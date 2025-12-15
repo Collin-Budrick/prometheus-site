@@ -1,1 +1,12 @@
-.vscode/settings.json
+node_modules
+.pnpm-store
+.env
+.DS_Store
+*.log
+coverage
+.vscode
+.idea
+dist
+build
+apps/api/drizzle
+apps/api/.elysia
