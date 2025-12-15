@@ -29,7 +29,7 @@ function qwikCityDevEnvDataJsonSafe() {
   return {
     name: 'qwik-city-dev-envdata-json-safe',
     configureServer(server: ViteDevServer) {
-      server.middlewares.use((_req: IncomingMessage, res: DevResponse, next) => {
+      server.middlewares.use((_req: IncomingMessage, res: DevResponse, next: (err?: unknown) => void) => {
         const envData = res._qwikEnvData
         const qwikcity = envData?.qwikcity
 
@@ -53,7 +53,7 @@ function qwikCityDevEnvDataGuard() {
     name: 'qwik-city-dev-envdata-guard',
     enforce: 'pre' as const,
     configureServer(server: ViteDevServer) {
-      server.middlewares.use((_req: IncomingMessage, res: DevResponse, next) => {
+      server.middlewares.use((_req: IncomingMessage, res: DevResponse, next: (err?: unknown) => void) => {
         let stored: DevResponse['_qwikEnvData']
         Object.defineProperty(res, '_qwikEnvData', {
           configurable: true,
@@ -75,7 +75,7 @@ export default defineConfig(() => ({
   plugins: [
     qwikCityDevEnvDataGuard(),
     qwikCity({ trailingSlash: false }),
-    qwikVite({ client: { manifest: true } }),
+    qwikVite(),
     tsconfigPaths(),
     UnoCSS(),
     qwikCityDevEnvDataJsonSafe()
@@ -86,7 +86,7 @@ export default defineConfig(() => ({
     modulePreload: { polyfill: false },
     rollupOptions: {
       output: {
-        manualChunks(id) {
+        manualChunks(id: string) {
           if (!id.includes('node_modules')) return
           if (id.includes('@builder.io/qwik')) return 'qwik'
           if (id.includes('@unocss/runtime') || id.includes('unocss')) return 'unocss'

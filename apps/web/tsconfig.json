@@ -10,8 +10,8 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "jsxImportSource": "@builder.io/qwik",
-    "types": ["vite/client", "@builder.io/qwik-city"]
+    "types": ["vite/client", "@builder.io/qwik-city", "node"]
   },
-  "include": ["src"],
+  "include": ["src", "vite.config.ts", "uno.config.ts", "qwik.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

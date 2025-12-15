@@ -1,7 +1,2 @@
-import { qwikCity } from '@builder.io/qwik-city/vite'
-import { defineConfig } from '@builder.io/qwik-city/config'
-
-export default defineConfig({
-  routes: [],
-  vitePlugins: [qwikCity()]
-})
+// Reuse the main Vite config for tooling expecting qwik.config.ts.
+export { default } from './vite.config'

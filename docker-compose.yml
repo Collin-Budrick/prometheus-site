@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   web:
     build:
@@ -49,7 +47,7 @@ services:
       retries: 5
 
   db:
-    image: postgres:16-alpine
+    image: postgres:18.1-alpine
     environment:
       - POSTGRES_USER=prometheus
       - POSTGRES_PASSWORD=secret
@@ -57,7 +55,7 @@ services:
     ports:
       - '5433:5432'
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql
       - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U prometheus']
@@ -66,7 +64,7 @@ services:
       retries: 5
 
   valkey:
-    image: valkey/valkey:7.2
+    image: valkey/valkey:9.0.1
     command: valkey-server /etc/valkey/valkey.conf
     volumes:
       - valkey_data:/data
