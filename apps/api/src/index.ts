@@ -1,5 +1,4 @@
 import { Elysia, t } from 'elysia'
-import { websocket } from '@elysiajs/websocket'
 import { desc, sql } from 'drizzle-orm'
 import { db } from './db/client'
 import { chatMessages, storeItems } from './db/schema'
@@ -31,7 +30,6 @@ async function bootstrap() {
 const chatChannel = 'chat:stream'
 
 const app = new Elysia()
-  .use(websocket())
   .decorate('valkey', valkey)
   .get('/health', () => ({ status: 'ok', uptime: process.uptime() }))
   .get(
@@ -93,7 +91,7 @@ const app = new Elysia()
       const subscriber = ws.data.subscriber
       if (subscriber) await subscriber.quit()
     },
-    async message(ws, message) {
+    async message(_ws, message) {
       const payload = typeof message === 'string' ? JSON.parse(message) : message
       if (payload.type === 'chat') {
         const entry = { from: 'guest', text: payload.text }

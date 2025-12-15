@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-    command: pnpm dev --host 0.0.0.0 --port 4173
+    command: sh -c "bun install --ignore-scripts && bun run --cwd apps/web dev -- --host 0.0.0.0 --port 4173"
     working_dir: /app
     environment:
       - WEB_PORT=4173
@@ -22,7 +22,7 @@ services:
   api:
     image: oven/bun:1.1
     working_dir: /app/apps/api
-    command: sh -c "bun install && bun run src/index.ts"
+    command: sh -c "bun install --ignore-scripts && bun run src/index.ts"
     environment:
       - API_PORT=4000
       - API_HOST=0.0.0.0
@@ -55,7 +55,7 @@ services:
       - POSTGRES_PASSWORD=secret
       - POSTGRES_DB=prometheus
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

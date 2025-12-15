@@ -3,7 +3,7 @@ deploy_env?=dev
 .PHONY: dev prod logs reset test lighthouse
 
 dev:
-	pnpm install --recursive --ignore-scripts
+	bun install --ignore-scripts
 	docker compose --profile dev up --build
 
 prod:
@@ -14,11 +14,10 @@ logs:
 
 reset:
 	docker compose down -v
-	rm -rf apps/api/drizzle
 	rm -rf node_modules
 
 test:
-	pnpm lint
+	bun run lint
 
 lighthouse:
 	scripts/perf-audit

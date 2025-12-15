@@ -3,6 +3,7 @@
 Bun-powered Elysia service with Postgres via Drizzle ORM and Valkey for cache/pubsub.
 
 ## Scripts
+
 - `bun dev` – start the API with hot reload.
 - `bun run src/db/migrate.ts` – apply pending migrations.
 - `bun run src/db/seed.ts` – seed default data.
@@ -11,6 +12,7 @@ Bun-powered Elysia service with Postgres via Drizzle ORM and Valkey for cache/pu
 - `drizzle-kit studio` – inspect schema interactively.
 
 ## Routes
+
 - `GET /health` – readiness probe.
 - `GET /store/items?cursor=0&limit=10` – cursor pagination with Valkey cache.
 - `POST /ai/echo` – simple echo endpoint.

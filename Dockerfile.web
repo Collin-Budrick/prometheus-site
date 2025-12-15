@@ -1,14 +1,26 @@
 FROM node:20-alpine as base
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml .npmrc* ./
+RUN apk add --no-cache curl unzip
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+COPY package.json ./
 COPY apps/web/package.json apps/web/
-RUN corepack enable && pnpm install --filter web --ignore-scripts
+RUN bun install --ignore-scripts
+
 COPY apps/web ./apps/web
-RUN pnpm --filter web build
+RUN bun run --cwd apps/web build
 
 FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache curl unzip
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
 ENV WEB_PORT=4173
-COPY --from=base /app/apps/web/dist ./dist
+COPY --from=base /app/package.json ./package.json
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/apps/web/package.json ./apps/web/package.json
+COPY --from=base /app/apps/web/dist ./apps/web/dist
 EXPOSE 4173
-CMD ["pnpm", "--filter", "web", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]
+CMD ["bun", "run", "--cwd", "apps/web", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]

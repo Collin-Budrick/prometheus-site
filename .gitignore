@@ -1,5 +1,4 @@
 node_modules
-.pnpm-store
 .env
 .DS_Store
 *.log
@@ -8,5 +7,4 @@ coverage
 .idea
 dist
 build
-apps/api/drizzle
 apps/api/.elysia

@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, isServer, useSignal, useTask$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
 
 export default component$(() => {
@@ -6,18 +6,22 @@ export default component$(() => {
   const socketRef = useSignal<WebSocket | null>(null)
   const draft = useSignal('')
 
-  useVisibleTask$(() => {
-    const ws = new WebSocket(`ws://${typeof window !== 'undefined' ? window.location.host : ''}/api/ws`)
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data)
-      if (payload.type === 'chat') {
-        const messageId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${messages.value.length}`
-        messages.value = [...messages.value, { id: messageId, from: payload.from, text: payload.text }]
+  useTask$(
+    ({ cleanup }) => {
+      if (isServer) return
+      const ws = new WebSocket(`ws://${window.location.host}/api/ws`)
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data)
+        if (payload.type === 'chat') {
+          const messageId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${messages.value.length}`
+          messages.value = [...messages.value, { id: messageId, from: payload.from, text: payload.text }]
+        }
       }
-    }
-    socketRef.value = ws
-    return () => ws.close()
-  })
+      socketRef.value = ws
+      cleanup(() => ws.close())
+    },
+    { eagerness: 'visible' }
+  )
 
   const send = $(() => {
     if (!draft.value || !socketRef.value) return

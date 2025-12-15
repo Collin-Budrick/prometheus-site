@@ -3,12 +3,12 @@
 Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rules, and optional Partytown for third-party isolation.
 
 ## Scripts
-- `pnpm dev` – start SSR dev server with hot module reloading.
-- `pnpm build` – build client + SSR output with Lightning CSS minification.
-- `pnpm preview` – preview the SSR build.
-- `pnpm lint` – run Biome linting.
-- `pnpm format` – apply Biome formatting.
-- `pnpm test` – execute Qwik tests.
+- `bun run dev` – start SSR dev server with hot module reloading.
+- `bun run build` – build client + SSR output with Lightning CSS minification.
+- `bun run preview` – preview the SSR build.
+- `bun run lint` – run Biome linting.
+- `bun run format` – apply Biome formatting.
+- `bun run test` – execute Qwik tests.
 
 ## Perf notes
 - Home route ships minimal HTML/CSS with immutable caching headers.
