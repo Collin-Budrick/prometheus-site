@@ -1,0 +1,3 @@
+CREATE DATABASE prometheus;
+CREATE USER prometheus WITH ENCRYPTED PASSWORD 'secret';
+GRANT ALL PRIVILEGES ON DATABASE prometheus TO prometheus;

@@ -1,0 +1,94 @@
+version: '3.9'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    command: pnpm dev --host 0.0.0.0 --port 4173
+    working_dir: /app
+    environment:
+      - WEB_PORT=4173
+      - API_URL=http://api:4000
+    ports:
+      - '4173:4173'
+    volumes:
+      - .:/app
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles: [dev]
+
+  api:
+    image: oven/bun:1.1
+    working_dir: /app/apps/api
+    command: sh -c "bun install && bun run src/index.ts"
+    environment:
+      - API_PORT=4000
+      - API_HOST=0.0.0.0
+      - POSTGRES_HOST=db
+      - POSTGRES_USER=prometheus
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=prometheus
+      - POSTGRES_PORT=5432
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    volumes:
+      - .:/app
+    ports:
+      - '4000:4000'
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'bun', 'run', 'src/healthcheck.ts']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=prometheus
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=prometheus
+    ports:
+      - '5432:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U prometheus']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:7.2
+    command: valkey-server /etc/valkey/valkey.conf
+    volumes:
+      - valkey_data:/data
+      - ./infra/valkey/valkey.conf:/etc/valkey/valkey.conf:ro
+    ports:
+      - '6379:6379'
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/tls:/etc/nginx/tls:ro
+    ports:
+      - '80:80'
+      - '443:443'
+    profiles: [prod]
+
+volumes:
+  db_data:
+  valkey_data:
