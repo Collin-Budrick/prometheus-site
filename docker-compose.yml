@@ -21,6 +21,7 @@ services:
     image: oven/bun:1.1
     working_dir: /app/apps/api
     command: sh -c "bun install --ignore-scripts && bun run src/index.ts"
+    profiles: [dev, prod]
     environment:
       - API_PORT=4000
       - API_HOST=0.0.0.0

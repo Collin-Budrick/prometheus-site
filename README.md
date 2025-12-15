@@ -55,7 +55,7 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 
 ## Testing and quality
 
-- `bun run lint` (Biome across web + api)
+- `bun run lint` (Oxlint across web + api)
 - `bun run test` placeholder (wire up framework tests as features grow)
 - `scripts/perf-audit` (requires `@lhci/cli` globally) to run Lighthouse CI against the built web assets
 
