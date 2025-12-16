@@ -1,29 +1,17 @@
 import { Elysia, t } from 'elysia'
-import { desc, sql } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { db } from './db/client'
+import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
 import { connectValkey, valkey } from './services/cache'
-import { migrate } from 'drizzle-orm/postgres-js/migrator'
-
-const migrationsFolder = new URL('../drizzle', import.meta.url).pathname
-
-async function runMigrations() {
-  await migrate(db, { migrationsFolder })
-}
-
-async function seedIfEmpty() {
-  const existing = await db.select({ count: sql<number>`count(*)` }).from(storeItems)
-  if ((existing[0]?.count ?? 0) === 0) {
-    await db.insert(storeItems).values([
-      { name: 'Photon Drive', price: '19.99' },
-      { name: 'Nebula Hoodie', price: '59.00' }
-    ])
-  }
-}
+const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
-  await runMigrations()
-  await seedIfEmpty()
+  if (shouldPrepareDatabase) {
+    await prepareDatabase()
+  } else {
+    console.log('RUN_MIGRATIONS not set; skipping migrations and seed step')
+  }
   await connectValkey()
 }
 
