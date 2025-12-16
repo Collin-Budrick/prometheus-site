@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bunx vite dev",
-    "build": "bunx vite build",
-    "preview": "bunx vite preview",
+    "dev": "vite dev",
+    "build": "vite build && vite build --ssr src/entry.preview.tsx --outDir server",
+    "preview": "vite preview",
     "lint": "oxlint .",
     "format": "oxfmt --write .",
     "test": "bun test"

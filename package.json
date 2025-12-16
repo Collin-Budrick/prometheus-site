@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "bun run --cwd apps/web dev & bun run --cwd apps/api dev",
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
+    "preview": "bun run --cwd apps/web preview",
     "lint": "bunx --bun oxlint apps/web apps/api",
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",

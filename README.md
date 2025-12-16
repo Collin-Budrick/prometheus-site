@@ -27,6 +27,15 @@ See `.env.example` for defaults. Key values:
 - `VALKEY_HOST`, `VALKEY_PORT`
 - `ENABLE_PARTYTOWN` to opt-in to Partytown for third-party scripts
 
+## Scripts
+
+- `bun run dev` – runs the web (Vite on `WEB_PORT`, default `4173`) and API dev servers together.
+- `bun run build` – builds the Qwik City web app (client + preview SSR server output) and the Bun/Elysia API.
+- `bun run preview` – serves the built web app via Vite preview on `WEB_PORT` (`4173`); run `bun run build` first so `apps/web/server/entry.preview` exists, and keep the API running (`bun run --cwd apps/api dev` or `make prod`) for data.
+- `bun run lint` – Oxlint across both apps; also used by `make test`.
+- `bun run format` – oxfmt across both apps.
+- `bun run test` – web tests via `bun test`; API currently returns a placeholder message.
+
 ## Local development
 
 ```bash

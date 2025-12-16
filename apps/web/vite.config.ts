@@ -1,3 +1,4 @@
+import os from 'node:os'
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
@@ -13,6 +14,15 @@ const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? 
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
 const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
+const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
+const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
+// WSL on a Windows mount drops fs events; fall back to polling so HMR stays live.
+const shouldUseHmrPolling = process.env.VITE_HMR_POLLING === '1' || isWindowsFs
+// Qwik City's MDX pipeline pulls in a lot of dependencies; skip it on slow /mnt/* mounts by default.
+const shouldSkipMdx = process.env.QWIK_CITY_DISABLE_MDX === '1' || (isWindowsFs && process.env.QWIK_CITY_DISABLE_MDX !== '0')
+if (shouldSkipMdx) {
+  process.env.QWIK_CITY_DISABLE_MDX = '1'
+}
 
 const devFontSilencer = () => ({
   name: 'dev-font-silencer',
@@ -141,7 +151,8 @@ export default defineConfig(() => ({
       host: hmrHost,
       port: hmrPort,
       clientPort: hmrClientPort
-    }
+    },
+    watch: shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined
   },
   preview: {
     host: '0.0.0.0',
