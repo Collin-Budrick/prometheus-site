@@ -11,9 +11,9 @@ export const RouterHead = component$(() => {
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
-  const speculationRulesPayload =
+  const speculationRulesInstaller =
     !isAudit && import.meta.env.PROD
-      ? '{"prerender":[{"source":"document","where":{"href_matches":"/store"}}],"prefetch":[{"source":"document","where":{"href_matches":"/chat"}}]}'
+      ? `(()=>{try{if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;const seen=new Set();const install=(kind,href)=>{if(!href||seen.has(href))return;seen.add(href);const script=document.createElement('script');script.type='speculationrules';script.textContent=JSON.stringify({[kind]:[{source:'list',urls:[href]}]});document.head.append(script);};const queue=(kind,href)=>{const run=()=>install(kind,href);(self.requestIdleCallback||((cb)=>setTimeout(cb,600)))(run,{timeout:900});};document.querySelectorAll('[data-speculate]').forEach((link)=>{const href=link.getAttribute('href');const kind=link.getAttribute('data-speculate')||'prefetch';if(!href)return;const prime=()=>install(kind,href);link.addEventListener('pointerdown',prime,{once:true});link.addEventListener('focus',prime,{once:true});link.addEventListener('mouseenter',()=>queue(kind,href),{once:true});});}catch{}})();`
       : undefined
 
   return (
@@ -30,15 +30,9 @@ export const RouterHead = component$(() => {
       {head.styles.map((s) => (
         <style key={s.key} {...s.props} dangerouslySetInnerHTML={s.style} />
       ))}
-      {/* Speculation Rules payload for supported browsers, deferred until idle to avoid eager JS fetches */}
+      {/* Speculation Rules payload installs only after the user signals intent to navigate (hover/focus/pointer). */}
       {/* cspell:ignore speculationrules */}
-      {speculationRulesPayload && (
-        <script
-          dangerouslySetInnerHTML={`(()=>{try{const rules=${JSON.stringify(
-            speculationRulesPayload
-          )};if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;let installed=false;const install=()=>{if(installed)return;installed=true;const script=document.createElement('script');script.type='speculationrules';script.textContent=rules;document.head.append(script);};(self.requestIdleCallback||((cb)=>setTimeout(cb,1200)))(install,{timeout:1200});document.addEventListener('pointerdown',install,{once:true});}catch{}})();`}
-        />
-      )}
+      {speculationRulesInstaller && <script dangerouslySetInnerHTML={speculationRulesInstaller} />}
       <script
         dangerouslySetInnerHTML={
           "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
@@ -61,10 +55,10 @@ export default component$(() => (
           <Link href="/" class="hover:text-emerald-300 transition-colors">
             Home
           </Link>
-          <Link href="/store" class="hover:text-emerald-300 transition-colors">
+          <Link href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
             Store
           </Link>
-          <Link href="/chat" class="hover:text-emerald-300 transition-colors">
+          <Link href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
             Chat
           </Link>
           <Link href="/ai" class="hover:text-emerald-300 transition-colors">

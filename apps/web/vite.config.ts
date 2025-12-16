@@ -169,10 +169,9 @@ export default defineConfig(({ ssrBuild }) => {
       __EXPERIMENTAL__: {}
     },
     optimizeDeps: {
-      // Minify and shake deps even in dev to keep @builder.io/qwik core tiny during audits.
-      esbuildOptions: {
-        minify: true,
-        treeShaking: true
+      // Rolldown prebundling (Vite 8) with aggressive treeshaking to keep audit payloads tiny.
+      rolldownOptions: {
+        treeshake: true
       }
     },
     resolve: {
