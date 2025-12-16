@@ -1,12 +1,16 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 
-export const onGet = () => {
-  return {
-    headers: {
-      'cache-control': 'public, max-age=900'
-    }
+export const onGet: RequestHandler = ({ cacheControl }) => {
+  if (!import.meta.env.PROD) {
+    cacheControl({ noStore: true })
+    return
   }
+
+  cacheControl({
+    public: true,
+    maxAge: 900
+  })
 }
 
 export default component$(() => (

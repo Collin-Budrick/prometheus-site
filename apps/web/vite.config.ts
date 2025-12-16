@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
@@ -16,8 +17,17 @@ const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
 const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
 const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
 const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
-// WSL on a Windows mount drops fs events; fall back to polling so HMR stays live.
-const shouldUseHmrPolling = process.env.VITE_HMR_POLLING === '1' || isWindowsFs
+// WSL on Windows mounts and containerized volumes drop fs events; fall back to polling so HMR stays live.
+const isDocker = (() => {
+  if (fs.existsSync('/.dockerenv')) return true
+  try {
+    const cgroup = fs.readFileSync('/proc/self/cgroup', 'utf8')
+    return cgroup.includes('docker') || cgroup.includes('containerd')
+  } catch {
+    return false
+  }
+})()
+const shouldUseHmrPolling = process.env.VITE_HMR_POLLING === '1' || isWindowsFs || isDocker
 // Qwik City's MDX pipeline pulls in a lot of dependencies; skip it on slow /mnt/* mounts by default.
 const shouldSkipMdx = process.env.QWIK_CITY_DISABLE_MDX === '1' || (isWindowsFs && process.env.QWIK_CITY_DISABLE_MDX !== '0')
 if (shouldSkipMdx) {

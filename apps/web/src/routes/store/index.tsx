@@ -11,12 +11,18 @@ type StoreItemsResponse = {
   items?: StoreItem[]
 }
 
-export const onGet: RequestHandler = () => {
-  return {
-    headers: {
-      'cache-control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=60'
-    }
+export const onGet: RequestHandler = ({ cacheControl }) => {
+  if (!import.meta.env.PROD) {
+    cacheControl({ noStore: true })
+    return
   }
+
+  cacheControl({
+    public: true,
+    maxAge: 300,
+    sMaxAge: 900,
+    staleWhileRevalidate: 60
+  })
 }
 
 export const useStoreItems = routeLoader$<StoreItem[]>(async ({ url }) => {
