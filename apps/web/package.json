@@ -15,9 +15,11 @@
     "@builder.io/qwik": "1.17.2",
     "@builder.io/qwik-city": "1.17.2",
     "@builder.io/partytown": "0.10.3",
+    "drizzle-orm": "0.45.1",
     "@unocss/reset": "66.5.10",
     "@unocss/runtime": "66.5.10",
-    "@unocss/vite": "66.5.10"
+    "@unocss/vite": "66.5.10",
+    "postgres": "3.4.7"
   },
   "devDependencies": {
     "@types/node": "25.0.2",

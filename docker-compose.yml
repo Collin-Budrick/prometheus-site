@@ -8,6 +8,11 @@ services:
     environment:
       - WEB_PORT=4173
       - API_URL=http://api:4000
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=prometheus
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=prometheus
     ports:
       - '4173:4173'
     volumes:
