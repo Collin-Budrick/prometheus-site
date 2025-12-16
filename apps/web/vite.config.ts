@@ -141,6 +141,7 @@ export default defineConfig(() => ({
   server: {
     host: '0.0.0.0',
     port: devPort,
+    strictPort: true,
     headers: {
       'cache-control': 'no-store',
       pragma: 'no-cache',
@@ -156,7 +157,8 @@ export default defineConfig(() => ({
   },
   preview: {
     host: '0.0.0.0',
-    port: devPort
+    port: devPort,
+    strictPort: true
   },
   css: {
     lightningcss: {
