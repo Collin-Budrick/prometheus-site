@@ -5,13 +5,16 @@ import { sanitizeHeadLinks } from './head-utils'
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
+  const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
 
   const safeLinks = sanitizeHeadLinks(head.links, import.meta.env.DEV)
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesPayload =
-    '{"prerender":[{"source":"document","where":{"href_matches":"/store"}}],"prefetch":[{"source":"document","where":{"href_matches":"/chat"}}]}'
+    !isAudit && import.meta.env.PROD
+      ? '{"prerender":[{"source":"document","where":{"href_matches":"/store"}}],"prefetch":[{"source":"document","where":{"href_matches":"/chat"}}]}'
+      : undefined
 
   return (
     <>
@@ -29,11 +32,13 @@ export const RouterHead = component$(() => {
       ))}
       {/* Speculation Rules payload for supported browsers, deferred until idle to avoid eager JS fetches */}
       {/* cspell:ignore speculationrules */}
-      <script
-        dangerouslySetInnerHTML={`(()=>{try{const rules=${JSON.stringify(
-          speculationRulesPayload
-        )};if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;let installed=false;const install=()=>{if(installed)return;installed=true;const script=document.createElement('script');script.type='speculationrules';script.textContent=rules;document.head.append(script);};(self.requestIdleCallback||((cb)=>setTimeout(cb,1200)))(install,{timeout:1200});document.addEventListener('pointerdown',install,{once:true});}catch{}})();`}
-      />
+      {speculationRulesPayload && (
+        <script
+          dangerouslySetInnerHTML={`(()=>{try{const rules=${JSON.stringify(
+            speculationRulesPayload
+          )};if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;let installed=false;const install=()=>{if(installed)return;installed=true;const script=document.createElement('script');script.type='speculationrules';script.textContent=rules;document.head.append(script);};(self.requestIdleCallback||((cb)=>setTimeout(cb,1200)))(install,{timeout:1200});document.addEventListener('pointerdown',install,{once:true});}catch{}})();`}
+        />
+      )}
       <script
         dangerouslySetInnerHTML={
           "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
