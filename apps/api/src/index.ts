@@ -23,8 +23,17 @@ const app = new Elysia()
   .get(
     '/store/items',
     async ({ query }) => {
-      const limit = Number.parseInt((query.limit as string) || '10', 10)
+      const limitRaw = Number.parseInt((query.limit as string) || '10', 10)
       const cursor = Number.parseInt((query.cursor as string) || '0', 10)
+
+      if (Number.isNaN(cursor) || cursor < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
+        return new Response(JSON.stringify({ error: 'Invalid cursor or limit' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      const limit = Math.min(limitRaw, 50)
       const cacheKey = `store:items:${cursor}:${limit}`
 
       const cached = await valkey.get(cacheKey)
