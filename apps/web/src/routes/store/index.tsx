@@ -4,12 +4,15 @@ import { gt } from 'drizzle-orm'
 import { db } from '../../server/db/client'
 import { storeItems, type StoreItemRow } from '../../server/db/schema'
 
-type StoreItem = StoreItemRow & { price: number }
+type StoreItem = Omit<StoreItemRow, 'price'> & { price: number }
 
-const normalizeItem = (item: StoreItemRow): StoreItem => ({
-  ...item,
-  price: Number.parseFloat(String(item.price))
-})
+const normalizeItem = (item: StoreItemRow): StoreItem => {
+  const priceNumber = Number.parseFloat(String(item.price))
+  return {
+    ...item,
+    price: Number.isFinite(priceNumber) ? priceNumber : 0
+  }
+}
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -36,15 +39,15 @@ const fetchStoreItems = server$(async (cursor?: number) => {
 })
 
 export const useCreateStoreItem = routeAction$(async (data) => {
-  const name = (data.name ?? '').trim()
-  const priceRaw = Number.parseFloat((data.price ?? '').toString())
+  const name = String(data.name ?? '').trim()
+  const priceRaw = Number.parseFloat(String(data.price ?? ''))
 
   if (!name || Number.isNaN(priceRaw) || priceRaw <= 0) {
     return { success: false, error: 'Name and positive price required.' }
   }
 
   try {
-    const [row] = await db.insert(storeItems).values({ name, price: priceRaw }).returning()
+    const [row] = await db.insert(storeItems).values({ name, price: priceRaw.toString() }).returning()
     return { success: true, item: normalizeItem(row) }
   } catch (err) {
     console.error('Failed to create store item', err)
