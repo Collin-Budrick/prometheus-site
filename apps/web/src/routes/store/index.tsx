@@ -7,6 +7,10 @@ type StoreItem = {
   price: number
 }
 
+type StoreItemsResponse = {
+  items?: StoreItem[]
+}
+
 export const onGet: RequestHandler = () => {
   return {
     headers: {
@@ -24,8 +28,17 @@ export const useStoreItems = routeLoader$<StoreItem[]>(async ({ url }) => {
     if (!res.ok) {
       return []
     }
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
+    const data = (await res.json()) as StoreItemsResponse | StoreItem[]
+
+    if (Array.isArray(data)) {
+      return data
+    }
+
+    if (data && typeof data === 'object' && Array.isArray(data.items)) {
+      return data.items
+    }
+
+    return []
   } catch (error) {
     console.error('Failed to load store items', error)
     return []
