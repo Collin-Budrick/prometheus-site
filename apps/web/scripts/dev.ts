@@ -2,6 +2,7 @@ import os from 'node:os'
 import { execSync, spawn } from 'node:child_process'
 
 const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
 
 const tryExec = (command: string) => {
   try {
@@ -59,16 +60,44 @@ const freePort = (targetPort: number) => {
 
 freePort(port)
 
-const dev = spawn('bunx vite dev', {
-  shell: true,
-  stdio: 'inherit',
-  env: process.env
-})
-
-dev.on('exit', (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal)
-    return
+if (auditMode) {
+  console.log('Audit mode enabled: building once and serving preview without HMR or the Vite client.')
+  try {
+    execSync('bun run build', {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: { ...process.env, VITE_DEV_AUDIT: '1' }
+    })
+  } catch (err) {
+    console.error('Failed to build before audit preview.', err)
+    process.exit(typeof err === 'object' && err && 'status' in err ? Number(err.status) || 1 : 1)
   }
-  process.exit(code ?? 0)
-})
+
+  const preview = spawn(`bunx vite preview --host 0.0.0.0 --port ${port}`, {
+    shell: true,
+    stdio: 'inherit',
+    env: { ...process.env, VITE_DEV_AUDIT: '1' }
+  })
+
+  preview.on('exit', (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal)
+      return
+    }
+    process.exit(code ?? 0)
+  })
+} else {
+  const dev = spawn('bunx vite dev', {
+    shell: true,
+    stdio: 'inherit',
+    env: process.env
+  })
+
+  dev.on('exit', (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal)
+      return
+    }
+    process.exit(code ?? 0)
+  })
+}

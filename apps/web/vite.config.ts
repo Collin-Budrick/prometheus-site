@@ -126,6 +126,24 @@ const devBustedViteClient = (enabled: boolean) =>
       }
     : null
 
+const devAuditStripViteClient = (enabled: boolean) =>
+  enabled
+    ? {
+        name: 'dev-audit-strip-vite-client',
+        apply: 'serve' as const,
+        transformIndexHtml(html: string) {
+          return html.replace(/<script\s+type="module"\s+src="\/@vite\/client"\s*><\/script>/g, '')
+        },
+        configureServer(server: ViteDevServer) {
+          server.middlewares.use('/@vite/client', (_req, res) => {
+            res.statusCode = 204
+            res.setHeader('cache-control', 'no-store')
+            res.end()
+          })
+        }
+      }
+    : null
+
 export default defineConfig(({ ssrBuild }) => {
   const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const resolveAlias = zodStubPath ? { zod: zodStubPath } : {}
@@ -145,6 +163,7 @@ export default defineConfig(({ ssrBuild }) => {
       qwikVite(),
       tsconfigPaths(),
       UnoCSS(),
+      devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
       devFontSilencer()
