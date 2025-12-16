@@ -4,11 +4,11 @@ Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia AP
 
 ## Architecture
 
-- **apps/web** – Qwik City SSR with UnoCSS + Lightning CSS, Speculation Rules, View Transitions, optional Partytown.
-- **apps/api** – Bun + Elysia REST/WebSocket service using Drizzle ORM (Postgres) and Valkey for cache/pubsub.
-- **infra/** – Nginx HTTP/3 reverse proxy, Postgres init scripts, Valkey config.
-- **docker-compose** – Dev and prod profiles bundling web, api, db, valkey, and nginx.
-- **scripts/perf-audit** – Lighthouse CI helper for bundle/perf verification.
+- **apps/web** - Qwik City SSR with UnoCSS + Lightning CSS, Speculation Rules, View Transitions, optional Partytown.
+- **apps/api** - Bun + Elysia REST/WebSocket service using Drizzle ORM (Postgres) and Valkey for cache/pubsub.
+- **infra/** - Nginx HTTP/3 reverse proxy, Postgres init scripts, Valkey config.
+- **docker-compose** - Dev and prod profiles bundling web, api, db, valkey, and nginx.
+- **scripts/perf-audit** - Lighthouse CI helper for bundle/perf verification.
 
 ### Ports
 
@@ -29,12 +29,13 @@ See `.env.example` for defaults. Key values:
 
 ## Scripts
 
-- `bun run dev` – runs the web (Vite on `WEB_PORT`, default `4173`) and API dev servers together; the web dev server now fails fast if that port is taken, so free it or set `WEB_PORT` before starting.
-- `bun run build` – builds the Qwik City web app (client + preview SSR server output) and the Bun/Elysia API.
-- `bun run preview` – serves the built web app via Vite preview on `WEB_PORT` (`4173`); run `bun run build` first so `apps/web/server/entry.preview` exists, and keep the API running (`bun run --cwd apps/api dev` or `make prod`) for data.
-- `bun run lint` – Oxlint across both apps; also used by `make test`.
-- `bun run format` – oxfmt across both apps.
-- `bun run test` – web tests via `bun test`; API currently returns a placeholder message.
+- `bun run dev` - runs the web (Vite on `WEB_PORT`, default `4173`) and API dev servers together; the web dev server now fails fast if that port is taken, so free it or set `WEB_PORT` before starting.
+- `bun run build` - builds the Qwik City web app (client + preview SSR server output) and the Bun/Elysia API.
+- `bun run preview` - serves the built web app via Vite preview on `WEB_PORT` (`4173`); run `bun run build` first so `apps/web/server/entry.preview` exists, and keep the API running (`bun run --cwd apps/api dev` or `make prod`) for data.
+- `bun run lint` - Oxlint across both apps; also used by `make test`.
+- `bun run format` - oxfmt across both apps.
+- `bun run test` - web tests via `bun test`; API currently returns a placeholder message.
+- `VITE_DEV_AUDIT=1 bun run dev` - disables HMR/WebSocket and minifies optimized deps so Lighthouse/devtools audits avoid the Vite client payload and back/forward cache blockers.
 
 ## Local development
 

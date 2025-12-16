@@ -7,10 +7,12 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
+import { fileURLToPath } from 'node:url'
 
 type DevResponse = ServerResponse & { _qwikEnvData?: { qwikcity?: Record<string, unknown> } }
 const devCacheBuster = Date.now().toString(36)
 const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
 const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
@@ -113,72 +115,93 @@ function qwikCityDevEnvDataGuard() {
   }
 }
 
-function devBustedViteClient() {
-  return {
-    name: 'dev-busted-vite-client',
-    apply: 'serve' as const,
-    transformIndexHtml(html: string) {
-      return html.replaceAll('/@vite/client', `/@vite/client?bust=${devCacheBuster}`)
-    }
-  }
-}
-
-export default defineConfig(() => ({
-  plugins: [
-    qwikCityDevEnvDataGuard(),
-    qwikCity({ trailingSlash: false }),
-    qwikVite(),
-    tsconfigPaths(),
-    UnoCSS(),
-    devBustedViteClient(),
-    qwikCityDevEnvDataJsonSafe(),
-    devFontSilencer()
-  ],
-  build: {
-    cssMinify: 'lightningcss',
-    target: 'esnext',
-    modulePreload: { polyfill: false },
-    rollupOptions: {
-      output: {
-        manualChunks(id: string) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('@builder.io/qwik')) return 'qwik'
-          if (id.includes('@unocss/runtime') || id.includes('unocss')) return 'unocss'
+const devBustedViteClient = (enabled: boolean) =>
+  enabled
+    ? {
+        name: 'dev-busted-vite-client',
+        apply: 'serve' as const,
+        transformIndexHtml(html: string) {
+          return html.replaceAll('/@vite/client', `/@vite/client?bust=${devCacheBuster}`)
         }
       }
-    }
-  },
-  server: {
-    host: '0.0.0.0',
-    port: devPort,
-    strictPort: true,
-    headers: {
-      'cache-control': 'no-store',
-      pragma: 'no-cache',
-      expires: '0'
-    },
-    hmr: {
-      protocol: hmrProtocol,
-      host: hmrHost,
-      port: hmrPort,
-      clientPort: hmrClientPort
-    },
-    watch: shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined
-  },
-  preview: {
-    host: '0.0.0.0',
-    port: devPort,
-    strictPort: true
-  },
-  css: {
-    lightningcss: {
-      drafts: {
-        nesting: true,
-        customMedia: true
+    : null
+
+export default defineConfig(({ ssrBuild }) => {
+  const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
+  const resolveAlias = zodStubPath ? { zod: zodStubPath } : {}
+  const hmrConfig = devAuditMode
+    ? false
+    : {
+        protocol: hmrProtocol,
+        host: hmrHost,
+        port: hmrPort,
+        clientPort: hmrClientPort
       }
+
+  return {
+    plugins: [
+      qwikCityDevEnvDataGuard(),
+      qwikCity({ trailingSlash: false }),
+      qwikVite(),
+      tsconfigPaths(),
+      UnoCSS(),
+      devBustedViteClient(!devAuditMode),
+      qwikCityDevEnvDataJsonSafe(),
+      devFontSilencer()
+    ].filter(Boolean),
+    build: {
+      cssMinify: 'lightningcss',
+      target: 'esnext',
+      modulePreload: { polyfill: false },
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('@builder.io/qwik')) return 'qwik'
+            if (id.includes('@builder.io/qwik-city')) return 'qwik-city'
+            if (id.includes('@unocss/runtime') || id.includes('unocss')) return 'unocss'
+          }
+        }
+      }
+    },
+    define: {
+      // Qwik City expects a global __EXPERIMENTAL__ object; provide a safe default in dev/build.
+      __EXPERIMENTAL__: {}
+    },
+    optimizeDeps: {
+      // Minify and shake deps even in dev to keep @builder.io/qwik core tiny during audits.
+      esbuildOptions: {
+        minify: true,
+        treeShaking: true
+      }
+    },
+    resolve: {
+      alias: resolveAlias,
+      // Ensure a single instance of Qwik City is used in dev and build to avoid duplicate chunks.
+      dedupe: ['@builder.io/qwik-city', '@builder.io/qwik']
+    },
+    server: {
+      host: '0.0.0.0',
+      port: devPort,
+      strictPort: true,
+      hmr: hmrConfig,
+      watch: shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined
+    },
+    preview: {
+      host: '0.0.0.0',
+      port: devPort,
+      strictPort: true
+    },
+    css: {
+      lightningcss: {
+        drafts: {
+          nesting: true,
+          customMedia: true
+        }
+      }
+    },
+    experimental: {
+      importGlobRestoreExtension: true
     }
-  },
-  experimental: {
-    importGlobRestoreExtension: true
   }
-}))
+})

@@ -2,15 +2,12 @@ import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
-  if (!import.meta.env.PROD) {
-    cacheControl({ noStore: true })
-    return
+  if (import.meta.env.PROD) {
+    cacheControl({
+      public: true,
+      maxAge: 900
+    })
   }
-
-  cacheControl({
-    public: true,
-    maxAge: 900
-  })
 }
 
 export default component$(() => (
@@ -23,9 +20,9 @@ export default component$(() => (
         browser supports them, and third-party scripts stay off the main thread.
       </p>
       <div class="gap-3 grid mt-6 text-slate-200 text-sm">
-        <div class="flex items-center gap-2">⚡ Ultra-thin home route with immutable caching</div>
-        <div class="flex items-center gap-2">🧩 Lazy feature routes for store, chat, and AI</div>
-        <div class="flex items-center gap-2">🧠 Optional Partytown for third-party isolation</div>
+        <div class="flex items-center gap-2">- Ultra-thin home route with immutable caching</div>
+        <div class="flex items-center gap-2">- Lazy feature routes for store, chat, and AI</div>
+        <div class="flex items-center gap-2">- Optional Partytown for third-party isolation</div>
       </div>
     </div>
     <div class="p-6 text-slate-200 text-sm surface">

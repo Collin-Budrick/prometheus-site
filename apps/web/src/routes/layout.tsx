@@ -1,4 +1,4 @@
-import { component$, Slot, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, Slot } from '@builder.io/qwik'
 import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { sanitizeHeadLinks } from './head-utils'
 
@@ -7,20 +7,11 @@ export const RouterHead = component$(() => {
   const loc = useLocation()
 
   const safeLinks = sanitizeHeadLinks(head.links, import.meta.env.DEV)
-
-  useVisibleTask$(() => {
-    if (!import.meta.env.DEV) return
-
-    document.querySelectorAll('link[rel="preload"]').forEach((link) => {
-      const href = link.getAttribute('href') || ''
-      const as = link.getAttribute('as') || ''
-      if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {
-        link.remove()
-      }
-    })
-
-    document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'))
-  })
+  const devHeadCleanup =
+    import.meta.env.DEV &&
+    "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
+  const speculationRulesPayload =
+    '{"prerender":[{"source":"document","where":{"href_matches":"/store"}}],"prefetch":[{"source":"document","where":{"href_matches":"/chat"}}]}'
 
   return (
     <>
@@ -36,18 +27,19 @@ export const RouterHead = component$(() => {
       {head.styles.map((s) => (
         <style key={s.key} {...s.props} dangerouslySetInnerHTML={s.style} />
       ))}
-      {/* Speculation Rules payload for supported browsers */}
+      {/* Speculation Rules payload for supported browsers, deferred until idle to avoid eager JS fetches */}
+      {/* cspell:ignore speculationrules */}
       <script
-        type="speculationrules"
-        dangerouslySetInnerHTML={
-          '{"prerender":[{"source":"document","where":{"href_matches":"/store"}}],"prefetch":[{"source":"document","where":{"href_matches":"/chat"}}]}'
-        }
+        dangerouslySetInnerHTML={`(()=>{try{const rules=${JSON.stringify(
+          speculationRulesPayload
+        )};if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;let installed=false;const install=()=>{if(installed)return;installed=true;const script=document.createElement('script');script.type='speculationrules';script.textContent=rules;document.head.append(script);};(self.requestIdleCallback||((cb)=>setTimeout(cb,1200)))(install,{timeout:1200});document.addEventListener('pointerdown',install,{once:true});}catch{}})();`}
       />
       <script
         dangerouslySetInnerHTML={
           "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
         }
       />
+      {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
     </>
   )
 })

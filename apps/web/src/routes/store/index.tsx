@@ -12,17 +12,14 @@ type StoreItemsResponse = {
 }
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
-  if (!import.meta.env.PROD) {
-    cacheControl({ noStore: true })
-    return
+  if (import.meta.env.PROD) {
+    cacheControl({
+      public: true,
+      maxAge: 300,
+      sMaxAge: 900,
+      staleWhileRevalidate: 60
+    })
   }
-
-  cacheControl({
-    public: true,
-    maxAge: 300,
-    sMaxAge: 900,
-    staleWhileRevalidate: 60
-  })
 }
 
 export const useStoreItems = routeLoader$<StoreItem[]>(async ({ url }) => {
