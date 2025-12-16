@@ -1,16 +1,39 @@
-import { component$, useResource$, Resource } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import { component$ } from '@builder.io/qwik'
+import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
-const fetchStoreItems = async () => {
-  const res = await fetch('/api/store/items?limit=5')
-  if (!res.ok) {
-    return []
-  }
-  return res.json()
+type StoreItem = {
+  id: number
+  name: string
+  price: number
 }
 
+export const onGet: RequestHandler = () => {
+  return {
+    headers: {
+      'cache-control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=60'
+    }
+  }
+}
+
+export const useStoreItems = routeLoader$<StoreItem[]>(async ({ url }) => {
+  const apiUrl = new URL('/api/store/items', url)
+  apiUrl.searchParams.set('limit', '5')
+
+  try {
+    const res = await fetch(apiUrl)
+    if (!res.ok) {
+      return []
+    }
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch (error) {
+    console.error('Failed to load store items', error)
+    return []
+  }
+})
+
 export default component$(() => {
-  const resource = useResource$(async () => fetchStoreItems())
+  const storeItems = useStoreItems()
 
   return (
     <section class="surface p-6">
@@ -25,22 +48,19 @@ export default component$(() => {
         Items stream from the Bun API and cache in Valkey. Cursor pagination keeps responses lean while staying resilient to
         large catalogs.
       </p>
-      <Resource
-        value={resource}
-        onPending={() => <p class="mt-4 text-slate-400">Loading inventory…</p>}
-        onRejected={() => <p class="mt-4 text-red-300">Unable to load items right now.</p>}
-        onResolved={(items: { id: number; name: string; price: number }[]) => (
-          <ul class="mt-6 grid gap-3 md:grid-cols-2">
-            {items.map((item) => (
-              <li key={item.id} class="surface p-4">
-                <p class="text-sm text-slate-400">SKU {item.id}</p>
-                <p class="text-lg font-semibold text-slate-50">{item.name}</p>
-                <p class="text-emerald-300">${item.price.toFixed(2)}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      />
+      {storeItems.value.length ? (
+        <ul class="mt-6 grid gap-3 md:grid-cols-2">
+          {storeItems.value.map((item) => (
+            <li key={item.id} class="surface p-4">
+              <p class="text-sm text-slate-400">SKU {item.id}</p>
+              <p class="text-lg font-semibold text-slate-50">{item.name}</p>
+              <p class="text-emerald-300">${item.price.toFixed(2)}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="mt-4 text-slate-400">Inventory is warming up. Check back in a moment.</p>
+      )}
     </section>
   )
 })
