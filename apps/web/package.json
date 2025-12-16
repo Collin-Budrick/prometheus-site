@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
+    "dev": "bun run scripts/dev.ts",
     "build": "vite build && vite build --ssr src/entry.preview.tsx --outDir server",
     "preview": "vite preview",
     "lint": "oxlint .",
