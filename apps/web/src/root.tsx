@@ -7,13 +7,11 @@ export default component$(() => (
   <QwikCityProvider>
     <head>
       <meta charSet="utf-8" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" />
-      <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
       <RouterHead />
     </head>
     <body class="app-shell">
       <RouterOutlet />
-      <ServiceWorkerRegister />
+      {import.meta.env.PROD && <ServiceWorkerRegister />}
     </body>
   </QwikCityProvider>
 ))

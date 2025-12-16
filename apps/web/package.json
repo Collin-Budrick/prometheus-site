@@ -9,7 +9,7 @@
     "preview": "bunx vite preview",
     "lint": "oxlint .",
     "format": "oxfmt --write .",
-    "test": "echo 'No tests yet'"
+    "test": "bun test"
   },
   "dependencies": {
     "@builder.io/qwik": "1.17.2",
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "25.0.2",
+    "bun-types": "1.3.4",
     "@unocss/preset-mini": "66.5.10",
     "@unocss/preset-typography": "66.5.10",
     "@unocss/preset-wind": "66.5.10",

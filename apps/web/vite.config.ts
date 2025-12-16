@@ -7,6 +7,28 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
 
 type DevResponse = ServerResponse & { _qwikEnvData?: { qwikcity?: Record<string, unknown> } }
+const devCacheBuster = Date.now().toString(36)
+const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
+const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
+const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
+const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
+
+const devFontSilencer = () => ({
+  name: 'dev-font-silencer',
+  apply: 'serve' as const,
+  configureServer(server: ViteDevServer) {
+    server.middlewares.use((req, res, next) => {
+      if (req.url?.startsWith('/fonts/inter-var.woff2')) {
+        res.statusCode = 204
+        res.setHeader('cache-control', 'no-store')
+        res.end()
+        return
+      }
+      next()
+    })
+  }
+})
 
 const toJSONSafe = <T>(value: T): T => {
   const seen = new WeakSet()
@@ -71,6 +93,16 @@ function qwikCityDevEnvDataGuard() {
   }
 }
 
+function devBustedViteClient() {
+  return {
+    name: 'dev-busted-vite-client',
+    apply: 'serve' as const,
+    transformIndexHtml(html: string) {
+      return html.replaceAll('/@vite/client', `/@vite/client?bust=${devCacheBuster}`)
+    }
+  }
+}
+
 export default defineConfig(() => ({
   plugins: [
     qwikCityDevEnvDataGuard(),
@@ -78,7 +110,9 @@ export default defineConfig(() => ({
     qwikVite(),
     tsconfigPaths(),
     UnoCSS(),
-    qwikCityDevEnvDataJsonSafe()
+    devBustedViteClient(),
+    qwikCityDevEnvDataJsonSafe(),
+    devFontSilencer()
   ],
   build: {
     cssMinify: 'lightningcss',
@@ -96,14 +130,22 @@ export default defineConfig(() => ({
   },
   server: {
     host: '0.0.0.0',
-    port: Number.parseInt(process.env.WEB_PORT ?? '4173', 10),
+    port: devPort,
     headers: {
-      'cache-control': 'public, max-age=31536000, immutable'
+      'cache-control': 'no-store',
+      pragma: 'no-cache',
+      expires: '0'
+    },
+    hmr: {
+      protocol: hmrProtocol,
+      host: hmrHost,
+      port: hmrPort,
+      clientPort: hmrClientPort
     }
   },
   preview: {
     host: '0.0.0.0',
-    port: Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+    port: devPort
   },
   css: {
     lightningcss: {

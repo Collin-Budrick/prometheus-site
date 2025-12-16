@@ -1,9 +1,27 @@
-import { component$, Slot } from '@builder.io/qwik'
+import { component$, Slot, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
+import { sanitizeHeadLinks } from './head-utils'
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
+
+  const safeLinks = sanitizeHeadLinks(head.links, import.meta.env.DEV)
+
+  useVisibleTask$(() => {
+    if (!import.meta.env.DEV) return
+
+    document.querySelectorAll('link[rel="preload"]').forEach((link) => {
+      const href = link.getAttribute('href') || ''
+      const as = link.getAttribute('as') || ''
+      if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {
+        link.remove()
+      }
+    })
+
+    document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'))
+  })
+
   return (
     <>
       <title>{head.title || 'Prometheus'}</title>
@@ -12,7 +30,7 @@ export const RouterHead = component$(() => {
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}
-      {head.links.map((l) => (
+      {safeLinks.map((l) => (
         <link key={l.key} {...l} />
       ))}
       {head.styles.map((s) => (
@@ -27,7 +45,7 @@ export const RouterHead = component$(() => {
       />
       <script
         dangerouslySetInnerHTML={
-          "if ('documentStartViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
+          "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
         }
       />
     </>
@@ -43,22 +61,22 @@ export default component$(() => (
           <span class="text-slate-400">Performance Lab</span>
         </div>
         <div class="flex items-center gap-4 text-slate-200">
-          <Link href="/" class="hover:text-emerald-300 transition-colors view-transition">
+          <Link href="/" class="hover:text-emerald-300 transition-colors">
             Home
           </Link>
-          <Link href="/store" class="hover:text-emerald-300 transition-colors view-transition">
+          <Link href="/store" class="hover:text-emerald-300 transition-colors">
             Store
           </Link>
-          <Link href="/chat" class="hover:text-emerald-300 transition-colors view-transition">
+          <Link href="/chat" class="hover:text-emerald-300 transition-colors">
             Chat
           </Link>
-          <Link href="/ai" class="hover:text-emerald-300 transition-colors view-transition">
+          <Link href="/ai" class="hover:text-emerald-300 transition-colors">
             AI
           </Link>
         </div>
       </nav>
     </header>
-    <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10">
+    <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10 route-transition">
       <Slot />
     </main>
   </div>

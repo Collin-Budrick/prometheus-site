@@ -1,21 +1,28 @@
 import { render, type RenderOptions } from '@builder.io/qwik'
-import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import Root from './root'
 
-export default async function renderEntry(opts: RenderToStreamOptions | RenderOptions = {}) {
-  if (typeof document !== 'undefined') {
-    // Vite dev sometimes executes the dev entry in the browser; fall back to client render there.
-    return render(document, <Root />, opts as RenderOptions)
+declare global {
+  // eslint-disable-next-line no-var
+  var __prometheusDevCachePurged: boolean | undefined
+}
+
+const purgeDevCaches = async () => {
+  if (!import.meta.env.DEV) return
+  if (globalThis.__prometheusDevCachePurged) return
+  globalThis.__prometheusDevCachePurged = true
+
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.map((r) => r.unregister()))
   }
 
-  return renderToStream(<Root />, {
-    ...(opts as RenderToStreamOptions),
-    containerTagName: 'main',
-    stream:
-      (opts as RenderToStreamOptions).stream ??
-      {
-        static: { buffer: 0 },
-        inOrder: ['<main']
-      }
-  })
+  if ('caches' in globalThis) {
+    const keys = await caches.keys()
+    await Promise.all(keys.map((k) => caches.delete(k)))
+  }
+}
+
+export default async function renderEntry(opts: RenderOptions = {}) {
+  await purgeDevCaches()
+  return render(document, <Root />, opts)
 }

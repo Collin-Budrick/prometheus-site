@@ -6,14 +6,14 @@ export default function render(opts: RenderToStreamOptions) {
   return renderToStream(<Root />, {
     ...opts,
     manifest: opts.manifest ?? manifest,
-    containerTagName: 'main',
+    containerTagName: 'html',
     stream:
       opts.stream ??
       {
         static: {
           buffer: 0
         },
-        inOrder: ['<main']
+        inOrder: ['<html']
       }
   })
 }
