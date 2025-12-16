@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { desc } from 'drizzle-orm'
+import { desc, gt } from 'drizzle-orm'
 import { db } from './db/client'
 import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
@@ -24,9 +24,9 @@ const app = new Elysia()
     '/store/items',
     async ({ query }) => {
       const limitRaw = Number.parseInt((query.limit as string) || '10', 10)
-      const cursor = Number.parseInt((query.cursor as string) || '0', 10)
+      const lastId = Number.parseInt((query.cursor as string) || '0', 10)
 
-      if (Number.isNaN(cursor) || cursor < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
+      if (Number.isNaN(lastId) || lastId < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
         return new Response(JSON.stringify({ error: 'Invalid cursor or limit' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
@@ -34,21 +34,19 @@ const app = new Elysia()
       }
 
       const limit = Math.min(limitRaw, 50)
-      const cacheKey = `store:items:${cursor}:${limit}`
+      const cacheKey = `store:items:${lastId}:${limit}`
 
       const cached = await valkey.get(cacheKey)
       if (cached) {
         return JSON.parse(cached)
       }
 
-      const items = await db
-        .select()
-        .from(storeItems)
-        .orderBy(storeItems.id)
-        .limit(limit)
-        .offset(cursor)
+      const itemsQuery = db.select().from(storeItems)
+      const paginatedQuery = lastId > 0 ? itemsQuery.where(gt(storeItems.id, lastId)) : itemsQuery
 
-      const nextCursor = items.length === limit ? cursor + limit : null
+      const items = await paginatedQuery.orderBy(storeItems.id).limit(limit)
+
+      const nextCursor = items.length === limit ? items[items.length - 1].id : null
       const payload = { items, cursor: nextCursor }
       await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
       return payload
