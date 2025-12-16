@@ -9,7 +9,8 @@ export default component$(() => {
   useTask$(
     ({ cleanup }) => {
       if (isServer) return
-      const ws = new WebSocket(`ws://${window.location.host}/api/ws`)
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+      const ws = new WebSocket(`${protocol}://${window.location.host}/api/ws`)
       ws.onmessage = (event) => {
         const payload = JSON.parse(event.data)
         if (payload.type === 'chat') {
