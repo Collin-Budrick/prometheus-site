@@ -12,6 +12,10 @@ const proxy = new Proxy(fail as any, {
 })
 
 // Match Zod's exported namespace shape enough for tree-shaken consumers.
+// Minimal named exports keep optimizer warnings quiet while still throwing at runtime if used.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const z = proxy as any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Schema = proxy as any
+export const object = (..._args: unknown[]) => fail()
 export default z

@@ -1,6 +1,11 @@
 import { defineConfig, presetMini, presetTypography, presetWind, transformerDirectives, transformerVariantGroup } from 'unocss'
 
 export default defineConfig({
+  content: {
+    pipeline: {
+      include: ['./src/**/*.{ts,tsx,js,jsx,mdx,md}', './index.html']
+    }
+  },
   presets: [presetMini(), presetWind(), presetTypography()],
   transformers: [transformerDirectives(), transformerVariantGroup()],
   shortcuts: {

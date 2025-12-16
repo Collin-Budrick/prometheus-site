@@ -5,10 +5,11 @@ export default component$(() => {
   const messages = useSignal<{ id: string; from: string; text: string }[]>([])
   const socketRef = useSignal<WebSocket | null>(null)
   const draft = useSignal('')
+  const shouldConnect = useSignal(false)
 
   useTask$(
     ({ cleanup }) => {
-      if (isServer) return
+      if (isServer || !shouldConnect.value) return
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
       const ws = new WebSocket(`${protocol}://${window.location.host}/api/ws`)
       ws.onmessage = (event) => {
@@ -40,9 +41,20 @@ export default component$(() => {
         <span class="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-200">websocket</span>
       </div>
       <p class="mt-3 max-w-2xl text-sm text-slate-300">
-        The client only loads after navigation to keep the home route microscopic. Messages fan out through Valkey channels on
-        the API.
+        The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility
+        until realtime is needed. Messages fan out through Valkey channels on the API.
       </p>
+      <div class="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          class="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-700 transition hover:bg-slate-700"
+          onClick$={() => (shouldConnect.value = true)}
+          disabled={shouldConnect.value}
+        >
+          {shouldConnect.value ? 'Connected' : 'Connect to chat'}
+        </button>
+        {!shouldConnect.value && <span class="text-xs text-slate-400">No socket opened until you opt in.</span>}
+      </div>
       <div class="mt-5 space-y-3 text-sm text-slate-200">
         <div class="surface max-h-64 overflow-auto p-4">
           {messages.value.length === 0 && <p class="text-slate-500">No messages yet.</p>}
