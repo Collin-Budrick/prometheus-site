@@ -8,3 +8,4 @@ coverage
 dist
 build
 apps/api/.elysia
+apps/web/server
