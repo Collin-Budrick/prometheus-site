@@ -1,10 +1,11 @@
 import { $, component$, useSignal, useTask$ } from '@builder.io/qwik'
-import { Form, routeAction$, server$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { Form, routeAction$, routeLoader$, server$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { gt } from 'drizzle-orm'
 import { db } from '../../server/db/client'
 import { storeItems, type StoreItemRow } from '../../server/db/schema'
 
 type StoreItem = Omit<StoreItemRow, 'price'> & { price: number }
+type StoreItemsResult = { items: StoreItem[]; cursor: number | null; source: 'db' | 'fallback' }
 
 const normalizeItem = (item: StoreItemRow): StoreItem => {
   const priceNumber = Number.parseFloat(String(item.price))
@@ -25,17 +26,30 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
   }
 }
 
-const fetchStoreItems = server$(async (cursor?: number) => {
+const loadStoreItems = async (cursor?: number): Promise<StoreItemsResult> => {
   const limit = 6
   const lastId = Number.isFinite(cursor) && (cursor ?? 0) > 0 ? Number(cursor) : 0
   const baseQuery = db.select().from(storeItems)
   const paginated = lastId > 0 ? baseQuery.where(gt(storeItems.id, lastId)) : baseQuery
+  try {
+    const rows = await paginated.orderBy(storeItems.id).limit(limit)
+    const normalized = rows.map(normalizeItem)
+    const nextCursor = normalized.length === limit ? normalized[normalized.length - 1].id : null
+    return { items: normalized, cursor: nextCursor, source: 'db' }
+  } catch (err) {
+    console.error('Failed to load store items', err)
+    const fallbackItems: StoreItem[] = [
+      { id: -1, name: 'Sample adapter (offline)', price: 24.99, createdAt: new Date() },
+      { id: -2, name: 'Edge cache pack (offline)', price: 12.5, createdAt: new Date() }
+    ]
+    return { items: fallbackItems, cursor: null, source: 'fallback' }
+  }
+}
 
-  const rows = await paginated.orderBy(storeItems.id).limit(limit)
-  const normalized = rows.map(normalizeItem)
-  const nextCursor = normalized.length === limit ? normalized[normalized.length - 1].id : null
+const fetchStoreItems = server$(async (cursor?: number) => loadStoreItems(cursor))
 
-  return { items: normalized, cursor: nextCursor }
+export const useStoreItemsLoader = routeLoader$(async () => {
+  return loadStoreItems()
 })
 
 export const useCreateStoreItem = routeAction$(async (data) => {
@@ -56,11 +70,15 @@ export const useCreateStoreItem = routeAction$(async (data) => {
 })
 
 export default component$(() => {
-  const items = useSignal<StoreItem[]>([])
-  const cursor = useSignal<number | null>(null)
+  const initial = useStoreItemsLoader()
+  const items = useSignal<StoreItem[]>(initial.value.items)
+  const cursor = useSignal<number | null>(initial.value.cursor)
   const loading = useSignal(false)
-  const hasAttempted = useSignal(false)
-  const error = useSignal<string | null>(null)
+  const hasAttempted = useSignal(initial.value.items.length > 0)
+  const isFallback = useSignal(initial.value.source === 'fallback')
+  const error = useSignal<string | null>(
+    initial.value.source === 'fallback' ? 'Database offline: showing fallback inventory.' : null
+  )
   const createAction = useCreateStoreItem()
 
   const loadItems = $(async (reset = false) => {
@@ -73,7 +91,9 @@ export default component$(() => {
       const incoming = response?.items ?? []
       items.value = reset ? incoming : [...items.value, ...incoming]
       cursor.value = response?.cursor ?? null
+      isFallback.value = response?.source === 'fallback'
       hasAttempted.value = true
+      error.value = response?.source === 'fallback' ? 'Database offline: showing fallback inventory.' : null
     } catch (err) {
       console.error('Failed to load store items', err)
       error.value = 'Unable to load inventory right now.'
@@ -126,6 +146,9 @@ export default component$(() => {
               Refresh
             </button>
           </div>
+          {isFallback.value && (
+            <p class="text-xs text-amber-300">Showing fallback data while the database is unavailable.</p>
+          )}
           {!hasAttempted.value && (
             <p class="text-sm text-slate-500">Inventory loads once this section is visible.</p>
           )}
