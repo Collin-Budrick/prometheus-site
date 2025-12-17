@@ -19,6 +19,15 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - Chat/WebSocket and AI logic only load on their respective routes.
 - Partytown runs third-party tags off the main thread when `VITE_ENABLE_PARTYTOWN=true` (defaults on in prod). Worker assets are copied into `/public/~partytown/` during build via the Partytown Vite plugin.
 
+## Styling conventions
+
+- UnoCSS powers all on-demand utilities. Prefer utilities/shortcuts over ad-hoc global CSS; the `light:` variant targets `.light`
+  or `[data-theme="light"]` while the built-in `dark:` variant still scopes to `.dark`.
+- Keep global styles microscopic (reset + tokens only). Route-only animations/layout tweaks should live next to the route with
+  `useStylesScoped$`/`routeStyles$` for critical extraction.
+- Lightning CSS handles transforms/minification; run `bun run check:css` to fail fast if `src/global.css` exceeds the budget
+  before builds and CI linting.
+
 ## Configuration
 
 - `VITE_SPECULATION_RULES` – enable Speculation Rules prefetch/prerender hints for likely next routes (defaults on in prod, off in

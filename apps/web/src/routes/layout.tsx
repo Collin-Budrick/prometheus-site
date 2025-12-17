@@ -1,10 +1,11 @@
-import { component$, Slot } from '@builder.io/qwik'
+import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
 import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
 import { LocaleSelector } from '../components/locale-selector/locale-selector'
 import { featureFlags } from '../config/feature-flags'
 import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
+import layoutStyles from './layout.css?inline'
 
 type SpeculationCandidate = {
   url: string
@@ -82,33 +83,37 @@ export const RouterHead = component$(() => {
   )
 })
 
-export default component$(() => (
-  <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-    <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-      <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm font-medium">
-        <div class="flex items-center gap-2">
-          <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">Prometheus</span>
-          <span class="text-slate-400">{_`Performance Lab`}</span>
-        </div>
-        <div class="flex items-center gap-4 text-slate-200">
-          <Link href="/" class="hover:text-emerald-300 transition-colors">
-            {_`Home`}
-          </Link>
-          <Link href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-            {_`Store`}
-          </Link>
-          <Link href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-            {_`Chat`}
-          </Link>
-          <Link href="/ai" class="hover:text-emerald-300 transition-colors">
-            {_`AI`}
-          </Link>
-          <LocaleSelector />
-        </div>
-      </nav>
-    </header>
-    <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10 route-transition">
-      <Slot />
-    </main>
-  </div>
-))
+export default component$(() => {
+  useStylesScoped$(layoutStyles)
+
+  return (
+    <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+      <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+        <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm font-medium">
+          <div class="flex items-center gap-2">
+            <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">Prometheus</span>
+            <span class="text-slate-400">{_`Performance Lab`}</span>
+          </div>
+          <div class="flex items-center gap-4 text-slate-200">
+            <Link href="/" class="hover:text-emerald-300 transition-colors">
+              {_`Home`}
+            </Link>
+            <Link href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
+              {_`Store`}
+            </Link>
+            <Link href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
+              {_`Chat`}
+            </Link>
+            <Link href="/ai" class="hover:text-emerald-300 transition-colors">
+              {_`AI`}
+            </Link>
+            <LocaleSelector />
+          </div>
+        </nav>
+      </header>
+      <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10 route-transition">
+        <Slot />
+      </main>
+    </div>
+  )
+})

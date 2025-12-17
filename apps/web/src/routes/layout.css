@@ -1,0 +1,7 @@
+.route-transition {
+  view-transition-name: route;
+}
+
+:global(.supports-view-transition .route-transition) {
+  contain: paint;
+}

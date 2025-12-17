@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "vite build && vite build --ssr src/entry.preview.tsx --outDir server",
+    "build": "bun run check:css && vite build && vite build --ssr src/entry.preview.tsx --outDir server",
     "preview": "vite preview",
-    "lint": "bun run check:scripts && oxlint .",
+    "lint": "bun run check:css && bun run check:scripts && oxlint .",
     "format": "oxfmt --write .",
     "test": "bun test",
-    "check:scripts": "bun run scripts/check-script-budget.ts"
+    "check:scripts": "bun run scripts/check-script-budget.ts",
+    "check:css": "bun run scripts/check-css-budget.ts"
   },
   "dependencies": {
     "@builder.io/qwik": "1.18.0",
