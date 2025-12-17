@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
-import { defineConfig } from 'vite'
+import { defineConfig, type ConfigEnv, type Plugin, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import { partytownVite } from '@builder.io/partytown/utils'
@@ -166,10 +166,10 @@ const devAuditStripViteClient = (enabled: boolean) =>
     : null
 
 const qwikViteNoDeprecatedEsbuild = () => {
-  const plugin = qwikVite()
+  const plugin: Plugin = qwikVite()
   const originalConfig = plugin.config
 
-  plugin.config = async function (viteConfig, viteEnv) {
+  plugin.config = async function (viteConfig: UserConfig, viteEnv: ConfigEnv) {
     const resolvedConfig = typeof originalConfig === 'function' ? await originalConfig.call(this, viteConfig, viteEnv) : undefined
     if (!resolvedConfig || typeof resolvedConfig !== 'object') return resolvedConfig
 
