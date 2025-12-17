@@ -3,22 +3,20 @@ import { setDefaultLocale } from 'compiled-i18n'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __prometheusDevCachePurged: boolean | undefined
-}
+type DevGlobals = typeof globalThis & { __prometheusDevCachePurged?: boolean }
+const devGlobals = globalThis as DevGlobals
 
 const purgeDevCaches = async () => {
   if (!import.meta.env.DEV) return
-  if (globalThis.__prometheusDevCachePurged) return
-  globalThis.__prometheusDevCachePurged = true
+  if (devGlobals.__prometheusDevCachePurged) return
+  devGlobals.__prometheusDevCachePurged = true
 
   if ('serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations()
     await Promise.all(registrations.map((r) => r.unregister()))
   }
 
-  if ('caches' in globalThis) {
+  if ('caches' in devGlobals) {
     const keys = await caches.keys()
     await Promise.all(keys.map((k) => caches.delete(k)))
   }

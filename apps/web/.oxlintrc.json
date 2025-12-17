@@ -1,5 +1,5 @@
 {
-  "ignorePatterns": ["dist/**", "server/**", "node_modules/**"],
+  "ignorePatterns": ["dist/**", "server/**", "node_modules/**", "public/~partytown/**"],
   "env": {
     "browser": true,
     "es2022": true
