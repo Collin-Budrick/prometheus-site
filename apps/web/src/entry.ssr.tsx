@@ -48,7 +48,7 @@ export default function render(opts: RenderToStreamOptions) {
   const loaderFile = (resolvedManifest as { qwikLoader?: string } | undefined)?.qwikLoader ?? 'qwikloader.js'
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {
-    ...(opts.containerAttributes ?? {}),
+    ...opts.containerAttributes,
     lang: locale,
     'q:locale': locale
   }
