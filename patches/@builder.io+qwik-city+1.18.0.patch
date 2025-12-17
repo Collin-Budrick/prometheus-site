@@ -8,9 +8,61 @@ diff --git a/lib/vite/index.mjs b/lib/vite/index.mjs
 -      mdxTransform = await createMdxTransformer(ctx);
 +      const disableMdx = process.env.QWIK_CITY_DISABLE_MDX === "1";
 +      mdxTransform = disableMdx ? async () => void 0 : await createMdxTransformer(ctx);
-       qwikPlugin = config.plugins.find((p) => p.name === "vite-plugin-qwik");
-       if (!qwikPlugin) {
-         throw new Error("Missing vite-plugin-qwik");
+      qwikPlugin = config.plugins.find((p) => p.name === "vite-plugin-qwik");
+      if (!qwikPlugin) {
+        throw new Error("Missing vite-plugin-qwik");
+
+diff --git a/lib/index.qwik.mjs b/lib/index.qwik.mjs
+--- a/lib/index.qwik.mjs
++++ b/lib/index.qwik.mjs
+@@
+-      loadClientData(dest, _getContextElement());
++      loadClientData(dest, _getContextElement() || document.documentElement);
+       loadRoute(qwikCity.routes, qwikCity.menus, qwikCity.cacheModules, dest.pathname);
+     }
+     actionState.value = void 0;
+     routeLocation.isNavigating = true;
+@@
+-        elm = _getContextElement();
++        elm = _getContextElement() || document.documentElement;
+         const pageData = clientPageData = await loadClientData(trackUrl, elm, {
+           action,
+           clearCache: true
+         });
+@@
+ function getContainer(elm) {
+   while (elm && elm.nodeType !== Node.ELEMENT_NODE) {
+     elm = elm.parentElement;
+   }
+-  return elm.closest("[q\\\\:container]");
++  return (elm && elm.closest ? elm.closest("[q\\\\:container]") : null) || document.querySelector("[q\\\\:container]") || document.documentElement;
+ }
+
+diff --git a/lib/index.qwik.cjs b/lib/index.qwik.cjs
+--- a/lib/index.qwik.cjs
++++ b/lib/index.qwik.cjs
+@@
+-      loadClientData(dest, qwik._getContextElement());
++      loadClientData(dest, qwik._getContextElement() || document.documentElement);
+       loadRoute(qwikCity__namespace.routes, qwikCity__namespace.menus, qwikCity__namespace.cacheModules, dest.pathname);
+     }
+     actionState.value = void 0;
+     routeLocation.isNavigating = true;
+@@
+-        elm = qwik._getContextElement();
++        elm = qwik._getContextElement() || document.documentElement;
+         const pageData = clientPageData = await loadClientData(trackUrl, elm, {
+           action,
+           clearCache: true
+         });
+@@
+ function getContainer(elm) {
+   while (elm && elm.nodeType !== Node.ELEMENT_NODE) {
+     elm = elm.parentElement;
+   }
+-  return elm.closest("[q\\\\:container]");
++  return (elm && elm.closest ? elm.closest("[q\\\\:container]") : null) || document.querySelector("[q\\\\:container]") || document.documentElement;
+ }
 diff --git a/lib/vite/index.cjs b/lib/vite/index.cjs
 --- a/lib/vite/index.cjs
 +++ b/lib/vite/index.cjs

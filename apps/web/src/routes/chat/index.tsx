@@ -20,7 +20,9 @@ export default component$(() => {
         {_`The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.`}
       </p>
 
-      <ChatIsland on:qvisible />
+      <div onQVisible$={() => undefined}>
+        <ChatIsland />
+      </div>
     </section>
   )
 })

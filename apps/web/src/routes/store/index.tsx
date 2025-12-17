@@ -22,7 +22,9 @@ export default component$(() => {
         {_`Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Data only wakes up once the route is visible to keep initial payloads microscopic.`}
       </p>
 
-      <StoreIsland on:qvisible />
+      <div onQVisible$={() => undefined}>
+        <StoreIsland />
+      </div>
     </section>
   )
 })

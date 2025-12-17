@@ -1,5 +1,5 @@
 import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
-import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
+import { useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
 import { allowedPreloadHrefs, resolveCriticalPreloads } from './preload-manifest'
@@ -100,18 +100,18 @@ export default component$(() => {
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200">
-            <Link href="/" class="hover:text-emerald-300 transition-colors">
+            <a href="/" class="hover:text-emerald-300 transition-colors">
               {_`Home`}
-            </Link>
-            <Link href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
+            </a>
+            <a href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
               {_`Store`}
-            </Link>
-            <Link href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
+            </a>
+            <a href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
               {_`Chat`}
-            </Link>
-            <Link href="/ai" class="hover:text-emerald-300 transition-colors">
+            </a>
+            <a href="/ai" class="hover:text-emerald-300 transition-colors">
               {_`AI`}
-            </Link>
+            </a>
             <LocaleSelector />
           </div>
         </nav>

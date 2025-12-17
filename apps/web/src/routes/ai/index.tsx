@@ -15,7 +15,9 @@ export default component$(() => {
         {_`This route keeps the interaction simple: a round-trip echo API that exercises Bun + Elysia without shipping extra client bundles.`}
       </p>
 
-      <AiEchoIsland on:qvisible />
+      <div onQVisible$={() => undefined}>
+        <AiEchoIsland />
+      </div>
     </section>
   )
 })
