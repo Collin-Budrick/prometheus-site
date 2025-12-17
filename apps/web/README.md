@@ -17,7 +17,7 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - Speculation Rules prerender `/store` and prefetch `/chat` when supported.
 - View Transitions enable smooth navigation without extra JS runtimes.
 - Chat/WebSocket and AI logic only load on their respective routes.
-- Partytown can be enabled by setting `ENABLE_PARTYTOWN=true` and adding worker scripts to `/public/~partytown/`.
+- Partytown runs third-party tags off the main thread when `VITE_ENABLE_PARTYTOWN=true` (defaults on in prod). Worker assets are copied into `/public/~partytown/` during build via the Partytown Vite plugin.
 
 ## Configuration
 
@@ -33,3 +33,13 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - Split heavier widgets (store grid, chat socket UI, AI form) into separate files so Qwik can stream HTML while deferring their chunks.
 - Scope CSS per route with `useStylesScoped$`/`routeStyles$` to keep the critical stylesheet tiny.
 - Opt into client hydration only when an action or realtime connection is required; keep hero/summary content static.
+
+## Third-party scripts
+
+- Script sources live in `src/config/third-party.ts` with explicit budgets, load strategies, and Partytown forwarding targets.
+- Analytics/ads default to Partytown (`type="text/partytown"`) while widgets load after interaction/idle when they cannot be offloaded.
+- Run `bun run --cwd apps/web check:scripts` (bundled into `bun run lint`) to enforce:
+  - Size ceilings (150kb max per vendor entry) with documented `budgetKb` values.
+  - Async/defer or worker-based loading—no blocking tags.
+  - Fallback/delay notes for interaction-gated widgets.
+- Add new vendors by updating the config, supplying a budget, load timing (`defer`/`idle`/`interaction`), and any `forward`ed APIs for Partytown, then re-run the budget check.

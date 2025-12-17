@@ -4,6 +4,7 @@ import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
 import { LocaleSelector } from '../components/locale-selector/locale-selector'
 import { featureFlags } from '../config/feature-flags'
+import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
 
 type SpeculationCandidate = {
   url: string
@@ -75,6 +76,7 @@ export const RouterHead = component$(() => {
           }
         />
       )}
+      <ThirdPartyScripts />
       {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
     </>
   )

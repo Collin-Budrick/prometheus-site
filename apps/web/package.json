@@ -7,9 +7,10 @@
     "dev": "bun run scripts/dev.ts",
     "build": "vite build && vite build --ssr src/entry.preview.tsx --outDir server",
     "preview": "vite preview",
-    "lint": "oxlint .",
+    "lint": "bun run check:scripts && oxlint .",
     "format": "oxfmt --write .",
-    "test": "bun test"
+    "test": "bun test",
+    "check:scripts": "bun run scripts/check-script-budget.ts"
   },
   "dependencies": {
     "@builder.io/qwik": "1.18.0",
