@@ -1,8 +1,10 @@
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db, pgClient } from './client'
 
+const migrationsFolder = new URL('../../drizzle', import.meta.url).pathname
+
 async function run() {
-  await migrate(db, { migrationsFolder: './apps/api/drizzle' })
+  await migrate(db, { migrationsFolder })
   await pgClient.end()
 }
 

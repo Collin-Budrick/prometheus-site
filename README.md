@@ -23,7 +23,7 @@ Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia AP
 See `.env.example` for defaults. Key values:
 
 - `WEB_PORT`, `API_PORT`, `API_HOST`
-- `POSTGRES_*` connection values and `POSTGRES_SSL`
+- `DATABASE_URL` (preferred) or `POSTGRES_*` connection values and `POSTGRES_SSL`
 - `VALKEY_HOST`, `VALKEY_PORT`
 - `ENABLE_PARTYTOWN` to opt-in to Partytown for third-party scripts
 

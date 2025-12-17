@@ -1,19 +1,21 @@
 FROM node:20-alpine as base
 WORKDIR /app
-RUN apk add --no-cache curl unzip
+RUN apk add --no-cache curl unzip bash
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
-COPY package.json ./
+COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/
+COPY apps/api/package.json apps/api/
 RUN bun install --ignore-scripts
 
 COPY apps/web ./apps/web
+COPY apps/api/src ./apps/api/src
 RUN bun run --cwd apps/web build
 
 FROM node:20-alpine
 WORKDIR /app
-RUN apk add --no-cache curl unzip
+RUN apk add --no-cache curl unzip bash
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 

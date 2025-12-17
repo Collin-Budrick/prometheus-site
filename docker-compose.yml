@@ -3,11 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-    command: sh -c "bun install --ignore-scripts && bun run --cwd apps/web dev -- --host 0.0.0.0 --port 4173"
+    command: sh -c "bun run --cwd apps/web preview -- --host 0.0.0.0 --port 4173"
     working_dir: /app
     environment:
       - WEB_PORT=4173
       - API_URL=http://api:4000
+      - DATABASE_URL=postgresql://prometheus:secret@db:5432/prometheus
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_USER=prometheus
@@ -15,8 +16,6 @@ services:
       - POSTGRES_DB=prometheus
     ports:
       - '4173:4173'
-    volumes:
-      - .:/app
     depends_on:
       api:
         condition: service_healthy
@@ -30,6 +29,7 @@ services:
     environment:
       - API_PORT=4000
       - API_HOST=0.0.0.0
+      - DATABASE_URL=postgresql://prometheus:secret@db:5432/prometheus
       - POSTGRES_HOST=db
       - POSTGRES_USER=prometheus
       - POSTGRES_PASSWORD=secret
@@ -39,6 +39,8 @@ services:
       - VALKEY_PORT=6379
     volumes:
       - .:/app
+      - /app/node_modules
+      - /app/apps/api/node_modules
     ports:
       - '4000:4000'
     depends_on:

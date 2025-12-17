@@ -20,16 +20,17 @@
   },
   "dependencies": {
     "@valkey/client": "1.0.0",
-    "drizzle-orm": "0.45.1",
+    "drizzle-orm": "1.0.0-beta.3-bd1ec83",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
     "undici": "7.16.0"
   },
   "devDependencies": {
-    "@types/node": "25.0.2",
-    "drizzle-kit": "0.31.8",
+    "@types/node": "25.0.3",
+    "bun-types": "1.3.5-canary.20251209T140747",
+    "drizzle-kit": "1.0.0-beta.3-bd1ec83",
     "oxfmt": "0.18.0",
     "oxlint": "1.33.0",
-    "typescript": "5.9.3"
+    "typescript": "6.0.0-dev.20251216"
   }
 }

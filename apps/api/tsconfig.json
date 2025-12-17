@@ -7,8 +7,9 @@
     "esModuleInterop": true,
     "strict": true,
     "outDir": "dist",
-    "types": ["node"],
-    "verbatimModuleSyntax": true
+    "types": ["bun-types", "node"],
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
   },
   "include": ["src", "drizzle.config.ts"],
   "exclude": ["node_modules", "dist"]

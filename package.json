@@ -8,12 +8,15 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun run --cwd apps/web dev & bun run --cwd apps/api dev",
+    "dev": "bun run scripts/dev.ts",
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
     "preview": "bun run --cwd apps/web preview",
     "lint": "bunx --bun oxlint apps/web apps/api",
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
     "prepare": "bun run lint"
+  },
+  "patchedDependencies": {
+    "@builder.io/qwik@1.17.2": "patches/@builder.io+qwik+1.17.2.patch"
   }
 }

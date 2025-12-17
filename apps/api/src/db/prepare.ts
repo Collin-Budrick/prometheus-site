@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db } from './client'
 import { storeItems } from './schema'
 
-const migrationsFolder = new URL('../../drizzle', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
 
 export async function runMigrations() {
   await migrate(db, { migrationsFolder })
