@@ -88,6 +88,7 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 - UnoCSS + Lightning CSS minimize CSS payloads; Vite 8 (Rolldown) powers builds.
 - Speculation Rules pre-render/prefetch likely navigations; View Transitions provide smooth navigation without client runtime bloat.
 - Partytown is optional for isolating third-party scripts off the main thread.
+- Stick with SSR/resumability for Lighthouse: keep prod SSR so HTML streams fast with edge caching; reserve SSG only for fully static routes that benefit from pre-rendered HTML without runtime data dependencies.
 
 ## TLS guidance
 
