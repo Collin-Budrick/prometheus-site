@@ -165,6 +165,44 @@ const devAuditStripViteClient = (enabled: boolean) =>
       }
     : null
 
+const qwikViteNoDeprecatedEsbuild = () => {
+  const plugin = qwikVite()
+  const originalConfig = plugin.config
+
+  plugin.config = async function (viteConfig, viteEnv) {
+    const resolvedConfig = typeof originalConfig === 'function' ? await originalConfig.call(this, viteConfig, viteEnv) : undefined
+    if (!resolvedConfig || typeof resolvedConfig !== 'object') return resolvedConfig
+
+    const asRecord = resolvedConfig as Record<string, unknown>
+    if ('esbuild' in asRecord) {
+      delete asRecord.esbuild
+      if (!('oxc' in asRecord)) {
+        asRecord.oxc = {
+          logLevel: 'error',
+          jsx: 'automatic'
+        }
+      }
+    }
+
+    const build = asRecord.build as Record<string, unknown> | undefined
+    const rollupOptions = build?.rollupOptions as Record<string, unknown> | undefined
+    const output = rollupOptions?.output
+    const stripOnlyExplicitManualChunks = (candidate: unknown) => {
+      if (!candidate || typeof candidate !== 'object') return
+      delete (candidate as Record<string, unknown>).onlyExplicitManualChunks
+    }
+    if (Array.isArray(output)) {
+      output.forEach(stripOnlyExplicitManualChunks)
+    } else {
+      stripOnlyExplicitManualChunks(output)
+    }
+
+    return resolvedConfig
+  }
+
+  return plugin
+}
+
 export default defineConfig((env) => {
   const ssrBuild = 'ssrBuild' in env ? (env as { ssrBuild?: boolean }).ssrBuild : false
   const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
@@ -183,7 +221,7 @@ export default defineConfig((env) => {
     plugins: [
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
-      qwikVite(),
+      qwikViteNoDeprecatedEsbuild(),
       i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
