@@ -3,6 +3,7 @@ import os from 'node:os'
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
+import { partytownVite } from '@builder.io/partytown/utils'
 import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
@@ -19,6 +20,7 @@ const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
 const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
 const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
+const partytownDest = fileURLToPath(new URL('./public/~partytown', import.meta.url))
 const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
 const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
 // WSL on Windows mounts and containerized volumes drop fs events; fall back to polling so HMR stays live.
@@ -167,6 +169,7 @@ export default defineConfig(({ ssrBuild }) => {
       i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
+      partytownVite({ dest: partytownDest }),
       devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
