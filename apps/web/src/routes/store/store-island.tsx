@@ -27,20 +27,6 @@ const runViewTransition = (update: () => void) => {
   update()
 }
 
-type TransitionIdState = Record<number, boolean>
-
-const addTransitionId = (state: TransitionIdState, id: number) => {
-  if (state[id]) return state
-  return { ...state, [id]: true }
-}
-
-const removeTransitionId = (state: TransitionIdState, id: number) => {
-  if (!state[id]) return state
-  const next = { ...state }
-  delete next[id]
-  return next
-}
-
 export const StoreIsland = component$(() => {
   const initial = useStoreItemsLoader()
   const items = useSignal<StoreItem[]>(initial.value.items)
@@ -53,12 +39,73 @@ export const StoreIsland = component$(() => {
   )
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
-  const hasViewTransitions = useSignal(false)
-  const enteringIds = useSignal<TransitionIdState>({})
-  const exitingIds = useSignal<TransitionIdState>({})
+  const pendingEntrants = useSignal<number[]>([])
 
-  useVisibleTask$(() => {
-    hasViewTransitions.value = typeof document !== 'undefined' && 'startViewTransition' in document
+  const prefersReducedMotion = () =>
+    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  const animateEntrances = $(async (ids: number[]) => {
+    if (typeof document === 'undefined' || !ids.length || prefersReducedMotion()) return
+
+    const elements = ids
+      .map((id) => document.querySelector(`[data-store-item-id="${id}"]`))
+      .filter((node): node is HTMLElement => Boolean(node))
+
+    if (!elements.length) return
+
+    try {
+      const { animate, stagger } = await import('motion')
+      await animate(
+        elements,
+        { opacity: [0, 1], y: [8, 0], scale: [0.98, 1] },
+        {
+          duration: 0.32,
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          delay: stagger(0.04)
+        }
+      ).finished
+    } catch (err) {
+      console.error('Failed to run entrance animations', err)
+    }
+  })
+
+  useVisibleTask$(({ track }) => {
+    const ids = track(() => pendingEntrants.value)
+    if (!ids.length) return
+
+    pendingEntrants.value = []
+    void animateEntrances(ids)
+  })
+
+  const animateRemoval = $(async (id: number) => {
+    const remove = () =>
+      runViewTransition(() => {
+        items.value = items.value.filter((item) => item.id !== id)
+      })
+
+    if (typeof document === 'undefined' || prefersReducedMotion()) {
+      remove()
+      return
+    }
+
+    const element = document.querySelector(`[data-store-item-id="${id}"]`)
+    if (!element) {
+      remove()
+      return
+    }
+
+    try {
+      const { animate } = await import('motion')
+      await animate(
+        element,
+        { opacity: 0, y: -8, scale: 0.96 },
+        { duration: 0.22, easing: 'cubic-bezier(0.4, 0, 1, 1)' }
+      ).finished
+    } catch (err) {
+      console.error('Failed to animate removal', err)
+    }
+
+    remove()
   })
 
   const loadItems = $(async (reset = false) => {
@@ -70,8 +117,11 @@ export const StoreIsland = component$(() => {
       const response = await fetchStoreItems(reset ? undefined : cursor.value ?? undefined)
       const incoming = response?.items ?? []
       const nextItems = reset ? incoming : [...items.value, ...incoming]
+      const existingIds = reset ? new Set<number>() : new Set(items.value.map((item) => item.id))
+      const newIds = incoming.map((item) => item.id).filter((id) => !existingIds.has(id))
       runViewTransition(() => {
         items.value = nextItems
+        pendingEntrants.value = newIds
       })
       cursor.value = response?.cursor ?? null
       isFallback.value = response?.source === 'fallback'
@@ -99,17 +149,10 @@ export const StoreIsland = component$(() => {
     if (actionState?.success && actionState.item) {
       const merged = [...items.value.filter((item) => item.id !== actionState.item.id), actionState.item]
       merged.sort((a, b) => a.id - b.id)
-      if (!hasViewTransitions.value) {
-        enteringIds.value = addTransitionId(enteringIds.value, actionState.item.id)
+      runViewTransition(() => {
         items.value = merged
-        setTimeout(() => {
-          enteringIds.value = removeTransitionId(enteringIds.value, actionState.item.id)
-        }, 320)
-      } else {
-        runViewTransition(() => {
-          items.value = merged
-        })
-      }
+        pendingEntrants.value = [actionState.item.id]
+      })
       hasAttempted.value = true
       error.value = null
     }
@@ -118,17 +161,7 @@ export const StoreIsland = component$(() => {
   useTask$(({ track }) => {
     const deleteState = track(() => deleteAction.value)
     if (deleteState?.success && deleteState.id) {
-      if (!hasViewTransitions.value) {
-        exitingIds.value = addTransitionId(exitingIds.value, deleteState.id)
-        setTimeout(() => {
-          items.value = items.value.filter((item) => item.id !== deleteState.id)
-          exitingIds.value = removeTransitionId(exitingIds.value, deleteState.id)
-        }, 260)
-      } else {
-        runViewTransition(() => {
-          items.value = items.value.filter((item) => item.id !== deleteState.id)
-        })
-      }
+      void animateRemoval(deleteState.id)
       error.value = null
     } else if (deleteState?.error) {
       error.value = deleteState.error
@@ -161,13 +194,8 @@ export const StoreIsland = component$(() => {
             {items.value.map((item) => (
               <li
                 key={item.id}
-                class={[
-                  'surface space-y-2 p-4',
-                  !hasViewTransitions.value && enteringIds.value[item.id] ? 'store-item-entering' : '',
-                  !hasViewTransitions.value && exitingIds.value[item.id] ? 'store-item-exiting' : ''
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
+                class="surface space-y-2 p-4"
+                data-store-item-id={item.id}
                 style={{ viewTransitionName: `store-item-${item.id}` }}
               >
                 <div class="flex justify-between items-start gap-3">
