@@ -18,6 +18,7 @@ const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? 
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
 const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
+const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
 const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
 const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
 // WSL on Windows mounts and containerized volumes drop fs events; fall back to polling so HMR stays live.
@@ -158,6 +159,7 @@ export default defineConfig(({ ssrBuild }) => {
       }
 
   return {
+    cacheDir,
     plugins: [
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
@@ -171,6 +173,7 @@ export default defineConfig(({ ssrBuild }) => {
       devFontSilencer()
     ].filter(Boolean),
     build: {
+      bundler: 'rolldown',
       cssMinify: 'lightningcss',
       target: 'esnext',
       modulePreload: { polyfill: false },
@@ -190,6 +193,14 @@ export default defineConfig(({ ssrBuild }) => {
       __EXPERIMENTAL__: {}
     },
     optimizeDeps: {
+      bundler: 'rolldown',
+      include: [
+        '@builder.io/qwik',
+        '@builder.io/qwik-city',
+        'compiled-i18n',
+        'compiled-i18n/qwik'
+      ],
+      entries: ['src/entry.dev.tsx', 'src/entry.client.tsx', 'src/root.tsx'],
       // Rolldown prebundling (Vite 8) with aggressive treeshaking to keep audit payloads tiny.
       rolldownOptions: {
         treeshake: true
