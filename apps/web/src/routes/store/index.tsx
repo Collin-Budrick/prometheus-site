@@ -101,8 +101,20 @@ export default component$(() => {
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const hasViewTransitions = useSignal(false)
-  const enteringIds = useSignal<Set<number>>(new Set())
-  const exitingIds = useSignal<Set<number>>(new Set())
+  const enteringIds = useSignal<Record<number, true>>({})
+  const exitingIds = useSignal<Record<number, true>>({})
+
+  const addTransitionId = (state: Record<number, true>, id: number) => {
+    if (state[id]) return state
+    return { ...state, [id]: true }
+  }
+
+  const removeTransitionId = (state: Record<number, true>, id: number) => {
+    if (!state[id]) return state
+    const next = { ...state }
+    delete next[id]
+    return next
+  }
 
   useVisibleTask$(() => {
     hasViewTransitions.value = typeof document !== 'undefined' && 'startViewTransition' in document
@@ -155,10 +167,10 @@ export default component$(() => {
       const merged = [...items.value.filter((item) => item.id !== actionState.item.id), actionState.item]
       merged.sort((a, b) => a.id - b.id)
       if (!hasViewTransitions.value) {
-        enteringIds.value = new Set([...enteringIds.value, actionState.item.id])
+        enteringIds.value = addTransitionId(enteringIds.value, actionState.item.id)
         items.value = merged
         setTimeout(() => {
-          enteringIds.value = new Set([...enteringIds.value].filter((id) => id !== actionState.item.id))
+          enteringIds.value = removeTransitionId(enteringIds.value, actionState.item.id)
         }, 320)
       } else {
         runViewTransition(() => {
@@ -174,10 +186,10 @@ export default component$(() => {
     const deleteState = track(() => deleteAction.value)
     if (deleteState?.success && deleteState.id) {
       if (!hasViewTransitions.value) {
-        exitingIds.value = new Set([...exitingIds.value, deleteState.id])
+        exitingIds.value = addTransitionId(exitingIds.value, deleteState.id)
         setTimeout(() => {
           items.value = items.value.filter((item) => item.id !== deleteState.id)
-          exitingIds.value = new Set([...exitingIds.value].filter((id) => id !== deleteState.id))
+          exitingIds.value = removeTransitionId(exitingIds.value, deleteState.id)
         }, 260)
       } else {
         runViewTransition(() => {
@@ -231,8 +243,8 @@ export default component$(() => {
                   key={item.id}
                   class={[
                     'surface space-y-2 p-4',
-                    !hasViewTransitions.value && enteringIds.value.has(item.id) ? 'store-item-entering' : '',
-                    !hasViewTransitions.value && exitingIds.value.has(item.id) ? 'store-item-exiting' : ''
+                    !hasViewTransitions.value && enteringIds.value[item.id] ? 'store-item-entering' : '',
+                    !hasViewTransitions.value && exitingIds.value[item.id] ? 'store-item-exiting' : ''
                   ]
                     .filter(Boolean)
                     .join(' ')}
