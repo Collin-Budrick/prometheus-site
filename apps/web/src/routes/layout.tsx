@@ -3,19 +3,48 @@ import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
 import { LocaleSelector } from '../components/locale-selector/locale-selector'
+import { featureFlags } from '../config/feature-flags'
+
+type SpeculationCandidate = {
+  url: string
+  action: 'prefetch' | 'prerender'
+}
+
+const speculationCandidates: SpeculationCandidate[] = [
+  { url: '/store', action: 'prerender' },
+  { url: '/chat', action: 'prefetch' }
+]
+
+const toSpeculationRules = (pathname: string) => {
+  const rules = speculationCandidates
+    .filter(({ url }) => url !== pathname)
+    .reduce(
+      (acc, candidate) => {
+        acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
+        return acc
+      },
+      { prefetch: [], prerender: [] } as { prefetch: { source: string; urls: string[] }[]; prerender: { source: string; urls: string[] }[] }
+    )
+
+  return rules.prefetch.length || rules.prerender.length ? rules : null
+}
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
+  const allowSpeculationRules = featureFlags.speculationRules && !isAudit
+  const speculationRules = allowSpeculationRules ? toSpeculationRules(loc.url.pathname) : null
 
   const safeLinks = sanitizeHeadLinks(head.links, import.meta.env.DEV)
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesInstaller =
-    !isAudit && import.meta.env.PROD
-      ? `(()=>{try{if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;const seen=new Set();const install=(kind,href)=>{if(!href||seen.has(href))return;seen.add(href);const script=document.createElement('script');script.type='speculationrules';script.textContent=JSON.stringify({[kind]:[{source:'list',urls:[href]}]});document.head.append(script);};const queue=(kind,href)=>{const run=()=>install(kind,href);(self.requestIdleCallback||((cb)=>setTimeout(cb,600)))(run,{timeout:900});};document.querySelectorAll('[data-speculate]').forEach((link)=>{const href=link.getAttribute('href');const kind=link.getAttribute('data-speculate')||'prefetch';if(!href)return;const prime=()=>install(kind,href);link.addEventListener('pointerdown',prime,{once:true});link.addEventListener('focus',prime,{once:true});link.addEventListener('mouseenter',()=>queue(kind,href),{once:true});});}catch{}})();`
+    allowSpeculationRules && speculationRules
+      ? `(()=>{try{if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;const payload=${JSON.stringify(
+          speculationRules
+        )};const script=document.createElement('script');script.type='speculationrules';script.textContent=JSON.stringify(payload);document.head.append(script);}catch{}})();`
       : undefined
 
   return (
@@ -29,17 +58,23 @@ export const RouterHead = component$(() => {
       {safeLinks.map((l) => (
         <link key={l.key} {...l} />
       ))}
+      {allowSpeculationRules &&
+        speculationCandidates
+          .filter(({ url }) => url !== loc.url.pathname)
+          .map(({ url, action }) => <link key={`${action}:${url}`} rel={action} href={url} />)}
       {head.styles.map((s) => (
         <style key={s.key} {...s.props} dangerouslySetInnerHTML={s.style} />
       ))}
-      {/* Speculation Rules payload installs only after the user signals intent to navigate (hover/focus/pointer). */}
+      {/* Speculation Rules payload installs only when supported and enabled. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesInstaller && <script dangerouslySetInnerHTML={speculationRulesInstaller} />}
-      <script
-        dangerouslySetInnerHTML={
-          "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
-        }
-      />
+      {featureFlags.viewTransitions && (
+        <script
+          dangerouslySetInnerHTML={
+            "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
+          }
+        />
+      )}
       {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
     </>
   )

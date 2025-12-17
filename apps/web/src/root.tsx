@@ -1,6 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { RouterHead } from './routes/layout'
+import { RouteTransitionBoundary } from './components/route-transition/route-transition'
 import 'virtual:uno.css'
 import './global.css'
 
@@ -18,7 +19,9 @@ export default component$(() => (
       <RouterHead />
     </head>
     <body class="app-shell">
-      <RouterOutlet />
+      <RouteTransitionBoundary>
+        <RouterOutlet />
+      </RouteTransitionBoundary>
     </body>
   </QwikCityProvider>
 ))
