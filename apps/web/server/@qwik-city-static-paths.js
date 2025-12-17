@@ -1,4 +1,4 @@
-const staticPaths = new Set(["/q-manifest.json"]);
+const staticPaths = new Set(["/.gitkeep","/q-manifest.json","/~partytown/.gitkeep"]);
 function isStaticPath(method, url) {
   if (method.toUpperCase() !== 'GET') {
     return false;

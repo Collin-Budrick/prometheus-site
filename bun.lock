@@ -59,6 +59,7 @@
     },
   },
   "patchedDependencies": {
+    "compiled-i18n@1.2.1": "patches/compiled-i18n+1.2.1.patch",
     "@builder.io/qwik@1.18.0": "patches/@builder.io+qwik+1.18.0.patch",
     "@builder.io/qwik-city@1.18.0": "patches/@builder.io+qwik-city+1.18.0.patch",
   },

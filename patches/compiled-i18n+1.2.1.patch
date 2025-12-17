@@ -2,8 +2,7 @@ diff --git a/dist/transform-localize.mjs b/dist/transform-localize.mjs
 index 2a2f7f1..1b8b6d0 100644
 --- a/dist/transform-localize.mjs
 +++ b/dist/transform-localize.mjs
-@@ -204,7 +204,16 @@ const replaceGlobals = ({
-     }
+@@ -210,5 +210,16 @@
      if (!argExprs.length) {
        throw new Error(`No arguments found for __$LOCALIZE$__`);
      }
@@ -13,14 +12,11 @@ index 2a2f7f1..1b8b6d0 100644
 +    try {
 +      key = JSON.parse(rawArg);
 +    } catch (err) {
-+      if (typeof rawArg === "string" && rawArg.startsWith("`") && rawArg.endsWith("`")) {
-+        key = rawArg.slice(1, -1);
++      const trimmed = typeof rawArg === "string" ? rawArg.trim().replace(/,$/, "") : "";
++      if (trimmed.startsWith("`") && trimmed.endsWith("`")) {
++        key = trimmed.slice(1, -1);
 +      } else {
 +        throw err;
 +      }
 +    }
      const tr = getTr(key, locale, translations);
-     code = code.slice(0, startIndex) + makeTranslatedExpr(tr, argExprs) + chunk.slice(i + 1);
-   }
-   return code;
- };
