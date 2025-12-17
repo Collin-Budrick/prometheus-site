@@ -35,7 +35,7 @@ export const RouteTransitionBoundary = component$(() => {
       return
     }
 
-    const transition = startViewTransition(() => doubleRaf())
+    const transition = startViewTransition.call(viewDoc, () => doubleRaf())
     transition?.finished.catch(() => {})
 
     lastHref.value = href

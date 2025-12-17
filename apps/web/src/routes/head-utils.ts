@@ -1,6 +1,6 @@
 import type { DocumentLink } from '@builder.io/qwik-city'
 
-const validPreloadAs = new Set(['style', 'font', 'document'])
+const validPreloadAs = new Set(['style', 'font'])
 
 export const sanitizeHeadLinks = (
   links: readonly DocumentLink[] | undefined,

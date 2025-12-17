@@ -9,12 +9,32 @@ import {
   useStoreItemsLoader
 } from './store-data'
 
-const addTransitionId = (state: Record<number, true>, id: number) => {
+const runViewTransition = (update: () => void) => {
+  if (typeof document === 'undefined') {
+    update()
+    return
+  }
+
+  const startViewTransition = (document as any).startViewTransition as
+    | ((cb: () => void) => { finished: Promise<void> })
+    | undefined
+
+  if (typeof startViewTransition === 'function') {
+    startViewTransition.call(document, update)
+    return
+  }
+
+  update()
+}
+
+type TransitionIdState = Record<number, boolean>
+
+const addTransitionId = (state: TransitionIdState, id: number) => {
   if (state[id]) return state
   return { ...state, [id]: true }
 }
 
-const removeTransitionId = (state: Record<number, true>, id: number) => {
+const removeTransitionId = (state: TransitionIdState, id: number) => {
   if (!state[id]) return state
   const next = { ...state }
   delete next[id]
@@ -34,22 +54,12 @@ export const StoreIsland = component$(() => {
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const hasViewTransitions = useSignal(false)
-  const enteringIds = useSignal<Record<number, true>>({})
-  const exitingIds = useSignal<Record<number, true>>({})
+  const enteringIds = useSignal<TransitionIdState>({})
+  const exitingIds = useSignal<TransitionIdState>({})
 
   useVisibleTask$(() => {
     hasViewTransitions.value = typeof document !== 'undefined' && 'startViewTransition' in document
   })
-
-  const runViewTransition = (update: () => void) => {
-    if (typeof document !== 'undefined' && 'startViewTransition' in document) {
-      ;(document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }).startViewTransition?.(
-        update
-      )
-      return
-    }
-    update()
-  }
 
   const loadItems = $(async (reset = false) => {
     if (loading.value) return
