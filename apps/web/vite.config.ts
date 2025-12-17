@@ -11,7 +11,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
 import { fileURLToPath } from 'node:url'
 
-type DevResponse = ServerResponse & { _qwikEnvData?: { qwikcity?: Record<string, unknown> } }
+type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown> }
+type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
 const devCacheBuster = Date.now().toString(36)
 const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
@@ -60,6 +61,13 @@ const toJSONSafe = <T>(value: T): T => {
   const seen = new WeakSet()
   const json = JSON.stringify(value, (_key, candidate) => {
     if (candidate === undefined) return undefined
+    if (candidate instanceof URL) return candidate.href
+    if (typeof URLSearchParams !== 'undefined' && candidate instanceof URLSearchParams) {
+      return candidate.toString()
+    }
+    if (typeof Headers !== 'undefined' && candidate instanceof Headers) {
+      return Object.fromEntries(candidate.entries())
+    }
     if (typeof candidate === 'function' || typeof candidate === 'symbol') return undefined
     if (typeof candidate === 'object' && candidate !== null) {
       if (seen.has(candidate)) return undefined
@@ -79,15 +87,24 @@ function qwikCityDevEnvDataJsonSafe() {
     configureServer(server: ViteDevServer) {
       server.middlewares.use((_req: IncomingMessage, res: DevResponse, next: (err?: unknown) => void) => {
         const envData = res._qwikEnvData
-        const qwikcity = envData?.qwikcity
+        if (!envData || typeof envData !== 'object') {
+          next()
+          return
+        }
 
-        if (qwikcity && typeof qwikcity === 'object' && 'ev' in qwikcity) {
-          const { ev: _devEvent, ...rest } = qwikcity
-          res._qwikEnvData = { qwikcity: toJSONSafe(rest) }
-        } else if (qwikcity) {
-          res._qwikEnvData = { qwikcity: toJSONSafe(qwikcity) }
-        } else {
-          res._qwikEnvData = {}
+        const qwikcity = (envData as DevEnvData).qwikcity
+        if (!qwikcity || typeof qwikcity !== 'object') {
+          next()
+          return
+        }
+
+        const qwikcityRecord = qwikcity as Record<string, unknown>
+        const cleanedQwikCity =
+          'ev' in qwikcityRecord ? (({ ev: _devEvent, ...rest }) => rest)(qwikcityRecord) : qwikcityRecord
+
+        res._qwikEnvData = {
+          ...(envData as DevEnvData),
+          qwikcity: toJSONSafe(cleanedQwikCity) as Record<string, unknown>
         }
 
         next()
@@ -148,9 +165,10 @@ const devAuditStripViteClient = (enabled: boolean) =>
       }
     : null
 
-export default defineConfig(({ ssrBuild }) => {
+export default defineConfig((env) => {
+  const ssrBuild = 'ssrBuild' in env ? (env as { ssrBuild?: boolean }).ssrBuild : false
   const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
-  const resolveAlias = zodStubPath ? { zod: zodStubPath } : {}
+  const resolveAlias = zodStubPath ? { zod: zodStubPath } : undefined
   const hmrConfig = devAuditMode
     ? false
     : {
@@ -197,13 +215,14 @@ export default defineConfig(({ ssrBuild }) => {
     },
     optimizeDeps: {
       bundler: 'rolldown',
+      entries: ['src/entry.dev.tsx', 'src/entry.client.tsx', 'src/root.tsx'],
       include: [
         '@builder.io/qwik',
-        '@builder.io/qwik-city',
+        // Reintroduce one at a time to isolate the blank page issue.
+        // '@builder.io/qwik-city'
         'compiled-i18n',
         'compiled-i18n/qwik'
       ],
-      entries: ['src/entry.dev.tsx', 'src/entry.client.tsx', 'src/root.tsx'],
       // Rolldown prebundling (Vite 8) with aggressive treeshaking to keep audit payloads tiny.
       rolldownOptions: {
         treeshake: true

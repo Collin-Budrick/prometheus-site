@@ -4,9 +4,17 @@ import {
   presetTypography,
   presetWind,
   transformerDirectives,
-  transformerVariantGroup,
-  variantMatcher
+  transformerVariantGroup
 } from 'unocss'
+import type { Variant } from '@unocss/core'
+
+const variantLight: Variant = (matcher) => {
+  if (!matcher.startsWith('light:')) return
+  return {
+    matcher: matcher.slice('light:'.length),
+    selector: (input) => `.light ${input}, [data-theme="light"] ${input}`
+  }
+}
 
 export default defineConfig({
   content: {
@@ -17,10 +25,7 @@ export default defineConfig({
   presets: [presetMini(), presetWind(), presetTypography()],
   transformers: [transformerDirectives(), transformerVariantGroup()],
   variants: [
-    variantMatcher('light', (matcher) => ({
-      matcher,
-      selector: (input) => `.light ${input}, [data-theme="light"] ${input}`
-    }))
+    variantLight
   ],
   shortcuts: {
     'app-shell': 'min-h-screen bg-slate-950 text-slate-100 antialiased',
