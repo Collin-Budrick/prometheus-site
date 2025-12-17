@@ -18,3 +18,11 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - View Transitions enable smooth navigation without extra JS runtimes.
 - Chat/WebSocket and AI logic only load on their respective routes.
 - Partytown can be enabled by setting `ENABLE_PARTYTOWN=true` and adding worker scripts to `/public/~partytown/`.
+
+## Resumability + hydration guidance
+
+- Default to SSR-only rendering for above-the-fold UI; avoid shipping client JS unless a user can interact.
+- Use `on:qvisible` or similar lazy boundaries to wake islands only when they scroll into view.
+- Split heavier widgets (store grid, chat socket UI, AI form) into separate files so Qwik can stream HTML while deferring their chunks.
+- Scope CSS per route with `useStylesScoped$`/`routeStyles$` to keep the critical stylesheet tiny.
+- Opt into client hydration only when an action or realtime connection is required; keep hero/summary content static.
