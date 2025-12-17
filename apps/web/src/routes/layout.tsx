@@ -2,6 +2,7 @@ import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
 import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
+import { allowedPreloadHrefs, resolveCriticalPreloads } from './preload-manifest'
 import { LocaleSelector } from '../components/locale-selector/locale-selector'
 import { featureFlags } from '../config/feature-flags'
 import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
@@ -37,8 +38,10 @@ export const RouterHead = component$(() => {
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const speculationRules = allowSpeculationRules ? toSpeculationRules(loc.url.pathname) : null
+  const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
+  const allowedPreloads = new Set([...allowedPreloadHrefs, ...criticalPreloads.map((link) => link.href)])
 
-  const safeLinks = sanitizeHeadLinks(head.links, import.meta.env.DEV)
+  const safeLinks = sanitizeHeadLinks([...head.links, ...criticalPreloads], import.meta.env.DEV, allowedPreloads)
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
@@ -54,6 +57,7 @@ export const RouterHead = component$(() => {
       <title>{head.title || 'Prometheus'}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="canonical" href={loc.url.href} />
+      <link rel="stylesheet" href="/assets/critical.css" />
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}

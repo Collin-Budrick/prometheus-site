@@ -55,6 +55,19 @@ make prod
 
 The **prod** profile adds Nginx (HTTP/3 + Early Hints) and expects TLS certs mounted at `infra/nginx/tls`. Use `make reset` to tear down containers and volumes.
 
+### Edge deployment + Early Hints
+
+- HTTP/3 terminates at Nginx with `Alt-Svc` advertising `h3=":443"`; the reverse proxy fans back to the web container on `4173`.
+- Early Hints (103) are emitted only for the document and `/assets/critical.css` to avoid racing HMR bundles in dev. Route-specific mappings live in `infra/nginx/nginx.conf` under the `$early_hint_links` map.
+- To validate in staging, hit the edge directly with HTTP/3 and inspect the 103 and `Link` headers:
+
+```bash
+curl -k -I --http3 https://staging.example.com/
+curl -k -I --http3 https://staging.example.com/store
+```
+
+You should see a `103 Early Hints` status followed by `Link` headers for the document and CSS before the final 200/304.
+
 ## Database + cache workflows
 
 - Generate SQL from Drizzle schema: `bun run --cwd apps/api db:generate`
