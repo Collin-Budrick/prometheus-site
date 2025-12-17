@@ -17,6 +17,7 @@
     "prepare": "bun run lint"
   },
   "patchedDependencies": {
-    "@builder.io/qwik@1.17.2": "patches/@builder.io+qwik+1.17.2.patch"
+    "@builder.io/qwik@1.18.0": "patches/@builder.io+qwik+1.18.0.patch",
+    "@builder.io/qwik-city@1.18.0": "patches/@builder.io+qwik-city+1.18.0.patch"
   }
 }

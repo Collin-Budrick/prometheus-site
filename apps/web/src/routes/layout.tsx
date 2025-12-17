@@ -1,6 +1,8 @@
 import { component$, Slot } from '@builder.io/qwik'
 import { Link, useDocumentHead, useLocation } from '@builder.io/qwik-city'
+import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
+import { LocaleSelector } from '../components/locale-selector/locale-selector'
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
@@ -49,21 +51,22 @@ export default component$(() => (
       <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm font-medium">
         <div class="flex items-center gap-2">
           <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">Prometheus</span>
-          <span class="text-slate-400">Performance Lab</span>
+          <span class="text-slate-400">{_`Performance Lab`}</span>
         </div>
         <div class="flex items-center gap-4 text-slate-200">
           <Link href="/" class="hover:text-emerald-300 transition-colors">
-            Home
+            {_`Home`}
           </Link>
           <Link href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-            Store
+            {_`Store`}
           </Link>
           <Link href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-            Chat
+            {_`Chat`}
           </Link>
           <Link href="/ai" class="hover:text-emerald-300 transition-colors">
-            AI
+            {_`AI`}
           </Link>
+          <LocaleSelector />
         </div>
       </nav>
     </header>

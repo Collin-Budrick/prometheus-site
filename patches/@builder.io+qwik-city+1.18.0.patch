@@ -1,5 +1,6 @@
---- /tmp/package/lib/vite/index.mjs	1985-10-26 04:15:00.000000000 -0400
-+++ node_modules/@builder.io/qwik-city/lib/vite/index.mjs	2025-12-16 02:15:08.331214600 -0500
+diff --git a/lib/vite/index.mjs b/lib/vite/index.mjs
+--- a/lib/vite/index.mjs
++++ b/lib/vite/index.mjs
 @@ -27571,7 +27571,8 @@
        ctx.isDevServer = config.command === "serve" && config.mode !== "production";
        ctx.isDevServerClientOnly = ctx.isDevServer && config.mode !== "ssr";
@@ -10,8 +11,9 @@
        qwikPlugin = config.plugins.find((p) => p.name === "vite-plugin-qwik");
        if (!qwikPlugin) {
          throw new Error("Missing vite-plugin-qwik");
---- /tmp/package/lib/vite/index.cjs	1985-10-26 04:15:00.000000000 -0400
-+++ node_modules/@builder.io/qwik-city/lib/vite/index.cjs	2025-12-16 02:15:33.192648500 -0500
+diff --git a/lib/vite/index.cjs b/lib/vite/index.cjs
+--- a/lib/vite/index.cjs
++++ b/lib/vite/index.cjs
 @@ -27566,7 +27566,8 @@
        ctx.isDevServer = config.command === "serve" && config.mode !== "production";
        ctx.isDevServerClientOnly = ctx.isDevServer && config.mode !== "ssr";

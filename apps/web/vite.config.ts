@@ -3,6 +3,7 @@ import os from 'node:os'
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
+import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -161,6 +162,7 @@ export default defineConfig(({ ssrBuild }) => {
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
       qwikVite(),
+      i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
       devAuditStripViteClient(devAuditMode),
