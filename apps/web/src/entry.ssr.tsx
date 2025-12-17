@@ -27,10 +27,13 @@ export default function render(opts: RenderToStreamOptions) {
 
   const lazyLoaderScript =
     `(function(){const src='${loaderSrc}';if(!src)return;let started=false;` +
-    `const load=()=>{if(started)return;started=true;const s=document.createElement('script');s.type='module';s.defer=true;s.src=src;s.setAttribute('data-qwik-loader','lazy');document.head.appendChild(s);};` +
-    `const kickIdle=()=>{if(started)return;if('requestIdleCallback'in window){requestIdleCallback(load,{timeout:1500});}else{setTimeout(load,1500);}};` +
-    `['pointerdown','keydown','touchstart','focusin'].forEach((event)=>document.addEventListener(event,load,{once:true,passive:true}));` +
-    `if(document.readyState==='complete'){kickIdle();}else{window.addEventListener('load',kickIdle,{once:true});}})();`
+    `const load=()=>{if(started||navigator.connection?.saveData)return;started=true;const s=document.createElement('script');s.type='module';s.defer=true;s.src=src;s.setAttribute('data-qwik-loader','lazy');document.head.appendChild(s);};` +
+    `const prime=()=>{load();cleanup();};` +
+    `const cleanup=()=>triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));` +
+    `const triggers=['pointerdown','keydown','touchstart','focusin'];` +
+    `const listenerOpts={once:true,passive:true};` +
+    `triggers.forEach((event)=>document.addEventListener(event,prime,listenerOpts));` +
+    `document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')prime();},{once:true});})();`
 
   const lazyInjection = {
     tag: 'script' as const,
