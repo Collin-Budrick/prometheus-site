@@ -19,6 +19,13 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - Chat/WebSocket and AI logic only load on their respective routes.
 - Partytown can be enabled by setting `ENABLE_PARTYTOWN=true` and adding worker scripts to `/public/~partytown/`.
 
+## Configuration
+
+- `VITE_SPECULATION_RULES` – enable Speculation Rules prefetch/prerender hints for likely next routes (defaults on in prod, off in
+  dev to avoid interfering with HMR).
+- `VITE_ROUTE_VIEW_TRANSITIONS` – wrap route switches with the native View Transitions API when supported (defaults on in prod,
+  off in dev).
+
 ## Resumability + hydration guidance
 
 - Default to SSR-only rendering for above-the-fold UI; avoid shipping client JS unless a user can interact.
