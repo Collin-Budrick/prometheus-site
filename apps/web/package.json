@@ -14,14 +14,15 @@
     "check:css": "bun run scripts/check-css-budget.ts"
   },
   "dependencies": {
+    "@builder.io/partytown": "0.10.3",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
-    "@builder.io/partytown": "0.10.3",
-    "compiled-i18n": "1.2.1",
-    "drizzle-orm": "1.0.0-beta.3-d4ff358",
     "@unocss/reset": "66.5.10",
     "@unocss/runtime": "66.5.10",
     "@unocss/vite": "66.5.10",
+    "compiled-i18n": "1.2.1",
+    "drizzle-orm": "1.0.0-beta.3-d4ff358",
+    "motion": "^12.23.26",
     "postgres": "3.4.7"
   },
   "devDependencies": {
