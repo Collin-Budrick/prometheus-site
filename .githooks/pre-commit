@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+if [ ! -d "node_modules/lefthook" ]; then
+  exit 0
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  exit 0
+fi
+
+os="$(node -p "(['win32','cygwin'].includes(process.platform) ? 'windows' : process.platform)")"
+arch="$(node -p "process.arch")"
+pkg="lefthook-${os}-${arch}"
+
+if node -e "require.resolve('${pkg}/bin/lefthook' + ((['win32','cygwin'].includes(process.platform)) ? '.exe' : ''))" >/dev/null 2>&1; then
+  node node_modules/lefthook/bin/index.js run pre-commit "$@"
+  exit $?
+fi
+
+echo "pre-commit: ${pkg} missing; skipping hooks (run install on this OS/arch to enable)" >&2
+exit 0

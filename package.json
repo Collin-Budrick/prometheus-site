@@ -14,6 +14,7 @@
     "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
+    "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "bun run lint"
   },
   "optionalDependencies": {
