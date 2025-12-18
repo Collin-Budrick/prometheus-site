@@ -19,12 +19,10 @@ export default component$(() => {
         <span class="bg-slate-800 px-3 py-1 rounded-full text-slate-200 text-xs">{_`cached`}</span>
       </div>
       <p class="mt-3 max-w-2xl text-slate-300 text-sm">
-        {_`Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Data only wakes up once the route is visible to keep initial payloads microscopic.`}
+        {_`Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Interactivity wakes up only when you click.`}
       </p>
 
-      <div onQVisible$={() => undefined}>
-        <StoreIsland />
-      </div>
+      <StoreIsland />
     </section>
   )
 })

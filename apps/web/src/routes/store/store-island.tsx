@@ -1,7 +1,6 @@
-import { $, component$, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useTask$ } from '@builder.io/qwik'
 import { Form } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import type { BezierDefinition } from 'motion-utils'
 import {
   fetchStoreItems,
   type StoreItem,
@@ -10,27 +9,63 @@ import {
   useStoreItemsLoader
 } from './store-data'
 
-const entranceEase = [0.16, 1, 0.3, 1] satisfies BezierDefinition
-const exitEase = [0.4, 0, 1, 1] satisfies BezierDefinition
+type CubicBezier = readonly [number, number, number, number]
+const entranceEase: CubicBezier = [0.16, 1, 0.3, 1]
+const exitEase: CubicBezier = [0.4, 0, 1, 1]
+
+const prefersReducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const toCubicBezier = (ease: CubicBezier) => `cubic-bezier(${ease[0]}, ${ease[1]}, ${ease[2]}, ${ease[3]})`
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      resolve()
+      return
+    }
+
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+const awaitFinished = (animation: Animation) =>
+  animation.finished?.then(() => undefined) ??
+  new Promise<void>((resolve, reject) => {
+    animation.addEventListener('finish', () => resolve(), { once: true })
+    animation.addEventListener('cancel', () => reject(new Error('Animation cancelled')), { once: true })
+  })
+
+type PerElementDelayOptions = Omit<KeyframeAnimationOptions, 'delay'> & { delay?: number | ((index: number) => number) }
+
+const animateElements = async (elements: HTMLElement[], frames: Keyframe[], options: PerElementDelayOptions) => {
+  if (!elements.length) return
+  if (typeof document === 'undefined') return
+  if (typeof elements[0]?.animate !== 'function') return
+
+  const animations = elements.map((element, index) => {
+    const delay = typeof options.delay === 'function' ? options.delay(index) : options.delay
+    return element.animate(frames, { ...options, delay })
+  })
+
+  await Promise.all(animations.map((animation) => awaitFinished(animation)))
+}
 
 export const StoreIsland = component$(() => {
   const initial = useStoreItemsLoader()
   const items = useSignal<StoreItem[]>(initial.value.items)
   const cursor = useSignal<number | null>(initial.value.cursor)
   const loading = useSignal(false)
-  const hasAttempted = useSignal(initial.value.items.length > 0)
   const isFallback = useSignal(initial.value.source === 'fallback')
   const error = useSignal<string | null>(
     initial.value.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
   )
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
-  const pendingEntrants = useSignal<number[]>([])
-  const hasAnimatedInitial = useSignal(false)
 
-  const animateEntrances = $(async (ids: number[], variant: 'initial' | 'new' = 'new') => {
+  const animateEntrances = async (ids: number[], variant: 'initial' | 'new' = 'new') => {
     if (typeof document === 'undefined' || !ids.length) return
-    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (prefersReducedMotion()) return
+
+    await nextFrame()
 
     const elements = ids
       .map((id) => document.querySelector(`[data-store-item-id="${id}"]`))
@@ -38,47 +73,32 @@ export const StoreIsland = component$(() => {
 
     if (!elements.length) return
 
-    const { animateMini, stagger } = await import('motion')
-    const keyframes =
-      variant === 'initial'
-        ? { opacity: [0.7, 1], y: [12, 0], scaleX: [0.99, 1], scaleY: [0.99, 1] }
-        : { opacity: [0, 1], y: [8, 0], scaleX: [0.98, 1], scaleY: [0.98, 1] }
-    const duration = variant === 'initial' ? 0.5 : 0.38
-    const delay = variant === 'initial' ? stagger(0.06) : stagger(0.045)
     try {
-      await animateMini(
+      const fromOpacity = variant === 'initial' ? 0.7 : 0
+      const fromY = variant === 'initial' ? 12 : 8
+      const fromScale = variant === 'initial' ? 0.99 : 0.98
+      const duration = variant === 'initial' ? 500 : 380
+      const perItemDelay = variant === 'initial' ? 60 : 45
+
+      await animateElements(
         elements,
-        keyframes,
+        [
+          { opacity: fromOpacity, transform: `translate3d(0, ${fromY}px, 0) scale(${fromScale})` },
+          { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' }
+        ],
         {
           duration,
-          ease: entranceEase,
-          delay
+          easing: toCubicBezier(entranceEase),
+          fill: 'none',
+          delay: (index) => index * perItemDelay
         }
-      ).finished
+      )
     } catch (err) {
       console.error('Failed to run entrance animations', err)
     }
-  })
+  }
 
-  useVisibleTask$(({ track }) => {
-    const ids = track(() => pendingEntrants.value)
-    if (!ids.length) return
-
-    pendingEntrants.value = []
-    void animateEntrances(ids)
-  })
-
-  useVisibleTask$(() => {
-    if (hasAnimatedInitial.value) return
-    hasAnimatedInitial.value = true
-    if (!items.value.length) return
-    void animateEntrances(
-      items.value.map((item) => item.id),
-      'initial'
-    )
-  })
-
-  const animateRemoval = $(async (id: number) => {
+  const animateRemoval = async (id: number) => {
     const remove = () => {
       const update = () => {
         items.value = items.value.filter((item) => item.id !== id)
@@ -99,7 +119,7 @@ export const StoreIsland = component$(() => {
     }
 
     if (typeof document === 'undefined') return remove()
-    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return remove()
+    if (prefersReducedMotion()) return remove()
 
     const element = document.querySelector(`[data-store-item-id="${id}"]`)
     if (!element) {
@@ -107,21 +127,27 @@ export const StoreIsland = component$(() => {
       return
     }
 
-    const { animateMini } = await import('motion')
     try {
-      await animateMini(
-        element,
-        { opacity: 0, y: -8, scaleX: 0.96, scaleY: 0.96 },
-        { duration: 0.22, ease: exitEase }
-      ).finished
+      const animation = element.animate(
+        [
+          { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+          { opacity: 0, transform: 'translate3d(0, -8px, 0) scale(0.96)' }
+        ],
+        {
+          duration: 220,
+          easing: toCubicBezier(exitEase),
+          fill: 'both'
+        }
+      )
+      await awaitFinished(animation)
     } catch (err) {
       console.error('Failed to animate removal', err)
     }
 
     remove()
-  })
+  }
 
-  const loadItems = $(async (reset = false) => {
+  const loadItems = async (reset = false) => {
     if (loading.value) return
     loading.value = true
     error.value = null
@@ -134,7 +160,6 @@ export const StoreIsland = component$(() => {
       const newIds = incoming.map((item) => item.id).filter((id) => !existingIds.has(id))
       const applyUpdate = () => {
         items.value = nextItems
-        pendingEntrants.value = newIds
       }
 
       if (typeof document === 'undefined') {
@@ -149,24 +174,20 @@ export const StoreIsland = component$(() => {
       }
       cursor.value = response?.cursor ?? null
       isFallback.value = response?.source === 'fallback'
-      hasAttempted.value = true
       error.value = response?.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
+      void animateEntrances(newIds)
     } catch (err) {
       console.error('Failed to load store items', err)
       error.value = _`Unable to load inventory right now.`
     } finally {
       loading.value = false
     }
-  })
+  }
 
-  useTask$(
-    () => {
-      if (!hasAttempted.value) {
-        void loadItems(true)
-      }
-    },
-    { eagerness: 'visible' }
-  )
+  const onLoadItems$ = $(async (_event: Event, button: HTMLButtonElement) => {
+    const reset = button.dataset.reset === '1'
+    await loadItems(reset)
+  })
 
   useTask$(({ track }) => {
     const actionState = track(() => createAction.value)
@@ -175,7 +196,6 @@ export const StoreIsland = component$(() => {
       merged.sort((a, b) => a.id - b.id)
       const applyUpdate = () => {
         items.value = merged
-        pendingEntrants.value = [actionState.item.id]
       }
 
       if (typeof document === 'undefined') {
@@ -188,10 +208,10 @@ export const StoreIsland = component$(() => {
           applyUpdate()
         }
       }
-      hasAttempted.value = true
       error.value = null
+      void animateEntrances([actionState.item.id])
     }
-  })
+  }, { eagerness: 'idle' })
 
   useTask$(({ track }) => {
     const deleteState = track(() => deleteAction.value)
@@ -201,7 +221,7 @@ export const StoreIsland = component$(() => {
     } else if (deleteState?.error) {
       error.value = deleteState.error
     }
-  })
+  }, { eagerness: 'idle' })
 
   return (
     <div class="gap-4 grid md:grid-cols-[1.2fr_1fr] bg-slate-900/60 mt-5 p-4 border border-slate-800 rounded-lg">
@@ -211,7 +231,8 @@ export const StoreIsland = component$(() => {
           <button
             type="button"
             class="bg-slate-800 hover:bg-slate-700 disabled:opacity-60 px-3 py-2 rounded-lg ring-1 ring-slate-700 font-semibold text-slate-100 text-xs transition"
-            onClick$={() => loadItems(true)}
+            data-reset="1"
+            onClick$={onLoadItems$}
             disabled={loading.value}
           >
             {_`Refresh`}
@@ -219,9 +240,6 @@ export const StoreIsland = component$(() => {
         </div>
         {isFallback.value && (
           <p class="text-amber-300 text-xs">{_`Showing fallback data while the database is unavailable.`}</p>
-        )}
-        {!hasAttempted.value && (
-          <p class="text-slate-500 text-sm">{_`Inventory loads once this section is visible.`}</p>
         )}
         {error.value && <p class="text-rose-300 text-sm">{error.value}</p>}
         {items.value.length ? (
@@ -255,14 +273,14 @@ export const StoreIsland = component$(() => {
             ))}
           </ul>
         ) : (
-          hasAttempted.value && !loading.value && <p class="text-slate-500 text-sm">{_`No items yet.`}</p>
+          !loading.value && <p class="text-slate-500 text-sm">{_`No items yet.`}</p>
         )}
         <div class="flex items-center gap-3">
           {cursor.value !== null && (
             <button
               type="button"
               class="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 px-4 py-2 rounded-lg font-semibold text-emerald-950 text-sm transition"
-              onClick$={() => loadItems()}
+              onClick$={onLoadItems$}
               disabled={loading.value}
             >
               {_`Load more`}

@@ -141,8 +141,14 @@ const devBustedViteClient = (enabled: boolean) =>
     ? {
         name: 'dev-busted-vite-client',
         apply: 'serve' as const,
+        enforce: 'post' as const,
         transformIndexHtml(html: string) {
-          return html.replaceAll('/@vite/client', `/@vite/client?bust=${devCacheBuster}`)
+          const stripped = html.replace(
+            /<script\s+type="module"\s+src="\/@vite\/client(?:\?[^"]*)?"\s*><\/script>/g,
+            ''
+          )
+          const injection = `<script type="module" src="/@vite/client?bust=${devCacheBuster}"></script>`
+          return stripped.includes('</head>') ? stripped.replace('</head>', `${injection}</head>`) : `${injection}${stripped}`
         }
       }
     : null
@@ -152,8 +158,9 @@ const devAuditStripViteClient = (enabled: boolean) =>
     ? {
         name: 'dev-audit-strip-vite-client',
         apply: 'serve' as const,
+        enforce: 'post' as const,
         transformIndexHtml(html: string) {
-          return html.replace(/<script\s+type="module"\s+src="\/@vite\/client"\s*><\/script>/g, '')
+          return html.replace(/<script\s+type="module"\s+src="\/@vite\/client(?:\?[^"]*)?"\s*><\/script>/g, '')
         },
         configureServer(server: ViteDevServer) {
           server.middlewares.use('/@vite/client', (_req, res) => {
