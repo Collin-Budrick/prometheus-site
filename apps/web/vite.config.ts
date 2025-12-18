@@ -291,10 +291,10 @@ export default defineConfig((env) => {
       strictPort: true
     },
     css: {
+      transformer: 'lightningcss',
       lightningcss: {
         drafts: {
-          nesting: true,
-          customMedia: true
+          nesting: true
         }
       }
     },
