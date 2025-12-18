@@ -322,6 +322,7 @@ export default defineConfig((env) => {
       minify: 'esbuild',
       cssMinify: 'lightningcss',
       target: 'esnext',
+      sourcemap: false,
       modulePreload: { polyfill: false },
       // Vite 8 uses Rolldown for production builds; keep it explicit so preview builds
       // can't silently fall back to a non-Rolldown pipeline.
