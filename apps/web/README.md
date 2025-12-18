@@ -23,6 +23,10 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 
 - UnoCSS powers all on-demand utilities. Prefer utilities/shortcuts over ad-hoc global CSS; the `light:` variant targets `.light`
   or `[data-theme="light"]` while the built-in `dark:` variant still scopes to `.dark`.
+- Variant grouping is enabled (`hover:(opacity-80 underline) focus:(ring-2 ring-offset-2)`) alongside layout/text shortcuts
+  (`stack-md`, `stack-lg`, `text-body`, `text-muted`, `title-md`, `title-lg`) to keep spacing and typography consistent.
+- Icons are self-hosted through UnoCSS `presetIcons` with tree-shaken collections (e.g. Solar); use `i-solar:moon-stars-bold`
+  or similar utility classes to embed icons without external fetches.
 - Keep global styles microscopic (reset + tokens only). Route-only animations/layout tweaks should live next to the route with
   `useStylesScoped$`/`routeStyles$` for critical extraction.
 - Lightning CSS handles transforms/minification; run `bun run check:css` to fail fast if `src/global.css` exceeds the budget
