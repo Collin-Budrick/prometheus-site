@@ -58,7 +58,7 @@ The **prod** profile adds Nginx (HTTP/3 + Early Hints) and expects TLS certs mou
 ### Edge deployment + Early Hints
 
 - HTTP/3 terminates at Nginx with `Alt-Svc` advertising `h3=":443"`; the reverse proxy fans back to the web container on `4173`.
-- Early Hints (103) are emitted only for the document and `/assets/critical.css` to avoid racing HMR bundles in dev. Route-specific mappings live in `infra/nginx/nginx.conf` under the `$early_hint_links` map.
+- Early Hints (103) are emitted only for the document and the built critical CSS asset to avoid racing HMR bundles in dev. Route-specific mappings live in `infra/nginx/nginx.conf` under the `$early_hint_links` map.
 - To validate in staging, hit the edge directly with HTTP/3 and inspect the 103 and `Link` headers:
 
 ```bash

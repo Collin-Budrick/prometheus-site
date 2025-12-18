@@ -8,7 +8,7 @@ import { LocaleSelector } from '../components/locale-selector/locale-selector'
 import { featureFlags } from '../config/feature-flags'
 import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
 import layoutStyles from './layout.css?inline'
-import criticalCss from './critical.css?raw'
+import { criticalCssInline } from './critical-css-assets'
 
 type SpeculationCandidate = {
   url: string
@@ -66,7 +66,7 @@ export const RouterHead = component$(() => {
       <title>{head.title || 'Prometheus'}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="canonical" href={loc.url.href} />
-      <style data-critical dangerouslySetInnerHTML={criticalCss} />
+      <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}
