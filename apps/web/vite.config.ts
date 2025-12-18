@@ -13,6 +13,8 @@ import { partytownForwards } from './src/config/third-party'
 import { conservativeViewportRules } from './src/config/speculation-rules'
 import partytown from 'vite-plugin-partytown'
 import { VitePWA } from 'vite-plugin-pwa'
+import Inspect from 'vite-plugin-inspect'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown> }
 type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
@@ -45,6 +47,7 @@ if (shouldSkipMdx) {
 }
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url))
+const analyzeBundles = process.env.VITE_ANALYZE === '1'
 
 type WorkboxManifestEntry = { url: string; revision?: string }
 
@@ -244,7 +247,8 @@ const speculationRulesManifest = (): Plugin => ({
 })
 
 export default defineConfig((env) => {
-  const ssrBuild = 'ssrBuild' in env ? (env as { ssrBuild?: boolean }).ssrBuild : false
+  const ssrBuild =
+    (env as { ssrBuild?: boolean }).ssrBuild ?? (env as { isSsrBuild?: boolean }).isSsrBuild ?? false
   const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const resolveAlias = zodStubPath ? { zod: zodStubPath } : undefined
   const hmrConfig = devAuditMode
@@ -256,9 +260,29 @@ export default defineConfig((env) => {
         clientPort: hmrClientPort
       }
 
+  const analysisPlugins =
+    analyzeBundles && !ssrBuild
+      ? [
+          Inspect({
+            dev: true,
+            build: true,
+            enabled: true,
+            outputDir: 'dist/stats/inspect'
+          }),
+          visualizer({
+            filename: 'stats/rollup-visualizer.html',
+            template: 'treemap',
+            gzipSize: true,
+            brotliSize: true,
+            emitFile: true
+          })
+        ]
+      : []
+
   return {
     cacheDir,
     plugins: [
+      ...analysisPlugins,
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
       qwikViteNoDeprecatedEsbuild(),

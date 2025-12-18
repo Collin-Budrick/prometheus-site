@@ -11,6 +11,10 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - `bun run format` – apply Oxfmt formatting.
 - `bun run test` – execute Qwik tests.
 
+## Bundle analysis
+
+- `VITE_ANALYZE=1 bun run --cwd apps/web build` – generates bundle inspection output. Visualizer stats land in `apps/web/dist/stats/rollup-visualizer.html`, and Inspect artifacts live under `apps/web/dist/stats/inspect/`.
+
 ## Perf notes
 
 - Home route ships minimal HTML/CSS with immutable caching headers.
