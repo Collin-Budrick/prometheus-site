@@ -70,6 +70,7 @@
     "Chat | Prometheus": "채팅 | Prometheus",
     "WebSocket chat backed by Valkey pub/sub.": "Valkey pub/sub 기반 WebSocket 채팅.",
     "AI | Prometheus": "AI | Prometheus",
-    "Minimal AI utility route hitting Bun API.": "Bun API를 호출하는 최소 AI 유틸리티 라우트."
+    "Minimal AI utility route hitting Bun API.": "Bun API를 호출하는 최소 AI 유틸리티 라우트.",
+    "Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Interactivity wakes up only when you click.": ""
   }
 }
