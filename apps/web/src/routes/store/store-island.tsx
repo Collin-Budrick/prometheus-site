@@ -61,7 +61,7 @@ export const StoreIsland = component$(() => {
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
 
-  const animateEntrances = async (ids: number[], variant: 'initial' | 'new' = 'new') => {
+  const animateEntrances = $(async (ids: number[], variant: 'initial' | 'new' = 'new') => {
     if (typeof document === 'undefined' || !ids.length) return
     if (prefersReducedMotion()) return
 
@@ -96,9 +96,9 @@ export const StoreIsland = component$(() => {
     } catch (err) {
       console.error('Failed to run entrance animations', err)
     }
-  }
+  })
 
-  const animateRemoval = async (id: number) => {
+  const animateRemoval = $(async (id: number) => {
     const remove = () => {
       const update = () => {
         items.value = items.value.filter((item) => item.id !== id)
@@ -145,9 +145,9 @@ export const StoreIsland = component$(() => {
     }
 
     remove()
-  }
+  })
 
-  const loadItems = async (reset = false) => {
+  const loadItems = $(async (reset = false) => {
     if (loading.value) return
     loading.value = true
     error.value = null
@@ -182,7 +182,7 @@ export const StoreIsland = component$(() => {
     } finally {
       loading.value = false
     }
-  }
+  })
 
   const onLoadItems$ = $(async (_event: Event, button: HTMLButtonElement) => {
     const reset = button.dataset.reset === '1'
