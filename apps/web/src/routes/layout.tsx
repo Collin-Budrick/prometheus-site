@@ -9,6 +9,7 @@ import { featureFlags } from '../config/feature-flags'
 import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
 import layoutStyles from './layout.css?inline'
 import { criticalCssInline } from './critical-css-assets'
+import { thirdPartyScripts } from '../config/third-party'
 
 type SpeculationCandidate = {
   url: string
@@ -57,6 +58,20 @@ const toSpeculationRules = (candidates: SpeculationCandidate[]) => {
   return rules.prefetch.length || rules.prerender.length ? rules : null
 }
 
+const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
+  Array.from(
+    entries.reduce((origins, entry) => {
+      if (!entry.src) return origins
+
+      try {
+        const { origin } = new URL(entry.src)
+        if (origin) origins.add(origin)
+      } catch {}
+
+      return origins
+    }, new Set<string>())
+  )
+
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
@@ -69,6 +84,9 @@ export const RouterHead = component$(() => {
     ...allowedPreloadHrefs,
     ...criticalPreloads.map((link) => link.href).filter(isNonEmptyString)
   ])
+
+  const allowThirdPartyHints = !import.meta.env.DEV
+  const thirdPartyOrigins = allowThirdPartyHints ? resolveThirdPartyOrigins(thirdPartyScripts) : []
 
   const safeLinks = sanitizeHeadLinks([...head.links, ...criticalPreloads], import.meta.env.DEV, allowedPreloads)
   const devHeadCleanup =
@@ -93,6 +111,14 @@ export const RouterHead = component$(() => {
       {safeLinks.map((l) => (
         <link key={l.key} {...l} />
       ))}
+      {allowThirdPartyHints &&
+        thirdPartyOrigins.map((origin) => (
+          <link key={`dns:${origin}`} rel="dns-prefetch" href={origin} />
+        ))}
+      {allowThirdPartyHints &&
+        thirdPartyOrigins.map((origin) => (
+          <link key={`preconnect:${origin}`} rel="preconnect" href={origin} crossOrigin="anonymous" />
+        ))}
       {allowSpeculationRules &&
         speculationCandidates.map(({ url, action }) => (
           <link key={`${action}:${url}`} rel={action} href={url} />
