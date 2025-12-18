@@ -16,6 +16,9 @@
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
     "prepare": "bun run lint"
   },
+  "optionalDependencies": {
+    "lefthook-windows-arm64": "2.0.12"
+  },
   "patchedDependencies": {
     "@builder.io/qwik@1.18.0": "patches/@builder.io+qwik+1.18.0.patch",
     "@builder.io/qwik-city@1.18.0": "patches/@builder.io+qwik-city+1.18.0.patch",

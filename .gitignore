@@ -10,3 +10,4 @@ build
 apps/api/.elysia
 apps/web/server/*
 apps/web/public/~partytown/*
+apps/web/test-results/*

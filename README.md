@@ -86,6 +86,7 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 
 - Hooks are powered by [Lefthook](https://github.com/evilmartians/lefthook) and run `bun run lint` and the web test suite on pre-commit.
 - Install hooks locally with `bunx lefthook install` after dependencies are installed.
+- If you see `Cannot find module 'lefthook-windows-arm64/bin/lefthook.exe'`, reinstall with optional deps enabled (recommended: `bun install`, or `npm ci --include=optional`).
 - Set `LEFTHOOK=0` in CI or for emergency bypass to skip hook execution.
 
 ## Performance guardrails

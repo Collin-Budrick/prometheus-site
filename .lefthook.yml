@@ -2,6 +2,6 @@ pre-commit:
   parallel: false
   commands:
     lint:
-      run: bun run lint
+      run: PATH="$HOME/.bun/bin:$PATH" bun run lint
     web-tests:
-      run: bun run --cwd apps/web test
+      run: PATH="$HOME/.bun/bin:$PATH" bun run --cwd apps/web test

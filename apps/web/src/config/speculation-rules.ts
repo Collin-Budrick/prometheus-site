@@ -22,7 +22,7 @@ export const conservativeViewportRules: SpeculationRules = {
       source: 'document',
       where: {
         and: [
-          { href_matches: '^/[^#?]*$' },
+          { selector_matches: 'a[href^="/"]:not([href*="#"]):not([href*="?"])' },
           { not: { selector_matches: '[rel~=nofollow], [data-speculate="false"]' } }
         ]
       },
