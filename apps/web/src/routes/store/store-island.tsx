@@ -1,6 +1,7 @@
 import { $, component$, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
+import type { BezierDefinition } from 'motion-utils'
 import {
   fetchStoreItems,
   type StoreItem,
@@ -9,15 +10,16 @@ import {
   useStoreItemsLoader
 } from './store-data'
 
+const entranceEase = [0.16, 1, 0.3, 1] satisfies BezierDefinition
+const exitEase = [0.4, 0, 1, 1] satisfies BezierDefinition
+
 const runViewTransition = (update: () => void) => {
   if (typeof document === 'undefined') {
     update()
     return
   }
 
-  const startViewTransition = (document as any).startViewTransition as
-    | ((cb: () => void) => { finished: Promise<void> })
-    | undefined
+  const startViewTransition = document.startViewTransition
 
   if (typeof startViewTransition === 'function') {
     startViewTransition.call(document, update)
@@ -53,14 +55,14 @@ export const StoreIsland = component$(() => {
 
     if (!elements.length) return
 
+    const { animateMini, stagger } = await import('motion')
     try {
-      const { animate, stagger } = await import('motion')
-      await animate(
+      await animateMini(
         elements,
-        { opacity: [0, 1], y: [8, 0], scale: [0.98, 1] },
+        { opacity: [0, 1], y: [8, 0], scaleX: [0.98, 1], scaleY: [0.98, 1] },
         {
           duration: 0.32,
-          easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+          ease: entranceEase,
           delay: stagger(0.04)
         }
       ).finished
@@ -94,12 +96,12 @@ export const StoreIsland = component$(() => {
       return
     }
 
+    const { animateMini } = await import('motion')
     try {
-      const { animate } = await import('motion')
-      await animate(
+      await animateMini(
         element,
-        { opacity: 0, y: -8, scale: 0.96 },
-        { duration: 0.22, easing: 'cubic-bezier(0.4, 0, 1, 1)' }
+        { opacity: 0, y: -8, scaleX: 0.96, scaleY: 0.96 },
+        { duration: 0.22, ease: exitEase }
       ).finished
     } catch (err) {
       console.error('Failed to animate removal', err)

@@ -2,6 +2,7 @@ import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
 import { useDocumentHead, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { sanitizeHeadLinks } from './head-utils'
+/* cspell:ignore hrefs */
 import { allowedPreloadHrefs, resolveCriticalPreloads } from './preload-manifest'
 import { LocaleSelector } from '../components/locale-selector/locale-selector'
 import { featureFlags } from '../config/feature-flags'
@@ -19,16 +20,20 @@ const speculationCandidates: SpeculationCandidate[] = [
   { url: '/chat', action: 'prefetch' }
 ]
 
+const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
 const toSpeculationRules = (pathname: string) => {
+  const empty = {
+    prefetch: [] as { source: 'list'; urls: string[] }[],
+    prerender: [] as { source: 'list'; urls: string[] }[]
+  }
+
   const rules = speculationCandidates
     .filter(({ url }) => url !== pathname)
-    .reduce(
-      (acc, candidate) => {
-        acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
-        return acc
-      },
-      { prefetch: [], prerender: [] } as { prefetch: { source: string; urls: string[] }[]; prerender: { source: string; urls: string[] }[] }
-    )
+    .reduce((acc, candidate) => {
+      acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
+      return acc
+    }, empty)
 
   return rules.prefetch.length || rules.prerender.length ? rules : null
 }
@@ -40,7 +45,10 @@ export const RouterHead = component$(() => {
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const speculationRules = allowSpeculationRules ? toSpeculationRules(loc.url.pathname) : null
   const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
-  const allowedPreloads = new Set([...allowedPreloadHrefs, ...criticalPreloads.map((link) => link.href)])
+  const allowedPreloads = new Set([
+    ...allowedPreloadHrefs,
+    ...criticalPreloads.map((link) => link.href).filter(isNonEmptyString)
+  ])
 
   const safeLinks = sanitizeHeadLinks([...head.links, ...criticalPreloads], import.meta.env.DEV, allowedPreloads)
   const devHeadCleanup =

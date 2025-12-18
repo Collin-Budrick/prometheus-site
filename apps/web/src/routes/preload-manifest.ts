@@ -10,4 +10,8 @@ export const resolveCriticalPreloads = (pathname: string, isDev: boolean): Docum
   return []
 }
 
-export const allowedPreloadHrefs = new Set(manifest.flatMap(({ links }) => links.map((link) => link.href)))
+const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
+export const allowedPreloadHrefs = new Set(
+  manifest.flatMap(({ links }) => links.map((link) => link.href)).filter(isNonEmptyString)
+)
