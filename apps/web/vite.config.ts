@@ -322,7 +322,12 @@ export default defineConfig((env) => {
       minify: 'esbuild',
       cssMinify: 'lightningcss',
       target: 'esnext',
-      modulePreload: { polyfill: false }
+      modulePreload: { polyfill: false },
+      // Vite 8 uses Rolldown for production builds; keep it explicit so preview builds
+      // can't silently fall back to a non-Rolldown pipeline.
+      rolldownOptions: {
+        treeshake: true
+      }
     },
     define: {
       // Qwik City expects a global __EXPERIMENTAL__ object; provide a safe default in dev/build.

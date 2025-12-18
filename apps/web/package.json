@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "build": "bun run check:css && vite build && vite build --ssr src/entry.preview.tsx --outDir server",
-    "preview": "bun run scripts/kill-port.ts 4173 && vite preview",
+    "preview": "bun run build && bun run scripts/kill-port.ts 4173 && vite preview",
     "lint": "bun run check:css && bun run check:scripts && oxlint .",
     "format": "oxfmt --write .",
     "test": "bun run test:unit && bun run test:e2e",
