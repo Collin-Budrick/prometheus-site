@@ -3,6 +3,14 @@ import { setDefaultLocale } from 'compiled-i18n'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 
+const registerServiceWorker = () => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 const resolveClientLocale = () => {
   if (typeof document === 'undefined') return undefined
   const params = new URLSearchParams(window.location.search)
@@ -24,6 +32,8 @@ export default function renderClient(opts: RenderOptions) {
     document.documentElement.setAttribute('q:locale', locale)
     setDefaultLocale(locale)
   }
+
+  registerServiceWorker()
 
   return render(document, <Root />, opts)
 }
