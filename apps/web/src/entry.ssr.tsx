@@ -1,6 +1,7 @@
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
 import { extractBase, setSsrLocaleGetter } from 'compiled-i18n/qwik'
+import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 
@@ -38,10 +39,74 @@ const resolveLocaleFromRequest = (opts: RenderToStreamOptions) => {
   return resolveLocale({ queryLocale, acceptLanguage })
 }
 
+const resolvePathname = (opts: RenderToStreamOptions) => {
+  const url = opts.serverData?.url
+  if (typeof url === 'string' && url.length > 0) {
+    try {
+      return new URL(url).pathname
+    } catch {}
+  }
+
+  return '/'
+}
+
+const resolveRouteBundles = (pathname: string): string[] => {
+  const routes = (qwikCityPlan as { routes?: unknown }).routes
+  if (!Array.isArray(routes)) return []
+
+  const normalized = pathname.startsWith('/') ? pathname : `/${pathname}`
+  const homeCandidates = new Set(['/', '/index'])
+
+  for (const route of routes) {
+    if (!Array.isArray(route) || route.length < 4) continue
+    const routePath = route[2]
+    const bundles = route[3]
+    if (typeof routePath !== 'string' || !Array.isArray(bundles)) continue
+
+    if (homeCandidates.has(routePath) && homeCandidates.has(normalized)) {
+      return bundles.filter((bundle): bundle is string => typeof bundle === 'string' && bundle.length > 0)
+    }
+
+    if (routePath === normalized) {
+      return bundles.filter((bundle): bundle is string => typeof bundle === 'string' && bundle.length > 0)
+    }
+  }
+
+  return []
+}
+
+const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname: string) => {
+  const manifestRecord = resolvedManifest && typeof resolvedManifest === 'object' ? (resolvedManifest as Record<string, unknown>) : null
+  const qwikLoader = typeof manifestRecord?.qwikLoader === 'string' ? manifestRecord.qwikLoader : null
+  const core = typeof manifestRecord?.core === 'string' ? manifestRecord.core : null
+  const preloader = typeof manifestRecord?.preloader === 'string' ? manifestRecord.preloader : null
+
+  const bundles = resolveRouteBundles(pathname)
+  const candidates = [qwikLoader, core, preloader, ...bundles].filter((value): value is string => typeof value === 'string')
+
+  const seen = new Set<string>()
+  return candidates
+    .filter((file) => {
+      if (seen.has(file)) return false
+      seen.add(file)
+      return true
+    })
+    .map((file) => ({
+      tag: 'link' as const,
+      location: 'head' as const,
+      attributes: {
+        rel: 'modulepreload',
+        href: `${base}${file}`,
+        crossorigin: 'anonymous'
+      }
+    }))
+}
+
 export default function render(opts: RenderToStreamOptions) {
   const isProd = import.meta.env.PROD
   const clientManifest = opts.manifest ?? manifest
   const resolvedManifest = isManifestWrapper(clientManifest) ? clientManifest.manifest : clientManifest
+  const pathname = resolvePathname(opts)
   const locale = resolveLocaleFromRequest(opts)
   const serverData = { ...opts.serverData, locale }
   const base = resolveBase({ ...opts, base: extractBase, serverData })
@@ -72,6 +137,8 @@ export default function render(opts: RenderToStreamOptions) {
     }
   }
 
+  const modulePreloadInjections = isProd ? resolveModulePreloads(base, resolvedManifest, pathname) : []
+
   const manifestWithLazyLoader = (
     isProd && resolvedManifest
       ? isManifestWrapper(clientManifest)
@@ -81,14 +148,14 @@ export default function render(opts: RenderToStreamOptions) {
               ...(resolvedManifest as Record<string, unknown>),
               core: undefined,
               preloader: undefined,
-              injections: ([...(resolvedManifest as any)?.injections ?? [], lazyInjection] as any)
+              injections: ([...(resolvedManifest as any)?.injections ?? [], ...modulePreloadInjections, lazyInjection] as any)
             }
           }
         : {
             ...(resolvedManifest as Record<string, unknown>),
             core: undefined,
             preloader: undefined,
-            injections: ([...(resolvedManifest as any)?.injections ?? [], lazyInjection] as any)
+            injections: ([...(resolvedManifest as any)?.injections ?? [], ...modulePreloadInjections, lazyInjection] as any)
           }
       : clientManifest
   ) as RenderToStreamOptions['manifest']
