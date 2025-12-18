@@ -11,6 +11,7 @@ import layoutStyles from './layout.css?inline'
 import { criticalCssInline } from './critical-css-assets'
 import { partytownForwards, thirdPartyScripts } from '../config/third-party'
 import { partytownSnippet } from '@builder.io/partytown/integration'
+import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../config/speculation-rules'
 
 type SpeculationCandidate = {
   url: string
@@ -45,18 +46,15 @@ const resolveSpeculationCandidates = (pathname: string): SpeculationCandidate[] 
       action: dataSpeculate
     }))
 
-const toSpeculationRules = (candidates: SpeculationCandidate[]) => {
-  const empty = {
-    prefetch: [] as { source: 'list'; urls: string[] }[],
-    prerender: [] as { source: 'list'; urls: string[] }[]
-  }
+const toSpeculationRules = (candidates: SpeculationCandidate[]): SpeculationRules | null => {
+  const rules: SpeculationRules = { prefetch: [], prerender: [] }
 
-  const rules = candidates.reduce((acc, candidate) => {
-    acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
-    return acc
-  }, empty)
+  candidates.forEach((candidate) => {
+    if (candidate.action === 'prefetch') rules.prefetch?.push({ source: 'list', urls: [candidate.url] })
+    if (candidate.action === 'prerender') rules.prerender?.push({ source: 'list', urls: [candidate.url] })
+  })
 
-  return rules.prefetch.length || rules.prerender.length ? rules : null
+  return rules.prefetch?.length || rules.prerender?.length ? rules : null
 }
 
 const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
@@ -79,7 +77,10 @@ export const RouterHead = component$(() => {
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname) : []
-  const speculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
+  const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
+  const speculationRules = allowSpeculationRules
+    ? mergeSpeculationRules(conservativeViewportRules, navigationSpeculationRules)
+    : null
   const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
   const allowedPreloads = new Set([
     ...allowedPreloadHrefs,
@@ -93,11 +94,10 @@ export const RouterHead = component$(() => {
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
-  const speculationRulesInstaller =
-    allowSpeculationRules && speculationRules
-      ? `(()=>{try{if(navigator.connection?.saveData)return;if(!HTMLScriptElement.supports?.('speculationrules'))return;const payload=${JSON.stringify(
-          speculationRules
-        )};const script=document.createElement('script');script.type='speculationrules';script.textContent=JSON.stringify(payload);document.head.append(script);}catch{}})();`
+  const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
+  const speculationRulesGuard =
+    allowSpeculationRules && speculationRulesPayload
+      ? `(()=>{const script=document.querySelector('script[type="speculationrules"][data-source="router"]');if(!script)return;if(navigator.connection?.saveData){script.remove();return;}if(!HTMLScriptElement.supports?.('speculationrules')){script.remove();}})();`
       : undefined
 
   return (
@@ -130,9 +130,12 @@ export const RouterHead = component$(() => {
       {featureFlags.partytown && thirdPartyScripts.some((entry) => entry.partytown) && (
         <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: partytownForwards })} />
       )}
-      {/* Speculation Rules payload installs only when supported and enabled. */}
+      {/* Speculation Rules payload remains inert without support and is stripped if Save-Data is set. */}
       {/* cspell:ignore speculationrules */}
-      {speculationRulesInstaller && <script dangerouslySetInnerHTML={speculationRulesInstaller} />}
+      {speculationRulesPayload && (
+        <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
+      )}
+      {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
       {featureFlags.viewTransitions && (
         <script
           dangerouslySetInnerHTML={
