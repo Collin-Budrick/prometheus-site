@@ -1,14 +1,8 @@
 import type { DocumentLink } from '@builder.io/qwik-city'
-import { criticalCssHref } from './critical-css-assets'
 
 export type PreloadEntry = { pattern: RegExp; links: DocumentLink[] }
 
-const manifest: PreloadEntry[] = [
-  {
-    pattern: /^\/(?:.*)?$/,
-    links: [{ rel: 'preload', href: criticalCssHref, as: 'style' }]
-  }
-]
+const manifest: PreloadEntry[] = []
 
 export const resolveCriticalPreloads = (pathname: string, isDev: boolean): DocumentLink[] => {
   if (isDev) return []
