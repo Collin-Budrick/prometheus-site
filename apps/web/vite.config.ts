@@ -322,19 +322,10 @@ export default defineConfig((env) => {
     ].filter(Boolean),
     build: {
       bundler: 'rolldown',
+      esbuildMinify: true,
       cssMinify: 'lightningcss',
       target: 'esnext',
-      modulePreload: { polyfill: false },
-      rollupOptions: {
-        output: {
-          manualChunks(id: string) {
-            if (!id.includes('node_modules')) return
-            if (id.includes('@builder.io/qwik')) return 'qwik'
-            if (id.includes('@builder.io/qwik-city')) return 'qwik-city'
-            if (id.includes('@unocss/runtime') || id.includes('unocss')) return 'unocss'
-          }
-        }
-      }
+      modulePreload: { polyfill: false }
     },
     define: {
       // Qwik City expects a global __EXPERIMENTAL__ object; provide a safe default in dev/build.

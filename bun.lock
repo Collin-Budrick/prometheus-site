@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "prometheus-site",
@@ -59,8 +58,8 @@
         "unocss": "66.5.10",
         "vite": "8.0.0-beta.3",
         "vite-plugin-inspect": "11.3.3",
-        "vite-plugin-partytown": "^0.0.2",
-        "vite-plugin-pwa": "^1.2.0",
+        "vite-plugin-partytown": "0.0.2",
+        "vite-plugin-pwa": "1.2.0",
         "vite-tsconfig-paths": "6.0.3",
       },
     },
