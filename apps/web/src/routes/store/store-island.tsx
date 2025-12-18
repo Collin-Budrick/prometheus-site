@@ -13,22 +13,6 @@ import {
 const entranceEase = [0.16, 1, 0.3, 1] satisfies BezierDefinition
 const exitEase = [0.4, 0, 1, 1] satisfies BezierDefinition
 
-const runViewTransition = (update: () => void) => {
-  if (typeof document === 'undefined') {
-    update()
-    return
-  }
-
-  const startViewTransition = document.startViewTransition
-
-  if (typeof startViewTransition === 'function') {
-    startViewTransition.call(document, update)
-    return
-  }
-
-  update()
-}
-
 export const StoreIsland = component$(() => {
   const initial = useStoreItemsLoader()
   const items = useSignal<StoreItem[]>(initial.value.items)
@@ -43,11 +27,9 @@ export const StoreIsland = component$(() => {
   const deleteAction = useDeleteStoreItem()
   const pendingEntrants = useSignal<number[]>([])
 
-  const prefersReducedMotion = () =>
-    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-
   const animateEntrances = $(async (ids: number[]) => {
-    if (typeof document === 'undefined' || !ids.length || prefersReducedMotion()) return
+    if (typeof document === 'undefined' || !ids.length) return
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const elements = ids
       .map((id) => document.querySelector(`[data-store-item-id="${id}"]`))
@@ -80,15 +62,27 @@ export const StoreIsland = component$(() => {
   })
 
   const animateRemoval = $(async (id: number) => {
-    const remove = () =>
-      runViewTransition(() => {
+    const remove = () => {
+      const update = () => {
         items.value = items.value.filter((item) => item.id !== id)
-      })
+      }
 
-    if (typeof document === 'undefined' || prefersReducedMotion()) {
-      remove()
-      return
+      if (typeof document === 'undefined') {
+        update()
+        return
+      }
+
+      const startViewTransition = document.startViewTransition
+      if (typeof startViewTransition === 'function') {
+        startViewTransition.call(document, update)
+        return
+      }
+
+      update()
     }
+
+    if (typeof document === 'undefined') return remove()
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return remove()
 
     const element = document.querySelector(`[data-store-item-id="${id}"]`)
     if (!element) {
@@ -121,10 +115,21 @@ export const StoreIsland = component$(() => {
       const nextItems = reset ? incoming : [...items.value, ...incoming]
       const existingIds = reset ? new Set<number>() : new Set(items.value.map((item) => item.id))
       const newIds = incoming.map((item) => item.id).filter((id) => !existingIds.has(id))
-      runViewTransition(() => {
+      const applyUpdate = () => {
         items.value = nextItems
         pendingEntrants.value = newIds
-      })
+      }
+
+      if (typeof document === 'undefined') {
+        applyUpdate()
+      } else {
+        const startViewTransition = document.startViewTransition
+        if (typeof startViewTransition === 'function') {
+          startViewTransition.call(document, applyUpdate)
+        } else {
+          applyUpdate()
+        }
+      }
       cursor.value = response?.cursor ?? null
       isFallback.value = response?.source === 'fallback'
       hasAttempted.value = true
@@ -151,10 +156,21 @@ export const StoreIsland = component$(() => {
     if (actionState?.success && actionState.item) {
       const merged = [...items.value.filter((item) => item.id !== actionState.item.id), actionState.item]
       merged.sort((a, b) => a.id - b.id)
-      runViewTransition(() => {
+      const applyUpdate = () => {
         items.value = merged
         pendingEntrants.value = [actionState.item.id]
-      })
+      }
+
+      if (typeof document === 'undefined') {
+        applyUpdate()
+      } else {
+        const startViewTransition = document.startViewTransition
+        if (typeof startViewTransition === 'function') {
+          startViewTransition.call(document, applyUpdate)
+        } else {
+          applyUpdate()
+        }
+      }
       hasAttempted.value = true
       error.value = null
     }

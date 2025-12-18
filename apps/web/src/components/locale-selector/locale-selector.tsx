@@ -1,4 +1,4 @@
-import { component$ } from '@builder.io/qwik'
+import { $, component$ } from '@builder.io/qwik'
 import { useLocation, useNavigate } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
 import { resolveLocale } from '../../i18n/locale'
@@ -41,29 +41,31 @@ export const LocaleSelector = component$(() => {
             href={href}
             aria-disabled={isCurrent}
             style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
-            onClick$={async (event) => {
-              if (isCurrent) return
-              if (event.defaultPrevented) return
-              if (event.button !== 0) return
-              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            onClick$={$(
+              async (event) => {
+                if (isCurrent) return
+                if (event.defaultPrevented) return
+                if (event.button !== 0) return
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 
-              event.preventDefault()
+                event.preventDefault()
 
-              if (typeof document === 'undefined') {
+                if (typeof document === 'undefined') {
+                  await navigate(href)
+                  return
+                }
+
+                const viewDoc = document as ViewTransitionDocument
+                const startViewTransition = featureFlags.viewTransitions ? viewDoc.startViewTransition : undefined
+                if (startViewTransition) {
+                  const transition = startViewTransition.call(viewDoc, () => navigate(href))
+                  transition?.finished.catch(() => {})
+                  return
+                }
+
                 await navigate(href)
-                return
               }
-
-              const viewDoc = document as ViewTransitionDocument
-              const startViewTransition = !featureFlags.viewTransitions ? viewDoc.startViewTransition : undefined
-              if (startViewTransition) {
-                const transition = startViewTransition.call(viewDoc, () => navigate(href))
-                transition?.finished.catch(() => {})
-                return
-              }
-
-              await navigate(href)
-            }}
+            )}
             class={[
               'rounded-full border px-2 py-1 transition-colors',
               isCurrent
