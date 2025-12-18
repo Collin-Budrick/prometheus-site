@@ -26,8 +26,9 @@ export const StoreIsland = component$(() => {
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const pendingEntrants = useSignal<number[]>([])
+  const hasAnimatedInitial = useSignal(false)
 
-  const animateEntrances = $(async (ids: number[]) => {
+  const animateEntrances = $(async (ids: number[], variant: 'initial' | 'new' = 'new') => {
     if (typeof document === 'undefined' || !ids.length) return
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
@@ -38,14 +39,20 @@ export const StoreIsland = component$(() => {
     if (!elements.length) return
 
     const { animateMini, stagger } = await import('motion')
+    const keyframes =
+      variant === 'initial'
+        ? { opacity: [0.7, 1], y: [12, 0], scaleX: [0.99, 1], scaleY: [0.99, 1] }
+        : { opacity: [0, 1], y: [8, 0], scaleX: [0.98, 1], scaleY: [0.98, 1] }
+    const duration = variant === 'initial' ? 0.5 : 0.38
+    const delay = variant === 'initial' ? stagger(0.06) : stagger(0.045)
     try {
       await animateMini(
         elements,
-        { opacity: [0, 1], y: [8, 0], scaleX: [0.98, 1], scaleY: [0.98, 1] },
+        keyframes,
         {
-          duration: 0.32,
+          duration,
           ease: entranceEase,
-          delay: stagger(0.04)
+          delay
         }
       ).finished
     } catch (err) {
@@ -59,6 +66,16 @@ export const StoreIsland = component$(() => {
 
     pendingEntrants.value = []
     void animateEntrances(ids)
+  })
+
+  useVisibleTask$(() => {
+    if (hasAnimatedInitial.value) return
+    hasAnimatedInitial.value = true
+    if (!items.value.length) return
+    void animateEntrances(
+      items.value.map((item) => item.id),
+      'initial'
+    )
   })
 
   const animateRemoval = $(async (id: number) => {
