@@ -15,25 +15,44 @@ type SpeculationCandidate = {
   action: 'prefetch' | 'prerender'
 }
 
-const speculationCandidates: SpeculationCandidate[] = [
-  { url: '/store', action: 'prerender' },
-  { url: '/chat', action: 'prefetch' }
+type NavLink = {
+  href: string
+  label: () => string
+  dataSpeculate?: SpeculationCandidate['action']
+}
+
+const navLinks: NavLink[] = [
+  { href: '/', label: () => _`Home` },
+  { href: '/store', label: () => _`Store`, dataSpeculate: 'prerender' },
+  { href: '/chat', label: () => _`Chat`, dataSpeculate: 'prefetch' },
+  { href: '/ai', label: () => _`AI` }
 ]
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 
-const toSpeculationRules = (pathname: string) => {
+const resolveSpeculationCandidates = (pathname: string): SpeculationCandidate[] =>
+  navLinks
+    .filter(
+      (
+        link
+      ): link is NavLink & { dataSpeculate: SpeculationCandidate['action'] } =>
+        Boolean(link.dataSpeculate) && link.href !== pathname
+    )
+    .map(({ href, dataSpeculate }) => ({
+      url: href,
+      action: dataSpeculate
+    }))
+
+const toSpeculationRules = (candidates: SpeculationCandidate[]) => {
   const empty = {
     prefetch: [] as { source: 'list'; urls: string[] }[],
     prerender: [] as { source: 'list'; urls: string[] }[]
   }
 
-  const rules = speculationCandidates
-    .filter(({ url }) => url !== pathname)
-    .reduce((acc, candidate) => {
-      acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
-      return acc
-    }, empty)
+  const rules = candidates.reduce((acc, candidate) => {
+    acc[candidate.action].push({ source: 'list', urls: [candidate.url] })
+    return acc
+  }, empty)
 
   return rules.prefetch.length || rules.prerender.length ? rules : null
 }
@@ -43,7 +62,8 @@ export const RouterHead = component$(() => {
   const loc = useLocation()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
-  const speculationRules = allowSpeculationRules ? toSpeculationRules(loc.url.pathname) : null
+  const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname) : []
+  const speculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
   const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
   const allowedPreloads = new Set([
     ...allowedPreloadHrefs,
@@ -74,9 +94,9 @@ export const RouterHead = component$(() => {
         <link key={l.key} {...l} />
       ))}
       {allowSpeculationRules &&
-        speculationCandidates
-          .filter(({ url }) => url !== loc.url.pathname)
-          .map(({ url, action }) => <link key={`${action}:${url}`} rel={action} href={url} />)}
+        speculationCandidates.map(({ url, action }) => (
+          <link key={`${action}:${url}`} rel={action} href={url} />
+        ))}
       {head.styles.map((s) => (
         <style key={s.key} {...s.props} dangerouslySetInnerHTML={s.style} />
       ))}
@@ -108,18 +128,16 @@ export default component$(() => {
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200">
-            <a href="/" class="hover:text-emerald-300 transition-colors">
-              {_`Home`}
-            </a>
-            <a href="/store" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-              {_`Store`}
-            </a>
-            <a href="/chat" data-speculate="prefetch" class="hover:text-emerald-300 transition-colors">
-              {_`Chat`}
-            </a>
-            <a href="/ai" class="hover:text-emerald-300 transition-colors">
-              {_`AI`}
-            </a>
+            {navLinks.map(({ href, label, dataSpeculate }) => (
+              <a
+                key={href}
+                href={href}
+                data-speculate={dataSpeculate}
+                class="hover:text-emerald-300 transition-colors"
+              >
+                {label()}
+              </a>
+            ))}
             <LocaleSelector />
           </div>
         </nav>
