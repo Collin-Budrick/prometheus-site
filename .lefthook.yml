@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: false
+  commands:
+    lint:
+      run: bun run lint
+    web-tests:
+      run: bun run --cwd apps/web test

@@ -79,8 +79,14 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 ## Testing and quality
 
 - `bun run lint` (Oxlint across web + api)
-- `bun run test` placeholder (wire up framework tests as features grow)
+- `bun run --cwd apps/web test` runs unit tests plus Playwright smoke coverage for `/` and `/store` (install browsers once via `bunx playwright install --with-deps chromium`)
 - `scripts/perf-audit` (requires `@lhci/cli` globally) to run Lighthouse CI against the built web assets
+
+## Git hooks
+
+- Hooks are powered by [Lefthook](https://github.com/evilmartians/lefthook) and run `bun run lint` and the web test suite on pre-commit.
+- Install hooks locally with `bunx lefthook install` after dependencies are installed.
+- Set `LEFTHOOK=0` in CI or for emergency bypass to skip hook execution.
 
 ## Performance guardrails
 
