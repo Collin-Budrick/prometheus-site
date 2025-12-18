@@ -16,9 +16,9 @@
     "check:css": "bun run scripts/check-css-budget.ts"
   },
   "dependencies": {
-    "@builder.io/partytown": "0.10.3",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
+    "@qwik.dev/partytown": "0.11.2",
     "@unocss/reset": "66.5.10",
     "@unocss/runtime": "66.5.10",
     "@unocss/vite": "66.5.10",
@@ -48,7 +48,6 @@
     "unocss": "66.5.10",
     "vite": "8.0.0-beta.3",
     "vite-plugin-inspect": "11.3.3",
-    "vite-plugin-partytown": "0.0.2",
     "vite-plugin-pwa": "1.2.0",
     "vite-tsconfig-paths": "6.0.3"
   }

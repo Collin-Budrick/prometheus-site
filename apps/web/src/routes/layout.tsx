@@ -10,7 +10,7 @@ import { ThirdPartyScripts } from '../components/third-party/third-party-scripts
 import layoutStyles from './layout.css?inline'
 import { criticalCssInline } from './critical-css-assets'
 import { partytownForwards, thirdPartyScripts } from '../config/third-party'
-import { partytownSnippet } from '@builder.io/partytown/integration'
+import { partytownSnippet } from '@qwik.dev/partytown/integration'
 import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../config/speculation-rules'
 
 type SpeculationCandidate = {

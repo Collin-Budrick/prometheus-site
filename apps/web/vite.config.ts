@@ -9,9 +9,8 @@ import UnoCSS from 'unocss/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
 import { fileURLToPath } from 'node:url'
-import { partytownForwards } from './src/config/third-party'
 import { conservativeViewportRules } from './src/config/speculation-rules'
-import partytown from 'vite-plugin-partytown'
+import { partytownVite } from '@qwik.dev/partytown/utils'
 import { VitePWA } from 'vite-plugin-pwa'
 import Inspect from 'vite-plugin-inspect'
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -46,10 +45,9 @@ if (shouldSkipMdx) {
   process.env.QWIK_CITY_DISABLE_MDX = '1'
 }
 
-const projectRoot = fileURLToPath(new URL('../..', import.meta.url))
 const analyzeBundles = process.env.VITE_ANALYZE === '1'
 
-type WorkboxManifestEntry = { url: string; revision?: string }
+type WorkboxManifestEntry = { url: string; revision: string | null; size: number }
 
 const leanWorkboxManifest = (entries: WorkboxManifestEntry[]) => {
   const cacheableAsset = (url: string) => {
@@ -279,7 +277,7 @@ export default defineConfig((env) => {
         ]
       : []
 
-  return {
+  const config: UserConfig = {
     cacheDir,
     plugins: [
       ...analysisPlugins,
@@ -314,15 +312,14 @@ export default defineConfig((env) => {
         }
       }),
       speculationRulesManifest(),
-      partytown({ moduleBase: projectRoot, dest: partytownDest, forward: partytownForwards }),
+      partytownVite({ dest: partytownDest }),
       devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
       devFontSilencer()
     ].filter(Boolean),
     build: {
-      bundler: 'rolldown',
-      esbuildMinify: true,
+      minify: 'esbuild',
       cssMinify: 'lightningcss',
       target: 'esnext',
       modulePreload: { polyfill: false }
@@ -332,7 +329,6 @@ export default defineConfig((env) => {
       __EXPERIMENTAL__: {}
     },
     optimizeDeps: {
-      bundler: 'rolldown',
       entries: ['src/entry.dev.tsx', 'src/entry.client.tsx', 'src/root.tsx'],
       include: [
         '@builder.io/qwik',
@@ -365,14 +361,12 @@ export default defineConfig((env) => {
     },
     css: {
       transformer: 'lightningcss',
-      lightningcss: {
-        drafts: {
-          nesting: true
-        }
-      }
+      lightningcss: {}
     },
     experimental: {
       importGlobRestoreExtension: true
     }
   }
+
+  return config
 })
