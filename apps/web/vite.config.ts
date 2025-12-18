@@ -3,13 +3,14 @@ import os from 'node:os'
 import { defineConfig, type ConfigEnv, type Plugin, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
-import { partytownVite } from '@builder.io/partytown/utils'
+import partytown from 'vite-plugin-partytown'
 import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { partytownForwards } from './src/config/third-party'
 
 type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown> }
 type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
@@ -232,7 +233,7 @@ export default defineConfig((env) => {
       i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
-      partytownVite({ dest: partytownDest }),
+      partytown({ dest: partytownDest, forward: partytownForwards }),
       devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),

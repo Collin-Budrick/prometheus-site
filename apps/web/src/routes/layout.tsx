@@ -9,7 +9,8 @@ import { featureFlags } from '../config/feature-flags'
 import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
 import layoutStyles from './layout.css?inline'
 import { criticalCssInline } from './critical-css-assets'
-import { thirdPartyScripts } from '../config/third-party'
+import { partytownForwards, thirdPartyScripts } from '../config/third-party'
+import { partytownSnippet } from '@builder.io/partytown/integration'
 
 type SpeculationCandidate = {
   url: string
@@ -126,6 +127,9 @@ export const RouterHead = component$(() => {
       {head.styles.map((s) => (
         <style key={s.key} {...s.props} dangerouslySetInnerHTML={s.style} />
       ))}
+      {featureFlags.partytown && thirdPartyScripts.some((entry) => entry.partytown) && (
+        <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: partytownForwards })} />
+      )}
       {/* Speculation Rules payload installs only when supported and enabled. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesInstaller && <script dangerouslySetInnerHTML={speculationRulesInstaller} />}

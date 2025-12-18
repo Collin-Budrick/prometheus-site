@@ -1,4 +1,3 @@
-import { partytownSnippet } from '@builder.io/partytown/integration'
 import { Fragment, component$ } from '@builder.io/qwik'
 import { featureFlags } from '../../config/feature-flags'
 import { thirdPartyScripts } from '../../config/third-party'
@@ -9,10 +8,6 @@ const idleLoader = (id: string, src: string) =>
 export const ThirdPartyScripts = component$(() => {
   const partytownEnabled = featureFlags.partytown
   const entries = thirdPartyScripts
-  const hasPartytownEntries = entries.some((entry) => entry.partytown)
-  const forwards = partytownEnabled
-    ? Array.from(new Set(entries.flatMap((entry) => entry.forward ?? [])))
-    : []
 
   if (!entries.length) {
     return null
@@ -20,9 +15,6 @@ export const ThirdPartyScripts = component$(() => {
 
   return (
     <>
-      {partytownEnabled && hasPartytownEntries && (
-        <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: forwards })} />
-      )}
       {entries.map((entry) => {
         if (!entry.src && !entry.inline) return null
 
