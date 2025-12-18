@@ -1,9 +1,10 @@
 import type { DocumentLink } from '@builder.io/qwik-city'
+import { criticalCssHref } from './critical-css-assets'
 
 export type PreloadEntry = { pattern: RegExp; links: DocumentLink[] }
 
 const baseCss: DocumentLink[] = [
-  { rel: 'preload', href: '/assets/critical.css', as: 'style', crossorigin: 'anonymous' },
+  { rel: 'preload', href: criticalCssHref, as: 'style', crossorigin: 'anonymous' },
   { rel: 'preload', href: '/assets/PkrpP_CG-style.css', as: 'style', crossorigin: 'anonymous' }
 ]
 
