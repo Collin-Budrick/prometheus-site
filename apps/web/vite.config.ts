@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { partytownForwards } from './src/config/third-party'
 import { conservativeViewportRules } from './src/config/speculation-rules'
 import partytown from 'vite-plugin-partytown'
+import { VitePWA } from 'vite-plugin-pwa'
 
 type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown> }
 type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
@@ -44,6 +45,22 @@ if (shouldSkipMdx) {
 }
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url))
+
+type WorkboxManifestEntry = { url: string; revision?: string }
+
+const leanWorkboxManifest = (entries: WorkboxManifestEntry[]) => {
+  const cacheableAsset = (url: string) => {
+    if (!url.startsWith('assets/')) return true
+    if (/\.(css|webp|png|svg|ico|webmanifest|woff2)$/.test(url)) return true
+
+    const isEntryChunk = /entry\.(client|preview)\.[\w.-]+\.js$/.test(url)
+    const isQwikRuntime = /qwik(?:-city)?\.[\w.-]+\.js$/.test(url)
+
+    return isEntryChunk || isQwikRuntime
+  }
+
+  return { manifest: entries.filter(({ url }) => cacheableAsset(url)) }
+}
 
 const devFontSilencer = () => ({
   name: 'dev-font-silencer',
@@ -248,6 +265,30 @@ export default defineConfig((env) => {
       i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        injectRegister: null,
+        manifest: {
+          name: 'Prometheus',
+          short_name: 'Prometheus',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          theme_color: '#0f172a',
+          background_color: '#020617',
+          icons: [
+            { src: '/icons/prometheus.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }
+          ]
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff2,webp}'],
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
+          navigateFallback: '/index.html',
+          manifestTransforms: [leanWorkboxManifest]
+        }
+      }),
       speculationRulesManifest(),
       partytown({ moduleBase: projectRoot, dest: partytownDest, forward: partytownForwards }),
       devAuditStripViteClient(devAuditMode),
