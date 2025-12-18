@@ -3,7 +3,6 @@ import os from 'node:os'
 import { defineConfig, type ConfigEnv, type Plugin, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
-import partytown from 'vite-plugin-partytown'
 import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
@@ -11,6 +10,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ViteDevServer } from 'vite'
 import { fileURLToPath } from 'node:url'
 import { partytownForwards } from './src/config/third-party'
+import { conservativeViewportRules } from './src/config/speculation-rules'
+import partytown from 'vite-plugin-partytown'
 
 type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown> }
 type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
@@ -41,6 +42,8 @@ const shouldSkipMdx = process.env.QWIK_CITY_DISABLE_MDX === '1' || (isWindowsFs 
 if (shouldSkipMdx) {
   process.env.QWIK_CITY_DISABLE_MDX = '1'
 }
+
+const projectRoot = fileURLToPath(new URL('../..', import.meta.url))
 
 const devFontSilencer = () => ({
   name: 'dev-font-silencer',
@@ -211,6 +214,18 @@ const qwikViteNoDeprecatedEsbuild = () => {
   return plugin
 }
 
+const speculationRulesManifest = (): Plugin => ({
+  name: 'speculation-rules-manifest',
+  apply: 'build',
+  generateBundle() {
+    this.emitFile({
+      type: 'asset',
+      fileName: 'speculation-rules.json',
+      source: JSON.stringify(conservativeViewportRules, null, 2)
+    })
+  }
+})
+
 export default defineConfig((env) => {
   const ssrBuild = 'ssrBuild' in env ? (env as { ssrBuild?: boolean }).ssrBuild : false
   const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
@@ -233,7 +248,8 @@ export default defineConfig((env) => {
       i18nPlugin({ locales: ['en', 'ko'] }),
       tsconfigPaths(),
       UnoCSS(),
-      partytown({ dest: partytownDest, forward: partytownForwards }),
+      speculationRulesManifest(),
+      partytown({ moduleBase: projectRoot, dest: partytownDest, forward: partytownForwards }),
       devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
