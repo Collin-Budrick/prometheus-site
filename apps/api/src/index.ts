@@ -3,7 +3,7 @@ import { desc, gt } from 'drizzle-orm'
 import { db } from './db/client'
 import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
-import { connectValkey, valkey } from './services/cache'
+import { connectValkey, isValkeyReady, valkey } from './services/cache'
 const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
@@ -36,23 +36,22 @@ const app = new Elysia()
       const lastId = Number.parseInt((query.cursor as string) || '0', 10)
 
       if (Number.isNaN(lastId) || lastId < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
-        return new Response(JSON.stringify({ error: 'Invalid cursor or limit' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        })
+        return jsonError(400, 'Invalid cursor or limit')
       }
 
       const limit = Math.min(limitRaw, 50)
       const cacheKey = `store:items:${lastId}:${limit}`
 
-      try {
-        const cached = await valkey.get(cacheKey)
-        if (cached) {
-          return JSON.parse(cached)
+      if (isValkeyReady()) {
+        try {
+          const cached = await valkey.get(cacheKey)
+          if (cached) {
+            return JSON.parse(cached)
+          }
+        } catch (error) {
+          console.error('Failed to read from cache', error)
+          return jsonError(503, 'Cache unavailable')
         }
-      } catch (error) {
-        console.error('Failed to read from cache', error)
-        return jsonError(503, 'Cache unavailable')
       }
 
       const itemsQuery = db.select().from(storeItems)
@@ -68,12 +67,16 @@ const app = new Elysia()
 
       const nextCursor = items.length === limit ? items[items.length - 1].id : null
       const payload = { items, cursor: nextCursor }
-      try {
-        await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
-      } catch (error) {
-        console.error('Failed to write to cache', error)
-        return jsonError(503, 'Cache unavailable')
+
+      if (isValkeyReady()) {
+        try {
+          await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
+        } catch (error) {
+          console.error('Failed to write to cache', error)
+          return jsonError(503, 'Cache unavailable')
+        }
       }
+
       return payload
     },
     {
@@ -108,6 +111,13 @@ const app = new Elysia()
   )
   .ws('/ws', {
     async open(ws) {
+      ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
+      if (!isValkeyReady()) {
+        ws.send(JSON.stringify({ type: 'error', text: 'Chat unavailable: cache offline' }))
+        ws.close()
+        return
+      }
+
       let subscriber
       try {
         subscriber = valkey.duplicate()
@@ -116,7 +126,6 @@ const app = new Elysia()
           ws.send(message)
         })
         ws.data.subscriber = subscriber
-        ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
       } catch (error) {
         console.error('WebSocket subscription failed', error)
         if (subscriber) {
@@ -135,6 +144,8 @@ const app = new Elysia()
       if (subscriber) await subscriber.quit()
     },
     async message(_ws, message) {
+      if (!isValkeyReady()) return
+
       let payload
       if (typeof message === 'string') {
         try {
@@ -176,7 +187,7 @@ const app = new Elysia()
       }
     }
   })
-
+ 
 async function start() {
   try {
     await bootstrap()
