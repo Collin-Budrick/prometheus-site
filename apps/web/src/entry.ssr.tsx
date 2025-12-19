@@ -15,6 +15,12 @@ const resolveBase = (opts: RenderToStreamOptions) => {
   return base.endsWith('/') ? base : `${base}/`
 }
 
+const normalizeLocaleBuildBase = (base: string, locale: string) => {
+  const suffix = `/build/${locale}/`
+  if (!base.endsWith(suffix)) return base
+  return `${base.slice(0, -suffix.length)}/build/`
+}
+
 const isManifestWrapper = (value: unknown): value is { manifest: unknown } & Record<string, unknown> => {
   return !!value && typeof value === 'object' && 'manifest' in value
 }
@@ -128,7 +134,8 @@ export default function render(opts: RenderToStreamOptions) {
   const isAudit = resolveIsAudit(opts)
   const locale = resolveLocaleFromRequest(opts)
   const serverData = { ...opts.serverData, locale }
-  const base = resolveBase({ ...opts, base: extractBase, serverData })
+  const baseFromI18n = resolveBase({ ...opts, base: extractBase, serverData })
+  const base = normalizeLocaleBuildBase(baseFromI18n, locale)
   const loaderFile = (resolvedManifest as { qwikLoader?: string } | undefined)?.qwikLoader ?? 'qwikloader.js'
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {
