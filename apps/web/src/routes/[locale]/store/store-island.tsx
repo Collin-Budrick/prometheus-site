@@ -54,6 +54,9 @@ export const StoreIsland = component$(() => {
   const items = useSignal<StoreItem[]>(initial.value.items)
   const cursor = useSignal<number | null>(initial.value.cursor)
   const loading = useSignal(false)
+  const mounted = useSignal(true)
+  const activeRequestId = useSignal(0)
+  const activeController = useSignal<AbortController | null>(null)
   const isFallback = useSignal(initial.value.source === 'fallback')
   const error = useSignal<string | null>(
     initial.value.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
@@ -148,12 +151,34 @@ export const StoreIsland = component$(() => {
   })
 
   const loadItems = $(async (reset = false) => {
-    if (loading.value) return
+    if (activeController.value) {
+      activeController.value.abort('Replaced by a new request')
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    activeController.value = controller
+
+    const requestId = activeRequestId.value + 1
+    activeRequestId.value = requestId
     loading.value = true
     error.value = null
 
     try {
-      const response = await fetchStoreItems(reset ? undefined : cursor.value ?? undefined)
+      const responsePromise = fetchStoreItems(reset ? undefined : cursor.value ?? undefined)
+      const response = controller
+        ? await Promise.race<Awaited<ReturnType<typeof fetchStoreItems>>>([
+            responsePromise,
+            new Promise<never>((_, reject) =>
+              controller.signal.addEventListener(
+                'abort',
+                () => reject(new DOMException('Request aborted', 'AbortError')),
+                { once: true }
+              )
+            )
+          ])
+        : await responsePromise
+
+      if (!mounted.value || activeRequestId.value !== requestId) return
       const incoming = response?.items ?? []
       const nextItems = reset ? incoming : [...items.value, ...incoming]
       const existingIds = reset ? new Set<number>() : new Set(items.value.map((item) => item.id))
@@ -177,10 +202,14 @@ export const StoreIsland = component$(() => {
       error.value = response?.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
       void animateEntrances(newIds)
     } catch (err) {
+      if ((err as DOMException)?.name === 'AbortError') return
       console.error('Failed to load store items', err)
+      if (!mounted.value || activeRequestId.value !== requestId) return
       error.value = _`Unable to load inventory right now.`
     } finally {
-      loading.value = false
+      if (activeRequestId.value === requestId) {
+        loading.value = false
+      }
     }
   })
 
@@ -222,6 +251,13 @@ export const StoreIsland = component$(() => {
       error.value = deleteState.error
     }
   }, { eagerness: 'idle' })
+
+  useTask$(({ cleanup }) => {
+    cleanup(() => {
+      mounted.value = false
+      activeController.value?.abort('Component unmounted')
+    })
+  })
 
   return (
     <div class="gap-4 grid md:grid-cols-[1.2fr_1fr] bg-slate-900/60 mt-5 p-4 border border-slate-800 rounded-lg">
