@@ -9,9 +9,10 @@
     "preview": "bun run build && bun run scripts/kill-port.ts 4173 && vite preview",
     "lint": "bun run check:css && bun run check:scripts && oxlint .",
     "format": "oxfmt --write .",
-    "test": "bun run test:unit && bun run test:e2e",
+    "test": "bun run test:unit && bun run test:e2e && bun run test:perf",
     "test:unit": "bun test src",
     "test:e2e": "bunx playwright test --config=playwright.config.ts --grep @smoke",
+    "test:perf": "bunx playwright test --config=playwright.config.ts --grep @perf",
     "check:scripts": "bun run scripts/check-script-budget.ts",
     "check:css": "bun run scripts/check-css-budget.ts",
     "prerender": "bunx tsx scripts/prerender.ts"

@@ -80,6 +80,7 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 
 - `bun run lint` (Oxlint across web + api)
 - `bun run --cwd apps/web test` runs unit tests plus Playwright smoke coverage for `/` and `/store` (install browsers once via `bunx playwright install --with-deps chromium`)
+- `bun run --cwd apps/web test:perf` enforces Web Vitals budgets via Playwright (`@perf` tag) and emits traces/HARs under the test results directory for regression triage
 - `scripts/perf-audit` (requires `@lhci/cli` globally) to run Lighthouse CI against the built web assets
 
 ## Git hooks
@@ -96,6 +97,7 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 - Speculation Rules pre-render/prefetch likely navigations; View Transitions provide smooth navigation without client runtime bloat.
 - Partytown is optional for isolating third-party scripts off the main thread.
 - Stick with SSR/resumability for Lighthouse: keep prod SSR so HTML streams fast with edge caching; reserve SSG only for fully static routes that benefit from pre-rendered HTML without runtime data dependencies.
+- Web Vitals budgets (FCP ≤ 1.8s home/2.0s store, LCP ≤ 2.5s home/2.8s store, TBT ≤ 150ms home/175ms store) are enforced in Playwright; investigate regressions using the saved traces and HARs from `apps/web/tests/performance.spec.ts`.
 
 ## TLS guidance
 
