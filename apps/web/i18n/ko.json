@@ -71,6 +71,11 @@
     "WebSocket chat backed by Valkey pub/sub.": "Valkey pub/sub 기반 WebSocket 채팅.",
     "AI | Prometheus": "AI | Prometheus",
     "Minimal AI utility route hitting Bun API.": "Bun API를 호출하는 최소 AI 유틸리티 라우트.",
-    "Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Interactivity wakes up only when you click.": ""
+    "Items stream directly from Postgres via Drizzle, with cursor pagination to keep responses lean. Interactivity wakes up only when you click.": "항목은 Drizzle을 통해 Postgres에서 직접 스트리밍되며, 응답을 가볍게 유지하기 위해 커서 페이지네이션을 사용합니다. 상호작용은 클릭할 때만 깨어납니다.",
+    "Sending...": "전송 중...",
+    "Request failed ($1)": "요청 실패 ($1)",
+    "Network error. Please try again.": "네트워크 오류입니다. 다시 시도해 주세요.",
+    "Status": "상태",
+    "Reconnect": "재연결"
   }
 }
