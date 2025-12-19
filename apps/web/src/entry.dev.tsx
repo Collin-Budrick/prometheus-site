@@ -24,6 +24,9 @@ const purgeDevCaches = async () => {
 
 const resolveClientLocale = () => {
   if (typeof document === 'undefined') return undefined
+  const pathnameLocale = window.location.pathname.split('/')[1]?.toLowerCase()
+  if (pathnameLocale && locales.includes(pathnameLocale as any)) return pathnameLocale as any
+
   const declared = document.documentElement.getAttribute('q:locale') || document.documentElement.lang
   if (declared && locales.includes(declared as any)) return declared as any
   const params = new URLSearchParams(window.location.search)

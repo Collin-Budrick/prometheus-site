@@ -5,12 +5,11 @@ import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 import { defaultLocale, locales as supportedLocales, setLocaleGetter, type Locale } from 'compiled-i18n'
-import { AsyncLocalStorage } from 'node:async_hooks'
 
 // cspell:ignore qwikloader
 
-const ssrLocaleStorage = new AsyncLocalStorage<Locale>()
-setLocaleGetter(() => ssrLocaleStorage.getStore() ?? defaultLocale)
+let ssrLocale: Locale = defaultLocale
+setLocaleGetter(() => ssrLocale)
 
 const resolveBase = (opts: RenderToStreamOptions) => {
   const base = typeof opts.base === 'function' ? opts.base(opts) : opts.base
@@ -23,21 +22,21 @@ const isManifestWrapper = (value: unknown): value is { manifest: unknown } & Rec
 }
 
 const resolveLocaleFromRequest = (opts: RenderToStreamOptions) => {
-  const knownLocale = opts.serverData?.locale
-  if (knownLocale) return knownLocale
-
   const url = opts.serverData?.url
   if (url) {
     try {
-      const pathnameLocale = new URL(url).pathname.split('/')[1]?.toLowerCase()
+      const pathnameLocale = new URL(url, 'http://qwik.local').pathname.split('/')[1]?.toLowerCase()
       if (pathnameLocale && supportedLocales.includes(pathnameLocale as any)) return pathnameLocale as any
     } catch {}
   }
 
+  const knownLocale = opts.locale || opts.serverData?.locale
+  if (knownLocale) return knownLocale
+
   let queryLocale: string | null = null
   if (url) {
     try {
-      queryLocale = new URL(url).searchParams.get('locale')
+      queryLocale = new URL(url, 'http://qwik.local').searchParams.get('locale')
     } catch {
       queryLocale = null
     }
@@ -53,7 +52,7 @@ const resolvePathname = (opts: RenderToStreamOptions) => {
   const url = opts.serverData?.url
   if (typeof url === 'string' && url.length > 0) {
     try {
-      return new URL(url).pathname
+      return new URL(url, 'http://qwik.local').pathname
     } catch {}
   }
 
@@ -64,7 +63,7 @@ const resolveIsAudit = (opts: RenderToStreamOptions) => {
   const url = opts.serverData?.url
   if (typeof url === 'string' && url.length > 0) {
     try {
-      const parsed = new URL(url)
+      const parsed = new URL(url, 'http://qwik.local')
       const audit = parsed.searchParams.get('audit')
       if (audit === '1' || audit === 'true') return true
     } catch {}
@@ -130,13 +129,13 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
     }))
 }
 
-export default function render(opts: RenderToStreamOptions) {
+export default async function render(opts: RenderToStreamOptions) {
   const isProd = import.meta.env.PROD
   const clientManifest = opts.manifest ?? manifest
   const resolvedManifest = isManifestWrapper(clientManifest) ? clientManifest.manifest : clientManifest
   const pathname = resolvePathname(opts)
   const isAudit = resolveIsAudit(opts)
-  const locale = opts.serverData?.locale || resolveLocaleFromRequest(opts)
+  const locale = resolveLocaleFromRequest(opts) as Locale
   const serverData = { ...opts.serverData, locale }
   const baseFromI18n = resolveBase({ ...opts, base: extractBase, serverData })
   const base = baseFromI18n
@@ -191,8 +190,10 @@ export default function render(opts: RenderToStreamOptions) {
       : clientManifest
   ) as RenderToStreamOptions['manifest']
 
-  return ssrLocaleStorage.run(locale as Locale, () =>
-    renderToStream(<Root />, {
+  const previousLocale = ssrLocale
+  ssrLocale = locale
+  try {
+    return await renderToStream(<Root />, {
       ...opts,
       base,
       locale,
@@ -211,5 +212,7 @@ export default function render(opts: RenderToStreamOptions) {
           inOrder: ['<html']
         }
     })
-  )
+  } finally {
+    ssrLocale = previousLocale
+  }
 }
