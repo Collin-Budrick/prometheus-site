@@ -1,39 +1,20 @@
-import { component$, useStylesScoped$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
-import { _ } from 'compiled-i18n'
-import styles from './index.css?inline'
-import { ChatIsland } from './chat-island'
+import { component$ } from '@builder.io/qwik'
+import type { RequestHandler } from '@builder.io/qwik-city'
+import { localeCookieOptions, resolvePreferredLocale } from '../locale-routing'
 
-export default component$(() => {
-  useStylesScoped$(styles)
+export const onGet: RequestHandler = ({ request, redirect, url, cookie, query }) => {
+  const preferred = resolvePreferredLocale({
+    queryLocale: query.get('locale'),
+    cookieLocale: cookie.get('locale')?.value ?? null,
+    acceptLanguage: request.headers.get('accept-language')
+  })
 
-  return (
-    <section class="surface p-6">
-      <div class="flex items-center justify-between gap-2">
-        <div>
-          <p class="text-sm uppercase tracking-wide text-emerald-300">{_`Realtime`}</p>
-          <h1 class="text-2xl font-semibold text-slate-50">{_`WebSocket chat via Valkey pub/sub`}</h1>
-        </div>
-        <span class="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-200">{_`websocket`}</span>
-      </div>
-      <p class="mt-3 max-w-2xl text-sm text-slate-300">
-        {_`The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.`}
-      </p>
+  cookie.set('locale', preferred, localeCookieOptions)
+  const params = new URLSearchParams(url.search)
+  params.delete('locale')
+  const search = params.toString()
+  throw redirect(302, `/${preferred}/chat${search ? `?${search}` : ''}`)
+}
 
-      <div onQVisible$={() => undefined}>
-        <ChatIsland />
-      </div>
-    </section>
-  )
-})
+export default component$(() => null)
 
-export const head: DocumentHead = ({ withLocale }) =>
-  withLocale(() => ({
-    title: _`Chat | Prometheus`,
-    meta: [
-      {
-        name: 'description',
-        content: _`WebSocket chat backed by Valkey pub/sub.`
-      }
-    ]
-  }))

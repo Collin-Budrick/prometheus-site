@@ -68,6 +68,7 @@ if (!artifactsFresh) {
   execSync(`${bunBin} run build`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
 } else {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
+  execSync(`${bunBin} run scripts/emit-locale-build-dirs.ts en ko`, { cwd: projectRoot, stdio: 'inherit', env: bunEnv })
 }
 
 const preview = spawn(bunBin, [viteBin, 'preview', '--host', '0.0.0.0', '--port', String(Number.isNaN(port) ? 4173 : port)], {

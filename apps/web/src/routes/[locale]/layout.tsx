@@ -1,17 +1,35 @@
 import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
-import { useDocumentHead, useLocation } from '@builder.io/qwik-city'
-import { _ } from 'compiled-i18n'
-import { sanitizeHeadLinks } from './head-utils'
+import { useDocumentHead, useLocation, type RequestHandler } from '@builder.io/qwik-city'
+import { _, locales } from 'compiled-i18n'
+import { sanitizeHeadLinks } from '../head-utils'
 /* cspell:ignore hrefs */
-import { allowedPreloadHrefs, resolveCriticalPreloads } from './preload-manifest'
-import { LocaleSelector } from '../components/locale-selector/locale-selector'
-import { featureFlags } from '../config/feature-flags'
-import { ThirdPartyScripts } from '../components/third-party/third-party-scripts'
-import layoutStyles from './layout.css?inline'
-import { criticalCssInline } from './critical-css-assets'
-import { partytownForwards, thirdPartyScripts } from '../config/third-party'
+import { allowedPreloadHrefs, resolveCriticalPreloads } from '../preload-manifest'
+import { LocaleSelector } from '../../components/locale-selector/locale-selector'
+import { featureFlags } from '../../config/feature-flags'
+import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
+import layoutStyles from '../layout.css?inline'
+import { criticalCssInline } from '../critical-css-assets'
+import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
-import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../config/speculation-rules'
+import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../../config/speculation-rules'
+import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
+
+export const onRequest: RequestHandler = ({ params, request, redirect, pathname, url, cookie, locale, query }) => {
+  const requested = normalizeLocaleParam((params as any).locale)
+  if (!requested) {
+    const preferred = resolvePreferredLocale({
+      queryLocale: query.get('locale'),
+      cookieLocale: cookie.get('locale')?.value ?? null,
+      acceptLanguage: request.headers.get('accept-language')
+    })
+
+    const rest = stripLocalePrefix(pathname)
+    throw redirect(302, `/${preferred}${rest}${url.search}`)
+  }
+
+  cookie.set('locale', requested, localeCookieOptions)
+  locale(requested)
+}
 
 type SpeculationCandidate = {
   url: string
@@ -19,30 +37,30 @@ type SpeculationCandidate = {
 }
 
 type NavLink = {
-  href: string
+  path: string
   label: () => string
   dataSpeculate?: SpeculationCandidate['action']
 }
 
 const navLinks: NavLink[] = [
-  { href: '/', label: () => _`Home` },
-  { href: '/store', label: () => _`Store`, dataSpeculate: 'prerender' },
-  { href: '/chat', label: () => _`Chat`, dataSpeculate: 'prefetch' },
-  { href: '/ai', label: () => _`AI` }
+  { path: '/', label: () => _`Home` },
+  { path: '/store', label: () => _`Store`, dataSpeculate: 'prerender' },
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: 'prefetch' },
+  { path: '/ai', label: () => _`AI` }
 ]
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 
-const resolveSpeculationCandidates = (pathname: string): SpeculationCandidate[] =>
+const resolveSpeculationCandidates = (pathname: string, prefix: string): SpeculationCandidate[] =>
   navLinks
     .filter(
       (
         link
       ): link is NavLink & { dataSpeculate: SpeculationCandidate['action'] } =>
-        Boolean(link.dataSpeculate) && link.href !== pathname
+        Boolean(link.dataSpeculate) && `${prefix}${link.path === '/' ? '' : link.path}` !== pathname
     )
-    .map(({ href, dataSpeculate }) => ({
-      url: href,
+    .map(({ path, dataSpeculate }) => ({
+      url: `${prefix}${path === '/' ? '' : path}`,
       action: dataSpeculate
     }))
 
@@ -74,9 +92,13 @@ const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
+  const localePrefix = (() => {
+    const segment = loc.url.pathname.split('/')[1] ?? ''
+    return locales.includes(segment as any) ? `/${segment}` : ''
+  })()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
-  const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname) : []
+  const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname, localePrefix) : []
   const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
   const speculationRules = allowSpeculationRules
     ? mergeSpeculationRules(conservativeViewportRules, navigationSpeculationRules)
@@ -191,6 +213,13 @@ export const RouterHead = component$(() => {
 export default component$(() => {
   useStylesScoped$(layoutStyles)
 
+  const loc = useLocation()
+  const localePrefix = (() => {
+    const segment = loc.url.pathname.split('/')[1] ?? ''
+    return locales.includes(segment as any) ? `/${segment}` : ''
+  })()
+  const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
+
   return (
     <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950">
@@ -200,10 +229,10 @@ export default component$(() => {
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200">
-            {navLinks.map(({ href, label, dataSpeculate }) => (
+            {navLinks.map(({ path, label, dataSpeculate }) => (
               <a
-                key={href}
-                href={href}
+                key={path}
+                href={linkHref(path)}
                 data-speculate={dataSpeculate}
                 class="hover:text-emerald-300 transition-colors"
               >

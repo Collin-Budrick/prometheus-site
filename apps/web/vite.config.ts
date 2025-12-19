@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
+import path from 'node:path'
 import { defineConfig, type ConfigEnv, type Plugin, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
@@ -177,6 +178,40 @@ function qwikCityDevEnvDataGuard() {
   }
 }
 
+const localeBuildFallback = (locales: string[]): Plugin => {
+  const localeSet = new Set(locales)
+
+  const createRewrite =
+    (rootDir: string, outDir: string) => (req: IncomingMessage, _res: ServerResponse, next: (err?: unknown) => void) => {
+    const originalUrl = req.url
+    if (!originalUrl) return next()
+
+    const [pathname, search] = originalUrl.split('?', 2)
+    const match = pathname.match(/^\/build\/([^/]+)\/(.+)$/)
+    if (!match) return next()
+
+    const locale = match[1]
+    if (!locale || !localeSet.has(locale)) return next()
+
+    const rest = match[2]
+    const localeFile = path.join(rootDir, outDir, 'build', locale, rest)
+    if (fs.existsSync(localeFile)) return next()
+
+    req.url = `/build/${rest}${search ? `?${search}` : ''}`
+    next()
+  }
+
+  return {
+    name: 'locale-build-fallback',
+    configureServer(server) {
+      server.middlewares.use(createRewrite(server.config.root, server.config.build.outDir))
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(createRewrite(server.config.root, server.config.build.outDir))
+    }
+  }
+}
+
 const devBustedViteClient = (enabled: boolean) =>
   enabled
     ? {
@@ -336,6 +371,7 @@ export default defineConfig((env) => {
       devAuditStripViteClient(devAuditMode),
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
+      localeBuildFallback(['en', 'ko']),
       devFontSilencer()
     ].filter(Boolean),
     environments: {

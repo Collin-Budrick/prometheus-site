@@ -1,8 +1,8 @@
 import { routeAction$, routeLoader$, server$, type RequestHandler } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
-import { db } from '../../server/db/client'
-import { storeItems, type StoreItemRow } from '../../server/db/schema'
+import { db } from '../../../server/db/client'
+import { storeItems, type StoreItemRow } from '../../../server/db/schema'
 
 export type StoreItem = { id: StoreItemRow['id']; name: StoreItemRow['name']; price: number }
 export type StoreItemsResult = { items: StoreItem[]; cursor: number | null; source: 'db' | 'fallback' }

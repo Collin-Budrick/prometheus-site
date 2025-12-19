@@ -36,5 +36,29 @@ describe('createI18nOnRequest', () => {
     ])
     expect(deleteCalls.some((call) => call.name === 'locale' && call.opts && 'path' in call.opts)).toBe(true)
   })
-})
 
+  it('respects the persisted locale without rewriting the cookie', () => {
+    const handler = createI18nOnRequest(({ queryLocale, cookieLocale }) => queryLocale || cookieLocale || 'en')
+
+    const setCalls: Array<{ name: string; value: string; opts: Record<string, unknown> | undefined }> = []
+    let selectedLocale: string | undefined
+
+    handler({
+      query: new URLSearchParams(),
+      cookie: {
+        get: (name: string) => (name === 'locale' ? { value: 'ko' } : undefined),
+        delete: () => {},
+        set: (name: string, value: string, opts?: Record<string, unknown>) => {
+          setCalls.push({ name, value, opts })
+        }
+      },
+      headers: new Headers(),
+      locale: (value: string) => {
+        selectedLocale = value
+      }
+    } as any)
+
+    expect(selectedLocale).toBe('ko')
+    expect(setCalls).toEqual([])
+  })
+})

@@ -1,6 +1,7 @@
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
 import { extractBase, setSsrLocaleGetter } from 'compiled-i18n/qwik'
+import { withLocale } from '@builder.io/qwik'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
@@ -13,12 +14,6 @@ const resolveBase = (opts: RenderToStreamOptions) => {
   const base = typeof opts.base === 'function' ? opts.base(opts) : opts.base
   if (!base) return '/build/'
   return base.endsWith('/') ? base : `${base}/`
-}
-
-const normalizeLocaleBuildBase = (base: string, locale: string) => {
-  const suffix = `/build/${locale}/`
-  if (!base.endsWith(suffix)) return base
-  return `${base.slice(0, -suffix.length)}/build/`
 }
 
 const isManifestWrapper = (value: unknown): value is { manifest: unknown } & Record<string, unknown> => {
@@ -132,10 +127,10 @@ export default function render(opts: RenderToStreamOptions) {
   const resolvedManifest = isManifestWrapper(clientManifest) ? clientManifest.manifest : clientManifest
   const pathname = resolvePathname(opts)
   const isAudit = resolveIsAudit(opts)
-  const locale = resolveLocaleFromRequest(opts)
+  const locale = opts.serverData?.locale || resolveLocaleFromRequest(opts)
   const serverData = { ...opts.serverData, locale }
   const baseFromI18n = resolveBase({ ...opts, base: extractBase, serverData })
-  const base = normalizeLocaleBuildBase(baseFromI18n, locale)
+  const base = baseFromI18n
   const loaderFile = (resolvedManifest as { qwikLoader?: string } | undefined)?.qwikLoader ?? 'qwikloader.js'
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {
@@ -187,22 +182,24 @@ export default function render(opts: RenderToStreamOptions) {
       : clientManifest
   ) as RenderToStreamOptions['manifest']
 
-  return renderToStream(<Root />, {
-    ...opts,
-    base,
-    serverData,
-    manifest: manifestWithLazyLoader,
-    qwikLoader: isProd ? 'never' : opts.qwikLoader,
-    preloader: isProd ? false : opts.preloader,
-    containerTagName: 'html',
-    containerAttributes,
-    stream:
-      opts.stream ??
-      {
-        static: {
-          buffer: 0
-        },
-        inOrder: ['<html']
-      }
-  })
+  return withLocale(locale, () =>
+    renderToStream(<Root />, {
+      ...opts,
+      base,
+      serverData,
+      manifest: manifestWithLazyLoader,
+      qwikLoader: isProd ? 'never' : opts.qwikLoader,
+      preloader: isProd ? false : opts.preloader,
+      containerTagName: 'html',
+      containerAttributes,
+      stream:
+        opts.stream ??
+        {
+          static: {
+            buffer: 0
+          },
+          inOrder: ['<html']
+        }
+    })
+  )
 }
