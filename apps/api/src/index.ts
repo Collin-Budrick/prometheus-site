@@ -3,7 +3,7 @@ import { desc, gt } from 'drizzle-orm'
 import { db } from './db/client'
 import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
-import { connectValkey, valkey } from './services/cache'
+import { connectValkey, isValkeyReady, valkey } from './services/cache'
 const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
@@ -36,9 +36,11 @@ const app = new Elysia()
       const limit = Math.min(limitRaw, 50)
       const cacheKey = `store:items:${lastId}:${limit}`
 
-      const cached = await valkey.get(cacheKey)
-      if (cached) {
-        return JSON.parse(cached)
+      if (isValkeyReady()) {
+        const cached = await valkey.get(cacheKey)
+        if (cached) {
+          return JSON.parse(cached)
+        }
       }
 
       const itemsQuery = db.select().from(storeItems)
@@ -48,7 +50,11 @@ const app = new Elysia()
 
       const nextCursor = items.length === limit ? items[items.length - 1].id : null
       const payload = { items, cursor: nextCursor }
-      await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
+
+      if (isValkeyReady()) {
+        await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
+      }
+
       return payload
     },
     {
@@ -75,6 +81,12 @@ const app = new Elysia()
   .ws('/ws', {
     async open(ws) {
       ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
+      if (!isValkeyReady()) {
+        ws.send(JSON.stringify({ type: 'error', text: 'Chat unavailable: cache offline' }))
+        ws.close()
+        return
+      }
+
       const subscriber = valkey.duplicate()
       await subscriber.connect()
       await subscriber.subscribe(chatChannel, (message) => {
@@ -87,6 +99,8 @@ const app = new Elysia()
       if (subscriber) await subscriber.quit()
     },
     async message(_ws, message) {
+      if (!isValkeyReady()) return
+
       const payload = typeof message === 'string' ? JSON.parse(message) : message
       if (payload.type === 'chat') {
         const entry = { from: 'guest', text: payload.text }

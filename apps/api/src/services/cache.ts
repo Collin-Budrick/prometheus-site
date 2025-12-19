@@ -7,10 +7,37 @@ const valkeyOptions = {
   }
 }
 
+const MAX_CONNECT_ATTEMPTS = 5
+const BASE_BACKOFF_MS = 200
+
 export const valkey = createClient(valkeyOptions)
+let cacheReady = false
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export const isValkeyReady = () => cacheReady && valkey.isOpen
 
 export async function connectValkey() {
-  if (!valkey.isOpen) {
-    await valkey.connect()
+  if (valkey.isOpen) {
+    cacheReady = true
+    return
+  }
+
+  for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
+    try {
+      await valkey.connect()
+      cacheReady = valkey.isOpen
+      console.log('Valkey connected')
+      return
+    } catch (error) {
+      cacheReady = false
+      console.error(`Valkey connection attempt ${attempt} failed`, error)
+      if (attempt === MAX_CONNECT_ATTEMPTS) {
+        throw error
+      }
+
+      const backoff = BASE_BACKOFF_MS * attempt
+      await wait(backoff)
+    }
   }
 }
