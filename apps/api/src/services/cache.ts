@@ -23,6 +23,7 @@ export async function connectValkey() {
     return
   }
 
+  let lastError: unknown
   for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
     try {
       await valkey.connect()
@@ -30,10 +31,13 @@ export async function connectValkey() {
       console.log('Valkey connected')
       return
     } catch (error) {
+      lastError = error
       cacheReady = false
       console.error(`Valkey connection attempt ${attempt} failed`, error)
       if (attempt === MAX_CONNECT_ATTEMPTS) {
-        throw error
+        throw new Error(`Valkey connection failed after ${MAX_CONNECT_ATTEMPTS} attempts`, {
+          cause: lastError
+        })
       }
 
       const backoff = BASE_BACKOFF_MS * attempt
