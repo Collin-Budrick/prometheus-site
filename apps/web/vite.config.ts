@@ -266,8 +266,8 @@ const speculationRulesManifest = (): Plugin => ({
 export default defineConfig((env) => {
   const ssrBuild =
     (env as { ssrBuild?: boolean }).ssrBuild ?? (env as { isSsrBuild?: boolean }).isSsrBuild ?? false
-  const zodStubPath = ssrBuild ? undefined : fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
-  const resolveAlias = zodStubPath ? { zod: zodStubPath } : undefined
+  const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
+  const zodStubAlias = { zod: zodStubPath }
   const hmrConfig = devAuditMode
     ? false
     : {
@@ -298,6 +298,7 @@ export default defineConfig((env) => {
 
   const config: UserConfig = {
     cacheDir,
+    builder: {},
     plugins: [
       ...analysisPlugins,
       qwikCityDevEnvDataGuard(),
@@ -337,6 +338,26 @@ export default defineConfig((env) => {
       qwikCityDevEnvDataJsonSafe(),
       devFontSilencer()
     ].filter(Boolean),
+    environments: {
+      client: {
+        resolve: {
+          alias: zodStubAlias
+        }
+      },
+      ssr: {
+        build: {
+          ssr: true,
+          outDir: 'server',
+          rollupOptions: {
+            input: [
+              fileURLToPath(new URL('./src/entry.preview.tsx', import.meta.url)),
+              fileURLToPath(new URL('./src/entry.ssr.tsx', import.meta.url)),
+              '@qwik-city-plan'
+            ]
+          }
+        }
+      }
+    },
     build: {
       minify: 'esbuild',
       cssMinify: 'lightningcss',
@@ -368,7 +389,6 @@ export default defineConfig((env) => {
       }
     },
     resolve: {
-      alias: resolveAlias,
       // Ensure a single instance of Qwik City is used in dev and build to avoid duplicate chunks.
       dedupe: ['@builder.io/qwik-city', '@builder.io/qwik']
     },

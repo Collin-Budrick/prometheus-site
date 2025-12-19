@@ -10,6 +10,14 @@ const serverDir = join(appRoot, 'server')
 const renderModulePath = join(serverDir, 'entry.ssr.js')
 const qwikCityPlanModulePath = join(serverDir, '@qwik-city-plan.js')
 
+const parsePositiveIntEnv = (key: string) => {
+  const raw = process.env[key]
+  if (!raw) return null
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isFinite(value) || value < 1) return null
+  return value
+}
+
 const ensureFile = async (path: string, label: string) => {
   try {
     await access(path)
@@ -19,7 +27,14 @@ const ensureFile = async (path: string, label: string) => {
   }
 }
 
+if (process.env.SKIP_PRERENDER === '1') {
+  console.log('SKIP_PRERENDER=1; skipping prerender step.')
+  process.exit(0)
+}
+
 const origin = process.env.PRERENDER_ORIGIN ?? 'https://prometheus.local'
+const maxWorkers = parsePositiveIntEnv('PRERENDER_MAX_WORKERS') ?? 1
+const maxTasksPerWorker = parsePositiveIntEnv('PRERENDER_MAX_TASKS_PER_WORKER') ?? 5
 
 await Promise.all([
   ensureFile(renderModulePath, 'SSR render bundle'),
@@ -36,8 +51,8 @@ const result = await generate({
   emitHtml: true,
   emitData: true,
   log: 'debug',
-  maxWorkers: 1,
-  maxTasksPerWorker: 5
+  maxWorkers,
+  maxTasksPerWorker
 })
 
 console.log(`Prerendered ${result.rendered} routes with ${result.errors} errors in ${result.duration.toFixed(0)}ms`)

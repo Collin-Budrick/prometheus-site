@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { execSync, spawn, spawnSync } from 'node:child_process'
 
@@ -55,9 +56,16 @@ if (!Number.isNaN(port)) {
   spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(port)], { stdio: 'inherit', env: bunEnv })
 }
 
+const cpuCount = Math.max(1, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
+const buildEnv = {
+  ...bunEnv,
+  PRERENDER_MAX_WORKERS: process.env.PRERENDER_MAX_WORKERS ?? String(cpuCount),
+  PRERENDER_MAX_TASKS_PER_WORKER: process.env.PRERENDER_MAX_TASKS_PER_WORKER ?? '5'
+}
+
 if (!artifactsFresh) {
   console.log('Build artifacts missing or stale; running full build before preview...')
-  execSync(`${bunBin} run build`, { cwd: projectRoot, stdio: 'inherit', env: bunEnv })
+  execSync(`${bunBin} run build`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
 } else {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
 }

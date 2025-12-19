@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "bun run check:css && vite build && vite build --ssr src/entry.preview.tsx --outDir server && vite build --ssr src/entry.ssr.tsx --outDir server --emptyOutDir=false && vite build --ssr @qwik-city-plan --outDir server --emptyOutDir=false && bun run prerender",
+    "build": "bun run check:css && vite build && bun run prerender",
     "preview": "bun run preview:fast",
     "preview:fast": "bun run scripts/preview-fast.ts",
     "lint": "bun run check:css && bun run check:scripts && oxlint .",
