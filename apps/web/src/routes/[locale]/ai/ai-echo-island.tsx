@@ -4,17 +4,36 @@ import { _ } from 'compiled-i18n'
 export const AiEchoIsland = component$(() => {
   const prompt = useSignal('')
   const response = useSignal('')
+  const error = useSignal('')
+  const isPending = useSignal(false)
 
   const echo = $(async () => {
-    if (!prompt.value) return
-    const res = await fetch('/api/ai/echo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt.value })
-    })
-    if (res.ok) {
+    const trimmedPrompt = prompt.value.trim()
+    if (!trimmedPrompt) return
+
+    isPending.value = true
+    error.value = ''
+    response.value = ''
+
+    try {
+      const res = await fetch('/api/ai/echo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: trimmedPrompt })
+      })
+
+      if (!res.ok) {
+        error.value = _`Request failed (${res.status})`
+        return
+      }
+
       const { echo: message } = await res.json()
       response.value = message
+    } catch {
+      error.value = _`Network error. Please try again.`
+    } finally {
+      isPending.value = false
+      prompt.value = trimmedPrompt
     }
   })
 
@@ -32,12 +51,14 @@ export const AiEchoIsland = component$(() => {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950"
+          class="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 disabled:opacity-60"
+          disabled={isPending.value}
           onClick$={echo}
         >
-          {_`Send to API`}
+          {isPending.value ? _`Sending...` : _`Send to API`}
         </button>
         {response.value && <span class="text-emerald-300">{_`Response: ${response.value}`}</span>}
+        {error.value && <span class="text-rose-300">{error.value}</span>}
       </div>
     </div>
   )
