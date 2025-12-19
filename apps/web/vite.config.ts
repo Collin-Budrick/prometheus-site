@@ -386,7 +386,12 @@ export default defineConfig((env) => {
     },
     css: {
       transformer: 'lightningcss',
-      lightningcss: {}
+      lightningcss: {
+        drafts: {
+          nesting: true,
+          customMedia: true
+        }
+      }
     },
     experimental: {
       importGlobRestoreExtension: true

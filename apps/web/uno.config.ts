@@ -2,7 +2,6 @@ import {
   defineConfig,
   presetMini,
   presetIcons,
-  presetTypography,
   presetWind,
   transformerDirectives,
   transformerVariantGroup
@@ -27,9 +26,8 @@ export default defineConfig({
     }
   },
   presets: [
-    presetMini(),
-    presetWind(),
-    presetTypography(),
+    presetMini({ preflight: false }),
+    presetWind({ preflight: false }),
     presetIcons({
       collections: {
         solar: async (): Promise<IconifyJSON> => (await import('@iconify-json/solar/icons.json')).default as IconifyJSON
