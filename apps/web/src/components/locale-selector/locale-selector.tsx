@@ -1,10 +1,15 @@
 import { component$, getLocale } from '@builder.io/qwik'
-import { Link, useLocation } from '@builder.io/qwik-city'
+import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
-  const currentLocale = getLocale()
+  const currentLocale = (() => {
+    const segments = loc.url.pathname.split('/').filter(Boolean)
+    const segmentLocale = segments[0]
+    if (segmentLocale && locales.includes(segmentLocale as any)) return segmentLocale as any
+    return getLocale()
+  })()
 
   const buildHref = (nextLocale: string) => {
     const segments = loc.url.pathname.split('/').filter(Boolean)
@@ -24,10 +29,9 @@ export const LocaleSelector = component$(() => {
         const isCurrent = locale === (currentLocale as any)
         const href = buildHref(locale)
         return (
-          <Link
+          <a
             key={locale}
             href={href}
-            reload
             aria-disabled={isCurrent}
             style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
             class={[
@@ -38,7 +42,7 @@ export const LocaleSelector = component$(() => {
             ].join(' ')}
           >
             {localeNames[locale] ?? locale.toUpperCase()}
-          </Link>
+          </a>
         )
       })}
     </div>

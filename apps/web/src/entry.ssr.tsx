@@ -1,14 +1,16 @@
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
-import { extractBase, setSsrLocaleGetter } from 'compiled-i18n/qwik'
-import { withLocale } from '@builder.io/qwik'
+import { extractBase } from 'compiled-i18n/qwik'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
+import { defaultLocale, locales as supportedLocales, setLocaleGetter, type Locale } from 'compiled-i18n'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 // cspell:ignore qwikloader
 
-setSsrLocaleGetter()
+const ssrLocaleStorage = new AsyncLocalStorage<Locale>()
+setLocaleGetter(() => ssrLocaleStorage.getStore() ?? defaultLocale)
 
 const resolveBase = (opts: RenderToStreamOptions) => {
   const base = typeof opts.base === 'function' ? opts.base(opts) : opts.base
@@ -24,8 +26,15 @@ const resolveLocaleFromRequest = (opts: RenderToStreamOptions) => {
   const knownLocale = opts.serverData?.locale
   if (knownLocale) return knownLocale
 
-  let queryLocale: string | null = null
   const url = opts.serverData?.url
+  if (url) {
+    try {
+      const pathnameLocale = new URL(url).pathname.split('/')[1]?.toLowerCase()
+      if (pathnameLocale && supportedLocales.includes(pathnameLocale as any)) return pathnameLocale as any
+    } catch {}
+  }
+
+  let queryLocale: string | null = null
   if (url) {
     try {
       queryLocale = new URL(url).searchParams.get('locale')
@@ -182,10 +191,11 @@ export default function render(opts: RenderToStreamOptions) {
       : clientManifest
   ) as RenderToStreamOptions['manifest']
 
-  return withLocale(locale, () =>
+  return ssrLocaleStorage.run(locale as Locale, () =>
     renderToStream(<Root />, {
       ...opts,
       base,
+      locale,
       serverData,
       manifest: manifestWithLazyLoader,
       qwikLoader: isProd ? 'never' : opts.qwikLoader,
