@@ -2,19 +2,16 @@ import { routeAction$, routeLoader$, server$, type RequestHandler } from '@build
 import { _ } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
 import { db } from '../../../server/db/client'
-import { storeItems, type StoreItemRow } from '../../../server/db/schema'
+import { storeItems } from '../../../server/db/schema'
+import {
+  centsToDecimalString,
+  normalizeItem,
+  priceToCents,
+  type StoreItem,
+  type StoreItemsResult
+} from './store-decimal'
 
-export type StoreItem = { id: StoreItemRow['id']; name: StoreItemRow['name']; price: number }
-export type StoreItemsResult = { items: StoreItem[]; cursor: number | null; source: 'db' | 'fallback' }
-
-const normalizeItem = (item: StoreItemRow): StoreItem => {
-  const priceNumber = Number.parseFloat(String(item.price))
-  return {
-    id: item.id,
-    name: item.name,
-    price: Number.isFinite(priceNumber) ? priceNumber : 0
-  }
-}
+export type { StoreItem, StoreItemsResult } from './store-decimal'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -71,14 +68,15 @@ export const useDeleteStoreItem = routeAction$(async (data) => {
 
 export const useCreateStoreItem = routeAction$(async (data) => {
   const name = String(data.name ?? '').trim()
-  const priceRaw = Number.parseFloat(String(data.price ?? ''))
+  const priceCents = priceToCents(data.price)
 
-  if (!name || Number.isNaN(priceRaw) || priceRaw <= 0) {
+  if (!name || priceCents === null || priceCents <= 0) {
     return { success: false, error: _`Name and positive price required.` }
   }
 
   try {
-    const [row] = await db.insert(storeItems).values({ name, price: priceRaw.toString() }).returning()
+    const price = centsToDecimalString(priceCents)
+    const [row] = await db.insert(storeItems).values({ name, price }).returning()
     return { success: true, item: normalizeItem(row) }
   } catch (err) {
     console.error('Failed to create store item', err)
