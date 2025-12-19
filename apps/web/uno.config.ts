@@ -8,6 +8,9 @@ import {
   transformerVariantGroup
 } from 'unocss'
 import type { Variant } from '@unocss/core'
+import type { IconifyJSON } from '@iconify/types'
+
+/* cspell:ignore preflights iconify */
 
 const variantLight: Variant = (matcher) => {
   if (!matcher.startsWith('light:')) return
@@ -29,7 +32,7 @@ export default defineConfig({
     presetTypography(),
     presetIcons({
       collections: {
-        solar: async () => (await import('@iconify-json/solar/icons.json')).default
+        solar: async (): Promise<IconifyJSON> => (await import('@iconify-json/solar/icons.json')).default as IconifyJSON
       }
     })
   ],
@@ -39,7 +42,7 @@ export default defineConfig({
   ],
   shortcuts: {
     'app-shell': 'min-h-screen bg-slate-950 text-slate-100 font-sans antialiased',
-    'surface': 'rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg backdrop-blur',
+    'surface': 'rounded-xl border border-slate-800 bg-slate-900 shadow-md',
     'stack-md': 'flex flex-col gap-4 md:gap-6',
     'stack-lg': 'flex flex-col gap-6 md:gap-8',
     'text-body': 'text-slate-200 leading-relaxed tracking-tight',

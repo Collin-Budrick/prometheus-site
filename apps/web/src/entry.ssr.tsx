@@ -50,6 +50,24 @@ const resolvePathname = (opts: RenderToStreamOptions) => {
   return '/'
 }
 
+const resolveIsAudit = (opts: RenderToStreamOptions) => {
+  const url = opts.serverData?.url
+  if (typeof url === 'string' && url.length > 0) {
+    try {
+      const parsed = new URL(url)
+      const audit = parsed.searchParams.get('audit')
+      if (audit === '1' || audit === 'true') return true
+    } catch {}
+  }
+
+  return false
+}
+
+const shouldInjectModulePreloads = (pathname: string, isAudit: boolean) => {
+  if (isAudit) return false
+  return pathname !== '/' && pathname !== '/index'
+}
+
 const resolveRouteBundles = (pathname: string): string[] => {
   const routes = (qwikCityPlan as { routes?: unknown }).routes
   if (!Array.isArray(routes)) return []
@@ -79,10 +97,9 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
   const manifestRecord = resolvedManifest && typeof resolvedManifest === 'object' ? (resolvedManifest as Record<string, unknown>) : null
   const qwikLoader = typeof manifestRecord?.qwikLoader === 'string' ? manifestRecord.qwikLoader : null
   const core = typeof manifestRecord?.core === 'string' ? manifestRecord.core : null
-  const preloader = typeof manifestRecord?.preloader === 'string' ? manifestRecord.preloader : null
 
   const bundles = resolveRouteBundles(pathname)
-  const candidates = [qwikLoader, core, preloader, ...bundles].filter((value): value is string => typeof value === 'string')
+  const candidates = [qwikLoader, core, ...bundles].filter((value): value is string => typeof value === 'string')
 
   const seen = new Set<string>()
   return candidates
@@ -97,7 +114,8 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
       attributes: {
         rel: 'modulepreload',
         href: `${base}${file}`,
-        crossorigin: 'anonymous'
+        crossorigin: 'anonymous',
+        fetchpriority: 'low'
       }
     }))
 }
@@ -107,6 +125,7 @@ export default function render(opts: RenderToStreamOptions) {
   const clientManifest = opts.manifest ?? manifest
   const resolvedManifest = isManifestWrapper(clientManifest) ? clientManifest.manifest : clientManifest
   const pathname = resolvePathname(opts)
+  const isAudit = resolveIsAudit(opts)
   const locale = resolveLocaleFromRequest(opts)
   const serverData = { ...opts.serverData, locale }
   const base = resolveBase({ ...opts, base: extractBase, serverData })
@@ -137,7 +156,8 @@ export default function render(opts: RenderToStreamOptions) {
     }
   }
 
-  const modulePreloadInjections = isProd ? resolveModulePreloads(base, resolvedManifest, pathname) : []
+  const modulePreloadInjections =
+    isProd && shouldInjectModulePreloads(pathname, isAudit) ? resolveModulePreloads(base, resolvedManifest, pathname) : []
 
   const manifestWithLazyLoader = (
     isProd && resolvedManifest

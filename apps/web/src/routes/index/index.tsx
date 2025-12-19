@@ -7,7 +7,9 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
     cacheControl({
       public: true,
-      maxAge: 900
+      maxAge: 900,
+      sMaxAge: 86_400,
+      staleWhileRevalidate: 600
     })
   }
 }

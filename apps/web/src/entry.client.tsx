@@ -6,6 +6,9 @@ import { resolveLocale } from './i18n/locale'
 const registerServiceWorker = () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
 
+  const isAudit = new URLSearchParams(window.location.search).get('audit') === '1'
+  if (isAudit) return
+
   window.addEventListener('load', () => {
     void navigator.serviceWorker.register('/sw.js').catch(() => {})
   })

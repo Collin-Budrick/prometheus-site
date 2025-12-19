@@ -74,7 +74,7 @@ const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
-  const isAudit = import.meta.env.VITE_DEV_AUDIT === '1'
+  const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname) : []
   const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
@@ -87,10 +87,45 @@ export const RouterHead = component$(() => {
     ...criticalPreloads.map((link) => link.href).filter(isNonEmptyString)
   ])
 
-  const allowThirdPartyHints = !import.meta.env.DEV
+  const canonical = new URL(loc.url.href)
+  canonical.search = ''
+  canonical.hash = ''
+
+  const allowThirdPartyHints = !import.meta.env.DEV && !isAudit
   const thirdPartyOrigins = allowThirdPartyHints ? resolveThirdPartyOrigins(thirdPartyScripts) : []
 
   const safeLinks = sanitizeHeadLinks([...head.links, ...criticalPreloads], import.meta.env.DEV, allowedPreloads)
+  const prioritizedLinks = safeLinks.map((link) => {
+    if (link.rel === 'stylesheet') return { ...link, fetchpriority: 'high' }
+    if (link.rel === 'preload' && link.as === 'style') return { ...link, fetchpriority: 'high' }
+    return link
+  })
+  const linkTags = (() => {
+    const tags: typeof prioritizedLinks = []
+    const seenStylePreload = new Set<string>()
+    prioritizedLinks.forEach((link) => {
+      if (link.rel === 'preload' && link.as === 'style' && typeof link.href === 'string') {
+        seenStylePreload.add(link.href)
+      }
+    })
+
+    prioritizedLinks.forEach((link) => {
+      const href = link.href
+      if (import.meta.env.PROD && link.rel === 'stylesheet' && typeof href === 'string' && !seenStylePreload.has(href)) {
+        tags.push({
+          key: `preload:style:${href}`,
+          rel: 'preload',
+          href,
+          as: 'style',
+          fetchpriority: 'high'
+        })
+        seenStylePreload.add(href)
+      }
+      tags.push(link)
+    })
+
+    return tags
+  })()
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
@@ -104,12 +139,12 @@ export const RouterHead = component$(() => {
     <>
       <title>{head.title || 'Prometheus'}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-      <link rel="canonical" href={loc.url.href} />
+      <link rel="canonical" href={canonical.href} />
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}
-      {safeLinks.map((l) => (
+      {linkTags.map((l) => (
         <link key={l.key} {...l} />
       ))}
       {allowThirdPartyHints &&
@@ -136,14 +171,14 @@ export const RouterHead = component$(() => {
         <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
       )}
       {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
-      {featureFlags.viewTransitions && (
+      {featureFlags.viewTransitions && !isAudit && (
         <script
           dangerouslySetInnerHTML={
             "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
           }
         />
       )}
-      <ThirdPartyScripts />
+      {!isAudit && <ThirdPartyScripts />}
       {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
     </>
   )
@@ -154,7 +189,7 @@ export default component$(() => {
 
   return (
     <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+      <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950">
         <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm font-medium">
           <div class="flex items-center gap-2">
             <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">Prometheus</span>

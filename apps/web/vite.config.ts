@@ -51,8 +51,19 @@ type WorkboxManifestEntry = { url: string; revision: string | null; size: number
 
 const leanWorkboxManifest = (entries: WorkboxManifestEntry[]) => {
   const cacheableAsset = (url: string) => {
-    if (!url.startsWith('assets/')) return true
-    if (/\.(css|webp|png|svg|ico|webmanifest|woff2)$/.test(url)) return true
+    if (url === 'manifest.webmanifest') return true
+    if (url === 'q-manifest.json') return true
+    if (url === 'speculation-rules.json') return true
+
+    if (url.startsWith('icons/')) return true
+
+    if (url.startsWith('assets/')) {
+      return /\.(css|webp|png|svg|ico|webmanifest|woff2)$/.test(url)
+    }
+
+    if (url.startsWith('~partytown/')) return false
+
+    if (!url.startsWith('build/')) return false
 
     const isEntryChunk = /entry\.(client|preview)\.[\w.-]+\.js$/.test(url)
     const isQwikRuntime = /qwik(?:-city)?\.[\w.-]+\.js$/.test(url)
@@ -60,7 +71,15 @@ const leanWorkboxManifest = (entries: WorkboxManifestEntry[]) => {
     return isEntryChunk || isQwikRuntime
   }
 
-  return { manifest: entries.filter(({ url }) => cacheableAsset(url)) }
+  const manifest = entries.filter(({ url }) => cacheableAsset(url))
+  const seen = new Set<string>()
+  return {
+    manifest: manifest.filter(({ url }) => {
+      if (seen.has(url)) return false
+      seen.add(url)
+      return true
+    })
+  }
 }
 
 const devFontSilencer = () => ({
