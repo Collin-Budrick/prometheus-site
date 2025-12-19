@@ -81,6 +81,7 @@ export const RouterHead = component$(() => {
   const speculationRules = allowSpeculationRules
     ? mergeSpeculationRules(conservativeViewportRules, navigationSpeculationRules)
     : null
+  const shouldLoadSpeculationManifest = allowSpeculationRules && import.meta.env.PROD
   const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
   const allowedPreloads = new Set([
     ...allowedPreloadHrefs,
@@ -131,8 +132,8 @@ export const RouterHead = component$(() => {
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
-    allowSpeculationRules && speculationRulesPayload
-      ? `(()=>{const script=document.querySelector('script[type="speculationrules"][data-source="router"]');if(!script)return;if(navigator.connection?.saveData){script.remove();return;}if(!HTMLScriptElement.supports?.('speculationrules')){script.remove();}})();`
+    allowSpeculationRules && (speculationRulesPayload || shouldLoadSpeculationManifest)
+      ? `(()=>{const scripts=document.querySelectorAll('script[type="speculationrules"]');if(!scripts.length)return;if(navigator.connection?.saveData||!HTMLScriptElement.supports?.('speculationrules')){scripts.forEach((script)=>script.remove());}})();`
       : undefined
 
   return (
@@ -155,6 +156,9 @@ export const RouterHead = component$(() => {
         thirdPartyOrigins.map((origin) => (
           <link key={`preconnect:${origin}`} rel="preconnect" href={origin} crossOrigin="anonymous" />
         ))}
+      {shouldLoadSpeculationManifest && (
+        <script type="speculationrules" src="/speculation-rules.json" data-source="manifest" />
+      )}
       {allowSpeculationRules &&
         speculationCandidates.map(({ url, action }) => (
           <link key={`${action}:${url}`} rel={action} href={url} />
@@ -165,7 +169,7 @@ export const RouterHead = component$(() => {
       {featureFlags.partytown && thirdPartyScripts.some((entry) => entry.partytown) && (
         <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: partytownForwards })} />
       )}
-      {/* Speculation Rules payload remains inert without support and is stripped if Save-Data is set. */}
+      {/* Speculation Rules remain inert without support and are stripped if Save-Data is set. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesPayload && (
         <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
