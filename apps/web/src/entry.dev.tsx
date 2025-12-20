@@ -2,6 +2,7 @@ import { render, type RenderOptions } from '@builder.io/qwik'
 import { locales, setDefaultLocale } from 'compiled-i18n'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
+import { resolvePathnameLocale } from './i18n/pathname-locale'
 
 type DevGlobals = typeof globalThis & { __prometheusDevCachePurged?: boolean }
 const devGlobals = globalThis as DevGlobals
@@ -24,8 +25,8 @@ const purgeDevCaches = async () => {
 
 const resolveClientLocale = () => {
   if (typeof document === 'undefined') return undefined
-  const pathnameLocale = window.location.pathname.split('/')[1]?.toLowerCase()
-  if (pathnameLocale && locales.includes(pathnameLocale as any)) return pathnameLocale as any
+  const pathnameLocale = resolvePathnameLocale(window.location.pathname)
+  if (pathnameLocale) return pathnameLocale
 
   const declared = document.documentElement.getAttribute('q:locale') || document.documentElement.lang
   if (declared && locales.includes(declared as any)) return declared as any

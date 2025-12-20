@@ -1,6 +1,6 @@
 import { component$, useStylesScoped$ } from '@builder.io/qwik'
-import { _ } from 'compiled-i18n'
-import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
+import { _, locales } from 'compiled-i18n'
+import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
 import styles from './index.css?inline'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
@@ -42,6 +42,12 @@ export default component$(() => {
     </section>
   )
 })
+
+export const onStaticGenerate: StaticGenerateHandler = () => {
+  return {
+    params: locales.map((locale) => ({ locale }))
+  }
+}
 
 export const head: DocumentHead = ({ withLocale }) =>
   withLocale(() => ({

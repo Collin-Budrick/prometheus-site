@@ -303,6 +303,8 @@ export default defineConfig((env) => {
     (env as { ssrBuild?: boolean }).ssrBuild ?? (env as { isSsrBuild?: boolean }).isSsrBuild ?? false
   const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const zodStubAlias = { zod: zodStubPath }
+  const bunTestStubPath = fileURLToPath(new URL('./src/stubs/bun-test.ts', import.meta.url))
+  const bunTestStubAlias = { 'bun:test': bunTestStubPath }
   const hmrConfig = devAuditMode
     ? false
     : {
@@ -377,10 +379,13 @@ export default defineConfig((env) => {
     environments: {
       client: {
         resolve: {
-          alias: zodStubAlias
+          alias: { ...zodStubAlias, ...bunTestStubAlias }
         }
       },
       ssr: {
+        resolve: {
+          alias: bunTestStubAlias
+        },
         build: {
           ssr: true,
           outDir: 'server',
@@ -426,7 +431,8 @@ export default defineConfig((env) => {
     },
     resolve: {
       // Ensure a single instance of Qwik City is used in dev and build to avoid duplicate chunks.
-      dedupe: ['@builder.io/qwik-city', '@builder.io/qwik']
+      dedupe: ['@builder.io/qwik-city', '@builder.io/qwik'],
+      alias: bunTestStubAlias
     },
     server: {
       host: '0.0.0.0',

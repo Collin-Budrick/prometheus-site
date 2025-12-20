@@ -1,6 +1,6 @@
 import { component$, useStylesScoped$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
-import { _ } from 'compiled-i18n'
+import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
+import { _, locales } from 'compiled-i18n'
 import styles from './index.css?inline'
 import { AiEchoIsland } from './ai-echo-island'
 
@@ -21,6 +21,12 @@ export default component$(() => {
     </section>
   )
 })
+
+export const onStaticGenerate: StaticGenerateHandler = () => {
+  return {
+    params: locales.map((locale) => ({ locale }))
+  }
+}
 
 export const head: DocumentHead = ({ withLocale }) =>
   withLocale(() => ({

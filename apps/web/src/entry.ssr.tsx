@@ -1,6 +1,6 @@
+import { noSerialize } from '@builder.io/qwik'
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
-import { extractBase } from 'compiled-i18n/qwik'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
@@ -129,6 +129,26 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
     }))
 }
 
+const densifyArrays = (value: unknown, seen = new WeakSet<object>()) => {
+  if (!value || typeof value !== 'object') return value
+  if (seen.has(value)) return value
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    const dense = Array.from(value, (entry) => densifyArrays(entry, seen))
+    return dense
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const next = densifyArrays(entry, seen)
+    if (next !== entry) {
+      ;(value as Record<string, unknown>)[key] = next
+    }
+  }
+
+  return value
+}
+
 export default async function render(opts: RenderToStreamOptions) {
   const isProd = import.meta.env.PROD
   const clientManifest = opts.manifest ?? manifest
@@ -136,9 +156,14 @@ export default async function render(opts: RenderToStreamOptions) {
   const pathname = resolvePathname(opts)
   const isAudit = resolveIsAudit(opts)
   const locale = resolveLocaleFromRequest(opts) as Locale
-  const serverData = { ...opts.serverData, locale }
-  const baseFromI18n = resolveBase({ ...opts, base: extractBase, serverData })
-  const base = baseFromI18n
+  const serverData = { ...opts.serverData, locale } as Record<string, any>
+  const qwikCity = serverData.qwikcity as Record<string, any> | undefined
+  if (qwikCity) {
+    if (qwikCity.ev) qwikCity.ev = noSerialize(qwikCity.ev)
+    if (qwikCity.loadedRoute) qwikCity.loadedRoute = noSerialize(qwikCity.loadedRoute)
+    densifyArrays(qwikCity)
+  }
+  const base = resolveBase({ ...opts, serverData })
   const loaderFile = (resolvedManifest as { qwikLoader?: string } | undefined)?.qwikLoader ?? 'qwikloader.js'
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {

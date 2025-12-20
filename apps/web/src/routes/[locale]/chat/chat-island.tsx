@@ -1,4 +1,4 @@
-import { $, component$, isServer, useSignal, useTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
 
 export const ChatIsland = component$(() => {
@@ -12,65 +12,65 @@ export const ChatIsland = component$(() => {
   const MAX_MESSAGES = 100
   const RETRY_DELAY = 2000
 
-  const clearRetryTimer = () => {
+  useVisibleTask$(({ cleanup, track }) => {
+    const clearRetryTimer = () => {
+      if (retryTimeout.value) {
+        clearTimeout(retryTimeout.value)
+        retryTimeout.value = null
+      }
+    }
+
+    const scheduleReconnect = () => {
+      if (!shouldConnect.value || retryTimeout.value) return
+      retryTimeout.value = window.setTimeout(() => {
+        retryTimeout.value = null
+        if (shouldConnect.value) {
+          connectionStatus.value = 'idle'
+        }
+      }, RETRY_DELAY)
+    }
+
+    track(() => shouldConnect.value)
+    track(() => connectionStatus.value)
+    if (!shouldConnect.value) return
+    if (connectionStatus.value === 'connected' || connectionStatus.value === 'connecting') return
+    connectionStatus.value = 'connecting'
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${protocol}://${window.location.host}/api/ws`)
+    ws.onopen = () => {
+      connectionStatus.value = 'connected'
+    }
+    ws.onmessage = (event) => {
+      const payload = JSON.parse(event.data)
+      if (payload.type === 'chat') {
+        const messageId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${messages.value.length}`
+        const nextMessages = Array.from([...messages.value, { id: messageId, from: payload.from, text: payload.text }])
+        messages.value = nextMessages.slice(-MAX_MESSAGES)
+      }
+    }
+    ws.onerror = () => {
+      socketRef.value = null
+      connectionStatus.value = 'error'
+      scheduleReconnect()
+    }
+    ws.onclose = () => {
+      socketRef.value = null
+      connectionStatus.value = shouldConnect.value ? 'disconnected' : 'idle'
+      scheduleReconnect()
+    }
+    socketRef.value = ws
+    cleanup(() => {
+      clearRetryTimer()
+      ws.close()
+    })
+  })
+
+  const reconnect = $(() => {
+    shouldConnect.value = true
     if (retryTimeout.value) {
       clearTimeout(retryTimeout.value)
       retryTimeout.value = null
     }
-  }
-
-  const scheduleReconnect = () => {
-    if (!shouldConnect.value || retryTimeout.value) return
-    retryTimeout.value = window.setTimeout(() => {
-      retryTimeout.value = null
-      if (shouldConnect.value) {
-        connectionStatus.value = 'idle'
-      }
-    }, RETRY_DELAY)
-  }
-
-  useTask$(
-    ({ cleanup, track }) => {
-      track(() => shouldConnect.value)
-      track(() => connectionStatus.value)
-      if (isServer || !shouldConnect.value) return
-      if (connectionStatus.value === 'connected' || connectionStatus.value === 'connecting') return
-      connectionStatus.value = 'connecting'
-      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const ws = new WebSocket(`${protocol}://${window.location.host}/api/ws`)
-      ws.onopen = () => {
-        connectionStatus.value = 'connected'
-      }
-      ws.onmessage = (event) => {
-        const payload = JSON.parse(event.data)
-        if (payload.type === 'chat') {
-          const messageId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${messages.value.length}`
-          const nextMessages = [...messages.value, { id: messageId, from: payload.from, text: payload.text }]
-          messages.value = nextMessages.slice(-MAX_MESSAGES)
-        }
-      }
-      ws.onerror = () => {
-        socketRef.value = null
-        connectionStatus.value = 'error'
-        scheduleReconnect()
-      }
-      ws.onclose = () => {
-        socketRef.value = null
-        connectionStatus.value = shouldConnect.value ? 'disconnected' : 'idle'
-        scheduleReconnect()
-      }
-      socketRef.value = ws
-      cleanup(() => {
-        clearRetryTimer()
-        ws.close()
-      })
-    },
-    { eagerness: 'visible' }
-  )
-
-  const reconnect = $(() => {
-    shouldConnect.value = true
-    clearRetryTimer()
     connectionStatus.value = 'idle'
   })
 
@@ -79,6 +79,8 @@ export const ChatIsland = component$(() => {
     socketRef.value.send(JSON.stringify({ type: 'chat', text: draft.value }))
     draft.value = ''
   })
+
+  const renderedMessages = Array.from(messages.value)
 
   return (
     <div class="chat-island">
@@ -100,8 +102,8 @@ export const ChatIsland = component$(() => {
       </div>
       <div class="mt-5 space-y-3 text-sm text-slate-200">
         <div class="surface chat-messages overflow-auto p-4">
-          {messages.value.length === 0 && <p class="text-slate-500">{_`No messages yet.`}</p>}
-          {messages.value.map((msg) => (
+          {renderedMessages.length === 0 && <p class="text-slate-500">{_`No messages yet.`}</p>}
+          {renderedMessages.map((msg) => (
             <div key={msg.id} class="py-1">
               <span class="text-slate-400">{msg.from}:</span> <span>{msg.text}</span>
             </div>
