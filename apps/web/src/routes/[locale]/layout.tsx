@@ -109,7 +109,6 @@ export const RouterHead = component$(() => {
   const speculationRules = allowSpeculationRules
     ? mergeSpeculationRules(conservativeViewportRules, navigationSpeculationRules)
     : null
-  const shouldLoadSpeculationManifest = allowSpeculationRules && import.meta.env.PROD
   const criticalPreloads = resolveCriticalPreloads(loc.url.pathname, import.meta.env.DEV)
   const allowedPreloads = new Set([
     ...allowedPreloadHrefs,
@@ -166,7 +165,7 @@ export const RouterHead = component$(() => {
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
-    allowSpeculationRules && (speculationRulesPayload || shouldLoadSpeculationManifest)
+    allowSpeculationRules && speculationRulesPayload
       ? `(()=>{const scripts=document.querySelectorAll('script[type="speculationrules"]');if(!scripts.length)return;if(navigator.connection?.saveData||!HTMLScriptElement.supports?.('speculationrules')){scripts.forEach((script)=>script.remove());}})();`
       : undefined
 
@@ -190,9 +189,6 @@ export const RouterHead = component$(() => {
         thirdPartyOrigins.map((origin) => (
           <link key={`preconnect:${origin}`} rel="preconnect" href={origin} crossOrigin="anonymous" />
         ))}
-      {shouldLoadSpeculationManifest && (
-        <script type="speculationrules" src="/speculation-rules.json" data-source="manifest" />
-      )}
       {allowSpeculationRules &&
         speculationCandidates.map(({ url, action }) => (
           <link key={`${action}:${url}`} rel={action} href={url} />

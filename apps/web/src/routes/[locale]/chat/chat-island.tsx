@@ -102,7 +102,7 @@ export const ChatIsland = component$(() => {
       </div>
       <div class="mt-5 space-y-3 text-sm text-slate-200">
         <div class="surface chat-messages overflow-auto p-4">
-          {renderedMessages.length === 0 && <p class="text-slate-500">{_`No messages yet.`}</p>}
+          {renderedMessages.length === 0 && <p class="text-slate-300">{_`No messages yet.`}</p>}
           {renderedMessages.map((msg) => (
             <div key={msg.id} class="py-1">
               <span class="text-slate-400">{msg.from}:</span> <span>{msg.text}</span>

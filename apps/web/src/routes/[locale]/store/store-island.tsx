@@ -296,7 +296,7 @@ export const StoreIsland = component$(() => {
                     <input type="hidden" name="id" value={item.id} />
                     <button
                       type="submit"
-                      class="hover:bg-rose-500/10 disabled:opacity-60 px-2 py-1 rounded-md ring-1 ring-slate-700 hover:ring-rose-500 text-slate-400 hover:text-rose-200 text-xs transition"
+                      class="hover:bg-rose-500/10 disabled:opacity-60 px-2 py-1 rounded-md ring-1 ring-slate-700 hover:ring-rose-500 text-slate-200 hover:text-rose-200 text-xs transition"
                       disabled={deleteAction.isRunning || item.id <= 0}
                       aria-label={_`Delete ${item.name}`}
                     >
