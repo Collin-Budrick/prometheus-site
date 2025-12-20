@@ -61,6 +61,11 @@
     "Price": "",
     "Saving...": "",
     "Create item": "",
-    "Added $1.": ""
+    "Added $1.": "",
+    "Sending...": "",
+    "Request failed ($1)": "",
+    "Network error. Please try again.": "",
+    "Status": "",
+    "Reconnect": ""
   }
 }

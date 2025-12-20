@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "bun run check:css && vite build && vite build --ssr && bun run prerender && bun run scripts/emit-locale-build-dirs.ts en ko",
+    "build": "bun run generate:uno && bun run check:css && vite build && vite build --ssr && bun run prerender && bun run scripts/emit-locale-build-dirs.ts en ko",
     "preview": "bun run preview:fast",
     "preview:fast": "bun run scripts/preview-fast.ts",
     "lint": "bun run check:css && bun run check:scripts && oxlint .",
@@ -16,6 +16,7 @@
     "test:perf": "bunx playwright test --config=playwright.config.ts --grep @perf",
     "check:scripts": "bun run scripts/check-script-budget.ts",
     "check:css": "bun run scripts/check-css-budget.ts",
+    "generate:uno": "unocss \"src/**/*.{ts,tsx,js,jsx,mdx,md}\" \"index.html\" -c uno.config.ts -o public/assets/app.css -m",
     "prerender": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp bunx tsx scripts/prerender.ts"
   },
   "dependencies": {

@@ -123,7 +123,13 @@ export const RouterHead = component$(() => {
   const allowThirdPartyHints = !import.meta.env.DEV && !isAudit
   const thirdPartyOrigins = allowThirdPartyHints ? resolveThirdPartyOrigins(thirdPartyScripts) : []
 
-  const safeLinks = sanitizeHeadLinks([...head.links, ...criticalPreloads], import.meta.env.DEV, allowedPreloads)
+  const appStylesHref = import.meta.env.PROD ? '/assets/app.css' : null
+  const baseLinks = [
+    ...head.links,
+    ...criticalPreloads,
+    ...(appStylesHref ? [{ rel: 'stylesheet', href: appStylesHref }] : [])
+  ]
+  const safeLinks = sanitizeHeadLinks(baseLinks, import.meta.env.DEV, allowedPreloads)
   const prioritizedLinks = safeLinks.map((link) => {
     if (link.rel === 'stylesheet') return { ...link, fetchpriority: 'high' }
     if (link.rel === 'preload' && link.as === 'style') return { ...link, fetchpriority: 'high' }
