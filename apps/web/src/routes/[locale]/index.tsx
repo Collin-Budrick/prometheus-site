@@ -25,11 +25,11 @@ export default component$(() => {
         <p class="mt-4 text-slate-300">
           {_`Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.`}
         </p>
-        <div class="gap-3 grid mt-6 text-slate-200 text-sm">
-          <div class="flex items-center gap-2">{_`- Ultra-thin home route with immutable caching`}</div>
-          <div class="flex items-center gap-2">{_`- Lazy feature routes for store, chat, and AI`}</div>
-          <div class="flex items-center gap-2">{_`- Optional Partytown for third-party isolation`}</div>
-        </div>
+        <ul class="mt-6 space-y-3 text-slate-200 text-sm">
+          <li>{_`- Ultra-thin home route with immutable caching`}</li>
+          <li>{_`- Lazy feature routes for store, chat, and AI`}</li>
+          <li>{_`- Optional Partytown for third-party isolation`}</li>
+        </ul>
       </div>
       <div class="p-6 text-slate-200 text-sm surface">
         <h2 class="font-semibold text-slate-50 text-lg">{_`Latency budget`}</h2>

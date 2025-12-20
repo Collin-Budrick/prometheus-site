@@ -14,7 +14,36 @@ import { partytownSnippet } from '@qwik.dev/partytown/integration'
 import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../../config/speculation-rules'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
 
-export const onRequest: RequestHandler = ({ params, request, redirect, pathname, url, cookie, locale, query }) => {
+const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
+
+const recordServerTiming = (
+  sharedMap: Map<string, any>,
+  name: string,
+  duration: number
+) => {
+  const timings = sharedMap.get('@serverTiming') as Array<[string, number]> | undefined
+  if (timings) {
+    timings.push([name, duration])
+    return
+  }
+  sharedMap.set('@serverTiming', [[name, duration]])
+}
+
+export const onRequest: RequestHandler = async ({
+  params,
+  request,
+  redirect,
+  pathname,
+  url,
+  cookie,
+  locale,
+  query,
+  cacheControl,
+  sharedMap,
+  next,
+  headers,
+  headersSent
+}) => {
   const requested = normalizeLocaleParam((params as any).locale)
   if (!requested) {
     const preferred = resolvePreferredLocale({
@@ -29,6 +58,29 @@ export const onRequest: RequestHandler = ({ params, request, redirect, pathname,
 
   cookie.set('locale', requested, localeCookieOptions)
   locale(requested)
+
+  if (import.meta.env.PROD && request.method === 'GET') {
+    const routePath = stripLocalePrefix(pathname) || '/'
+    const isStaticRoute = routePath === '/' || routePath === '/ai' || routePath === '/chat'
+    if (isStaticRoute) {
+      cacheControl({
+        public: true,
+        maxAge: 60,
+        sMaxAge: 900,
+        staleWhileRevalidate: 300
+      })
+    }
+  }
+
+  const start = nowMs()
+  const response = await next()
+  const duration = nowMs() - start
+  if (!headersSent) {
+    headers.set('Server-Timing', `ssr;dur=${duration.toFixed(2)}`)
+  } else {
+    recordServerTiming(sharedMap, 'ssr', duration)
+  }
+  return response
 }
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
@@ -104,7 +156,8 @@ export const RouterHead = component$(() => {
   })()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
-  const speculationCandidates = allowSpeculationRules ? resolveSpeculationCandidates(loc.url.pathname, localePrefix) : []
+  const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
+  const speculationCandidates = resolveSpeculationCandidates(loc.url.pathname, localePrefix)
   const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
   const speculationRules = allowSpeculationRules
     ? mergeSpeculationRules(conservativeViewportRules, navigationSpeculationRules)
@@ -168,12 +221,12 @@ export const RouterHead = component$(() => {
     allowSpeculationRules && speculationRulesPayload
       ? `(()=>{const scripts=document.querySelectorAll('script[type="speculationrules"]');if(!scripts.length)return;if(navigator.connection?.saveData||!HTMLScriptElement.supports?.('speculationrules')){scripts.forEach((script)=>script.remove());}})();`
       : undefined
-
   return (
     <>
       <title>{head.title || 'Prometheus'}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="canonical" href={canonical.href} />
+      <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
@@ -189,7 +242,7 @@ export const RouterHead = component$(() => {
         thirdPartyOrigins.map((origin) => (
           <link key={`preconnect:${origin}`} rel="preconnect" href={origin} crossOrigin="anonymous" />
         ))}
-      {allowSpeculationRules &&
+      {allowLegacySpeculationHints &&
         speculationCandidates.map(({ url, action }) => (
           <link key={`${action}:${url}`} rel={action} href={url} />
         ))}
@@ -229,14 +282,14 @@ export default component$(() => {
   const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
 
   return (
-    <div class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <header class="sticky top-0 z-20 border-b border-slate-800 bg-slate-950">
-        <nav class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 text-sm font-medium">
-          <div class="flex items-center gap-2">
-            <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-300">Prometheus</span>
+    <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame">
+      <header class="top-0 z-20 sticky bg-slate-950 border-slate-800 border-b app-header">
+        <nav class="flex justify-between items-center mx-auto px-4 py-3 max-w-5xl font-medium text-sm app-nav">
+          <div class="flex items-center gap-2 app-brand">
+            <span class="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300 app-pill">Prometheus</span>
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
-          <div class="flex items-center gap-4 text-slate-200">
+          <div class="flex items-center gap-4 text-slate-200 app-links">
             {navLinks.map(({ path, label, dataSpeculate }) => (
               <a
                 key={path}
@@ -251,7 +304,7 @@ export default component$(() => {
           </div>
         </nav>
       </header>
-      <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10 route-transition">
+      <main class="flex flex-col gap-6 mx-auto px-4 py-10 max-w-5xl route-transition app-main">
         <Slot />
       </main>
     </div>

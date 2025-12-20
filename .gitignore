@@ -12,3 +12,4 @@ apps/web/server/*
 apps/web/public/~partytown/*
 apps/web/test-results/*
 lighthouse*
+CUserscolliAppDataLocallighthouse*
