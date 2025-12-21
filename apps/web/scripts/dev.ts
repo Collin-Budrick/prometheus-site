@@ -66,11 +66,15 @@ freePort(port)
 
 if (auditMode) {
   console.log('Audit mode enabled: building once and serving preview without HMR or the Vite client.')
+  const buildEnv = { ...bunEnv, VITE_DEV_AUDIT: '1' }
+  if (!('SKIP_PRERENDER' in buildEnv)) {
+    buildEnv.SKIP_PRERENDER = '1'
+  }
   try {
     execSync(`${bunBin} run build`, {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: { ...bunEnv, VITE_DEV_AUDIT: '1' }
+      env: buildEnv
     })
   } catch (err) {
     console.error('Failed to build before audit preview.', err)

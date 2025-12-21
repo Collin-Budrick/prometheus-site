@@ -6,7 +6,11 @@ import { execSync, spawn, spawnSync } from 'node:child_process'
 const projectRoot = process.cwd()
 const bunBin = process.execPath
 const viteBin = path.resolve(projectRoot, '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
-const bunEnv = { ...process.env, PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}` }
+const bunEnv = {
+  ...process.env,
+  PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`,
+  VITE_PREVIEW: process.env.VITE_PREVIEW ?? '1'
+}
 const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
 
 const distDir = path.join(projectRoot, 'dist')

@@ -53,3 +53,9 @@ export const mergeSpeculationRules = (
 
   return merged
 }
+
+export const slowSpeculationConnectionTypes = ['slow-2g', '2g', '3g'] as const
+const slowSpeculationConnectionTypesScript = JSON.stringify(slowSpeculationConnectionTypes)
+
+export const buildSpeculationRulesGuard = () =>
+  `(()=>{const scripts=document.querySelectorAll('script[type="speculationrules"]');if(!scripts.length)return;const connection=navigator.connection;const effectiveType=connection?.effectiveType;const isSlow=Boolean(connection?.saveData)||${slowSpeculationConnectionTypesScript}.includes(effectiveType||'');if(isSlow||!HTMLScriptElement.supports?.('speculationrules')){scripts.forEach((script)=>script.remove());}})();`

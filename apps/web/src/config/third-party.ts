@@ -31,6 +31,8 @@ const env = {
   supportWidgetSrc: readEnv('VITE_SUPPORT_WIDGET_SRC')
 }
 
+const isPreview = import.meta.env.PROD
+
 const definitions: ThirdPartyScript[] = [
   {
     id: 'gtag',
@@ -43,9 +45,11 @@ const definitions: ThirdPartyScript[] = [
     forward: ['dataLayer.push', 'gtag'],
     attributes: { async: true, 'data-gtm-id': env.gaId },
     budgetKb: 90,
-    load: 'defer',
+    load: isPreview ? 'interaction' : 'defer',
     partytown: true,
-    fallback: 'Falls back to async tag when Partytown is disabled.',
+    fallback: isPreview
+      ? 'Loads after explicit consent; falls back to async tag when Partytown is disabled.'
+      : 'Falls back to async tag when Partytown is disabled.',
     when: Boolean(env.gaId)
   },
   {
@@ -58,9 +62,11 @@ const definitions: ThirdPartyScript[] = [
     forward: ['adsbygoogle.push'],
     attributes: { async: true, 'data-ad-client': env.adsClient, crossOrigin: 'anonymous' },
     budgetKb: 95,
-    load: 'idle',
+    load: isPreview ? 'interaction' : 'idle',
     partytown: true,
-    fallback: 'Loads on idle/timeout when Partytown is off to avoid blocking hydration.',
+    fallback: isPreview
+      ? 'Loads after explicit consent; falls back to async tag when Partytown is disabled.'
+      : 'Loads on idle/timeout when Partytown is off to avoid blocking hydration.',
     when: Boolean(env.adsClient)
   },
   {
@@ -70,8 +76,10 @@ const definitions: ThirdPartyScript[] = [
     src: env.supportWidgetSrc,
     budgetKb: 120,
     load: 'interaction',
-    partytown: false,
-    fallback: 'Injected after user input, idle callback, or 5s timeout.',
+    partytown: isPreview,
+    fallback: isPreview
+      ? 'Injected after explicit consent; stays off the main thread when Partytown is enabled.'
+      : 'Injected after user input, idle callback, or 5s timeout.',
     when: Boolean(env.supportWidgetSrc)
   }
 ]

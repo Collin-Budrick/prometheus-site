@@ -22,6 +22,7 @@ const devCacheBuster = Date.now().toString(36)
 const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
 const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
+const previewCacheEnabled = process.env.VITE_PREVIEW === '1'
 const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
@@ -99,6 +100,39 @@ const devFontSilencer = () => ({
     })
   }
 })
+
+const immutableAssetPrefixes = ['/build/', '/assets/', '/icons/', '/~partytown/']
+const immutableAssetCacheHeader = 'public, max-age=31536000, s-maxage=31536000, immutable'
+const previewImmutableAssetCache = (enabled: boolean) =>
+  enabled
+    ? {
+        name: 'preview-immutable-asset-cache',
+        configurePreviewServer(server: ViteDevServer) {
+          const distRoot = path.resolve(server.config.root, server.config.build.outDir)
+
+          server.middlewares.use((req, res, next) => {
+            const url = req.url
+            if (!url || (req.method !== 'GET' && req.method !== 'HEAD')) {
+              next()
+              return
+            }
+
+            const pathname = url.split('?', 1)[0] ?? ''
+            if (!immutableAssetPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+              next()
+              return
+            }
+
+            const assetPath = path.join(distRoot, pathname.replace(/^\/+/, ''))
+            if (fs.existsSync(assetPath)) {
+              res.setHeader('cache-control', immutableAssetCacheHeader)
+            }
+
+            next()
+          })
+        }
+      }
+    : null
 
 const toJSONSafe = <T>(value: T): T => {
   const seen = new WeakSet()
@@ -375,7 +409,8 @@ export default defineConfig((env) => {
       devBustedViteClient(!devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
       localeBuildFallback(['en', 'ko']),
-      devFontSilencer()
+      devFontSilencer(),
+      previewImmutableAssetCache(previewCacheEnabled)
     ].filter(Boolean),
     environments: {
       client: {

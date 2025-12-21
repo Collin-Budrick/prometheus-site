@@ -11,7 +11,12 @@ import layoutStyles from '../layout.css?inline'
 import { criticalCssInline } from '../critical-css-assets'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
-import { conservativeViewportRules, mergeSpeculationRules, type SpeculationRules } from '../../config/speculation-rules'
+import {
+  buildSpeculationRulesGuard,
+  conservativeViewportRules,
+  mergeSpeculationRules,
+  type SpeculationRules
+} from '../../config/speculation-rules'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
@@ -59,15 +64,18 @@ export const onRequest: RequestHandler = async ({
   cookie.set('locale', requested, localeCookieOptions)
   locale(requested)
 
+  const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW === '1'
+
   if (import.meta.env.PROD && request.method === 'GET') {
     const routePath = stripLocalePrefix(pathname) || '/'
     const isStaticRoute = routePath === '/' || routePath === '/ai' || routePath === '/chat'
     if (isStaticRoute) {
+      const policy = previewCacheEnabled
+        ? { maxAge: 900, sMaxAge: 86_400, staleWhileRevalidate: 600 }
+        : { maxAge: 60, sMaxAge: 900, staleWhileRevalidate: 300 }
       cacheControl({
         public: true,
-        maxAge: 60,
-        sMaxAge: 900,
-        staleWhileRevalidate: 300
+        ...policy
       })
     }
   }
@@ -155,7 +163,8 @@ export const RouterHead = component$(() => {
     return locales.includes(segment as any) ? `/${segment}` : ''
   })()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
-  const allowSpeculationRules = featureFlags.speculationRules && !isAudit
+  const isPreview = import.meta.env.PROD
+  const allowSpeculationRules = featureFlags.speculationRules && !isAudit && isPreview
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
   const speculationCandidates = resolveSpeculationCandidates(loc.url.pathname, localePrefix)
   const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
@@ -218,9 +227,7 @@ export const RouterHead = component$(() => {
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
-    allowSpeculationRules && speculationRulesPayload
-      ? `(()=>{const scripts=document.querySelectorAll('script[type="speculationrules"]');if(!scripts.length)return;if(navigator.connection?.saveData||!HTMLScriptElement.supports?.('speculationrules')){scripts.forEach((script)=>script.remove());}})();`
-      : undefined
+    allowSpeculationRules && speculationRulesPayload ? buildSpeculationRulesGuard() : undefined
   return (
     <>
       <title>{head.title || 'Prometheus'}</title>
@@ -266,7 +273,7 @@ export const RouterHead = component$(() => {
       {featureFlags.partytown && thirdPartyScripts.some((entry) => entry.partytown) && (
         <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: partytownForwards })} />
       )}
-      {/* Speculation Rules remain inert without support and are stripped if Save-Data is set. */}
+      {/* Speculation Rules remain inert without support and are stripped on Save-Data or slow connections. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesPayload && (
         <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
