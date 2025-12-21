@@ -1,0 +1,7 @@
+services:
+  api:
+    command: ["bun", "run", "--watch", "src/index.ts"]
+    volumes:
+      - ./apps/api:/app/apps/api
+    environment:
+      - NODE_ENV=development
