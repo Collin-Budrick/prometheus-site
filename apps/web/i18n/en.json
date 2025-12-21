@@ -75,6 +75,7 @@
     "Request failed ($1)": "Request failed ($1)",
     "Network error. Please try again.": "Network error. Please try again.",
     "Status": "Status",
-    "Reconnect": "Reconnect"
+    "Reconnect": "Reconnect",
+    "Performance first of course": ""
   }
 }

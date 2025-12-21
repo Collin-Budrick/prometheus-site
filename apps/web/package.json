@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "build": "bun run generate:uno && bun run check:css && vite build && vite build --ssr && bun run prerender && bun run scripts/emit-locale-build-dirs.ts en ko",
+    "build:parallel": "bun run scripts/build-parallel.ts",
     "preview": "bun run preview:fast",
     "preview:fast": "bun run scripts/preview-fast.ts",
     "lint": "bun run check:css && bun run check:scripts && oxlint .",

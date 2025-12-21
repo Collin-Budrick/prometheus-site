@@ -44,6 +44,7 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
   off in dev).
 - `PRERENDER_ORIGIN` – origin used by `scripts/prerender.ts` for absolute URLs (defaults to `https://prometheus.local`).
 - `PRERENDER_MAX_WORKERS` – worker pool size for prerender (defaults to `1`; `bun run preview` uses CPU count unless overridden).
+- `PRERENDER_WORKER_MULTIPLIER` – multiplier applied to the default worker count for preview/build scripts when `PRERENDER_MAX_WORKERS` is unset (defaults to `1.5`).
 - `PRERENDER_MAX_TASKS_PER_WORKER` – parallel route tasks per worker (defaults to `5`).
 - `SKIP_PRERENDER=1` – skip the prerender step (useful for faster local `bun run preview` when you don't need static HTML).
 

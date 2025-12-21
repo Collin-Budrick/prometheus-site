@@ -62,9 +62,22 @@ if (!Number.isNaN(previewPort)) {
 }
 
 const cpuCount = Math.max(1, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
+const parsePositiveInt = (value: string | undefined) => {
+  if (!value) return null
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+const parsePositiveFloat = (value: string | undefined) => {
+  if (!value) return null
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+const workerMultiplier = parsePositiveFloat(process.env.PRERENDER_WORKER_MULTIPLIER) ?? 1.5
+const defaultWorkers = Math.max(1, Math.ceil(cpuCount * workerMultiplier))
+const prerenderWorkers = parsePositiveInt(process.env.PRERENDER_MAX_WORKERS) ?? defaultWorkers
 const buildEnv = {
   ...bunEnv,
-  PRERENDER_MAX_WORKERS: process.env.PRERENDER_MAX_WORKERS ?? String(cpuCount),
+  PRERENDER_MAX_WORKERS: String(prerenderWorkers),
   PRERENDER_MAX_TASKS_PER_WORKER: process.env.PRERENDER_MAX_TASKS_PER_WORKER ?? '5',
   TMPDIR: process.env.TMPDIR ?? '/tmp',
   TEMP: process.env.TEMP ?? '/tmp',
@@ -73,8 +86,8 @@ const buildEnv = {
 }
 
 if (!artifactsFresh) {
-  console.log('Build artifacts missing or stale; running full build before preview...')
-  execSync(`${bunBin} run build`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
+  console.log('Build artifacts missing or stale; running parallel build before preview...')
+  execSync(`${bunBin} run build:parallel`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
 } else {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
   execSync(`${bunBin} run scripts/emit-locale-build-dirs.ts en ko`, { cwd: projectRoot, stdio: 'inherit', env: bunEnv })

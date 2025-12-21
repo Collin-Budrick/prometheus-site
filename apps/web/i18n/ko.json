@@ -76,6 +76,7 @@
     "Request failed ($1)": "요청 실패 ($1)",
     "Network error. Please try again.": "네트워크 오류입니다. 다시 시도해 주세요.",
     "Status": "상태",
-    "Reconnect": "재연결"
+    "Reconnect": "재연결",
+    "Performance first of course": ""
   }
 }
