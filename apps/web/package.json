@@ -17,7 +17,7 @@
     "test:perf": "VITE_DEV_AUDIT=1 SKIP_PRERENDER=1 bunx playwright test --config=playwright.config.ts --grep @perf",
     "check:scripts": "bun run scripts/check-script-budget.ts",
     "check:css": "bun run scripts/check-css-budget.ts",
-    "generate:uno": "unocss \"src/**/*.{ts,tsx,js,jsx,mdx,md}\" \"index.html\" -c uno.config.ts -o public/assets/app.css -m",
+    "generate:uno": "bun run scripts/generate-uno.ts",
     "prerender": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp bunx tsx scripts/prerender.ts"
   },
   "dependencies": {

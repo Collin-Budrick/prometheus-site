@@ -20,7 +20,7 @@ export default component$(() => {
   return (
     <section class="home-grid">
       <div class="p-6 surface">
-        <p class="text-emerald-300 text-sm uppercase tracking-wide">{_`Performance first stuff`}</p>
+        <p class="text-emerald-300 text-sm uppercase tracking-wide">{_`Performance first`}</p>
         <h1 class="mt-2 font-semibold text-slate-50 text-3xl">{_`Microscopic first load, big capability`}</h1>
         <p class="mt-4 text-slate-300">
           {_`Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.`}

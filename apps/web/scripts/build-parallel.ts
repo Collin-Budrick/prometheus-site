@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { performance } from 'node:perf_hooks'
 
 const projectRoot = process.cwd()
 const bunBin = process.execPath
@@ -60,6 +61,13 @@ const run = (label: string, command: string, args: string[], env: NodeJS.Process
     })
   })
 
+const runTimed = async (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
+  const start = performance.now()
+  await run(label, command, args, env)
+  const duration = performance.now() - start
+  console.log(`[timing] ${label}: ${duration.toFixed(0)}ms`)
+}
+
 const stopActive = () => {
   for (const child of active) {
     child.kill('SIGTERM')
@@ -68,13 +76,13 @@ const stopActive = () => {
 
 try {
   await Promise.all([
-    run('generate:uno', bunBin, ['run', 'generate:uno'], bunEnv),
-    run('check:css', bunBin, ['run', 'check:css'], bunEnv)
+    runTimed('generate:uno', bunBin, ['run', 'generate:uno'], bunEnv),
+    runTimed('check:css', bunBin, ['run', 'check:css'], bunEnv)
   ])
 
-  await run('vite build', bunBin, [viteBin, 'build'], bunEnv)
+  await runTimed('vite build', bunBin, [viteBin, 'build'], bunEnv)
 
-  await run('prerender', bunBin, ['run', 'prerender'], buildEnv)
+  await runTimed('prerender', bunBin, ['run', 'prerender'], buildEnv)
 } catch (error) {
   stopActive()
   console.error(error instanceof Error ? error.message : error)

@@ -11,6 +11,7 @@ apps/api/.elysia
 apps/web/server/*
 apps/web/public/~partytown/*
 apps/web/test-results/*
+apps/web/.cache/*
 lighthouse*
 CUserscolliAppDataLocallighthouse*
 a.out
