@@ -1,9 +1,10 @@
 import { createClient } from '@valkey/client'
+import { config } from '../config/env'
 
 const valkeyOptions = {
   socket: {
-    host: process.env.VALKEY_HOST ?? 'localhost',
-    port: Number.parseInt(process.env.VALKEY_PORT ?? '6379', 10)
+    host: config.valkey.host,
+    port: config.valkey.port
   }
 }
 
