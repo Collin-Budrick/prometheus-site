@@ -90,7 +90,6 @@ if (!artifactsFresh) {
   execSync(`${bunBin} run build:parallel`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
 } else {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
-  execSync(`${bunBin} run scripts/emit-locale-build-dirs.ts en ko`, { cwd: projectRoot, stdio: 'inherit', env: bunEnv })
 }
 
 const prerenderFresh = localeIndexFiles.every((file) => fs.existsSync(file))
