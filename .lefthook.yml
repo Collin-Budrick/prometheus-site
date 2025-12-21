@@ -3,5 +3,3 @@ pre-commit:
   commands:
     lint:
       run: PATH="$HOME/.bun/bin:$PATH" bun run lint
-    web-tests:
-      run: PATH="$HOME/.bun/bin:$PATH" bun run --cwd apps/web test

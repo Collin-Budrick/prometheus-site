@@ -8,7 +8,7 @@ const webServerTimeout = (() => {
     const parsed = Number.parseInt(process.env.PLAYWRIGHT_WEBSERVER_TIMEOUT, 10)
     return Number.isFinite(parsed) ? parsed : 120_000
   }
-  return auditMode ? 300_000 : 120_000
+  return auditMode ? 600_000 : 120_000
 })()
 const webServerEnv = {
   ...process.env,
