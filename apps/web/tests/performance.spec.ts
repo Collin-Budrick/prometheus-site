@@ -31,13 +31,25 @@ const collectWebVitals = async (page: import('@playwright/test').Page): Promise<
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(2_000)
 
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
+    const lcp = await new Promise<number>((resolve) => {
+      let lcpValue = 0
+      const observer = new PerformanceObserver((entryList) => {
+        const entries = entryList.getEntries()
+        const lastEntry = entries[entries.length - 1]
+        if (lastEntry) lcpValue = lastEntry.startTime
+      })
+      observer.observe({ type: 'largest-contentful-paint', buffered: true })
+      setTimeout(() => {
+        observer.disconnect()
+        resolve(lcpValue)
+      }, 0)
+    })
+
     const fcpEntry = performance.getEntriesByName('first-contentful-paint')[0]
-    const lcpEntries = performance.getEntriesByType('largest-contentful-paint')
     const longTasks = performance.getEntriesByType('longtask')
 
     const fcp = fcpEntry?.startTime ?? 0
-    const lcp = lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : 0
     const tbt = longTasks.reduce((total, entry) => {
       const blockingTime = entry.duration - 50
       return blockingTime > 0 ? total + blockingTime : total
@@ -48,6 +60,8 @@ const collectWebVitals = async (page: import('@playwright/test').Page): Promise<
 }
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${process.env.WEB_PORT ?? '4173'}`
+
+test.use({ trace: 'off' })
 
 test.describe('performance budgets', () => {
   test('meets Web Vitals budgets on key routes @perf', async ({ browser }, testInfo) => {

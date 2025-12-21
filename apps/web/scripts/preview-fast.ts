@@ -7,11 +7,12 @@ const projectRoot = process.cwd()
 const bunBin = process.execPath
 const viteBin = path.resolve(projectRoot, '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
 const bunEnv = { ...process.env, PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}` }
-const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
 
 const distDir = path.join(projectRoot, 'dist')
 const serverDir = path.join(projectRoot, 'server')
 const srcDir = path.join(projectRoot, 'src')
+const publicDir = path.join(projectRoot, 'public')
 const localeIndexFiles = [path.join(distDir, 'en', 'index.html'), path.join(distDir, 'ko', 'index.html')]
 
 const getLatestMtime = (roots: string[]) => {
@@ -47,15 +48,15 @@ const hasArtifacts = (dir: string) => fs.existsSync(dir) && fs.readdirSync(dir).
 
 const distFresh = hasArtifacts(distDir)
 const serverFresh = hasArtifacts(serverDir)
-const sourceLatest = getLatestMtime([srcDir])
+const sourceLatest = getLatestMtime([srcDir, publicDir])
 const distLatest = getLatestMtime([distDir])
 const serverLatest = getLatestMtime([serverDir])
 
 const artifactsFresh = distFresh && serverFresh && distLatest > sourceLatest && serverLatest > sourceLatest
 const prerenderFresh = localeIndexFiles.every((file) => fs.existsSync(file))
 
-if (!Number.isNaN(port)) {
-  spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(port)], { stdio: 'inherit', env: bunEnv })
+if (!Number.isNaN(previewPort)) {
+  spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(previewPort)], { stdio: 'inherit', env: bunEnv })
 }
 
 const cpuCount = Math.max(1, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
@@ -65,7 +66,8 @@ const buildEnv = {
   PRERENDER_MAX_TASKS_PER_WORKER: process.env.PRERENDER_MAX_TASKS_PER_WORKER ?? '5',
   TMPDIR: process.env.TMPDIR ?? '/tmp',
   TEMP: process.env.TEMP ?? '/tmp',
-  TMP: process.env.TMP ?? '/tmp'
+  TMP: process.env.TMP ?? '/tmp',
+  SKIP_PRERENDER: process.env.SKIP_PRERENDER ?? '1'
 }
 
 if (!artifactsFresh) {
@@ -81,7 +83,7 @@ if (!prerenderFresh) {
   execSync(`${bunBin} run prerender`, { cwd: projectRoot, stdio: 'inherit', env: buildEnv })
 }
 
-const preview = spawn(bunBin, [viteBin, 'preview', '--host', '0.0.0.0', '--port', String(Number.isNaN(port) ? 4173 : port)], {
+const preview = spawn(bunBin, [viteBin, 'preview', '--host', '0.0.0.0', '--port', String(Number.isNaN(previewPort) ? 4174 : previewPort)], {
   stdio: 'inherit',
   env: bunEnv
 })

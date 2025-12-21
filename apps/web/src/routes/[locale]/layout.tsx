@@ -174,12 +174,12 @@ export const RouterHead = component$(() => {
 
   const allowThirdPartyHints = !import.meta.env.DEV && !isAudit
   const thirdPartyOrigins = allowThirdPartyHints ? resolveThirdPartyOrigins(thirdPartyScripts) : []
+  const includeGlobalStyles = import.meta.env.PROD
+  const appCssHref = '/assets/app.css'
 
-  const appStylesHref = import.meta.env.PROD ? '/assets/app.css' : null
   const baseLinks = [
     ...head.links,
-    ...criticalPreloads,
-    ...(appStylesHref ? [{ rel: 'stylesheet', href: appStylesHref }] : [])
+    ...criticalPreloads
   ]
   const safeLinks = sanitizeHeadLinks(baseLinks, import.meta.env.DEV, allowedPreloads)
   const prioritizedLinks = safeLinks.map((link) => {
@@ -228,6 +228,20 @@ export const RouterHead = component$(() => {
       <link rel="canonical" href={canonical.href} />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
+      {includeGlobalStyles && (
+        <>
+          <link rel="preload" href={appCssHref} as="style" fetchpriority="high" />
+          <link
+            rel="stylesheet"
+            href={appCssHref}
+            media="print"
+            {...({ onload: "this.media='all'" } as Record<string, string>)}
+          />
+          <noscript>
+            <link rel="stylesheet" href={appCssHref} />
+          </noscript>
+        </>
+      )}
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}

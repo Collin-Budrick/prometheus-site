@@ -26,6 +26,8 @@
     "compiled-i18n@1.2.1": "patches/compiled-i18n+1.2.1.patch"
   },
   "devDependencies": {
+    "@rolldown/binding-win32-arm64-msvc": "^1.0.0-beta.55",
+    "@rolldown/binding-win32-x64-msvc": "^1.0.0-beta.55",
     "lefthook": "^2.0.12"
   }
 }

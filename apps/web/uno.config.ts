@@ -40,7 +40,7 @@ export default defineConfig({
   ],
   shortcuts: {
     'app-shell': 'min-h-screen bg-slate-950 text-slate-100 font-sans antialiased',
-    'surface': 'rounded-xl border border-slate-800 bg-slate-900 shadow-md',
+    'surface': 'rounded-xl border border-slate-800 bg-slate-900',
     'stack-md': 'flex flex-col gap-4 md:gap-6',
     'stack-lg': 'flex flex-col gap-6 md:gap-8',
     'text-body': 'text-slate-200 leading-relaxed tracking-tight',

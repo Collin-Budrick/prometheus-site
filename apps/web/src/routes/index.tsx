@@ -1,8 +1,12 @@
 import { component$ } from '@builder.io/qwik'
-import type { RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$ } from '@builder.io/qwik-city'
 import { localeCookieOptions, resolvePreferredLocale } from './locale-routing'
+import BaseLayout from './[locale]/layout'
+import Home from './[locale]/index'
 
-export const onGet: RequestHandler = ({ request, redirect, url, cookie, query }) => {
+export { head } from './[locale]/index'
+
+export const usePreferredLocale = routeLoader$(({ request, cookie, query, locale }) => {
   const preferred = resolvePreferredLocale({
     queryLocale: query.get('locale'),
     cookieLocale: cookie.get('locale')?.value ?? null,
@@ -10,7 +14,17 @@ export const onGet: RequestHandler = ({ request, redirect, url, cookie, query })
   })
 
   cookie.set('locale', preferred, localeCookieOptions)
-  throw redirect(302, `/${preferred}${url.search}`)
-}
+  locale(preferred)
 
-export default component$(() => null)
+  return preferred
+})
+
+export default component$(() => {
+  usePreferredLocale()
+
+  return (
+    <BaseLayout>
+      <Home />
+    </BaseLayout>
+  )
+})

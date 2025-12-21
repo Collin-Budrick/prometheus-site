@@ -20,6 +20,7 @@ type DevEnvData = Record<string, unknown> & { qwikcity?: Record<string, unknown>
 type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
 const devCacheBuster = Date.now().toString(36)
 const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
 const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
 const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
@@ -443,7 +444,7 @@ export default defineConfig((env) => {
     },
     preview: {
       host: '0.0.0.0',
-      port: devPort,
+      port: previewPort,
       strictPort: true
     },
     css: {
