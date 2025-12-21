@@ -36,7 +36,7 @@ See `.env.example` for defaults. Key values:
 - `bun run lint` - Oxlint across both apps; also used by `make test`.
 - `bun run format` - oxfmt across both apps.
 - `bun run test` - web tests via `bun test`; API currently returns a placeholder message.
-- `VITE_DEV_AUDIT=1 bun run dev` - disables HMR/WebSocket and minifies optimized deps so Lighthouse/devtools audits avoid the Vite client payload and back/forward cache blockers.
+- `VITE_DEV_AUDIT=1 bun run dev` - disables HMR/WebSocket and minifies optimized deps so Lighthouse/devtools audits avoid the Vite client payload and back/forward cache blockers. Leave this unset in normal dev shells; audit mode forces full reloads because HMR is off.
 
 ## Local development
 
