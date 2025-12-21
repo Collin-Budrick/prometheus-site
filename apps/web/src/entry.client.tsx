@@ -1,8 +1,9 @@
 import { render, type RenderOptions } from '@builder.io/qwik'
-import { locales, setDefaultLocale } from 'compiled-i18n'
+import { defaultLocale, locales, setDefaultLocale } from 'compiled-i18n'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 import { resolvePathnameLocale } from './i18n/pathname-locale'
+import { ensureLocaleDictionary } from './i18n/dictionaries'
 
 const registerServiceWorker = () => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
@@ -44,13 +45,14 @@ const persistLocaleCookie = (locale: string) => {
   document.cookie = `locale=${encodeURIComponent(locale)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`
 }
 
-export default function renderClient(opts: RenderOptions) {
-  const locale = resolveClientLocale()
-  if (locale && typeof document !== 'undefined') {
-    document.documentElement.lang = locale
-    document.documentElement.setAttribute('q:locale', locale)
-    setDefaultLocale(locale)
-    persistLocaleCookie(locale)
+export default async function renderClient(opts: RenderOptions) {
+  const locale = resolveClientLocale() ?? defaultLocale
+  const loadedLocale = await ensureLocaleDictionary(locale)
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = loadedLocale
+    document.documentElement.setAttribute('q:locale', loadedLocale)
+    setDefaultLocale(loadedLocale)
+    persistLocaleCookie(loadedLocale)
   }
 
   registerServiceWorker()
