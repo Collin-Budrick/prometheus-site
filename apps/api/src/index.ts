@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { desc, gt } from 'drizzle-orm'
-import { db } from './db/client'
+import { db, pgClient } from './db/client'
 import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
 import { connectValkey, isValkeyReady, valkey } from './services/cache'
@@ -28,7 +28,39 @@ const maxChatLength = 1000
 
 const app = new Elysia()
   .decorate('valkey', valkey)
-  .get('/health', () => ({ status: 'ok', uptime: process.uptime() }))
+  .get('/health', async () => {
+    const checks = {
+      postgres: false,
+      valkey: false
+    }
+
+    try {
+      await pgClient`select 1`
+      checks.postgres = true
+    } catch (error) {
+      console.error('Postgres health check failed', error)
+    }
+
+    try {
+      if (!isValkeyReady()) {
+        throw new Error('Valkey not connected')
+      }
+      await valkey.ping()
+      checks.valkey = true
+    } catch (error) {
+      console.error('Valkey health check failed', error)
+    }
+
+    const healthy = checks.postgres && checks.valkey
+
+    return new Response(
+      JSON.stringify({ status: healthy ? 'ok' : 'degraded', uptime: process.uptime(), checks }),
+      {
+        status: healthy ? 200 : 503,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    )
+  })
   .get(
     '/store/items',
     async ({ query }) => {
