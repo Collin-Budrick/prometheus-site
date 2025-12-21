@@ -52,6 +52,24 @@ This runs docker-compose in the **dev** profile with hot reload for both apps. S
 
 The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and wires those settings through the `server.hmr` block in `apps/web/vite.config.ts`. When running inside Docker or WSL, set `HMR_HOST` to an address reachable by the browser (e.g., your host IP or `localhost` when port-forwarded) and `HMR_CLIENT_PORT` to the forwarded dev port so the Vite client can open the WebSocket. Avoid `VITE_HMR_POLLING=1` unless necessary; it forces polling and disables the faster WebSocket path.
 
+#### Remote/HTTPS dev checklist
+
+- Set `HMR_PROTOCOL=wss` so the Vite client upgrades over TLS when you front the dev server with HTTPS.
+- Align `HMR_PORT` with the dev server port you expose from the container/VM (usually `WEB_PORT`).
+- Set `HMR_CLIENT_PORT` to the browser-facing port (the one you access in the address bar after forwarding or reverse-proxying).
+
+Example `.env` snippet for a containerized HTTPS setup:
+
+```bash
+# HMR over HTTPS
+HMR_PROTOCOL=wss
+HMR_HOST=localhost
+HMR_PORT=4173
+HMR_CLIENT_PORT=443
+```
+
+These values are read in `apps/web/src/config/env.ts` and populate the `server.hmr` block so Vite can build the correct WebSocket URL when running behind HTTPS or port-forwarding.
+
 ## Production-like
 
 ```bash
