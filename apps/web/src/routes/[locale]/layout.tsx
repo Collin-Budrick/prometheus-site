@@ -1,6 +1,6 @@
 import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
 import { useDocumentHead, useLocation, type RequestHandler, type StaticGenerateHandler } from '@builder.io/qwik-city'
-import { _, locales } from 'compiled-i18n'
+import { _, defaultLocale, locales } from 'compiled-i18n'
 import { sanitizeHeadLinks } from '../head-utils'
 /* cspell:ignore hrefs */
 import { allowedPreloadHrefs, resolveCriticalPreloads } from '../preload-manifest'
@@ -93,7 +93,7 @@ export const onRequest: RequestHandler = async ({
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: locales.map((locale) => ({ locale }))
+    params: [{ locale: defaultLocale }]
   }
 }
 

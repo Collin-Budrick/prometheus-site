@@ -1,5 +1,5 @@
 import { component$, useStylesScoped$ } from '@builder.io/qwik'
-import { _, locales } from 'compiled-i18n'
+import { _, defaultLocale } from 'compiled-i18n'
 import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
 import styles from './index.css?inline'
 
@@ -45,7 +45,7 @@ export default component$(() => {
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: locales.map((locale) => ({ locale }))
+    params: [{ locale: defaultLocale }]
   }
 }
 
