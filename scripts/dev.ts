@@ -5,13 +5,13 @@ const bunDir = dirname(bunBin)
 const env = { ...process.env, PATH: `${bunDir}${delimiter}${process.env.PATH ?? ''}` }
 
 const commands = [
-  { name: 'web', args: ['run', '--cwd', 'apps/web', 'dev'] },
-  { name: 'api', args: ['run', '--cwd', 'apps/api', 'dev'] }
+  { name: 'web', cwd: 'apps/web', args: ['scripts/dev.ts'] },
+  { name: 'api', cwd: 'apps/api', args: ['run', 'dev'] }
 ]
 
-const processes = commands.map(({ name, args }) => ({
+const processes = commands.map(({ name, cwd, args }) => ({
   name,
-  proc: Bun.spawn([bunBin, ...args], { stdout: 'inherit', stderr: 'inherit', stdin: 'inherit', env })
+  proc: Bun.spawn([bunBin, ...args], { cwd, stdout: 'inherit', stderr: 'inherit', stdin: 'inherit', env })
 }))
 
 const stopAll = (signal: 'SIGINT' | 'SIGTERM') => {
