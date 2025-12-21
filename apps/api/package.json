@@ -11,7 +11,7 @@
     "build": "bun build src/index.ts --target bun --outdir dist",
     "lint": "oxlint .",
     "format": "oxfmt --write .",
-    "test": "echo 'No tests yet'",
+    "test": "bun test tests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun run src/db/migrate.ts",
     "db:prepare": "RUN_MIGRATIONS=1 bun run src/db/prepare-cli.ts",
