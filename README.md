@@ -48,6 +48,10 @@ make dev
 
 This runs docker-compose in the **dev** profile with hot reload for both apps. Stop with `Ctrl+C`. View logs with `make logs`.
 
+### Docker/WSL HMR tips
+
+The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and wires those settings through the `server.hmr` block in `apps/web/vite.config.ts`. When running inside Docker or WSL, set `HMR_HOST` to an address reachable by the browser (e.g., your host IP or `localhost` when port-forwarded) and `HMR_CLIENT_PORT` to the forwarded dev port so the Vite client can open the WebSocket. Avoid `VITE_HMR_POLLING=1` unless necessary; it forces polling and disables the faster WebSocket path.
+
 ## Production-like
 
 ```bash
