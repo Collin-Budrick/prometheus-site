@@ -176,6 +176,8 @@ export default defineConfig((configEnv) => {
         'compiled-i18n',
         'compiled-i18n/qwik'
       ],
+      // Keep the locale store singleton in dev by avoiding prebundle duplication.
+      exclude: ['@i18n/__locales', '@i18n/__data', '@i18n/__state'],
       rolldownOptions: {
         treeshake: true
       }
