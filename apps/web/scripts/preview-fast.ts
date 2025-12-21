@@ -53,8 +53,6 @@ const distLatest = getLatestMtime([distDir])
 const serverLatest = getLatestMtime([serverDir])
 
 const artifactsFresh = distFresh && serverFresh && distLatest > sourceLatest && serverLatest > sourceLatest
-const prerenderFresh = localeIndexFiles.every((file) => fs.existsSync(file))
-
 if (!Number.isNaN(previewPort)) {
   spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(previewPort)], { stdio: 'inherit', env: bunEnv })
 }
@@ -67,7 +65,7 @@ const buildEnv = {
   TMPDIR: process.env.TMPDIR ?? '/tmp',
   TEMP: process.env.TEMP ?? '/tmp',
   TMP: process.env.TMP ?? '/tmp',
-  SKIP_PRERENDER: process.env.SKIP_PRERENDER ?? '1'
+  SKIP_PRERENDER: process.env.SKIP_PRERENDER ?? '0'
 }
 
 if (!artifactsFresh) {
@@ -77,6 +75,8 @@ if (!artifactsFresh) {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
   execSync(`${bunBin} run scripts/emit-locale-build-dirs.ts en ko`, { cwd: projectRoot, stdio: 'inherit', env: bunEnv })
 }
+
+const prerenderFresh = localeIndexFiles.every((file) => fs.existsSync(file))
 
 if (!prerenderFresh) {
   console.log('Prerender output missing; running prerender before preview...')
