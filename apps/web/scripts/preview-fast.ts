@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execSync, spawn, spawnSync } from 'node:child_process'
+import { prerenderRoutes } from '../src/routes/prerender-routes'
 
 const projectRoot = process.cwd()
 const bunBin = process.execPath
@@ -17,7 +18,10 @@ const distDir = path.join(projectRoot, 'dist')
 const serverDir = path.join(projectRoot, 'server')
 const srcDir = path.join(projectRoot, 'src')
 const publicDir = path.join(projectRoot, 'public')
-const localeIndexFiles = [path.join(distDir, 'en', 'index.html'), path.join(distDir, 'ko', 'index.html')]
+const prerenderIndexFiles = prerenderRoutes.map((route) => {
+  const clean = route.replace(/^\//, '')
+  return path.join(distDir, clean ? path.join(clean, 'index.html') : 'index.html')
+})
 
 const getLatestMtime = (roots: string[]) => {
   let latest = 0
@@ -92,7 +96,7 @@ if (!artifactsFresh) {
   console.log('Using existing dist/ and server/ artifacts for preview (newer than src/).')
 }
 
-const prerenderFresh = localeIndexFiles.every((file) => fs.existsSync(file))
+const prerenderFresh = prerenderIndexFiles.every((file) => fs.existsSync(file))
 
 if (!prerenderFresh) {
   console.log('Prerender output missing; running prerender before preview...')
