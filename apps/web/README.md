@@ -56,6 +56,10 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - Scope CSS per route with `useStylesScoped$`/`routeStyles$` to keep the critical stylesheet tiny.
 - Opt into client hydration only when an action or realtime connection is required; keep hero/summary content static.
 
+## Frontend contributing guide
+
+- Keep frequently edited logic inside Qwik components/routes instead of the `src/entry.*` bootstraps. Entry point edits invalidate the app shell and force reloads, so files like `apps/web/src/entry.dev.tsx` should stay stable as global bootstrap code while feature work lands in routes.
+
 ## Third-party scripts
 
 - Script sources live in `src/config/third-party.ts` with explicit budgets, load strategies, and Partytown forwarding targets.
