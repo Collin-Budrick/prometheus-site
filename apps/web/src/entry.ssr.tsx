@@ -4,6 +4,7 @@ import { manifest } from '@qwik-client-manifest'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
+import { ensureLocaleDictionary } from './i18n/dictionaries'
 import { defaultLocale, locales as supportedLocales, setLocaleGetter, type Locale } from 'compiled-i18n'
 
 // cspell:ignore qwikloader
@@ -156,7 +157,8 @@ export default async function render(opts: RenderToStreamOptions) {
   const pathname = resolvePathname(opts)
   const isAudit = resolveIsAudit(opts)
   const locale = resolveLocaleFromRequest(opts) as Locale
-  const serverData = { ...opts.serverData, locale } as Record<string, any>
+  const loadedLocale = await ensureLocaleDictionary(locale)
+  const serverData = { ...opts.serverData, locale: loadedLocale } as Record<string, any>
   const qwikCity = serverData.qwikcity as Record<string, any> | undefined
   if (qwikCity) {
     if (qwikCity.ev) qwikCity.ev = noSerialize(qwikCity.ev)
@@ -168,8 +170,8 @@ export default async function render(opts: RenderToStreamOptions) {
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {
     ...opts.containerAttributes,
-    lang: locale,
-    'q:locale': locale
+    lang: loadedLocale,
+    'q:locale': loadedLocale
   }
 
   const lazyLoaderScript =
@@ -216,7 +218,7 @@ export default async function render(opts: RenderToStreamOptions) {
   ) as RenderToStreamOptions['manifest']
 
   const previousLocale = ssrLocale
-  ssrLocale = locale
+  ssrLocale = loadedLocale
   try {
     return await renderToStream(<Root />, {
       ...opts,

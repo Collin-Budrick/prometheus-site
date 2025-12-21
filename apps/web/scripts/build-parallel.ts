@@ -75,10 +75,7 @@ try {
   await run('vite build', bunBin, [viteBin, 'build'], bunEnv)
   await run('vite build --ssr', bunBin, [viteBin, 'build', '--ssr'], bunEnv)
 
-  await Promise.all([
-    run('prerender', bunBin, ['run', 'prerender'], buildEnv),
-    run('emit-locale-build-dirs', bunBin, ['run', 'scripts/emit-locale-build-dirs.ts', 'en', 'ko'], bunEnv)
-  ])
+  await run('prerender', bunBin, ['run', 'prerender'], buildEnv)
 } catch (error) {
   stopActive()
   console.error(error instanceof Error ? error.message : error)
