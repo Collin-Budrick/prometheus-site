@@ -1,7 +1,6 @@
-diff --git a/node_modules/compiled-i18n/dist/transform-localize.mjs b/node_modules/compiled-i18n/dist/transform-localize.mjs
-index d05ac79..0adba7c 100644
---- a/node_modules/compiled-i18n/dist/transform-localize.mjs
-+++ b/node_modules/compiled-i18n/dist/transform-localize.mjs
+diff --git a/dist/transform-localize.mjs b/dist/transform-localize.mjs
+--- a/dist/transform-localize.mjs
++++ b/dist/transform-localize.mjs
 @@ -210,7 +210,18 @@ const replaceGlobals = ({
      if (!argExprs.length) {
        throw new Error(`No arguments found for __$LOCALIZE$__`);
@@ -22,11 +21,9 @@ index d05ac79..0adba7c 100644
      const tr = getTr(key, locale, translations);
      code = code.slice(0, startIndex) + makeTranslatedExpr(tr, argExprs) + chunk.slice(i + 1);
    }
-
-diff --git a/node_modules/compiled-i18n/dist/vite.mjs b/node_modules/compiled-i18n/dist/vite.mjs
-index 4d049ac..31184a5 100644
---- a/node_modules/compiled-i18n/dist/vite.mjs
-+++ b/node_modules/compiled-i18n/dist/vite.mjs
+diff --git a/dist/vite.mjs b/dist/vite.mjs
+--- a/dist/vite.mjs
++++ b/dist/vite.mjs
 @@ -1,67 +1,68 @@
  import { resolve, sep } from "node:path";
  import fs from "node:fs";
@@ -75,10 +72,9 @@ index 4d049ac..31184a5 100644
          };
          return updatedViteConfig;
        },
--      configResolved(config) {
+       configResolved(config) {
 -        shouldInline = !config.build.ssr && config.mode === "production";
-+        configResolved(config) {
-+          shouldInline = !lazy && !config.build.ssr && config.mode === "production";
++        shouldInline = !lazy && !config.build.ssr && config.mode === "production";
          if (!assetsDir && config.plugins.some((p) => p.name === "vite-plugin-qwik"))
            assetsDir = "build/";
        },
