@@ -25,11 +25,65 @@ const readEnv = (key: string) => {
   return undefined
 }
 
-const env = {
+export type ThirdPartyEnv = {
+  gaId?: string
+  adsClient?: string
+  supportWidgetSrc?: string
+}
+
+const envKeyByProperty: Record<keyof ThirdPartyEnv, string> = {
+  gaId: 'VITE_GTAG_ID',
+  adsClient: 'VITE_ADSENSE_CLIENT',
+  supportWidgetSrc: 'VITE_SUPPORT_WIDGET_SRC'
+}
+
+const normalizeEnvValue = (value: string | undefined) => {
+  const normalized = value?.trim()
+  return normalized ? normalized : undefined
+}
+
+const validateEnvId = (key: keyof ThirdPartyEnv, value: string | undefined, pattern: RegExp, hint: string) => {
+  const normalized = normalizeEnvValue(value)
+  if (!normalized) return undefined
+
+  if (!pattern.test(normalized)) {
+    throw new Error(`${envKeyByProperty[key]} is set but invalid. Expected ${hint}.`)
+  }
+
+  return normalized
+}
+
+export const validateThirdPartyEnv = (raw: ThirdPartyEnv): ThirdPartyEnv => {
+  const gaId = validateEnvId('gaId', raw.gaId, /^G-[A-Z0-9-]+$/, 'a GA4 measurement ID like G-XXXXXXX')
+  const adsClient = validateEnvId(
+    'adsClient',
+    raw.adsClient,
+    /^ca-pub-\d{16}$/,
+    'an AdSense client ID like ca-pub-1234567890123456'
+  )
+
+  const supportWidgetSrc = normalizeEnvValue(raw.supportWidgetSrc)
+  if (supportWidgetSrc) {
+    try {
+      const url = new URL(supportWidgetSrc)
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('')
+      }
+    } catch {
+      throw new Error(
+        `${envKeyByProperty.supportWidgetSrc} is set but invalid. Expected an absolute http/https URL.`
+      )
+    }
+  }
+
+  return { gaId, adsClient, supportWidgetSrc }
+}
+
+const env = validateThirdPartyEnv({
   gaId: readEnv('VITE_GTAG_ID'),
   adsClient: readEnv('VITE_ADSENSE_CLIENT'),
   supportWidgetSrc: readEnv('VITE_SUPPORT_WIDGET_SRC')
-}
+})
 
 const isPreview = import.meta.env.PROD
 
