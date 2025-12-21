@@ -42,7 +42,7 @@ export default defineConfig((configEnv) => {
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
       qwikViteNoDeprecatedEsbuild(),
-      i18nPlugin({ locales: ['en', 'ko'] }),
+      i18nPlugin({ locales: ['en', 'ko'], lazy: true }),
       tsconfigPaths(),
       UnoCSS(),
       VitePWA({

@@ -1,8 +1,9 @@
 import { render, type RenderOptions } from '@builder.io/qwik'
-import { locales, setDefaultLocale } from 'compiled-i18n'
+import { defaultLocale, locales, setDefaultLocale } from 'compiled-i18n'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
 import { resolvePathnameLocale } from './i18n/pathname-locale'
+import { ensureLocaleDictionary } from './i18n/dictionaries'
 
 type DevGlobals = typeof globalThis & { __prometheusDevCachePurged?: boolean }
 const devGlobals = globalThis as DevGlobals
@@ -42,9 +43,10 @@ const resolveClientLocale = () => {
   return resolveLocale({ queryLocale, cookieLocale, acceptLanguage })
 }
 
-const applyClientLocale = () => {
-  const locale = resolveClientLocale()
-  if (!locale || typeof document === 'undefined') return
+const applyClientLocale = async () => {
+  const locale = resolveClientLocale() ?? defaultLocale
+  await ensureLocaleDictionary(locale)
+  if (typeof document === 'undefined') return
   document.documentElement.lang = locale
   document.documentElement.setAttribute('q:locale', locale)
   setDefaultLocale(locale)
@@ -52,6 +54,6 @@ const applyClientLocale = () => {
 
 export default async function renderEntry(opts: RenderOptions = {}) {
   await purgeDevCaches()
-  applyClientLocale()
+  await applyClientLocale()
   return render(document, <Root />, opts)
 }
