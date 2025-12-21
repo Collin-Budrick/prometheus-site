@@ -73,7 +73,6 @@ try {
   ])
 
   await run('vite build', bunBin, [viteBin, 'build'], bunEnv)
-  await run('vite build --ssr', bunBin, [viteBin, 'build', '--ssr'], bunEnv)
 
   await run('prerender', bunBin, ['run', 'prerender'], buildEnv)
 } catch (error) {

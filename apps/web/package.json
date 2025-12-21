@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "bun run generate:uno && bun run check:css && vite build && vite build --ssr && bun run prerender",
+    "build": "bun run generate:uno && bun run check:css && vite build && bun run prerender",
     "build:parallel": "bun run scripts/build-parallel.ts",
     "preview": "bun run preview:fast",
     "preview:fast": "bun run scripts/preview-fast.ts",

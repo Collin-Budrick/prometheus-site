@@ -5,7 +5,7 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 ## Scripts
 
 - `bun run dev` – start SSR dev server with hot module reloading.
-- `bun run build` – build client + SSR output with Lightning CSS minification.
+- `bun run build` – run a single Vite build that outputs both client + SSR bundles with Lightning CSS minification.
 - `bun run preview` – preview the SSR build.
 - `bun run lint` – run Oxlint linting.
 - `bun run format` – apply Oxfmt formatting.
