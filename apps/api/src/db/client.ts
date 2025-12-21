@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
+import { config } from '../config/env'
 
 type ConnectionMetrics = {
   attempts: number
@@ -8,15 +9,11 @@ type ConnectionMetrics = {
   lastSuccessAt?: Date
 }
 
-const connectionString =
-  process.env.DATABASE_URL ??
-  `postgresql://${process.env.POSTGRES_USER ?? 'prometheus'}:${process.env.POSTGRES_PASSWORD ?? 'secret'}@${
-    process.env.POSTGRES_HOST ?? 'localhost'
-  }:${process.env.POSTGRES_PORT ?? 5433}/${process.env.POSTGRES_DB ?? 'prometheus'}`
+const connectionString = config.postgres.connectionString
 
-const ssl = process.env.POSTGRES_SSL === 'true' ? 'require' : false
-const maxRetries = Number(process.env.DB_CONNECT_RETRIES ?? 5)
-const baseDelayMs = Number(process.env.DB_CONNECT_BACKOFF_MS ?? 200)
+const ssl = config.postgres.ssl
+const maxRetries = config.postgres.connectRetries
+const baseDelayMs = config.postgres.backoffMs
 
 const metrics: ConnectionMetrics = {
   attempts: 0,
