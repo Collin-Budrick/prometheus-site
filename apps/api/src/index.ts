@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { desc, gt } from 'drizzle-orm'
-import { db } from './db/client'
+import { db, pgClient } from './db/client'
 import { prepareDatabase } from './db/prepare'
 import { chatMessages, storeItems } from './db/schema'
 import { connectValkey, isValkeyReady, valkey } from './services/cache'
@@ -94,7 +94,49 @@ const checkWsQuota = (ws: any) => {
 
 const app = new Elysia()
   .decorate('valkey', valkey)
-  .get('/health', () => ({ status: 'ok', uptime: process.uptime(), telemetry }))
+  .get('/health', async () => {
+    const dependencies = {
+      postgres: { status: 'ok' as const },
+      valkey: { status: 'ok' as const }
+    }
+
+    let healthy = true
+
+    try {
+      await pgClient`select 1`
+    } catch (error) {
+      healthy = false
+      dependencies.postgres = {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    try {
+      if (!isValkeyReady()) {
+        throw new Error('Valkey connection not established')
+      }
+      await valkey.ping()
+    } catch (error) {
+      healthy = false
+      dependencies.valkey = {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    const payload = {
+      status: healthy ? 'ok' : 'degraded',
+      uptime: process.uptime(),
+      telemetry,
+      dependencies
+    }
+
+    return new Response(JSON.stringify(payload), {
+      status: healthy ? 200 : 503,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  })
   .get(
     '/store/items',
     async ({ query, request }) => {
