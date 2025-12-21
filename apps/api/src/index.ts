@@ -17,6 +17,13 @@ async function bootstrap() {
 
 const chatChannel = 'chat:stream'
 
+const telemetry = {
+  cacheHits: 0,
+  cacheMisses: 0,
+  cacheGetErrors: 0,
+  cacheSetErrors: 0
+}
+
 const jsonError = (status: number, error: string) =>
   new Response(JSON.stringify({ error }), {
     status,
@@ -28,7 +35,7 @@ const maxChatLength = 1000
 
 const app = new Elysia()
   .decorate('valkey', valkey)
-  .get('/health', () => ({ status: 'ok', uptime: process.uptime() }))
+  .get('/health', () => ({ status: 'ok', uptime: process.uptime(), telemetry }))
   .get(
     '/store/items',
     async ({ query }) => {
@@ -46,11 +53,13 @@ const app = new Elysia()
         try {
           const cached = await valkey.get(cacheKey)
           if (cached) {
+            telemetry.cacheHits += 1
             return JSON.parse(cached)
           }
+          telemetry.cacheMisses += 1
         } catch (error) {
-          console.error('Failed to read from cache', error)
-          return jsonError(503, 'Cache unavailable')
+          telemetry.cacheGetErrors += 1
+          console.warn('Cache read failed; serving fresh data', { cacheKey, error })
         }
       }
 
@@ -72,8 +81,8 @@ const app = new Elysia()
         try {
           await valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
         } catch (error) {
-          console.error('Failed to write to cache', error)
-          return jsonError(503, 'Cache unavailable')
+          telemetry.cacheSetErrors += 1
+          console.warn('Cache write failed; response not cached', { cacheKey, error })
         }
       }
 
