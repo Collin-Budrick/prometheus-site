@@ -8,7 +8,14 @@ const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
   if (shouldPrepareDatabase) {
-    await prepareDatabase()
+    console.log('RUN_MIGRATIONS=1: running database migrations and seed data')
+    try {
+      await prepareDatabase()
+      console.log('Database migrations and seed completed successfully')
+    } catch (error) {
+      console.error('Database migrations failed', error)
+      throw error
+    }
   } else {
     console.log('RUN_MIGRATIONS not set; skipping migrations and seed step')
   }
