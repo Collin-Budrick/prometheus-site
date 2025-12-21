@@ -26,6 +26,7 @@ See `.env.example` for defaults. Key values:
 - `DATABASE_URL` (preferred) or `POSTGRES_*` connection values and `POSTGRES_SSL`
 - `VALKEY_HOST`, `VALKEY_PORT`
 - `ENABLE_PARTYTOWN` to opt-in to Partytown for third-party scripts
+- Operational toggles: `RUN_MIGRATIONS` (auto-run DB migrations on API start) and `VITE_PREVIEW` (serve built web via Vite preview)
 
 ## Scripts
 
