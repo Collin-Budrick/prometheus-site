@@ -45,8 +45,7 @@ const rateLimitMaxRequests = 60
 const wsMessageWindowMs = 60_000
 const wsMessageLimit = 40
 
-const requestCounters = new Map<string, { count: number; resetAt: number }>()
-const wsMessageCounters = new WeakMap<any, { count: number; resetAt: number }>()
+const inMemoryCounters = new Map<string, { count: number; resetAt: number }>()
 
 const getClientIp = (request: Request) =>
   request.headers.get('cf-connecting-ip') ||
@@ -55,18 +54,48 @@ const getClientIp = (request: Request) =>
   request.headers.get('remote-addr') ||
   'unknown'
 
-const checkRateLimit = (route: string, clientIp: string) => {
+const getCounter = async (key: string, windowMs: number) => {
   const now = Date.now()
-  const key = `${route}:${clientIp}`
-  const counter = requestCounters.get(key) || { count: 0, resetAt: now + rateLimitWindowMs }
+
+  if (isValkeyReady()) {
+    try {
+      const [[, countRaw], [, ttlRaw]] = await valkey
+        .multi()
+        .incr(key)
+        .pttl(key)
+        .exec()
+
+      const count = Number(countRaw)
+      let ttlMs = Number(ttlRaw)
+
+      if (Number.isNaN(ttlMs) || ttlMs < 0) {
+        ttlMs = windowMs
+        await valkey.pexpire(key, windowMs)
+      }
+
+      return { count, resetAt: now + ttlMs }
+    } catch (error) {
+      console.error('Valkey rate limiter unavailable; using local fallback', { key, error })
+    }
+  }
+
+  const counter = inMemoryCounters.get(key) || { count: 0, resetAt: now + windowMs }
 
   if (now > counter.resetAt) {
     counter.count = 0
-    counter.resetAt = now + rateLimitWindowMs
+    counter.resetAt = now + windowMs
   }
 
   counter.count += 1
-  requestCounters.set(key, counter)
+  inMemoryCounters.set(key, counter)
+
+  return counter
+}
+
+const checkRateLimit = async (route: string, clientIp: string) => {
+  const now = Date.now()
+  const key = `${route}:${clientIp}`
+  const counter = await getCounter(key, rateLimitWindowMs)
 
   const allowed = counter.count <= rateLimitMaxRequests
   const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
@@ -74,17 +103,10 @@ const checkRateLimit = (route: string, clientIp: string) => {
   return { allowed, retryAfter }
 }
 
-const checkWsQuota = (ws: any) => {
+const checkWsQuota = async (ws: any) => {
   const now = Date.now()
-  const counter = wsMessageCounters.get(ws) || { count: 0, resetAt: now + wsMessageWindowMs }
-
-  if (now > counter.resetAt) {
-    counter.count = 0
-    counter.resetAt = now + wsMessageWindowMs
-  }
-
-  counter.count += 1
-  wsMessageCounters.set(ws, counter)
+  const key = `ws:${ws.remoteAddress ?? 'unknown'}`
+  const counter = await getCounter(key, wsMessageWindowMs)
 
   const allowed = counter.count <= wsMessageLimit
   const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
@@ -141,7 +163,7 @@ const app = new Elysia()
     '/store/items',
     async ({ query, request }) => {
       const clientIp = getClientIp(request)
-      const { allowed, retryAfter } = checkRateLimit('/store/items', clientIp)
+      const { allowed, retryAfter } = await checkRateLimit('/store/items', clientIp)
 
       if (!allowed) {
         return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
@@ -205,7 +227,7 @@ const app = new Elysia()
   )
   .get('/chat/history', async ({ request }) => {
     const clientIp = getClientIp(request)
-    const { allowed, retryAfter } = checkRateLimit('/chat/history', clientIp)
+    const { allowed, retryAfter } = await checkRateLimit('/chat/history', clientIp)
 
     if (!allowed) {
       return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
@@ -218,7 +240,7 @@ const app = new Elysia()
     '/ai/echo',
     async ({ body, request }) => {
       const clientIp = getClientIp(request)
-      const { allowed, retryAfter } = checkRateLimit('/ai/echo', clientIp)
+      const { allowed, retryAfter } = await checkRateLimit('/ai/echo', clientIp)
 
       if (!allowed) {
         return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
@@ -277,7 +299,7 @@ const app = new Elysia()
     async message(_ws, message) {
       if (!isValkeyReady()) return
 
-      const { allowed, retryAfter } = checkWsQuota(_ws)
+      const { allowed, retryAfter } = await checkWsQuota(_ws)
 
       if (!allowed) {
         _ws.send(
@@ -332,16 +354,44 @@ const app = new Elysia()
     }
   })
  
+let shuttingDown = false
+let serverHandle: ReturnType<typeof app.listen> | null = null
+
 async function start() {
   try {
     await bootstrap()
     const port = Number.parseInt(process.env.API_PORT ?? '4000', 10)
-    app.listen({ port, hostname: process.env.API_HOST ?? '0.0.0.0' })
+    serverHandle = app.listen({ port, hostname: process.env.API_HOST ?? '0.0.0.0' })
     console.log(`API ready at http://${process.env.API_HOST ?? '0.0.0.0'}:${port}`)
   } catch (error) {
     console.error('Startup failed', error)
     process.exit(1)
   }
+}
+
+const shutdown = async (signal: NodeJS.Signals) => {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`${signal} received: shutting down API`)
+
+  try {
+    if (serverHandle?.stop) await serverHandle.stop()
+    if (valkey.isOpen) await valkey.quit()
+    await pgClient.end()
+  } catch (error) {
+    console.error('Graceful shutdown failed', error)
+    process.exitCode = 1
+  } finally {
+    process.exit()
+  }
+}
+
+const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM']
+
+for (const signal of signals) {
+  process.on(signal, () => {
+    void shutdown(signal)
+  })
 }
 
 void start()
