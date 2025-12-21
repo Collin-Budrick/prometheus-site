@@ -65,7 +65,7 @@ export default defineConfig((configEnv) => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          navigateFallback: '/index.html',
+          navigateFallback: undefined,
           runtimeCaching: [
             {
               urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
@@ -111,7 +111,8 @@ export default defineConfig((configEnv) => {
               }
             },
             {
-              urlPattern: ({ request }) => request.mode === 'navigate',
+              urlPattern: ({ request, url }) =>
+                request.mode === 'navigate' && (url.pathname === '/' || url.pathname.endsWith('/index.html')),
               handler: 'NetworkOnly',
               options: {
                 precacheFallback: {
