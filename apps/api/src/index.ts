@@ -26,12 +26,71 @@ const jsonError = (status: number, error: string) =>
 const maxPromptLength = 2000
 const maxChatLength = 1000
 
+const rateLimitWindowMs = 60_000
+const rateLimitMaxRequests = 60
+const wsMessageWindowMs = 60_000
+const wsMessageLimit = 40
+
+const requestCounters = new Map<string, { count: number; resetAt: number }>()
+const wsMessageCounters = new WeakMap<any, { count: number; resetAt: number }>()
+
+const getClientIp = (request: Request) =>
+  request.headers.get('cf-connecting-ip') ||
+  request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+  request.headers.get('x-real-ip') ||
+  request.headers.get('remote-addr') ||
+  'unknown'
+
+const checkRateLimit = (route: string, clientIp: string) => {
+  const now = Date.now()
+  const key = `${route}:${clientIp}`
+  const counter = requestCounters.get(key) || { count: 0, resetAt: now + rateLimitWindowMs }
+
+  if (now > counter.resetAt) {
+    counter.count = 0
+    counter.resetAt = now + rateLimitWindowMs
+  }
+
+  counter.count += 1
+  requestCounters.set(key, counter)
+
+  const allowed = counter.count <= rateLimitMaxRequests
+  const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
+
+  return { allowed, retryAfter }
+}
+
+const checkWsQuota = (ws: any) => {
+  const now = Date.now()
+  const counter = wsMessageCounters.get(ws) || { count: 0, resetAt: now + wsMessageWindowMs }
+
+  if (now > counter.resetAt) {
+    counter.count = 0
+    counter.resetAt = now + wsMessageWindowMs
+  }
+
+  counter.count += 1
+  wsMessageCounters.set(ws, counter)
+
+  const allowed = counter.count <= wsMessageLimit
+  const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
+
+  return { allowed, retryAfter }
+}
+
 const app = new Elysia()
   .decorate('valkey', valkey)
   .get('/health', () => ({ status: 'ok', uptime: process.uptime() }))
   .get(
     '/store/items',
-    async ({ query }) => {
+    async ({ query, request }) => {
+      const clientIp = getClientIp(request)
+      const { allowed, retryAfter } = checkRateLimit('/store/items', clientIp)
+
+      if (!allowed) {
+        return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+      }
+
       const limitRaw = Number.parseInt((query.limit as string) || '10', 10)
       const lastId = Number.parseInt((query.cursor as string) || '0', 10)
 
@@ -86,13 +145,27 @@ const app = new Elysia()
       })
     }
   )
-  .get('/chat/history', async () => {
+  .get('/chat/history', async ({ request }) => {
+    const clientIp = getClientIp(request)
+    const { allowed, retryAfter } = checkRateLimit('/chat/history', clientIp)
+
+    if (!allowed) {
+      return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+    }
+
     const rows = await db.select().from(chatMessages).orderBy(desc(chatMessages.createdAt)).limit(20)
     return rows.reverse()
   })
   .post(
     '/ai/echo',
-    async ({ body }) => {
+    async ({ body, request }) => {
+      const clientIp = getClientIp(request)
+      const { allowed, retryAfter } = checkRateLimit('/ai/echo', clientIp)
+
+      if (!allowed) {
+        return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+      }
+
       const prompt = body.prompt.trim()
 
       if (!prompt) {
@@ -145,6 +218,19 @@ const app = new Elysia()
     },
     async message(_ws, message) {
       if (!isValkeyReady()) return
+
+      const { allowed, retryAfter } = checkWsQuota(_ws)
+
+      if (!allowed) {
+        _ws.send(
+          JSON.stringify({
+            type: 'error',
+            error: `Message quota exceeded. Try again in ${retryAfter}s`
+          })
+        )
+        _ws.close()
+        return
+      }
 
       let payload
       if (typeof message === 'string') {
