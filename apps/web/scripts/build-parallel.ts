@@ -81,12 +81,7 @@ try {
   ])
 
   await runTimed('vite build (client)', bunBin, [viteBin, 'build'], bunEnv)
-  await runTimed(
-    'vite build (ssr)',
-    bunBin,
-    [viteBin, 'build', '--ssr', 'src/entry.ssr.tsx', '--outDir', 'server'],
-    bunEnv
-  )
+  await runTimed('vite build (ssr)', bunBin, [viteBin, 'build', '--ssr', '--outDir', 'server'], bunEnv)
 
   await runTimed('prerender', bunBin, ['run', 'prerender'], buildEnv)
 } catch (error) {
