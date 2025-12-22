@@ -3,8 +3,9 @@ import { locales as supportedLocales } from '@i18n/__data'
 const store = {}
 
 const loaders = {
-  en: () => import('../web/i18n/en.json'),
-  ko: () => import('../web/i18n/ko.json')
+  en: () => import('../../i18n/en.json'),
+  ko: () => import('../../i18n/ko.json'),
+  ja: () => import('../../i18n/ja.json')
 }
 
 const normalizeDictionary = (locale, payload) => {

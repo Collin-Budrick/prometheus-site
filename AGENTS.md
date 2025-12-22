@@ -67,6 +67,15 @@ Use these rules when touching routes, layouts, components, or styles.
 - Locale-aware links should be built from `useLocation()` and preserve the non-locale path.
 - For labels in UI, use `compiled-i18n` `_`` strings so they localize correctly.
 
+### Adding a new language
+
+- Add the locale code to `i18nPlugin` and `localeBuildFallback` in `apps/web/vite.config.ts`.
+- Create `i18n/<locale>.json` by copying `i18n/en.json`; set `locale`, `name` (selector label), optional `fallback`, and translate all keys.
+- Update locale loaders in `apps/i18n-locales/index.mjs` and `apps/i18n-locales/index.cjs`.
+- If keeping explicit locale routes (see `apps/web/src/routes/en` and `apps/web/src/routes/ko`), copy one of those folders to `apps/web/src/routes/<locale>` and update `layout.tsx` to set the new locale.
+- Restart `bun run dev` after changing `vite.config.ts` or adding locale JSON files.
+- Optional: update locale-specific tests or `apps/web/src/routes/prerender-routes.ts` if you want localized prerender coverage.
+
 ### Testing + preview expectations
 
 - `bun run dev` for HMR; `bun run preview` runs the full build + prerender.

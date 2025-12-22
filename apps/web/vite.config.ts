@@ -21,8 +21,10 @@ import {
   speculationRulesManifest
 } from './vite.plugins'
 
+const appRoot = fileURLToPath(new URL('.', import.meta.url))
 const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
 const partytownDest = fileURLToPath(new URL('./public/~partytown', import.meta.url))
+const localesDir = fileURLToPath(new URL('../../i18n', import.meta.url))
 
 export default defineConfig((configEnv) => {
   const ssrBuild =
@@ -42,7 +44,7 @@ export default defineConfig((configEnv) => {
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
       qwikViteNoDeprecatedEsbuild(),
-      i18nPlugin({ locales: ['en', 'ko'], lazy: true }),
+      i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }),
       tsconfigPaths(),
       UnoCSS(),
       VitePWA({
@@ -129,7 +131,7 @@ export default defineConfig((configEnv) => {
       devAuditStripViteClient(env.devAuditMode),
       devBustedViteClient(!env.devAuditMode),
       qwikCityDevEnvDataJsonSafe(),
-      localeBuildFallback(['en', 'ko']),
+      localeBuildFallback(['en', 'ko', 'ja']),
       devFontSilencer(),
       previewImmutableAssetCache(env.previewCacheEnabled)
     ].filter(Boolean),
@@ -191,7 +193,10 @@ export default defineConfig((configEnv) => {
       port: env.devPort,
       strictPort: true,
       hmr: env.hmr,
-      watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined
+      watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined,
+      fs: {
+        allow: [appRoot, localesDir]
+      }
     },
     preview: {
       host: '0.0.0.0',
