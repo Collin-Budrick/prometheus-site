@@ -4,6 +4,7 @@ import { localeNames, locales } from 'compiled-i18n'
 
 type MotionModule = typeof import('motion/mini')
 type AnimateFn = MotionModule['animate']
+type AnimationHandle = ReturnType<AnimateFn>
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
@@ -23,7 +24,7 @@ export const LocaleSelector = component$(() => {
     const panel = track(() => panelRef.value)
     if (!menu || !panel) return
 
-    let activeAnimation: Animation | undefined
+    let activeAnimation: AnimationHandle | null = null
     let animateFn: AnimateFn | null = null
     let motionPromise: Promise<MotionModule> | null = null
     let animationToken = 0
@@ -40,7 +41,11 @@ export const LocaleSelector = component$(() => {
 
     const prewarmMotion = () => {
       if (prefersReducedMotion()) return
-      if (navigator.connection?.saveData) return
+      const connection =
+        typeof navigator !== 'undefined' && 'connection' in navigator
+          ? (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+          : undefined
+      if (connection?.saveData) return
       const warm = () => {
         void loadAnimate()
       }
@@ -65,7 +70,7 @@ export const LocaleSelector = component$(() => {
         if (token !== animationToken) return
         onFinish()
         if (activeAnimation === animation) {
-          activeAnimation = undefined
+          activeAnimation = null
         }
       })
     }
