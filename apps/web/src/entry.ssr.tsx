@@ -130,7 +130,7 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
     }))
 }
 
-const densifyArrays = (value: unknown, seen = new WeakSet<object>()) => {
+const densifyArrays = (value: unknown, seen = new WeakSet<object>()): unknown => {
   if (!value || typeof value !== 'object') return value
   if (seen.has(value)) return value
   seen.add(value)
