@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Plugin, ViteDevServer } from 'vite'
+import type { ConfigEnv, Plugin, UserConfig, ViteDevServer } from 'vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import Inspect from 'vite-plugin-inspect'
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -72,7 +72,7 @@ export const leanWorkboxManifest = (entries: WorkboxManifestEntry[]) => {
 
 export const devFontSilencer = () => ({
   name: 'dev-font-silencer',
-  apply: 'serve' as const,
+  apply: (_config: UserConfig, env: ConfigEnv) => env.command === 'serve' && !env.isPreview,
   configureServer(server: ViteDevServer) {
     server.middlewares.use((req, res, next) => {
       if (req.url?.startsWith('/fonts/inter-var.woff2')) {
@@ -212,7 +212,7 @@ export const devBustedViteClient = (enabled: boolean) =>
   enabled
     ? {
         name: 'dev-busted-vite-client',
-        apply: 'serve' as const,
+        apply: (_config: UserConfig, env: ConfigEnv) => env.command === 'serve' && !env.isPreview,
         enforce: 'post' as const,
         transformIndexHtml(html: string) {
           const stripped = html.replace(
@@ -229,7 +229,7 @@ export const devAuditStripViteClient = (enabled: boolean) =>
   enabled
     ? {
         name: 'dev-audit-strip-vite-client',
-        apply: 'serve' as const,
+        apply: (_config: UserConfig, env: ConfigEnv) => env.command === 'serve' && !env.isPreview,
         enforce: 'post' as const,
         transformIndexHtml(html: string) {
           return html.replace(/<script\s+type="module"\s+src="\/@vite\/client(?:\?[^"]*)?"\s*><\/script>/g, '')
@@ -302,13 +302,13 @@ export const createAnalysisPlugins = (enabled: boolean): Plugin[] =>
           build: true,
           enabled: true,
           outputDir: 'dist/stats/inspect'
-        }),
+        }) as unknown as Plugin,
         visualizer({
           filename: 'stats/rollup-visualizer.html',
           template: 'treemap',
           gzipSize: true,
           brotliSize: true,
           emitFile: true
-        })
+        }) as unknown as Plugin
       ]
     : []
