@@ -105,11 +105,8 @@ const resolveRouteBundles = (pathname: string): string[] => {
 
 const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname: string) => {
   const manifestRecord = resolvedManifest && typeof resolvedManifest === 'object' ? (resolvedManifest as Record<string, unknown>) : null
-  const qwikLoader = typeof manifestRecord?.qwikLoader === 'string' ? manifestRecord.qwikLoader : null
-  const core = typeof manifestRecord?.core === 'string' ? manifestRecord.core : null
-
   const bundles = resolveRouteBundles(pathname)
-  const candidates = [qwikLoader, core, ...bundles].filter((value): value is string => typeof value === 'string')
+  const candidates = bundles.filter((value): value is string => typeof value === 'string')
 
   const seen = new Set<string>()
   return candidates
@@ -209,11 +206,6 @@ export default async function render(opts: RenderToStreamOptions) {
 
   const warmupModules = isProd ? resolveWarmupModules(resolvedManifest) : []
   const warmupModuleJson = JSON.stringify(warmupModules)
-  const warmupImportScript = warmupModules.length
-    ? `if(!navigator.connection?.saveData){${warmupModules
-        .map((file) => `import('${base}${file}');`)
-        .join('')}}`
-    : ''
 
   const lazyLoaderScript =
     `(function(){const src='${loaderSrc}';if(!src)return;let started=false;` +
@@ -221,17 +213,16 @@ export default async function render(opts: RenderToStreamOptions) {
     `const preload=(file)=>{if(!file||warmed.has(file))return;warmed.add(file);const href=file.startsWith('/')?file:(base+file);` +
     `const link=document.createElement('link');link.rel='modulepreload';link.href=href;link.crossOrigin='anonymous';document.head.appendChild(link);};` +
     `const load=()=>{if(started||navigator.connection?.saveData)return;started=true;const s=document.createElement('script');s.type='module';s.defer=true;s.src=src;s.setAttribute('data-qwik-loader','lazy');document.head.appendChild(s);};` +
-    `const prime=()=>{load();cleanup();};` +
-    `const cleanup=()=>triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));` +
+    `const warmupNow=()=>{if(navigator.connection?.saveData)return;warmup.forEach(preload);};` +
+    `const prime=()=>{warmupNow();load();cleanup();};` +
+    `const cleanup=()=>{triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));document.removeEventListener('pointerover',hoverPrime,hoverOpts);};` +
     `const triggers=['pointerdown','keydown','touchstart','focusin'];` +
     `const listenerOpts={once:true,passive:true};` +
-    `const scheduleWarmup=()=>{if(navigator.connection?.saveData)return;const run=()=>{warmup.forEach(preload);prime();};` +
-    `setTimeout(run,0);};` +
-    `if(document.readyState==='complete'||document.readyState==='interactive'){scheduleWarmup();}` +
-    `else{document.addEventListener('DOMContentLoaded',scheduleWarmup,{once:true});}` +
+    `const hoverOpts={passive:true};` +
+    `const hoverPrime=(event)=>{const target=event.target;const el=target&&target.closest?target.closest('[data-qwik-prime]'):null;if(el)prime();};` +
     `triggers.forEach((event)=>document.addEventListener(event,prime,listenerOpts));` +
-    `document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')prime();},{once:true});` +
-    `window.__qwikLazyLoad=prime;if(window.__qwikLazyLoadPending){prime();}})();`
+    `document.addEventListener('pointerover',hoverPrime,hoverOpts);` +
+    `window.__qwikLazyLoad=prime;window.__qwikLazyWarmup=warmupNow;if(window.__qwikLazyLoadPending){prime();}})();`
 
   const lazyInjection = {
     tag: 'script' as const,
@@ -241,18 +232,6 @@ export default async function render(opts: RenderToStreamOptions) {
       dangerouslySetInnerHTML: lazyLoaderScript
     }
   }
-  const warmupInjection = warmupImportScript
-    ? {
-        tag: 'script' as const,
-        location: 'head' as const,
-        attributes: {
-          type: 'module',
-          'data-qwik-warmup': 'modules',
-          dangerouslySetInnerHTML: warmupImportScript
-        }
-      }
-    : null
-
   const modulePreloadInjections =
     isProd && shouldInjectModulePreloads(pathname, isAudit) ? resolveModulePreloads(base, resolvedManifest, pathname) : []
 
@@ -268,7 +247,6 @@ export default async function render(opts: RenderToStreamOptions) {
               injections: ([
                 ...(resolvedManifest as any)?.injections ?? [],
                 ...modulePreloadInjections,
-                warmupInjection,
                 lazyInjection
               ].filter(Boolean) as any)
             }
@@ -280,7 +258,6 @@ export default async function render(opts: RenderToStreamOptions) {
             injections: ([
               ...(resolvedManifest as any)?.injections ?? [],
               ...modulePreloadInjections,
-              warmupInjection,
               lazyInjection
             ].filter(Boolean) as any)
           }

@@ -61,6 +61,24 @@ Use these rules when touching routes, layouts, components, or styles.
 - Keep critical CSS minimal: only what’s needed for initial layout and the current route.
 - Prefer utility classes for non-critical styling, but ensure critical structural styles exist in `critical.css`.
 
+### Animation implementation (Motion One mini)
+
+- Default to CSS/View Transitions; when JS is required, use `apps/web/src/components/animations/use-motion-mini.ts` to lazy-load Motion One safely.
+- All DOM animation wiring belongs in `useVisibleTask$`; keep render/SSR pure.
+- Use `const motion = useMotionMini()` inside the visible task and call:
+  - `motion.prewarm({ element, willChange: 'opacity, transform, filter', delay: 0 })` to prefetch the chunk (respects Save-Data and reduced motion).
+  - `motion.loadAnimate()` when actually animating.
+  - `motion.prefersReducedMotion()` to skip animations.
+- Qwik runtime priming is hover/interaction-based (no DOMContentLoaded warmup). To prewarm for first interaction, add `data-qwik-prime` to the trigger element; the lazy loader in `apps/web/src/entry.ssr.tsx` will prefetch on `pointerover` and on the first real input event.
+- For animated `<details>` menus:
+  - Add `animated-details` to the `<details>` and `animated-panel` to the panel.
+  - Set `menu.dataset.js = 'true'` in the visible task so `critical.css` shows the panel only for no-JS fallback.
+  - Add `data-qwik-prime` to the `<summary>` trigger if you want Qwik primed on hover.
+  - Intercept the summary click to animate close: `event.preventDefault()`, run the close animation, then set `menu.open = false`.
+  - Guard the `toggle` handler with a flag (e.g., `ignoreToggle`) so programmatic open/close doesn’t double-run animations.
+  - Keep the panel visible during close (`panel.style.display = 'grid'`), run `panel.getBoundingClientRect()` before the animation, and remove inline styles after finish.
+- Always cancel any in-flight animation before starting a new one and clear the animation handle when finished.
+
 ### Locale + navigation rules
 
 - Use `locales`/`localeNames` from `compiled-i18n`.
@@ -98,6 +116,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/routes/layout.css` — Layout-level CSS for the shell.
 - `apps/web/src/root.tsx` — App shell and providers.
 - `apps/web/src/components/` — Reusable UI components (nav, locale selector, etc).
+- `apps/web/src/components/animations/` — Motion One mini helpers (`use-motion-mini.ts`).
 - `apps/web/src/config/` — Feature flags, env parsing, third-party config.
 - `apps/web/src/server/` — Server-only helpers (DB, API, adapters).
 - `apps/web/src/i18n/` — Locale helpers and dictionaries.
