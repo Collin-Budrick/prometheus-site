@@ -15,3 +15,4 @@ apps/web/.cache/*
 lighthouse*
 CUserscolliAppDataLocallighthouse*
 a.out
+apps/web/server/
