@@ -1,10 +1,7 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
-
-type MotionModule = typeof import('motion/mini')
-type AnimateFn = MotionModule['animate']
-type AnimationHandle = ReturnType<AnimateFn>
+import { useMotionMini, type MotionMiniAnimationHandle } from '../animations/use-motion-mini'
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
@@ -27,39 +24,14 @@ export const LocaleSelector = component$(() => {
     if (!menu || !summary || !panel) return
 
     menu.dataset.js = 'true'
-    let activeAnimation: AnimationHandle | null = null
-    let animateFn: AnimateFn | null = null
-    let motionPromise: Promise<MotionModule> | null = null
+    const motion = useMotionMini()
+    let activeAnimation: MotionMiniAnimationHandle | null = null
     let animationToken = 0
     let isClosing = false
     let ignoreToggle = false
-    const prefersReducedMotion = () =>
-      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    const loadAnimate = async () => {
-      if (animateFn) return animateFn
-      if (!motionPromise) motionPromise = import('motion/mini')
-      const mod = await motionPromise
-      animateFn = mod.animate
-      return animateFn
-    }
 
     const prewarmMotion = () => {
-      if (prefersReducedMotion()) return
-      const connection =
-        typeof navigator !== 'undefined' && 'connection' in navigator
-          ? (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
-          : undefined
-      if (connection?.saveData) return
-      const warm = () => {
-        void loadAnimate()
-      }
-      panel.style.willChange = 'opacity, transform, filter'
-      if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(warm, { timeout: 1500 })
-      } else {
-        setTimeout(warm, 0)
-      }
+      motion.prewarm({ element: panel, willChange: 'opacity, transform, filter', delay: 0 })
     }
 
     const runAnimation = async (
@@ -69,7 +41,7 @@ export const LocaleSelector = component$(() => {
       onFinish: () => void
     ) => {
       panel.style.willChange = 'opacity, transform, filter'
-      const animate = await loadAnimate()
+      const animate = await motion.loadAnimate()
       if (token !== animationToken) return
       const animation = animate(panel, keyframes, options)
       activeAnimation = animation
@@ -103,7 +75,7 @@ export const LocaleSelector = component$(() => {
       panel.style.display = 'grid'
       panel.style.willChange = 'opacity, transform, filter'
       delete menu.dataset.closing
-      if (prefersReducedMotion()) return
+      if (motion.prefersReducedMotion()) return
       panel.style.opacity = '0'
       panel.style.transform = 'translateY(-8px)'
       panel.style.filter = 'blur(8px)'
@@ -127,7 +99,7 @@ export const LocaleSelector = component$(() => {
       menu.dataset.closing = 'true'
       panel.style.display = 'grid'
       panel.style.willChange = 'opacity, transform, filter'
-      if (prefersReducedMotion()) {
+      if (motion.prefersReducedMotion()) {
         panel.style.display = 'none'
         delete menu.dataset.closing
         onClosed?.()
@@ -214,7 +186,7 @@ export const LocaleSelector = component$(() => {
   }
 
   return (
-    <details ref={menuRef} class="settings-menu">
+    <details ref={menuRef} class="settings-menu animated-details">
       <summary ref={summaryRef} class="settings-trigger" aria-label="Settings">
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -228,7 +200,7 @@ export const LocaleSelector = component$(() => {
           <path d="M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" fill="none" stroke="currentColor" stroke-width="1.4" />
         </svg>
       </summary>
-      <div ref={panelRef} class="settings-panel">
+      <div ref={panelRef} class="settings-panel animated-panel">
         <details class="settings-group">
           <summary class="settings-group-trigger">Language</summary>
           <div class="settings-group-panel">
