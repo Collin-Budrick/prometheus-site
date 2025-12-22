@@ -79,6 +79,7 @@ Use these rules when touching routes, layouts, components, or styles.
 ### Testing + preview expectations
 
 - `bun run dev` for HMR; `bun run preview` runs the full build + prerender.
+- Preview runs off build artifacts; after SSR/i18n changes, rerun `bun run preview` or delete `apps/web/dist` and `apps/web/server` to force a rebuild.
 - If preview serves stale assets, delete `apps/web/dist` and `apps/web/server` and rerun.
 - SSG failures typically mean non-serializable values in QRLs or loader data; fix by moving logic into `useVisibleTask$` or by serializing the data.
 

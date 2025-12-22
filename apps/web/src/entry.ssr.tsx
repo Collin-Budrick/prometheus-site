@@ -140,10 +140,20 @@ const densifyArrays = (value: unknown, seen = new WeakSet<object>()) => {
     return dense
   }
 
+  const isExtensible = Object.isExtensible(value)
+
   for (const [key, entry] of Object.entries(value)) {
     const next = densifyArrays(entry, seen)
     if (next !== entry) {
-      ;(value as Record<string, unknown>)[key] = next
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      const writable = descriptor
+        ? 'value' in descriptor
+          ? descriptor.writable !== false
+          : typeof descriptor.set === 'function'
+        : isExtensible
+      if (writable) {
+        ;(value as Record<string, unknown>)[key] = next
+      }
     }
   }
 
