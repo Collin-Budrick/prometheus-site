@@ -9,6 +9,7 @@ type AnimationHandle = ReturnType<AnimateFn>
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
   const menuRef = useSignal<HTMLDetailsElement>()
+  const summaryRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLDivElement>()
   const currentLocale = (() => {
     const segments = loc.url.pathname.split('/').filter(Boolean)
@@ -21,14 +22,17 @@ export const LocaleSelector = component$(() => {
     if (typeof document === 'undefined') return
 
     const menu = track(() => menuRef.value)
+    const summary = track(() => summaryRef.value)
     const panel = track(() => panelRef.value)
-    if (!menu || !panel) return
+    if (!menu || !summary || !panel) return
 
     menu.dataset.js = 'true'
     let activeAnimation: AnimationHandle | null = null
     let animateFn: AnimateFn | null = null
     let motionPromise: Promise<MotionModule> | null = null
     let animationToken = 0
+    let isClosing = false
+    let ignoreToggle = false
     const prefersReducedMotion = () =>
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -84,6 +88,14 @@ export const LocaleSelector = component$(() => {
         })
     }
 
+    const setMenuOpen = (next: boolean) => {
+      ignoreToggle = true
+      menu.open = next
+      queueMicrotask(() => {
+        ignoreToggle = false
+      })
+    }
+
     const animateOpen = () => {
       activeAnimation?.cancel()
       animationToken += 1
@@ -108,36 +120,57 @@ export const LocaleSelector = component$(() => {
       )
     }
 
-    const animateClose = () => {
+    const animateClose = (onClosed?: () => void) => {
       activeAnimation?.cancel()
       animationToken += 1
       const token = animationToken
       menu.dataset.closing = 'true'
+      panel.style.display = 'grid'
       panel.style.willChange = 'opacity, transform, filter'
       if (prefersReducedMotion()) {
         panel.style.display = 'none'
         delete menu.dataset.closing
+        onClosed?.()
         return
       }
+      panel.style.opacity = '1'
+      panel.style.transform = 'translateY(0)'
+      panel.style.filter = 'blur(0px)'
+      panel.getBoundingClientRect()
       void runAnimation(
         token,
-        { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-6px)'], filter: ['blur(0px)', 'blur(8px)'] },
-        { duration: 0.18, easing: 'ease-in' },
+        { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-8px)'], filter: ['blur(0px)', 'blur(8px)'] },
+        { duration: 0.22, easing: 'ease-in' },
         () => {
           panel.style.display = 'none'
           panel.style.removeProperty('opacity')
           panel.style.removeProperty('transform')
           panel.style.removeProperty('filter')
           delete menu.dataset.closing
+          onClosed?.()
         }
       )
     }
 
+    const handleSummaryClick = (event: Event) => {
+      if (!menu.open) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (isClosing) return
+      isClosing = true
+      animateClose(() => {
+        setMenuOpen(false)
+        isClosing = false
+      })
+    }
+
     const handleToggle = () => {
+      if (ignoreToggle) return
       if (menu.open) {
         animateOpen()
         return
       }
+      if (isClosing) return
       animateClose()
     }
 
@@ -146,9 +179,11 @@ export const LocaleSelector = component$(() => {
     }
 
     prewarmMotion()
+    summary.addEventListener('click', handleSummaryClick)
     menu.addEventListener('toggle', handleToggle)
 
     return () => {
+      summary.removeEventListener('click', handleSummaryClick)
       menu.removeEventListener('toggle', handleToggle)
     }
   })
@@ -180,7 +215,7 @@ export const LocaleSelector = component$(() => {
 
   return (
     <details ref={menuRef} class="settings-menu">
-      <summary class="settings-trigger" aria-label="Settings">
+      <summary ref={summaryRef} class="settings-trigger" aria-label="Settings">
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065Z"
