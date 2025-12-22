@@ -228,6 +228,8 @@ export const RouterHead = component$(() => {
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
     allowSpeculationRules && speculationRulesPayload ? buildSpeculationRulesGuard() : undefined
+  const themeInitScript =
+    "(()=>{try{const theme=localStorage.getItem('theme');if(!theme)return;const root=document.documentElement;if(theme==='system'){root.removeAttribute('data-theme');root.classList.remove('light','dark');return;}root.setAttribute('data-theme',theme);root.classList.remove('light','dark');}catch{}})();"
   return (
     <>
       <title>{head.title || 'Prometheus'}</title>
@@ -286,6 +288,7 @@ export const RouterHead = component$(() => {
           }
         />
       )}
+      <script dangerouslySetInnerHTML={themeInitScript} />
       {!isAudit && <ThirdPartyScripts />}
       {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
     </>

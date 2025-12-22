@@ -187,7 +187,6 @@ export default async function render(opts: RenderToStreamOptions) {
   const lazyLoaderScript =
     `(function(){const src='${loaderSrc}';if(!src)return;let started=false;` +
     `const load=()=>{if(started||navigator.connection?.saveData)return;started=true;const s=document.createElement('script');s.type='module';s.defer=true;s.src=src;s.setAttribute('data-qwik-loader','lazy');document.head.appendChild(s);};` +
-    `load();` +
     `const prime=()=>{load();cleanup();};` +
     `const cleanup=()=>triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));` +
     `const triggers=['pointerdown','keydown','touchstart','focusin'];` +

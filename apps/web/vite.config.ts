@@ -93,17 +93,23 @@ export default defineConfig((configEnv) => {
   const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const nodeModuleStubPath = fileURLToPath(new URL('./src/stubs/node-module.ts', import.meta.url))
   const bunTestStubPath = fileURLToPath(new URL('./src/stubs/bun-test.ts', import.meta.url))
-  const bunTestStubAlias = { 'bun:test': bunTestStubPath }
   const motionEsmPath = fileURLToPath(new URL('../../node_modules/motion/dist/es/index.mjs', import.meta.url))
+  const motionMiniEsmPath = fileURLToPath(new URL('../../node_modules/motion/dist/es/mini.mjs', import.meta.url))
   const framerMotionDomEsmPath = fileURLToPath(new URL('../../node_modules/framer-motion/dist/es/dom.mjs', import.meta.url))
+  const framerMotionDomMiniEsmPath = fileURLToPath(
+    new URL('../../node_modules/framer-motion/dist/es/dom-mini.mjs', import.meta.url)
+  )
   const motionDomEsmPath = fileURLToPath(new URL('../../node_modules/motion-dom/dist/es/index.mjs', import.meta.url))
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
-  const motionAliases = {
-    motion: motionEsmPath,
-    'framer-motion/dom': framerMotionDomEsmPath,
-    'motion-dom': motionDomEsmPath,
-    'motion-utils': motionUtilsEsmPath
-  }
+  const aliasEntries = [
+    { find: 'bun:test', replacement: bunTestStubPath },
+    { find: 'motion/mini', replacement: motionMiniEsmPath },
+    { find: 'framer-motion/dom/mini', replacement: framerMotionDomMiniEsmPath },
+    { find: 'motion', replacement: motionEsmPath },
+    { find: 'framer-motion/dom', replacement: framerMotionDomEsmPath },
+    { find: 'motion-dom', replacement: motionDomEsmPath },
+    { find: 'motion-utils', replacement: motionUtilsEsmPath }
+  ]
 
   const analysisPlugins = createAnalysisPlugins(env.analyzeBundles && !ssrBuild)
   const clientBuildStubs: Plugin = {
@@ -300,10 +306,7 @@ export default defineConfig((configEnv) => {
     },
     resolve: {
       dedupe: ['@builder.io/qwik-city', '@builder.io/qwik'],
-      alias: {
-        ...bunTestStubAlias,
-        ...motionAliases
-      }
+      alias: aliasEntries
     },
     server: {
       host: '0.0.0.0',

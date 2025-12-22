@@ -1,7 +1,9 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
-import { animate } from 'motion'
+
+type MotionModule = typeof import('motion/mini')
+type AnimateFn = MotionModule['animate']
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
@@ -22,58 +24,83 @@ export const LocaleSelector = component$(() => {
     if (!menu || !panel) return
 
     let activeAnimation: Animation | undefined
+    let animateFn: AnimateFn | null = null
+    let motionPromise: Promise<MotionModule> | null = null
+    let animationToken = 0
     const prefersReducedMotion = () =>
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    const animateOpen = () => {
-      activeAnimation?.cancel()
-      panel.style.display = 'grid'
-      delete menu.dataset.closing
-      if (prefersReducedMotion()) return
-      const animation = animate(
-        panel,
-        { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
-        { duration: 0.22, easing: 'ease-out' }
-      )
+    const loadAnimate = async () => {
+      if (animateFn) return animateFn
+      if (!motionPromise) motionPromise = import('motion/mini')
+      const mod = await motionPromise
+      animateFn = mod.animate
+      return animateFn
+    }
 
+    const runAnimation = async (
+      token: number,
+      keyframes: Record<string, string[] | number[]>,
+      options: { duration: number; easing: string },
+      onFinish: () => void
+    ) => {
+      const animate = await loadAnimate()
+      if (token !== animationToken) return
+      const animation = animate(panel, keyframes, options)
       activeAnimation = animation
-
       animation.finished.then(() => {
-        panel.style.removeProperty('opacity')
-        panel.style.removeProperty('transform')
-        panel.style.removeProperty('filter')
+        if (token !== animationToken) return
+        onFinish()
         if (activeAnimation === animation) {
           activeAnimation = undefined
         }
       })
     }
 
+    const animateOpen = () => {
+      activeAnimation?.cancel()
+      animationToken += 1
+      const token = animationToken
+      panel.style.display = 'grid'
+      delete menu.dataset.closing
+      if (prefersReducedMotion()) return
+      panel.style.opacity = '0'
+      panel.style.transform = 'translateY(-8px)'
+      panel.style.filter = 'blur(8px)'
+      void runAnimation(
+        token,
+        { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
+        { duration: 0.22, easing: 'ease-out' },
+        () => {
+          panel.style.removeProperty('opacity')
+          panel.style.removeProperty('transform')
+          panel.style.removeProperty('filter')
+        }
+      )
+    }
+
     const animateClose = () => {
       activeAnimation?.cancel()
+      animationToken += 1
+      const token = animationToken
       menu.dataset.closing = 'true'
       if (prefersReducedMotion()) {
         panel.style.display = 'none'
         delete menu.dataset.closing
         return
       }
-      const animation = animate(
-        panel,
+      void runAnimation(
+        token,
         { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-6px)'], filter: ['blur(0px)', 'blur(8px)'] },
-        { duration: 0.18, easing: 'ease-in' }
-      )
-
-      activeAnimation = animation
-
-      animation.finished.then(() => {
-        panel.style.display = 'none'
-        panel.style.removeProperty('opacity')
-        panel.style.removeProperty('transform')
-        panel.style.removeProperty('filter')
-        delete menu.dataset.closing
-        if (activeAnimation === animation) {
-          activeAnimation = undefined
+        { duration: 0.18, easing: 'ease-in' },
+        () => {
+          panel.style.display = 'none'
+          panel.style.removeProperty('opacity')
+          panel.style.removeProperty('transform')
+          panel.style.removeProperty('filter')
+          delete menu.dataset.closing
         }
-      })
+      )
     }
 
     const handleToggle = () => {
@@ -88,25 +115,20 @@ export const LocaleSelector = component$(() => {
       panel.style.display = 'grid'
     }
 
+    const handleWarmup = () => {
+      if (prefersReducedMotion()) return
+      void loadAnimate()
+    }
+
     menu.addEventListener('toggle', handleToggle)
+    menu.addEventListener('pointerenter', handleWarmup)
+    menu.addEventListener('focusin', handleWarmup)
 
     return () => {
       menu.removeEventListener('toggle', handleToggle)
+      menu.removeEventListener('pointerenter', handleWarmup)
+      menu.removeEventListener('focusin', handleWarmup)
     }
-  })
-
-  useVisibleTask$(() => {
-    if (typeof document === 'undefined') return
-    const storedTheme = window.localStorage.getItem('theme')
-    if (!storedTheme) return
-    const root = document.documentElement
-    if (storedTheme === 'system') {
-      root.removeAttribute('data-theme')
-      root.classList.remove('light', 'dark')
-      return
-    }
-    root.setAttribute('data-theme', storedTheme)
-    root.classList.remove('light', 'dark')
   })
 
   const applyTheme = $((theme: 'light' | 'dark' | 'system') => {

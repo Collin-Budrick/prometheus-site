@@ -354,6 +354,7 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
     ? (() => {
         const jsLikeFile = /\.[cm]?[jt]sx?$/
         const emitted = new Map<string, string>()
+        const emittedFileNames = new Map<string, string>()
         let isSsrBuild = false
         let rootDir = process.cwd()
         let outputDir: string | null = null
@@ -407,6 +408,7 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
           },
           buildStart() {
             emitted.clear()
+            emittedFileNames.clear()
             patchedOutput = false
           },
           async transform(code, id, options) {
@@ -478,11 +480,19 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
           generateBundle(_options, bundle) {
             if (isSsrBuild || emitted.size === 0) return
 
+            const targets = new Map<string, string>()
+            emittedFileNames.clear()
+            for (const [spec, refId] of emitted) {
+              const fileName = this.getFileName(refId)
+              targets.set(spec, fileName)
+              emittedFileNames.set(spec, fileName)
+            }
+
             for (const entry of Object.values(bundle)) {
               if (entry.type === 'chunk') {
                 let updated = entry.code
-                for (const [spec, refId] of emitted) {
-                  const replacement = normalizeImport(entry.fileName, this.getFileName(refId))
+                for (const [spec, fileName] of targets) {
+                  const replacement = normalizeImport(entry.fileName, fileName)
                   updated = replaceImport(updated, spec, replacement)
                 }
                 if (updated !== entry.code) {
@@ -493,8 +503,8 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
 
               if (entry.type === 'asset' && typeof entry.source === 'string') {
                 let updated = entry.source
-                for (const [spec, refId] of emitted) {
-                  const replacement = normalizeImport(entry.fileName, this.getFileName(refId))
+                for (const [spec, fileName] of targets) {
+                  const replacement = normalizeImport(entry.fileName, fileName)
                   updated = replaceImport(updated, spec, replacement)
                 }
                 if (updated !== entry.source) {
@@ -509,15 +519,12 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
             }
           },
           closeBundle() {
-            if (emitted.size === 0 || patchedOutput || !outputDir) return
+            if (emittedFileNames.size === 0 || patchedOutput || !outputDir) return
 
             const buildDir = path.join(outputDir, 'build')
             if (!fs.existsSync(buildDir)) return
 
-            const targets = new Map<string, string>()
-            for (const [spec, refId] of emitted) {
-              targets.set(spec, this.getFileName(refId))
-            }
+            const targets = new Map(emittedFileNames)
 
             const queue = [buildDir]
             while (queue.length > 0) {
