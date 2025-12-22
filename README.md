@@ -57,7 +57,6 @@ The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and
 - Set `HMR_PROTOCOL=wss` so the Vite client upgrades over TLS when you front the dev server with HTTPS.
 - Align `HMR_PORT` with the dev server port you expose from the container/VM (usually `WEB_PORT`).
 - Set `HMR_CLIENT_PORT` to the browser-facing port (the one you access in the address bar after forwarding or reverse-proxying).
-- Set `VITE_QWIK_HMR=0` to restore forced full reloads if HMR gets flaky; the dev script defaults this to `1`.
 
 Example `.env` snippet for a containerized HTTPS setup:
 

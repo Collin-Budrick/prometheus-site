@@ -6,10 +6,6 @@ const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
 const bunBin = process.execPath
 const bunEnv = { ...process.env, PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}` }
-const devEnv = {
-  ...bunEnv,
-  VITE_QWIK_HMR: bunEnv.VITE_QWIK_HMR ?? '1'
-}
 const viteBin = path.resolve(process.cwd(), '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
 
 const tryExec = (command: string) => {
@@ -100,7 +96,7 @@ if (auditMode) {
 } else {
   const dev = spawn(bunBin, [viteBin, 'dev'], {
     stdio: 'inherit',
-    env: devEnv
+    env: bunEnv
   })
 
   dev.on('exit', (code, signal) => {
