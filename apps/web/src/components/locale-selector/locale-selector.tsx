@@ -1,4 +1,4 @@
-import { component$, getLocale } from '@builder.io/qwik'
+import { $, component$, getLocale, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
 
@@ -10,6 +10,33 @@ export const LocaleSelector = component$(() => {
     if (segmentLocale && locales.includes(segmentLocale as any)) return segmentLocale as any
     return getLocale()
   })()
+
+  useVisibleTask$(() => {
+    if (typeof document === 'undefined') return
+    const storedTheme = window.localStorage.getItem('theme')
+    if (!storedTheme) return
+    const root = document.documentElement
+    if (storedTheme === 'system') {
+      root.removeAttribute('data-theme')
+      root.classList.remove('light', 'dark')
+      return
+    }
+    root.setAttribute('data-theme', storedTheme)
+    root.classList.remove('light', 'dark')
+  })
+
+  const applyTheme = $((theme: 'light' | 'dark' | 'system') => {
+    if (typeof document === 'undefined') return
+    const root = document.documentElement
+    if (theme === 'system') {
+      root.removeAttribute('data-theme')
+      root.classList.remove('light', 'dark')
+    } else {
+      root.setAttribute('data-theme', theme)
+      root.classList.remove('light', 'dark')
+    }
+    window.localStorage.setItem('theme', theme)
+  })
 
   const buildHref = (nextLocale: string) => {
     const segments = loc.url.pathname.split('/').filter(Boolean)
@@ -24,27 +51,57 @@ export const LocaleSelector = component$(() => {
   }
 
   return (
-    <div class="flex items-center gap-1 text-xs">
-      {locales.map((locale) => {
-        const isCurrent = locale === (currentLocale as any)
-        const href = buildHref(locale)
-        return (
-          <a
-            key={locale}
-            href={href}
-            aria-disabled={isCurrent}
-            style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
-            class={[
-              'rounded-full border px-2 py-1 transition-colors',
-              isCurrent
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200 pointer-events-none'
-                : 'border-slate-700 text-slate-300 hover:text-emerald-200 hover:border-emerald-500/40'
-            ].join(' ')}
-          >
-            {localeNames[locale] ?? locale.toUpperCase()}
-          </a>
-        )
-      })}
-    </div>
+    <details class="settings-menu">
+      <summary class="settings-trigger" aria-label="Settings">
+        <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path d="M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" fill="none" stroke="currentColor" stroke-width="1.4" />
+        </svg>
+      </summary>
+      <div class="settings-panel">
+        <details class="settings-group">
+          <summary class="settings-group-trigger">Language</summary>
+          <div class="settings-group-panel">
+            {locales.map((locale) => {
+              const isCurrent = locale === (currentLocale as any)
+              const href = buildHref(locale)
+              return (
+                <a
+                  key={locale}
+                  href={href}
+                  aria-disabled={isCurrent}
+                  aria-current={isCurrent ? 'true' : undefined}
+                  style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
+                  class="settings-option"
+                >
+                  {localeNames[locale] ?? locale.toUpperCase()}
+                </a>
+              )
+            })}
+          </div>
+        </details>
+        <details class="settings-group">
+          <summary class="settings-group-trigger">Theme</summary>
+          <div class="settings-group-panel">
+            <button type="button" class="settings-option" onClick$={() => applyTheme('system')}>
+              System
+            </button>
+            <button type="button" class="settings-option" onClick$={() => applyTheme('light')}>
+              Light
+            </button>
+            <button type="button" class="settings-option" onClick$={() => applyTheme('dark')}>
+              Dark
+            </button>
+          </div>
+        </details>
+      </div>
+    </details>
   )
 })
