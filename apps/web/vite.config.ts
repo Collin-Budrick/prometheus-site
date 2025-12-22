@@ -21,6 +21,7 @@ import {
   leanWorkboxManifest,
   localeBuildFallback,
   preserveQwikLoader,
+  previewBrotliAssets,
   previewImmutableAssetCache,
   qwikCityDevEnvDataGuard,
   qwikCityDevEnvDataJsonSafe,
@@ -123,10 +124,13 @@ export default defineConfig((configEnv) => {
       return null
     }
   }
+  const brotliFilter = /\.(?:js|mjs|css|html|json|webmanifest|svg|txt|xml)$/i
   const compressionPlugin = !ssrBuild
     ? compression({
         algorithm: 'brotliCompress',
-        ext: '.br'
+        ext: '.br',
+        filter: brotliFilter,
+        threshold: 0
       })
     : null
   const staticCopyPlugins = !ssrBuild
@@ -268,6 +272,7 @@ export default defineConfig((configEnv) => {
     qwikCityDevEnvDataJsonSafe(),
     localeBuildFallback(['en', 'ko', 'ja']),
     devFontSilencer(),
+    previewBrotliAssets(),
     previewImmutableAssetCache(env.previewCacheEnabled),
     patchNodeModuleRuntime(),
     ...staticCopyPlugins,

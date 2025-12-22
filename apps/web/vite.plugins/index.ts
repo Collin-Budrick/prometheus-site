@@ -105,6 +105,55 @@ export const devFontSilencer = () => ({
 
 const immutableAssetPrefixes = ['/build/', '/assets/', '/icons/', '/~partytown/']
 const immutableAssetCacheHeader = 'public, max-age=31536000, s-maxage=31536000, immutable'
+const brotliMimeTypes = new Map<string, string>([
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.webmanifest', 'application/manifest+json; charset=utf-8'],
+  ['.svg', 'image/svg+xml; charset=utf-8'],
+  ['.txt', 'text/plain; charset=utf-8'],
+  ['.xml', 'application/xml; charset=utf-8']
+])
+
+const acceptsBrotli = (header: string | string[] | undefined) => {
+  if (!header) return false
+  const value = Array.isArray(header) ? header.join(',') : header
+  for (const part of value.split(',')) {
+    const [encoding, ...params] = part.trim().split(';').map((chunk) => chunk.trim())
+    if (encoding !== 'br') continue
+    const qParam = params.find((param) => param.startsWith('q='))
+    if (!qParam) return true
+    const qValue = Number.parseFloat(qParam.slice(2))
+    return Number.isFinite(qValue) && qValue > 0
+  }
+  return false
+}
+
+const appendVaryHeader = (res: ServerResponse, value: string) => {
+  const current = res.getHeader('vary')
+  if (!current) {
+    res.setHeader('vary', value)
+    return
+  }
+  const currentValue = Array.isArray(current) ? current.join(',') : String(current)
+  const tokens = currentValue
+    .split(',')
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean)
+  if (tokens.includes(value.toLowerCase())) return
+  res.setHeader('vary', `${currentValue}, ${value}`)
+}
+
+const decodePathname = (pathname: string) => {
+  try {
+    return decodeURIComponent(pathname)
+  } catch {
+    return pathname
+  }
+}
+
 export const previewImmutableAssetCache = (enabled: boolean) =>
   enabled
     ? {
@@ -135,6 +184,85 @@ export const previewImmutableAssetCache = (enabled: boolean) =>
         }
       }
     : null
+
+export const previewBrotliAssets = (): Plugin => ({
+  name: 'preview-brotli-assets',
+  configurePreviewServer(server: ViteDevServer) {
+    const distRoot = path.resolve(server.config.root, server.config.build.outDir)
+
+    server.middlewares.use((req, res, next) => {
+      if (!req.url || (req.method !== 'GET' && req.method !== 'HEAD')) {
+        next()
+        return
+      }
+
+      if (!acceptsBrotli(req.headers['accept-encoding'])) {
+        next()
+        return
+      }
+
+      const rawPathname = req.url.split('?', 1)[0]
+      if (!rawPathname || rawPathname.endsWith('.br')) {
+        next()
+        return
+      }
+
+      const pathname = decodePathname(rawPathname)
+      const candidates = [pathname]
+      if (pathname.endsWith('/')) {
+        candidates.push(`${pathname}index.html`)
+      } else if (!path.extname(pathname)) {
+        candidates.push(`${pathname}/index.html`)
+      }
+
+      let resolvedPath: string | null = null
+      let brotliPath: string | null = null
+
+      for (const candidate of candidates) {
+        const resolvedCandidate = path.resolve(distRoot, `.${candidate}`)
+        const relativePath = path.relative(distRoot, resolvedCandidate)
+        if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) continue
+
+        const candidateBrotli = `${resolvedCandidate}.br`
+        if (!fs.existsSync(candidateBrotli)) continue
+
+        resolvedPath = resolvedCandidate
+        brotliPath = candidateBrotli
+        break
+      }
+
+      if (!resolvedPath || !brotliPath) {
+        next()
+        return
+      }
+
+      const extname = path.extname(resolvedPath).toLowerCase()
+      const contentType = brotliMimeTypes.get(extname)
+      if (contentType) {
+        res.setHeader('content-type', contentType)
+      }
+      res.setHeader('content-encoding', 'br')
+      appendVaryHeader(res, 'Accept-Encoding')
+
+      if (immutableAssetPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+        res.setHeader('cache-control', immutableAssetCacheHeader)
+      }
+
+      const stat = fs.statSync(brotliPath)
+      res.setHeader('content-length', String(stat.size))
+
+      if (req.method === 'HEAD') {
+        res.statusCode = res.statusCode || 200
+        res.end()
+        return
+      }
+
+      const stream = fs.createReadStream(brotliPath)
+      stream.on('error', (error) => next(error))
+      stream.pipe(res)
+    })
+  }
+})
 
 export function qwikCityDevEnvDataJsonSafe(): Plugin {
   return {
