@@ -38,6 +38,19 @@ export const LocaleSelector = component$(() => {
       return animateFn
     }
 
+    const prewarmMotion = () => {
+      if (prefersReducedMotion()) return
+      if (navigator.connection?.saveData) return
+      const warm = () => {
+        void loadAnimate()
+      }
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(warm, { timeout: 1500 })
+      } else {
+        setTimeout(warm, 200)
+      }
+    }
+
     const runAnimation = async (
       token: number,
       keyframes: Record<string, string[] | number[]>,
@@ -115,19 +128,11 @@ export const LocaleSelector = component$(() => {
       panel.style.display = 'grid'
     }
 
-    const handleWarmup = () => {
-      if (prefersReducedMotion()) return
-      void loadAnimate()
-    }
-
+    prewarmMotion()
     menu.addEventListener('toggle', handleToggle)
-    menu.addEventListener('pointerenter', handleWarmup)
-    menu.addEventListener('focusin', handleWarmup)
 
     return () => {
       menu.removeEventListener('toggle', handleToggle)
-      menu.removeEventListener('pointerenter', handleWarmup)
-      menu.removeEventListener('focusin', handleWarmup)
     }
   })
 

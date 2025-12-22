@@ -130,6 +130,29 @@ const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname
     }))
 }
 
+const resolveWarmupModules = (resolvedManifest: unknown): string[] => {
+  if (!resolvedManifest || typeof resolvedManifest !== 'object') return []
+  const bundles = (resolvedManifest as { bundles?: Record<string, { dynamicImports?: unknown; origins?: unknown }> }).bundles
+  if (!bundles || typeof bundles !== 'object') return []
+
+  const originHints = ['src/components/locale-selector/locale-selector.tsx_LocaleSelector_component_useVisibleTask', 'src/components/locale-selector/locale-selector.tsx']
+  const warmup = new Set<string>()
+
+  for (const bundle of Object.values(bundles)) {
+    const origins = Array.isArray(bundle?.origins) ? bundle.origins : []
+    const matchesOrigin = origins.some((origin) => originHints.some((hint) => typeof origin === 'string' && origin.includes(hint)))
+    if (!matchesOrigin) continue
+    const dynamicImports = Array.isArray(bundle?.dynamicImports) ? bundle.dynamicImports : []
+    for (const entry of dynamicImports) {
+      if (typeof entry === 'string' && entry.endsWith('.js')) {
+        warmup.add(entry)
+      }
+    }
+  }
+
+  return Array.from(warmup)
+}
+
 const densifyArrays = (value: unknown, seen = new WeakSet<object>()): unknown => {
   if (!value || typeof value !== 'object') return value
   if (seen.has(value)) return value
@@ -184,16 +207,28 @@ export default async function render(opts: RenderToStreamOptions) {
     'q:locale': loadedLocale
   }
 
+  const warmupModules = isProd ? resolveWarmupModules(resolvedManifest) : []
+  const warmupModuleJson = JSON.stringify(warmupModules)
+  const warmupImportScript = warmupModules.length
+    ? `if(!navigator.connection?.saveData){${warmupModules
+        .map((file) => `import('${base}${file}');`)
+        .join('')}}`
+    : ''
+
   const lazyLoaderScript =
     `(function(){const src='${loaderSrc}';if(!src)return;let started=false;` +
+    `const warmup=${warmupModuleJson};const base='${base}';const warmed=new Set();` +
+    `const preload=(file)=>{if(!file||warmed.has(file))return;warmed.add(file);const href=file.startsWith('/')?file:(base+file);` +
+    `const link=document.createElement('link');link.rel='modulepreload';link.href=href;link.crossOrigin='anonymous';document.head.appendChild(link);};` +
     `const load=()=>{if(started||navigator.connection?.saveData)return;started=true;const s=document.createElement('script');s.type='module';s.defer=true;s.src=src;s.setAttribute('data-qwik-loader','lazy');document.head.appendChild(s);};` +
     `const prime=()=>{load();cleanup();};` +
     `const cleanup=()=>triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));` +
     `const triggers=['pointerdown','keydown','touchstart','focusin'];` +
     `const listenerOpts={once:true,passive:true};` +
-    `const scheduleWarmup=()=>{if(started||navigator.connection?.saveData)return;const run=()=>prime();` +
-    `if('requestIdleCallback' in window){requestIdleCallback(run,{timeout:2000});}else{setTimeout(run,1500);}};` +
-    `if(document.readyState==='complete'){scheduleWarmup();}else{window.addEventListener('load',scheduleWarmup,{once:true});}` +
+    `const scheduleWarmup=()=>{if(navigator.connection?.saveData)return;const run=()=>{warmup.forEach(preload);prime();};` +
+    `setTimeout(run,0);};` +
+    `if(document.readyState==='complete'||document.readyState==='interactive'){scheduleWarmup();}` +
+    `else{document.addEventListener('DOMContentLoaded',scheduleWarmup,{once:true});}` +
     `triggers.forEach((event)=>document.addEventListener(event,prime,listenerOpts));` +
     `document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')prime();},{once:true});` +
     `window.__qwikLazyLoad=prime;if(window.__qwikLazyLoadPending){prime();}})();`
@@ -206,6 +241,17 @@ export default async function render(opts: RenderToStreamOptions) {
       dangerouslySetInnerHTML: lazyLoaderScript
     }
   }
+  const warmupInjection = warmupImportScript
+    ? {
+        tag: 'script' as const,
+        location: 'head' as const,
+        attributes: {
+          type: 'module',
+          'data-qwik-warmup': 'modules',
+          dangerouslySetInnerHTML: warmupImportScript
+        }
+      }
+    : null
 
   const modulePreloadInjections =
     isProd && shouldInjectModulePreloads(pathname, isAudit) ? resolveModulePreloads(base, resolvedManifest, pathname) : []
@@ -219,14 +265,24 @@ export default async function render(opts: RenderToStreamOptions) {
               ...(resolvedManifest as Record<string, unknown>),
               core: undefined,
               preloader: undefined,
-              injections: ([...(resolvedManifest as any)?.injections ?? [], ...modulePreloadInjections, lazyInjection] as any)
+              injections: ([
+                ...(resolvedManifest as any)?.injections ?? [],
+                ...modulePreloadInjections,
+                warmupInjection,
+                lazyInjection
+              ].filter(Boolean) as any)
             }
           }
         : {
             ...(resolvedManifest as Record<string, unknown>),
             core: undefined,
             preloader: undefined,
-            injections: ([...(resolvedManifest as any)?.injections ?? [], ...modulePreloadInjections, lazyInjection] as any)
+            injections: ([
+              ...(resolvedManifest as any)?.injections ?? [],
+              ...modulePreloadInjections,
+              warmupInjection,
+              lazyInjection
+            ].filter(Boolean) as any)
           }
       : clientManifest
   ) as RenderToStreamOptions['manifest']
