@@ -257,7 +257,7 @@ a {
   z-index: 20;
 }
 
-.settings-menu[open] .settings-panel {
+.settings-menu:not([data-js='true'])[open] .settings-panel {
   display: grid;
 }
 

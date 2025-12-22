@@ -24,6 +24,7 @@ export const LocaleSelector = component$(() => {
     const panel = track(() => panelRef.value)
     if (!menu || !panel) return
 
+    menu.dataset.js = 'true'
     let activeAnimation: AnimationHandle | null = null
     let animateFn: AnimateFn | null = null
     let motionPromise: Promise<MotionModule> | null = null
@@ -49,10 +50,11 @@ export const LocaleSelector = component$(() => {
       const warm = () => {
         void loadAnimate()
       }
+      panel.style.willChange = 'opacity, transform, filter'
       if (typeof requestIdleCallback === 'function') {
         requestIdleCallback(warm, { timeout: 1500 })
       } else {
-        setTimeout(warm, 200)
+        setTimeout(warm, 0)
       }
     }
 
@@ -62,17 +64,24 @@ export const LocaleSelector = component$(() => {
       options: { duration: number; easing: string },
       onFinish: () => void
     ) => {
+      panel.style.willChange = 'opacity, transform, filter'
       const animate = await loadAnimate()
       if (token !== animationToken) return
       const animation = animate(panel, keyframes, options)
       activeAnimation = animation
-      animation.finished.then(() => {
+      animation.finished
+        .then(() => {
         if (token !== animationToken) return
         onFinish()
         if (activeAnimation === animation) {
           activeAnimation = null
         }
       })
+        .finally(() => {
+          if (token === animationToken) {
+            panel.style.removeProperty('will-change')
+          }
+        })
     }
 
     const animateOpen = () => {
@@ -80,11 +89,13 @@ export const LocaleSelector = component$(() => {
       animationToken += 1
       const token = animationToken
       panel.style.display = 'grid'
+      panel.style.willChange = 'opacity, transform, filter'
       delete menu.dataset.closing
       if (prefersReducedMotion()) return
       panel.style.opacity = '0'
       panel.style.transform = 'translateY(-8px)'
       panel.style.filter = 'blur(8px)'
+      panel.getBoundingClientRect()
       void runAnimation(
         token,
         { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
@@ -102,6 +113,7 @@ export const LocaleSelector = component$(() => {
       animationToken += 1
       const token = animationToken
       menu.dataset.closing = 'true'
+      panel.style.willChange = 'opacity, transform, filter'
       if (prefersReducedMotion()) {
         panel.style.display = 'none'
         delete menu.dataset.closing
