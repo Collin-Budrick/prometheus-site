@@ -80,7 +80,13 @@ try {
     runTimed('check:css', bunBin, ['run', 'check:css'], bunEnv)
   ])
 
-  await runTimed('vite build', bunBin, [viteBin, 'build'], bunEnv)
+  await runTimed('vite build (client)', bunBin, [viteBin, 'build'], bunEnv)
+  await runTimed(
+    'vite build (ssr)',
+    bunBin,
+    [viteBin, 'build', '--ssr', 'src/entry.ssr.tsx', '--outDir', 'server'],
+    bunEnv
+  )
 
   await runTimed('prerender', bunBin, ['run', 'prerender'], buildEnv)
 } catch (error) {

@@ -18,6 +18,7 @@ const distDir = path.join(projectRoot, 'dist')
 const serverDir = path.join(projectRoot, 'server')
 const srcDir = path.join(projectRoot, 'src')
 const publicDir = path.join(projectRoot, 'public')
+const requiredServerFiles = ['entry.ssr.js', '@qwik-city-plan.js']
 const prerenderIndexFiles = prerenderRoutes.map((route) => {
   const clean = route.replace(/^\//, '')
   return path.join(distDir, clean ? path.join(clean, 'index.html') : 'index.html')
@@ -59,8 +60,13 @@ const serverFresh = hasArtifacts(serverDir)
 const sourceLatest = getLatestMtime([srcDir, publicDir])
 const distLatest = getLatestMtime([distDir])
 const serverLatest = getLatestMtime([serverDir])
-
-const artifactsFresh = distFresh && serverFresh && distLatest > sourceLatest && serverLatest > sourceLatest
+const serverHasRequired = requiredServerFiles.every((file) => fs.existsSync(path.join(serverDir, file)))
+const artifactsFresh =
+  distFresh &&
+  serverFresh &&
+  serverHasRequired &&
+  distLatest > sourceLatest &&
+  serverLatest > sourceLatest
 if (!Number.isNaN(previewPort)) {
   spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(previewPort)], { stdio: 'inherit', env: bunEnv })
 }
