@@ -191,8 +191,12 @@ export default async function render(opts: RenderToStreamOptions) {
     `const cleanup=()=>triggers.forEach((event)=>document.removeEventListener(event,prime,listenerOpts));` +
     `const triggers=['pointerdown','keydown','touchstart','focusin'];` +
     `const listenerOpts={once:true,passive:true};` +
+    `const scheduleWarmup=()=>{if(started||navigator.connection?.saveData)return;const run=()=>prime();` +
+    `if('requestIdleCallback' in window){requestIdleCallback(run,{timeout:2000});}else{setTimeout(run,1500);}};` +
+    `if(document.readyState==='complete'){scheduleWarmup();}else{window.addEventListener('load',scheduleWarmup,{once:true});}` +
     `triggers.forEach((event)=>document.addEventListener(event,prime,listenerOpts));` +
-    `document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')prime();},{once:true});})();`
+    `document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')prime();},{once:true});` +
+    `window.__qwikLazyLoad=prime;if(window.__qwikLazyLoadPending){prime();}})();`
 
   const lazyInjection = {
     tag: 'script' as const,
