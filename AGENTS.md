@@ -32,6 +32,80 @@
 - Data layer: prefer Postgres + Valkey as cache/pubsub.
 - Never wrap imports in try/catch.
 
+## Editing site pages (SSR + SSG guardrails)
+
+Use these rules when touching routes, layouts, components, or styles.
+
+### Route structure + where to edit
+
+- Pages live in `apps/web/src/routes/[locale]/...` (localized routes).
+- Shared layout and nav live in `apps/web/src/routes/[locale]/layout.tsx`.
+- Global app shell lives in `apps/web/src/root.tsx`.
+- Critical CSS is `apps/web/src/routes/critical.css` and is inlined via `apps/web/src/routes/critical-css-assets.ts`.
+- Non-critical/global styles live in `apps/web/src/global.css` and UnoCSS output is `apps/web/public/assets/app.css` (generated).
+- Shared components live in `apps/web/src/components/...`.
+- Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
+
+### SSG/SSR safety rules (must follow)
+
+- Any function passed to `onClick$`, `onInput$`, `useTask$`, etc. must be a QRL (`$()`), not a plain function. Plain functions are not serializable and will crash SSG with Qwik `Code(3)`.
+- Avoid capturing non-serializable values inside `$()` callbacks (e.g., `window`, `document`, `AbortController`, class instances, `Map`, `Set`, `Date`, `URL`, `RegExp`, `BigInt`, `Error`). Use them only inside `useVisibleTask$` or `useTask$` and construct them at runtime.
+- Prefer `useVisibleTask$` for DOM/`window`/`document` interactions; guard with `typeof document !== 'undefined'`.
+- Any data returned from `routeLoader$`, `routeAction$`, or `server$` must be JSON-serializable. Convert `BigInt`/`Date`/`Map`/`Set` into primitives before returning.
+- Keep SSR execution pure: don’t access `window`, `document`, `localStorage`, or `matchMedia` in component render; only in `useVisibleTask$` or `useTask$` with guards.
+- When adding new routes to be statically generated, update `apps/web/src/routes/prerender-routes.ts` and ensure `onStaticGenerate` includes the locale.
+
+### Styling + critical path rules
+
+- If the change affects the header/nav or above-the-fold UI, update `apps/web/src/routes/critical.css` so the layout is stable before `app.css` loads.
+- Keep critical CSS minimal: only what’s needed for initial layout and the current route.
+- Prefer utility classes for non-critical styling, but ensure critical structural styles exist in `critical.css`.
+
+### Locale + navigation rules
+
+- Use `locales`/`localeNames` from `compiled-i18n`.
+- Locale-aware links should be built from `useLocation()` and preserve the non-locale path.
+- For labels in UI, use `compiled-i18n` `_`` strings so they localize correctly.
+
+### Testing + preview expectations
+
+- `bun run dev` for HMR; `bun run preview` runs the full build + prerender.
+- If preview serves stale assets, delete `apps/web/dist` and `apps/web/server` and rerun.
+- SSG failures typically mean non-serializable values in QRLs or loader data; fix by moving logic into `useVisibleTask$` or by serializing the data.
+
+## Repository map (what lives where)
+
+- `apps/web/` — Qwik City web app (this is where page work happens).
+- `apps/web/src/routes/` — Route tree; `apps/web/src/routes/[locale]/` holds localized pages.
+- `apps/web/src/routes/[locale]/layout.tsx` — Shared layout/header/nav and `<RouterHead />`.
+- `apps/web/src/routes/[locale]/index.tsx` — Home page content.
+- `apps/web/src/routes/[locale]/ai/` — AI route UI (`index.tsx`) and island logic.
+- `apps/web/src/routes/[locale]/chat/` — Chat route UI and islands.
+- `apps/web/src/routes/[locale]/store/` — Store route UI, data loaders, and islands.
+- `apps/web/src/routes/prerender-routes.ts` — SSG route list (must include any new static route).
+- `apps/web/src/routes/critical.css` — Critical CSS (inlined on SSR/SSG).
+- `apps/web/src/routes/critical-css-assets.ts` — Loads critical CSS for inlining.
+- `apps/web/src/routes/layout.css` — Layout-level CSS for the shell.
+- `apps/web/src/root.tsx` — App shell and providers.
+- `apps/web/src/components/` — Reusable UI components (nav, locale selector, etc).
+- `apps/web/src/config/` — Feature flags, env parsing, third-party config.
+- `apps/web/src/server/` — Server-only helpers (DB, API, adapters).
+- `apps/web/src/i18n/` — Locale helpers and dictionaries.
+- `apps/web/src/global.css` — Global styling (non-critical).
+- `apps/web/public/` — Static assets served as-is.
+- `apps/web/public/assets/app.css` — Generated global CSS (do not edit by hand).
+- `apps/web/scripts/` — Build/dev/prerender/preview tooling.
+- `apps/web/vite.config.ts` — Vite + Qwik City configuration.
+- `apps/web/qwik.config.ts` — Re-exports Vite config for Qwik tooling.
+- `apps/web/uno.config.ts` — UnoCSS config.
+- `apps/web/tests/` — E2E tests.
+- `apps/web/src/routes/*.test.ts` — Route-level unit tests.
+- `apps/web/dist/` — Client build output (generated).
+- `apps/web/server/` — SSR build output (generated).
+- `i18n/` — Shared locale resources for the monorepo.
+- `patches/` — Dependency patches (e.g., Qwik tweaks).
+- `scripts/` — Repo-level scripts (outside `apps/web`).
+
 ## Testing and performance guardrails
 
 - Run `bun run lint` and `bun run test` before committing.
