@@ -261,6 +261,11 @@ a {
   display: grid;
 }
 
+.settings-menu[data-closing='true'] .settings-panel {
+  display: grid;
+  pointer-events: none;
+}
+
 .settings-group {
   border-radius: 0.6rem;
   border: 1px solid rgba(30, 41, 59, 0.85);

@@ -1,15 +1,91 @@
-import { $, component$, getLocale, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
+import { animate } from 'motion'
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
+  const menuRef = useSignal<HTMLDetailsElement>()
+  const panelRef = useSignal<HTMLDivElement>()
   const currentLocale = (() => {
     const segments = loc.url.pathname.split('/').filter(Boolean)
     const segmentLocale = segments[0]
     if (segmentLocale && locales.includes(segmentLocale as any)) return segmentLocale as any
     return getLocale()
   })()
+
+  useVisibleTask$(() => {
+    if (typeof document === 'undefined') return
+
+    const menu = menuRef.value
+    const panel = panelRef.value
+    if (!menu || !panel) return
+
+    let activeAnimation: Animation | undefined
+
+    const animateOpen = () => {
+      activeAnimation?.cancel()
+      panel.style.display = 'grid'
+      delete menu.dataset.closing
+      const animation = animate(
+        panel,
+        { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
+        { duration: 0.22, easing: 'ease-out' }
+      )
+
+      activeAnimation = animation
+
+      animation.finished.then(() => {
+        panel.style.removeProperty('opacity')
+        panel.style.removeProperty('transform')
+        panel.style.removeProperty('filter')
+        if (activeAnimation === animation) {
+          activeAnimation = undefined
+        }
+      })
+    }
+
+    const animateClose = () => {
+      activeAnimation?.cancel()
+      menu.dataset.closing = 'true'
+      const animation = animate(
+        panel,
+        { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-6px)'], filter: ['blur(0px)', 'blur(8px)'] },
+        { duration: 0.18, easing: 'ease-in' }
+      )
+
+      activeAnimation = animation
+
+      animation.finished.then(() => {
+        panel.style.display = 'none'
+        panel.style.removeProperty('opacity')
+        panel.style.removeProperty('transform')
+        panel.style.removeProperty('filter')
+        delete menu.dataset.closing
+        if (activeAnimation === animation) {
+          activeAnimation = undefined
+        }
+      })
+    }
+
+    const handleToggle = () => {
+      if (menu.open) {
+        animateOpen()
+        return
+      }
+      animateClose()
+    }
+
+    if (menu.open) {
+      panel.style.display = 'grid'
+    }
+
+    menu.addEventListener('toggle', handleToggle)
+
+    return () => {
+      menu.removeEventListener('toggle', handleToggle)
+    }
+  })
 
   useVisibleTask$(() => {
     if (typeof document === 'undefined') return
@@ -51,7 +127,7 @@ export const LocaleSelector = component$(() => {
   }
 
   return (
-    <details class="settings-menu">
+    <details ref={menuRef} class="settings-menu">
       <summary class="settings-trigger" aria-label="Settings">
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -65,7 +141,7 @@ export const LocaleSelector = component$(() => {
           <path d="M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" fill="none" stroke="currentColor" stroke-width="1.4" />
         </svg>
       </summary>
-      <div class="settings-panel">
+      <div ref={panelRef} class="settings-panel">
         <details class="settings-group">
           <summary class="settings-group-trigger">Language</summary>
           <div class="settings-group-panel">
