@@ -10,7 +10,8 @@ const viteBin = path.resolve(projectRoot, '..', '..', 'node_modules', 'vite', 'b
 const bunEnv = {
   ...process.env,
   PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`,
-  VITE_PREVIEW: process.env.VITE_PREVIEW ?? '1'
+  VITE_PREVIEW: process.env.VITE_PREVIEW ?? '1',
+  VITE_PREVIEW_CACHE: process.env.VITE_PREVIEW_CACHE ?? '0'
 }
 const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
 

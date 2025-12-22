@@ -1,7 +1,10 @@
 import fs from 'node:fs'
+import { builtinModules, createRequire } from 'node:module'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ConfigEnv, Plugin, UserConfig, ViteDevServer } from 'vite'
+import type { PluginContext } from 'rollup'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import Inspect from 'vite-plugin-inspect'
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -12,6 +15,20 @@ type DevResponse = ServerResponse & { _qwikEnvData?: DevEnvData }
 type WorkboxManifestEntry = { url: string; revision: string | null; size: number }
 
 const devCacheBuster = Date.now().toString(36)
+const schemePrefix = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
+
+const normalizePath = (id: string) => id.replaceAll('\\', '/')
+const requireResolve = createRequire(import.meta.url)
+
+const isBareImport = (id: string) =>
+  !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('\u0000') && !schemePrefix.test(id)
+
+const isNodeBuiltin = (id: string) => {
+  const normalized = id.startsWith('node:') ? id.slice(5) : id
+  return builtinModules.includes(normalized) || builtinModules.includes(`node:${normalized}`)
+}
+
+const isVirtualId = (id: string) => id.startsWith('\u0000') || id.startsWith('virtual:') || id.startsWith('data:')
 
 const toJSONSafe = <T>(value: T): T => {
   const seen = new WeakSet()
@@ -282,6 +299,25 @@ export const qwikViteNoDeprecatedEsbuild = () => {
   return plugin
 }
 
+export const preserveQwikLoader = (): Plugin => {
+  const qwikLoaderRegex = /@builder\.io\/qwik\/dist\/qwikloader\.m?js$/
+  return {
+    name: 'preserve-qwik-loader',
+    enforce: 'pre',
+    async resolveId(id, importer) {
+      const cleaned = id.split('?', 1)[0] ?? id
+      if (cleaned === '@builder.io/qwik/qwikloader.js' || qwikLoaderRegex.test(normalizePath(cleaned))) {
+        const resolved = await this.resolve(cleaned, importer, { skipSelf: true })
+        if (resolved) {
+          return { ...resolved, moduleSideEffects: 'no-treeshake' }
+        }
+        return { id: cleaned, moduleSideEffects: 'no-treeshake' }
+      }
+      return null
+    }
+  }
+}
+
 export const speculationRulesManifest = (): Plugin => ({
   name: 'speculation-rules-manifest',
   apply: 'build',
@@ -312,3 +348,205 @@ export const createAnalysisPlugins = (enabled: boolean): Plugin[] =>
         }) as unknown as Plugin
       ]
     : []
+
+export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
+  enabled
+    ? (() => {
+        const jsLikeFile = /\.[cm]?[jt]sx?$/
+        const emitted = new Map<string, string>()
+        let isSsrBuild = false
+        let rootDir = process.cwd()
+        let outputDir: string | null = null
+        let patchedOutput = false
+        const normalizeImport = (from: string, to: string) => {
+          const rel = path.posix.relative(path.posix.dirname(normalizePath(from)), normalizePath(to))
+          return rel.startsWith('.') ? rel : `./${rel}`
+        }
+
+        const resolveDependency = async (ctx: PluginContext, spec: string, importer: string) => {
+          const resolved = await ctx.resolve(spec, importer, { skipSelf: true })
+          if (resolved?.id && !isVirtualId(resolved.id) && path.isAbsolute(resolved.id)) {
+            return resolved.id
+          }
+
+          const importerUrl = path.isAbsolute(importer) ? pathToFileURL(importer).href : undefined
+          if (typeof import.meta.resolve === 'function') {
+            try {
+              const resolvedUrl = await import.meta.resolve(spec, importerUrl)
+              if (resolvedUrl.startsWith('file:')) {
+                return fileURLToPath(resolvedUrl)
+              }
+            } catch {}
+          }
+
+          try {
+            return requireResolve.resolve(spec, importerUrl ? { paths: [path.dirname(importer)] } : undefined)
+          } catch {}
+
+          return null
+        }
+
+        const replaceImport = (code: string, spec: string, replacement: string) => {
+          return code
+            .replaceAll(`from"${spec}"`, `from"${replacement}"`)
+            .replaceAll(`from'${spec}'`, `from'${replacement}'`)
+            .replaceAll(`import("${spec}")`, `import("${replacement}")`)
+            .replaceAll(`import('${spec}')`, `import('${replacement}')`)
+            .replaceAll(`import"${spec}"`, `import"${replacement}"`)
+            .replaceAll(`import'${spec}'`, `import'${replacement}'`)
+        }
+
+        return {
+          name: 'force-client-bundle-deps',
+          enforce: 'post',
+          apply: 'build',
+          configResolved(config) {
+            isSsrBuild = Boolean(config.build?.ssr)
+            rootDir = config.root ?? rootDir
+            outputDir = config.build?.outDir ? path.resolve(rootDir, config.build.outDir) : null
+          },
+          buildStart() {
+            emitted.clear()
+            patchedOutput = false
+          },
+          async transform(code, id, options) {
+            const pathId = normalizePath(id.split('?', 1)[0] ?? id)
+            if (!jsLikeFile.test(pathId) || pathId.includes('/node_modules/')) return null
+            if ((isSsrBuild || options?.ssr) && !pathId.includes('_component_')) return null
+
+            const ast = this.parse(code)
+            const sources = new Set<string>()
+
+            const stack = [ast]
+            while (stack.length > 0) {
+              const node = stack.pop()
+              if (!node || typeof node.type !== 'string') continue
+
+              if (
+                node.type === 'ImportDeclaration' ||
+                node.type === 'ExportNamedDeclaration' ||
+                node.type === 'ExportAllDeclaration'
+              ) {
+                const source = node.source
+                if (source && typeof source.value === 'string') {
+                  sources.add(source.value)
+                }
+              } else if (node.type === 'ImportExpression') {
+                const source = node.source
+                if (source && typeof source.value === 'string') {
+                  sources.add(source.value)
+                }
+              }
+
+              for (const value of Object.values(node)) {
+                if (!value) continue
+                if (Array.isArray(value)) {
+                  for (const child of value) {
+                    if (child && typeof child.type === 'string') stack.push(child)
+                  }
+                } else if (value && typeof value.type === 'string') {
+                  stack.push(value)
+                }
+              }
+            }
+
+            if (sources.size === 0) return null
+
+            for (const spec of sources) {
+              if (!isBareImport(spec) || isNodeBuiltin(spec)) continue
+
+              const resolvedId = await resolveDependency(this, spec, id)
+              if (!resolvedId) continue
+
+              const normalized = normalizePath(resolvedId)
+              if (!normalized.includes('/node_modules/')) continue
+
+              if (!emitted.has(spec)) {
+                emitted.set(
+                  spec,
+                  this.emitFile({
+                    type: 'chunk',
+                    id: resolvedId,
+                    preserveSignature: 'allow-extension'
+                  })
+                )
+              }
+            }
+
+            return null
+          },
+          generateBundle(_options, bundle) {
+            if (isSsrBuild || emitted.size === 0) return
+
+            for (const entry of Object.values(bundle)) {
+              if (entry.type === 'chunk') {
+                let updated = entry.code
+                for (const [spec, refId] of emitted) {
+                  const replacement = normalizeImport(entry.fileName, this.getFileName(refId))
+                  updated = replaceImport(updated, spec, replacement)
+                }
+                if (updated !== entry.code) {
+                  entry.code = updated
+                }
+                continue
+              }
+
+              if (entry.type === 'asset' && typeof entry.source === 'string') {
+                let updated = entry.source
+                for (const [spec, refId] of emitted) {
+                  const replacement = normalizeImport(entry.fileName, this.getFileName(refId))
+                  updated = replaceImport(updated, spec, replacement)
+                }
+                if (updated !== entry.source) {
+                  entry.source = updated
+                }
+              }
+            }
+          },
+          writeBundle(outputOptions) {
+            if (outputOptions.dir) {
+              outputDir = path.resolve(rootDir, outputOptions.dir)
+            }
+          },
+          closeBundle() {
+            if (emitted.size === 0 || patchedOutput || !outputDir) return
+
+            const buildDir = path.join(outputDir, 'build')
+            if (!fs.existsSync(buildDir)) return
+
+            const targets = new Map<string, string>()
+            for (const [spec, refId] of emitted) {
+              targets.set(spec, this.getFileName(refId))
+            }
+
+            const queue = [buildDir]
+            while (queue.length > 0) {
+              const current = queue.pop()
+              if (!current) continue
+              const stats = fs.statSync(current)
+              if (stats.isDirectory()) {
+                const entries = fs.readdirSync(current, { withFileTypes: true })
+                for (const entry of entries) {
+                  queue.push(path.join(current, entry.name))
+                }
+                continue
+              }
+
+              if (!current.endsWith('.js')) continue
+              const relFile = normalizePath(path.relative(outputDir, current))
+              const code = fs.readFileSync(current, 'utf8')
+              let updated = code
+              for (const [spec, fileName] of targets) {
+                const replacement = normalizeImport(relFile, fileName)
+                updated = replaceImport(updated, spec, replacement)
+              }
+              if (updated !== code) {
+                fs.writeFileSync(current, updated)
+              }
+            }
+
+            patchedOutput = true
+          }
+        }
+      })()
+    : null

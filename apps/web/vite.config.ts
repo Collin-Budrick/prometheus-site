@@ -12,8 +12,10 @@ import {
   devAuditStripViteClient,
   devBustedViteClient,
   devFontSilencer,
+  forceClientBundleDeps,
   leanWorkboxManifest,
   localeBuildFallback,
+  preserveQwikLoader,
   previewImmutableAssetCache,
   qwikCityDevEnvDataGuard,
   qwikCityDevEnvDataJsonSafe,
@@ -25,6 +27,11 @@ const appRoot = fileURLToPath(new URL('.', import.meta.url))
 const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
 const partytownDest = fileURLToPath(new URL('./public/~partytown', import.meta.url))
 const localesDir = fileURLToPath(new URL('../../i18n', import.meta.url))
+const qwikLoaderPattern = /@builder\.io\/qwik\/dist\/qwikloader\.m?js$/
+const normalizeModuleId = (id: string) => id.replaceAll('\\', '/')
+const treeshakeOptions = {
+  moduleSideEffects: (id: string) => (qwikLoaderPattern.test(normalizeModuleId(id)) ? true : undefined)
+}
 
 export default defineConfig((configEnv) => {
   const ssrBuild =
@@ -36,6 +43,28 @@ export default defineConfig((configEnv) => {
 
   const analysisPlugins = createAnalysisPlugins(env.analyzeBundles && !ssrBuild)
 
+  const clientEnv = {
+    resolve: {
+      alias: { ...zodStubAlias, ...bunTestStubAlias }
+    }
+  }
+  const ssrEnv = {
+    resolve: {
+      alias: bunTestStubAlias
+    },
+    build: {
+      ssr: true,
+      outDir: 'server',
+      rollupOptions: {
+        input: [
+          fileURLToPath(new URL('./src/entry.preview.tsx', import.meta.url)),
+          fileURLToPath(new URL('./src/entry.ssr.tsx', import.meta.url)),
+          '@qwik-city-plan'
+        ]
+      }
+    }
+  }
+
   const config: UserConfig = {
     cacheDir,
     builder: {},
@@ -44,6 +73,8 @@ export default defineConfig((configEnv) => {
       qwikCityDevEnvDataGuard(),
       qwikCity({ trailingSlash: false }),
       qwikViteNoDeprecatedEsbuild(),
+      preserveQwikLoader(),
+      forceClientBundleDeps(true),
       i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }),
       tsconfigPaths(),
       UnoCSS(),
@@ -135,29 +166,7 @@ export default defineConfig((configEnv) => {
       devFontSilencer(),
       previewImmutableAssetCache(env.previewCacheEnabled)
     ].filter(Boolean),
-    environments: {
-      client: {
-        resolve: {
-          alias: { ...zodStubAlias, ...bunTestStubAlias }
-        }
-      },
-      ssr: {
-        resolve: {
-          alias: bunTestStubAlias
-        },
-        build: {
-          ssr: true,
-          outDir: 'server',
-          rollupOptions: {
-            input: [
-              fileURLToPath(new URL('./src/entry.preview.tsx', import.meta.url)),
-              fileURLToPath(new URL('./src/entry.ssr.tsx', import.meta.url)),
-              '@qwik-city-plan'
-            ]
-          }
-        }
-      }
-    },
+    environments: ssrBuild ? { ssr: ssrEnv } : { client: clientEnv },
     build: {
       minify: 'esbuild',
       cssMinify: 'lightningcss',
@@ -165,7 +174,7 @@ export default defineConfig((configEnv) => {
       sourcemap: false,
       modulePreload: { polyfill: false },
       rolldownOptions: {
-        treeshake: true
+        treeshake: treeshakeOptions
       }
     },
     define: {
@@ -181,7 +190,7 @@ export default defineConfig((configEnv) => {
       // Keep the locale store singleton in dev by avoiding prebundle duplication.
       exclude: ['@i18n/__locales', '@i18n/__data', '@i18n/__state'],
       rolldownOptions: {
-        treeshake: true
+        treeshake: treeshakeOptions
       }
     },
     resolve: {

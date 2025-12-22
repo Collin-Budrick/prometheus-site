@@ -14,19 +14,22 @@ export const LocaleSelector = component$(() => {
     return getLocale()
   })()
 
-  useVisibleTask$(() => {
+  useVisibleTask$(({ track }) => {
     if (typeof document === 'undefined') return
 
-    const menu = menuRef.value
-    const panel = panelRef.value
+    const menu = track(() => menuRef.value)
+    const panel = track(() => panelRef.value)
     if (!menu || !panel) return
 
     let activeAnimation: Animation | undefined
+    const prefersReducedMotion = () =>
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
     const animateOpen = () => {
       activeAnimation?.cancel()
       panel.style.display = 'grid'
       delete menu.dataset.closing
+      if (prefersReducedMotion()) return
       const animation = animate(
         panel,
         { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
@@ -48,6 +51,11 @@ export const LocaleSelector = component$(() => {
     const animateClose = () => {
       activeAnimation?.cancel()
       menu.dataset.closing = 'true'
+      if (prefersReducedMotion()) {
+        panel.style.display = 'none'
+        delete menu.dataset.closing
+        return
+      }
       const animation = animate(
         panel,
         { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-6px)'], filter: ['blur(0px)', 'blur(8px)'] },

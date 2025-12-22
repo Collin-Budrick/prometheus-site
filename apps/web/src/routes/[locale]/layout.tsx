@@ -64,7 +64,7 @@ export const onRequest: RequestHandler = async ({
   cookie.set('locale', requested, localeCookieOptions)
   locale(requested)
 
-  const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW === '1'
+  const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW_CACHE === '1'
 
   if (import.meta.env.PROD && request.method === 'GET') {
     const routePath = stripLocalePrefix(pathname) || '/'

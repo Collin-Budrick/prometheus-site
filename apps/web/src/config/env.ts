@@ -17,7 +17,7 @@ const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
 if (devAuditMode) {
   console.warn('VITE_DEV_AUDIT enabled: HMR is disabled and dev will full reload on every change.')
 }
-const previewCacheEnabled = process.env.VITE_PREVIEW === '1'
+const previewCacheEnabled = process.env.VITE_PREVIEW_CACHE === '1'
 const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
