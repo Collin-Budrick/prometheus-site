@@ -19,6 +19,8 @@ const distDir = path.join(projectRoot, 'dist')
 const serverDir = path.join(projectRoot, 'server')
 const srcDir = path.join(projectRoot, 'src')
 const publicDir = path.join(projectRoot, 'public')
+const staticCopyDir = path.join(projectRoot, 'static-copy')
+const distStaticDir = path.join(distDir, 'static')
 const requiredServerFiles = ['entry.ssr.js', '@qwik-city-plan.js']
 const prerenderIndexFiles = prerenderRoutes.map((route) => {
   const clean = route.replace(/^\//, '')
@@ -55,19 +57,43 @@ const getLatestMtime = (roots: string[]) => {
 }
 
 const hasArtifacts = (dir: string) => fs.existsSync(dir) && fs.readdirSync(dir).length > 0
+const hasFiles = (root: string) => {
+  if (!fs.existsSync(root)) return false
+  const queue = [root]
+
+  while (queue.length > 0) {
+    const current = queue.pop()
+    if (!current) continue
+
+    const stats = fs.statSync(current)
+    if (stats.isDirectory()) {
+      const entries = fs.readdirSync(current, { withFileTypes: true })
+      for (const entry of entries) {
+        queue.push(path.join(current, entry.name))
+      }
+    } else if (stats.isFile()) {
+      return true
+    }
+  }
+
+  return false
+}
 
 const distFresh = hasArtifacts(distDir)
 const serverFresh = hasArtifacts(serverDir)
-const sourceLatest = getLatestMtime([srcDir, publicDir])
+const sourceLatest = getLatestMtime([srcDir, publicDir, staticCopyDir])
 const distLatest = getLatestMtime([distDir])
 const serverLatest = getLatestMtime([serverDir])
 const serverHasRequired = requiredServerFiles.every((file) => fs.existsSync(path.join(serverDir, file)))
+const staticCopyHasAssets = hasFiles(staticCopyDir)
+const distStaticHasAssets = hasFiles(distStaticDir)
 const artifactsFresh =
   distFresh &&
   serverFresh &&
   serverHasRequired &&
   distLatest > sourceLatest &&
-  serverLatest > sourceLatest
+  serverLatest > sourceLatest &&
+  (!staticCopyHasAssets || distStaticHasAssets)
 if (!Number.isNaN(previewPort)) {
   spawnSync(bunBin, ['run', 'scripts/kill-port.ts', String(previewPort)], { stdio: 'inherit', env: bunEnv })
 }
