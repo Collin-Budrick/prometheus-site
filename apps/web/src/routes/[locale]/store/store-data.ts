@@ -19,9 +19,10 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
     cacheControl({
       public: true,
-      maxAge: 300,
-      sMaxAge: 900,
-      staleWhileRevalidate: 60
+      noCache: true,
+      maxAge: 0,
+      sMaxAge: 0,
+      staleWhileRevalidate: 0
     })
   }
 }
