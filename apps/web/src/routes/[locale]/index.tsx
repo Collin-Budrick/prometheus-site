@@ -36,7 +36,7 @@ export default component$(() => {
         <ul class="space-y-2 mt-3">
           <li>{_`Server render: sub-50ms target with streaming enabled`}</li>
           <li>{_`Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny`}</li>
-          <li>{_`Speculative nav: prerender store, prefetch chat`}</li>
+          <li>{_`Speculative nav: prerender all nav links`}</li>
         </ul>
       </div>
     </section>

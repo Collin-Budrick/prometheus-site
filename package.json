@@ -2,14 +2,14 @@
   "name": "prometheus-site",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "bun@1.3.4",
+  "packageManager": "bun@1.3.5",
   "description": "Performance-forward monorepo for Qwik City web and Bun Elysia API services.",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "docker:prod": "docker compose -f docker-compose.yml --profile prod up --build -d",
+    "docker:prod": "sh -c \"docker compose -f docker-compose.yml --profile prod stop web || true; docker compose -f docker-compose.yml --profile prod rm -f web || true; docker compose -f docker-compose.yml --profile prod up --build -d\"",
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
     "preview": "bun run --cwd apps/web preview",
     "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",

@@ -13,11 +13,11 @@ export type SpeculationDocumentRule = {
 
 export type SpeculationRules = {
   prefetch?: (SpeculationListRule | SpeculationDocumentRule)[]
-  prerender?: SpeculationListRule[]
+  prerender?: (SpeculationListRule | SpeculationDocumentRule)[]
 }
 
 export const conservativeViewportRules: SpeculationRules = {
-  prefetch: [
+  prerender: [
     {
       source: 'document',
       where: {
@@ -28,8 +28,7 @@ export const conservativeViewportRules: SpeculationRules = {
       },
       eagerness: 'moderate'
     }
-  ],
-  prerender: []
+  ]
 }
 
 export const mergeSpeculationRules = (

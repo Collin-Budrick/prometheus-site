@@ -77,7 +77,12 @@ export const onRequest: RequestHandler = async ({
     throw redirect(302, `/${preferred}${rest}${url.search}`)
   }
 
-  cookie.set('locale', requested, localeCookieOptions)
+  const purposeHeader = request.headers.get('sec-purpose') || request.headers.get('purpose')
+  const isSpeculationRequest = Boolean(purposeHeader && /(prefetch|prerender)/i.test(purposeHeader))
+  const existingLocale = cookie.get('locale')?.value ?? null
+  if (!isSpeculationRequest && existingLocale !== requested) {
+    cookie.set('locale', requested, localeCookieOptions)
+  }
   locale(requested)
 
   const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW_CACHE === '1'
@@ -125,10 +130,10 @@ type NavLink = {
 }
 
 const navLinks: NavLink[] = [
-  { path: '/', label: () => _`Home` },
+  { path: '/', label: () => _`Home`, dataSpeculate: 'prerender' },
   { path: '/store', label: () => _`Store`, dataSpeculate: 'prerender' },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: 'prefetch' },
-  { path: '/ai', label: () => _`AI` }
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: 'prerender' },
+  { path: '/ai', label: () => _`AI`, dataSpeculate: 'prerender' }
 ]
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
@@ -180,7 +185,7 @@ export const RouterHead = component$(() => {
   })()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const isPreview = import.meta.env.PROD
-  const allowSpeculationRules = featureFlags.speculationRules && !isAudit && isPreview
+  const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
   const speculationCandidates = resolveSpeculationCandidates(loc.url.pathname, localePrefix)
   const navigationSpeculationRules = allowSpeculationRules ? toSpeculationRules(speculationCandidates) : null
@@ -244,6 +249,103 @@ export const RouterHead = component$(() => {
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
     allowSpeculationRules && speculationRulesPayload ? buildSpeculationRulesGuard() : undefined
+  const hoverSpeculationScript = !isAudit
+    ? `(() => {
+  const key = '__prometheusSpeculationHover'
+  if (window[key]) return
+  window[key] = true
+
+  const slowTypes = ${JSON.stringify(slowSpeculationConnectionTypes)}
+  const connection = navigator.connection
+  const isSlow = Boolean(connection?.saveData) || slowTypes.includes(connection?.effectiveType || '')
+  if (isSlow) return
+
+  const isSecure = window.isSecureContext === true
+  const supportsSpeculation = isSecure && Boolean(HTMLScriptElement.supports?.('speculationrules'))
+  const queued = new Set()
+
+  const prefetchWithFetch = (url) => {
+    if (!('fetch' in window)) return
+    try {
+      fetch(url, { credentials: 'same-origin', cache: 'force-cache' }).catch(() => {})
+    } catch {}
+  }
+
+  const scheduleFetch = (url) => {
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => prefetchWithFetch(url), { timeout: 2000 })
+    } else {
+      setTimeout(() => prefetchWithFetch(url), 120)
+    }
+  }
+
+  const addHint = (action, url) => {
+    const id = action + ':' + url
+    if (queued.has(id)) return
+    queued.add(id)
+
+    const allowFallback = !supportsSpeculation || action !== 'prerender'
+    if (supportsSpeculation) {
+      const script = document.createElement('script')
+      script.type = 'speculationrules'
+      script.dataset.source = 'hover'
+      script.text = JSON.stringify({ [action]: [{ source: 'list', urls: [url] }] })
+      document.head.append(script)
+    } else {
+      const link = document.createElement('link')
+      const rel = action === 'prerender' ? 'prefetch' : action
+      link.rel = rel
+      if (rel === 'prefetch') link.as = 'document'
+      link.href = url
+      link.dataset.speculateHover = 'true'
+      document.head.append(link)
+    }
+
+    if (allowFallback) scheduleFetch(url)
+  }
+
+  const isDocumentUrl = (url) => {
+    const path = url.pathname
+    if (path.startsWith('/@fs/')) return false
+    if (path.includes('/node_modules/')) return false
+    if (/\\.[a-z0-9]+$/i.test(path)) return false
+    return true
+  }
+
+  const findAnchor = (event) => {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target]
+    for (const entry of path) {
+      if (!(entry instanceof Element)) continue
+      const anchor = entry.closest ? entry.closest('a') : null
+      if (anchor) return anchor
+    }
+    return null
+  }
+
+  const onHover = (event) => {
+    const anchor = findAnchor(event)
+    if (!anchor) return
+    if (!anchor.closest('.app-frame')) return
+
+    const href = anchor.getAttribute('href')
+    if (!href || href.startsWith('#')) return
+
+    const url = new URL(anchor.href, window.location.href)
+    if (url.origin !== window.location.origin) return
+    if (!isDocumentUrl(url)) return
+
+    const dataSpeculate = anchor.dataset.speculate
+    if (dataSpeculate === 'false') return
+    const action = dataSpeculate === 'prefetch' ? 'prefetch' : 'prerender'
+    addHint(action, '' + url.pathname + url.search)
+  }
+
+  document.addEventListener('pointerover', onHover, { passive: true })
+  document.addEventListener('mouseover', onHover, { passive: true })
+  document.addEventListener('focusin', onHover, { passive: true })
+  document.addEventListener('touchstart', onHover, { passive: true })
+})()`
+    : undefined
   const themeInitScript =
     "(()=>{try{const theme=localStorage.getItem('theme');if(!theme)return;const root=document.documentElement;if(theme==='system'){root.removeAttribute('data-theme');root.classList.remove('light','dark');return;}root.setAttribute('data-theme',theme);root.classList.remove('light','dark');}catch{}})();"
   return (
@@ -297,6 +399,7 @@ export const RouterHead = component$(() => {
         <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
       )}
       {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
+      {hoverSpeculationScript && <script dangerouslySetInnerHTML={hoverSpeculationScript} />}
       {featureFlags.viewTransitions && !isAudit && (
         <script
           dangerouslySetInnerHTML={
@@ -321,72 +424,6 @@ export default component$(() => {
         setDefaultLocale(loaded)
       })
       .catch(() => {})
-  })
-  useVisibleTask$(({ cleanup }) => {
-    const head = document.head
-    if (!head) return
-    const isDev = import.meta.env.DEV
-
-    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
-    const isSlowConnection =
-      Boolean(connection?.saveData) ||
-      slowSpeculationConnectionTypes.includes((connection?.effectiveType ?? '') as (typeof slowSpeculationConnectionTypes)[number])
-    if (isSlowConnection) return
-
-    const supportsSpeculation = Boolean(HTMLScriptElement.supports?.('speculationrules'))
-    const queued = new Set<string>()
-
-    const addSpeculationHint = (action: SpeculationCandidate['action'], url: string) => {
-      const key = `${action}:${url}`
-      if (queued.has(key)) return
-      queued.add(key)
-
-      if (supportsSpeculation) {
-        const script = document.createElement('script')
-        script.type = 'speculationrules'
-        script.dataset.source = 'hover'
-        script.text = JSON.stringify({ [action]: [{ source: 'list', urls: [url] }] })
-        head.append(script)
-        return
-      }
-
-      const link = document.createElement('link')
-      link.rel = action
-      link.href = url
-      link.dataset.speculateHover = 'true'
-      head.append(link)
-    }
-
-    const isDocumentUrl = (url: URL) => {
-      const { pathname } = url
-      if (pathname.startsWith('/@fs/')) return false
-      if (pathname.includes('/node_modules/')) return false
-      if (/\.[a-z0-9]+$/i.test(pathname)) return false
-      return true
-    }
-
-    const onPointerOver = (event: Event) => {
-      const target = event.target as Element | null
-      const anchor = target?.closest?.('a') as HTMLAnchorElement | null
-      if (!anchor) return
-      if (!anchor.closest('.app-frame')) return
-
-      const action = anchor.dataset.speculate === 'prerender' ? 'prerender' : 'prefetch'
-
-      const href = anchor.getAttribute('href')
-      if (!href || href.startsWith('#')) return
-
-      const url = new URL(anchor.href, window.location.href)
-      if (url.origin !== window.location.origin) return
-      if (!isDocumentUrl(url)) return
-
-      addSpeculationHint(action, `${url.pathname}${url.search}`)
-    }
-
-    document.addEventListener('pointerover', onPointerOver, { passive: true })
-    cleanup(() => {
-      document.removeEventListener('pointerover', onPointerOver)
-    })
   })
 
   const loc = useLocation()
