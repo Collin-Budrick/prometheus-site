@@ -17,6 +17,7 @@ import {
   buildSpeculationRulesGuard,
   conservativeViewportRules,
   mergeSpeculationRules,
+  slowSpeculationConnectionTypes,
   type SpeculationRules
 } from '../../config/speculation-rules'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
@@ -320,6 +321,72 @@ export default component$(() => {
         setDefaultLocale(loaded)
       })
       .catch(() => {})
+  })
+  useVisibleTask$(({ cleanup }) => {
+    const head = document.head
+    if (!head) return
+    const isDev = import.meta.env.DEV
+
+    const connection = navigator.connection
+    const isSlowConnection =
+      Boolean(connection?.saveData) ||
+      slowSpeculationConnectionTypes.includes((connection?.effectiveType ?? '') as (typeof slowSpeculationConnectionTypes)[number])
+    if (isSlowConnection) return
+
+    const supportsSpeculation = Boolean(HTMLScriptElement.supports?.('speculationrules'))
+    const queued = new Set<string>()
+
+    const addSpeculationHint = (action: SpeculationCandidate['action'], url: string) => {
+      const key = `${action}:${url}`
+      if (queued.has(key)) return
+      queued.add(key)
+
+      if (supportsSpeculation) {
+        const script = document.createElement('script')
+        script.type = 'speculationrules'
+        script.dataset.source = 'hover'
+        script.text = JSON.stringify({ [action]: [{ source: 'list', urls: [url] }] })
+        head.append(script)
+        return
+      }
+
+      const link = document.createElement('link')
+      link.rel = action
+      link.href = url
+      link.dataset.speculateHover = 'true'
+      head.append(link)
+    }
+
+    const isDocumentUrl = (url: URL) => {
+      const { pathname } = url
+      if (pathname.startsWith('/@fs/')) return false
+      if (pathname.includes('/node_modules/')) return false
+      if (/\.[a-z0-9]+$/i.test(pathname)) return false
+      return true
+    }
+
+    const onPointerOver = (event: Event) => {
+      const target = event.target as Element | null
+      const anchor = target?.closest?.('a') as HTMLAnchorElement | null
+      if (!anchor) return
+      if (!anchor.closest('.app-frame')) return
+
+      const action = anchor.dataset.speculate === 'prerender' ? 'prerender' : 'prefetch'
+
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#')) return
+
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin) return
+      if (!isDocumentUrl(url)) return
+
+      addSpeculationHint(action, `${url.pathname}${url.search}`)
+    }
+
+    document.addEventListener('pointerover', onPointerOver, { passive: true })
+    cleanup(() => {
+      document.removeEventListener('pointerover', onPointerOver)
+    })
   })
 
   const loc = useLocation()
