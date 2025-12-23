@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import { execSync, spawn } from 'node:child_process'
 import path from 'node:path'
@@ -5,10 +6,15 @@ import path from 'node:path'
 const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
 const bunBin = process.execPath
-const hmrClientPort = process.env.HMR_CLIENT_PORT ?? '80'
+const repoRoot = path.resolve(process.cwd(), '..', '..')
+const traefikTlsPath = path.join(repoRoot, 'infra', 'traefik', 'dynamic', 'tls.yml')
+const useHttps = process.env.DEV_HTTPS === '1' || fs.existsSync(traefikTlsPath)
+const hmrClientPort = process.env.HMR_CLIENT_PORT ?? (useHttps ? '443' : '80')
+const hmrProtocol = process.env.HMR_PROTOCOL ?? (useHttps ? 'wss' : 'ws')
 const bunEnv = {
   ...process.env,
   HMR_CLIENT_PORT: hmrClientPort,
+  HMR_PROTOCOL: hmrProtocol,
   PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`
 }
 const viteBin = path.resolve(process.cwd(), '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')

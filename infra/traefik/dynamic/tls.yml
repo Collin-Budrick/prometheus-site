@@ -1,0 +1,4 @@
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/prometheus.localhost+prometheus.test.pem
+      keyFile: /etc/traefik/certs/prometheus.localhost+prometheus.test.key

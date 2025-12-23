@@ -19,3 +19,4 @@ apps/web/server/
 apps/web/server/@qwik-city-not-found-paths.js
 apps/web/server/@qwik-city-static-paths.js
 apps/web/server/entry.preview.js
+infra/traefik/certs/

@@ -3,16 +3,18 @@ http:
     prometheus-prod-web:
       rule: Host(`prometheus.test`)
       entryPoints:
-        - web
+        - websecure
       service: prometheus-prod-web
+      tls: {}
       priority: 1
     prometheus-prod-api:
       rule: Host(`prometheus.test`) && PathPrefix(`/api`)
       entryPoints:
-        - web
+        - websecure
       service: prometheus-prod-api
       middlewares:
         - prometheus-prod-api-strip
+      tls: {}
       priority: 10
   services:
     prometheus-prod-web:

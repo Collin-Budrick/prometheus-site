@@ -3,16 +3,18 @@ http:
     prometheus-dev-web:
       rule: Host(`prometheus.localhost`)
       entryPoints:
-        - web
+        - websecure
       service: prometheus-dev-web
+      tls: {}
       priority: 1
     prometheus-dev-api:
       rule: Host(`prometheus.localhost`) && PathPrefix(`/api`)
       entryPoints:
-        - web
+        - websecure
       service: prometheus-dev-api
       middlewares:
         - prometheus-dev-api-strip
+      tls: {}
       priority: 10
   services:
     prometheus-dev-web:
