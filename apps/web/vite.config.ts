@@ -94,6 +94,7 @@ export default defineConfig((configEnv) => {
   const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const nodeModuleStubPath = fileURLToPath(new URL('./src/stubs/node-module.ts', import.meta.url))
   const bunTestStubPath = fileURLToPath(new URL('./src/stubs/bun-test.ts', import.meta.url))
+  const partytownIntegrationStubPath = fileURLToPath(new URL('./src/stubs/partytown-integration.ts', import.meta.url))
   const motionEsmPath = fileURLToPath(new URL('../../node_modules/motion/dist/es/index.mjs', import.meta.url))
   const motionMiniEsmPath = fileURLToPath(new URL('../../node_modules/motion/dist/es/mini.mjs', import.meta.url))
   const framerMotionDomEsmPath = fileURLToPath(new URL('../../node_modules/framer-motion/dist/es/dom.mjs', import.meta.url))
@@ -102,6 +103,7 @@ export default defineConfig((configEnv) => {
   )
   const motionDomEsmPath = fileURLToPath(new URL('../../node_modules/motion-dom/dist/es/index.mjs', import.meta.url))
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
+  const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
   const aliasEntries = [
     { find: 'bun:test', replacement: bunTestStubPath },
     { find: 'motion/mini', replacement: motionMiniEsmPath },
@@ -109,7 +111,8 @@ export default defineConfig((configEnv) => {
     { find: 'motion', replacement: motionEsmPath },
     { find: 'framer-motion/dom', replacement: framerMotionDomEsmPath },
     { find: 'motion-dom', replacement: motionDomEsmPath },
-    { find: 'motion-utils', replacement: motionUtilsEsmPath }
+    { find: 'motion-utils', replacement: motionUtilsEsmPath },
+    ...(shouldStubPartytown ? [{ find: '@qwik.dev/partytown/integration', replacement: partytownIntegrationStubPath }] : [])
   ]
 
   const analysisPlugins = createAnalysisPlugins(env.analyzeBundles && !ssrBuild)
@@ -121,6 +124,7 @@ export default defineConfig((configEnv) => {
       if (options?.ssr || this.environment?.name === 'ssr') return null
       if (source === 'zod') return zodStubPath
       if (source === 'node:module') return nodeModuleStubPath
+      if (source === '@qwik.dev/partytown/integration') return partytownIntegrationStubPath
       return null
     }
   }

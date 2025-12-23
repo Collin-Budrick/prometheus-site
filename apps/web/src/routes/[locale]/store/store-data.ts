@@ -1,8 +1,10 @@
-import { routeAction$, routeLoader$, server$, type RequestHandler } from '@builder.io/qwik-city'
-import { _ } from 'compiled-i18n'
+import { routeAction$, routeLoader$, server$, type RequestEventBase, type RequestHandler } from '@builder.io/qwik-city'
+import { _, locales, type Locale } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
 import { db } from '../../../server/db/client'
 import { storeItems } from '../../../server/db/schema'
+import { resolveLocale } from '../../../i18n/locale'
+import { ensureLocaleDictionary } from '../../../i18n/dictionaries'
 import {
   centsToDecimalString,
   normalizeItem,
@@ -44,11 +46,28 @@ const loadStoreItems = async (cursor?: number): Promise<StoreItemsResult> => {
   }
 }
 
-export const fetchStoreItems = server$(async (cursor?: number) => loadStoreItems(cursor))
+const resolveRequestLocale = (event: RequestEventBase) => {
+  const eventLocale = event.locale?.()
+  if (eventLocale && locales.includes(eventLocale as any)) return eventLocale as Locale
+  return resolveLocale({
+    queryLocale: event.query.get('locale'),
+    cookieLocale: event.cookie.get('locale')?.value ?? null,
+    acceptLanguage: event.request.headers.get('accept-language')
+  }) as Locale
+}
 
-export const useStoreItemsLoader = routeLoader$(async () => loadStoreItems())
+export const fetchStoreItems = server$(async function (this: RequestEventBase, cursor?: number) {
+  await ensureLocaleDictionary(resolveRequestLocale(this))
+  return loadStoreItems(cursor)
+})
 
-export const useDeleteStoreItem = routeAction$(async (data) => {
+export const useStoreItemsLoader = routeLoader$(async (event) => {
+  await ensureLocaleDictionary(resolveRequestLocale(event))
+  return loadStoreItems()
+})
+
+export const useDeleteStoreItem = routeAction$(async (data, event) => {
+  await ensureLocaleDictionary(resolveRequestLocale(event))
   const id = Number.parseInt(String(data.id ?? ''), 10)
   if (!Number.isFinite(id) || id <= 0) {
     return { success: false, error: _`Invalid id.` }
@@ -66,7 +85,8 @@ export const useDeleteStoreItem = routeAction$(async (data) => {
   }
 })
 
-export const useCreateStoreItem = routeAction$(async (data) => {
+export const useCreateStoreItem = routeAction$(async (data, event) => {
+  await ensureLocaleDictionary(resolveRequestLocale(event))
   const name = String(data.name ?? '').trim()
   const priceCents = priceToCents(data.price)
 

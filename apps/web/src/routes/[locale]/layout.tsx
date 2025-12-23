@@ -1,6 +1,7 @@
-import { Slot, component$, useStylesScoped$ } from '@builder.io/qwik'
+import { Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import { useDocumentHead, useLocation, type RequestHandler, type StaticGenerateHandler } from '@builder.io/qwik-city'
-import { _, defaultLocale, locales } from 'compiled-i18n'
+import localeStore from '@i18n/__locales'
+import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
 import { sanitizeHeadLinks } from '../head-utils'
 /* cspell:ignore hrefs */
 import { allowedPreloadHrefs, resolveCriticalPreloads } from '../preload-manifest'
@@ -9,6 +10,7 @@ import { featureFlags } from '../../config/feature-flags'
 import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
 import layoutStyles from '../layout.css?inline'
 import { criticalCssInline } from '../critical-css-assets'
+import { ensureLocaleDictionary } from '../../i18n/dictionaries'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
 import {
@@ -20,6 +22,19 @@ import {
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
+
+const primeLocaleStore = () => {
+  locales.forEach((locale) => {
+    if (localeStore[locale]) return
+    localeStore[locale] = {
+      locale: locale as Locale,
+      ...(locale !== defaultLocale ? { fallback: defaultLocale } : {}),
+      translations: {}
+    }
+  })
+}
+
+primeLocaleStore()
 
 const recordServerTiming = (
   sharedMap: Map<string, any>,
@@ -297,6 +312,15 @@ export const RouterHead = component$(() => {
 
 export default component$(() => {
   useStylesScoped$(layoutStyles)
+  useVisibleTask$(() => {
+    const resolved = getLocale()
+    const target = locales.includes(resolved as any) ? (resolved as Locale) : defaultLocale
+    void ensureLocaleDictionary(target)
+      .then((loaded) => {
+        setDefaultLocale(loaded)
+      })
+      .catch(() => {})
+  })
 
   const loc = useLocation()
   const localePrefix = (() => {
