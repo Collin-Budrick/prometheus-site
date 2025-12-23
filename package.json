@@ -15,6 +15,7 @@
     "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
+    "certs:mkcert": "scripts/setup-mkcert.sh",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "bun run lint"
   },
@@ -27,8 +28,8 @@
     "compiled-i18n@1.2.1": "patches/compiled-i18n+1.2.1.patch"
   },
   "devDependencies": {
-    "@rolldown/binding-win32-arm64-msvc": "^1.0.0-beta.55",
-    "@rolldown/binding-win32-x64-msvc": "^1.0.0-beta.55",
+    "@rolldown/binding-win32-arm64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
+    "@rolldown/binding-win32-x64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
     "lefthook": "^2.0.12"
   }
 }

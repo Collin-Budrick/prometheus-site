@@ -16,7 +16,7 @@ Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia AP
 - API: `4000`
 - Postgres: `5433`
 - Valkey: `6379`
-- Traefik edge: `80` (HTTP)
+- Traefik edge: `80` (HTTP), `443` (HTTPS + HTTP/3)
 
 ## Environment variables
 
@@ -49,6 +49,22 @@ make dev
 
 This runs docker-compose in the **dev** profile with hot reload for both apps. Stop with `Ctrl+C`. View logs with `make logs`.
 
+### TLS (mkcert)
+
+Traefik terminates TLS using mkcert-issued certificates stored in `infra/traefik/certs`.
+
+WSL (Bash):
+```bash
+bun run certs:mkcert
+```
+
+Windows (PowerShell):
+```powershell
+.\scripts\setup-mkcert.ps1
+```
+
+If you run mkcert inside WSL but browse from Windows, import the WSL root CA into Windows trust (`mkcert -CAROOT` shows the CA path).
+
 ### Docker/WSL HMR tips
 
 The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and wires those settings through the `server.hmr` block in `apps/web/vite.config.ts`. When running inside Docker or WSL, set `HMR_HOST` to an address reachable by the browser (e.g., your host IP or `localhost` when port-forwarded) and `HMR_CLIENT_PORT` to the forwarded dev port so the Vite client can open the WebSocket. Avoid `VITE_HMR_POLLING=1` unless necessary; it forces polling and disables the faster WebSocket path.
@@ -56,6 +72,7 @@ The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and
 #### Remote/HTTPS dev checklist
 
 - Set `HMR_PROTOCOL=wss` so the Vite client upgrades over TLS when you front the dev server with HTTPS.
+- `bun run dev` auto-switches to `wss` + `443` when `infra/traefik/dynamic/tls.yml` exists; override with `DEV_HTTPS=0` or explicit `HMR_*` env vars if needed.
 - Align `HMR_PORT` with the dev server port you expose from the container/VM (usually `WEB_PORT`).
 - Set `HMR_CLIENT_PORT` to the browser-facing port (the one you access in the address bar after forwarding or reverse-proxying).
 
@@ -77,7 +94,7 @@ These values are read in `apps/web/src/config/env.ts` and populate the `server.h
 bun run docker:prod
 ```
 
-The **prod** profile runs Traefik on port 80 and serves the preview web container. Add `prometheus.test` to your hosts file so the router can match the hostname.
+The **prod** profile runs Traefik on ports 80/443 and serves the preview web container. Add `prometheus.test` to your hosts file so the router can match the hostname, and run mkcert so HTTPS is trusted.
 
 ## Database + cache workflows
 
