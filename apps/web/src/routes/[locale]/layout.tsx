@@ -249,60 +249,19 @@ export const RouterHead = component$(() => {
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
   const speculationRulesGuard =
     allowSpeculationRules && speculationRulesPayload ? buildSpeculationRulesGuard() : undefined
-  const hoverSpeculationScript = !isAudit
+  const prerenderAllLinksScript = allowSpeculationRules && !isAudit
     ? `(() => {
-  const key = '__prometheusSpeculationHover'
+  const key = '__prometheusSpeculationAllLinks'
   if (window[key]) return
   window[key] = true
+
+  if (!HTMLScriptElement.supports?.('speculationrules')) return
+  if (window.isSecureContext !== true) return
 
   const slowTypes = ${JSON.stringify(slowSpeculationConnectionTypes)}
   const connection = navigator.connection
   const isSlow = Boolean(connection?.saveData) || slowTypes.includes(connection?.effectiveType || '')
   if (isSlow) return
-
-  const isSecure = window.isSecureContext === true
-  const supportsSpeculation = isSecure && Boolean(HTMLScriptElement.supports?.('speculationrules'))
-  const queued = new Set()
-
-  const prefetchWithFetch = (url) => {
-    if (!('fetch' in window)) return
-    try {
-      fetch(url, { credentials: 'same-origin', cache: 'force-cache' }).catch(() => {})
-    } catch {}
-  }
-
-  const scheduleFetch = (url) => {
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => prefetchWithFetch(url), { timeout: 2000 })
-    } else {
-      setTimeout(() => prefetchWithFetch(url), 120)
-    }
-  }
-
-  const addHint = (action, url) => {
-    const id = action + ':' + url
-    if (queued.has(id)) return
-    queued.add(id)
-
-    const allowFallback = !supportsSpeculation || action !== 'prerender'
-    if (supportsSpeculation) {
-      const script = document.createElement('script')
-      script.type = 'speculationrules'
-      script.dataset.source = 'hover'
-      script.text = JSON.stringify({ [action]: [{ source: 'list', urls: [url] }] })
-      document.head.append(script)
-    } else {
-      const link = document.createElement('link')
-      const rel = action === 'prerender' ? 'prefetch' : action
-      link.rel = rel
-      if (rel === 'prefetch') link.as = 'document'
-      link.href = url
-      link.dataset.speculateHover = 'true'
-      document.head.append(link)
-    }
-
-    if (allowFallback) scheduleFetch(url)
-  }
 
   const isDocumentUrl = (url) => {
     const path = url.pathname
@@ -312,38 +271,55 @@ export const RouterHead = component$(() => {
     return true
   }
 
-  const findAnchor = (event) => {
-    const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target]
-    for (const entry of path) {
-      if (!(entry instanceof Element)) continue
-      const anchor = entry.closest ? entry.closest('a') : null
-      if (anchor) return anchor
+  const collect = () => {
+    const anchors = Array.from(document.querySelectorAll('a[href]'))
+    if (!anchors.length) return
+
+    const urls = new Set()
+    for (const anchor of anchors) {
+      if (!anchor.closest || !anchor.closest('.app-frame')) continue
+      if (anchor.dataset && anchor.dataset.speculate === 'false') continue
+      if (anchor.rel && anchor.rel.split(' ').includes('nofollow')) continue
+      const raw = anchor.getAttribute('href')
+      if (!raw || raw.startsWith('#')) continue
+
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin) continue
+      if (!isDocumentUrl(url)) continue
+      if (url.pathname === window.location.pathname && url.search === window.location.search) continue
+
+      urls.add('' + url.pathname + url.search)
     }
-    return null
+
+    if (!urls.size) return
+
+    const script = document.createElement('script')
+    script.type = 'speculationrules'
+    script.dataset.source = 'document'
+    script.text = JSON.stringify({
+      prerender: [
+        {
+          source: 'list',
+          urls: Array.from(urls)
+        }
+      ]
+    })
+    document.head.append(script)
   }
 
-  const onHover = (event) => {
-    const anchor = findAnchor(event)
-    if (!anchor) return
-    if (!anchor.closest('.app-frame')) return
-
-    const href = anchor.getAttribute('href')
-    if (!href || href.startsWith('#')) return
-
-    const url = new URL(anchor.href, window.location.href)
-    if (url.origin !== window.location.origin) return
-    if (!isDocumentUrl(url)) return
-
-    const dataSpeculate = anchor.dataset.speculate
-    if (dataSpeculate === 'false') return
-    const action = dataSpeculate === 'prefetch' ? 'prefetch' : 'prerender'
-    addHint(action, '' + url.pathname + url.search)
+  const schedule = () => {
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(collect, { timeout: 3000 })
+    } else {
+      setTimeout(collect, 200)
+    }
   }
 
-  document.addEventListener('pointerover', onHover, { passive: true })
-  document.addEventListener('mouseover', onHover, { passive: true })
-  document.addEventListener('focusin', onHover, { passive: true })
-  document.addEventListener('touchstart', onHover, { passive: true })
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', schedule, { once: true })
+  } else {
+    schedule()
+  }
 })()`
     : undefined
   const themeInitScript =
@@ -399,7 +375,7 @@ export const RouterHead = component$(() => {
         <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
       )}
       {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
-      {hoverSpeculationScript && <script dangerouslySetInnerHTML={hoverSpeculationScript} />}
+      {prerenderAllLinksScript && <script dangerouslySetInnerHTML={prerenderAllLinksScript} />}
       {featureFlags.viewTransitions && !isAudit && (
         <script
           dangerouslySetInnerHTML={

@@ -13,20 +13,23 @@ export type SpeculationDocumentRule = {
 
 export type SpeculationRules = {
   prefetch?: (SpeculationListRule | SpeculationDocumentRule)[]
-  prerender?: (SpeculationListRule | SpeculationDocumentRule)[]
+  prerender?: SpeculationListRule[]
 }
 
 export const conservativeViewportRules: SpeculationRules = {
-  prerender: [
+  prefetch: [
     {
       source: 'document',
       where: {
         and: [
-          { selector_matches: 'a[href^="/"]:not([href*="#"]):not([href*="?"])' },
+          {
+            selector_matches:
+              'a[href^="/"]:not([href^="//"]):not([href^="/@fs/"]):not([href^="/node_modules/"]):not([href*="#"])'
+          },
           { not: { selector_matches: '[rel~=nofollow], [data-speculate="false"]' } }
         ]
       },
-      eagerness: 'moderate'
+      eagerness: 'eager'
     }
   ]
 }
