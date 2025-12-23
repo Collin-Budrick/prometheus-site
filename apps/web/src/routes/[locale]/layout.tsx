@@ -247,6 +247,7 @@ export const RouterHead = component$(() => {
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
   const speculationRulesPayload = speculationRules ? JSON.stringify(speculationRules) : null
+  const speculationRulesKey = speculationRulesPayload ? `speculationrules:${loc.url.pathname}` : undefined
   const speculationRulesGuard =
     allowSpeculationRules && speculationRulesPayload ? buildSpeculationRulesGuard() : undefined
   const prerenderAllLinksScript = allowSpeculationRules && !isAudit
@@ -372,7 +373,12 @@ export const RouterHead = component$(() => {
       {/* Speculation Rules remain inert without support and are stripped on Save-Data or slow connections. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesPayload && (
-        <script type="speculationrules" data-source="router" dangerouslySetInnerHTML={speculationRulesPayload} />
+        <script
+          key={speculationRulesKey}
+          type="speculationrules"
+          data-source="router"
+          dangerouslySetInnerHTML={speculationRulesPayload}
+        />
       )}
       {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
       {prerenderAllLinksScript && <script dangerouslySetInnerHTML={prerenderAllLinksScript} />}

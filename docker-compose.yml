@@ -29,6 +29,8 @@ services:
     environment:
       - WEB_PORT=4173
       - API_URL=http://api:4000
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
       - DATABASE_URL=postgresql://prometheus:secret@db:5432/prometheus
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
