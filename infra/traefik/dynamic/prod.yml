@@ -1,0 +1,30 @@
+http:
+  routers:
+    prometheus-prod-web:
+      rule: Host(`prometheus.test`)
+      entryPoints:
+        - web
+      service: prometheus-prod-web
+      priority: 1
+    prometheus-prod-api:
+      rule: Host(`prometheus.test`) && PathPrefix(`/api`)
+      entryPoints:
+        - web
+      service: prometheus-prod-api
+      middlewares:
+        - prometheus-prod-api-strip
+      priority: 10
+  services:
+    prometheus-prod-web:
+      loadBalancer:
+        servers:
+          - url: http://web:4173
+    prometheus-prod-api:
+      loadBalancer:
+        servers:
+          - url: http://api:4000
+  middlewares:
+    prometheus-prod-api-strip:
+      stripPrefix:
+        prefixes:
+          - /api

@@ -5,7 +5,12 @@ import path from 'node:path'
 const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
 const bunBin = process.execPath
-const bunEnv = { ...process.env, PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}` }
+const hmrClientPort = process.env.HMR_CLIENT_PORT ?? '80'
+const bunEnv = {
+  ...process.env,
+  HMR_CLIENT_PORT: hmrClientPort,
+  PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`
+}
 const viteBin = path.resolve(process.cwd(), '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
 
 const tryExec = (command: string) => {

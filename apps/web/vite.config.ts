@@ -17,6 +17,7 @@ import {
   devAuditStripViteClient,
   devBustedViteClient,
   devFontSilencer,
+  fixOxcAutomaticJsx,
   forceClientBundleDeps,
   leanWorkboxManifest,
   localeBuildFallback,
@@ -278,6 +279,7 @@ export default defineConfig((configEnv) => {
     devFontSilencer(),
     previewBrotliAssets(),
     previewImmutableAssetCache(env.previewCacheEnabled),
+    fixOxcAutomaticJsx(),
     patchNodeModuleRuntime(),
     ...staticCopyPlugins,
     compressionPlugin
@@ -330,7 +332,8 @@ export default defineConfig((configEnv) => {
     preview: {
       host: '0.0.0.0',
       port: env.previewPort,
-      strictPort: true
+      strictPort: true,
+      allowedHosts: ['prometheus.localhost', 'prometheus.test']
     },
     css: {
       transformer: 'lightningcss',

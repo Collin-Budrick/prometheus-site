@@ -6,8 +6,8 @@ Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia AP
 
 - **apps/web** – Qwik City SSR with UnoCSS + Lightning CSS, Speculation Rules, View Transitions, optional Partytown.
 - **apps/api** – Bun + Elysia REST/WebSocket service using Drizzle ORM (Postgres) and Valkey for cache/pubsub.
-- **infra/** – Nginx HTTP/3 reverse proxy, Postgres init scripts, Valkey config.
-- **docker-compose** – Dev and prod profiles bundling web, api, db, valkey, and nginx.
+- **infra/** – Traefik dynamic config, Postgres init scripts, Valkey config.
+- **docker-compose** – Dev and prod profiles bundling web, api, db, valkey, and Traefik.
 - **scripts/perf-audit** – Lighthouse CI helper for bundle/perf verification.
 
 ### Ports
@@ -16,7 +16,7 @@ Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia AP
 - API: `4000`
 - Postgres: `5433`
 - Valkey: `6379`
-- Nginx edge: `80/443` (HTTP/3 + Early Hints)
+- Traefik edge: `80` (HTTP)
 
 ## Environment variables
 
@@ -35,6 +35,7 @@ See `.env.example` for defaults. Key values:
 - `bun run lint` – Oxlint across both apps; also used by `make test`.
 - `bun run format` – oxfmt across both apps.
 - `bun run test` – web tests via `bun test`; API currently returns a placeholder message.
+- `bun run docker:prod` – builds and runs Traefik + web preview + API containers.
 
 ## Local development
 
@@ -49,10 +50,10 @@ This runs docker-compose in the **dev** profile with hot reload for both apps. S
 ## Production-like
 
 ```bash
-make prod
+bun run docker:prod
 ```
 
-The **prod** profile adds Nginx (HTTP/3 + Early Hints) and expects TLS certs mounted at `infra/nginx/tls`. Use `make reset` to tear down containers and volumes.
+The **prod** profile runs Traefik on port 80 and serves the preview web container. Add `prometheus.test` to your hosts file so the router can match the hostname.
 
 ## Database + cache workflows
 
@@ -75,7 +76,3 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 - Speculation Rules pre-render/prefetch likely navigations; View Transitions provide smooth navigation without client runtime bloat.
 - Partytown is optional for isolating third-party scripts off the main thread.
 
-## TLS guidance
-
-- Mount `fullchain.pem` and `privkey.pem` into `infra/nginx/tls/` for Nginx.
-- HTTP/3 and Early Hints are enabled; an HTTP port 80 listener redirects to HTTPS.

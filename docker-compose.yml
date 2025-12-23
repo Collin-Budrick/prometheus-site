@@ -1,9 +1,22 @@
 services:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+    ports:
+      - '80:80'
+    volumes:
+      - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
   web:
     build:
       context: .
       dockerfile: Dockerfile.web
-    command: sh -c "bun run --cwd apps/web preview -- --host 0.0.0.0 --port 4173"
+    command: sh -c "bun run --cwd apps/web vite preview --host 0.0.0.0 --port 4173"
     working_dir: /app
     environment:
       - WEB_PORT=4173
@@ -14,12 +27,17 @@ services:
       - POSTGRES_USER=prometheus
       - POSTGRES_PASSWORD=secret
       - POSTGRES_DB=prometheus
-    ports:
-      - '4173:4173'
     depends_on:
       api:
         condition: service_healthy
-    profiles: [dev]
+    profiles: [dev, prod]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.prometheus-web.rule=Host(`prometheus.test`)
+      - traefik.http.routers.prometheus-web.entrypoints=web
+      - traefik.http.routers.prometheus-web.priority=1
+      - traefik.http.routers.prometheus-web.service=prometheus-web
+      - traefik.http.services.prometheus-web.loadbalancer.server.port=4173
 
   api:
     build:
@@ -41,15 +59,22 @@ services:
       - VALKEY_HOST=valkey
       - VALKEY_PORT=6379
       - RUN_MIGRATIONS=1
-    ports:
-      - '4000:4000'
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.prometheus-api.rule=Host(`prometheus.test`) && PathPrefix(`/api`)
+      - traefik.http.routers.prometheus-api.entrypoints=web
+      - traefik.http.routers.prometheus-api.priority=10
+      - traefik.http.routers.prometheus-api.middlewares=prometheus-api-strip
+      - traefik.http.middlewares.prometheus-api-strip.stripprefix.prefixes=/api
+      - traefik.http.routers.prometheus-api.service=prometheus-api
+      - traefik.http.services.prometheus-api.loadbalancer.server.port=4000
     depends_on:
       db:
         condition: service_healthy
       valkey:
         condition: service_started
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS "http://localhost:${API_PORT:-4000}/health"']
+      test: ["CMD-SHELL", "bun -e \"const port = process.env.API_PORT || '4000'; fetch('http://localhost:' + port + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -79,21 +104,6 @@ services:
       - ./infra/valkey/valkey.conf:/etc/valkey/valkey.conf:ro
     ports:
       - '6379:6379'
-
-  nginx:
-    image: nginx:1.27-alpine
-    depends_on:
-      web:
-        condition: service_started
-      api:
-        condition: service_started
-    volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infra/nginx/tls:/etc/nginx/tls:ro
-    ports:
-      - '80:80'
-      - '443:443'
-    profiles: [prod]
 
 volumes:
   db_data:

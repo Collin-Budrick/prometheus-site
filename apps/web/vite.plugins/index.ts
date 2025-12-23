@@ -392,6 +392,13 @@ export const devAuditStripViteClient = (enabled: boolean) =>
 export const qwikViteNoDeprecatedEsbuild = () => {
   const plugin: Plugin = qwikVite()
   const originalConfig = plugin.config
+  const originalConfigResolved = plugin.configResolved
+
+  const normalizeOxcJsx = (oxc: Record<string, unknown>) => {
+    if (oxc.jsx === 'automatic' || oxc.jsx === 'react-jsx' || oxc.jsx === 'react') {
+      oxc.jsx = { runtime: 'automatic' }
+    }
+  }
 
   plugin.config = async function (viteConfig, viteEnv) {
     const resolvedConfig = typeof originalConfig === 'function' ? await originalConfig.call(this, viteConfig, viteEnv) : undefined
@@ -400,12 +407,16 @@ export const qwikViteNoDeprecatedEsbuild = () => {
     const asRecord = resolvedConfig as Record<string, unknown>
     if ('esbuild' in asRecord) {
       delete asRecord.esbuild
-      if (!('oxc' in asRecord)) {
-        asRecord.oxc = {
-          logLevel: 'error',
-          jsx: 'automatic'
-        }
+    }
+
+    if (!('oxc' in asRecord)) {
+      asRecord.oxc = {
+        logLevel: 'error',
+        jsx: { runtime: 'automatic' }
       }
+    } else if (asRecord.oxc && typeof asRecord.oxc === 'object') {
+      const oxc = asRecord.oxc as Record<string, unknown>
+      normalizeOxcJsx(oxc)
     }
 
     const build = asRecord.build as Record<string, unknown> | undefined
@@ -424,8 +435,28 @@ export const qwikViteNoDeprecatedEsbuild = () => {
     return resolvedConfig
   }
 
+  plugin.configResolved = function (resolvedConfig) {
+    originalConfigResolved?.call(this, resolvedConfig)
+    if (resolvedConfig.oxc && typeof resolvedConfig.oxc === 'object') {
+      const oxc = resolvedConfig.oxc as Record<string, unknown>
+      normalizeOxcJsx(oxc)
+    }
+  }
+
   return plugin
 }
+
+export const fixOxcAutomaticJsx = (): Plugin => ({
+  name: 'fix-oxc-automatic-jsx',
+  configResolved(config) {
+    if (config.oxc && typeof config.oxc === 'object') {
+      const oxc = config.oxc as Record<string, unknown>
+      if (oxc.jsx === 'automatic' || oxc.jsx === 'react-jsx' || oxc.jsx === 'react') {
+        oxc.jsx = { runtime: 'automatic' }
+      }
+    }
+  }
+})
 
 export const preserveQwikLoader = (): Plugin => {
   const qwikLoaderRegex = /@builder\.io\/qwik\/dist\/qwikloader\.m?js$/

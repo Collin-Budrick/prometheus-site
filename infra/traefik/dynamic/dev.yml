@@ -1,0 +1,30 @@
+http:
+  routers:
+    prometheus-dev-web:
+      rule: Host(`prometheus.localhost`)
+      entryPoints:
+        - web
+      service: prometheus-dev-web
+      priority: 1
+    prometheus-dev-api:
+      rule: Host(`prometheus.localhost`) && PathPrefix(`/api`)
+      entryPoints:
+        - web
+      service: prometheus-dev-api
+      middlewares:
+        - prometheus-dev-api-strip
+      priority: 10
+  services:
+    prometheus-dev-web:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:4173
+    prometheus-dev-api:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:4000
+  middlewares:
+    prometheus-dev-api-strip:
+      stripPrefix:
+        prefixes:
+          - /api

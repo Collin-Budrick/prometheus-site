@@ -18,7 +18,7 @@
     "check:scripts": "bun run scripts/check-script-budget.ts",
     "check:css": "bun run scripts/check-css-budget.ts",
     "generate:uno": "bun run scripts/generate-uno.ts",
-    "prerender": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp bunx tsx scripts/prerender.ts"
+    "prerender": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp bun x tsx scripts/prerender.ts"
   },
   "dependencies": {
     "@builder.io/qwik": "1.18.0",

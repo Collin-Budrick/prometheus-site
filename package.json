@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "bun run scripts/dev.ts",
+    "docker:prod": "docker compose -f docker-compose.yml --profile prod up --build -d",
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
     "preview": "bun run --cwd apps/web preview",
     "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",
