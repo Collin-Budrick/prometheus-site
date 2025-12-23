@@ -5,8 +5,10 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./index.d.ts",
       "import": "./index.mjs",
       "require": "./index.cjs"
     }
-  }
+  },
+  "types": "./index.d.ts"
 }

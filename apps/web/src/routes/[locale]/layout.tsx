@@ -208,8 +208,8 @@ export const RouterHead = component$(() => {
   ]
   const safeLinks = sanitizeHeadLinks(baseLinks, import.meta.env.DEV, allowedPreloads)
   const prioritizedLinks = safeLinks.map((link) => {
-    if (link.rel === 'stylesheet') return { ...link, fetchpriority: 'high' }
-    if (link.rel === 'preload' && link.as === 'style') return { ...link, fetchpriority: 'high' }
+    if (link.rel === 'stylesheet') return { ...link, fetchPriority: 'high' as const }
+    if (link.rel === 'preload' && link.as === 'style') return { ...link, fetchPriority: 'high' as const }
     return link
   })
   const linkTags = (() => {
@@ -229,7 +229,7 @@ export const RouterHead = component$(() => {
           rel: 'preload',
           href,
           as: 'style',
-          fetchpriority: 'high'
+          fetchPriority: 'high' as const
         })
         seenStylePreload.add(href)
       }
@@ -255,7 +255,7 @@ export const RouterHead = component$(() => {
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
       {includeGlobalStyles && (
         <>
-          <link rel="preload" href={appCssHref} as="style" fetchpriority="high" />
+          <link rel="preload" href={appCssHref} as="style" fetchPriority={'high' as const} />
           <link
             rel="stylesheet"
             href={appCssHref}
@@ -327,7 +327,7 @@ export default component$(() => {
     if (!head) return
     const isDev = import.meta.env.DEV
 
-    const connection = navigator.connection
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
     const isSlowConnection =
       Boolean(connection?.saveData) ||
       slowSpeculationConnectionTypes.includes((connection?.effectiveType ?? '') as (typeof slowSpeculationConnectionTypes)[number])

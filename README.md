@@ -54,11 +54,13 @@ This runs docker-compose in the **dev** profile with hot reload for both apps. S
 Traefik terminates TLS using mkcert-issued certificates stored in `infra/traefik/certs`.
 
 WSL (Bash):
+
 ```bash
 bun run certs:mkcert
 ```
 
 Windows (PowerShell):
+
 ```powershell
 .\scripts\setup-mkcert.ps1
 ```
