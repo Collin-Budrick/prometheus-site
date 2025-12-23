@@ -94,7 +94,7 @@ These values are read in `apps/web/src/config/env.ts` and populate the `server.h
 bun run docker:prod
 ```
 
-The **prod** profile runs Traefik on ports 80/443 and serves the preview web container. Add `prometheus.test` to your hosts file so the router can match the hostname, and run mkcert so HTTPS is trusted.
+The **prod** profile runs Traefik on ports 80/443 and serves the preview web container. Add `prometheus.prod` to your hosts file so the router can match the hostname, and run mkcert so HTTPS is trusted.
 
 ## Database + cache workflows
 

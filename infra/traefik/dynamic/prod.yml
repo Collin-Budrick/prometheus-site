@@ -1,14 +1,14 @@
 http:
   routers:
     prometheus-prod-web:
-      rule: Host(`prometheus.test`)
+      rule: Host(`prometheus.prod`)
       entryPoints:
         - websecure
       service: prometheus-prod-web
       tls: {}
       priority: 1
     prometheus-prod-api:
-      rule: Host(`prometheus.test`) && PathPrefix(`/api`)
+      rule: Host(`prometheus.prod`) && PathPrefix(`/api`)
       entryPoints:
         - websecure
       service: prometheus-prod-api

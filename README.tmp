@@ -53,7 +53,7 @@ This runs docker-compose in the **dev** profile with hot reload for both apps. S
 bun run docker:prod
 ```
 
-The **prod** profile runs Traefik on port 80 and serves the preview web container. Add `prometheus.test` to your hosts file so the router can match the hostname.
+The **prod** profile runs Traefik on port 80 and serves the preview web container. Add `prometheus.prod` to your hosts file so the router can match the hostname.
 
 ## Database + cache workflows
 

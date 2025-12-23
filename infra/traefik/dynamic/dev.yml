@@ -1,14 +1,14 @@
 http:
   routers:
     prometheus-dev-web:
-      rule: Host(`prometheus.localhost`)
+      rule: Host(`prometheus.dev`)
       entryPoints:
         - websecure
       service: prometheus-dev-web
       tls: {}
       priority: 1
     prometheus-dev-api:
-      rule: Host(`prometheus.localhost`) && PathPrefix(`/api`)
+      rule: Host(`prometheus.dev`) && PathPrefix(`/api`)
       entryPoints:
         - websecure
       service: prometheus-dev-api
@@ -30,3 +30,7 @@ http:
       stripPrefix:
         prefixes:
           - /api
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.pem
+      keyFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.key

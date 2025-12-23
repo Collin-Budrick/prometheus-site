@@ -324,6 +324,7 @@ export default defineConfig((configEnv) => {
       port: env.devPort,
       strictPort: true,
       hmr: env.hmr,
+      allowedHosts: ['prometheus.dev'],
       watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined,
       fs: {
         allow: [appRoot, localesDir]
@@ -333,7 +334,7 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.previewPort,
       strictPort: true,
-      allowedHosts: ['prometheus.localhost', 'prometheus.test']
+      allowedHosts: ['prometheus.dev', 'prometheus.prod']
     },
     css: {
       transformer: 'lightningcss',

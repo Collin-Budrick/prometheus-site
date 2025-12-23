@@ -41,7 +41,7 @@ services:
     profiles: [dev, prod]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.prometheus-web.rule=Host(`prometheus.test`)
+      - traefik.http.routers.prometheus-web.rule=Host(`prometheus.prod`)
       - traefik.http.routers.prometheus-web.entrypoints=web
       - traefik.http.routers.prometheus-web.priority=1
       - traefik.http.routers.prometheus-web.service=prometheus-web
@@ -69,7 +69,7 @@ services:
       - RUN_MIGRATIONS=1
     labels:
       - traefik.enable=true
-      - traefik.http.routers.prometheus-api.rule=Host(`prometheus.test`) && PathPrefix(`/api`)
+      - traefik.http.routers.prometheus-api.rule=Host(`prometheus.prod`) && PathPrefix(`/api`)
       - traefik.http.routers.prometheus-api.entrypoints=web
       - traefik.http.routers.prometheus-api.priority=10
       - traefik.http.routers.prometheus-api.middlewares=prometheus-api-strip
