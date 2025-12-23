@@ -5,11 +5,26 @@ type Dictionary = (typeof localeStore)[string]
 
 const loadDictionary = async (locale: Locale) => {
   const existing: Dictionary | undefined = localeStore[locale]
-  if (existing?.translations) return locale
+  const translations = existing?.translations as Record<string, unknown> | undefined
+  const translationCount = translations ? Object.keys(translations).length : 0
+  if (translationCount > 0) return locale
 
-  const loaded = await loadLocaleData(locale)
-  localeStore[locale] = loaded
-  return locale
+  const hadPlaceholder = Boolean(existing && translations && translationCount === 0)
+  if (hadPlaceholder) {
+    // Clear placeholder entries so the lazy loader doesn't short-circuit.
+    delete localeStore[locale]
+  }
+
+  try {
+    const loaded = await loadLocaleData(locale)
+    localeStore[locale] = loaded
+    return locale
+  } catch (err) {
+    if (hadPlaceholder && existing) {
+      localeStore[locale] = existing
+    }
+    throw err
+  }
 }
 
 const normalizeLocale = (locale: Locale) => (locales.includes(locale) ? locale : defaultLocale)
