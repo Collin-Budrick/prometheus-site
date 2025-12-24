@@ -17,7 +17,7 @@
     "Latency budget": "レイテンシ予算",
     "Server render: sub-50ms target with streaming enabled": "サーバーレンダリング: ストリーミング有効で 50ms 未満を目標",
     "Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny": "クリティカル CSS: UnoCSS + Lightning CSS でペイロードを最小化",
-    "Speculative nav: prerender store, prefetch chat": "投機的ナビゲーション: ストアはプリレンダー、チャットはプリフェッチ",
+    "Speculative nav: prerender all internal links": "投機的ナビゲーション: 内部リンクをすべてプリレンダー",
     "Sample adapter (offline)": "サンプルアダプター（オフライン）",
     "Edge cache pack (offline)": "エッジキャッシュパック（オフライン）",
     "Invalid id.": "無効な ID です。",

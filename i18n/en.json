@@ -16,7 +16,7 @@
     "Latency budget": "Latency budget",
     "Server render: sub-50ms target with streaming enabled": "Server render: sub-50ms target with streaming enabled",
     "Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny": "Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny",
-    "Speculative nav: prerender store, prefetch chat": "Speculative nav: prerender store, prefetch chat",
+    "Speculative nav: prerender all internal links": "Speculative nav: prerender all internal links",
     "Sample adapter (offline)": "Sample adapter (offline)",
     "Edge cache pack (offline)": "Edge cache pack (offline)",
     "Invalid id.": "Invalid id.",
