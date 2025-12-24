@@ -25,7 +25,12 @@ import {
   type SpeculationRules
 } from '../../config/speculation-rules'
 import { getPageConfig, getPageSpeculation } from '../../config/page-config'
-import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
+import {
+  localeCookieOptions,
+  normalizeLocaleParam,
+  resolvePreferredLocale,
+  stripLocalePrefix
+} from '../_shared/locale/locale-routing'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
   if (value === undefined) return fallback

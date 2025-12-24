@@ -1,7 +1,7 @@
 import { component$, type Component } from '@builder.io/qwik'
 import { routeLoader$ } from '@builder.io/qwik-city'
-import { localeCookieOptions, resolvePreferredLocale } from '../locale-routing'
-import BaseLayout from '../[locale]/layout'
+import { localeCookieOptions, resolvePreferredLocale } from './locale-routing'
+import BaseLayout from '../../[locale]/layout'
 
 export const resolvePreferredLocaleLoader: Parameters<typeof routeLoader$>[0] = ({
   request,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { onRequest } from './index/on-request'
+import { onRequest } from '../src/routes/_shared/locale/on-request'
 
 describe('onRequest', () => {
   const createEvent = (opts: {

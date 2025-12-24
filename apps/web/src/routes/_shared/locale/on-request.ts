@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@builder.io/qwik-city'
 import { defaultLocale } from 'compiled-i18n'
-import { localeCookieOptions, resolvePreferredLocale } from '../locale-routing'
+import { localeCookieOptions, resolvePreferredLocale } from './locale-routing'
 
 export const onRequest: RequestHandler = ({ request, cookie, query, locale, redirect, url }) => {
   const preferred = resolvePreferredLocale({

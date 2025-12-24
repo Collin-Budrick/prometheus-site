@@ -23,7 +23,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: apps/web/Dockerfile
     command: sh -c "bun run --cwd apps/web vite preview --host 0.0.0.0 --port 4173"
     working_dir: /app
     environment:
@@ -52,7 +52,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: apps/api/Dockerfile
     image: prometheus-site-api
     working_dir: /app/apps/api
     command: ["bun", "run", "dist/index.js"]

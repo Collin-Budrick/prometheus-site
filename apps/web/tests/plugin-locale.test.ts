@@ -3,8 +3,8 @@ import { describe, expect, it, mock } from 'bun:test'
 mock.module('@qwik-city-plan', () => ({ default: {} }))
 mock.module('@qwik-city-sw-register', () => ({ default: () => {} }))
 
-const { resolveLocaleRedirect } = await import('./plugin@locale')
-const { resolvePreferredLocaleLoader } = await import('./_shared/locale-entry')
+const { resolveLocaleRedirect } = await import('../src/routes/plugin@locale')
+const { resolvePreferredLocaleLoader } = await import('../src/routes/_shared/locale/entry')
 
 describe('resolveLocaleRedirect', () => {
   it('rewrites locale query params into the path prefix', () => {

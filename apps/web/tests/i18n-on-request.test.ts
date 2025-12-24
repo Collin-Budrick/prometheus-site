@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { createI18nOnRequest } from './i18n-on-request'
+import { createI18nOnRequest } from '../src/routes/i18n-on-request'
 
 describe('createI18nOnRequest', () => {
   it('stores the chosen locale on the root path so navigation keeps the language', () => {

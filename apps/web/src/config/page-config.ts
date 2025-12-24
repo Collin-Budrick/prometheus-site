@@ -1,5 +1,5 @@
 import pageConfig from './page-config.json'
-import { stripLocalePrefix } from '../routes/locale-routing'
+import { stripLocalePrefix } from '../routes/_shared/locale/locale-routing'
 
 type RenderMode = 'ssr' | 'ssg'
 type SpeculationMode = 'prefetch' | 'prerender' | 'none'

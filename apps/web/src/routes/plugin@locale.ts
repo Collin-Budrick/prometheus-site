@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@builder.io/qwik-city'
 import { locales } from 'compiled-i18n'
-import { localeCookieOptions, normalizeLocaleParam, stripLocalePrefix } from './locale-routing'
+import { localeCookieOptions, normalizeLocaleParam, stripLocalePrefix } from './_shared/locale/locale-routing'
 
 export const resolveLocaleRedirect = (pathname: string, search: string, queryLocale?: string | null) => {
   const normalizedQuery = normalizeLocaleParam(queryLocale)

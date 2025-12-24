@@ -1,5 +1,5 @@
 import ChatPage from '../[locale]/chat/index'
-import { LocaleEntry, usePreferredLocale } from '../_shared/locale-entry'
+import { LocaleEntry, usePreferredLocale } from '../_shared/locale/entry'
 
 export { head } from '../[locale]/chat/index'
 

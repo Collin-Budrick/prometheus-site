@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
-import en from '../../../../i18n/en.json'
-import ja from '../../../../i18n/ja.json'
-import ko from '../../../../i18n/ko.json'
+import en from '../../../i18n/en.json'
+import ja from '../../../i18n/ja.json'
+import ko from '../../../i18n/ko.json'
 
 const homeKeys = [
   'Performance first',
