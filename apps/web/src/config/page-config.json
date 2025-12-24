@@ -1,0 +1,24 @@
+{
+  "defaults": {
+    "render": "ssr",
+    "speculation": "prerender"
+  },
+  "routes": {
+    "/": {
+      "render": "ssg",
+      "speculation": "prerender"
+    },
+    "/ai": {
+      "render": "ssg",
+      "speculation": "prerender"
+    },
+    "/chat": {
+      "render": "ssr",
+      "speculation": "prerender"
+    },
+    "/store": {
+      "render": "ssr",
+      "speculation": "prerender"
+    }
+  }
+}

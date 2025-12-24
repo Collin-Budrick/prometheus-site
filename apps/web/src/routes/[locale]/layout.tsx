@@ -20,6 +20,7 @@ import {
   slowSpeculationConnectionTypes,
   type SpeculationRules
 } from '../../config/speculation-rules'
+import { getPageConfig, getPageSpeculation } from '../../config/page-config'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
@@ -88,9 +89,8 @@ export const onRequest: RequestHandler = async ({
   const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW_CACHE === '1'
 
   if (import.meta.env.PROD && request.method === 'GET') {
-    const routePath = stripLocalePrefix(pathname) || '/'
-    const isStaticRoute = routePath === '/' || routePath === '/ai' || routePath === '/chat'
-    if (isStaticRoute) {
+    const routeConfig = getPageConfig(pathname)
+    if (routeConfig.render === 'ssg') {
       const policy = previewCacheEnabled
         ? { maxAge: 900, sMaxAge: 86_400, staleWhileRevalidate: 600 }
         : { maxAge: 60, sMaxAge: 900, staleWhileRevalidate: 300 }
@@ -131,10 +131,10 @@ type NavLink = {
 }
 
 const navLinks: NavLink[] = [
-  { path: '/', label: () => _`Home`, dataSpeculate: 'prerender' },
-  { path: '/store', label: () => _`Store`, dataSpeculate: 'prerender' },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: 'prerender' },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: 'prerender' }
+  { path: '/', label: () => _`Home`, dataSpeculate: getPageSpeculation('/') },
+  { path: '/store', label: () => _`Store`, dataSpeculate: getPageSpeculation('/store') },
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
+  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') }
 ]
 
 const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))

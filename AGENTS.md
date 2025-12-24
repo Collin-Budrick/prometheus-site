@@ -54,6 +54,13 @@ Use these rules when touching routes, layouts, components, or styles.
 - Shared components live in `apps/web/src/components/...`.
 - Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
 
+### Page config (central JSON)
+
+- Per-route attributes live in `apps/web/src/config/page-config.json`.
+- `render: "ssg"` adds a route to prerender + static caching; default comes from `defaults`.
+- `speculation: "prefetch" | "prerender" | "none"` controls link hinting.
+- Access config in code via `apps/web/src/config/page-config.ts` (`getPageConfig`, `getPageSpeculation`).
+
 ### SSG/SSR safety rules (must follow)
 
 - Any function passed to `onClick$`, `onInput$`, `useTask$`, etc. must be a QRL (`$()`), not a plain function. Plain functions are not serializable and will crash SSG with Qwik `Code(3)`.
@@ -126,6 +133,8 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/components/` — Reusable UI components (nav, locale selector, etc).
 - `apps/web/src/components/animations/` — Motion One mini helpers (`use-motion-mini.ts`).
 - `apps/web/src/config/` — Feature flags, env parsing, third-party config.
+- `apps/web/src/config/page-config.json` — Central per-route settings (render/speculation).
+- `apps/web/src/config/page-config.ts` — Helpers for reading page config.
 - `apps/web/src/server/` — Server-only helpers (DB, API, adapters).
 - `apps/web/src/i18n/` — Locale helpers and dictionaries.
 - `apps/web/src/global.css` — Global styling (non-critical).
