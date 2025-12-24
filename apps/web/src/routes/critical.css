@@ -648,3 +648,80 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@keyframes route-slide-in-right {
+  from {
+    transform: translateX(22%);
+    opacity: 0.35;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes route-slide-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-22%);
+    opacity: 0.35;
+  }
+}
+
+@keyframes route-slide-in-left {
+  from {
+    transform: translateX(-22%);
+    opacity: 0.35;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes route-slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(22%);
+    opacity: 0.35;
+  }
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-old(route),
+:root.supports-view-transition[data-vt-direction='left']::view-transition-new(route),
+:root.supports-view-transition[data-vt-direction='right']::view-transition-old(route),
+:root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-old(route) {
+  animation-name: route-slide-out-left;
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-new(route) {
+  animation-name: route-slide-in-right;
+}
+
+:root.supports-view-transition[data-vt-direction='right']::view-transition-old(route) {
+  animation-name: route-slide-out-right;
+}
+
+:root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
+  animation-name: route-slide-in-left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.supports-view-transition::view-transition-old(route),
+  :root.supports-view-transition::view-transition-new(route) {
+    animation: none;
+  }
+}

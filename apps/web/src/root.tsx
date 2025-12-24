@@ -2,6 +2,7 @@ import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { RouterHead } from './routes/[locale]/layout'
 import { RouteTransitionBoundary } from './components/route-transition/route-transition'
+import { featureFlags } from './config/feature-flags'
 import 'virtual:uno.css'
 import './global.css'
 
@@ -42,7 +43,7 @@ export default component$(() => {
   })
 
   return (
-    <QwikCityProvider>
+    <QwikCityProvider viewTransition={featureFlags.viewTransitions}>
       <head>
         <meta charSet="utf-8" />
         <RouterHead />

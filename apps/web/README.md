@@ -39,8 +39,7 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 ## Configuration
 
 - `VITE_SPECULATION_RULES` – enable Speculation Rules prefetch/prerender hints for likely next routes (defaults on in dev + prod).
-- `VITE_ROUTE_VIEW_TRANSITIONS` – wrap route switches with the native View Transitions API when supported (defaults on in prod,
-  off in dev).
+- `VITE_ROUTE_VIEW_TRANSITIONS` – wrap route switches with the native View Transitions API when supported (defaults on in dev + prod).
 - `PRERENDER_ORIGIN` – origin used by `scripts/prerender.ts` for absolute URLs (defaults to `https://prometheus.local`).
 - `PRERENDER_MAX_WORKERS` – worker pool size for prerender (defaults to `1`; `bun run preview` uses CPU count unless overridden).
 - `PRERENDER_WORKER_MULTIPLIER` – multiplier applied to the default worker count for preview/build scripts when `PRERENDER_MAX_WORKERS` is unset (defaults to `1.5`).

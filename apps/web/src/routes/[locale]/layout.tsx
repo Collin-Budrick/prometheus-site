@@ -1,5 +1,5 @@
-import { Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
-import { useDocumentHead, useLocation, type RequestHandler, type StaticGenerateHandler } from '@builder.io/qwik-city'
+import { $, Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
+import { Link, useDocumentHead, useLocation, type RequestHandler, type StaticGenerateHandler } from '@builder.io/qwik-city'
 import localeStore from '@i18n/__locales'
 import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
 import { sanitizeHeadLinks } from '../head-utils'
@@ -101,6 +101,7 @@ export const onRequest: RequestHandler = async ({
     }
   }
 
+
   const start = nowMs()
   const response = await next()
   const duration = nowMs() - start
@@ -135,6 +136,30 @@ const navLinks: NavLink[] = [
   { path: '/chat', label: () => _`Chat`, dataSpeculate: 'prerender' },
   { path: '/ai', label: () => _`AI`, dataSpeculate: 'prerender' }
 ]
+
+const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))
+
+const normalizeNavPath = (pathname: string) => {
+  const stripped = stripLocalePrefix(pathname) || '/'
+  if (stripped.length > 1 && stripped.endsWith('/')) return stripped.slice(0, -1)
+  return stripped
+}
+
+const resolveNavIndex = (href: string) => {
+  try {
+    const path = normalizeNavPath(new URL(href, 'http://qwik.local').pathname)
+    return navOrder.indexOf(path)
+  } catch {
+    return -1
+  }
+}
+
+const resolveNavDirection = (fromHref: string, toHref: string) => {
+  const fromIndex = resolveNavIndex(fromHref)
+  const toIndex = resolveNavIndex(toHref)
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return null
+  return toIndex > fromIndex ? 'left' : 'right'
+}
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 
@@ -382,13 +407,6 @@ export const RouterHead = component$(() => {
       )}
       {speculationRulesGuard && <script dangerouslySetInnerHTML={speculationRulesGuard} />}
       {prerenderAllLinksScript && <script dangerouslySetInnerHTML={prerenderAllLinksScript} />}
-      {featureFlags.viewTransitions && !isAudit && (
-        <script
-          dangerouslySetInnerHTML={
-            "if ('startViewTransition' in document) {document.documentElement.classList.add('supports-view-transition');}"
-          }
-        />
-      )}
       <script dangerouslySetInnerHTML={themeInitScript} />
       {!isAudit && <ThirdPartyScripts />}
       {devHeadCleanup && <script dangerouslySetInnerHTML={devHeadCleanup} />}
@@ -407,6 +425,33 @@ export default component$(() => {
       })
       .catch(() => {})
   })
+  useVisibleTask$(() => {
+    if (!featureFlags.viewTransitions) return
+    if (typeof document === 'undefined') return
+    if (typeof document.startViewTransition !== 'function') return
+
+    const root = document.documentElement
+    root.classList.add('supports-view-transition')
+    delete root.dataset.vtDirection
+
+    const handleTransition = (event: Event) => {
+      const transition = (event as CustomEvent<ViewTransition>).detail
+      if (!transition?.finished) {
+        delete root.dataset.vtDirection
+        return
+      }
+      transition.finished
+        .catch(() => {})
+        .finally(() => {
+          delete root.dataset.vtDirection
+        })
+    }
+
+    document.addEventListener('qviewTransition', handleTransition as EventListener)
+    return () => {
+      document.removeEventListener('qviewTransition', handleTransition as EventListener)
+    }
+  })
 
   const loc = useLocation()
   const localePrefix = (() => {
@@ -414,6 +459,21 @@ export default component$(() => {
     return locales.includes(segment as any) ? `/${segment}` : ''
   })()
   const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
+  const handleNavClick$ = $((event: MouseEvent, element: HTMLAnchorElement) => {
+    if (!featureFlags.viewTransitions) return
+    if (event.button !== 0) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    if (element.target && element.target !== '_self') return
+    if (element.hasAttribute('download')) return
+    if (element.origin !== window.location.origin) return
+
+    const direction = resolveNavDirection(window.location.href, element.href)
+    if (direction) {
+      document.documentElement.dataset.vtDirection = direction
+    } else {
+      delete document.documentElement.dataset.vtDirection
+    }
+  })
 
   return (
     <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame">
@@ -425,14 +485,15 @@ export default component$(() => {
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
             {navLinks.map(({ path, label, dataSpeculate }) => (
-              <a
+              <Link
                 key={path}
                 href={linkHref(path)}
                 data-speculate={dataSpeculate}
+                onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
                 {label()}
-              </a>
+              </Link>
             ))}
             <LocaleSelector />
           </div>
