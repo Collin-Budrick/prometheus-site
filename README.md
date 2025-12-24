@@ -2,6 +2,17 @@
 
 Performance-first monorepo running a Qwik City SSR web app and a Bun + Elysia API, wired together with Postgres and Valkey.
 
+## Quick start (Bun)
+
+```bash
+git clone <repo>
+cd prometheus-site
+bun install
+bun run dev          # web + api dev servers
+# or run the built preview once assets exist:
+bun run preview
+```
+
 ## Architecture
 
 - **apps/web** - Qwik City SSR with UnoCSS + Lightning CSS, Speculation Rules, View Transitions, optional Partytown.
@@ -38,6 +49,17 @@ See `.env.example` for defaults. Key values:
 - `bun run test` - web tests via `bun test`; API currently returns a placeholder message.
 - `bun run docker:prod` - builds and runs Traefik + web preview + API containers.
 - `VITE_DEV_AUDIT=1 bun run dev` - disables HMR/WebSocket and minifies optimized deps so Lighthouse/devtools audits avoid the Vite client payload and back/forward cache blockers. Leave this unset in normal dev shells; audit mode forces full reloads because HMR is off.
+
+## apps/web map (where to find things)
+
+- Routes and layouts: `apps/web/src/routes/[locale]/...` (shared layout in `layout.tsx`, home in `index.tsx`).
+- Components: `apps/web/src/components/` (animations under `components/animations/`).
+- Critical/non-critical CSS: `apps/web/src/routes/critical.css` and `apps/web/src/global.css` (generated output at `apps/web/public/assets/app.css`).
+- Config: `apps/web/src/config/` (page-config JSON/TS, env parsing, speculation rules, third-party config).
+- Server-only helpers: `apps/web/src/server/` or route `server$`/loader/action files.
+- Scripts/tooling: `apps/web/scripts/`.
+- Tests: `apps/web/tests/` and `apps/web/src/routes/*.test.ts`.
+- Public assets: `apps/web/public/`.
 
 ## Local development
 
@@ -112,6 +134,15 @@ Caching for `/store/items` uses Valkey with cursor pagination keys; WebSocket ch
 - `bun run --cwd apps/web test` runs unit tests plus Playwright smoke coverage for `/` and `/store` (install browsers once via `bunx playwright install --with-deps chromium`)
 - `bun run --cwd apps/web test:perf` enforces Web Vitals budgets via Playwright (`@perf` tag) and emits traces/HARs under the test results directory for regression triage
 - `scripts/perf-audit` (requires `@lhci/cli` globally) to run Lighthouse CI against the built web assets
+
+## Contributing (Bun workflow)
+
+- Install: `bun install`
+- Lint: `bun run lint`
+- Unit/e2e tests: `bun run test` (or `bun run --cwd apps/web test` for route-level coverage)
+- Dev server: `bun run dev`
+- Preview build: `bun run build` then `bun run preview`
+- Run lint + tests before opening a PR; rerun `bun run preview` after SSR/i18n changes to ensure the built output matches.
 
 ## Git hooks
 
