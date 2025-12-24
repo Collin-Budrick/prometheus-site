@@ -318,10 +318,14 @@ export const StoreIsland = component$(() => {
             {items.value.map((item) => (
               <li
                 key={item.id}
-                class="space-y-2 p-4 surface"
+                class="space-y-2 p-4 surface motion-reduce:animate-none motion-reduce:transition-none"
                 data-store-item-id={item.id}
                 data-reveal-item
-                style={{ viewTransitionName: `store-item-${item.id}` }}
+                style={{
+                  viewTransitionName: `store-item-${item.id}`,
+                  transformOrigin: 'top center',
+                  willChange: 'transform, opacity'
+                }}
               >
                 <div class="flex justify-between items-start gap-3">
                   <div>

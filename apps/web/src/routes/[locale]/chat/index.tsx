@@ -1,12 +1,9 @@
-import { component$, useStylesScoped$ } from '@builder.io/qwik'
+import { component$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import styles from './index.css?inline'
 import { ChatIsland } from './chat-island'
 
 export default component$(() => {
-  useStylesScoped$(styles)
-
   return (
     <section class="surface p-6">
       <div class="flex items-center justify-between gap-2">

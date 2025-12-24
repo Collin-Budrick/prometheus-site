@@ -1,14 +1,11 @@
-import { component$, useStylesScoped$ } from '@builder.io/qwik'
+import { component$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { StoreIsland } from './store-island'
-import styles from './index.css?inline'
 
 export { onGet, useCreateStoreItem, useDeleteStoreItem, useStoreItemsLoader } from './store-data'
 
 export default component$(() => {
-  useStylesScoped$(styles)
-
   return (
     <section class="p-6 surface">
       <div class="flex justify-between items-center gap-2">

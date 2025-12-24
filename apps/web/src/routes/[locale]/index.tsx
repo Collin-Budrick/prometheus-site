@@ -1,7 +1,6 @@
-import { component$, useStylesScoped$ } from '@builder.io/qwik'
+import { component$ } from '@builder.io/qwik'
 import { _, defaultLocale } from 'compiled-i18n'
 import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
-import styles from './index.css?inline'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -15,10 +14,8 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
 }
 
 export default component$(() => {
-  useStylesScoped$(styles)
-
   return (
-    <section class="home-grid">
+    <section class="grid gap-6 md:grid-cols-2">
       <div class="p-6 surface">
         <p class="text-emerald-300 text-sm uppercase tracking-wide">{_`Performance first`}</p>
         <h1 class="mt-2 font-semibold text-slate-50 text-3xl">{_`Microscopic first load, big capability`}</h1>

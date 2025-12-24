@@ -38,7 +38,7 @@ export const AiEchoIsland = component$(() => {
   })
 
   return (
-    <div class="ai-island space-y-3 text-sm text-slate-200">
+    <div class="mt-4 space-y-3 text-sm text-slate-200">
       <textarea
         value={prompt.value}
         onInput$={(event) => {
