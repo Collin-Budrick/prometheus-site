@@ -99,7 +99,7 @@ export const StoreIsland = component$(() => {
       const fromScale = variant === 'initial' ? 0.99 : 0.98
       const duration = variant === 'initial' ? 500 : 380
       const perItemDelay = variant === 'initial' ? 60 : 45
-      const baseDelay = variant === 'initial' ? 140 : 0
+      const baseDelay = variant === 'initial' ? 30 : 0
       const fill = variant === 'initial' ? 'backwards' : 'none'
 
       await animateElements(
@@ -198,15 +198,15 @@ export const StoreIsland = component$(() => {
       const responsePromise = fetchStoreItems(reset ? undefined : cursor.value ?? undefined)
       const response = controller
         ? await Promise.race<Awaited<ReturnType<typeof fetchStoreItems>>>([
-            responsePromise,
-            new Promise<never>((_, reject) =>
-              controller.signal.addEventListener(
-                'abort',
-                () => reject(new DOMException('Request aborted', 'AbortError')),
-                { once: true }
-              )
+          responsePromise,
+          new Promise<never>((_, reject) =>
+            controller.signal.addEventListener(
+              'abort',
+              () => reject(new DOMException('Request aborted', 'AbortError')),
+              { once: true }
             )
-          ])
+          )
+        ])
         : await responsePromise
 
       if (!mounted.value || activeRequestId.value !== requestId) return
@@ -313,13 +313,14 @@ export const StoreIsland = component$(() => {
           <ul
             class="gap-3 grid md:grid-cols-2"
             style={{ viewTransitionName: 'store-grid' }}
-            data-store-animate={animateStage.value}
+            data-reveal={animateStage.value}
           >
             {items.value.map((item) => (
               <li
                 key={item.id}
-                class="surface space-y-2 p-4"
+                class="space-y-2 p-4 surface"
                 data-store-item-id={item.id}
+                data-reveal-item
                 style={{ viewTransitionName: `store-item-${item.id}` }}
               >
                 <div class="flex justify-between items-start gap-3">

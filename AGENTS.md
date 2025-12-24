@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## How to use this file
+
+- Read this doc before making changes; treat it as the project’s guardrails.
+- Follow the sections that match your task (routing, SSR/SSG, styling, animation, i18n).
+- If a request conflicts with these rules, pause and ask for clarification.
+- When adding new patterns or workflows, update this file so future work stays consistent.
+- Keep additions concise and scoped; prefer small, explicit rules over broad principles.
+
 ## Project ethos ("Insane Mode")
 
 - HTML-first: ship SSR pages that work without JS; wake up interactivity only where users interact.
