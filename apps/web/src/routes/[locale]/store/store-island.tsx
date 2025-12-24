@@ -58,8 +58,9 @@ export const StoreIsland = component$(() => {
   const activeRequestId = useSignal(0)
   const activeController = useSignal<AbortController | null>(null)
   const isFallback = useSignal(initial.value.source === 'fallback')
-  const animateStage = useSignal<'pending' | 'animating' | 'ready'>('pending')
-  const hasAnimatedInitial = useSignal(false)
+  // Avoid hiding SSR content before the lazy Qwik runtime loads on direct entry.
+  const animateStage = useSignal<'pending' | 'animating' | 'ready'>(import.meta.env.SSR ? 'ready' : 'pending')
+  const hasAnimatedInitial = useSignal(import.meta.env.SSR)
   const error = useSignal<string | null>(
     initial.value.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
   )
@@ -315,16 +316,18 @@ export const StoreIsland = component$(() => {
             style={{ viewTransitionName: 'store-grid' }}
             data-reveal={animateStage.value}
           >
-            {items.value.map((item) => (
+            {items.value.map((item, index) => (
               <li
                 key={item.id}
                 class="space-y-2 p-4 surface motion-reduce:animate-none motion-reduce:transition-none"
                 data-store-item-id={item.id}
+                data-store-ssr-item={import.meta.env.SSR ? 'true' : undefined}
                 data-reveal-item
                 style={{
                   viewTransitionName: `store-item-${item.id}`,
                   transformOrigin: 'top center',
-                  willChange: 'transform, opacity'
+                  willChange: 'transform, opacity',
+                  ...(import.meta.env.SSR ? { animationDelay: `${120 + index * 60}ms` } : {})
                 }}
               >
                 <div class="flex justify-between items-start gap-3">
