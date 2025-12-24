@@ -75,6 +75,8 @@ const stopActive = () => {
 }
 
 try {
+  await runTimed('sync:page-config', bunBin, ['run', 'sync:page-config'], bunEnv)
+
   await Promise.all([
     runTimed('generate:uno', bunBin, ['run', 'generate:uno'], bunEnv),
     runTimed('check:css', bunBin, ['run', 'check:css'], bunEnv)

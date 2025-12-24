@@ -60,6 +60,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `render: "ssg"` adds a route to prerender + static caching; default comes from `defaults`.
 - `speculation: "prefetch" | "prerender" | "none"` controls link hinting.
 - Access config in code via `apps/web/src/config/page-config.ts` (`getPageConfig`, `getPageSpeculation`).
+- `bun run build` runs `sync:page-config` to auto-add new folder-based `index.*` routes; dynamic segments or non-index route files still need manual entries.
 
 ### SSG/SSR safety rules (must follow)
 

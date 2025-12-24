@@ -17,6 +17,7 @@
     "test:perf": "VITE_DEV_AUDIT=1 SKIP_PRERENDER=1 bunx playwright test --config=playwright.config.ts --grep @perf",
     "check:scripts": "bun run scripts/check-script-budget.ts",
     "check:css": "bun run scripts/check-css-budget.ts",
+    "sync:page-config": "bun run scripts/sync-page-config.ts",
     "generate:uno": "bun run scripts/generate-uno.ts",
     "prerender": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp bun x tsx scripts/prerender.ts"
   },
