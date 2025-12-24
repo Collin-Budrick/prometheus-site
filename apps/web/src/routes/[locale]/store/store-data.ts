@@ -60,6 +60,8 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
   }
 }
 
+// The store page relies on these server-side loaders for reads; the standalone API route was removed
+// to avoid duplicating query/normalization logic in multiple paths.
 const loadStoreItems = async (cursor?: number): Promise<StoreItemsResult> => {
   const limit = 6
   const lastId = Number.isFinite(cursor) && (cursor ?? 0) > 0 ? Number(cursor) : 0
