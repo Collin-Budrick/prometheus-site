@@ -7,6 +7,7 @@
 - If a request conflicts with these rules, pause and ask for clarification.
 - When adding new patterns or workflows, update this file so future work stays consistent.
 - Keep additions concise and scoped; prefer small, explicit rules over broad principles.
+- Nested `AGENTS.md` files override parent scopes. When editing any file, search upward and downward for `AGENTS.md` within that path to catch more specific rules and re-read them before committing.
 
 ## Project ethos ("Insane Mode")
 
@@ -44,6 +45,11 @@
 
 Use these rules when touching routes, layouts, components, or styles.
 
+- Common resumability hazards (avoid or fix with the noted remedy):
+  - Capturing non-serializable values inside `$()` handlers—move DOM access into `useVisibleTask$` and keep `$()` pure.
+  - Returning `Date`/`URL`/`Map`/`Set`/`BigInt` or class instances from loaders/actions—serialize to primitives before returning.
+  - Accessing `window`/`document`/`matchMedia` during render—guard inside `useVisibleTask$`/`useTask$` and check `typeof document !== 'undefined'`.
+
 ### Route structure + where to edit
 
 - Pages live in `apps/web/src/routes/[locale]/...` (localized routes).
@@ -74,12 +80,13 @@ Use these rules when touching routes, layouts, components, or styles.
 ### Styling + critical path rules
 
 - If the change affects the header/nav or above-the-fold UI, update `apps/web/src/routes/critical.css` so the layout is stable before `app.css` loads.
-- Keep critical CSS minimal: only what’s needed for initial layout and the current route.
+- Keep critical CSS minimal and structural: only what’s needed for initial layout and the current route (e.g., above-the-fold grid sizing in `critical.css`; color tweaks can live in `global.css`).
 - Prefer utility classes for non-critical styling, but ensure critical structural styles exist in `critical.css`.
+- Put shared/non-critical styles in `apps/web/src/global.css`; never edit the generated `apps/web/public/assets/app.css`.
 
 ### Animation implementation (Motion One mini)
 
-- Default to CSS/View Transitions; when JS is required, use `apps/web/src/components/animations/use-motion-mini.ts` to lazy-load Motion One safely.
+- Default to CSS/View Transitions; when JS is required, use `apps/web/src/components/animations/use-motion-mini.ts` to lazy-load Motion One safely. Checklist: prefer CSS first, wire DOM access inside `useVisibleTask$`, guard reduced motion, cancel in-flight animations, and avoid DOM access during SSR render.
 - All DOM animation wiring belongs in `useVisibleTask$`; keep render/SSR pure.
 - Use `const motion = useMotionMini()` inside the visible task and call:
   - `motion.prewarm({ element, willChange: 'opacity, transform, filter', delay: 0 })` to prefetch the chunk (respects Save-Data and reduced motion).
@@ -93,12 +100,21 @@ Use these rules when touching routes, layouts, components, or styles.
   - Intercept the summary click to animate close: `event.preventDefault()`, run the close animation, then set `menu.open = false`.
   - Guard the `toggle` handler with a flag (e.g., `ignoreToggle`) so programmatic open/close doesn’t double-run animations.
   - Keep the panel visible during close (`panel.style.display = 'grid'`), run `panel.getBoundingClientRect()` before the animation, and remove inline styles after finish.
+  - Cancel any in-flight animation before starting a new one and clear handles when complete; guard against reduced motion via `motion.prefersReducedMotion()`.
+  - Example (animated-details pattern): handle `summary` clicks with `event.preventDefault()`, run the close animation, then set `menu.open = false` once finished while keeping the panel visible during the animation.
+
+### SSR safety checklist
+
+- Never touch `window`/`document`/`matchMedia`/`localStorage` during render; wrap browser-only logic in `useVisibleTask$` with guards.
+- Keep loader/action/server$ data JSON-serializable; convert objects like `Date`/`Map`/`Set`/`URL` before returning.
+- Ensure all event handlers passed to `$()` stay serializable and avoid capturing module-scoped singletons.
 - Always cancel any in-flight animation before starting a new one and clear the animation handle when finished.
 
 ### Locale + navigation rules
 
 - Use `locales`/`localeNames` from `compiled-i18n`.
-- Locale-aware links should be built from `useLocation()` and preserve the non-locale path.
+- Locale-aware links should be built from `useLocation()` and preserve the non-locale path when swapping locales.
+- When building locale switchers, derive the base path from `useLocation().url.pathname` (strip the leading locale segment) and rebuild links with the target locale plus the preserved remainder.
 - For labels in UI, use `compiled-i18n` `_`` strings so they localize correctly.
 
 ### Adding a new language
@@ -109,6 +125,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Locale routes are served through the dynamic `apps/web/src/routes/[locale]` tree; add new locales there instead of creating alias folders (the former `en`/`ko` aliases have been removed).
 - Restart `bun run dev` after changing `vite.config.ts` or adding locale JSON files.
 - Optional: update locale-specific tests or `apps/web/src/config/page-config.ts` if you want localized prerender coverage.
+- Checklist: update `apps/web/vite.config.ts` locale lists, add `i18n/<locale>.json`, extend `packages/i18n-locales/index.{mjs,cjs}`, ensure `[locale]` routes exist, and restart the dev server.
 
 ### Testing + preview expectations
 
@@ -116,6 +133,11 @@ Use these rules when touching routes, layouts, components, or styles.
 - Preview runs off build artifacts; after SSR/i18n changes, rerun `bun run preview` or delete `apps/web/dist` and `apps/web/server` to force a rebuild.
 - If preview serves stale assets, delete `apps/web/dist` and `apps/web/server` and rerun.
 - SSG failures typically mean non-serializable values in QRLs or loader data; fix by moving logic into `useVisibleTask$` or by serializing the data.
+
+### Performance budgets
+
+- Treat bundle size as a feature; prefer lazy loading/dynamic imports for heavy widgets and keep main-thread JS minimal.
+- Track Lighthouse and Web Vitals (TBT/INP) when modifying routes; avoid regressions from added client runtime.
 
 ## Repository map (what lives where)
 
@@ -159,6 +181,26 @@ Use these rules when touching routes, layouts, components, or styles.
 - Build runs a lightweight i18n smoke test (`apps/web/src/routes/home-i18n.test.ts`) via the `prebuild` hook; keep home copy keys in sync across locales.
 - Keep Lighthouse budgets in mind: avoid increasing TBT/INP by shipping large client bundles.
 - Add or update tests when changing behavior.
+
+## Third-party scripts and bundle discipline
+
+- Defer or offload third-party scripts via Partytown; avoid main-thread impact and keep configuration under `apps/web/src/config/third-party.ts`.
+- Aggressively code-split non-critical routes/widgets with dynamic imports to keep the initial route payload microscopic.
+- Do not wrap imports in `try/catch`; rely on static resolution for determinism and tree-shaking.
+
+## Data + realtime expectations
+
+- Default to WebSockets for realtime; WebTransport is an optional fast-path with fallbacks.
+- Keep progressive enhancement in mind when adding new transport options.
+- Server-only helpers belong under `apps/web/src/server/` or route loader/action/server$ files; avoid mixing server logic into shared client components.
+
+## Styling + tooling notes
+
+- UnoCSS + Lightning CSS are the preferred pipeline. `apps/web/public/assets/app.css` is generated—never edit it directly; use `apps/web/src/global.css` for global styles.
+
+## Speculation and navigation hints
+
+- Configure link speculation in `apps/web/src/config/page-config.json` via the `speculation` field (`prefetch`, `prerender`, `none`). Enable `prerender` only for truly cacheable pages; use `prefetch` for likely navigations with light payloads; choose `none` when network budget or dynamic data make hints risky.
 
 ## PR instructions
 
