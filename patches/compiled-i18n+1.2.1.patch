@@ -109,10 +109,10 @@ diff --git a/dist/vite.mjs b/dist/vite.mjs
        },
        // Redirect to our virtual data files
        async resolveId(id) {
-         if (id.startsWith("@i18n/__locales")) return "\0i18n-locales.js";
-         if (id.startsWith("@i18n/__data")) return "\0i18n-data.js";
-         if (id.startsWith("@i18n/__state")) return "\0i18n-state.js";
-       },
+        if (id.startsWith("@i18n/__locales")) return "\0i18n-locales.js";
+        if (id.startsWith("@i18n/__data")) return "\0i18n-data.js";
+        if (id.startsWith("@i18n/__state")) return "\0i18n-state.js";
+      },
        // Load our virtual data files
        async load(id) {
          if (id === "\0i18n-locales.js") {

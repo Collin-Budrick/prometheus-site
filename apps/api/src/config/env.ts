@@ -1,16 +1,16 @@
-export type PostgresConfig = {
+type PostgresConfig = {
   connectionString: string
   ssl: false | 'require'
   connectRetries: number
   backoffMs: number
 }
 
-export type ValkeyConfig = {
+type ValkeyConfig = {
   host: string
   port: number
 }
 
-export type AppConfig = {
+type AppConfig = {
   postgres: PostgresConfig
   valkey: ValkeyConfig
 }

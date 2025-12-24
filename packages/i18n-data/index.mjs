@@ -1,5 +1,6 @@
-export const locales = ['en', 'ko']
+export const locales = ['en', 'ko', 'ja']
 export const localeNames = {
   en: 'English',
-  ko: 'Korean'
+  ko: 'Korean',
+  ja: 'Japanese'
 }

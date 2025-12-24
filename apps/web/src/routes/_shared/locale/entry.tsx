@@ -23,15 +23,7 @@ export const resolvePreferredLocaleLoader: Parameters<typeof routeLoader$>[0] = 
 
 export const usePreferredLocale = routeLoader$(resolvePreferredLocaleLoader)
 
-type LocaleEntryOptions = {
-  head?: unknown
-  data?: unknown
-}
-
-export const LocaleEntry = <Props,>(
-  Page: Component<Props>,
-  _options?: LocaleEntryOptions
-) =>
+export const LocaleEntry = <Props,>(Page: Component<Props>) =>
   component$(() => {
     usePreferredLocale()
 
