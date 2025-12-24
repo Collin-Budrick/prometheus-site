@@ -156,6 +156,7 @@ Use these rules when touching routes, layouts, components, or styles.
 ## Testing and performance guardrails
 
 - Run `bun run lint` and `bun run test` before committing.
+- Build runs a lightweight i18n smoke test (`apps/web/src/routes/home-i18n.test.ts`) via the `prebuild` hook; keep home copy keys in sync across locales.
 - Keep Lighthouse budgets in mind: avoid increasing TBT/INP by shipping large client bundles.
 - Add or update tests when changing behavior.
 
