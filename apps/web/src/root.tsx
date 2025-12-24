@@ -29,7 +29,7 @@ const persistLocaleCookie = (locale: string) => {
   document.cookie = `locale=${encodeURIComponent(locale)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`
 }
 
-const RoutesWithLocaleSync = component$(() => {
+export default component$(() => {
   const loc = useLocation()
   const lastLocale = useSignal(resolvePathnameLocale(loc.url.pathname))
 
@@ -45,10 +45,6 @@ const RoutesWithLocaleSync = component$(() => {
     }
   })
 
-  return <RouterOutlet />
-})
-
-export default component$(() => {
   useVisibleTask$(() => {
     if (import.meta.env.VITE_PREVIEW !== '1') return
     if (typeof window === 'undefined') return
@@ -84,7 +80,7 @@ export default component$(() => {
         <RouterHead />
       </head>
       <body class="app-shell">
-        <RoutesWithLocaleSync />
+        <RouterOutlet />
       </body>
     </QwikCityProvider>
   )
