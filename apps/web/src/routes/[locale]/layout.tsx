@@ -10,7 +10,6 @@ import {
 import localeStore from '@i18n/__locales'
 import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
 /* cspell:ignore hrefs */
-import { allowedPreloadHrefs, resolveCriticalPreloads } from '../preload-manifest'
 import { LocaleSelector } from '../../components/locale-selector/locale-selector'
 import { featureFlags } from '../../config/feature-flags'
 import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
@@ -170,6 +169,38 @@ const resolveNavDirection = (fromHref: string, toHref: string) => {
 }
 
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
+type PreloadEntry = { pattern: RegExp; links: DocumentLink[] }
+
+const preloadManifest: PreloadEntry[] = []
+
+const resolveCriticalPreloads = (pathname: string, isDev: boolean): DocumentLink[] => {
+  if (isDev) return []
+
+  const seen = new Set<string>()
+
+  return preloadManifest
+    .filter(({ pattern }) => pattern.test(pathname))
+    .flatMap(({ links }) => links)
+    .filter((link) => {
+      const href = link.href
+      if (typeof href !== 'string' || href.trim().length === 0) return false
+
+      const key = `${link.rel}:${href}`
+      if (seen.has(key)) return false
+
+      seen.add(key)
+      return true
+    })
+}
+
+const allowedPreloadHrefs = new Set(
+  preloadManifest
+    .flatMap(({ links }) => links)
+    .filter((link) => link.rel === 'preload')
+    .map((link) => link.href)
+    .filter(isNonEmptyString)
+)
 
 const resolveSpeculationCandidates = (pathname: string, prefix: string): SpeculationCandidate[] =>
   navLinks
