@@ -30,6 +30,14 @@ const persistLocaleCookie = (locale: string) => {
 }
 
 export default component$(() => {
+  return (
+    <QwikCityProvider viewTransition={featureFlags.viewTransitions}>
+      <AppShell />
+    </QwikCityProvider>
+  )
+})
+
+const AppShell = component$(() => {
   const loc = useLocation()
   const lastLocale = useSignal(resolvePathnameLocale(loc.url.pathname))
 
@@ -74,7 +82,7 @@ export default component$(() => {
   })
 
   return (
-    <QwikCityProvider viewTransition={featureFlags.viewTransitions}>
+    <>
       <head>
         <meta charSet="utf-8" />
         <RouterHead />
@@ -82,6 +90,6 @@ export default component$(() => {
       <body class="app-shell">
         <RouterOutlet />
       </body>
-    </QwikCityProvider>
+    </>
   )
 })
