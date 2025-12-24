@@ -10,8 +10,8 @@ import {
 import localeStore from '@i18n/__locales'
 import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
 /* cspell:ignore hrefs */
-import { LocaleSelector } from '../../components/locale-selector/locale-selector'
-import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
+import { LocaleSelector } from '../../components/LocaleSelector'
+import { ThirdPartyScripts } from '../../components/ThirdPartyScripts'
 import layoutStyles from '../layout.css?inline'
 import criticalCss from '../critical.css?raw'
 import { ensureLocaleDictionary } from '../../i18n/dictionaries'

@@ -1,5 +1,5 @@
 import { Fragment, component$ } from '@builder.io/qwik'
-import { thirdPartyScripts } from '../../config/third-party'
+import { thirdPartyScripts } from '../config/third-party'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
   if (value === undefined) return fallback
