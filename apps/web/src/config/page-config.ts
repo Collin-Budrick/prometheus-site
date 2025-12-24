@@ -50,3 +50,6 @@ export const getPrerenderRoutes = () => {
     .filter(([, routeConfig]) => (routeConfig.render ?? defaults.render) === 'ssg')
     .map(([path]) => normalizeConfigPath(path))
 }
+
+export const prerenderRoutes = getPrerenderRoutes()
+export type PrerenderRoute = (typeof prerenderRoutes)[number]

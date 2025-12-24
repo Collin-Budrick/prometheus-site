@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execSync, spawn, spawnSync } from 'node:child_process'
-import { prerenderRoutes } from '../src/routes/prerender-routes'
+import { prerenderRoutes } from '../src/config/page-config'
 
 const projectRoot = process.cwd()
 const bunBin = process.execPath

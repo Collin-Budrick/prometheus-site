@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { brotliCompress, constants as zlibConstants } from 'node:zlib'
 import { generate } from '@builder.io/qwik-city/static'
-import { prerenderRoutes } from '../src/routes/prerender-routes'
+import { prerenderRoutes } from '../src/config/page-config'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 const distDir = join(appRoot, 'dist')

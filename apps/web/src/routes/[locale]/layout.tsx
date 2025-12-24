@@ -9,7 +9,7 @@ import { LocaleSelector } from '../../components/locale-selector/locale-selector
 import { featureFlags } from '../../config/feature-flags'
 import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
 import layoutStyles from '../layout.css?inline'
-import { criticalCssInline } from '../critical-css-assets'
+import criticalCss from '../critical.css?raw'
 import { ensureLocaleDictionary } from '../../i18n/dictionaries'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
@@ -24,6 +24,8 @@ import { getPageConfig, getPageSpeculation } from '../../config/page-config'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
+
+const criticalCssInline = criticalCss
 
 const primeLocaleStore = () => {
   locales.forEach((locale) => {
@@ -209,7 +211,6 @@ export const RouterHead = component$(() => {
     return locales.includes(segment as any) ? `/${segment}` : ''
   })()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
-  const isPreview = import.meta.env.PROD
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
   const speculationCandidates = resolveSpeculationCandidates(loc.url.pathname, localePrefix)

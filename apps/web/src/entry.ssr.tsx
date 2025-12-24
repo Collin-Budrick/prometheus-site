@@ -104,7 +104,6 @@ const resolveRouteBundles = (pathname: string): string[] => {
 }
 
 const resolveModulePreloads = (base: string, resolvedManifest: unknown, pathname: string) => {
-  const manifestRecord = resolvedManifest && typeof resolvedManifest === 'object' ? (resolvedManifest as Record<string, unknown>) : null
   const bundles = resolveRouteBundles(pathname)
   const candidates = bundles.filter((value): value is string => typeof value === 'string')
 

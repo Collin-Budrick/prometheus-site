@@ -1,7 +1,7 @@
 import { gt } from 'drizzle-orm'
 import type { RequestHandler } from '@builder.io/qwik-city'
 import { db } from '../../../../server/db/client'
-import { storeItems, type StoreItemRow } from '../../../../server/db/schema'
+import { storeItems, type StoreItemRow } from '../../../../../../api/src/db/schema'
 
 export const onGet: RequestHandler = async ({ cacheControl, query, json }) => {
   cacheControl({

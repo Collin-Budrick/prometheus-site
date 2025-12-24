@@ -49,7 +49,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Pages live in `apps/web/src/routes/[locale]/...` (localized routes).
 - Shared layout and nav live in `apps/web/src/routes/[locale]/layout.tsx`.
 - Global app shell lives in `apps/web/src/root.tsx`.
-- Critical CSS is `apps/web/src/routes/critical.css` and is inlined via `apps/web/src/routes/critical-css-assets.ts`.
+- Critical CSS is `apps/web/src/routes/critical.css` and is inlined directly from the locale layout via a raw import.
 - Non-critical/global styles live in `apps/web/src/global.css` and UnoCSS output is `apps/web/public/assets/app.css` (generated).
 - Shared components live in `apps/web/src/components/...`.
 - Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
@@ -69,7 +69,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Prefer `useVisibleTask$` for DOM/`window`/`document` interactions; guard with `typeof document !== 'undefined'`.
 - Any data returned from `routeLoader$`, `routeAction$`, or `server$` must be JSON-serializable. Convert `BigInt`/`Date`/`Map`/`Set` into primitives before returning.
 - Keep SSR execution pure: don’t access `window`, `document`, `localStorage`, or `matchMedia` in component render; only in `useVisibleTask$` or `useTask$` with guards.
-- When adding new routes to be statically generated, update `apps/web/src/routes/prerender-routes.ts` and ensure `onStaticGenerate` includes the locale.
+- When adding new routes to be statically generated, update `apps/web/src/config/page-config.ts` and ensure `onStaticGenerate` includes the locale.
 
 ### Styling + critical path rules
 
@@ -108,7 +108,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Update locale loaders in `apps/i18n-locales/index.mjs` and `apps/i18n-locales/index.cjs`.
 - If keeping explicit locale routes (see `apps/web/src/routes/en` and `apps/web/src/routes/ko`), copy one of those folders to `apps/web/src/routes/<locale>` and update `layout.tsx` to set the new locale.
 - Restart `bun run dev` after changing `vite.config.ts` or adding locale JSON files.
-- Optional: update locale-specific tests or `apps/web/src/routes/prerender-routes.ts` if you want localized prerender coverage.
+- Optional: update locale-specific tests or `apps/web/src/config/page-config.ts` if you want localized prerender coverage.
 
 ### Testing + preview expectations
 
@@ -126,9 +126,8 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/routes/[locale]/ai/` — AI route UI (`index.tsx`) and island logic.
 - `apps/web/src/routes/[locale]/chat/` — Chat route UI and islands.
 - `apps/web/src/routes/[locale]/store/` — Store route UI, data loaders, and islands.
-- `apps/web/src/routes/prerender-routes.ts` — SSG route list (must include any new static route).
-- `apps/web/src/routes/critical.css` — Critical CSS (inlined on SSR/SSG).
-- `apps/web/src/routes/critical-css-assets.ts` — Loads critical CSS for inlining.
+- `apps/web/src/config/page-config.ts` — SSG route list helper (`prerenderRoutes`).
+- `apps/web/src/routes/critical.css` — Critical CSS (inlined on SSR/SSG from the locale layout).
 - `apps/web/src/routes/layout.css` — Layout-level CSS for the shell.
 - `apps/web/src/root.tsx` — App shell and providers.
 - `apps/web/src/components/` — Reusable UI components (nav, locale selector, etc).
