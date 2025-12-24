@@ -1,8 +1,14 @@
 import { $, Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, useDocumentHead, useLocation, type RequestHandler, type StaticGenerateHandler } from '@builder.io/qwik-city'
+import {
+  Link,
+  useDocumentHead,
+  useLocation,
+  type DocumentLink,
+  type RequestHandler,
+  type StaticGenerateHandler
+} from '@builder.io/qwik-city'
 import localeStore from '@i18n/__locales'
 import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
-import { sanitizeHeadLinks } from '../head-utils'
 /* cspell:ignore hrefs */
 import { allowedPreloadHrefs, resolveCriticalPreloads } from '../preload-manifest'
 import { LocaleSelector } from '../../components/locale-selector/locale-selector'
@@ -202,6 +208,31 @@ const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
       return origins
     }, new Set<string>())
   )
+
+const validPreloadAs = new Set(['style', 'font', 'script', 'image'])
+
+export const sanitizeHeadLinks = (
+  links: readonly DocumentLink[] | undefined,
+  isDev: boolean,
+  allowedPreloads?: Set<string>
+): DocumentLink[] => {
+  const seenPreloadHref = new Set<string>()
+
+  return Array.from(links ?? []).filter((link) => {
+    if (link.rel !== 'preload') return true
+    if (isDev) return false
+
+    const href = link.href
+    const as = link.as
+    if (typeof href !== 'string' || href.trim().length === 0) return false
+    if (allowedPreloads && !allowedPreloads.has(href)) return false
+    if (typeof as !== 'string' || !validPreloadAs.has(as)) return false
+    if (seenPreloadHref.has(href)) return false
+
+    seenPreloadHref.add(href)
+    return true
+  })
+}
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
