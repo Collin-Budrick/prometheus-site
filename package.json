@@ -5,7 +5,8 @@
   "packageManager": "bun@1.3.5",
   "description": "Performance-forward monorepo for Qwik City web and Bun Elysia API services.",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "bun run scripts/dev.ts",

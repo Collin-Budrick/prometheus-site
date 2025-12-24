@@ -105,7 +105,7 @@ Use these rules when touching routes, layouts, components, or styles.
 
 - Add the locale code to `i18nPlugin` and `localeBuildFallback` in `apps/web/vite.config.ts`.
 - Create `i18n/<locale>.json` by copying `i18n/en.json`; set `locale`, `name` (selector label), optional `fallback`, and translate all keys.
-- Update locale loaders in `apps/i18n-locales/index.mjs` and `apps/i18n-locales/index.cjs`.
+- Update locale loaders in `packages/i18n-locales/index.mjs` and `packages/i18n-locales/index.cjs`.
 - If keeping explicit locale routes (see `apps/web/src/routes/en` and `apps/web/src/routes/ko`), copy one of those folders to `apps/web/src/routes/<locale>` and update `layout.tsx` to set the new locale.
 - Restart `bun run dev` after changing `vite.config.ts` or adding locale JSON files.
 - Optional: update locale-specific tests or `apps/web/src/config/page-config.ts` if you want localized prerender coverage.
@@ -148,6 +148,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/routes/*.test.ts` — Route-level unit tests.
 - `apps/web/dist/` — Client build output (generated).
 - `apps/web/server/` — SSR build output (generated).
+- `packages/i18n-*` — Shared i18n helper packages (data, locale registry, shared state).
 - `i18n/` — Shared locale resources for the monorepo.
 - `patches/` — Dependency patches (e.g., Qwik tweaks).
 - `scripts/` — Repo-level scripts (outside `apps/web`).

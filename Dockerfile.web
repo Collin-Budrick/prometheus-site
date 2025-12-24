@@ -7,17 +7,17 @@ ENV PATH="/root/.bun/bin:${PATH}"
 COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/
 COPY apps/api/package.json apps/api/
-COPY apps/i18n-data/package.json apps/i18n-data/
-COPY apps/i18n-locales/package.json apps/i18n-locales/
-COPY apps/i18n-state/package.json apps/i18n-state/
+COPY packages/i18n-data/package.json packages/i18n-data/
+COPY packages/i18n-locales/package.json packages/i18n-locales/
+COPY packages/i18n-state/package.json packages/i18n-state/
 COPY patches ./patches
 RUN bun install --ignore-scripts
 
 COPY apps/web ./apps/web
 COPY apps/api/src ./apps/api/src
-COPY apps/i18n-data ./apps/i18n-data
-COPY apps/i18n-locales ./apps/i18n-locales
-COPY apps/i18n-state ./apps/i18n-state
+COPY packages/i18n-data ./packages/i18n-data
+COPY packages/i18n-locales ./packages/i18n-locales
+COPY packages/i18n-state ./packages/i18n-state
 COPY i18n ./i18n
 RUN bun run --cwd apps/web build
 
