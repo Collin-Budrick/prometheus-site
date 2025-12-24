@@ -14,6 +14,8 @@
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
     "preview": "bun run --cwd apps/web preview",
     "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",
+    "lint:all": "bun run typecheck && bunx --bun oxlint . --ignore-pattern node_modules",
+    "typecheck": "bunx --bun tsc -p apps/web/tsconfig.json --noEmit && bunx --bun tsc -p apps/api/tsconfig.json --noEmit",
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
     "certs:mkcert": "scripts/setup-mkcert.sh",
