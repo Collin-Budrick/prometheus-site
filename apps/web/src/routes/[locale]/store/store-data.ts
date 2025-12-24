@@ -2,7 +2,7 @@ import { routeAction$, routeLoader$, server$, type RequestEventBase, type Reques
 import { _, locales, type Locale } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
 import { db } from '../../../server/db/client'
-import { storeItems } from '../../../server/db/schema'
+import { storeItems } from '../../../../../api/src/db/schema'
 import { resolveLocale } from '../../../i18n/locale'
 import { ensureLocaleDictionary } from '../../../i18n/dictionaries'
 import {

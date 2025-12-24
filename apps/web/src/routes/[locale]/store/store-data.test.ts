@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { StoreItemRow } from '../../../server/db/schema'
+import type { StoreItemRow } from './store-decimal'
 import { centsToDecimalString, centsToNumber, normalizeItem, priceToCents } from './store-decimal'
 
 const makeRow = (price: string | number): StoreItemRow => ({

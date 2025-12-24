@@ -1,4 +1,6 @@
-import type { StoreItemRow } from '../../../server/db/schema'
+import type { storeItems } from '../../../../../api/src/db/schema'
+
+export type StoreItemRow = typeof storeItems.$inferSelect
 
 export type StoreItem = { id: StoreItemRow['id']; name: StoreItemRow['name']; price: number }
 export type StoreItemsResult = { items: StoreItem[]; cursor: number | null; source: 'db' | 'fallback' }
