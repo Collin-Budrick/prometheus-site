@@ -31,6 +31,9 @@ const telemetry = {
   cacheSetErrors: 0
 }
 
+type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
+type WsData = { subscriber?: ValkeySubscriber }
+
 const jsonError = (status: number, error: string) =>
   new Response(JSON.stringify({ error }), {
     status,
@@ -59,18 +62,20 @@ const getCounter = async (key: string, windowMs: number) => {
 
   if (isValkeyReady()) {
     try {
-      const [[, countRaw], [, ttlRaw]] = await valkey
+      const results = (await valkey
         .multi()
         .incr(key)
-        .pttl(key)
-        .exec()
+        .pTTL(key)
+        .exec()) as Array<[unknown, unknown]> | null
+      const countRaw = results?.[0]?.[1]
+      const ttlRaw = results?.[1]?.[1]
 
       const count = Number(countRaw)
       let ttlMs = Number(ttlRaw)
 
       if (Number.isNaN(ttlMs) || ttlMs < 0) {
         ttlMs = windowMs
-        await valkey.pexpire(key, windowMs)
+        await valkey.pExpire(key, windowMs)
       }
 
       return { count, resetAt: now + ttlMs }
@@ -117,9 +122,12 @@ const checkWsQuota = async (ws: any) => {
 const app = new Elysia()
   .decorate('valkey', valkey)
   .get('/health', async () => {
-    const dependencies = {
-      postgres: { status: 'ok' as const },
-      valkey: { status: 'ok' as const }
+    const dependencies: {
+      postgres: { status: 'ok' | 'error'; error?: string }
+      valkey: { status: 'ok' | 'error'; error?: string }
+    } = {
+      postgres: { status: 'ok' },
+      valkey: { status: 'ok' }
     }
 
     let healthy = true
@@ -278,7 +286,8 @@ const app = new Elysia()
         await subscriber.subscribe(chatChannel, (message) => {
           ws.send(message)
         })
-        ws.data.subscriber = subscriber
+        const data = ws.data as WsData
+        data.subscriber = subscriber
       } catch (error) {
         console.error('WebSocket subscription failed', error)
         if (subscriber) {
@@ -293,7 +302,8 @@ const app = new Elysia()
       }
     },
     async close(ws) {
-      const subscriber = ws.data.subscriber
+      const data = ws.data as WsData
+      const subscriber = data.subscriber
       if (subscriber) await subscriber.quit()
     },
     async message(_ws, message) {

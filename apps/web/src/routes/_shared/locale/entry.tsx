@@ -23,13 +23,14 @@ export const resolvePreferredLocaleLoader: Parameters<typeof routeLoader$>[0] = 
 
 export const usePreferredLocale = routeLoader$(resolvePreferredLocaleLoader)
 
-export const LocaleEntry = <Props,>(Page: Component<Props>) =>
-  component$(() => {
+export const LocaleEntry = <Props extends Record<string, any>>(Page: Component<Props>) =>
+  component$<Props>((props) => {
     usePreferredLocale()
+    const PageComponent = Page as Component<Record<string, any>>
 
     return (
       <BaseLayout>
-        <Page />
+        <PageComponent {...(props as Record<string, any>)} />
       </BaseLayout>
     )
   })

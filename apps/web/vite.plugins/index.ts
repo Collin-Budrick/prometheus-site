@@ -3,8 +3,7 @@ import { builtinModules, createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ConfigEnv, Plugin, UserConfig, ViteDevServer } from 'vite'
-import type { PluginContext } from 'rollup'
+import type { ConfigEnv, Plugin, PreviewServer, UserConfig, ViteDevServer } from 'vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import Inspect from 'vite-plugin-inspect'
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -158,7 +157,7 @@ export const previewImmutableAssetCache = (enabled: boolean) =>
   enabled
     ? {
         name: 'preview-immutable-asset-cache',
-        configurePreviewServer(server: ViteDevServer) {
+        configurePreviewServer(server: PreviewServer) {
           const distRoot = path.resolve(server.config.root, server.config.build.outDir)
 
           server.middlewares.use((req, res, next) => {
@@ -187,7 +186,7 @@ export const previewImmutableAssetCache = (enabled: boolean) =>
 
 export const previewBrotliAssets = (): Plugin => ({
   name: 'preview-brotli-assets',
-  configurePreviewServer(server: ViteDevServer) {
+  configurePreviewServer(server: PreviewServer) {
     const distRoot = path.resolve(server.config.root, server.config.build.outDir)
 
     server.middlewares.use((req, res, next) => {
@@ -435,8 +434,11 @@ export const qwikViteNoDeprecatedEsbuild = () => {
     return resolvedConfig
   }
 
+  const originalConfigResolvedHandler =
+    typeof originalConfigResolved === 'function' ? originalConfigResolved : originalConfigResolved?.handler
+
   plugin.configResolved = function (resolvedConfig) {
-    originalConfigResolved?.call(this, resolvedConfig)
+    originalConfigResolvedHandler?.call(this, resolvedConfig)
     if (resolvedConfig.oxc && typeof resolvedConfig.oxc === 'object') {
       const oxc = resolvedConfig.oxc as Record<string, unknown>
       normalizeOxcJsx(oxc)
@@ -523,7 +525,11 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
           return rel.startsWith('.') ? rel : `./${rel}`
         }
 
-        const resolveDependency = async (ctx: PluginContext, spec: string, importer: string) => {
+        const resolveDependency = async (
+          ctx: { resolve: (...args: any[]) => Promise<any> },
+          spec: string,
+          importer: string
+        ) => {
           const resolved = await ctx.resolve(spec, importer, { skipSelf: true })
           if (resolved?.id && !isVirtualId(resolved.id) && path.isAbsolute(resolved.id)) {
             return resolved.id
@@ -575,10 +581,10 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
             if (!jsLikeFile.test(pathId) || pathId.includes('/node_modules/')) return null
             if ((isSsrBuild || options?.ssr) && !pathId.includes('_component_')) return null
 
-            const ast = this.parse(code)
+            const ast = this.parse(code) as unknown as { type?: string; [key: string]: unknown }
             const sources = new Set<string>()
 
-            const stack = [ast]
+            const stack: Array<{ type?: string; [key: string]: unknown }> = [ast]
             while (stack.length > 0) {
               const node = stack.pop()
               if (!node || typeof node.type !== 'string') continue
@@ -588,12 +594,12 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
                 node.type === 'ExportNamedDeclaration' ||
                 node.type === 'ExportAllDeclaration'
               ) {
-                const source = node.source
+                const source = (node as { source?: { value?: unknown } }).source
                 if (source && typeof source.value === 'string') {
                   sources.add(source.value)
                 }
               } else if (node.type === 'ImportExpression') {
-                const source = node.source
+                const source = (node as { source?: { value?: unknown } }).source
                 if (source && typeof source.value === 'string') {
                   sources.add(source.value)
                 }
@@ -603,10 +609,12 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
                 if (!value) continue
                 if (Array.isArray(value)) {
                   for (const child of value) {
-                    if (child && typeof child.type === 'string') stack.push(child)
+                    if (child && typeof (child as { type?: unknown }).type === 'string') {
+                      stack.push(child as { type?: string; [key: string]: unknown })
+                    }
                   }
-                } else if (value && typeof value.type === 'string') {
-                  stack.push(value)
+                } else if (value && typeof (value as { type?: unknown }).type === 'string') {
+                  stack.push(value as { type?: string; [key: string]: unknown })
                 }
               }
             }

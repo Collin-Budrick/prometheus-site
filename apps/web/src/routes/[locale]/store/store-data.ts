@@ -83,8 +83,8 @@ const loadStoreItems = async (cursor?: number): Promise<StoreItemsResult> => {
 }
 
 const resolveRequestLocale = (event: RequestEventBase) => {
-  const eventLocale = event.locale?.()
-  if (eventLocale && locales.includes(eventLocale as any)) return eventLocale as Locale
+  const eventLocale = event.params?.locale
+  if (eventLocale && locales.includes(eventLocale as Locale)) return eventLocale as Locale
   return resolveLocale({
     queryLocale: event.query.get('locale'),
     cookieLocale: event.cookie.get('locale')?.value ?? null,

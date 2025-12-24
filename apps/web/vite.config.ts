@@ -179,17 +179,27 @@ export default defineConfig((configEnv) => {
         treeshake: treeshakeOptions
       }
 
-  const plugins = [
-    ...analysisPlugins,
-    clientBuildStubs,
-    qwikCityDevEnvDataGuard(),
-    qwikCity({ trailingSlash: false }),
-    qwikViteNoDeprecatedEsbuild(),
-    preserveQwikLoader(),
-    forceClientBundleDeps(true),
-    i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }),
-    tsconfigPaths(),
-    UnoCSS(),
+  const plugins: PluginOption[] = []
+  const pushPlugin = (plugin: any) => {
+    if (!plugin) return
+    if (Array.isArray(plugin)) {
+      plugins.push(...plugin)
+      return
+    }
+    plugins.push(plugin)
+  }
+
+  pushPlugin(analysisPlugins as PluginOption[])
+  pushPlugin(clientBuildStubs)
+  pushPlugin(qwikCityDevEnvDataGuard())
+  pushPlugin(qwikCity({ trailingSlash: false }))
+  pushPlugin(qwikViteNoDeprecatedEsbuild())
+  pushPlugin(preserveQwikLoader())
+  pushPlugin(forceClientBundleDeps(true))
+  pushPlugin(i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }))
+  pushPlugin(tsconfigPaths())
+  pushPlugin(UnoCSS())
+  pushPlugin(
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
@@ -268,22 +278,22 @@ export default defineConfig((configEnv) => {
         ],
         manifestTransforms: [leanWorkboxManifest]
       }
-    }),
-    preloadPlugin,
-    speculationRulesManifest(),
-    partytownVite({ dest: partytownDest }),
-    devAuditStripViteClient(env.devAuditMode),
-    devBustedViteClient(!env.devAuditMode),
-    qwikCityDevEnvDataJsonSafe(),
-    localeBuildFallback(['en', 'ko', 'ja']),
-    devFontSilencer(),
-    previewBrotliAssets(),
-    previewImmutableAssetCache(env.previewCacheEnabled),
-    fixOxcAutomaticJsx(),
-    patchNodeModuleRuntime(),
-    ...staticCopyPlugins,
-    compressionPlugin
-  ] as unknown as PluginOption[]
+    })
+  )
+  pushPlugin(preloadPlugin)
+  pushPlugin(speculationRulesManifest())
+  pushPlugin(partytownVite({ dest: partytownDest }))
+  pushPlugin(devAuditStripViteClient(env.devAuditMode))
+  pushPlugin(devBustedViteClient(!env.devAuditMode))
+  pushPlugin(qwikCityDevEnvDataJsonSafe())
+  pushPlugin(localeBuildFallback(['en', 'ko', 'ja']))
+  pushPlugin(devFontSilencer())
+  pushPlugin(previewBrotliAssets())
+  pushPlugin(previewImmutableAssetCache(env.previewCacheEnabled))
+  pushPlugin(fixOxcAutomaticJsx())
+  pushPlugin(patchNodeModuleRuntime())
+  pushPlugin(staticCopyPlugins)
+  pushPlugin(compressionPlugin)
 
   const config = {
     cacheDir,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import type { StoreItemRow } from './store-data'
 import { centsToDecimalString, centsToNumber, normalizeItem, priceToCents } from './store-data'
 
-const makeRow = (price: string | number): StoreItemRow => ({
+const makeRow = (price: StoreItemRow['price']): StoreItemRow => ({
   id: 1,
   name: 'High precision widget',
   price,
