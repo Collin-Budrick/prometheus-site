@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "prometheus-site",
@@ -31,18 +30,6 @@
         "oxlint": "1.33.0",
         "typescript": "6.0.0-dev.20251216",
       },
-    },
-    "apps/i18n-data": {
-      "name": "@i18n/__data",
-      "version": "0.0.0",
-    },
-    "apps/i18n-locales": {
-      "name": "@i18n/__locales",
-      "version": "0.0.0",
-    },
-    "apps/i18n-state": {
-      "name": "@i18n/__state",
-      "version": "0.0.0",
     },
     "apps/web": {
       "name": "web",
@@ -91,6 +78,18 @@
         "vite-plugin-static-copy": "3.1.4",
         "vite-tsconfig-paths": "6.0.3",
       },
+    },
+    "packages/i18n-data": {
+      "name": "@i18n/__data",
+      "version": "0.0.0",
+    },
+    "packages/i18n-locales": {
+      "name": "@i18n/__locales",
+      "version": "0.0.0",
+    },
+    "packages/i18n-state": {
+      "name": "@i18n/__state",
+      "version": "0.0.0",
     },
   },
   "patchedDependencies": {
@@ -397,11 +396,11 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
-    "@i18n/__data": ["@i18n/__data@workspace:apps/i18n-data"],
+    "@i18n/__data": ["@i18n/__data@workspace:packages/i18n-data"],
 
-    "@i18n/__locales": ["@i18n/__locales@workspace:apps/i18n-locales"],
+    "@i18n/__locales": ["@i18n/__locales@workspace:packages/i18n-locales"],
 
-    "@i18n/__state": ["@i18n/__state@workspace:apps/i18n-state"],
+    "@i18n/__state": ["@i18n/__state@workspace:packages/i18n-state"],
 
     "@iconify-json/solar": ["@iconify-json/solar@1.2.5", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-WMAiNwchU8zhfrySww6KQBRIBbsQ6SvgIu2yA+CHGyMima/0KQwT5MXogrZPJGoQF+1Ye3Qj6K+1CiyNn3YkoA=="],
 
