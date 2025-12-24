@@ -11,7 +11,6 @@ import localeStore from '@i18n/__locales'
 import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
 /* cspell:ignore hrefs */
 import { LocaleSelector } from '../../components/locale-selector/locale-selector'
-import { featureFlags } from '../../config/feature-flags'
 import { ThirdPartyScripts } from '../../components/third-party/third-party-scripts'
 import layoutStyles from '../layout.css?inline'
 import criticalCss from '../critical.css?raw'
@@ -27,6 +26,21 @@ import {
 } from '../../config/speculation-rules'
 import { getPageConfig, getPageSpeculation } from '../../config/page-config'
 import { localeCookieOptions, normalizeLocaleParam, resolvePreferredLocale, stripLocalePrefix } from '../locale-routing'
+
+const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
+  if (value === undefined) return fallback
+  if (typeof value === 'boolean') return value
+  return value === '1' || value.toLowerCase() === 'true'
+}
+
+const defaultProd = (flag: string | boolean | undefined, prodFallback: boolean) =>
+  toBoolean(flag, prodFallback && import.meta.env.PROD)
+
+const featureFlags = {
+  speculationRules: toBoolean(import.meta.env.VITE_SPECULATION_RULES, true),
+  viewTransitions: toBoolean(import.meta.env.VITE_ROUTE_VIEW_TRANSITIONS, true),
+  partytown: defaultProd(import.meta.env.VITE_ENABLE_PARTYTOWN ?? import.meta.env.ENABLE_PARTYTOWN, true)
+}
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
 

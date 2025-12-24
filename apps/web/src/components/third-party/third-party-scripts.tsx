@@ -1,6 +1,18 @@
 import { Fragment, component$ } from '@builder.io/qwik'
-import { featureFlags } from '../../config/feature-flags'
 import { thirdPartyScripts } from '../../config/third-party'
+
+const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
+  if (value === undefined) return fallback
+  if (typeof value === 'boolean') return value
+  return value === '1' || value.toLowerCase() === 'true'
+}
+
+const defaultProd = (flag: string | boolean | undefined, prodFallback: boolean) =>
+  toBoolean(flag, prodFallback && import.meta.env.PROD)
+
+const featureFlags = {
+  partytown: defaultProd(import.meta.env.VITE_ENABLE_PARTYTOWN ?? import.meta.env.ENABLE_PARTYTOWN, true)
+}
 
 const idleLoader = (id: string, src: string) =>
   `(()=>{const url='${src}';let loaded=false;const load=()=>{if(loaded||!url)return;loaded=true;const s=document.createElement('script');s.src=url;s.async=true;s.dataset.thirdParty='${id}';document.body.appendChild(s);};const prime=()=>{load();cleanup();};const cleanup=()=>events.forEach((event)=>window.removeEventListener(event,prime,opts));const events=['pointerdown','keydown','touchstart','focusin'];const opts={once:true,passive:true};events.forEach((event)=>window.addEventListener(event,prime,opts));if('requestIdleCallback'in window){requestIdleCallback(()=>prime(),{timeout:5000});}else{setTimeout(prime,5000);}setTimeout(load,8000);})();`

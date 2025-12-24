@@ -2,9 +2,18 @@ import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { RouterHead } from './routes/[locale]/layout'
 import { RouteTransitionBoundary } from './components/route-transition/route-transition'
-import { featureFlags } from './config/feature-flags'
 import 'virtual:uno.css'
 import './global.css'
+
+const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
+  if (value === undefined) return fallback
+  if (typeof value === 'boolean') return value
+  return value === '1' || value.toLowerCase() === 'true'
+}
+
+const featureFlags = {
+  viewTransitions: toBoolean(import.meta.env.VITE_ROUTE_VIEW_TRANSITIONS, true)
+}
 
 declare const __EXPERIMENTAL__: Record<string, unknown> | undefined
 
