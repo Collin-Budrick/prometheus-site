@@ -131,7 +131,7 @@ const resolveWarmupModules = (resolvedManifest: unknown): string[] => {
   const bundles = (resolvedManifest as { bundles?: Record<string, { dynamicImports?: unknown; origins?: unknown }> }).bundles
   if (!bundles || typeof bundles !== 'object') return []
 
-  const originHints = ['src/components/locale-selector/locale-selector.tsx_LocaleSelector_component_useVisibleTask', 'src/components/locale-selector/locale-selector.tsx']
+  const originHints = ['src/components/LocaleSelector.tsx_LocaleSelector_component_useVisibleTask', 'src/components/LocaleSelector.tsx']
   const warmup = new Set<string>()
 
   for (const bundle of Object.values(bundles)) {

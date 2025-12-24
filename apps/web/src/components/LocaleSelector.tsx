@@ -1,7 +1,7 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
-import { useMotionMini, type MotionMiniAnimationHandle } from '../animations/use-motion-mini'
+import { useMotionMini, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
