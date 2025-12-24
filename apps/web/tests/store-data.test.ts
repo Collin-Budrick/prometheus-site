@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import type { StoreItemRow } from './store-data'
-import { centsToDecimalString, centsToNumber, normalizeItem, priceToCents } from './store-data'
+import type { StoreItemRow } from '../src/routes/[locale]/store/store-data'
+import { centsToDecimalString, centsToNumber, normalizeItem, priceToCents } from '../src/routes/[locale]/store/store-data'
 
 const makeRow = (price: StoreItemRow['price']): StoreItemRow => ({
   id: 1,

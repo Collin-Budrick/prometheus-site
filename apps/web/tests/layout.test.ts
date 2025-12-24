@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 
-let sanitizeHeadLinks: typeof import('./[locale]/layout').sanitizeHeadLinks
+let sanitizeHeadLinks: typeof import('../src/routes/[locale]/layout').sanitizeHeadLinks
 
 beforeAll(async () => {
   mock.module('@qwik-city-plan', () => ({ default: {} }))
   mock.module('@qwik-city-sw-register', () => ({ default: () => null }))
-  ;({ sanitizeHeadLinks } = await import('./[locale]/layout'))
+  ;({ sanitizeHeadLinks } = await import('../src/routes/[locale]/layout'))
 })
 
 const l = (input: Record<string, unknown>) => input

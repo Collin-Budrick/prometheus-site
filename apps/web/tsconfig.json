@@ -19,6 +19,13 @@
     "types": ["vite/client", "@builder.io/qwik-city", "node", "bun-types"],
     "skipLibCheck": true
   },
-  "include": ["src", "vite.config.ts", "uno.config.ts", "qwik.config.ts"],
+  "include": [
+    "src",
+    "vite.config.ts",
+    "uno.config.ts",
+    "qwik.config.ts",
+    "tests/store-data.test.ts",
+    "tests/layout.test.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
