@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import {
@@ -58,6 +58,8 @@ export const StoreIsland = component$(() => {
   const activeRequestId = useSignal(0)
   const activeController = useSignal<AbortController | null>(null)
   const isFallback = useSignal(initial.value.source === 'fallback')
+  const animateStage = useSignal<'pending' | 'animating' | 'ready'>('pending')
+  const hasAnimatedInitial = useSignal(false)
   const error = useSignal<string | null>(
     initial.value.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
   )
@@ -65,23 +67,40 @@ export const StoreIsland = component$(() => {
   const deleteAction = useDeleteStoreItem()
 
   const animateEntrances = $(async (ids: number[], variant: 'initial' | 'new' = 'new') => {
-    if (typeof document === 'undefined' || !ids.length) return
-    if (prefersReducedMotion()) return
+    if (variant === 'initial') {
+      animateStage.value = 'pending'
+    }
+    if (typeof document === 'undefined' || !ids.length) {
+      if (variant === 'initial') animateStage.value = 'ready'
+      return
+    }
+    if (prefersReducedMotion()) {
+      if (variant === 'initial') animateStage.value = 'ready'
+      return
+    }
 
     await nextFrame()
+    if (variant === 'initial') {
+      animateStage.value = 'animating'
+    }
 
     const elements = ids
       .map((id) => document.querySelector(`[data-store-item-id="${id}"]`))
       .filter((node): node is HTMLElement => Boolean(node))
 
-    if (!elements.length) return
+    if (!elements.length) {
+      if (variant === 'initial') animateStage.value = 'ready'
+      return
+    }
 
     try {
-      const fromOpacity = variant === 'initial' ? 0.7 : 0
+      const fromOpacity = variant === 'initial' ? 0 : 0
       const fromY = variant === 'initial' ? 12 : 8
       const fromScale = variant === 'initial' ? 0.99 : 0.98
       const duration = variant === 'initial' ? 500 : 380
       const perItemDelay = variant === 'initial' ? 60 : 45
+      const baseDelay = variant === 'initial' ? 140 : 0
+      const fill = variant === 'initial' ? 'backwards' : 'none'
 
       await animateElements(
         elements,
@@ -92,13 +111,25 @@ export const StoreIsland = component$(() => {
         {
           duration,
           easing: toCubicBezier(entranceEase),
-          fill: 'none',
-          delay: (index) => index * perItemDelay
+          fill,
+          delay: (index) => baseDelay + index * perItemDelay
         }
       )
     } catch (err) {
       console.error('Failed to run entrance animations', err)
+    } finally {
+      if (variant === 'initial') {
+        animateStage.value = 'ready'
+      }
     }
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => items.value.length)
+    if (hasAnimatedInitial.value) return
+    if (!items.value.length) return
+    hasAnimatedInitial.value = true
+    void animateEntrances(items.value.map((item) => item.id), 'initial')
   })
 
   const animateRemoval = $(async (id: number) => {
@@ -279,7 +310,11 @@ export const StoreIsland = component$(() => {
         )}
         {error.value && <p class="text-rose-300 text-sm">{error.value}</p>}
         {items.value.length ? (
-          <ul class="gap-3 grid md:grid-cols-2" style={{ viewTransitionName: 'store-grid' }}>
+          <ul
+            class="gap-3 grid md:grid-cols-2"
+            style={{ viewTransitionName: 'store-grid' }}
+            data-store-animate={animateStage.value}
+          >
             {items.value.map((item) => (
               <li
                 key={item.id}

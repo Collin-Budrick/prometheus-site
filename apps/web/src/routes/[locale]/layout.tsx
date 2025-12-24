@@ -348,6 +348,8 @@ export const RouterHead = component$(() => {
   }
 })()`
     : undefined
+  const jsReadyScript =
+    "document.documentElement.dataset.js='true'"
   const themeInitScript =
     "(()=>{try{const theme=localStorage.getItem('theme');if(!theme)return;const root=document.documentElement;if(theme==='system'){root.removeAttribute('data-theme');root.classList.remove('light','dark');return;}root.setAttribute('data-theme',theme);root.classList.remove('light','dark');}catch{}})();"
   return (
@@ -356,6 +358,7 @@ export const RouterHead = component$(() => {
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="canonical" href={canonical.href} />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
+      <script dangerouslySetInnerHTML={jsReadyScript} />
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
       {includeGlobalStyles && (
         <>

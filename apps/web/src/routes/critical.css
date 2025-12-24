@@ -725,3 +725,8 @@ a {
     animation: none;
   }
 }
+
+:root[data-js='true'] [data-store-animate='pending'] [data-store-item-id] {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0) scale(0.99);
+}
