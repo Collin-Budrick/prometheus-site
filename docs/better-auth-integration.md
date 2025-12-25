@@ -50,3 +50,11 @@
 - Model the required auth tables (users, sessions, passkeys, OAuth accounts) in Drizzle and plan migrations.
 - Scaffold `/api/auth/*` Elysia routes using Better Auth, wiring cookies to the shared domain and reusing the existing rate limiter.
 - Update the SSR login route to call the new endpoints via `routeAction$`, and add locale-aware redirects for OAuth callbacks.
+
+## Auth database schema snapshot (Drizzle)
+
+- `users` — `uuid` primary key with default `gen_random_uuid()`, unique `email`, optional `email_verified_at` timestamp, optional `password_hash`, and `created_at`/`updated_at` timestamps (both default `now()`).
+- `auth_keys` — primary key `id` (provider-scoped key identifier), `user_id` FK to `users` (cascade delete), optional `hashed_password`, optional `provider` + `provider_user_id` pair (unique composite index), optional `expires_at`, and `created_at`/`updated_at` timestamps.
+- `auth_sessions` — primary key `id`, `user_id` FK to `users` (cascade delete), `expires_at`, optional `refresh_expires_at`, and `created_at`/`updated_at` timestamps.
+- `passkeys` — primary key `id` (credential ID), `user_id` FK to `users` (cascade delete), `name`, `public_key`, `counter` bigint default `0`, optional `device_type`, `backed_up` boolean default `false`, optional `authenticator_attachment`, optional text[] `transports`, optional `last_used_at`, plus `created_at`/`updated_at` timestamps.
+- Migration: `apps/api/drizzle/20251225231103_auth-tables/migration.sql` creates all four tables, foreign keys, and indexes; `apps/api/src/db/schema.ts` holds the source definitions and corresponding Zod insert schemas for validation.
