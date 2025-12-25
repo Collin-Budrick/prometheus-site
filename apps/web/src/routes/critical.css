@@ -299,6 +299,14 @@ a {
 }
 
 .settings-group-panel {
+  display: none;
+}
+
+.settings-group[data-closing='true'] .settings-group-panel {
+  display: grid;
+}
+
+.settings-group-panel-inner {
   display: grid;
   gap: 0.25rem;
   padding: 0 0.35rem 0.45rem;

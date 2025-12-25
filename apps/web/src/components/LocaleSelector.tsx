@@ -1,7 +1,9 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 import { localeNames, locales } from 'compiled-i18n'
-import { useMotionMini, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
+import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
+
+type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
 
 export const LocaleSelector = component$(() => {
   const loc = useLocation()
@@ -37,7 +39,7 @@ export const LocaleSelector = component$(() => {
     const runAnimation = async (
       token: number,
       keyframes: Record<string, string[] | number[]>,
-      options: { duration: number; easing: string },
+      options: MotionMiniAnimateOptions,
       onFinish: () => void
     ) => {
       panel.style.willChange = 'opacity, transform, filter'
@@ -47,12 +49,12 @@ export const LocaleSelector = component$(() => {
       activeAnimation = animation
       animation.finished
         .then(() => {
-        if (token !== animationToken) return
-        onFinish()
-        if (activeAnimation === animation) {
-          activeAnimation = null
-        }
-      })
+          if (token !== animationToken) return
+          onFinish()
+          if (activeAnimation === animation) {
+            activeAnimation = null
+          }
+        })
         .finally(() => {
           if (token === animationToken) {
             panel.style.removeProperty('will-change')
@@ -83,7 +85,7 @@ export const LocaleSelector = component$(() => {
       void runAnimation(
         token,
         { opacity: [0, 1], transform: ['translateY(-8px)', 'translateY(0)'], filter: ['blur(8px)', 'blur(0px)'] },
-        { duration: 0.22, easing: 'ease-out' },
+        { duration: 0.22, ease: 'easeOut' },
         () => {
           panel.style.removeProperty('opacity')
           panel.style.removeProperty('transform')
@@ -112,7 +114,7 @@ export const LocaleSelector = component$(() => {
       void runAnimation(
         token,
         { opacity: [1, 0], transform: ['translateY(0)', 'translateY(-8px)'], filter: ['blur(0px)', 'blur(8px)'] },
-        { duration: 0.22, easing: 'ease-in' },
+        { duration: 0.22, ease: 'easeIn' },
         () => {
           panel.style.display = 'none'
           panel.style.removeProperty('opacity')
@@ -150,6 +152,115 @@ export const LocaleSelector = component$(() => {
       panel.style.display = 'grid'
     }
 
+    const setupGroupAnimation = (group: HTMLDetailsElement) => {
+      const groupSummary = group.querySelector<HTMLElement>('summary')
+      const groupPanel = group.querySelector<HTMLElement>('.settings-group-panel')
+      if (!groupSummary || !groupPanel) return () => {}
+
+      group.dataset.js = 'true'
+      if (group.open) {
+        groupPanel.style.display = 'grid'
+      }
+
+      motion.prewarm({ element: groupPanel, willChange: 'height, opacity', delay: 0 })
+
+      let groupAnimation: MotionMiniAnimationHandle | null = null
+      let groupToken = 0
+      let groupIsClosing = false
+      let groupIgnoreToggle = false
+
+      const setGroupOpen = (next: boolean) => {
+        groupIgnoreToggle = true
+        group.open = next
+        queueMicrotask(() => {
+          groupIgnoreToggle = false
+        })
+      }
+
+      const runGroupAnimation = async (direction: 'open' | 'close', onFinish: () => void) => {
+        groupAnimation?.cancel()
+        groupToken += 1
+        const token = groupToken
+        if (direction === 'close') {
+          group.dataset.closing = 'true'
+          groupPanel.style.display = 'grid'
+        } else {
+          delete group.dataset.closing
+        }
+        groupPanel.style.willChange = 'height, opacity'
+        const slideResult = await motion.slide({
+          element: groupPanel,
+          direction,
+          display: 'grid',
+          duration: direction === 'open' ? 0.2 : 0.18,
+          ease: direction === 'open' ? 'easeOut' : 'easeIn',
+          opacity: true,
+          onFinish: () => {
+            if (token !== groupToken) return
+            delete group.dataset.closing
+            onFinish()
+            groupAnimation = null
+          }
+        })
+        if (token !== groupToken) return
+        const animation = slideResult?.animation ?? null
+        groupAnimation = animation
+        if (animation) {
+          animation.finished.finally(() => {
+            if (token === groupToken) {
+              groupPanel.style.removeProperty('will-change')
+            }
+          })
+        } else {
+          groupPanel.style.removeProperty('will-change')
+        }
+      }
+
+      const animateGroupOpen = () => {
+        void runGroupAnimation('open', () => {})
+      }
+
+      const animateGroupClose = (onClosed?: () => void) => {
+        void runGroupAnimation('close', () => {
+          onClosed?.()
+        })
+      }
+
+      const handleGroupSummaryClick = (event: Event) => {
+        if (!group.open) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (groupIsClosing) return
+        groupIsClosing = true
+        animateGroupClose(() => {
+          setGroupOpen(false)
+          groupIsClosing = false
+        })
+      }
+
+      const handleGroupToggle = () => {
+        if (groupIgnoreToggle) return
+        if (group.open) {
+          animateGroupOpen()
+          return
+        }
+        if (groupIsClosing) return
+        animateGroupClose()
+      }
+
+      groupSummary.addEventListener('click', handleGroupSummaryClick)
+      group.addEventListener('toggle', handleGroupToggle)
+
+      return () => {
+        groupSummary.removeEventListener('click', handleGroupSummaryClick)
+        group.removeEventListener('toggle', handleGroupToggle)
+      }
+    }
+
+    const groupCleanup = Array.from(panel.querySelectorAll<HTMLDetailsElement>('.settings-group')).map((group) =>
+      setupGroupAnimation(group)
+    )
+
     prewarmMotion()
     summary.addEventListener('click', handleSummaryClick)
     menu.addEventListener('toggle', handleToggle)
@@ -157,6 +268,7 @@ export const LocaleSelector = component$(() => {
     return () => {
       summary.removeEventListener('click', handleSummaryClick)
       menu.removeEventListener('toggle', handleToggle)
+      groupCleanup.forEach((cleanup) => cleanup())
     }
   })
 
@@ -201,39 +313,43 @@ export const LocaleSelector = component$(() => {
         </svg>
       </summary>
       <div ref={panelRef} class="settings-panel animated-panel">
-        <details class="settings-group">
+        <details class="settings-group animated-details">
           <summary class="settings-group-trigger">Language</summary>
-          <div class="settings-group-panel">
-            {locales.map((locale) => {
-              const isCurrent = locale === (currentLocale as any)
-              const href = buildHref(locale)
-              return (
-                <a
-                  key={locale}
-                  href={href}
-                  aria-disabled={isCurrent}
-                  aria-current={isCurrent ? 'true' : undefined}
-                  style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
-                  class="settings-option"
-                >
-                  {localeNames[locale] ?? locale.toUpperCase()}
-                </a>
-              )
-            })}
+          <div class="settings-group-panel animated-panel">
+            <div class="settings-group-panel-inner">
+              {locales.map((locale) => {
+                const isCurrent = locale === (currentLocale as any)
+                const href = buildHref(locale)
+                return (
+                  <a
+                    key={locale}
+                    href={href}
+                    aria-disabled={isCurrent}
+                    aria-current={isCurrent ? 'true' : undefined}
+                    style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
+                    class="settings-option"
+                  >
+                    {localeNames[locale] ?? locale.toUpperCase()}
+                  </a>
+                )
+              })}
+            </div>
           </div>
         </details>
-        <details class="settings-group">
+        <details class="settings-group animated-details">
           <summary class="settings-group-trigger">Theme</summary>
-          <div class="settings-group-panel">
-            <button type="button" class="settings-option" onClick$={() => applyTheme('system')}>
-              System
-            </button>
-            <button type="button" class="settings-option" onClick$={() => applyTheme('light')}>
-              Light
-            </button>
-            <button type="button" class="settings-option" onClick$={() => applyTheme('dark')}>
-              Dark
-            </button>
+          <div class="settings-group-panel animated-panel">
+            <div class="settings-group-panel-inner">
+              <button type="button" class="settings-option" onClick$={() => applyTheme('system')}>
+                System
+              </button>
+              <button type="button" class="settings-option" onClick$={() => applyTheme('light')}>
+                Light
+              </button>
+              <button type="button" class="settings-option" onClick$={() => applyTheme('dark')}>
+                Dark
+              </button>
+            </div>
           </div>
         </details>
       </div>
