@@ -20,17 +20,19 @@
   },
   "dependencies": {
     "@valkey/client": "1.0.0",
+    "drizzle-zod": "1.0.0-beta.5-e0482ac",
     "drizzle-orm": "1.0.0-beta.5-e0482ac",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
-    "undici": "7.16.0"
+    "undici": "7.16.0",
+    "zod": "4.3.0-canary.20251223T202943"
   },
   "devDependencies": {
     "@types/node": "25.0.3",
-    "bun-types": "1.3.5-canary.20251209T140747",
+    "bun-types": "1.3.6-canary.20251224T140738",
     "drizzle-kit": "1.0.0-beta.5-e0482ac",
-    "oxfmt": "0.18.0",
-    "oxlint": "1.33.0",
-    "typescript": "6.0.0-dev.20251216"
+    "oxfmt": "0.20.0",
+    "oxlint": "1.35.0",
+    "typescript": "6.0.0-dev.20251224"
   }
 }

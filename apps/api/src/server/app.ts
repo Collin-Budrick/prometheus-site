@@ -4,6 +4,7 @@ import { db, pgClient } from '../db/client'
 import { prepareDatabase } from '../db/prepare'
 import { chatMessages, storeItems } from '../db/schema'
 import { connectValkey, isValkeyReady, valkey } from '../services/cache'
+import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
 const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
@@ -20,15 +21,31 @@ async function bootstrap() {
     console.log('RUN_MIGRATIONS not set; skipping migrations and seed step')
   }
   await connectValkey()
+  void startStoreRealtime(broadcastStoreEvent).catch((error) => {
+    console.error('Store realtime listener failed', error)
+  })
 }
 
 const chatChannel = 'chat:stream'
+const storeSockets = new Set<any>()
 
 const telemetry = {
   cacheHits: 0,
   cacheMisses: 0,
   cacheGetErrors: 0,
   cacheSetErrors: 0
+}
+
+const broadcastStoreEvent = (event: StoreRealtimeEvent) => {
+  const payload = JSON.stringify(event)
+  for (const ws of storeSockets) {
+    try {
+      ws.send(payload)
+    } catch (error) {
+      console.warn('Failed to broadcast store realtime event', error)
+      storeSockets.delete(ws)
+    }
+  }
 }
 
 type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
@@ -270,6 +287,15 @@ const app = new Elysia()
       body: t.Object({ prompt: t.String() })
     }
   )
+  .ws('/store/ws', {
+    open(ws) {
+      storeSockets.add(ws)
+      ws.send(JSON.stringify({ type: 'store:ready' }))
+    },
+    close(ws) {
+      storeSockets.delete(ws)
+    }
+  })
   .ws('/ws', {
     async open(ws) {
       ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
@@ -387,6 +413,7 @@ const shutdown = async (signal: NodeJS.Signals) => {
   try {
     if (serverHandle?.stop) await serverHandle.stop()
     if (valkey.isOpen) await valkey.quit()
+    await stopStoreRealtime()
     await pgClient.end()
   } catch (error) {
     console.error('Graceful shutdown failed', error)

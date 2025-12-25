@@ -66,6 +66,9 @@ export const StoreIsland = component$(() => {
     initial.value.source === 'fallback' ? _`Database offline: showing fallback inventory.` : null
   )
   const editingId = useSignal<number | null>(null)
+  const removingIds = useSignal<Record<number, true>>({})
+  const realtimeStatus = useSignal<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle')
+  const realtimeToken = useSignal(0)
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const updateAction = useUpdateStoreItem()
@@ -128,15 +131,10 @@ export const StoreIsland = component$(() => {
     }
   })
 
-  useVisibleTask$(({ track }) => {
-    track(() => items.value.length)
-    if (hasAnimatedInitial.value) return
-    if (!items.value.length) return
-    hasAnimatedInitial.value = true
-    void animateEntrances(items.value.map((item) => item.id), 'initial')
-  })
-
   const animateRemoval = $(async (id: number) => {
+    if (removingIds.value[id]) return
+    removingIds.value = { ...removingIds.value, [id]: true }
+
     const remove = () => {
       const update = () => {
         items.value = items.value.filter((item) => item.id !== id)
@@ -156,33 +154,161 @@ export const StoreIsland = component$(() => {
       update()
     }
 
-    if (typeof document === 'undefined') return remove()
-    if (prefersReducedMotion()) return remove()
-
-    const element = document.querySelector(`[data-store-item-id="${id}"]`)
-    if (!element) {
-      remove()
-      return
-    }
-
     try {
-      const animation = element.animate(
-        [
-          { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
-          { opacity: 0, transform: 'translate3d(0, -8px, 0) scale(0.96)' }
-        ],
-        {
-          duration: 220,
-          easing: toCubicBezier(exitEase),
-          fill: 'both'
-        }
-      )
-      await awaitFinished(animation)
-    } catch (err) {
-      console.error('Failed to animate removal', err)
+      if (typeof document === 'undefined') {
+        remove()
+        return
+      }
+      if (prefersReducedMotion()) {
+        remove()
+        return
+      }
+
+      const element = document.querySelector(`[data-store-item-id="${id}"]`)
+      if (!element) {
+        remove()
+        return
+      }
+
+      try {
+        const animation = element.animate(
+          [
+            { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+            { opacity: 0, transform: 'translate3d(0, -8px, 0) scale(0.96)' }
+          ],
+          {
+            duration: 220,
+            easing: toCubicBezier(exitEase),
+            fill: 'both'
+          }
+        )
+        await awaitFinished(animation)
+      } catch (err) {
+        console.error('Failed to animate removal', err)
+      }
+
+      remove()
+    } finally {
+      const next = { ...removingIds.value }
+      delete next[id]
+      removingIds.value = next
+    }
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => items.value.length)
+    if (hasAnimatedInitial.value) return
+    if (!items.value.length) return
+    hasAnimatedInitial.value = true
+    void animateEntrances(items.value.map((item) => item.id), 'initial')
+  })
+
+  useVisibleTask$(({ cleanup, track }) => {
+    track(() => realtimeToken.value)
+    if (typeof window === 'undefined') return
+
+    realtimeStatus.value = 'connecting'
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${protocol}://${window.location.host}/api/store/ws`)
+    const currentToken = realtimeToken.value
+
+    const updateStatus = (status: 'connecting' | 'connected' | 'disconnected' | 'error') => {
+      if (realtimeToken.value !== currentToken) return
+      realtimeStatus.value = status
     }
 
-    remove()
+    const applyUpdate = (nextItems: StoreItem[]) => {
+      const update = () => {
+        items.value = nextItems
+      }
+
+      if (typeof document === 'undefined') {
+        update()
+        return
+      }
+
+      const startViewTransition = document.startViewTransition
+      if (typeof startViewTransition === 'function') {
+        startViewTransition.call(document, update)
+      } else {
+        update()
+      }
+    }
+
+    const upsertItem = (incoming: StoreItem) => {
+      const existingIndex = items.value.findIndex((item) => item.id === incoming.id)
+      let nextItems: StoreItem[]
+      if (existingIndex >= 0) {
+        nextItems = items.value.map((item) => (item.id === incoming.id ? incoming : item))
+      } else {
+        nextItems = [...items.value, incoming].sort((a, b) => a.id - b.id)
+      }
+
+      applyUpdate(nextItems)
+      if (existingIndex < 0 && hasAnimatedInitial.value) {
+        void animateEntrances([incoming.id])
+      }
+      isFallback.value = false
+      error.value = null
+    }
+
+    const removeItem = (id: number) => {
+      if (!items.value.some((item) => item.id === id)) return
+      void animateRemoval(id)
+      isFallback.value = false
+      error.value = null
+    }
+
+    const coerceItem = (value: unknown): StoreItem | null => {
+      if (!value || typeof value !== 'object') return null
+      const record = value as { id?: unknown; name?: unknown; price?: unknown }
+      const id = Number(record.id)
+      const name = record.name
+      const price = Number(record.price)
+      if (!Number.isFinite(id) || id <= 0) return null
+      if (typeof name !== 'string') return null
+      if (!Number.isFinite(price)) return null
+      return { id, name, price }
+    }
+
+    ws.onopen = () => {
+      updateStatus('connected')
+    }
+    ws.onmessage = (event) => {
+      let payload: unknown
+      try {
+        payload = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      if (!payload || typeof payload !== 'object') return
+      const record = payload as { type?: unknown; item?: unknown; id?: unknown }
+
+      if (record.type === 'store:upsert') {
+        const incoming = coerceItem(record.item)
+        if (incoming) {
+          upsertItem(incoming)
+        }
+        return
+      }
+
+      if (record.type === 'store:delete') {
+        const id = Number(record.id)
+        if (Number.isFinite(id) && id > 0) {
+          removeItem(id)
+        }
+      }
+    }
+    ws.onerror = () => {
+      updateStatus('error')
+    }
+    ws.onclose = () => {
+      updateStatus('disconnected')
+    }
+
+    cleanup(() => {
+      ws.close()
+    })
   })
 
   const loadItems = $(async (reset = false) => {
@@ -215,9 +341,10 @@ export const StoreIsland = component$(() => {
 
       if (!mounted.value || activeRequestId.value !== requestId) return
       const incoming = response?.items ?? []
-      const nextItems = reset ? incoming : [...items.value, ...incoming]
       const existingIds = reset ? new Set<number>() : new Set(items.value.map((item) => item.id))
-      const newIds = incoming.map((item) => item.id).filter((id) => !existingIds.has(id))
+      const dedupedIncoming = reset ? incoming : incoming.filter((item) => !existingIds.has(item.id))
+      const nextItems = reset ? incoming : [...items.value, ...dedupedIncoming]
+      const newIds = dedupedIncoming.map((item) => item.id)
       const applyUpdate = () => {
         items.value = nextItems
       }
@@ -251,6 +378,11 @@ export const StoreIsland = component$(() => {
   const onLoadItems$ = $(async (_event: Event, button: HTMLButtonElement) => {
     const reset = button.dataset.reset === '1'
     await loadItems(reset)
+  })
+
+  const reconnectRealtime = $(() => {
+    realtimeStatus.value = 'connecting'
+    realtimeToken.value += 1
   })
 
   useTask$(({ track }) => {
@@ -325,17 +457,42 @@ export const StoreIsland = component$(() => {
   return (
     <div class="gap-4 grid md:grid-cols-[1.2fr_1fr] bg-slate-900/60 mt-5 p-4 border border-slate-800 rounded-lg">
       <div class="space-y-4">
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center gap-3">
           <p class="text-slate-300 text-sm">{_`Inventory`}</p>
-          <button
-            type="button"
-            class="bg-slate-800 hover:bg-slate-700 disabled:opacity-60 px-3 py-2 rounded-lg ring-1 ring-slate-700 font-semibold text-slate-100 text-xs transition"
-            data-reset="1"
-            onClick$={onLoadItems$}
-            disabled={loading.value}
-          >
-            {_`Refresh`}
-          </button>
+          <div class="flex flex-wrap items-center gap-2">
+            {realtimeStatus.value !== 'idle' && (
+              <div class="flex items-center gap-2">
+                <span class="text-slate-400 text-[10px] uppercase tracking-wide">{_`Realtime`}</span>
+                <span
+                  class={`px-2 py-1 rounded-full text-[10px] uppercase tracking-wide ring-1 ${
+                    realtimeStatus.value === 'connected'
+                      ? 'bg-emerald-500/10 text-emerald-200 ring-emerald-400/40'
+                      : 'bg-slate-800 text-slate-300 ring-slate-700'
+                  }`}
+                >
+                  {realtimeStatus.value === 'connected' ? _`Live` : _`Offline`}
+                </span>
+              </div>
+            )}
+            {(realtimeStatus.value === 'disconnected' || realtimeStatus.value === 'error') && (
+              <button
+                type="button"
+                class="hover:bg-slate-800 px-2 py-1 rounded-md ring-1 ring-slate-700 text-slate-200 text-xs transition"
+                onClick$={reconnectRealtime}
+              >
+                {_`Reconnect`}
+              </button>
+            )}
+            <button
+              type="button"
+              class="bg-slate-800 hover:bg-slate-700 disabled:opacity-60 px-3 py-2 rounded-lg ring-1 ring-slate-700 font-semibold text-slate-100 text-xs transition"
+              data-reset="1"
+              onClick$={onLoadItems$}
+              disabled={loading.value}
+            >
+              {_`Refresh`}
+            </button>
+          </div>
         </div>
         {isFallback.value && (
           <p class="text-amber-300 text-xs">{_`Showing fallback data while the database is unavailable.`}</p>

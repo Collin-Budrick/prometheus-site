@@ -48,6 +48,8 @@
     "Create item": "アイテムを作成",
     "Added $1.": "$1 を追加しました。",
     "Realtime": "リアルタイム",
+    "Live": "ライブ",
+    "Offline": "オフライン",
     "WebSocket chat via Valkey pub/sub": "Valkey の pub/sub を使った WebSocket チャット",
     "websocket": "ウェブソケット",
     "The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.": "ホームルートを極小に保つため、クライアントは遷移後にのみ読み込みます。リアルタイムが必要になるまで bfcache の対象を維持するため、必要時に接続します。メッセージは API の Valkey チャンネルを通じて配信されます。",

@@ -47,6 +47,8 @@
     "Create item": "Create item",
     "Added $1.": "Added $1.",
     "Realtime": "Realtime",
+    "Live": "Live",
+    "Offline": "Offline",
     "WebSocket chat via Valkey pub/sub": "WebSocket chat via Valkey pub/sub",
     "websocket": "websocket",
     "The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.": "The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.",
