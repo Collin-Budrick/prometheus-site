@@ -109,7 +109,7 @@ export default defineConfig((configEnv) => {
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
   const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
   const isDevServer = configEnv.command === 'serve' && !isPreview
-  const codeInspectorEnabled = isDevServer && !env.devAuditMode
+  const codeInspectorEnabled = isDevServer && !env.devAuditMode && env.codeInspectorEnabled
   const codeInspectorPackageRoot = path.resolve(appRoot, 'node_modules/vite-code-inspector-plugin')
   const codeInspectorOutput = path.join(codeInspectorPackageRoot, 'dist')
   const aliasEntries = [
@@ -156,7 +156,8 @@ export default defineConfig((configEnv) => {
   const codeInspectorPlugin = codeInspectorEnabled
     ? ViteCodeInspectorPlugin({
         bundler: 'vite',
-        output: codeInspectorOutput
+        output: codeInspectorOutput,
+        hideConsole: true
       })
     : null
   const staticCopyPlugins = !ssrBuild

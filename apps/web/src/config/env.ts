@@ -59,6 +59,7 @@ const hmr: HmrConfig = devAuditMode
     }
 
 const analyzeBundles = process.env.VITE_ANALYZE === '1'
+const codeInspectorEnabled = process.env.VITE_CODE_INSPECTOR === '1'
 
 export const env = {
   devPort,
@@ -67,5 +68,6 @@ export const env = {
   previewCacheEnabled,
   shouldUseHmrPolling,
   analyzeBundles,
+  codeInspectorEnabled,
   hmr
 }
