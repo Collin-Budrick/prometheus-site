@@ -44,8 +44,13 @@ const getLatestMtime = (roots: string[]) => {
 
 const inputLatest = getLatestMtime([srcDir, indexHtml, unoConfig])
 const outputMtime = fs.existsSync(outputPath) ? fs.statSync(outputPath).mtimeMs : 0
+const force =
+  process.env.UNO_FORCE === '1' ||
+  process.env.UNO_FORCE === 'true' ||
+  process.env.CI === '1' ||
+  process.env.CI === 'true'
 
-if (outputMtime >= inputLatest && outputMtime > 0) {
+if (!force && outputMtime >= inputLatest && outputMtime > 0) {
   console.log('UnoCSS output up-to-date; skipping generation.')
   process.exit(0)
 }

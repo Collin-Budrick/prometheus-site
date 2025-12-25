@@ -445,15 +445,7 @@ export const RouterHead = component$(() => {
       {includeGlobalStyles && (
         <>
           <link rel="preload" href={appCssHref} as="style" fetchPriority={'high' as const} />
-          <link
-            rel="stylesheet"
-            href={appCssHref}
-            media="print"
-            {...({ onload: "this.media='all'" } as Record<string, string>)}
-          />
-          <noscript>
-            <link rel="stylesheet" href={appCssHref} />
-          </noscript>
+          <link rel="stylesheet" href={appCssHref} fetchPriority={'high' as const} />
         </>
       )}
       {head.meta.map((m) => (

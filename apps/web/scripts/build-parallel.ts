@@ -44,6 +44,10 @@ const buildEnv = {
   TMP: process.env.TMP ?? '/tmp',
   SKIP_PRERENDER: process.env.SKIP_PRERENDER ?? '0'
 }
+const unoEnv = {
+  ...bunEnv,
+  UNO_FORCE: '1'
+}
 
 const active = new Set<ChildProcess>()
 
@@ -88,7 +92,7 @@ try {
   await runTimed('sync:page-config', bunBin, ['run', 'sync:page-config'], bunEnv)
 
   await Promise.all([
-    runTimed('generate:uno', bunBin, ['run', 'generate:uno'], bunEnv),
+    runTimed('generate:uno', bunBin, ['run', 'generate:uno'], unoEnv),
     runTimed('check:css', bunBin, ['run', 'check:css'], bunEnv)
   ])
 

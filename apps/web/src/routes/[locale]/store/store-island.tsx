@@ -594,7 +594,7 @@ export const StoreIsland = component$(() => {
                         disabled={updateAction.isRunning || item.id <= 0}
                         aria-label={_`Edit ${item.name}`}
                       >
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                           <path
                             d="M16.862 4.487a2.25 2.25 0 0 1 3.182 3.182L6.75 20.25H3v-3.75L16.862 4.487Z"
                             fill="none"
