@@ -58,3 +58,10 @@
   - `handleAuthRequest(request)` forwards an incoming request to `auth.handler`, allowing an Elysia route to delegate Better Auth endpoints.
   - `signInWithEmail` and `signUpWithEmail` wrap the email/password endpoints and return `Response` objects (cookies included) suitable for Elysia route handlers.
   - `validateSession` wraps `getSession` and returns `{ headers, response, status }`, making it easy to gate routes and propagate refreshed cookies from middleware.
+## Auth database schema snapshot (Drizzle)
+
+- `users` — `uuid` primary key with default `gen_random_uuid()`, unique `email`, optional `email_verified_at` timestamp, optional `password_hash`, and `created_at`/`updated_at` timestamps (both default `now()`).
+- `auth_keys` — primary key `id` (provider-scoped key identifier), `user_id` FK to `users` (cascade delete), optional `hashed_password`, optional `provider` + `provider_user_id` pair (unique composite index), optional `expires_at`, and `created_at`/`updated_at` timestamps.
+- `auth_sessions` — primary key `id`, `user_id` FK to `users` (cascade delete), `expires_at`, optional `refresh_expires_at`, and `created_at`/`updated_at` timestamps.
+- `passkeys` — primary key `id` (credential ID), `user_id` FK to `users` (cascade delete), `name`, `public_key`, `counter` bigint default `0`, optional `device_type`, `backed_up` boolean default `false`, optional `authenticator_attachment`, optional text[] `transports`, optional `last_used_at`, plus `created_at`/`updated_at` timestamps.
+- Migration: `apps/api/drizzle/20251225231103_auth-tables/migration.sql` creates all four tables, foreign keys, and indexes; `apps/api/src/db/schema.ts` holds the source definitions and corresponding Zod insert schemas for validation.
