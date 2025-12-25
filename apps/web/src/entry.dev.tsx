@@ -45,11 +45,11 @@ const resolveClientLocale = () => {
 
 const applyClientLocale = async () => {
   const locale = resolveClientLocale() ?? defaultLocale
-  await ensureLocaleDictionary(locale)
+  const loadedLocale = await ensureLocaleDictionary(locale)
   if (typeof document === 'undefined') return
-  document.documentElement.lang = locale
-  document.documentElement.setAttribute('q:locale', locale)
-  setDefaultLocale(locale)
+  document.documentElement.lang = loadedLocale
+  document.documentElement.setAttribute('q:locale', loadedLocale)
+  setDefaultLocale(loadedLocale)
 }
 
 export default async function renderEntry(opts: RenderOptions = {}) {

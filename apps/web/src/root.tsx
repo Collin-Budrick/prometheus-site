@@ -5,6 +5,7 @@ import 'virtual:uno.css'
 import './global.css'
 import { RouterHead } from './routes/[locale]/layout'
 import { resolvePathnameLocale } from './i18n/pathname-locale'
+import { ensureLocaleDictionary } from './i18n/dictionaries'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
   if (value === undefined) return fallback
@@ -36,13 +37,17 @@ const RoutesWithLocaleSync = component$(() => {
   useVisibleTask$(({ track }) => {
     const nextLocale = track(() => resolvePathnameLocale(loc.url.pathname))
 
-    if (nextLocale && nextLocale !== lastLocale.value) {
-      document.documentElement.lang = nextLocale
-      document.documentElement.setAttribute('q:locale', nextLocale)
-      setDefaultLocale(nextLocale)
-      persistLocaleCookie(nextLocale)
-      lastLocale.value = nextLocale
-    }
+    if (!nextLocale || nextLocale === lastLocale.value) return
+
+    void ensureLocaleDictionary(nextLocale)
+      .then((loadedLocale) => {
+        document.documentElement.lang = loadedLocale
+        document.documentElement.setAttribute('q:locale', loadedLocale)
+        setDefaultLocale(loadedLocale)
+        persistLocaleCookie(loadedLocale)
+        lastLocale.value = loadedLocale
+      })
+      .catch(() => {})
   })
 
   return <RouterOutlet />
