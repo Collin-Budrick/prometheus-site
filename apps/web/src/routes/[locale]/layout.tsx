@@ -482,6 +482,7 @@ export const RouterHead = component$(() => {
           key={speculationRulesKey}
           type="application/json"
           data-speculationrules="router"
+          data-speculationrules-key={speculationRulesKey}
           data-source="router"
           dangerouslySetInnerHTML={speculationRulesPayload}
         />
