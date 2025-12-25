@@ -2,7 +2,7 @@ import { routeAction$, routeLoader$, server$, type RequestEventBase, type Reques
 import { _, locales, type Locale } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
 import { createInsertSchema } from 'drizzle-zod'
-import { z } from 'zod'
+import { z } from 'zod/v4'
 import { db } from '../../../server/db/client'
 import { storeItems } from '../../../../../api/src/db/schema'
 import { resolveLocale } from '../../../i18n/locale'
