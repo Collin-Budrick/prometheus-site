@@ -218,3 +218,4 @@ Use these rules when touching routes, layouts, components, or styles.
 
 - Use concise titles; include the relevant package/scope if applicable.
 - Describe performance-sensitive changes explicitly (e.g., chunk splits, lazy-loading, third-party isolation).
+- When modifying authentication flows (web or API), update `docs/better-auth-integration.md` to keep the Better Auth design notes in sync.
