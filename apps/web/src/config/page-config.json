@@ -27,6 +27,10 @@
     "/login": {
       "render": "ssr",
       "speculation": "prerender"
+    },
+    "/register": {
+      "render": "ssr",
+      "speculation": "prerender"
     }
   }
 }

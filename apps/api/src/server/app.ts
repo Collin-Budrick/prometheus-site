@@ -5,6 +5,7 @@ import { prepareDatabase } from '../db/prepare'
 import { chatMessages, storeItems } from '../db/schema'
 import { connectValkey, isValkeyReady, valkey } from '../services/cache'
 import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
+import { authRoutes } from './routes/auth'
 const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
 
 async function bootstrap() {
@@ -137,6 +138,7 @@ const checkWsQuota = async (ws: any) => {
 }
 
 const app = new Elysia()
+  .use(authRoutes)
   .decorate('valkey', valkey)
   .get('/health', async () => {
     const dependencies: {
