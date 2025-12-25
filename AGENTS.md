@@ -201,6 +201,10 @@ Use these rules when touching routes, layouts, components, or styles.
 - Default to WebSockets for realtime; WebTransport is an optional fast-path with fallbacks.
 - Keep progressive enhancement in mind when adding new transport options.
 - Server-only helpers belong under `apps/web/src/server/` or route loader/action/server$ files; avoid mixing server logic into shared client components.
+- Database change fan-out should be event-driven (no polling): use Postgres `LISTEN/NOTIFY` with a trigger that emits a minimal payload (table/op/id only) and keep payloads under the ~8KB NOTIFY limit.
+- API listens via `pgClient.listen`, validates/normalizes with `drizzle-zod` + `zod`, and emits **semantic** events (e.g., `store:upsert`, `store:delete`) over WebSocket routes like `/api/store/ws`—never forward raw DB payloads.
+- Clients update Qwik `Signal`s inside `useVisibleTask$` WebSocket handlers; mutate signal state directly and keep render/SSR pure.
+- For store realtime specifically: channel `store_items_updates` + trigger `store_items_notify` in `apps/api/drizzle`, listener in `apps/api/src/server/store-realtime.ts`, broadcast from `apps/api/src/server/app.ts`, and UI signal updates in `apps/web/src/routes/[locale]/store/store-island.tsx`.
 
 ## Styling + tooling notes
 
