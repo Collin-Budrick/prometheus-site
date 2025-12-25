@@ -371,7 +371,8 @@ export const RouterHead = component$(() => {
   const slowTypes = ${JSON.stringify(slowSpeculationConnectionTypes)}
   const connection = navigator.connection
   const isSlow = Boolean(connection?.saveData) || slowTypes.includes(connection?.effectiveType || '')
-  if (isSlow) return
+  const prefersReducedData = window.matchMedia?.('(prefers-reduced-data: reduce)')?.matches
+  if (isSlow || prefersReducedData) return
 
   const isDocumentUrl = (url) => {
     const path = url.pathname
@@ -474,12 +475,13 @@ export const RouterHead = component$(() => {
       {featureFlags.partytown && thirdPartyScripts.some((entry) => entry.partytown) && (
         <script dangerouslySetInnerHTML={partytownSnippet({ lib: '/~partytown/', forward: partytownForwards })} />
       )}
-      {/* Speculation Rules remain inert without support and are stripped on Save-Data or slow connections. */}
+      {/* Speculation Rules are injected only when supported, secure, and not data-saver constrained. */}
       {/* cspell:ignore speculationrules */}
       {speculationRulesPayload && (
         <script
           key={speculationRulesKey}
-          type="speculationrules"
+          type="application/json"
+          data-speculationrules="router"
           data-source="router"
           dangerouslySetInnerHTML={speculationRulesPayload}
         />
