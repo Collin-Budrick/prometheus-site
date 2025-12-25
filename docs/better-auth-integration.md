@@ -28,6 +28,12 @@
 - **Session introspection:** SSR handlers call `POST /api/auth/session` (or verify a stateless token) to fetch the current user/session claims for gating protected routes without hitting the database on every request if stateless mode is enabled.
 - **Sign-out:** `POST /api/auth/sign-out` revokes the active session (and refresh token, if present) and clears cookies; Qwik UI triggers this via a server action and redirects to the public home page.
 
+## Implemented surface
+
+- **API:** Added dedicated Elysia routes for Better Auth under `/api/auth`, including email/password sign-in/up, session introspection, passkey, and OAuth callback delegation. Better Auth’s handler still owns passkey/OAuth endpoints while Elysia shapes request bodies and mirrors `Set-Cookie` headers. 【F:apps/api/src/server/routes/auth.ts†L1-L43】【F:apps/api/src/server/app.ts†L1-L95】
+- **Web:** Login and registration pages now use `routeAction$` + `<Form>` to post to the API, forward refreshed cookies, and render localized errors while keeping credentials server-side. Passkey login/registration buttons progressively enhance the forms by calling the WebAuthn challenge/verify endpoints only on user interaction. 【F:apps/web/src/routes/[locale]/login/index.tsx†L1-L219】【F:apps/web/src/routes/[locale]/register/index.tsx†L1-L211】
+- **SSR guard:** Protected SSR routes validate the Better Auth session server-side via `/api/auth/session` and redirect unauthenticated visitors to the localized login page with a callback to return post-auth. 【F:apps/web/src/routes/[locale]/store/index.tsx†L1-L30】【F:apps/web/src/server/auth/session.ts†L1-L39】
+
 ## Cookie and session strategy
 
 - **Cookies:** Use `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/` cookies for `session` and `refresh` (if using a sliding refresh model). Domain should be configurable (e.g., `APP_COOKIE_DOMAIN`) to align app and API origins. Add a non-HttpOnly `csrf_token` for double-submit checks on state-changing POSTs from SSR forms.

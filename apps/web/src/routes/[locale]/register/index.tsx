@@ -9,19 +9,20 @@ const normalizeCallback = (value: unknown, locale?: string) => {
   const fallback = `${normalizedLocale}/`
   const stringValue = typeof value === 'string' ? value : null
   if (stringValue && stringValue.startsWith('/')) return stringValue
-  return fallback.replace(/\/+$/, '/') // ensure trailing slash
+  return fallback.replace(/\/+$/, '/')
 }
 
-export const useEmailLogin = routeAction$(async (data, event) => {
+export const useEmailRegister = routeAction$(async (data, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
   const callback = normalizeCallback(data.callback, event.params.locale)
-  const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
+  const response = await fetch(`${apiBase}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       cookie: event.request.headers.get('cookie') ?? ''
     },
     body: JSON.stringify({
+      name: data.name,
       email: data.email,
       password: data.password,
       rememberMe: data.remember === 'on' || data.remember === 'true',
@@ -32,7 +33,7 @@ export const useEmailLogin = routeAction$(async (data, event) => {
   forwardAuthCookies(response, event)
 
   if (!response.ok) {
-    let message = _`Unable to sign in right now.`
+    let message = _`Unable to create your account right now.`
     try {
       const payload = (await response.json()) as { message?: string }
       if (payload?.message) message = payload.message
@@ -40,20 +41,20 @@ export const useEmailLogin = routeAction$(async (data, event) => {
     return event.fail(response.status, { message })
   }
 
-  throw event.redirect(302, callback)
+  return { success: true, callback }
 })
 
 export default component$(() => {
-  const action = useEmailLogin()
+  const action = useEmailRegister()
   const location = useLocation()
   const callback = useSignal(normalizeCallback(location.url.searchParams.get('callback'), location.params.locale))
-  const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const passkeyError = useSignal<string>('')
+  const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
 
-  const startPasskeyLogin = $(async () => {
+  const startPasskeyRegistration = $(async () => {
     if (typeof window === 'undefined' || !('PublicKeyCredential' in window)) {
-      passkeyStatus.value = 'error'
       passkeyError.value = _`Passkeys are not supported on this device.`
+      passkeyStatus.value = 'error'
       return
     }
 
@@ -61,42 +62,44 @@ export default component$(() => {
       passkeyStatus.value = 'pending'
       passkeyError.value = ''
 
-      const optionsResponse = await fetch('/api/auth/passkey/generate-authenticate-options', {
+      const optionsResponse = await fetch('/api/auth/passkey/generate-register-options', {
         credentials: 'include'
       })
       if (!optionsResponse.ok) throw new Error('challenge')
+
       const options = await optionsResponse.json()
-
-      const credential = (await navigator.credentials.get({
-        publicKey: toPublicKeyRequestOptions(options)
+      const credential = (await navigator.credentials.create({
+        publicKey: toPublicKeyCreationOptions(options)
       })) as PublicKeyCredential | null
-
       if (!credential) throw new Error('credential')
 
-      const verify = await fetch('/api/auth/passkey/verify-authentication', {
+      const verifyResponse = await fetch('/api/auth/passkey/verify-registration', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ response: publicKeyCredentialToJSON(credential) })
+        body: JSON.stringify({
+          response: publicKeyCredentialToCreateJSON(credential),
+          name: options.user?.name
+        })
       })
 
-      if (!verify.ok) throw new Error('verify')
+      if (!verifyResponse.ok) throw new Error('verify')
 
       passkeyStatus.value = 'idle'
       window.location.href = callback.value
     } catch (error) {
-      console.error('Passkey login failed', error)
+      console.error('Passkey registration failed', error)
       passkeyStatus.value = 'error'
-      passkeyError.value = _`Unable to sign in with a passkey.`
+      passkeyError.value = _`Unable to register a passkey right now.`
     }
   })
 
   return (
     <section class="surface p-6">
-      <p class="text-sm uppercase tracking-wide text-emerald-300">{_`Login`}</p>
-      <h1 class="text-2xl font-semibold text-slate-50">{_`Sign in to continue`}</h1>
+      <p class="text-sm uppercase tracking-wide text-emerald-300">{_`Register`}</p>
+      <h1 class="text-2xl font-semibold text-slate-50">{_`Create your account`}</h1>
       <p class="mt-3 max-w-2xl text-sm text-slate-300">
-        {_`This route stays SSR-only to keep credentials off the client bundle.`}
+        {_`Email-first signup keeps credentials on the server. You can attach a passkey after creating the account for hardware-backed sign-in.`}
       </p>
 
       <div class="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
@@ -105,6 +108,17 @@ export default component$(() => {
           class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30"
         >
           <input type="hidden" name="callback" value={callback.value} />
+          <label class="flex flex-col gap-2 text-sm text-slate-200">
+            <span class="font-medium">{_`Name`}</span>
+            <input
+              name="name"
+              type="text"
+              autoComplete="name"
+              required
+              class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-50 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/30"
+              placeholder={_`Ada Lovelace`}
+            />
+          </label>
           <label class="flex flex-col gap-2 text-sm text-slate-200">
             <span class="font-medium">{_`Email`}</span>
             <input
@@ -121,10 +135,11 @@ export default component$(() => {
             <input
               name="password"
               type="password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               required
               class="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-50 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/30"
               placeholder="••••••••"
+              minLength={12}
             />
           </label>
           <label class="flex items-center gap-2 text-sm text-slate-200">
@@ -133,41 +148,39 @@ export default component$(() => {
               name="remember"
               class="h-4 w-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
             />
-            <span>{_`Remember me`}</span>
+            <span>{_`Keep me signed in on this device`}</span>
           </label>
-          {action.value?.message ? (
-            <p class="text-sm text-rose-300">{action.value.message}</p>
+          {action.value?.message ? <p class="text-sm text-rose-300">{action.value.message}</p> : null}
+          {action.value?.success ? (
+            <p class="text-sm text-emerald-300">{_`Account created. You can add a passkey below or continue browsing.`}</p>
           ) : null}
           <button
             type="submit"
             class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
           >
-            {_`Continue`}
+            {_`Create account`}
           </button>
-          <a class="self-start text-sm font-medium text-emerald-300 hover:text-emerald-200" href="/reset">
-            {_`Forgot password?`}
-          </a>
         </Form>
 
         <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30">
           <div class="flex items-center justify-between gap-3">
-            <p class="text-sm font-semibold text-slate-50">{_`Passkey sign-in`}</p>
+            <p class="text-sm font-semibold text-slate-50">{_`Add a passkey`}</p>
             <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-              {_`hardware-backed`}
+              {_`recommended`}
             </span>
           </div>
           <p class="text-sm text-slate-300">
-            {_`Use your device authenticator to sign in without typing a password. Falls back to the email form if passkeys are unavailable.`}
+            {_`Passkeys bind login to your device authenticator. Create one after signup to avoid typing passwords on future visits.`}
           </p>
           {passkeyError.value ? <p class="text-sm text-rose-300">{passkeyError.value}</p> : null}
           <button
             type="button"
             data-qwik-prime
             class="inline-flex items-center justify-center rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60"
-            onClick$={startPasskeyLogin}
+            onClick$={startPasskeyRegistration}
             disabled={passkeyStatus.value === 'pending'}
           >
-            {passkeyStatus.value === 'pending' ? _`Waiting for your authenticator...` : _`Use a passkey`}
+            {passkeyStatus.value === 'pending' ? _`Waiting for your authenticator...` : _`Create a passkey`}
           </button>
         </div>
       </div>
@@ -177,26 +190,28 @@ export default component$(() => {
 
 const bufferDecode = (value: string) => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
 
-const toPublicKeyRequestOptions = (options: any): PublicKeyCredentialRequestOptions => ({
+const toPublicKeyCreationOptions = (options: any): PublicKeyCredentialCreationOptions => ({
   ...options,
   challenge: bufferDecode(options.challenge),
-  allowCredentials: options.allowCredentials?.map((cred: any) => ({
+  user: {
+    ...options.user,
+    id: bufferDecode(options.user.id)
+  },
+  excludeCredentials: options.excludeCredentials?.map((cred: any) => ({
     ...cred,
     id: bufferDecode(cred.id)
   }))
 })
 
-const publicKeyCredentialToJSON = (credential: PublicKeyCredential) => {
-  const response = credential.response as AuthenticatorAssertionResponse
+const publicKeyCredentialToCreateJSON = (credential: PublicKeyCredential) => {
+  const response = credential.response as AuthenticatorAttestationResponse
   return {
     id: credential.id,
     rawId: encodeBuffer(credential.rawId),
     type: credential.type,
     response: {
-      authenticatorData: encodeBuffer(response.authenticatorData),
       clientDataJSON: encodeBuffer(response.clientDataJSON),
-      signature: encodeBuffer(response.signature),
-      userHandle: response.userHandle ? encodeBuffer(response.userHandle) : null
+      attestationObject: encodeBuffer(response.attestationObject)
     }
   }
 }
@@ -206,11 +221,11 @@ const encodeBuffer = (value: ArrayBuffer | ArrayBufferView) =>
 
 export const head: DocumentHead = ({ withLocale }) =>
   withLocale(() => ({
-    title: _`Login | Prometheus`,
+    title: _`Register | Prometheus`,
     meta: [
       {
         name: 'description',
-        content: _`Secure SSR login surface without client-side credential exposure.`
+        content: _`Server-rendered registration with passkey opt-in to keep credentials off the client bundle.`
       }
     ]
   }))
