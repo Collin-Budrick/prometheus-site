@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -5,7 +6,16 @@ import { performance } from 'node:perf_hooks'
 
 const projectRoot = process.cwd()
 const bunBin = process.execPath
-const viteBin = path.resolve(projectRoot, '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
+const viteCandidates = [
+  path.resolve(projectRoot, '..', '..', 'node_modules', 'vite', 'bin', 'vite.js'),
+  path.resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
+]
+const viteBin = viteCandidates.find((candidate) => existsSync(candidate))
+
+if (!viteBin) {
+  console.error('Vite binary not found. Ensure workspace devDependencies are installed before running build.')
+  process.exit(1)
+}
 const bunEnv = {
   ...process.env,
   PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`

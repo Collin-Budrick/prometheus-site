@@ -5,6 +5,7 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 COPY package.json bun.lock ./
+COPY bunfig.toml ./
 COPY apps/web/package.json apps/web/
 COPY apps/api/package.json apps/api/
 COPY packages/i18n-data/package.json packages/i18n-data/

@@ -50,13 +50,34 @@ if (outputMtime >= inputLatest && outputMtime > 0) {
   process.exit(0)
 }
 
-const unocssBin = path.resolve(projectRoot, '..', '..', 'node_modules', '.bin', 'unocss')
-const unocssCmd = fs.existsSync(unocssBin) ? unocssBin : 'unocss'
+const unocssArgs = ['src/**/*.{ts,tsx,js,jsx,mdx,md}', 'index.html', '-c', 'uno.config.ts', '-o', 'public/assets/app.css', '-m']
+const binCandidates = [
+  path.resolve(projectRoot, '..', '..', 'node_modules', '.bin', 'unocss'),
+  path.resolve(projectRoot, 'node_modules', '.bin', 'unocss')
+]
+const cliCandidates = [
+  path.resolve(projectRoot, '..', '..', 'node_modules', '@unocss', 'cli', 'bin', 'unocss.mjs'),
+  path.resolve(projectRoot, 'node_modules', '@unocss', 'cli', 'bin', 'unocss.mjs')
+]
 
-const result = spawnSync(
-  unocssCmd,
-  ['src/**/*.{ts,tsx,js,jsx,mdx,md}', 'index.html', '-c', 'uno.config.ts', '-o', 'public/assets/app.css', '-m'],
-  { stdio: 'inherit' }
-)
+const unocssBin = binCandidates.find((candidate) => fs.existsSync(candidate))
+const unocssCli = cliCandidates.find((candidate) => fs.existsSync(candidate))
+
+let command = 'unocss'
+let args = unocssArgs
+
+if (unocssBin) {
+  command = unocssBin
+} else if (unocssCli) {
+  command = process.execPath
+  args = [unocssCli, ...unocssArgs]
+}
+
+const result = spawnSync(command, args, { stdio: 'inherit' })
+
+if (result.error) {
+  console.error(`Failed to run UnoCSS: ${result.error.message}`)
+  process.exit(1)
+}
 
 process.exit(result.status ?? 1)
