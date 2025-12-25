@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "bun run scripts/dev.ts",
+    "storybook": "bun run --cwd apps/web storybook",
     "docker:prod": "sh -c \"docker compose -f docker-compose.yml --profile prod stop web || true; docker compose -f docker-compose.yml --profile prod rm -f web || true; docker compose -f docker-compose.yml --profile prod up --build -d\"",
     "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
     "preview": "bun run --cwd apps/web preview",
