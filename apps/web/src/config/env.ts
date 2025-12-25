@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
+import { z } from 'zod'
 
 type HmrConfig =
   | false
@@ -10,18 +11,25 @@ type HmrConfig =
       clientPort: number
     }
 
-const devPort = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
-const previewPort = Number.parseInt(process.env.WEB_PREVIEW_PORT ?? process.env.PREVIEW_PORT ?? '4174', 10)
+const pickEnv = (...candidates: Array<string | undefined>) => candidates.find((value) => value !== undefined)
+const numberFromEnv = (value: string | undefined, fallback: number) => {
+  if (value === undefined) return fallback
+  const parsed = z.coerce.number().int().safeParse(value)
+  return parsed.success ? parsed.data : Number.NaN
+}
+
+const devPort = numberFromEnv(process.env.WEB_PORT, 4173)
+const previewPort = numberFromEnv(pickEnv(process.env.WEB_PREVIEW_PORT, process.env.PREVIEW_PORT), 4174)
 const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
 
 if (devAuditMode) {
   console.warn('VITE_DEV_AUDIT enabled: HMR is disabled and dev will full reload on every change.')
 }
 const previewCacheEnabled = process.env.VITE_PREVIEW_CACHE === '1'
-const hmrPort = Number.parseInt(process.env.HMR_PORT ?? process.env.WEB_PORT ?? '4173', 10)
+const hmrPort = numberFromEnv(pickEnv(process.env.HMR_PORT, process.env.WEB_PORT), 4173)
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
-const hmrClientPort = Number.parseInt(process.env.HMR_CLIENT_PORT ?? hmrPort.toString(), 10)
+const hmrClientPort = numberFromEnv(process.env.HMR_CLIENT_PORT, hmrPort)
 
 const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
 const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')

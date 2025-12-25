@@ -8,7 +8,9 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
 import { partytownVite } from '@qwik.dev/partytown/utils'
 import { VitePWA } from 'vite-plugin-pwa'
-import compression from 'vite-plugin-compression'
+import compression from 'vite-plugin-compression2'
+import checker from 'vite-plugin-checker'
+import { ViteCodeInspectorPlugin } from 'vite-code-inspector-plugin'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 import preload from 'vite-plugin-preload'
 import { env } from './src/config/env'
@@ -91,6 +93,7 @@ const patchNodeModuleRuntime = (): Plugin => {
 export default defineConfig((configEnv) => {
   const ssrBuild =
     (configEnv as { ssrBuild?: boolean }).ssrBuild ?? (configEnv as { isSsrBuild?: boolean }).isSsrBuild ?? false
+  const isPreview = (configEnv as { isPreview?: boolean }).isPreview ?? false
   const mode = configEnv.mode ?? (configEnv.command === 'serve' ? 'development' : 'production')
   const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const nodeModuleStubPath = fileURLToPath(new URL('./src/stubs/node-module.ts', import.meta.url))
@@ -105,6 +108,10 @@ export default defineConfig((configEnv) => {
   const motionDomEsmPath = fileURLToPath(new URL('../../node_modules/motion-dom/dist/es/index.mjs', import.meta.url))
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
   const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
+  const isDevServer = configEnv.command === 'serve' && !isPreview
+  const codeInspectorEnabled = isDevServer && !env.devAuditMode
+  const codeInspectorPackageRoot = path.resolve(appRoot, 'node_modules/vite-code-inspector-plugin')
+  const codeInspectorOutput = path.join(codeInspectorPackageRoot, 'dist')
   const aliasEntries = [
     { find: 'bun:test', replacement: bunTestStubPath },
     { find: 'motion/mini', replacement: motionMiniEsmPath },
@@ -113,7 +120,8 @@ export default defineConfig((configEnv) => {
     { find: 'framer-motion/dom', replacement: framerMotionDomEsmPath },
     { find: 'motion-dom', replacement: motionDomEsmPath },
     { find: 'motion-utils', replacement: motionUtilsEsmPath },
-    ...(shouldStubPartytown ? [{ find: '@qwik.dev/partytown/integration', replacement: partytownIntegrationStubPath }] : [])
+    ...(shouldStubPartytown ? [{ find: '@qwik.dev/partytown/integration', replacement: partytownIntegrationStubPath }] : []),
+    ...(codeInspectorEnabled ? [{ find: 'code-inspector-plugin', replacement: codeInspectorPackageRoot }] : [])
   ]
 
   const analysisPlugins = createAnalysisPlugins(env.analyzeBundles && !ssrBuild)
@@ -132,10 +140,23 @@ export default defineConfig((configEnv) => {
   const brotliFilter = /\.(?:js|mjs|css|html|json|webmanifest|svg|txt|xml)$/i
   const compressionPlugin = !ssrBuild
     ? compression({
-        algorithm: 'brotliCompress',
-        ext: '.br',
-        filter: brotliFilter,
-        threshold: 0
+        algorithms: ['brotliCompress'],
+        include: brotliFilter,
+        threshold: 0,
+        skipIfLargerOrEqual: false
+      })
+    : null
+  const checkerPlugin = isDevServer
+    ? checker({
+        typescript: { tsconfigPath: path.resolve(appRoot, 'tsconfig.json'), root: appRoot },
+        overlay: false,
+        enableBuild: false
+      })
+    : null
+  const codeInspectorPlugin = codeInspectorEnabled
+    ? ViteCodeInspectorPlugin({
+        bundler: 'vite',
+        output: codeInspectorOutput
       })
     : null
   const staticCopyPlugins = !ssrBuild
@@ -190,6 +211,8 @@ export default defineConfig((configEnv) => {
   }
 
   pushPlugin(analysisPlugins as PluginOption[])
+  pushPlugin(checkerPlugin)
+  pushPlugin(codeInspectorPlugin)
   pushPlugin(clientBuildStubs)
   pushPlugin(qwikCityDevEnvDataGuard())
   pushPlugin(qwikCity({ trailingSlash: false }))

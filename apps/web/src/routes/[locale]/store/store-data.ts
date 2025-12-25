@@ -1,6 +1,8 @@
 import { routeAction$, routeLoader$, server$, type RequestEventBase, type RequestHandler } from '@builder.io/qwik-city'
 import { _, locales, type Locale } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
+import { createInsertSchema } from 'drizzle-zod'
+import { z } from 'zod'
 import { db } from '../../../server/db/client'
 import { storeItems } from '../../../../../api/src/db/schema'
 import { resolveLocale } from '../../../i18n/locale'
@@ -36,6 +38,12 @@ export const centsToDecimalString = (cents: bigint): string => {
 }
 
 export const centsToNumber = (cents: bigint): number => Number.parseFloat(centsToDecimalString(cents))
+
+const buildCreateStoreItemSchema = () =>
+  createInsertSchema(storeItems, {
+    name: z.string().trim().min(1),
+    price: z.string().trim()
+  }).pick({ name: true, price: true })
 
 export const normalizeItem = (item: StoreItemRow): StoreItem => {
   const priceCents = priceToCents(item.price)
@@ -123,16 +131,23 @@ export const useDeleteStoreItem = routeAction$(async (data, event) => {
 
 export const useCreateStoreItem = routeAction$(async (data, event) => {
   await ensureLocaleDictionary(resolveRequestLocale(event))
-  const name = String(data.name ?? '').trim()
-  const priceCents = priceToCents(data.price)
+  const parsed = buildCreateStoreItemSchema().safeParse({
+    name: data.name,
+    price: data.price
+  })
+  if (!parsed.success) {
+    return { success: false, error: _`Name and positive price required.` }
+  }
 
-  if (!name || priceCents === null || priceCents <= 0) {
+  const priceCents = priceToCents(parsed.data.price)
+
+  if (priceCents === null || priceCents <= 0) {
     return { success: false, error: _`Name and positive price required.` }
   }
 
   try {
     const price = centsToDecimalString(priceCents)
-    const [row] = await db.insert(storeItems).values({ name, price }).returning()
+    const [row] = await db.insert(storeItems).values({ name: parsed.data.name, price }).returning()
     return { success: true, item: normalizeItem(row) }
   } catch (err) {
     console.error('Failed to create store item', err)
