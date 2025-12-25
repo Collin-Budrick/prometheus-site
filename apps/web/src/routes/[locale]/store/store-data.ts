@@ -38,7 +38,7 @@ export const centsToDecimalString = (cents: bigint): string => {
 
 export const centsToNumber = (cents: bigint): number => Number.parseFloat(centsToDecimalString(cents))
 
-const buildCreateStoreItemSchema = () =>
+const buildStoreItemSchema = () =>
   createInsertSchema(storeItems, {
     name: (schema) => schema.trim().min(1),
     price: (schema) => schema.trim()
@@ -130,7 +130,7 @@ export const useDeleteStoreItem = routeAction$(async (data, event) => {
 
 export const useCreateStoreItem = routeAction$(async (data, event) => {
   await ensureLocaleDictionary(resolveRequestLocale(event))
-  const parsed = buildCreateStoreItemSchema().safeParse({
+  const parsed = buildStoreItemSchema().safeParse({
     name: data.name,
     price: data.price
   })
@@ -151,5 +151,43 @@ export const useCreateStoreItem = routeAction$(async (data, event) => {
   } catch (err) {
     console.error('Failed to create store item', err)
     return { success: false, error: _`Unable to create item right now.` }
+  }
+})
+
+export const useUpdateStoreItem = routeAction$(async (data, event) => {
+  await ensureLocaleDictionary(resolveRequestLocale(event))
+  const id = Number.parseInt(String(data.id ?? ''), 10)
+  if (!Number.isFinite(id) || id <= 0) {
+    return { success: false, error: _`Invalid id.`, id: null }
+  }
+
+  const parsed = buildStoreItemSchema().safeParse({
+    name: data.name,
+    price: data.price
+  })
+  if (!parsed.success) {
+    return { success: false, error: _`Name and positive price required.`, id }
+  }
+
+  const priceCents = priceToCents(parsed.data.price)
+
+  if (priceCents === null || priceCents <= 0) {
+    return { success: false, error: _`Name and positive price required.`, id }
+  }
+
+  try {
+    const price = centsToDecimalString(priceCents)
+    const [row] = await db
+      .update(storeItems)
+      .set({ name: parsed.data.name, price })
+      .where(eq(storeItems.id, id))
+      .returning()
+    if (!row) {
+      return { success: false, error: _`Item not found.`, id }
+    }
+    return { success: true, item: normalizeItem(row), id }
+  } catch (err) {
+    console.error('Failed to update store item', err)
+    return { success: false, error: _`Unable to update item right now.`, id }
   }
 })

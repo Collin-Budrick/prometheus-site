@@ -3,7 +3,7 @@ import type { DocumentHead } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { StoreIsland } from './store-island'
 
-export { onGet, useCreateStoreItem, useDeleteStoreItem, useStoreItemsLoader } from './store-data'
+export { onGet, useCreateStoreItem, useDeleteStoreItem, useStoreItemsLoader, useUpdateStoreItem } from './store-data'
 
 export default component$(() => {
   return (
