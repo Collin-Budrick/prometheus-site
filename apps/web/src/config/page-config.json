@@ -19,6 +19,14 @@
     "/store": {
       "render": "ssr",
       "speculation": "prerender"
+    },
+    "/labs": {
+      "render": "ssg",
+      "speculation": "prerender"
+    },
+    "/login": {
+      "render": "ssr",
+      "speculation": "prerender"
     }
   }
 }

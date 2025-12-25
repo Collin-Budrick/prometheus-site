@@ -160,7 +160,8 @@ const navLinks: NavLink[] = [
   { path: '/', label: () => _`Home`, dataSpeculate: getPageSpeculation('/') },
   { path: '/store', label: () => _`Store`, dataSpeculate: getPageSpeculation('/store') },
   { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') }
+  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
+  { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') }
 ]
 
 const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))
