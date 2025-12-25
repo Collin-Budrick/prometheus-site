@@ -29,6 +29,8 @@
 - Target Vite 8 Beta (Rolldown) for dev/build speed and fine-grained chunking.
 - Prefer UnoCSS + Lightning CSS for minimal CSS output and fast transforms/minification.
 - Optimize for HTTP/3 + Early Hints at the edge (preload only truly critical assets).
+- PWA/Workbox config lives in `apps/web/vite.config.ts`; service worker registration is in `apps/web/src/entry.client.tsx`—update both for caching/offline changes.
+- Env toggles live in `apps/web/src/config/env.ts`; update `.env.example` when adding new env vars.
 
 ## Code style and architecture
 
@@ -40,6 +42,7 @@
 - Realtime: WebSockets as default path; WebTransport as optional fast-path.
 - Data layer: prefer Postgres + Valkey as cache/pubsub.
 - Never wrap imports in try/catch.
+- Keep entry points stable; prefer route/component edits over `apps/web/src/entry.*` changes.
 
 ## Editing site pages (SSR + SSG guardrails)
 
@@ -59,6 +62,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Non-critical/global styles live in `apps/web/src/global.css` and UnoCSS output is `apps/web/public/assets/app.css` (generated).
 - Shared components live in `apps/web/src/components/...`.
 - Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
+- Non-locale entry routes (e.g., `apps/web/src/routes/ai/index.tsx`) should wrap `[locale]` pages via `LocaleEntry` from `apps/web/src/routes/_shared/locale/entry.tsx` so locale detection stays consistent.
 
 ### Page config (central JSON)
 
@@ -67,6 +71,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `speculation: "prefetch" | "prerender" | "none"` controls link hinting.
 - Access config in code via `apps/web/src/config/page-config.ts` (`getPageConfig`, `getPageSpeculation`).
 - `bun run build` runs `sync:page-config` to auto-add new folder-based `index.*` routes; dynamic segments or non-index route files still need manual entries.
+- `getPageSpeculation` feeds the main nav in `apps/web/src/routes/[locale]/layout.tsx`; keep `page-config.json` and nav links aligned when adding top-level routes.
 
 ### SSG/SSR safety rules (must follow)
 
@@ -83,6 +88,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Keep critical CSS minimal and structural: only what’s needed for initial layout and the current route (e.g., above-the-fold grid sizing in `critical.css`; color tweaks can live in `global.css`).
 - Prefer utility classes for non-critical styling, but ensure critical structural styles exist in `critical.css`.
 - Put shared/non-critical styles in `apps/web/src/global.css`; never edit the generated `apps/web/public/assets/app.css`.
+- Prefer route-scoped styles (`useStylesScoped$`/`routeStyles$`) for route-only CSS so `global.css` stays tiny.
 
 ### Animation implementation (Motion One mini)
 
@@ -148,6 +154,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/routes/[locale]/ai/` — AI route UI (`index.tsx`) and island logic.
 - `apps/web/src/routes/[locale]/chat/` — Chat route UI and islands.
 - `apps/web/src/routes/[locale]/store/` — Store route UI, data loaders, and islands.
+- `apps/web/src/routes/index/`, `apps/web/src/routes/ai/`, `apps/web/src/routes/chat/`, `apps/web/src/routes/store/` — Locale entry wrappers for non-`[locale]` paths.
 - `apps/web/src/config/page-config.ts` — SSG route list helper (`prerenderRoutes`).
 - `apps/web/src/routes/critical.css` — Critical CSS (inlined on SSR/SSG from the locale layout).
 - `apps/web/src/routes/layout.css` — Layout-level CSS for the shell.
@@ -166,8 +173,8 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/vite.config.ts` — Vite + Qwik City configuration.
 - `apps/web/qwik.config.ts` — Re-exports Vite config for Qwik tooling.
 - `apps/web/uno.config.ts` — UnoCSS config.
-- `apps/web/tests/` — E2E tests.
-- `apps/web/src/routes/*.test.ts` — Route-level unit tests.
+- `apps/web/tests/` — Unit + Playwright specs (smoke/a11y/perf/i18n).
+- `apps/web/src/i18n/pathname-locale.test.ts` — Locale resolver unit test.
 - `apps/web/dist/` — Client build output (generated).
 - `apps/web/server/` — SSR build output (generated).
 - `packages/i18n-*` — Shared i18n helper packages (data, locale registry, shared state).
@@ -178,7 +185,8 @@ Use these rules when touching routes, layouts, components, or styles.
 ## Testing and performance guardrails
 
 - Run `bun run lint` and `bun run test` before committing.
-- Build runs a lightweight i18n smoke test (`apps/web/src/routes/home-i18n.test.ts`) via the `prebuild` hook; keep home copy keys in sync across locales.
+- Build runs a lightweight i18n smoke test (`apps/web/tests/home-i18n.test.ts`) via the `prebuild` hook; keep home copy keys in sync across locales.
+- CSS/script budgets are enforced by `apps/web/scripts/check-css-budget.ts` and `apps/web/scripts/check-script-budget.ts`; update `apps/web/src/global.css` and `apps/web/src/config/third-party.ts` when budgets or vendors change.
 - Keep Lighthouse budgets in mind: avoid increasing TBT/INP by shipping large client bundles.
 - Add or update tests when changing behavior.
 
