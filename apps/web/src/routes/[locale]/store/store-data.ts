@@ -2,7 +2,6 @@ import { routeAction$, routeLoader$, server$, type RequestEventBase, type Reques
 import { _, locales, type Locale } from 'compiled-i18n'
 import { eq, gt } from 'drizzle-orm'
 import { createInsertSchema } from 'drizzle-zod'
-import { z } from 'zod/v4'
 import { db } from '../../../server/db/client'
 import { storeItems } from '../../../../../api/src/db/schema'
 import { resolveLocale } from '../../../i18n/locale'
@@ -41,8 +40,8 @@ export const centsToNumber = (cents: bigint): number => Number.parseFloat(centsT
 
 const buildCreateStoreItemSchema = () =>
   createInsertSchema(storeItems, {
-    name: z.string().trim().min(1),
-    price: z.string().trim()
+    name: (schema) => schema.trim().min(1),
+    price: (schema) => schema.trim()
   }).pick({ name: true, price: true })
 
 export const normalizeItem = (item: StoreItemRow): StoreItem => {
