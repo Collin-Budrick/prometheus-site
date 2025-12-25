@@ -51,6 +51,13 @@
 - Scaffold `/api/auth/*` Elysia routes using Better Auth, wiring cookies to the shared domain and reusing the existing rate limiter.
 - Update the SSR login route to call the new endpoints via `routeAction$`, and add locale-aware redirects for OAuth callbacks.
 
+## Auth scaffolding (API)
+
+- `apps/api/src/auth/auth.ts` initializes Better Auth against the shared Postgres client with `drizzleAdapter(db, { provider: 'pg' })`, pins the base path to `/api/auth`, enables email/password auth, and installs `passkey()` for WebAuthn flows.
+- Exported helpers:
+  - `handleAuthRequest(request)` forwards an incoming request to `auth.handler`, allowing an Elysia route to delegate Better Auth endpoints.
+  - `signInWithEmail` and `signUpWithEmail` wrap the email/password endpoints and return `Response` objects (cookies included) suitable for Elysia route handlers.
+  - `validateSession` wraps `getSession` and returns `{ headers, response, status }`, making it easy to gate routes and propagate refreshed cookies from middleware.
 ## Auth database schema snapshot (Drizzle)
 
 - `users` — `uuid` primary key with default `gen_random_uuid()`, unique `email`, optional `email_verified_at` timestamp, optional `password_hash`, and `created_at`/`updated_at` timestamps (both default `now()`).

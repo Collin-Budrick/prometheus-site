@@ -19,9 +19,12 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "^1.4.9",
+    "@better-auth/passkey": "^1.4.9",
     "@valkey/client": "1.0.0",
-    "drizzle-zod": "1.0.0-beta.5-e0482ac",
+    "better-auth": "^1.4.9",
     "drizzle-orm": "1.0.0-beta.5-e0482ac",
+    "drizzle-zod": "1.0.0-beta.5-e0482ac",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
     "undici": "7.16.0",
