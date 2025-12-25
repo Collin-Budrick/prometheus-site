@@ -483,15 +483,6 @@ export const StoreIsland = component$(() => {
                 {_`Reconnect`}
               </button>
             )}
-            <button
-              type="button"
-              class="bg-slate-800 hover:bg-slate-700 disabled:opacity-60 px-3 py-2 rounded-lg ring-1 ring-slate-700 font-semibold text-slate-100 text-xs transition"
-              data-reset="1"
-              onClick$={onLoadItems$}
-              disabled={loading.value}
-            >
-              {_`Refresh`}
-            </button>
           </div>
         </div>
         {isFallback.value && (
