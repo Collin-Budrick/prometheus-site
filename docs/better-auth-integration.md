@@ -54,6 +54,7 @@
 ## Configuration surface
 
 - Core secrets live in `.env` and are validated in both apps: `BETTER_AUTH_COOKIE_SECRET`, `BETTER_AUTH_RP_ID`, and `BETTER_AUTH_RP_ORIGIN` (falls back to `BETTER_AUTH_ORIGIN` / `PRERENDER_ORIGIN` for SSR preview).
+- In non-production (`NODE_ENV` not set to `production`), missing Better Auth core secrets fall back to the local dev defaults (`dev-cookie-secret`, `localhost`, `https://localhost:4173`); production requires explicit values.
 - OAuth providers are opt-in by setting paired env vars per provider (e.g., `BETTER_AUTH_GOOGLE_CLIENT_ID` and `BETTER_AUTH_GOOGLE_CLIENT_SECRET`). Validation requires both halves when either is present.
 - Passkeys require HTTPS and an RP ID + origin matching the browser host (e.g., `localhost` + `https://localhost:4173` when fronted by Traefik + mkcert in dev).
 

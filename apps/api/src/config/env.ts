@@ -78,6 +78,21 @@ const ensureString = (value: string | undefined, defaultValue: string, name: str
   return resolved
 }
 
+const requireString = (value: string | undefined, name: string) => {
+  const resolved = value?.trim() ?? ''
+  if (!resolved) {
+    throw new Error(`${name} is required`)
+  }
+  return resolved
+}
+
+const resolveAuthString = (
+  value: string | undefined,
+  fallback: string,
+  name: string,
+  allowDevDefaults: boolean
+) => (allowDevDefaults ? ensureString(value, fallback, name) : requireString(value, name))
+
 const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: string): OAuthClient | null => {
   const providerKey = provider.toUpperCase()
   const clientIdKey = `BETTER_AUTH_${providerKey}_CLIENT_ID`
@@ -93,13 +108,19 @@ const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: st
   return { clientId, clientSecret }
 }
 
-const parseAuthConfig = (env: Env): AuthConfig => {
-  const cookieSecret = ensureString(env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
-  const rpId = ensureString(env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
-  const rpOrigin = ensureString(
+const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
+  const cookieSecret = resolveAuthString(
+    env.BETTER_AUTH_COOKIE_SECRET,
+    'dev-cookie-secret',
+    'BETTER_AUTH_COOKIE_SECRET',
+    allowDevDefaults
+  )
+  const rpId = resolveAuthString(env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID', allowDevDefaults)
+  const rpOrigin = resolveAuthString(
     env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN,
     'https://localhost:4173',
-    'BETTER_AUTH_RP_ORIGIN'
+    'BETTER_AUTH_RP_ORIGIN',
+    allowDevDefaults
   )
 
   const oauth: AuthConfig['oauth'] = {}
@@ -143,6 +164,8 @@ const buildConnectionString = (env: Env) => {
 }
 
 export const loadConfig = (env: Env = process.env): AppConfig => {
+  const nodeEnv = env.NODE_ENV?.trim()
+  const allowDevDefaults = nodeEnv !== 'production'
   const connectionString = buildConnectionString(env)
   const ssl = parseBooleanFlag(env.POSTGRES_SSL, false, 'POSTGRES_SSL') ? 'require' : false
   const connectRetries = parseNonNegativeInt(env.DB_CONNECT_RETRIES, 5, 'DB_CONNECT_RETRIES')
@@ -150,7 +173,7 @@ export const loadConfig = (env: Env = process.env): AppConfig => {
 
   const valkeyHost = ensureString(env.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
   const valkeyPort = parsePort(env.VALKEY_PORT, 6379, 'VALKEY_PORT')
-  const auth = parseAuthConfig(env)
+  const auth = parseAuthConfig(env, allowDevDefaults)
 
   return {
     postgres: {

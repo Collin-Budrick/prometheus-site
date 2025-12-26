@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+--> statement-breakpoint
 CREATE TABLE "auth_keys" (
 	"id" text PRIMARY KEY,
 	"user_id" uuid NOT NULL,

@@ -38,6 +38,14 @@ const ensureString = (value: string | undefined, fallback: string, name: string)
   return resolved
 }
 
+const requireString = (value: string | undefined, name: string) => {
+  const resolved = value?.trim() ?? ''
+  if (!resolved) {
+    throw new Error(`${name} is required`)
+  }
+  return resolved
+}
+
 type OAuthProvider = 'google' | 'github' | 'apple' | 'discord' | 'microsoft'
 
 type OAuthClient = {
@@ -85,15 +93,26 @@ const hmr: HmrConfig = devAuditMode
       clientPort: hmrClientPort
     }
 
+const nodeEnv = process.env.NODE_ENV?.trim()
+const allowDevDefaults = nodeEnv !== 'production'
 const analyzeBundles = process.env.VITE_ANALYZE === '1'
 const codeInspectorEnabled = process.env.VITE_CODE_INSPECTOR === '1'
-const betterAuthCookieSecret = ensureString(process.env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
-const betterAuthRpId = ensureString(process.env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
-const betterAuthRpOrigin = ensureString(
-  process.env.BETTER_AUTH_RP_ORIGIN ?? process.env.BETTER_AUTH_ORIGIN ?? process.env.PRERENDER_ORIGIN,
-  'https://localhost:4173',
-  'BETTER_AUTH_RP_ORIGIN'
-)
+const betterAuthCookieSecret = allowDevDefaults
+  ? ensureString(process.env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
+  : requireString(process.env.BETTER_AUTH_COOKIE_SECRET, 'BETTER_AUTH_COOKIE_SECRET')
+const betterAuthRpId = allowDevDefaults
+  ? ensureString(process.env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
+  : requireString(process.env.BETTER_AUTH_RP_ID, 'BETTER_AUTH_RP_ID')
+const betterAuthRpOrigin = allowDevDefaults
+  ? ensureString(
+      process.env.BETTER_AUTH_RP_ORIGIN ?? process.env.BETTER_AUTH_ORIGIN ?? process.env.PRERENDER_ORIGIN,
+      'https://localhost:4173',
+      'BETTER_AUTH_RP_ORIGIN'
+    )
+  : requireString(
+      process.env.BETTER_AUTH_RP_ORIGIN ?? process.env.BETTER_AUTH_ORIGIN ?? process.env.PRERENDER_ORIGIN,
+      'BETTER_AUTH_RP_ORIGIN'
+    )
 
 const oauthProviders: OAuthProvider[] = ['google', 'github', 'apple', 'discord', 'microsoft']
 const betterAuthOAuth = oauthProviders.reduce<Partial<Record<OAuthProvider, OAuthClient>>>((all, provider) => {
