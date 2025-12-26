@@ -354,6 +354,14 @@ export default defineConfig((configEnv) => {
       rolldownOptions: buildRolldownOptions,
       ...(ssrBuild ? { ssr: true, outDir: 'server' } : {})
     },
+    worker: {
+      format: 'es',
+      rollupOptions: {
+        treeshake: treeshakeOptions
+      },
+      // Keep WASM assets externalized for worker scope (Transformers.js / ONNX runtime).
+      plugins: [tsconfigPaths()]
+    },
     ssr: {
       noExternal: ['typegpu', 'typegpu/data', 'typed-binary', 'tinyest']
     },
