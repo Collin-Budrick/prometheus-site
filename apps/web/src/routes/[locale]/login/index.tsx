@@ -2,13 +2,15 @@ import { $, component$, useSignal } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
 import { Form, routeAction$, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
+import { OAuthButtons } from '../../../components/auth/OAuthButtons'
+import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
 import { forwardAuthCookies } from '../../../server/auth/session'
 
 const normalizeCallback = (value: unknown, locale?: string) => {
   const normalizedLocale = locale ? `/${locale}` : ''
   const fallback = `${normalizedLocale}/`
   const stringValue = typeof value === 'string' ? value : null
-  if (stringValue && stringValue.startsWith('/')) return stringValue
+  if (stringValue && stringValue.startsWith('/') && !stringValue.startsWith('//')) return stringValue
   return fallback.replace(/\/+$/, '/') // ensure trailing slash
 }
 
@@ -43,14 +45,59 @@ export const useEmailLogin = routeAction$(async (data, event) => {
   throw event.redirect(302, callback)
 })
 
+export const useSocialLogin = routeAction$(async (data, event) => {
+  const provider = typeof data.provider === 'string' ? data.provider : ''
+  if (!provider) {
+    return event.fail(400, { message: _`Unable to sign in right now.` })
+  }
+
+  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const callback = normalizeCallback(data.callback, event.params.locale)
+  const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
+  const errorCallback = `${localePrefix}/login?error=oauth`
+  const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie: event.request.headers.get('cookie') ?? ''
+    },
+    body: JSON.stringify({
+      provider,
+      callbackURL: callback,
+      errorCallbackURL: errorCallback,
+      disableRedirect: true
+    })
+  })
+
+  forwardAuthCookies(response, event)
+
+  if (!response.ok) {
+    let message = _`Unable to sign in right now.`
+    try {
+      const payload = (await response.json()) as { message?: string }
+      if (payload?.message) message = payload.message
+    } catch {}
+    return event.fail(response.status, { message })
+  }
+
+  try {
+    const payload = (await response.json()) as { url?: string }
+    if (payload?.url) throw event.redirect(302, payload.url)
+  } catch {}
+
+  return event.fail(500, { message: _`Unable to sign in right now.` })
+})
+
 export default component$(() => {
   const action = useEmailLogin()
+  const socialAction = useSocialLogin()
   const location = useLocation()
   const callback = useSignal(normalizeCallback(location.url.searchParams.get('callback'), location.params.locale))
   const localePrefix = location.params.locale ? `/${location.params.locale}` : ''
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(callback.value)}`
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const passkeyError = useSignal<string>('')
+  const oauthProviders = resolveOAuthProviders()
 
   const startPasskeyLogin = $(async () => {
     if (typeof window === 'undefined' || !('PublicKeyCredential' in window)) {
@@ -162,26 +209,29 @@ export default component$(() => {
           </div>
         </Form>
 
-        <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30">
-          <div class="flex items-center justify-between gap-3">
-            <p class="text-sm font-semibold text-slate-50">{_`Passkey sign-in`}</p>
-            <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-              {_`hardware-backed`}
-            </span>
+        <div class="flex flex-col gap-6">
+          <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-semibold text-slate-50">{_`Passkey sign-in`}</p>
+              <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+                {_`hardware-backed`}
+              </span>
+            </div>
+            <p class="text-sm text-slate-300">
+              {_`Use your device authenticator to sign in without typing a password. Falls back to the email form if passkeys are unavailable.`}
+            </p>
+            {passkeyError.value ? <p class="text-sm text-rose-300">{passkeyError.value}</p> : null}
+            <button
+              type="button"
+              data-qwik-prime
+              class="inline-flex items-center justify-center rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60"
+              onClick$={startPasskeyLogin}
+              disabled={passkeyStatus.value === 'pending'}
+            >
+              {passkeyStatus.value === 'pending' ? _`Waiting for your authenticator...` : _`Use a passkey`}
+            </button>
           </div>
-          <p class="text-sm text-slate-300">
-            {_`Use your device authenticator to sign in without typing a password. Falls back to the email form if passkeys are unavailable.`}
-          </p>
-          {passkeyError.value ? <p class="text-sm text-rose-300">{passkeyError.value}</p> : null}
-          <button
-            type="button"
-            data-qwik-prime
-            class="inline-flex items-center justify-center rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-60"
-            onClick$={startPasskeyLogin}
-            disabled={passkeyStatus.value === 'pending'}
-          >
-            {passkeyStatus.value === 'pending' ? _`Waiting for your authenticator...` : _`Use a passkey`}
-          </button>
+          <OAuthButtons action={socialAction} providers={oauthProviders} callback={callback.value} />
         </div>
       </div>
     </section>

@@ -2,8 +2,8 @@
 
 ## Current authentication surface
 
-- **Web app:** The localized login page is SSR-only, rendering a static email/password form without any submit handler or session wiring. There is no client-side auth state or server action attached to the form, so credentials are not processed today. 【F:apps/web/src/routes/[locale]/login/index.tsx†L1-L78】
-- **API:** The Elysia server exposes health checks, store item pagination, chat history, a simple AI echo endpoint, and two WebSocket surfaces (store updates and chat). None of these routes perform authentication or session validation; inputs are gated only by rate limiting and payload validation. 【F:apps/api/src/server/app.ts†L1-L210】【F:apps/api/src/server/app.ts†L210-L360】
+- **Web app:** The localized login and registration pages are SSR-first, using `routeAction$` to call Better Auth email and social endpoints while keeping credentials off the client bundle. Passkey and OAuth buttons progressively enhance on interaction only. 【F:apps/web/src/routes/[locale]/login/index.tsx†L1-L260】【F:apps/web/src/routes/[locale]/register/index.tsx†L1-L250】
+- **API:** Elysia mounts `/api/auth` routes for email sign-in/up, social sign-in, and session introspection, then delegates remaining Better Auth routes (passkeys, OAuth callbacks, sign-out) to the handler. 【F:apps/api/src/server/routes/auth.ts†L1-L43】
 
 ## Requirements vs. Better Auth capabilities
 
@@ -17,15 +17,15 @@
 - **Keep auth APIs in Elysia:** Centralizes callback handling, token issuance, and cookie setting alongside the existing `/api` namespace, reducing duplication and letting WebSocket handlers reuse the same session validator. Elysia already owns rate limiting and Valkey connectivity, which can be shared for auth routes.
 - **Use Qwik SSR for UX only:** The SSR login route remains the UI shell; form submissions call the Elysia auth endpoints via `routeAction$`/`server$` helpers, keeping credentials off the client bundle and out of Qwik render functions.
 
-## Proposed request/response flows
+## Active request/response flows
 
-- **Email/password sign-in:** `POST /api/auth/sign-in` (Elysia + Better Auth) validates credentials, rotates the session, and sets `Secure`, `HttpOnly`, `SameSite=Lax` cookies (`session`, `refresh`). Qwik `routeAction$` proxies the form and redirects on success; failures map to localized error copy without exposing error bodies.
-- **Signup (if enabled):** `POST /api/auth/sign-up` creates the user, issues initial session cookies, and triggers email verification hooks if configured.
-- **Passkey registration:** Qwik action calls `POST /api/auth/passkey/challenge` to fetch a WebAuthn create challenge (JSON). The browser completes `navigator.credentials.create` and posts the attestation to `POST /api/auth/passkey/register`; server stores credential IDs/public keys and sets session cookies.
-- **Passkey sign-in:** Similar round-trip using `/api/auth/passkey/assertion` for the challenge and `/api/auth/passkey/verify` for assertion verification; successful verification rotates the session cookies.
-- **OAuth start:** `GET /api/auth/oauth/:provider/start` returns a 302 to the provider with PKCE/state. Qwik pages link to this endpoint directly to avoid embedding secrets.
-- **OAuth callback:** Provider returns to `/api/auth/oauth/:provider/callback`; Elysia finalizes the login, links the OAuth account, and sets session cookies before 302 back to the locale-aware return URL (e.g., `/{locale}/` or the original `redirect_uri`).
-- **Session introspection:** SSR handlers call `POST /api/auth/session` (or verify a stateless token) to fetch the current user/session claims for gating protected routes without hitting the database on every request if stateless mode is enabled.
+- **Email/password sign-in:** `POST /api/auth/sign-in/email` validates credentials, rotates the session, and sets cookies. Qwik `routeAction$` proxies the form and redirects on success; failures map to localized error copy without exposing error bodies.
+- **Signup:** `POST /api/auth/sign-up/email` creates the user, issues initial session cookies, and triggers email verification hooks if configured.
+- **Passkey registration:** Qwik calls `GET /api/auth/passkey/generate-register-options`, then posts the attestation to `POST /api/auth/passkey/verify-registration`; the server stores the credential and sets session cookies.
+- **Passkey sign-in:** Qwik calls `GET /api/auth/passkey/generate-authenticate-options`, then posts the assertion to `POST /api/auth/passkey/verify-authentication`; successful verification rotates the session cookies.
+- **OAuth start:** `POST /api/auth/sign-in/social` returns a provider URL (PKCE + state). Qwik actions redirect to the provider and pass locale-aware `callbackURL`/`errorCallbackURL`.
+- **OAuth callback:** Provider returns to `GET /api/auth/callback/:providerId`; Better Auth finalizes login and redirects to the stored callback URL.
+- **Session introspection:** SSR handlers call `GET /api/auth/session` (or verify a stateless token) to fetch the current user/session claims.
 - **Sign-out:** `POST /api/auth/sign-out` revokes the active session (and refresh token, if present) and clears cookies; Qwik UI triggers this via a server action and redirects to the public home page.
 
 ## Implemented surface
@@ -60,13 +60,13 @@
 
 ## Next steps
 
-- Model the required auth tables (users, sessions, passkeys, OAuth accounts) in Drizzle and plan migrations.
-- Scaffold `/api/auth/*` Elysia routes using Better Auth, wiring cookies to the shared domain and reusing the existing rate limiter.
-- Update the SSR login route to call the new endpoints via `routeAction$`, and add locale-aware redirects for OAuth callbacks.
+- Decide whether email verification and CSRF tokens are required before expanding state-changing auth flows.
+- Add app-specific profile/account records on signup if the product needs richer user metadata.
+- Add account-linking and session-aware nav UI once the shell UX is defined.
 
 ## Auth scaffolding (API)
 
-- `apps/api/src/auth/auth.ts` initializes Better Auth against the shared Postgres client with `drizzleAdapter(db, { provider: 'pg' })`, pins the base path to `/api/auth`, enables email/password auth, and installs `passkey()` for WebAuthn flows.
+- `apps/api/src/auth/auth.ts` initializes Better Auth against the shared Postgres client with `drizzleAdapter(db, { provider: 'pg' })`, pins the base path to `/api/auth`, wires the secret + social providers from env, and configures `passkey()` with RP ID + origin.
 - Exported helpers:
   - `handleAuthRequest(request)` forwards an incoming request to `auth.handler`, allowing an Elysia route to delegate Better Auth endpoints.
   - `signInWithEmail` and `signUpWithEmail` wrap the email/password endpoints and return `Response` objects (cookies included) suitable for Elysia route handlers.

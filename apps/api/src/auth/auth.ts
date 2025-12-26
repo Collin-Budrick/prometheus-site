@@ -1,7 +1,9 @@
 import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
+import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { randomUUID } from 'node:crypto'
+import { config } from '../config/env'
 import { db } from '../db/client'
 import { authKeys, authSessions, passkeys, users, verification } from '../db/schema'
 
@@ -30,8 +32,22 @@ const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
 }
 
+const socialProviders = Object.entries(config.auth.oauth).reduce<SocialProviders>((acc, [provider, credentials]) => {
+  if (!credentials) return acc
+  acc[provider as keyof SocialProviders] = {
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret
+  }
+  return acc
+}, {})
+
+const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
+
 export const auth = betterAuth({
+  appName: 'Prometheus',
   basePath: '/api/auth',
+  secret: config.auth.cookieSecret,
+  socialProviders: socialProvidersConfig,
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {
@@ -57,7 +73,12 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true
   },
-  plugins: [passkey()]
+  plugins: [
+    passkey({
+      rpID: config.auth.rpId,
+      origin: config.auth.rpOrigin
+    })
+  ]
 })
 
 export const handleAuthRequest = (request: Request) => auth.handler(request)

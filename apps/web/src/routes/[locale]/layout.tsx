@@ -1,6 +1,8 @@
 import { $, Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import {
+  Form,
   Link,
+  routeAction$,
   useDocumentHead,
   useLocation,
   type DocumentLink,
@@ -17,6 +19,7 @@ import criticalCss from '../critical.css?raw'
 import { ensureLocaleDictionary } from '../../i18n/dictionaries'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
+import { forwardAuthCookies } from '../../server/auth/session'
 import {
   buildSpeculationRulesGuard,
   conservativeViewportRules,
@@ -164,6 +167,21 @@ const navLinks: NavLink[] = [
   { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
   { path: '/login', label: () => _`Login`, dataSpeculate: getPageSpeculation('/login') }
 ]
+
+export const useSignOut = routeAction$(async (_, event) => {
+  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const response = await fetch(`${apiBase}/api/auth/sign-out`, {
+    method: 'POST',
+    headers: {
+      cookie: event.request.headers.get('cookie') ?? ''
+    }
+  })
+
+  forwardAuthCookies(response, event)
+
+  const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
+  throw event.redirect(302, localePrefix || '/')
+})
 
 const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))
 
@@ -536,6 +554,7 @@ export default component$(() => {
   })
 
   const loc = useLocation()
+  const signOutAction = useSignOut()
   const localePrefix = (() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
@@ -577,6 +596,14 @@ export default component$(() => {
                 {label()}
               </Link>
             ))}
+            <Form action={signOutAction} class="flex">
+              <button
+                type="submit"
+                class="text-slate-200 hover:text-emerald-300 transition-colors bg-transparent border-0 p-0"
+              >
+                {_`Sign out`}
+              </button>
+            </Form>
             <LocaleSelector />
           </div>
         </nav>
