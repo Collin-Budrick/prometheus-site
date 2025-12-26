@@ -42,6 +42,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const transcript = useSignal<TranscriptEntry[]>([])
   const runtime = useSignal<Runtime>('web-llm')
   const deviceMode = useSignal<DeviceMode>('webgpu')
+  const wasmThreads = useSignal<number | null>(null)
   const hasWebLlmCache = useSignal(false)
   const hasTransformersCache = useSignal(false)
   const cacheCheckComplete = useSignal(false)
@@ -64,6 +65,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           if (data.runtime) runtime.value = data.runtime
           if (data.deviceMode) deviceMode.value = data.deviceMode
           if (data.modelId) loadedModelId.value = data.modelId
+          if (typeof data.threads === 'number') wasmThreads.value = data.threads
           break
         case 'ready':
           loadState.value = 'ready'
@@ -71,6 +73,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           runtime.value = data.runtime
           deviceMode.value = data.deviceMode
           loadedModelId.value = data.modelId
+          wasmThreads.value =
+            typeof data.threads === 'number' ? data.threads : data.runtime === 'web-llm' ? null : wasmThreads.value
           error.value = ''
           break
         case 'token':
@@ -139,6 +143,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     loadState.value = 'loading'
     loadedModelId.value = null
     error.value = ''
+    wasmThreads.value = null
     progress.value =
       acceleration === 'npu'
         ? _`Starting WebNN inference...`
@@ -374,6 +379,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
             {runtime.value === 'transformers' && (
               <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
                 {_`Transformers.js`}
+              </span>
+            )}
+            {runtime.value === 'transformers' && wasmThreads.value !== null && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
+                {_`Threads: ${wasmThreads.value}`}
               </span>
             )}
             <span

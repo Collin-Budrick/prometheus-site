@@ -127,6 +127,10 @@ export default defineConfig((configEnv) => {
   const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
   const isDevServer = configEnv.command === 'serve' && !isPreview
   const codeInspectorEnabled = isDevServer && !env.devAuditMode && env.codeInspectorEnabled
+  const aiIsolationHeaders = {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp'
+  }
   const codeInspectorPackageRoot = path.resolve(appRoot, 'node_modules/vite-code-inspector-plugin')
   const codeInspectorOutput = path.join(codeInspectorPackageRoot, 'dist')
   const aliasEntries = [
@@ -390,10 +394,7 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.devPort,
       strictPort: true,
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp'
-      },
+      headers: aiIsolationHeaders,
       hmr: env.hmr,
       allowedHosts: ['prometheus.dev'],
       proxy: {
@@ -408,10 +409,7 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.previewPort,
       strictPort: true,
-      headers: {
-        'Cross-Origin-Opener-Policy': 'same-origin',
-        'Cross-Origin-Embedder-Policy': 'require-corp'
-      },
+      headers: aiIsolationHeaders,
       allowedHosts: ['prometheus.dev', 'prometheus.prod'],
       proxy: {
         '/api': apiProxy
