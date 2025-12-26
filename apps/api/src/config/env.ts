@@ -10,9 +10,24 @@ type ValkeyConfig = {
   port: number
 }
 
+type OAuthProvider = 'google' | 'github' | 'apple' | 'discord' | 'microsoft'
+
+type OAuthClient = {
+  clientId: string
+  clientSecret: string
+}
+
+type AuthConfig = {
+  cookieSecret: string
+  rpId: string
+  rpOrigin: string
+  oauth: Partial<Record<OAuthProvider, OAuthClient>>
+}
+
 type AppConfig = {
   postgres: PostgresConfig
   valkey: ValkeyConfig
+  auth: AuthConfig
 }
 
 type Env = Record<string, string | undefined>
@@ -63,6 +78,47 @@ const ensureString = (value: string | undefined, defaultValue: string, name: str
   return resolved
 }
 
+const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: string): OAuthClient | null => {
+  const providerKey = provider.toUpperCase()
+  const clientIdKey = `BETTER_AUTH_${providerKey}_CLIENT_ID`
+  const clientSecretKey = `BETTER_AUTH_${providerKey}_CLIENT_SECRET`
+  const clientId = env[clientIdKey]?.trim()
+  const clientSecret = env[clientSecretKey]?.trim()
+
+  if (!clientId && !clientSecret) return null
+  if (!clientId || !clientSecret) {
+    throw new Error(`${providerLabel} OAuth requires both ${clientIdKey} and ${clientSecretKey}`)
+  }
+
+  return { clientId, clientSecret }
+}
+
+const parseAuthConfig = (env: Env): AuthConfig => {
+  const cookieSecret = ensureString(env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
+  const rpId = ensureString(env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
+  const rpOrigin = ensureString(
+    env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN,
+    'https://localhost:4173',
+    'BETTER_AUTH_RP_ORIGIN'
+  )
+
+  const oauth: AuthConfig['oauth'] = {}
+  const providers: Array<[OAuthProvider, string]> = [
+    ['google', 'Google'],
+    ['github', 'GitHub'],
+    ['apple', 'Apple'],
+    ['discord', 'Discord'],
+    ['microsoft', 'Microsoft']
+  ]
+
+  for (const [provider, label] of providers) {
+    const config = parseOAuthProvider(env, provider, label)
+    if (config) oauth[provider] = config
+  }
+
+  return { cookieSecret, rpId, rpOrigin, oauth }
+}
+
 const buildConnectionString = (env: Env) => {
   if (env.DATABASE_URL) {
     try {
@@ -94,6 +150,7 @@ export const loadConfig = (env: Env = process.env): AppConfig => {
 
   const valkeyHost = ensureString(env.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
   const valkeyPort = parsePort(env.VALKEY_PORT, 6379, 'VALKEY_PORT')
+  const auth = parseAuthConfig(env)
 
   return {
     postgres: {
@@ -105,7 +162,8 @@ export const loadConfig = (env: Env = process.env): AppConfig => {
     valkey: {
       host: valkeyHost,
       port: valkeyPort
-    }
+    },
+    auth
   }
 }
 
