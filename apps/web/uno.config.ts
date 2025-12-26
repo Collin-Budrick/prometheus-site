@@ -6,16 +6,15 @@ import {
   transformerDirectives,
   transformerVariantGroup
 } from 'unocss'
-import type { Variant } from '@unocss/core'
 import type { IconifyJSON } from '@iconify/types'
 
 /* cspell:ignore preflights iconify */
 
-const variantLight: Variant = (matcher) => {
+const variantLight = (matcher: string) => {
   if (!matcher.startsWith('light:')) return
   return {
     matcher: matcher.slice('light:'.length),
-    selector: (input) => `.light ${input}, [data-theme="light"] ${input}`
+    selector: (input: string) => `.light ${input}, [data-theme="light"] ${input}`
   }
 }
 

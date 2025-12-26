@@ -22,29 +22,7 @@ call_lefthook()
   else
     dir="$(git rev-parse --show-toplevel)"
     osArch=$(uname | tr '[:upper:]' '[:lower:]')
-    case "$osArch" in
-      mingw*|msys*|cygwin*) osArch="windows" ;;
-    esac
-    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/;s/amd64/x64/')
-    if test "$osArch" = "windows"
-    then
-      if test -f "$dir/node_modules/lefthook-windows-${cpuArch}/bin/lefthook.exe"
-      then
-        "$dir/node_modules/lefthook-windows-${cpuArch}/bin/lefthook.exe" "$@"
-        return
-      elif test -f "$dir/node_modules/lefthook-windows-x64/bin/lefthook.exe"
-      then
-        "$dir/node_modules/lefthook-windows-x64/bin/lefthook.exe" "$@"
-        return
-      elif test -f "$dir/node_modules/lefthook-windows-arm64/bin/lefthook.exe"
-      then
-        "$dir/node_modules/lefthook-windows-arm64/bin/lefthook.exe" "$@"
-        return
-      else
-        echo "Lefthook Windows binary not found. Run bun install in Windows or set LEFTHOOK=0 to bypass." >&2
-        return 0
-      fi
-    fi
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
     if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
     then
       "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook" "$@"

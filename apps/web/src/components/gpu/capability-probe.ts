@@ -1,5 +1,50 @@
 const MB = 1024 * 1024
 
+type GpuBufferUsageFlags = {
+  COPY_SRC: number
+  MAP_WRITE: number
+  COPY_DST: number
+}
+
+type GpuBuffer = {
+  destroy: () => void
+  getMappedRange: () => ArrayBuffer
+  unmap: () => void
+}
+
+type GpuCommandEncoder = {
+  copyBufferToBuffer: (source: GpuBuffer, sourceOffset: number, target: GpuBuffer, targetOffset: number, size: number) => void
+  finish: () => unknown
+}
+
+type GpuQueue = {
+  submit: (commandBuffers: unknown[]) => void
+  onSubmittedWorkDone: () => Promise<void>
+}
+
+type GpuDevice = {
+  createBuffer: (descriptor: { size: number; usage: number; mappedAtCreation?: boolean }) => GpuBuffer
+  createCommandEncoder: () => GpuCommandEncoder
+  queue: GpuQueue
+  limits: { maxBufferSize: number }
+}
+
+type GpuAdapter = {
+  name?: string
+  requestDevice: () => Promise<GpuDevice>
+}
+
+type WebGpuNavigator = Navigator & {
+  gpu?: {
+    requestAdapter: (options?: Record<string, unknown>) => Promise<GpuAdapter | null>
+  }
+}
+
+const getBufferUsage = (): GpuBufferUsageFlags => {
+  const usage = (globalThis as { GPUBufferUsage?: GpuBufferUsageFlags }).GPUBufferUsage
+  return usage ?? { COPY_SRC: 4, MAP_WRITE: 2, COPY_DST: 8 }
+}
+
 export type GpuTier = 'unavailable' | 'low' | 'mid' | 'high'
 
 export type ProbeStatus = 'unavailable' | 'running' | 'complete' | 'error'
@@ -27,7 +72,14 @@ export const gpuTierThresholds = {
   bandwidthHigh: 90 // GB/s
 }
 
-const safeNavigator = () => (typeof navigator === 'undefined' ? undefined : navigator)
+const safeNavigator = (): WebGpuNavigator | undefined =>
+  typeof navigator === 'undefined' ? undefined : (navigator as WebGpuNavigator)
+
+const isWindowsPlatform = (nav: Navigator) => {
+  const uaData = (nav as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+  const platform = uaData?.platform ?? nav.userAgent
+  return /windows/i.test(platform)
+}
 
 const classifyTier = (peakBytes: number, bandwidthGBps: number): GpuTier => {
   if (peakBytes <= 0) return 'unavailable'
@@ -45,13 +97,14 @@ const classifyTier = (peakBytes: number, bandwidthGBps: number): GpuTier => {
   return 'unavailable'
 }
 
-const measureBandwidth = async (device: GPUDevice, size: number): Promise<number> => {
-  const buffers: GPUBuffer[] = []
+const measureBandwidth = async (device: GpuDevice, size: number): Promise<number> => {
+  const buffers: GpuBuffer[] = []
+  const bufferUsage = getBufferUsage()
 
   try {
     const source = device.createBuffer({
       size,
-      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_WRITE,
+      usage: bufferUsage.COPY_SRC | bufferUsage.MAP_WRITE,
       mappedAtCreation: true
     })
 
@@ -61,7 +114,7 @@ const measureBandwidth = async (device: GPUDevice, size: number): Promise<number
 
     const target = device.createBuffer({
       size,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+      usage: bufferUsage.COPY_DST | bufferUsage.COPY_SRC
     })
 
     buffers.push(source, target)
@@ -90,7 +143,7 @@ const measureBandwidth = async (device: GPUDevice, size: number): Promise<number
 export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
   const nav = safeNavigator()
 
-  if (!nav?.gpu) {
+  if (!nav || !nav.gpu) {
     return {
       status: 'unavailable',
       tier: 'unavailable',
@@ -99,9 +152,17 @@ export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
   }
 
   try {
-    const adapter =
-      (await nav.gpu.requestAdapter({ powerPreference: 'high-performance' })) ||
-      (await nav.gpu.requestAdapter({ powerPreference: 'low-power' }))
+    const gpu = nav.gpu
+    const adapterOptions = isWindowsPlatform(nav)
+      ? [{}]
+      : [{ powerPreference: 'high-performance' }, { powerPreference: 'low-power' }]
+
+    let adapter: GpuAdapter | null = null
+
+    for (const options of adapterOptions) {
+      adapter = await gpu.requestAdapter(options)
+      if (adapter) break
+    }
 
     if (!adapter) {
       return {

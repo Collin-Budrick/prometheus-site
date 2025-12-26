@@ -1,12 +1,14 @@
-import { component$, useSignal } from '@builder.io/qwik'
+import { $, component$, useSignal } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _, defaultLocale } from 'compiled-i18n'
-import type { GpuTier } from '../../components/gpu/capability-probe'
+import type { GpuTier } from '../../../components/gpu/capability-probe'
+import type { NpuTier } from '../../../components/gpu/npu-probe'
 import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 
 export default component$(() => {
   const tier = useSignal<GpuTier>('unavailable')
+  const npuTier = useSignal<NpuTier>('unavailable')
 
   return (
     <section class="surface p-6">
@@ -16,9 +18,12 @@ export default component$(() => {
         {_`This route keeps the interaction simple: a round-trip echo API that exercises Bun + Elysia without shipping extra client bundles.`}
       </p>
 
-      <GpuProbeIsland onTierDetected$={(value) => (tier.value = value)} />
+      <GpuProbeIsland
+        onTierDetected$={$((value) => (tier.value = value))}
+        onNpuTierDetected$={$((value) => (npuTier.value = value))}
+      />
 
-      <div onQVisible$={() => undefined}>
+      <div onQVisible$={$(() => undefined)}>
         <AiEchoIsland />
       </div>
     </section>
