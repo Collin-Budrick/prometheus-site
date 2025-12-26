@@ -36,5 +36,9 @@
     "@rolldown/binding-win32-arm64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
     "@rolldown/binding-win32-x64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
     "lefthook": "^2.0.13"
+  },
+  "dependencies": {
+    "@webgpu/types": "^0.1.68",
+    "typegpu": "^0.9.0"
   }
 }
