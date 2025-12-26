@@ -16,16 +16,19 @@ call_lefthook()
   elif lefthook -h >/dev/null 2>&1
   then
     lefthook "$@"
-  elif /mnt/c/Users/colli/Documents/Project/prometheus-site/node_modules/lefthook-linux-arm64/bin/lefthook -h >/dev/null 2>&1
-  then
-    /mnt/c/Users/colli/Documents/Project/prometheus-site/node_modules/lefthook-linux-arm64/bin/lefthook "$@"
   else
     dir="$(git rev-parse --show-toplevel)"
     osArch=$(uname | tr '[:upper:]' '[:lower:]')
-    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
-    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook"
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/;s/amd64/x64/')
+    extension=""
+    case "$osArch" in
+      mingw*|msys*|cygwin*) osArch="windows"; extension=".exe" ;;
+      darwin*) osArch="darwin" ;;
+      linux*) osArch="linux" ;;
+    esac
+    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook${extension}"
     then
-      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook" "$@"
+      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook${extension}" "$@"
     elif test -f "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook"
     then
       "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook" "$@"

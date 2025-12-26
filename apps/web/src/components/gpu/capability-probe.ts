@@ -1,10 +1,7 @@
-const MB = 1024 * 1024
+import tgpu from 'typegpu'
+import * as d from 'typegpu/data'
 
-type GpuBufferUsageFlags = {
-  COPY_SRC: number
-  MAP_WRITE: number
-  COPY_DST: number
-}
+const MB = 1024 * 1024
 
 type GpuBuffer = {
   destroy: () => void
@@ -34,15 +31,21 @@ type GpuAdapter = {
   requestDevice: () => Promise<GpuDevice>
 }
 
+type TgpuBufferHandle = {
+  buffer: GpuBuffer
+  destroy: () => void
+}
+
+type TgpuRootHandle = {
+  device: GpuDevice
+  createBuffer: (schema: unknown) => TgpuBufferHandle
+  destroy: () => void
+}
+
 type WebGpuNavigator = Navigator & {
   gpu?: {
     requestAdapter: (options?: Record<string, unknown>) => Promise<GpuAdapter | null>
   }
-}
-
-const getBufferUsage = (): GpuBufferUsageFlags => {
-  const usage = (globalThis as { GPUBufferUsage?: GpuBufferUsageFlags }).GPUBufferUsage
-  return usage ?? { COPY_SRC: 4, MAP_WRITE: 2, COPY_DST: 8 }
 }
 
 export type GpuTier = 'unavailable' | 'low' | 'mid' | 'high'
@@ -81,6 +84,9 @@ const isWindowsPlatform = (nav: Navigator) => {
   return /windows/i.test(platform)
 }
 
+const initTypeGpu = (device: GpuDevice) =>
+  (tgpu.initFromDevice as unknown as (options: { device: GpuDevice }) => TgpuRootHandle)({ device })
+
 const classifyTier = (peakBytes: number, bandwidthGBps: number): GpuTier => {
   if (peakBytes <= 0) return 'unavailable'
 
@@ -97,46 +103,37 @@ const classifyTier = (peakBytes: number, bandwidthGBps: number): GpuTier => {
   return 'unavailable'
 }
 
-const measureBandwidth = async (device: GpuDevice, size: number): Promise<number> => {
-  const buffers: GpuBuffer[] = []
-  const bufferUsage = getBufferUsage()
+const measureBandwidth = async (
+  root: TgpuRootHandle,
+  sizeBytes: number
+): Promise<{ bandwidthGBps: number; sizeBytes: number }> => {
+  const elementCount = Math.max(1, Math.floor(sizeBytes / 4))
+  const schema = d.arrayOf(d.u32, elementCount)
+  const actualSizeBytes = d.sizeOf(schema)
+
+  const source = root.createBuffer(schema)
+  const target = root.createBuffer(schema)
 
   try {
-    const source = device.createBuffer({
-      size,
-      usage: bufferUsage.COPY_SRC | bufferUsage.MAP_WRITE,
-      mappedAtCreation: true
-    })
-
-    const view = new Uint8Array(source.getMappedRange())
-    view.fill(1)
-    source.unmap()
-
-    const target = device.createBuffer({
-      size,
-      usage: bufferUsage.COPY_DST | bufferUsage.COPY_SRC
-    })
-
-    buffers.push(source, target)
-
-    const encoder = device.createCommandEncoder()
-    encoder.copyBufferToBuffer(source, 0, target, 0, size)
+    const encoder = root.device.createCommandEncoder()
+    encoder.copyBufferToBuffer(source.buffer, 0, target.buffer, 0, actualSizeBytes)
 
     const commandBuffer = encoder.finish()
     const start = typeof performance !== 'undefined' ? performance.now() : 0
 
-    device.queue.submit([commandBuffer])
-    await device.queue.onSubmittedWorkDone()
+    root.device.queue.submit([commandBuffer])
+    await root.device.queue.onSubmittedWorkDone()
 
     const end = typeof performance !== 'undefined' ? performance.now() : start
     const elapsedMs = Math.max(end - start, 0.0001)
 
-    const bytesPerSecond = size / (elapsedMs / 1000)
+    const bytesPerSecond = actualSizeBytes / (elapsedMs / 1000)
     const bandwidthGBps = bytesPerSecond / (1024 * 1024 * 1024)
 
-    return bandwidthGBps
+    return { bandwidthGBps, sizeBytes: actualSizeBytes }
   } finally {
-    buffers.forEach((buffer) => buffer.destroy())
+    source.destroy()
+    target.destroy()
   }
 }
 
@@ -173,6 +170,7 @@ export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
     }
 
     const device = await adapter.requestDevice()
+    const root = initTypeGpu(device)
 
     const maxCandidateSize = Math.min(device.limits.maxBufferSize, 512 * MB)
     const candidateSizes: number[] = []
@@ -185,15 +183,19 @@ export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
     let bestBandwidthGBps = 0
     let attempts = 0
 
-    for (const size of candidateSizes) {
-      try {
-        const bandwidthGBps = await measureBandwidth(device, size)
-        attempts += 1
-        peakBufferBytes = size
-        bestBandwidthGBps = Math.max(bestBandwidthGBps, bandwidthGBps)
-      } catch {
-        break
+    try {
+      for (const size of candidateSizes) {
+        try {
+          const { bandwidthGBps, sizeBytes } = await measureBandwidth(root, size)
+          attempts += 1
+          peakBufferBytes = sizeBytes
+          bestBandwidthGBps = Math.max(bestBandwidthGBps, bandwidthGBps)
+        } catch {
+          break
+        }
       }
+    } finally {
+      root.destroy()
     }
 
     const tier = classifyTier(peakBufferBytes, bestBandwidthGBps)

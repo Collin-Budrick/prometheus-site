@@ -1,6 +1,6 @@
 # WebGPU + NPU capability probes
 
-This route uses lightweight probes to assess available GPU (WebGPU) and NPU (WebNN) capability without blocking navigation or requiring heavy client bundles.
+This route uses lightweight probes to assess available GPU (WebGPU) and NPU (WebNN) capability without blocking navigation or requiring heavy client bundles. The WebGPU probe now uses TypeGPU for typed buffer allocation and interop with raw WebGPU commands.
 
 ## Probe goals
 
@@ -15,17 +15,18 @@ This route uses lightweight probes to assess available GPU (WebGPU) and NPU (Web
 The probe lives in `apps/web/src/components/gpu/capability-probe.ts` and runs client-side via a Qwik island (`apps/web/src/routes/[locale]/ai/gpu-probe-island.tsx`). It intentionally avoids DOM access during SSR.
 
 1. **Adapter selection**: request a `high-performance` adapter first, then fall back to `low-power`.
-2. **Buffer sweep**: attempt buffer allocations from 32 MB up to the lesser of `device.limits.maxBufferSize` and 512 MB, doubling each iteration. Bandwidth is measured for each successful size via `copyBufferToBuffer` and `queue.onSubmittedWorkDone()` timing.
-3. **Metrics captured**:
+2. **TypeGPU buffers**: initialize a TypeGPU root from the WebGPU device and allocate typed buffers sized with `d.arrayOf(d.u32, count)` so byte sizing stays deterministic.
+3. **Buffer sweep**: attempt buffer allocations from 32 MB up to the lesser of `device.limits.maxBufferSize` and 512 MB, doubling each iteration. Bandwidth is measured for each successful size via `copyBufferToBuffer` and `queue.onSubmittedWorkDone()` timing.
+4. **Metrics captured**:
    - `peakBufferBytes`: largest buffer successfully copied.
    - `bestBandwidthGBps`: fastest observed throughput.
    - `attempts`: successful buffer sizes tested.
-4. **Tier classification** (see `gpuTierThresholds`):
+5. **Tier classification** (see `gpuTierThresholds`):
    - `low`: ≥ 128 MB buffers
    - `mid`: ≥ 384 MB buffers or ≥ 40 GB/s bandwidth
    - `high`: ≥ 768 MB buffers or ≥ 90 GB/s bandwidth
    - `unavailable`: no WebGPU, adapter missing, or no successful attempts
-5. **Error handling**: missing `navigator.gpu` or adapter returns an `unavailable` status with a friendly message; runtime errors surface as an `error` status with the message and a fallback tier of `unavailable`.
+6. **Error handling**: missing `navigator.gpu` or adapter returns an `unavailable` status with a friendly message; runtime errors surface as an `error` status with the message and a fallback tier of `unavailable`.
 
 ## WebNN (NPU) probe details
 
