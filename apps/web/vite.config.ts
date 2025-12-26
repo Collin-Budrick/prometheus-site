@@ -343,6 +343,7 @@ export default defineConfig((configEnv) => {
   const config = {
     cacheDir,
     builder: {},
+    assetsInclude: ['**/*.wasm'],
     plugins,
     build: {
       minify: 'esbuild',
@@ -381,6 +382,10 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.devPort,
       strictPort: true,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp'
+      },
       hmr: env.hmr,
       allowedHosts: ['prometheus.dev'],
       proxy: {
@@ -395,6 +400,10 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.previewPort,
       strictPort: true,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp'
+      },
       allowedHosts: ['prometheus.dev', 'prometheus.prod'],
       proxy: {
         '/api': apiProxy
