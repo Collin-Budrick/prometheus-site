@@ -513,6 +513,7 @@ export const createAnalysisPlugins = (enabled: boolean): Plugin[] =>
 export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
   enabled
     ? (() => {
+        const forcedClientDeps = new Set(['typegpu', 'typegpu/data', 'typed-binary', 'tinyest'])
         const jsLikeFile = /\.[cm]?[jt]sx?$/
         const emitted = new Map<string, string>()
         const emittedFileNames = new Map<string, string>()
@@ -562,6 +563,26 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
             .replaceAll(`import'${spec}'`, `import'${replacement}'`)
         }
 
+        const emitForcedDeps = async (ctx: { resolve: (...args: any[]) => Promise<any>; emitFile: any }) => {
+          if (forcedClientDeps.size === 0) return
+          const importer = path.resolve(rootDir, 'src/entry.client.tsx')
+          for (const spec of forcedClientDeps) {
+            if (emitted.has(spec)) continue
+            const resolvedId = await resolveDependency(ctx, spec, importer)
+            if (!resolvedId) continue
+            const normalized = normalizePath(resolvedId)
+            if (!normalized.includes('/node_modules/')) continue
+            emitted.set(
+              spec,
+              ctx.emitFile({
+                type: 'chunk',
+                id: resolvedId,
+                preserveSignature: 'allow-extension'
+              })
+            )
+          }
+        }
+
         return {
           name: 'force-client-bundle-deps',
           enforce: 'post',
@@ -575,6 +596,9 @@ export const forceClientBundleDeps = (enabled: boolean): Plugin | null =>
             emitted.clear()
             emittedFileNames.clear()
             patchedOutput = false
+            if (!isSsrBuild) {
+              return emitForcedDeps(this)
+            }
           },
           async transform(code, id, options) {
             const pathId = normalizePath(id.split('?', 1)[0] ?? id)

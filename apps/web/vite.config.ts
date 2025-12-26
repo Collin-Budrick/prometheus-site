@@ -118,6 +118,10 @@ export default defineConfig((configEnv) => {
   const framerMotionDomMiniEsmPath = fileURLToPath(
     new URL('../../node_modules/framer-motion/dist/es/dom-mini.mjs', import.meta.url)
   )
+  const typegpuEsmPath = fileURLToPath(new URL('../../node_modules/typegpu/index.js', import.meta.url))
+  const typegpuDataEsmPath = fileURLToPath(new URL('../../node_modules/typegpu/data/index.js', import.meta.url))
+  const typedBinaryEsmPath = fileURLToPath(new URL('../../node_modules/typed-binary/dist/index.js', import.meta.url))
+  const tinyestEsmPath = fileURLToPath(new URL('../../node_modules/tinyest/index.js', import.meta.url))
   const motionDomEsmPath = fileURLToPath(new URL('../../node_modules/motion-dom/dist/es/index.mjs', import.meta.url))
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
   const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
@@ -126,6 +130,10 @@ export default defineConfig((configEnv) => {
   const codeInspectorPackageRoot = path.resolve(appRoot, 'node_modules/vite-code-inspector-plugin')
   const codeInspectorOutput = path.join(codeInspectorPackageRoot, 'dist')
   const aliasEntries = [
+    { find: 'typegpu/data', replacement: typegpuDataEsmPath },
+    { find: 'typegpu', replacement: typegpuEsmPath },
+    { find: 'typed-binary', replacement: typedBinaryEsmPath },
+    { find: 'tinyest', replacement: tinyestEsmPath },
     { find: 'bun:test', replacement: bunTestStubPath },
     { find: 'motion/mini', replacement: motionMiniEsmPath },
     { find: 'framer-motion/dom/mini', replacement: framerMotionDomMiniEsmPath },
@@ -344,6 +352,9 @@ export default defineConfig((configEnv) => {
       modulePreload: { polyfill: false },
       rolldownOptions: buildRolldownOptions,
       ...(ssrBuild ? { ssr: true, outDir: 'server' } : {})
+    },
+    ssr: {
+      noExternal: ['typegpu', 'typegpu/data', 'typed-binary', 'tinyest']
     },
     define: {
       __EXPERIMENTAL__: {},
