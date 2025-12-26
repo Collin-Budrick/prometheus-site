@@ -1,16 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { handleAuthRequest, signInWithEmail, signUpWithEmail, validateSession } from '../../auth/auth'
 
-const buildSessionResponse = (result: Awaited<ReturnType<typeof validateSession>>) => {
-  const headers = new Headers(result?.headers ?? undefined)
-  headers.set('content-type', 'application/json')
-
-  return new Response(JSON.stringify(result?.response ?? null), {
-    status: result?.status ?? 200,
-    headers
-  })
-}
-
 export const authRoutes = new Elysia({ prefix: '/api/auth' })
   .post(
     '/sign-in/email',
@@ -37,6 +27,6 @@ export const authRoutes = new Elysia({ prefix: '/api/auth' })
       })
     }
   )
-  .get('/session', async ({ request }) => buildSessionResponse(await validateSession({ request })))
+  .get('/session', async ({ request }) => validateSession({ request }))
   // Delegate all remaining auth, passkey, and OAuth routes to Better Auth's handler
   .all('/*', async ({ request }) => handleAuthRequest(request))

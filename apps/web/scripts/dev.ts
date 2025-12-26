@@ -8,8 +8,18 @@ const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT ==
 const bunBin = process.execPath
 const repoRoot = path.resolve(process.cwd(), '..', '..')
 const traefikTlsPath = path.join(repoRoot, 'infra', 'traefik', 'dynamic', 'tls.yml')
-const useHttps = process.env.DEV_HTTPS === '1' || fs.existsSync(traefikTlsPath)
-const hmrClientPort = process.env.HMR_CLIENT_PORT ?? (useHttps ? '443' : '80')
+const devHttps = process.env.DEV_HTTPS
+const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? ''
+const normalizedHost = hmrHost.trim().toLowerCase()
+const isLocalhostHost =
+  normalizedHost === '' ||
+  normalizedHost === 'localhost' ||
+  normalizedHost === '127.0.0.1' ||
+  normalizedHost === '[::1]'
+const useHttps =
+  devHttps === '1' ||
+  (devHttps !== '0' && fs.existsSync(traefikTlsPath) && !isLocalhostHost)
+const hmrClientPort = process.env.HMR_CLIENT_PORT ?? (useHttps ? '443' : String(port))
 const hmrProtocol = process.env.HMR_PROTOCOL ?? (useHttps ? 'wss' : 'ws')
 const bunEnv = {
   ...process.env,

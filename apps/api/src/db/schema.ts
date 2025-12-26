@@ -104,24 +104,24 @@ export const chatMessages = pgTable('chat_messages', {
 })
 
 export const insertUserSchema = createInsertSchema(users, {
-  emailVerifiedAt: z.date().nullable()
+  emailVerifiedAt: (schema) => schema.nullable()
 })
 
 export const insertAuthSessionSchema = createInsertSchema(authSessions, {
-  refreshExpiresAt: z.date().nullable()
+  refreshExpiresAt: (schema) => schema.nullable()
 })
 
 export const insertAuthKeySchema = createInsertSchema(authKeys, {
-  provider: z.string().nullable(),
-  providerUserId: z.string().nullable(),
-  expiresAt: z.date().nullable()
+  provider: (schema) => schema.nullable(),
+  providerUserId: (schema) => schema.nullable(),
+  expiresAt: (schema) => schema.nullable()
 })
 
 export const insertPasskeySchema = createInsertSchema(passkeys, {
-  deviceType: z.string().nullable(),
-  authenticatorAttachment: z.string().nullable(),
-  transports: z.array(z.string()).nullable(),
-  lastUsedAt: z.date().nullable()
+  deviceType: (schema) => schema.nullable(),
+  authenticatorAttachment: (schema) => schema.nullable(),
+  transports: (schema) => schema.nullable(),
+  lastUsedAt: (schema) => schema.nullable()
 })
 
 export const authPayloadSchema = z.object({

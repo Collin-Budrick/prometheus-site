@@ -96,7 +96,7 @@ The Vite dev server defaults to WebSocket HMR (`apps/web/src/config/env.ts`) and
 #### Remote/HTTPS dev checklist
 
 - Set `HMR_PROTOCOL=wss` so the Vite client upgrades over TLS when you front the dev server with HTTPS.
-- `bun run dev` auto-switches to `wss` + `443` when `infra/traefik/dynamic/tls.yml` exists; override with `DEV_HTTPS=0` or explicit `HMR_*` env vars if needed.
+- `bun run dev` auto-switches to `wss` + `443` when `infra/traefik/dynamic/tls.yml` exists and you set a non-localhost `HMR_HOST`/`WEB_HOST` (or `DEV_HTTPS=1`); override with `DEV_HTTPS=0` or explicit `HMR_*` env vars if needed.
 - Align `HMR_PORT` with the dev server port you expose from the container/VM (usually `WEB_PORT`).
 - Set `HMR_CLIENT_PORT` to the browser-facing port (the one you access in the address bar after forwarding or reverse-proxying).
 

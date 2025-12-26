@@ -1,6 +1,6 @@
 import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle-adapter'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from '../db/client'
 
 type AuthRequestContext = {
@@ -25,8 +25,7 @@ type SignUpBody = {
 } & Record<string, unknown>
 
 const resolveHeaders = (context?: AuthRequestContext) => {
-  if (!context?.headers && !context?.request) return undefined
-  return new Headers(context.headers ?? context.request?.headers)
+  return new Headers(context?.headers ?? context?.request?.headers)
 }
 
 export const auth = betterAuth({
@@ -60,6 +59,5 @@ export const validateSession = (context?: AuthRequestContext) =>
   auth.api.getSession({
     headers: resolveHeaders(context),
     request: context?.request,
-    returnHeaders: true,
-    returnStatus: true
+    asResponse: true
   })
