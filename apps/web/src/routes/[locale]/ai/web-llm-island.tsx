@@ -11,6 +11,16 @@ import type {
 } from '../../workers/ai-inference.worker'
 import workerUrl from '../../workers/ai-inference.worker?worker&url'
 
+const formatBytes = (bytes: number) => {
+  const gb = bytes / 1024 ** 3
+  if (gb >= 1) {
+    return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`
+  }
+
+  const mb = bytes / 1024 ** 2
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
+}
+
 export const WebLlmIsland = component$(() => {
   const workerRef = useSignal<Worker | null>(null)
   const selectedModelId = useSignal<WebLlmModelId>(defaultWebLlmModelId)
@@ -26,6 +36,13 @@ export const WebLlmIsland = component$(() => {
   const transcript = useSignal<TranscriptEntry[]>([])
   const runtime = useSignal<Runtime>('web-llm')
   const deviceMode = useSignal<DeviceMode>('webgpu')
+  const hasWebLlmCache = useSignal(false)
+  const hasTransformersCache = useSignal(false)
+  const cacheCheckComplete = useSignal(false)
+  const shouldShowDownloadWarning = useSignal(false)
+  const downloadWarningDismissed = useSignal(false)
+  const storageWarning = useSignal('')
+  const freeStorageBytes = useSignal<number | null>(null)
 
   const ensureWorker = async () => {
     if (workerRef.value) return workerRef.value
@@ -81,6 +98,27 @@ export const WebLlmIsland = component$(() => {
     return worker
   }
 
+  const getSelectedModel = () => webLlmModels.find((model) => model.id === selectedModelId.value)
+
+  const updateStorageEstimate = async (modelId: WebLlmModelId) => {
+    if (typeof navigator === 'undefined' || !navigator.storage?.estimate) return
+
+    try {
+      const { quota, usage } = await navigator.storage.estimate()
+      if (!quota || typeof usage !== 'number') return
+      const free = quota - usage
+      freeStorageBytes.value = free
+      const model = webLlmModels.find((item) => item.id === modelId)
+      if (model?.sizeBytes && free < model.sizeBytes) {
+        storageWarning.value = _`Only ${formatBytes(free)} free; ${model.label} needs about ${model.size}.`
+      } else {
+        storageWarning.value = ''
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const resetConversation = () => {
     streamingText.value = ''
     transcript.value = []
@@ -98,13 +136,60 @@ export const WebLlmIsland = component$(() => {
   }
 
   useVisibleTask$(() => {
+    const restoreDownloadWarning = () => {
+      if (typeof sessionStorage === 'undefined') return
+      const dismissed = sessionStorage.getItem('ai-download-warning-dismissed') === '1'
+      downloadWarningDismissed.value = dismissed
+      shouldShowDownloadWarning.value = !dismissed
+    }
+
+    const checkCaches = async () => {
+      if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
+        try {
+          const databases = await indexedDB.databases()
+          const names = databases.map((db) => db?.name?.toLowerCase() ?? '')
+          hasWebLlmCache.value = names.some((name) => name?.includes('webllm/model') || name?.includes('webllm'))
+          hasTransformersCache.value = names.some(
+            (name) => name?.includes('transformers') || name?.includes('huggingface')
+          )
+        } catch (err) {
+          console.error(err)
+        }
+      }
+
+      if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+        try {
+          const cacheNames = await caches.keys()
+          if (cacheNames.some((name) => name.includes('transformers'))) {
+            hasTransformersCache.value = true
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+
+      cacheCheckComplete.value = true
+      if (!downloadWarningDismissed.value) {
+        const cached = hasWebLlmCache.value || hasTransformersCache.value
+        shouldShowDownloadWarning.value = !cached
+      }
+    }
+
     hasWebGpu.value = typeof navigator !== 'undefined' && 'gpu' in navigator
+    restoreDownloadWarning()
+    void checkCaches()
+    void updateStorageEstimate(selectedModelId.value)
     void loadModel(selectedModelId.value)
 
     return () => {
       workerRef.value?.terminate()
       workerRef.value = null
     }
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => selectedModelId.value)
+    void updateStorageEstimate(selectedModelId.value)
   })
 
   const handleModelChange = $(async (event: Event) => {
@@ -147,6 +232,17 @@ export const WebLlmIsland = component$(() => {
     )
   })
 
+  const dismissDownloadWarning = $(() => {
+    downloadWarningDismissed.value = true
+    shouldShowDownloadWarning.value = false
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('ai-download-warning-dismissed', '1')
+    }
+  })
+
+  const offlineReady = hasWebLlmCache.value || hasTransformersCache.value
+  const selectedModel = getSelectedModel()
+
   return (
     <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-slate-200">
       <div class="flex flex-wrap items-start justify-between gap-3">
@@ -177,6 +273,24 @@ export const WebLlmIsland = component$(() => {
           </button>
         </div>
       </div>
+
+      {shouldShowDownloadWarning.value && (
+        <div class="mt-3 flex flex-wrap items-start gap-3 rounded-md border border-amber-700/50 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <div class="space-y-1">
+            <p class="font-semibold">{_`First download is large`}</p>
+            <p>
+              {_`Expect the initial model pull (2–5 GB) to take time; keep this tab open until the cache finishes so offline reloads are instant.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-md border border-amber-400/60 px-3 py-2 text-xs font-semibold text-amber-50"
+            onClick$={dismissDownloadWarning}
+          >
+            {_`Got it`}
+          </button>
+        </div>
+      )}
 
       <div class="mt-4 grid gap-3 lg:grid-cols-[2fr_1.3fr]">
         <div class="space-y-3">
@@ -250,10 +364,49 @@ export const WebLlmIsland = component$(() => {
             </span>
           </div>
 
+          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-200">
+            <span
+              class={`inline-flex items-center rounded-full px-3 py-1 font-semibold ${
+                cacheCheckComplete.value
+                  ? offlineReady
+                    ? 'bg-emerald-500/20 text-emerald-200'
+                    : 'bg-slate-800 text-slate-200'
+                  : 'bg-slate-800 text-slate-200'
+              }`}
+            >
+              {cacheCheckComplete.value
+                ? offlineReady
+                  ? _`Cached / offline ready`
+                  : _`No local cache yet`
+                : _`Checking caches...`}
+            </span>
+            {hasWebLlmCache.value && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 font-semibold text-emerald-100">
+                {_`WebLLM cache detected`}
+              </span>
+            )}
+            {hasTransformersCache.value && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 font-semibold text-emerald-100">
+                {_`Transformers.js cache detected`}
+              </span>
+            )}
+            {freeStorageBytes.value !== null && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 font-semibold text-slate-100">
+                {_`Free storage: ${formatBytes(freeStorageBytes.value)}`}
+              </span>
+            )}
+          </div>
+
           {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
           {hasWebGpu.value === false && (
             <p class="text-sm text-amber-200">
               {_`WebGPU is not detected; falling back to Transformers.js WASM mode.`}
+            </p>
+          )}
+          {storageWarning.value && <p class="text-sm text-amber-200">{storageWarning.value}</p>}
+          {selectedModel?.size && (
+            <p class="text-xs text-slate-400">
+              {_`Offline cache target: ${selectedModel.size} (~${formatBytes(selectedModel.sizeBytes)})`}
             </p>
           )}
         </div>
