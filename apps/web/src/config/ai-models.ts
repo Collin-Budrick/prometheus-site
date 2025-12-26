@@ -15,6 +15,11 @@ export interface WebLlmModel {
   contextLength: string
   recommendedTier: string
   description: string
+  transformers: {
+    id: string
+    label: string
+    task: 'text-generation'
+  }
   record: ModelRecord
 }
 
@@ -40,6 +45,11 @@ export const webLlmModels: WebLlmModel[] = [
     contextLength: '4K tokens',
     recommendedTier: '4–6 GB VRAM / mid-tier WebGPU',
     description: 'Balanced general-purpose model tuned for quick WebGPU warmup.',
+    transformers: {
+      id: 'Xenova/gpt2',
+      label: 'GPT-2 (ONNX)',
+      task: 'text-generation'
+    },
     record: pickRecord('Llama-3.2-3B-Instruct-q4f16_1-MLC')
   },
   {
@@ -51,6 +61,11 @@ export const webLlmModels: WebLlmModel[] = [
     contextLength: '4K tokens',
     recommendedTier: '≤4 GB VRAM / low-power devices',
     description: 'Small-footprint chat baseline for devices without much headroom.',
+    transformers: {
+      id: 'Xenova/distilgpt2',
+      label: 'DistilGPT-2 (ONNX)',
+      task: 'text-generation'
+    },
     record: pickRecord('Phi-3.5-mini-instruct-q4f16_1-MLC')
   },
   {
@@ -62,6 +77,11 @@ export const webLlmModels: WebLlmModel[] = [
     contextLength: '4K tokens',
     recommendedTier: '8–12 GB VRAM / desktop dGPU',
     description: 'Higher quality responses when more VRAM is available.',
+    transformers: {
+      id: 'Xenova/gpt2',
+      label: 'GPT-2 (ONNX)',
+      task: 'text-generation'
+    },
     record: pickRecord('Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC')
   }
 ]

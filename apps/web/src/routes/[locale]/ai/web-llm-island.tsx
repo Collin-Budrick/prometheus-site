@@ -49,7 +49,6 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const downloadWarningDismissed = useSignal(false)
   const storageWarning = useSignal('')
   const freeStorageBytes = useSignal<number | null>(null)
-  const lastAutoLoad = useSignal<{ modelId: WebLlmModelId; acceleration: AccelerationTarget } | null>(null)
 
   const ensureWorker = async () => {
     if (workerRef.value) return workerRef.value
@@ -138,6 +137,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const loadModel = async (modelId: WebLlmModelId, acceleration: AccelerationTarget = resolveAcceleration()) => {
     const worker = await ensureWorker()
     loadState.value = 'loading'
+    loadedModelId.value = null
     error.value = ''
     progress.value =
       acceleration === 'npu'
@@ -205,26 +205,6 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     void updateStorageEstimate(selectedModelId.value)
   })
 
-  useVisibleTask$(({ track }) => {
-    const ready = track(() => accelerationReady)
-    const modelId = track(() => selectedModelId.value)
-    const acceleration = track(() => preferredAcceleration)
-
-    if (ready === false) {
-      if (loadState.value === 'idle') {
-        progress.value = _`Running acceleration probes...`
-      }
-      return
-    }
-
-    const resolvedAcceleration = acceleration ?? 'gpu'
-    const last = lastAutoLoad.value
-    if (last?.modelId === modelId && last.acceleration === resolvedAcceleration) return
-
-    lastAutoLoad.value = { modelId, acceleration: resolvedAcceleration }
-    void loadModel(modelId, resolvedAcceleration)
-  })
-
   const handleModelChange = $(async (event: Event) => {
     const target = event.target as HTMLSelectElement
     const nextModel = target.value as WebLlmModelId
@@ -241,8 +221,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     const promptValue = prompt.value.trim()
     if (!promptValue) return
     const worker = await ensureWorker()
-    if (loadState.value !== 'ready') {
-      error.value = _`Model is not ready yet. Try reloading the model.`
+    if (loadState.value !== 'ready' || loadedModelId.value !== selectedModelId.value) {
+      error.value = _`Model is not ready yet. Select a model and install it first.`
       return
     }
 
@@ -277,6 +257,9 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const isAccelerationReady = accelerationReady !== false
   const isWebNn = deviceMode.value.startsWith('webnn')
   const isWebNnNpu = deviceMode.value === 'webnn-npu'
+  const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
+  const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
+  const isWebNnSelected = preferredAcceleration === 'npu'
 
   return (
     <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-slate-200">
@@ -304,7 +287,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
             disabled={loadState.value === 'loading' || !isAccelerationReady}
             onClick$={$(() => loadModel(selectedModelId.value, resolveAcceleration()))}
           >
-            {loadedModelId.value ? _`Reload model` : _`Load model`}
+            {isSelectedModelLoaded ? _`Reload model` : _`Install model`}
           </button>
         </div>
       </div>
@@ -347,6 +330,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           {webLlmModels.map((model) => (
             <div key={model.id} class={model.id === selectedModelId.value ? 'block' : 'hidden'}>
               <p class="text-sm text-slate-300">{model.description}</p>
+              {isWebNnSelected && (
+                <p class="mt-2 text-xs text-cyan-200">
+                  {_`WebNN uses ${model.transformers.label} via Transformers.js.`}
+                </p>
+              )}
               <div class="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
                 <span class="rounded-md border border-slate-800 px-2 py-1">
                   {_`Quantization: ${model.quantization}`}
@@ -446,6 +434,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
               {_`WebGPU is not detected; using a non-WebGPU fallback.`}
             </p>
           )}
+          {loadedModelId.value && !isSelectedModelLoaded && (
+            <p class="text-sm text-amber-200">
+              {_`Selected model is not installed yet. Click install to switch.`}
+            </p>
+          )}
           {storageWarning.value && <p class="text-sm text-amber-200">{storageWarning.value}</p>}
           {selectedModel?.size && (
             <p class="text-xs text-slate-400">
@@ -484,13 +477,13 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
               onInput$={$((event) => {
                 prompt.value = (event.target as HTMLTextAreaElement).value
               })}
-              disabled={loadState.value !== 'ready' || isStreaming.value}
+              disabled={!isSelectedModelReady || isStreaming.value}
             />
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 class="rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-950 disabled:opacity-50"
-                disabled={loadState.value !== 'ready' || isStreaming.value}
+                disabled={!isSelectedModelReady || isStreaming.value}
                 onClick$={sendPrompt}
               >
                 {isStreaming.value ? _`Streaming...` : _`Send to WebLLM`}

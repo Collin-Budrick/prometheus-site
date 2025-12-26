@@ -55,10 +55,10 @@
         "@unocss/runtime": "66.5.11",
         "@unocss/vite": "66.5.11",
         "compiled-i18n": "1.2.1",
-        "drizzle-orm": "1.0.0-beta.6-d6f09ef",
-        "drizzle-zod": "1.0.0-beta.6-d6f09ef",
+        "drizzle-orm": "1.0.0-beta.6-ea4d663",
+        "drizzle-zod": "1.0.0-beta.6-ea4d663",
         "motion": "13.0.0-alpha.0",
-        "onnxruntime-web": "^1.23.2",
+        "onnxruntime-web": "^1.24.0-dev.20251116-b39e144322",
         "postgres": "3.4.7",
         "typegpu": "^0.9.0",
         "zod": "4.3.0-canary.20251223T202943",
@@ -80,7 +80,7 @@
         "@unocss/transformer-variant-group": "66.5.11",
         "@vitejs/plugin-basic-ssl": "2.1.0",
         "bun-types": "1.3.6-canary.20251226T140703",
-        "drizzle-kit": "1.0.0-beta.6-d6f09ef",
+        "drizzle-kit": "1.0.0-beta.6-ea4d663",
         "ignore": "7.0.5",
         "lightningcss": "1.30.2",
         "lightningcss-win32-x64-msvc": "1.30.2",
@@ -1624,11 +1624,11 @@
 
     "ohash": ["ohash@2.0.11", "", {}, "sha512-RdR9FQrFwNBNXAr4GixM8YaRZRJ5PUWbKYbE5eOsrwAjJW0q2REGcf79oYPsLyskQCZG1PLN+S/K1V00joZAoQ=="],
 
-    "onnxruntime-common": ["onnxruntime-common@1.23.2", "", {}, "sha512-5LFsC9Dukzp2WV6kNHYLNzp8sT6V02IubLCbzw2Xd6X5GOlr65gAX6xiJwyi2URJol/s71gaQLC5F2C25AAR2w=="],
+    "onnxruntime-common": ["onnxruntime-common@1.24.0-dev.20251116-b39e144322", "", {}, "sha512-BOoomdHYmNRL5r4iQ4bMvsl2t0/hzVQ3OM3PHD0gxeXu1PmggqBv3puZicEUVOA3AtHHYmqZtjMj9FOfGrATTw=="],
 
     "onnxruntime-node": ["onnxruntime-node@1.21.0", "", { "dependencies": { "global-agent": "^3.0.0", "onnxruntime-common": "1.21.0", "tar": "^7.0.1" }, "os": [ "linux", "win32", "darwin", ] }, "sha512-NeaCX6WW2L8cRCSqy3bInlo5ojjQqu2fD3D+9W5qb5irwxhEyWKXeH2vZ8W9r6VxaMPUan+4/7NDwZMtouZxEw=="],
 
-    "onnxruntime-web": ["onnxruntime-web@1.23.2", "", { "dependencies": { "flatbuffers": "^25.1.24", "guid-typescript": "^1.0.9", "long": "^5.2.3", "onnxruntime-common": "1.23.2", "platform": "^1.3.6", "protobufjs": "^7.2.4" } }, "sha512-T09JUtMn+CZLk3mFwqiH0lgQf+4S7+oYHHtk6uhaYAAJI95bTcKi5bOOZYwORXfS/RLZCjDDEXGWIuOCAFlEjg=="],
+    "onnxruntime-web": ["onnxruntime-web@1.24.0-dev.20251116-b39e144322", "", { "dependencies": { "flatbuffers": "^25.1.24", "guid-typescript": "^1.0.9", "long": "^5.2.3", "onnxruntime-common": "1.24.0-dev.20251116-b39e144322", "platform": "^1.3.6", "protobufjs": "^7.2.4" } }, "sha512-9f3lHSdhexJkMHVHhgDaD6C6pqH9PN4dlbfpHXYSzuCdfO8g9dJVoLg5xaZ6G7W6Pari3UGF/6bMwabVY6OvnQ=="],
 
     "open": ["open@8.4.2", "", { "dependencies": { "define-lazy-prop": "^2.0.0", "is-docker": "^2.1.1", "is-wsl": "^2.2.0" } }, "sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ=="],
 
@@ -2334,11 +2334,11 @@
 
     "web/bun-types": ["bun-types@1.3.6-canary.20251226T140703", "", { "dependencies": { "@types/node": "*" } }, "sha512-KTlQ7b0ADzJnYap+quDiRJml/1teFOfC2AOI4i7vXCe41dZ26DUdQEqlOjcxFW5b5+RKrVuLsf90jIDxiATbtQ=="],
 
-    "web/drizzle-kit": ["drizzle-kit@1.0.0-beta.6-d6f09ef", "", { "dependencies": { "@drizzle-team/brocli": "^0.11.0", "@js-temporal/polyfill": "^0.5.1", "esbuild": "^0.25.10", "esbuild-register": "^3.6.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-IpfnKfDaIiDiDyCdHhhId/e/TQtU1s0+7QOm3/t6ZbYp5f+LkglMZ5jZDAWskhaD/LkZFNU8FIM88nAkraNrNg=="],
+    "web/drizzle-kit": ["drizzle-kit@1.0.0-beta.6-ea4d663", "", { "dependencies": { "@drizzle-team/brocli": "^0.11.0", "@js-temporal/polyfill": "^0.5.1", "esbuild": "^0.25.10", "esbuild-register": "^3.6.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-HU0H5mqPKmdcIEjnV4amHchNfoZOBAhY08fGdv9RRvA7lObD2M0g8McaCOY/cnPUQII9e/KuJAZM4s0y6FW1Iw=="],
 
-    "web/drizzle-orm": ["drizzle-orm@1.0.0-beta.6-d6f09ef", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@prisma/client": "*", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "better-sqlite3": ">=9.3.0", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@prisma/client", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "mysql2", "pg", "postgres", "sql.js", "sqlite3"] }, "sha512-PbYGTzLEHWMz4hgziYcJaItexC9xg/2qIxhQl/wp26FmLGVXiTrpjX6jU3VFhDJyMZUricqZmdltx01jDykDbQ=="],
+    "web/drizzle-orm": ["drizzle-orm@1.0.0-beta.6-ea4d663", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@prisma/client": "*", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "better-sqlite3": ">=9.3.0", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@prisma/client", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "mysql2", "pg", "postgres", "sql.js", "sqlite3"] }, "sha512-NqDEW7qOceptF6f3AmDBOm73GVH53nlnLUpkZyXDX9oL3PnrEsOx/wWV7U3bcp2KhzPxF/xXOuL8Q4BTYuzT6w=="],
 
-    "web/drizzle-zod": ["drizzle-zod@1.0.0-beta.6-d6f09ef", "", { "peerDependencies": { "drizzle-orm": ">=1.0.0-beta.2", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-u77KvgZNr/gh34f/dw1G2NnI7tuYnmyjTXgUsydEPyG5LNTHi8VLxDyYUHAhp4T0qRmm5PH5b98SypxhqPud8g=="],
+    "web/drizzle-zod": ["drizzle-zod@1.0.0-beta.6-ea4d663", "", { "peerDependencies": { "drizzle-orm": ">=1.0.0-beta.2", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-D9JwX3o/yciNtRtkMX8Vx3Ym5GO9i00BIB73VWpZd5IwLf1Cj0zdR47KBpZnf82/gc6hR314PnIgfSAIQhOOEA=="],
 
     "web/typescript": ["typescript@6.0.0-dev.20251226", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-CeiQq+YVgFnuZleRBj9MOr2ltsiFtdifJP+eqVCGh8IoV7q7jkzSVwXaIvXgONAaNJeYDdJ4TxhiNgtUp+MmCg=="],
 
@@ -2520,9 +2520,7 @@
 
     "vite/rolldown/@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.57", "", {}, "sha512-aQNelgx14tGA+n2tNSa9x6/jeoCL9fkDeCei7nOKnHx0fEFRRMu5ReiITo+zZD5TzWDGGRjbSYCs93IfRIyTuQ=="],
 
-    "web/drizzle-orm/bun-types": ["bun-types@1.3.6-canary.20251225T140626", "", { "dependencies": { "@types/node": "*" } }, "sha512-wlcA/9uuUqv7Q5wK/XHG7vtY6UQ9dNwqVaVIp9jvUHphesYt7sJzs+e0kT3T1OSQjVLJMin6DTZBi6g9NHJF1g=="],
-
-    "web/drizzle-zod/zod": ["zod@3.25.48", "", {}, "sha512-0X1mz8FtgEIvaxGjdIImYpZEaZMrund9pGXm3M6vM7Reba0e2eI71KPjSCGXBfwKDPwPoywf6waUKc3/tFvX2Q=="],
+    "web/drizzle-zod/zod": ["zod@4.2.1", "", {}, "sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw=="],
 
     "workbox-build/source-map/whatwg-url": ["whatwg-url@7.1.0", "", { "dependencies": { "lodash.sortby": "^4.7.0", "tr46": "^1.0.1", "webidl-conversions": "^4.0.2" } }, "sha512-WUu7Rg1DroM7oQvGWfOiAK21n74Gg+T4elXEQYkOhtyLeWiJFoOGLXPKI/9gzIie9CtwVLm8wtw6YJdKyxSjeg=="],
 

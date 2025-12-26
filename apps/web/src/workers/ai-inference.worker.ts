@@ -38,7 +38,12 @@ export type AiWorkerResponse =
   | { type: 'error'; error: string; loadState?: LoadState }
   | { type: 'stopped' }
 
-const ctx: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
+type WorkerScope = {
+  postMessage: (message: AiWorkerResponse) => void
+  addEventListener: (type: 'message', listener: (event: MessageEvent<AiWorkerRequest>) => void) => void
+}
+
+const ctx = self as unknown as WorkerScope
 const mapChunkToText = (chunk: ChatCompletionChunk) => {
   const delta = chunk.choices?.[0]?.delta
   if (!delta) return ''
@@ -172,17 +177,24 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
 
 const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: AccelerationPreference) => {
   const mod = await ensureTransformers()
+  const modelInfo = webLlmModels.find((model) => model.id === modelId)
+  const transformersSpec = modelInfo?.transformers
+  if (!transformersSpec) {
+    setLoadState('error')
+    send({ type: 'error', error: 'Selected model is not available for Transformers.js.', loadState })
+    return
+  }
   const devices = getTransformersDeviceCandidates(acceleration)
   let lastError: Error | null = null
 
   for (const device of devices) {
     try {
-      const cacheKey = `${modelId}:${device}`
+      const cacheKey = `${transformersSpec.id}:${device}`
       const cachedPipeline = pipelineCache[cacheKey]
       if (cachedPipeline) {
         pipelineRef = cachedPipeline
       } else {
-        const pipeline = (await mod.pipeline('text-generation', modelId, { device })) as TextGenerationPipeline
+        const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, { device })) as TextGenerationPipeline
         pipelineRef = pipeline
         pipelineCache[cacheKey] = pipeline
       }
@@ -192,7 +204,7 @@ const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: Accel
       runtime = 'transformers'
       deviceMode = device
       setLoadState('ready')
-      const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
+      const loadedLabel = transformersSpec.label || transformersSpec.id
       const deviceLabel = formatDeviceLabel(device)
       send({
         type: 'ready',
@@ -284,7 +296,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
 
   const mod = transformersRef
   const streamer = new mod.TextStreamer(pipelineRef.tokenizer as any, {
-    onTextChunk: (chunk: string) => {
+    callback_function: (chunk: string) => {
       send({ type: 'token', chunk })
     }
   })
