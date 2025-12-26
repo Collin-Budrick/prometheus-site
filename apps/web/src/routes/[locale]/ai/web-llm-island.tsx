@@ -7,6 +7,7 @@ import type {
 } from '@mlc-ai/web-llm'
 import { _ } from 'compiled-i18n'
 import type * as WebLlmTypes from '@mlc-ai/web-llm'
+import type * as TransformersTypes from '@huggingface/transformers'
 import {
   defaultWebLlmModelId,
   webLlmModels,
@@ -15,6 +16,11 @@ import {
 } from '../../../config/ai-models'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
+type Runtime = 'web-llm' | 'transformers'
+type DeviceMode = 'webgpu' | 'wasm'
+type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown>) => Promise<any>) & {
+  tokenizer: unknown
+}
 
 type Role = 'user' | 'assistant'
 interface TranscriptEntry {
@@ -38,7 +44,12 @@ const mapChunkToText = (chunk: ChatCompletionChunk) => {
 
 export const WebLlmIsland = component$(() => {
   const moduleRef = useSignal<typeof WebLlmTypes | null>(null)
+  const transformersRef = useSignal<typeof TransformersTypes | null>(null)
   const engineRef = useSignal<MLCEngine | null>(null)
+  const engineCache = useSignal<Partial<Record<WebLlmModelId, MLCEngine>>>({})
+  const pipelineCache = useSignal<Partial<Record<WebLlmModelId, TextGenerationPipeline>>>({})
+  const transformersAbortRef = useSignal<AbortController | null>(null)
+  const pipelineRef = useSignal<TextGenerationPipeline | null>(null)
   const selectedModelId = useSignal<WebLlmModelId>(defaultWebLlmModelId)
   const loadedModelId = useSignal<WebLlmModelId | null>(null)
   const loadState = useSignal<LoadState>('idle')
@@ -49,11 +60,22 @@ export const WebLlmIsland = component$(() => {
   const isStreaming = useSignal(false)
   const hasWebGpu = useSignal<boolean | null>(null)
   const transcript = useSignal<TranscriptEntry[]>([])
+  const runtime = useSignal<Runtime>('web-llm')
+  const deviceMode = useSignal<DeviceMode>('webgpu')
 
   const ensureModule = async () => {
     if (moduleRef.value) return moduleRef.value
     const mod = await import('@mlc-ai/web-llm')
     moduleRef.value = mod
+    return mod
+  }
+
+  const ensureTransformers = async () => {
+    if (transformersRef.value) return transformersRef.value
+    const mod = await import('@huggingface/transformers')
+    mod.env.allowLocalModels = false
+    mod.env.allowRemoteModels = true
+    transformersRef.value = mod
     return mod
   }
 
@@ -67,37 +89,78 @@ export const WebLlmIsland = component$(() => {
   }
 
   const loadModel = async (modelId: WebLlmModelId) => {
-    if (hasWebGpu.value === false) {
-      loadState.value = 'error'
-      error.value = _`WebGPU is required for the on-device model path.`
-      return
-    }
-
-    const mod = await ensureModule()
+    const canUseWebGpu = hasWebGpu.value === true
     loadState.value = 'loading'
     error.value = ''
-    progress.value = _`Starting WebLLM...`
+    progress.value = canUseWebGpu ? _`Starting WebLLM...` : _`Loading Transformers.js fallback...`
+
+    if (canUseWebGpu) {
+      const webLlmLoaded = await loadWebLlmModel(modelId)
+      if (webLlmLoaded) return
+      progress.value = _`WebLLM failed; switching to Transformers.js.`
+    }
+
+    await loadTransformersModel(modelId, canUseWebGpu ? 'webgpu' : 'wasm')
+  }
+
+  const loadWebLlmModel = async (modelId: WebLlmModelId) => {
+    const mod = await ensureModule()
 
     try {
-      if (!engineRef.value) {
-        engineRef.value = await mod.CreateMLCEngine(modelId, {
+      const cachedEngine = engineCache.value[modelId]
+      if (cachedEngine) {
+        cachedEngine.setInitProgressCallback(applyProgress)
+        engineRef.value = cachedEngine
+      } else {
+        const engine = await mod.CreateMLCEngine(modelId, {
           appConfig: { model_list: webLlmModelRecords },
           initProgressCallback: applyProgress
         })
-      } else {
-        engineRef.value.setAppConfig({ model_list: webLlmModelRecords })
-        engineRef.value.setInitProgressCallback(applyProgress)
-        await engineRef.value.reload(modelId)
+        engineRef.value = engine
+        engineCache.value = { ...engineCache.value, [modelId]: engine }
       }
 
       loadedModelId.value = modelId
+      runtime.value = 'web-llm'
+      deviceMode.value = 'webgpu'
       loadState.value = 'ready'
       const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
       progress.value = _`Ready: ${loadedLabel}`
+      return true
     } catch (err) {
       console.error(err)
       loadState.value = 'error'
       error.value = (err as Error)?.message ?? _`Unable to load the selected model.`
+      return false
+    }
+  }
+
+  const loadTransformersModel = async (modelId: WebLlmModelId, device: DeviceMode) => {
+    const mod = await ensureTransformers()
+
+    try {
+      const cachedPipeline = pipelineCache.value[modelId]
+      if (cachedPipeline) {
+        pipelineRef.value = cachedPipeline
+      } else {
+        const pipeline = (await mod.pipeline('text-generation', modelId, { device })) as TextGenerationPipeline
+        pipelineRef.value = pipeline
+        pipelineCache.value = { ...pipelineCache.value, [modelId]: pipeline }
+      }
+
+      engineRef.value = null
+      loadedModelId.value = modelId
+      runtime.value = 'transformers'
+      deviceMode.value = device
+      loadState.value = 'ready'
+      error.value = ''
+      const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
+      const deviceLabel = device === 'webgpu' ? _`WebGPU` : _`WASM (CPU)`
+      progress.value = _`Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`
+    } catch (err) {
+      console.error(err)
+      loadState.value = 'error'
+      error.value = (err as Error)?.message ?? _`Unable to load the fallback pipeline.`
     }
   }
 
@@ -114,32 +177,48 @@ export const WebLlmIsland = component$(() => {
   })
 
   const stopStreaming = $(async () => {
-    if (!engineRef.value || !isStreaming.value) return
-    await engineRef.value.interruptGenerate()
+    if (!isStreaming.value) return
+
+    if (runtime.value === 'web-llm' && engineRef.value) {
+      await engineRef.value.interruptGenerate()
+    }
+
+    if (runtime.value === 'transformers' && transformersAbortRef.value) {
+      transformersAbortRef.value.abort()
+    }
+
     isStreaming.value = false
   })
 
   const sendPrompt = $(async () => {
     const promptValue = prompt.value.trim()
-    if (!promptValue || !engineRef.value) return
-
-    const engine = engineRef.value
-    const messages: ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: _`Keep responses concise and explicitly note that tokens are streaming from the browser.`
-      },
-      ...transcript.value.map((entry) => ({ role: entry.role, content: entry.content } as ChatCompletionMessageParam)),
-      { role: 'user', content: promptValue }
-    ]
+    if (!promptValue) return
+    if (runtime.value === 'web-llm' && !engineRef.value) return
+    if (runtime.value === 'transformers' && !pipelineRef.value) {
+      error.value = _`Fallback pipeline is not ready yet. Try reloading the model.`
+      return
+    }
 
     streamingText.value = ''
     isStreaming.value = true
     error.value = ''
     prompt.value = ''
 
-    try {
-      const iterator = await engine.chat.completions.create({
+    const handleWebLlm = async () => {
+      if (!engineRef.value) return
+
+      const messages: ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content: _`Keep responses concise and explicitly note that tokens are streaming from the browser.`
+        },
+        ...transcript.value.map(
+          (entry) => ({ role: entry.role, content: entry.content } as ChatCompletionMessageParam)
+        ),
+        { role: 'user', content: promptValue }
+      ]
+
+      const iterator = await engineRef.value.chat.completions.create({
         model: selectedModelId.value,
         messages,
         stream: true
@@ -149,10 +228,51 @@ export const WebLlmIsland = component$(() => {
         streamingText.value = `${streamingText.value}${mapChunkToText(chunk)}`
       }
 
+      return streamingText.value
+    }
+
+    const handleTransformers = async () => {
+      if (!pipelineRef.value || !transformersRef.value) return ''
+
+      const mod = transformersRef.value
+      const streamer = new mod.TextStreamer(pipelineRef.value.tokenizer as any, {
+        onTextChunk: (chunk) => {
+          streamingText.value = `${streamingText.value}${chunk}`
+        }
+      })
+
+      const abortController = new AbortController()
+      transformersAbortRef.value = abortController
+
+      const conversation = transcript.value
+        .map((entry) => `${entry.role === 'user' ? 'User' : 'Assistant'}: ${entry.content}`)
+        .join('\n')
+
+      const composedPrompt = conversation
+        ? `${conversation}\nUser: ${promptValue}\nAssistant:`
+        : `User: ${promptValue}\nAssistant:`
+
+      const outputs = await pipelineRef.value(composedPrompt, {
+        max_new_tokens: 200,
+        temperature: 0.6,
+        streamer,
+        signal: abortController.signal
+      })
+
+      const generated = Array.isArray(outputs)
+        ? outputs[0]?.generated_text ?? streamingText.value
+        : streamingText.value
+      return generated.replace(composedPrompt, '').trim() || streamingText.value
+    }
+
+    try {
+      const assistantText =
+        runtime.value === 'web-llm' ? await handleWebLlm() : await handleTransformers()
+
       transcript.value = [
         ...transcript.value,
         { role: 'user', content: promptValue },
-        { role: 'assistant', content: streamingText.value }
+        { role: 'assistant', content: assistantText ?? streamingText.value }
       ]
     } catch (err) {
       console.error(err)
@@ -160,6 +280,7 @@ export const WebLlmIsland = component$(() => {
     } finally {
       isStreaming.value = false
       streamingText.value = ''
+      transformersAbortRef.value = null
     }
   })
 
@@ -250,12 +371,26 @@ export const WebLlmIsland = component$(() => {
                     : _`Idle`}
             </span>
             {progress.value && <span class="text-slate-300">{progress.value}</span>}
+            {runtime.value === 'transformers' && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
+                {_`Transformers.js`}
+              </span>
+            )}
+            <span
+              class={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                deviceMode.value === 'webgpu'
+                  ? 'bg-emerald-500/20 text-emerald-200'
+                  : 'bg-slate-800 text-slate-200'
+              }`}
+            >
+              {deviceMode.value === 'webgpu' ? _`GPU` : _`CPU / WASM`}
+            </span>
           </div>
 
           {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
           {hasWebGpu.value === false && (
             <p class="text-sm text-amber-200">
-              {_`WebGPU is not detected; try a compatible browser or use the API echo fallback.`}
+              {_`WebGPU is not detected; falling back to Transformers.js WASM mode.`}
             </p>
           )}
         </div>
