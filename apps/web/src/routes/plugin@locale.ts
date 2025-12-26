@@ -7,7 +7,17 @@ import {
   stripLocalePrefix
 } from './_shared/locale/locale-routing'
 
-const nonLocaleRedirectPrefixes = ['/api', '/assets', '/build', '/icons', '/~partytown']
+const nonLocaleRedirectPrefixes = [
+  '/api',
+  '/assets',
+  '/build',
+  '/icons',
+  '/~partytown',
+  '/@',
+  '/__',
+  '/src',
+  '/node_modules'
+]
 const nonLocaleRedirectExact = new Set([
   '/favicon.ico',
   '/manifest.webmanifest',
@@ -45,10 +55,10 @@ export const resolveLocaleRedirect = (pathname: string, search: string, queryLoc
 }
 
 export const onRequest: RequestHandler = ({ pathname, cookie, locale, query, redirect, request, url }) => {
+  if (shouldSkipLocaleRedirect(pathname)) return
+
   const redirectTarget = resolveLocaleRedirect(pathname, url.search, query.get('locale'))
   if (redirectTarget) throw redirect(302, redirectTarget)
-
-  if (shouldSkipLocaleRedirect(pathname)) return
 
   const segment = pathname.split('/')[1]
   const requested = normalizeLocaleParam(segment)
