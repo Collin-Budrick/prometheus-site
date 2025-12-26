@@ -1,6 +1,3 @@
-import type { ModelRecord } from '@mlc-ai/web-llm'
-import { prebuiltAppConfig } from '@mlc-ai/web-llm'
-
 export type WebLlmModelId =
   | 'Llama-3.2-3B-Instruct-q4f16_1-MLC'
   | 'Phi-3.5-mini-instruct-q4f16_1-MLC'
@@ -24,7 +21,6 @@ export interface WebLlmModel {
     label: string
     task: 'text-generation'
   }
-  record: ModelRecord
 }
 
 export interface WebNnModel {
@@ -43,18 +39,6 @@ export interface WebNnModel {
   }
 }
 
-const modelLookup = new Map(prebuiltAppConfig.model_list.map((record) => [record.model_id, record]))
-
-const pickRecord = (id: WebLlmModelId): ModelRecord => {
-  const record = modelLookup.get(id)
-
-  if (!record) {
-    throw new Error(`Missing WebLLM prebuilt model for ${id}`)
-  }
-
-  return record
-}
-
 export const webLlmModels: WebLlmModel[] = [
   {
     id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC',
@@ -69,8 +53,7 @@ export const webLlmModels: WebLlmModel[] = [
       id: 'Xenova/gpt2',
       label: 'GPT-2 (ONNX)',
       task: 'text-generation'
-    },
-    record: pickRecord('Llama-3.2-3B-Instruct-q4f16_1-MLC')
+    }
   },
   {
     id: 'Phi-3.5-mini-instruct-q4f16_1-MLC',
@@ -85,8 +68,7 @@ export const webLlmModels: WebLlmModel[] = [
       id: 'Xenova/distilgpt2',
       label: 'DistilGPT-2 (ONNX)',
       task: 'text-generation'
-    },
-    record: pickRecord('Phi-3.5-mini-instruct-q4f16_1-MLC')
+    }
   },
   {
     id: 'Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC',
@@ -101,8 +83,7 @@ export const webLlmModels: WebLlmModel[] = [
       id: 'Xenova/gpt2',
       label: 'GPT-2 (ONNX)',
       task: 'text-generation'
-    },
-    record: pickRecord('Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC')
+    }
   }
 ]
 
@@ -156,7 +137,6 @@ export const webNnModels: WebNnModel[] = [
 
 export const defaultWebLlmModelId: WebLlmModelId = webLlmModels[0]?.id ?? 'Llama-3.2-3B-Instruct-q4f16_1-MLC'
 export const defaultWebNnModelId: WebNnModelId = webNnModels[0]?.id ?? 'Xenova/gpt2'
-export const webLlmModelRecords = webLlmModels.map((model) => model.record)
 
 const webLlmModelIds = new Set(webLlmModels.map((model) => model.id))
 

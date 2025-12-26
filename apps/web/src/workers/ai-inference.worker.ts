@@ -1,14 +1,8 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam, InitProgressReport, MLCEngine } from '@mlc-ai/web-llm'
 import type * as TransformersTypes from '@huggingface/transformers'
-import {
-  getTransformersModel,
-  isWebLlmModelId,
-  webLlmModelRecords,
-  webLlmModels,
-  type AiModelId,
-  type WebLlmModelId
-} from '../config/ai-models'
+import { getTransformersModel, isWebLlmModelId, webLlmModels, type AiModelId, type WebLlmModelId } from '../config/ai-models'
 import type { AccelerationPreference } from '../config/ai-acceleration'
+import { webLlmModelRecords } from './web-llm-records'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 export type Runtime = 'web-llm' | 'transformers'
