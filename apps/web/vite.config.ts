@@ -13,7 +13,7 @@ import checker from 'vite-plugin-checker'
 import { ViteCodeInspectorPlugin } from 'vite-code-inspector-plugin'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 import preload from 'vite-plugin-preload'
-import { env } from './src/config/env'
+import { loadEnv } from './src/config/env'
 import {
   createAnalysisPlugins,
   devAuditStripViteClient,
@@ -95,6 +95,19 @@ export default defineConfig((configEnv) => {
     (configEnv as { ssrBuild?: boolean }).ssrBuild ?? (configEnv as { isSsrBuild?: boolean }).isSsrBuild ?? false
   const isPreview = (configEnv as { isPreview?: boolean }).isPreview ?? false
   const mode = configEnv.mode ?? (configEnv.command === 'serve' ? 'development' : 'production')
+  const env = loadEnv({ command: configEnv.command, mode, isPreview })
+  const apiUrl = process.env.API_URL?.trim() || 'http://localhost:4000'
+  const rewriteApiPath = (value: string) => {
+    if (value.startsWith('/api/auth')) return value
+    return value.replace(/^\/api(\/|$)/, '/')
+  }
+  const apiProxy = {
+    target: apiUrl,
+    changeOrigin: true,
+    secure: false,
+    ws: true,
+    rewrite: rewriteApiPath
+  }
   const zodStubPath = fileURLToPath(new URL('./src/stubs/zod.ts', import.meta.url))
   const nodeModuleStubPath = fileURLToPath(new URL('./src/stubs/node-module.ts', import.meta.url))
   const bunTestStubPath = fileURLToPath(new URL('./src/stubs/bun-test.ts', import.meta.url))
@@ -359,6 +372,9 @@ export default defineConfig((configEnv) => {
       strictPort: true,
       hmr: env.hmr,
       allowedHosts: ['prometheus.dev'],
+      proxy: {
+        '/api': apiProxy
+      },
       watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined,
       fs: {
         allow: [appRoot, localesDir]
@@ -368,7 +384,10 @@ export default defineConfig((configEnv) => {
       host: '0.0.0.0',
       port: env.previewPort,
       strictPort: true,
-      allowedHosts: ['prometheus.dev', 'prometheus.prod']
+      allowedHosts: ['prometheus.dev', 'prometheus.prod'],
+      proxy: {
+        '/api': apiProxy
+      }
     },
     css: {
       transformer: 'lightningcss',

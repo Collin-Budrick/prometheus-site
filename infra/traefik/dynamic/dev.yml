@@ -1,5 +1,12 @@
 http:
   routers:
+    prometheus-dev-auth:
+      rule: Host(`prometheus.dev`) && PathPrefix(`/api/auth`)
+      entryPoints:
+        - websecure
+      service: prometheus-dev-api
+      tls: {}
+      priority: 20
     prometheus-dev-web:
       rule: Host(`prometheus.dev`)
       entryPoints:

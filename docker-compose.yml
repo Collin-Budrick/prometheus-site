@@ -68,9 +68,16 @@ services:
       - POSTGRES_PORT=5432
       - VALKEY_HOST=valkey
       - VALKEY_PORT=6379
+      - BETTER_AUTH_COOKIE_SECRET=${BETTER_AUTH_COOKIE_SECRET}
+      - BETTER_AUTH_RP_ID=${BETTER_AUTH_RP_ID}
+      - BETTER_AUTH_RP_ORIGIN=${BETTER_AUTH_RP_ORIGIN}
       - RUN_MIGRATIONS=1
     labels:
       - traefik.enable=true
+      - traefik.http.routers.prometheus-auth.rule=Host(`prometheus.prod`) && PathPrefix(`/api/auth`)
+      - traefik.http.routers.prometheus-auth.entrypoints=web
+      - traefik.http.routers.prometheus-auth.priority=11
+      - traefik.http.routers.prometheus-auth.service=prometheus-api
       - traefik.http.routers.prometheus-api.rule=Host(`prometheus.prod`) && PathPrefix(`/api`)
       - traefik.http.routers.prometheus-api.entrypoints=web
       - traefik.http.routers.prometheus-api.priority=10
