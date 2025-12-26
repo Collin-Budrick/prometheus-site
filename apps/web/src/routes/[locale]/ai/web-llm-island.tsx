@@ -1,61 +1,25 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type {
-  ChatCompletionChunk,
-  ChatCompletionMessageParam,
-  InitProgressReport,
-  MLCEngine
-} from '@mlc-ai/web-llm'
 import { _ } from 'compiled-i18n'
-import type * as WebLlmTypes from '@mlc-ai/web-llm'
-import type * as TransformersTypes from '@huggingface/transformers'
-import {
-  defaultWebLlmModelId,
-  webLlmModels,
-  webLlmModelRecords,
-  type WebLlmModelId
-} from '../../../config/ai-models'
-
-type LoadState = 'idle' | 'loading' | 'ready' | 'error'
-type Runtime = 'web-llm' | 'transformers'
-type DeviceMode = 'webgpu' | 'wasm'
-type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown>) => Promise<any>) & {
-  tokenizer: unknown
-}
-
-type Role = 'user' | 'assistant'
-interface TranscriptEntry {
-  role: Role
-  content: string
-}
-
-const formatProgress = (report: InitProgressReport) => {
-  const pct = Math.max(0, Math.min(100, Math.round(report.progress * 100)))
-  const details = report.text ? ` · ${report.text}` : ''
-  return _`Loading: ${pct}%${details}`
-}
-
-const mapChunkToText = (chunk: ChatCompletionChunk) => {
-  const delta = chunk.choices?.[0]?.delta
-  if (!delta) return ''
-
-  const content = Array.isArray(delta.content) ? delta.content.map((item) => item.text).join(' ') : delta.content
-  return content ?? ''
-}
+import { defaultWebLlmModelId, webLlmModels, type WebLlmModelId } from '../../../config/ai-models'
+import type {
+  AiWorkerRequest,
+  AiWorkerResponse,
+  DeviceMode,
+  LoadState,
+  Runtime,
+  TranscriptEntry
+} from '../../workers/ai-inference.worker'
+import workerUrl from '../../workers/ai-inference.worker?worker&url'
 
 export const WebLlmIsland = component$(() => {
-  const moduleRef = useSignal<typeof WebLlmTypes | null>(null)
-  const transformersRef = useSignal<typeof TransformersTypes | null>(null)
-  const engineRef = useSignal<MLCEngine | null>(null)
-  const engineCache = useSignal<Partial<Record<WebLlmModelId, MLCEngine>>>({})
-  const pipelineCache = useSignal<Partial<Record<WebLlmModelId, TextGenerationPipeline>>>({})
-  const transformersAbortRef = useSignal<AbortController | null>(null)
-  const pipelineRef = useSignal<TextGenerationPipeline | null>(null)
+  const workerRef = useSignal<Worker | null>(null)
   const selectedModelId = useSignal<WebLlmModelId>(defaultWebLlmModelId)
   const loadedModelId = useSignal<WebLlmModelId | null>(null)
   const loadState = useSignal<LoadState>('idle')
   const progress = useSignal('')
   const error = useSignal('')
   const prompt = useSignal('')
+  const pendingPrompt = useSignal('')
   const streamingText = useSignal('')
   const isStreaming = useSignal(false)
   const hasWebGpu = useSignal<boolean | null>(null)
@@ -63,110 +27,84 @@ export const WebLlmIsland = component$(() => {
   const runtime = useSignal<Runtime>('web-llm')
   const deviceMode = useSignal<DeviceMode>('webgpu')
 
-  const ensureModule = async () => {
-    if (moduleRef.value) return moduleRef.value
-    const mod = await import('@mlc-ai/web-llm')
-    moduleRef.value = mod
-    return mod
-  }
+  const ensureWorker = async () => {
+    if (workerRef.value) return workerRef.value
+    const worker = new Worker(workerUrl, { type: 'module' })
+    worker.addEventListener('message', (event: MessageEvent<AiWorkerResponse>) => {
+      const data = event.data
+      if (!data) return
 
-  const ensureTransformers = async () => {
-    if (transformersRef.value) return transformersRef.value
-    const mod = await import('@huggingface/transformers')
-    mod.env.allowLocalModels = false
-    mod.env.allowRemoteModels = true
-    transformersRef.value = mod
-    return mod
-  }
+      switch (data.type) {
+        case 'progress':
+          loadState.value = data.loadState ?? loadState.value
+          progress.value = data.message
+          if (data.runtime) runtime.value = data.runtime
+          if (data.deviceMode) deviceMode.value = data.deviceMode
+          if (data.modelId) loadedModelId.value = data.modelId
+          break
+        case 'ready':
+          loadState.value = 'ready'
+          progress.value = data.message
+          runtime.value = data.runtime
+          deviceMode.value = data.deviceMode
+          loadedModelId.value = data.modelId
+          error.value = ''
+          break
+        case 'token':
+          streamingText.value = `${streamingText.value}${data.chunk}`
+          break
+        case 'complete':
+          isStreaming.value = false
+          transcript.value = [
+            ...transcript.value,
+            { role: 'user', content: pendingPrompt.value || '' },
+            { role: 'assistant', content: data.content || streamingText.value }
+          ]
+          streamingText.value = ''
+          pendingPrompt.value = ''
+          break
+        case 'error':
+          loadState.value = data.loadState ?? loadState.value
+          error.value = data.error
+          isStreaming.value = false
+          streamingText.value = ''
+          break
+        case 'stopped':
+          isStreaming.value = false
+          streamingText.value = ''
+          pendingPrompt.value = ''
+          break
+      }
+    })
 
-  const applyProgress = (report: InitProgressReport) => {
-    progress.value = formatProgress(report)
+    workerRef.value = worker
+    return worker
   }
 
   const resetConversation = () => {
     streamingText.value = ''
     transcript.value = []
+    error.value = ''
+    workerRef.value?.postMessage({ type: 'reset' } satisfies AiWorkerRequest)
   }
 
   const loadModel = async (modelId: WebLlmModelId) => {
-    const canUseWebGpu = hasWebGpu.value === true
+    const worker = await ensureWorker()
     loadState.value = 'loading'
     error.value = ''
-    progress.value = canUseWebGpu ? _`Starting WebLLM...` : _`Loading Transformers.js fallback...`
+    progress.value = hasWebGpu.value ? _`Starting WebLLM...` : _`Loading Transformers.js fallback...`
 
-    if (canUseWebGpu) {
-      const webLlmLoaded = await loadWebLlmModel(modelId)
-      if (webLlmLoaded) return
-      progress.value = _`WebLLM failed; switching to Transformers.js.`
-    }
-
-    await loadTransformersModel(modelId, canUseWebGpu ? 'webgpu' : 'wasm')
+    worker.postMessage({ type: 'load-model', modelId, preferWebGpu: hasWebGpu.value === true } satisfies AiWorkerRequest)
   }
 
-  const loadWebLlmModel = async (modelId: WebLlmModelId) => {
-    const mod = await ensureModule()
-
-    try {
-      const cachedEngine = engineCache.value[modelId]
-      if (cachedEngine) {
-        cachedEngine.setInitProgressCallback(applyProgress)
-        engineRef.value = cachedEngine
-      } else {
-        const engine = await mod.CreateMLCEngine(modelId, {
-          appConfig: { model_list: webLlmModelRecords },
-          initProgressCallback: applyProgress
-        })
-        engineRef.value = engine
-        engineCache.value = { ...engineCache.value, [modelId]: engine }
-      }
-
-      loadedModelId.value = modelId
-      runtime.value = 'web-llm'
-      deviceMode.value = 'webgpu'
-      loadState.value = 'ready'
-      const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
-      progress.value = _`Ready: ${loadedLabel}`
-      return true
-    } catch (err) {
-      console.error(err)
-      loadState.value = 'error'
-      error.value = (err as Error)?.message ?? _`Unable to load the selected model.`
-      return false
-    }
-  }
-
-  const loadTransformersModel = async (modelId: WebLlmModelId, device: DeviceMode) => {
-    const mod = await ensureTransformers()
-
-    try {
-      const cachedPipeline = pipelineCache.value[modelId]
-      if (cachedPipeline) {
-        pipelineRef.value = cachedPipeline
-      } else {
-        const pipeline = (await mod.pipeline('text-generation', modelId, { device })) as TextGenerationPipeline
-        pipelineRef.value = pipeline
-        pipelineCache.value = { ...pipelineCache.value, [modelId]: pipeline }
-      }
-
-      engineRef.value = null
-      loadedModelId.value = modelId
-      runtime.value = 'transformers'
-      deviceMode.value = device
-      loadState.value = 'ready'
-      error.value = ''
-      const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
-      const deviceLabel = device === 'webgpu' ? _`WebGPU` : _`WASM (CPU)`
-      progress.value = _`Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`
-    } catch (err) {
-      console.error(err)
-      loadState.value = 'error'
-      error.value = (err as Error)?.message ?? _`Unable to load the fallback pipeline.`
-    }
-  }
-
-  useVisibleTask$(async () => {
+  useVisibleTask$(() => {
     hasWebGpu.value = typeof navigator !== 'undefined' && 'gpu' in navigator
-    await loadModel(selectedModelId.value)
+    void loadModel(selectedModelId.value)
+
+    return () => {
+      workerRef.value?.terminate()
+      workerRef.value = null
+    }
   })
 
   const handleModelChange = $(async (event: Event) => {
@@ -179,109 +117,34 @@ export const WebLlmIsland = component$(() => {
   const stopStreaming = $(async () => {
     if (!isStreaming.value) return
 
-    if (runtime.value === 'web-llm' && engineRef.value) {
-      await engineRef.value.interruptGenerate()
-    }
-
-    if (runtime.value === 'transformers' && transformersAbortRef.value) {
-      transformersAbortRef.value.abort()
-    }
-
-    isStreaming.value = false
+    workerRef.value?.postMessage({ type: 'stop' } satisfies AiWorkerRequest)
   })
 
   const sendPrompt = $(async () => {
     const promptValue = prompt.value.trim()
     if (!promptValue) return
-    if (runtime.value === 'web-llm' && !engineRef.value) return
-    if (runtime.value === 'transformers' && !pipelineRef.value) {
-      error.value = _`Fallback pipeline is not ready yet. Try reloading the model.`
+    const worker = await ensureWorker()
+    if (loadState.value !== 'ready') {
+      error.value = _`Model is not ready yet. Try reloading the model.`
       return
     }
 
+    pendingPrompt.value = promptValue
     streamingText.value = ''
     isStreaming.value = true
     error.value = ''
     prompt.value = ''
 
-    const handleWebLlm = async () => {
-      if (!engineRef.value) return
+    const transcriptPayload = transcript.value.map((entry) => ({ role: entry.role, content: entry.content }))
 
-      const messages: ChatCompletionMessageParam[] = [
-        {
-          role: 'system',
-          content: _`Keep responses concise and explicitly note that tokens are streaming from the browser.`
-        },
-        ...transcript.value.map(
-          (entry) => ({ role: entry.role, content: entry.content } as ChatCompletionMessageParam)
-        ),
-        { role: 'user', content: promptValue }
-      ]
-
-      const iterator = await engineRef.value.chat.completions.create({
-        model: selectedModelId.value,
-        messages,
-        stream: true
-      })
-
-      for await (const chunk of iterator) {
-        streamingText.value = `${streamingText.value}${mapChunkToText(chunk)}`
-      }
-
-      return streamingText.value
-    }
-
-    const handleTransformers = async () => {
-      if (!pipelineRef.value || !transformersRef.value) return ''
-
-      const mod = transformersRef.value
-      const streamer = new mod.TextStreamer(pipelineRef.value.tokenizer as any, {
-        onTextChunk: (chunk) => {
-          streamingText.value = `${streamingText.value}${chunk}`
-        }
-      })
-
-      const abortController = new AbortController()
-      transformersAbortRef.value = abortController
-
-      const conversation = transcript.value
-        .map((entry) => `${entry.role === 'user' ? 'User' : 'Assistant'}: ${entry.content}`)
-        .join('\n')
-
-      const composedPrompt = conversation
-        ? `${conversation}\nUser: ${promptValue}\nAssistant:`
-        : `User: ${promptValue}\nAssistant:`
-
-      const outputs = await pipelineRef.value(composedPrompt, {
-        max_new_tokens: 200,
-        temperature: 0.6,
-        streamer,
-        signal: abortController.signal
-      })
-
-      const generated = Array.isArray(outputs)
-        ? outputs[0]?.generated_text ?? streamingText.value
-        : streamingText.value
-      return generated.replace(composedPrompt, '').trim() || streamingText.value
-    }
-
-    try {
-      const assistantText =
-        runtime.value === 'web-llm' ? await handleWebLlm() : await handleTransformers()
-
-      transcript.value = [
-        ...transcript.value,
-        { role: 'user', content: promptValue },
-        { role: 'assistant', content: assistantText ?? streamingText.value }
-      ]
-    } catch (err) {
-      console.error(err)
-      error.value = (err as Error)?.message ?? _`Unable to complete the request.`
-    } finally {
-      isStreaming.value = false
-      streamingText.value = ''
-      transformersAbortRef.value = null
-    }
+    worker.postMessage(
+      {
+        type: 'generate',
+        modelId: selectedModelId.value,
+        prompt: promptValue,
+        transcript: transcriptPayload
+      } satisfies AiWorkerRequest
+    )
   })
 
   return (
