@@ -148,18 +148,13 @@ const ensureTransformers = async () => {
   mod.env.allowLocalModels = false
   mod.env.allowRemoteModels = true
   const threads = getWasmThreadCount()
-  mod.env.wasm = {
-    ...mod.env.wasm,
-    numThreads: threads
-  }
   const ortWasmPath = '/ort/'
-  const ortCdnFallback = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
-  const backends = mod.env.backends ?? {}
+  const backends = mod.env.backends
   const onnxBackend = backends.onnx ?? {}
   const wasmBackend = {
     ...onnxBackend.wasm,
     wasmPaths: ortWasmPath,
-    fallbackWasmPaths: onnxBackend.wasm?.fallbackWasmPaths ?? ortCdnFallback
+    numThreads: threads
   }
 
   mod.env.backends = {

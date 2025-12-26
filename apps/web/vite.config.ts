@@ -266,6 +266,7 @@ export default defineConfig((configEnv) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff2,webp}'],
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
