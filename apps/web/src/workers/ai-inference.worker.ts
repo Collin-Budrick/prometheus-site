@@ -72,6 +72,9 @@ let transformersRef: typeof TransformersTypes | null = null
 const engineCache: Partial<Record<WebLlmModelId, MLCEngine>> = {}
 const pipelineCache: Partial<Record<string, TextGenerationPipeline>> = {}
 let wasmThreadCount: number | null = null
+const ortLocalWasmPath = '/ort/'
+const ortCdnWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+let ortWasmPath = ortLocalWasmPath
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getHardwareThreadCount = () => {
@@ -118,6 +121,34 @@ const formatDeviceLabel = (device: DeviceMode) => {
 
 const uniqueDevices = (devices: DeviceMode[]) => Array.from(new Set(devices))
 
+const configureOnnxWasmBackend = (mod: typeof TransformersTypes, wasmPaths: string, threads: number) => {
+  const backends = mod.env.backends
+  const onnxBackend = backends.onnx ?? {}
+  const wasmBackend = {
+    ...onnxBackend.wasm,
+    wasmPaths,
+    numThreads: threads
+  }
+
+  mod.env.backends = {
+    ...backends,
+    onnx: {
+      ...onnxBackend,
+      wasm: wasmBackend
+    }
+  }
+}
+
+const shouldRetryWithCdn = (err: unknown) => {
+  if (ortWasmPath === ortCdnWasmPath) return false
+  const message = typeof err === 'string' ? err : (err as Error)?.message ?? ''
+  const normalized = message.toLowerCase()
+  if (!normalized) return false
+  if (normalized.includes('/ort/')) return true
+  if (normalized.includes('ort-wasm')) return true
+  return normalized.includes('wasm') && normalized.includes('fetch')
+}
+
 const getTransformersDeviceCandidates = (acceleration: AccelerationPreference): DeviceMode[] => {
   if (acceleration === 'npu') {
     const devices: DeviceMode[] = ['webnn-npu', 'webnn-gpu', 'webnn-cpu', 'webnn']
@@ -148,22 +179,7 @@ const ensureTransformers = async () => {
   mod.env.allowLocalModels = false
   mod.env.allowRemoteModels = true
   const threads = getWasmThreadCount()
-  const ortWasmPath = '/ort/'
-  const backends = mod.env.backends
-  const onnxBackend = backends.onnx ?? {}
-  const wasmBackend = {
-    ...onnxBackend.wasm,
-    wasmPaths: ortWasmPath,
-    numThreads: threads
-  }
-
-  mod.env.backends = {
-    ...backends,
-    onnx: {
-      ...onnxBackend,
-      wasm: wasmBackend
-    }
-  }
+  configureOnnxWasmBackend(mod, ortWasmPath, threads)
   transformersRef = mod
   return mod
 }
@@ -227,17 +243,21 @@ const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: Accel
   const devices = getTransformersDeviceCandidates(acceleration)
   let lastError: Error | null = null
 
+  const loadPipelineForDevice = async (device: DeviceMode) => {
+    const cacheKey = `${transformersSpec.id}:${device}`
+    const cachedPipeline = pipelineCache[cacheKey]
+    if (cachedPipeline) {
+      pipelineRef = cachedPipeline
+      return
+    }
+    const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, { device })) as TextGenerationPipeline
+    pipelineRef = pipeline
+    pipelineCache[cacheKey] = pipeline
+  }
+
   for (const device of devices) {
     try {
-      const cacheKey = `${transformersSpec.id}:${device}`
-      const cachedPipeline = pipelineCache[cacheKey]
-      if (cachedPipeline) {
-        pipelineRef = cachedPipeline
-      } else {
-        const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, { device })) as TextGenerationPipeline
-        pipelineRef = pipeline
-        pipelineCache[cacheKey] = pipeline
-      }
+      await loadPipelineForDevice(device)
 
       engineRef = null
       loadedModelId = modelId
@@ -256,6 +276,41 @@ const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: Accel
       })
       return
     } catch (err) {
+      if (shouldRetryWithCdn(err)) {
+        ortWasmPath = ortCdnWasmPath
+        configureOnnxWasmBackend(mod, ortWasmPath, getWasmThreadCount())
+        send({
+          type: 'progress',
+          message: 'Local /ort/ assets missing; retrying with CDN fallback...',
+          loadState: 'loading',
+          runtime: 'transformers',
+          deviceMode: device,
+          modelId,
+          threads: getWasmThreadCount()
+        })
+        try {
+          await loadPipelineForDevice(device)
+          engineRef = null
+          loadedModelId = modelId
+          runtime = 'transformers'
+          deviceMode = device
+          setLoadState('ready')
+          const loadedLabel = transformersSpec.label || transformersSpec.id
+          const deviceLabel = formatDeviceLabel(device)
+          send({
+            type: 'ready',
+            message: `Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`,
+            runtime,
+            deviceMode,
+            modelId,
+            threads: getWasmThreadCount()
+          })
+          return
+        } catch (retryErr) {
+          lastError = retryErr as Error
+          continue
+        }
+      }
       lastError = err as Error
     }
   }

@@ -7,6 +7,10 @@ export const AiEchoIsland = component$(() => {
   const error = useSignal('')
   const isPending = useSignal(false)
 
+  const handlePromptInput = $((event: Event) => {
+    prompt.value = (event.target as HTMLTextAreaElement).value
+  })
+
   const echo = $(async () => {
     const trimmedPrompt = prompt.value.trim()
     if (!trimmedPrompt) return
@@ -41,9 +45,7 @@ export const AiEchoIsland = component$(() => {
     <div class="mt-4 space-y-3 text-sm text-slate-200">
       <textarea
         value={prompt.value}
-        onInput$={(event) => {
-          prompt.value = (event.target as HTMLTextAreaElement).value
-        }}
+        onInput$={handlePromptInput}
         class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"
         placeholder={_`Type a quick prompt`}
         rows={4}
