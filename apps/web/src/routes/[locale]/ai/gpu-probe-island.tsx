@@ -1,16 +1,22 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
+import type { AccelerationTarget } from '../../../config/ai-acceleration'
+import { pickAccelerationTarget } from '../../../config/ai-acceleration'
 import type { GpuProbeResult, GpuTier } from '../../../components/gpu/capability-probe'
 import { probeGpuCapabilities } from '../../../components/gpu/capability-probe'
 import type { NpuProbeResult, NpuTier } from '../../../components/gpu/npu-probe'
 import { probeNpuCapabilities } from '../../../components/gpu/npu-probe'
 
 interface Props {
+  selectedAcceleration?: AccelerationTarget
+  onAccelerationSelect$?: (target: AccelerationTarget) => void
+  onAutoSelect$?: (target: AccelerationTarget) => void
   onTierDetected$?: (tier: GpuTier) => void
   onNpuTierDetected$?: (tier: NpuTier) => void
 }
 
-export const GpuProbeIsland = component$<Props>(({ onTierDetected$, onNpuTierDetected$ }) => {
+export const GpuProbeIsland = component$<Props>(
+  ({ selectedAcceleration, onAccelerationSelect$, onAutoSelect$, onTierDetected$, onNpuTierDetected$ }) => {
   const gpuStatus = useSignal<GpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const npuStatus = useSignal<NpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
 
@@ -28,6 +34,11 @@ export const GpuProbeIsland = component$<Props>(({ onTierDetected$, onNpuTierDet
     }
     if (npuResult.status === 'complete' && onNpuTierDetected$) {
       await onNpuTierDetected$(npuResult.tier)
+    }
+
+    if (onAutoSelect$) {
+      const preferred = pickAccelerationTarget(gpuResult.tier, npuResult.tier)
+      await onAutoSelect$(preferred)
     }
   })
 
@@ -60,8 +71,24 @@ export const GpuProbeIsland = component$<Props>(({ onTierDetected$, onNpuTierDet
       </div>
 
       <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <div class="rounded-md border border-slate-800/70 bg-slate-950/40 p-3">
-          <p class="text-xs uppercase tracking-wide text-emerald-300">{_`WebGPU`}</p>
+        <button
+          type="button"
+          class={`rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 ${
+            selectedAcceleration === 'gpu'
+              ? 'border-emerald-400/60 bg-emerald-500/10 ring-1 ring-emerald-400/30'
+              : 'border-slate-800/70 bg-slate-950/40 hover:border-slate-700/80'
+          }`}
+          aria-pressed={selectedAcceleration === 'gpu'}
+          onClick$={$(() => onAccelerationSelect$?.('gpu'))}
+        >
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs uppercase tracking-wide text-emerald-300">{_`WebGPU`}</p>
+            {selectedAcceleration === 'gpu' && (
+              <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-100">
+                {_`Selected`}
+              </span>
+            )}
+          </div>
 
           {gpuStatus.value.status === 'running' && (
             <p class="mt-2 text-slate-300">{_`Allocating buffers and measuring bandwidth...`}</p>
@@ -94,10 +121,26 @@ export const GpuProbeIsland = component$<Props>(({ onTierDetected$, onNpuTierDet
               )}
             </div>
           )}
-        </div>
+        </button>
 
-        <div class="rounded-md border border-slate-800/70 bg-slate-950/40 p-3">
-          <p class="text-xs uppercase tracking-wide text-cyan-300">{_`WebNN / NPU`}</p>
+        <button
+          type="button"
+          class={`rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ${
+            selectedAcceleration === 'npu'
+              ? 'border-cyan-400/60 bg-cyan-500/10 ring-1 ring-cyan-400/30'
+              : 'border-slate-800/70 bg-slate-950/40 hover:border-slate-700/80'
+          }`}
+          aria-pressed={selectedAcceleration === 'npu'}
+          onClick$={$(() => onAccelerationSelect$?.('npu'))}
+        >
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs uppercase tracking-wide text-cyan-300">{_`WebNN / NPU`}</p>
+            {selectedAcceleration === 'npu' && (
+              <span class="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+                {_`Selected`}
+              </span>
+            )}
+          </div>
 
           {npuStatus.value.status === 'running' && (
             <p class="mt-2 text-slate-300">{_`Building a tiny graph and timing inference...`}</p>
@@ -136,8 +179,9 @@ export const GpuProbeIsland = component$<Props>(({ onTierDetected$, onNpuTierDet
               )}
             </div>
           )}
-        </div>
+        </button>
       </div>
     </div>
   )
-})
+  }
+)

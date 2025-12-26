@@ -1,5 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
+import type { AccelerationTarget } from '../../../config/ai-acceleration'
 import { defaultWebLlmModelId, webLlmModels, type WebLlmModelId } from '../../../config/ai-models'
 import type {
   AiWorkerRequest,
@@ -21,7 +22,12 @@ const formatBytes = (bytes: number) => {
   return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
 }
 
-export const WebLlmIsland = component$(() => {
+interface WebLlmIslandProps {
+  preferredAcceleration?: AccelerationTarget
+  accelerationReady?: boolean
+}
+
+export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAcceleration, accelerationReady }) => {
   const workerRef = useSignal<Worker | null>(null)
   const selectedModelId = useSignal<WebLlmModelId>(defaultWebLlmModelId)
   const loadedModelId = useSignal<WebLlmModelId | null>(null)
@@ -43,6 +49,7 @@ export const WebLlmIsland = component$(() => {
   const downloadWarningDismissed = useSignal(false)
   const storageWarning = useSignal('')
   const freeStorageBytes = useSignal<number | null>(null)
+  const lastAutoLoad = useSignal<{ modelId: WebLlmModelId; acceleration: AccelerationTarget } | null>(null)
 
   const ensureWorker = async () => {
     if (workerRef.value) return workerRef.value
@@ -126,13 +133,20 @@ export const WebLlmIsland = component$(() => {
     workerRef.value?.postMessage({ type: 'reset' } satisfies AiWorkerRequest)
   }
 
-  const loadModel = async (modelId: WebLlmModelId) => {
+  const resolveAcceleration = () => preferredAcceleration ?? 'gpu'
+
+  const loadModel = async (modelId: WebLlmModelId, acceleration: AccelerationTarget = resolveAcceleration()) => {
     const worker = await ensureWorker()
     loadState.value = 'loading'
     error.value = ''
-    progress.value = hasWebGpu.value ? _`Starting WebLLM...` : _`Loading Transformers.js fallback...`
+    progress.value =
+      acceleration === 'npu'
+        ? _`Starting WebNN inference...`
+        : hasWebGpu.value
+          ? _`Starting WebLLM...`
+          : _`Loading Transformers.js fallback...`
 
-    worker.postMessage({ type: 'load-model', modelId, preferWebGpu: hasWebGpu.value === true } satisfies AiWorkerRequest)
+    worker.postMessage({ type: 'load-model', modelId, acceleration } satisfies AiWorkerRequest)
   }
 
   useVisibleTask$(() => {
@@ -179,7 +193,6 @@ export const WebLlmIsland = component$(() => {
     restoreDownloadWarning()
     void checkCaches()
     void updateStorageEstimate(selectedModelId.value)
-    void loadModel(selectedModelId.value)
 
     return () => {
       workerRef.value?.terminate()
@@ -192,11 +205,30 @@ export const WebLlmIsland = component$(() => {
     void updateStorageEstimate(selectedModelId.value)
   })
 
+  useVisibleTask$(({ track }) => {
+    const ready = track(() => accelerationReady)
+    const modelId = track(() => selectedModelId.value)
+    const acceleration = track(() => preferredAcceleration)
+
+    if (ready === false) {
+      if (loadState.value === 'idle') {
+        progress.value = _`Running acceleration probes...`
+      }
+      return
+    }
+
+    const resolvedAcceleration = acceleration ?? 'gpu'
+    const last = lastAutoLoad.value
+    if (last?.modelId === modelId && last.acceleration === resolvedAcceleration) return
+
+    lastAutoLoad.value = { modelId, acceleration: resolvedAcceleration }
+    void loadModel(modelId, resolvedAcceleration)
+  })
+
   const handleModelChange = $(async (event: Event) => {
     const target = event.target as HTMLSelectElement
     const nextModel = target.value as WebLlmModelId
     selectedModelId.value = nextModel
-    await loadModel(nextModel)
   })
 
   const stopStreaming = $(async () => {
@@ -242,6 +274,9 @@ export const WebLlmIsland = component$(() => {
 
   const offlineReady = hasWebLlmCache.value || hasTransformersCache.value
   const selectedModel = getSelectedModel()
+  const isAccelerationReady = accelerationReady !== false
+  const isWebNn = deviceMode.value.startsWith('webnn')
+  const isWebNnNpu = deviceMode.value === 'webnn-npu'
 
   return (
     <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-slate-200">
@@ -266,8 +301,8 @@ export const WebLlmIsland = component$(() => {
           <button
             type="button"
             class="rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
-            disabled={loadState.value === 'loading'}
-            onClick$={$(() => loadModel(selectedModelId.value))}
+            disabled={loadState.value === 'loading' || !isAccelerationReady}
+            onClick$={$(() => loadModel(selectedModelId.value, resolveAcceleration()))}
           >
             {loadedModelId.value ? _`Reload model` : _`Load model`}
           </button>
@@ -357,10 +392,18 @@ export const WebLlmIsland = component$(() => {
               class={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                 deviceMode.value === 'webgpu'
                   ? 'bg-emerald-500/20 text-emerald-200'
-                  : 'bg-slate-800 text-slate-200'
+                  : isWebNn
+                    ? 'bg-cyan-500/20 text-cyan-100'
+                    : 'bg-slate-800 text-slate-200'
               }`}
             >
-              {deviceMode.value === 'webgpu' ? _`GPU` : _`CPU / WASM`}
+              {deviceMode.value === 'webgpu'
+                ? _`GPU`
+                : isWebNnNpu
+                  ? _`NPU / WebNN`
+                  : isWebNn
+                    ? _`WebNN`
+                    : _`CPU / WASM`}
             </span>
           </div>
 
@@ -400,7 +443,7 @@ export const WebLlmIsland = component$(() => {
           {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
           {hasWebGpu.value === false && (
             <p class="text-sm text-amber-200">
-              {_`WebGPU is not detected; falling back to Transformers.js WASM mode.`}
+              {_`WebGPU is not detected; using a non-WebGPU fallback.`}
             </p>
           )}
           {storageWarning.value && <p class="text-sm text-amber-200">{storageWarning.value}</p>}

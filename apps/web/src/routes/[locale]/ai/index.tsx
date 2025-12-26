@@ -1,15 +1,28 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _, defaultLocale } from 'compiled-i18n'
-import type { GpuTier } from '../../../components/gpu/capability-probe'
-import type { NpuTier } from '../../../components/gpu/npu-probe'
+import type { AccelerationTarget } from '../../../config/ai-acceleration'
 import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 import { WebLlmIsland } from './web-llm-island'
 
 export default component$(() => {
-  const tier = useSignal<GpuTier>('unavailable')
-  const npuTier = useSignal<NpuTier>('unavailable')
+  const selectedAcceleration = useSignal<AccelerationTarget>('gpu')
+  const accelerationReady = useSignal(false)
+  const manualOverride = useSignal(false)
+
+  const handleAutoSelect = $((target: AccelerationTarget) => {
+    if (!manualOverride.value) {
+      selectedAcceleration.value = target
+    }
+    accelerationReady.value = true
+  })
+
+  const handleManualSelect = $((target: AccelerationTarget) => {
+    manualOverride.value = true
+    selectedAcceleration.value = target
+    accelerationReady.value = true
+  })
 
   return (
     <section class="surface p-6">
@@ -20,12 +33,16 @@ export default component$(() => {
       </p>
 
       <GpuProbeIsland
-        onTierDetected$={$((value) => (tier.value = value))}
-        onNpuTierDetected$={$((value) => (npuTier.value = value))}
+        selectedAcceleration={selectedAcceleration.value}
+        onAutoSelect$={handleAutoSelect}
+        onAccelerationSelect$={handleManualSelect}
       />
 
       <div class="mt-6 space-y-6" onQVisible$={$(() => undefined)}>
-        <WebLlmIsland />
+        <WebLlmIsland
+          preferredAcceleration={selectedAcceleration.value}
+          accelerationReady={accelerationReady.value}
+        />
 
         <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
           <p class="text-xs uppercase tracking-wide text-emerald-300">{_`API fallback`}</p>

@@ -1,10 +1,11 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam, InitProgressReport, MLCEngine } from '@mlc-ai/web-llm'
 import type * as TransformersTypes from '@huggingface/transformers'
 import { webLlmModelRecords, webLlmModels, type WebLlmModelId } from '../config/ai-models'
+import type { AccelerationPreference } from '../config/ai-acceleration'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 export type Runtime = 'web-llm' | 'transformers'
-export type DeviceMode = 'webgpu' | 'wasm'
+export type DeviceMode = 'webgpu' | 'wasm' | 'webnn' | 'webnn-npu' | 'webnn-gpu' | 'webnn-cpu'
 
 export type Role = 'user' | 'assistant'
 export interface TranscriptEntry {
@@ -17,7 +18,7 @@ type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown
 }
 
 export type AiWorkerRequest =
-  | { type: 'load-model'; modelId: WebLlmModelId; preferWebGpu: boolean }
+  | { type: 'load-model'; modelId: WebLlmModelId; acceleration: AccelerationPreference }
   | { type: 'generate'; modelId: WebLlmModelId; prompt: string; transcript: TranscriptEntry[] }
   | { type: 'stop' }
   | { type: 'reset' }
@@ -56,13 +57,52 @@ let pipelineRef: TextGenerationPipeline | null = null
 let moduleRef: typeof import('@mlc-ai/web-llm') | null = null
 let transformersRef: typeof TransformersTypes | null = null
 const engineCache: Partial<Record<WebLlmModelId, MLCEngine>> = {}
-const pipelineCache: Partial<Record<WebLlmModelId, TextGenerationPipeline>> = {}
+const pipelineCache: Partial<Record<string, TextGenerationPipeline>> = {}
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const formatProgress = (report: InitProgressReport) => {
   const pct = Math.max(0, Math.min(100, Math.round(report.progress * 100)))
   const details = report.text ? ` · ${report.text}` : ''
   return `Loading: ${pct}%${details}`
+}
+
+const formatDeviceLabel = (device: DeviceMode) => {
+  switch (device) {
+    case 'webgpu':
+      return 'WebGPU'
+    case 'wasm':
+      return 'WASM (CPU)'
+    case 'webnn-npu':
+      return 'WebNN NPU'
+    case 'webnn-gpu':
+      return 'WebNN GPU'
+    case 'webnn-cpu':
+      return 'WebNN CPU'
+    case 'webnn':
+      return 'WebNN'
+    default:
+      return device
+  }
+}
+
+const uniqueDevices = (devices: DeviceMode[]) => Array.from(new Set(devices))
+
+const getTransformersDeviceCandidates = (acceleration: AccelerationPreference): DeviceMode[] => {
+  if (acceleration === 'npu') {
+    const devices: DeviceMode[] = ['webnn-npu', 'webnn-gpu', 'webnn-cpu', 'webnn']
+    if (hasWebGpu()) devices.push('webgpu')
+    devices.push('wasm')
+    return uniqueDevices(devices)
+  }
+
+  if (acceleration === 'auto') {
+    const devices: DeviceMode[] = []
+    if (hasWebGpu()) devices.push('webgpu')
+    devices.push('webnn', 'webnn-gpu', 'webnn-cpu', 'wasm')
+    return uniqueDevices(devices)
+  }
+
+  return hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
 }
 
 const ensureModule = async () => {
@@ -89,8 +129,8 @@ const setLoadState = (next: LoadState) => {
   loadState = next
 }
 
-const loadWebLlmModel = async (modelId: WebLlmModelId, preferWebGpu: boolean) => {
-  const canUseWebGpu = preferWebGpu && hasWebGpu()
+const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: AccelerationPreference) => {
+  const canUseWebGpu = acceleration !== 'npu' && hasWebGpu()
   if (!canUseWebGpu) return false
 
   const mod = await ensureModule()
@@ -130,39 +170,48 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, preferWebGpu: boolean) =>
   }
 }
 
-const loadTransformersModel = async (modelId: WebLlmModelId, preferWebGpu: boolean) => {
+const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: AccelerationPreference) => {
   const mod = await ensureTransformers()
-  const device: DeviceMode = preferWebGpu && hasWebGpu() ? 'webgpu' : 'wasm'
+  const devices = getTransformersDeviceCandidates(acceleration)
+  let lastError: Error | null = null
 
-  try {
-    const cachedPipeline = pipelineCache[modelId]
-    if (cachedPipeline) {
-      pipelineRef = cachedPipeline
-    } else {
-      const pipeline = (await mod.pipeline('text-generation', modelId, { device })) as TextGenerationPipeline
-      pipelineRef = pipeline
-      pipelineCache[modelId] = pipeline
+  for (const device of devices) {
+    try {
+      const cacheKey = `${modelId}:${device}`
+      const cachedPipeline = pipelineCache[cacheKey]
+      if (cachedPipeline) {
+        pipelineRef = cachedPipeline
+      } else {
+        const pipeline = (await mod.pipeline('text-generation', modelId, { device })) as TextGenerationPipeline
+        pipelineRef = pipeline
+        pipelineCache[cacheKey] = pipeline
+      }
+
+      engineRef = null
+      loadedModelId = modelId
+      runtime = 'transformers'
+      deviceMode = device
+      setLoadState('ready')
+      const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
+      const deviceLabel = formatDeviceLabel(device)
+      send({
+        type: 'ready',
+        message: `Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`,
+        runtime,
+        deviceMode,
+        modelId
+      })
+      return
+    } catch (err) {
+      lastError = err as Error
     }
-
-    engineRef = null
-    loadedModelId = modelId
-    runtime = 'transformers'
-    deviceMode = device
-    setLoadState('ready')
-    const loadedLabel = webLlmModels.find((model) => model.id === modelId)?.label ?? modelId
-    const deviceLabel = device === 'webgpu' ? 'WebGPU' : 'WASM (CPU)'
-    send({
-      type: 'ready',
-      message: `Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`,
-      runtime,
-      deviceMode,
-      modelId
-    })
-  } catch (err) {
-    console.error(err)
-    setLoadState('error')
-    send({ type: 'error', error: (err as Error)?.message ?? 'Unable to load the fallback pipeline.', loadState })
   }
+
+  if (lastError) {
+    console.error(lastError)
+  }
+  setLoadState('error')
+  send({ type: 'error', error: lastError?.message ?? 'Unable to load the fallback pipeline.', loadState })
 }
 
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {
@@ -171,23 +220,34 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
   setLoadState('loading')
   send({
     type: 'progress',
-    message: message.preferWebGpu ? 'Starting WebLLM...' : 'Loading Transformers.js fallback...',
+    message:
+      message.acceleration === 'npu'
+        ? 'Starting Transformers.js with WebNN...'
+        : hasWebGpu()
+          ? 'Starting WebLLM...'
+          : 'Loading Transformers.js fallback...',
     loadState
   })
 
-  const webLlmLoaded = await loadWebLlmModel(message.modelId, message.preferWebGpu)
+  const shouldTryWebLlm = message.acceleration !== 'npu' && hasWebGpu()
+  const webLlmLoaded = shouldTryWebLlm ? await loadWebLlmModel(message.modelId, message.acceleration) : false
   if (webLlmLoaded) return
 
   send({
     type: 'progress',
-    message: 'WebLLM failed; switching to Transformers.js.',
+    message:
+      message.acceleration === 'npu'
+        ? 'WebNN requested; loading Transformers.js.'
+        : shouldTryWebLlm
+          ? 'WebLLM failed; switching to Transformers.js.'
+          : 'WebGPU unavailable; using Transformers.js.',
     loadState: 'loading',
     runtime: 'transformers',
-    deviceMode: hasWebGpu() ? 'webgpu' : 'wasm',
+    deviceMode: message.acceleration === 'npu' ? 'webnn-npu' : hasWebGpu() ? 'webgpu' : 'wasm',
     modelId: message.modelId
   })
 
-  await loadTransformersModel(message.modelId, message.preferWebGpu)
+  await loadTransformersModel(message.modelId, message.acceleration)
 }
 
 const handleWebLlmGeneration = async (prompt: string, transcript: TranscriptEntry[]) => {
