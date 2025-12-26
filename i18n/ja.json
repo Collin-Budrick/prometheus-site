@@ -31,6 +31,8 @@
     "Remember me": "サインイン状態を保持",
     "Continue": "続行",
     "Forgot password?": "パスワードをお忘れですか？",
+    "New here?": "初めてですか？",
+    "Create an account": "アカウントを作成",
     "Login | Prometheus": "ログイン | Prometheus",
     "Secure SSR login surface without client-side credential exposure.": "SSR で安全にログインし、クライアント側でクレデンシャルを露出させません。",
     "Unable to sign in right now.": "現在サインインできません。",

@@ -47,6 +47,8 @@ export default component$(() => {
   const action = useEmailLogin()
   const location = useLocation()
   const callback = useSignal(normalizeCallback(location.url.searchParams.get('callback'), location.params.locale))
+  const localePrefix = location.params.locale ? `/${location.params.locale}` : ''
+  const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(callback.value)}`
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const passkeyError = useSignal<string>('')
 
@@ -152,6 +154,12 @@ export default component$(() => {
           >
             {_`Forgot password?`}
           </a>
+          <div class="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+            <span>{_`New here?`}</span>
+            <a class="font-medium text-emerald-300 hover:text-emerald-200" href={registerHref}>
+              {_`Create an account`}
+            </a>
+          </div>
         </Form>
 
         <div class="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30">

@@ -30,6 +30,8 @@
     "Remember me": "Remember me",
     "Continue": "Continue",
     "Forgot password?": "Forgot password?",
+    "New here?": "New here?",
+    "Create an account": "Create an account",
     "Login | Prometheus": "Login | Prometheus",
     "Secure SSR login surface without client-side credential exposure.": "Secure SSR login surface without client-side credential exposure.",
     "Unable to sign in right now.": "Unable to sign in right now.",
