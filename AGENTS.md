@@ -23,6 +23,7 @@
 - Install dependencies: `bun install`
 - Start dev server: `bun run dev`
 - Run tests/checks: `bun run test`
+- Fix local TLS (mkcert + Traefik): `bun run certs:fix`
 
 ## Build/tooling expectations
 

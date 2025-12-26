@@ -10,7 +10,21 @@ const repoRoot = path.resolve(process.cwd(), '..', '..')
 const traefikTlsPath = path.join(repoRoot, 'infra', 'traefik', 'dynamic', 'tls.yml')
 const devHttps = process.env.DEV_HTTPS
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? ''
-const normalizedHost = hmrHost.trim().toLowerCase()
+const originFromEnv =
+  process.env.BETTER_AUTH_RP_ORIGIN ?? process.env.BETTER_AUTH_ORIGIN ?? process.env.PRERENDER_ORIGIN ?? ''
+const parsedOrigin = (() => {
+  if (!originFromEnv) return null
+  try {
+    return new URL(originFromEnv)
+  } catch {
+    return null
+  }
+})()
+const inferredHost = parsedOrigin?.hostname ?? ''
+const inferredPort = parsedOrigin?.port ?? ''
+const inferredHttps = parsedOrigin?.protocol === 'https:'
+const resolvedHost = hmrHost || inferredHost
+const normalizedHost = resolvedHost.trim().toLowerCase()
 const isLocalhostHost =
   normalizedHost === '' ||
   normalizedHost === 'localhost' ||
@@ -18,8 +32,9 @@ const isLocalhostHost =
   normalizedHost === '[::1]'
 const useHttps =
   devHttps === '1' ||
-  (devHttps !== '0' && fs.existsSync(traefikTlsPath) && !isLocalhostHost)
-const hmrClientPort = process.env.HMR_CLIENT_PORT ?? (useHttps ? '443' : String(port))
+  (devHttps !== '0' && (inferredHttps || (fs.existsSync(traefikTlsPath) && !isLocalhostHost)))
+const inferredClientPort = inferredPort || (useHttps ? '443' : String(port))
+const hmrClientPort = process.env.HMR_CLIENT_PORT ?? inferredClientPort
 const hmrProtocol = process.env.HMR_PROTOCOL ?? (useHttps ? 'wss' : 'ws')
 const bunEnv = {
   ...process.env,

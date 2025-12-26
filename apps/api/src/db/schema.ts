@@ -17,7 +17,10 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    name: text('name').notNull(),
     email: text('email').notNull(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    image: text('image'),
     emailVerifiedAt: timestamp('email_verified_at', { mode: 'date', withTimezone: true }),
     passwordHash: text('password_hash'),
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
@@ -35,13 +38,17 @@ export const authSessions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
     expiresAt: timestamp('expires_at', { mode: 'date', withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     refreshExpiresAt: timestamp('refresh_expires_at', { mode: 'date', withTimezone: true })
   },
   (table) => ({
-    userIdx: index('auth_sessions_user_id_idx').on(table.userId)
+    userIdx: index('auth_sessions_user_id_idx').on(table.userId),
+    tokenUnique: uniqueIndex('auth_sessions_token_unique').on(table.token)
   })
 )
 
@@ -55,6 +62,12 @@ export const authKeys = pgTable(
     hashedPassword: text('hashed_password'),
     provider: text('provider'),
     providerUserId: text('provider_user_id'),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { mode: 'date', withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { mode: 'date', withTimezone: true }),
+    scope: text('scope'),
     expiresAt: timestamp('expires_at', { mode: 'date', withTimezone: true }),
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
@@ -73,19 +86,37 @@ export const passkeys = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
+    name: text('name'),
+    credentialID: text('credential_id').notNull(),
     publicKey: text('public_key').notNull(),
     counter: bigint('counter', { mode: 'number' }).notNull().default(0),
     deviceType: text('device_type'),
     backedUp: boolean('backed_up').notNull().default(false),
     authenticatorAttachment: text('authenticator_attachment'),
-    transports: text('transports').array(),
+    transports: text('transports'),
     lastUsedAt: timestamp('last_used_at', { mode: 'date', withTimezone: true }),
+    aaguid: text('aaguid'),
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
   },
   (table) => ({
-    userIdx: index('passkeys_user_id_idx').on(table.userId)
+    userIdx: index('passkeys_user_id_idx').on(table.userId),
+    credentialUnique: uniqueIndex('passkeys_credential_id_unique').on(table.credentialID)
+  })
+)
+
+export const verification = pgTable(
+  'verification',
+  {
+    id: text('id').primaryKey(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { mode: 'date', withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    identifierIdx: index('verification_identifier_idx').on(table.identifier)
   })
 )
 

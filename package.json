@@ -20,6 +20,7 @@
     "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
     "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
     "certs:mkcert": "scripts/setup-mkcert.sh",
+    "certs:fix": "bun run scripts/fix-ssl.ts",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepare": "bun run lint"
   },

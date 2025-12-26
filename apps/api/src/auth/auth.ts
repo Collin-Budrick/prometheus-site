@@ -1,7 +1,9 @@
 import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { randomUUID } from 'node:crypto'
 import { db } from '../db/client'
+import { authKeys, authSessions, passkeys, users, verification } from '../db/schema'
 
 type AuthRequestContext = {
   headers?: HeadersInit
@@ -30,7 +32,28 @@ const resolveHeaders = (context?: AuthRequestContext) => {
 
 export const auth = betterAuth({
   basePath: '/api/auth',
-  database: drizzleAdapter(db, { provider: 'pg' }),
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: {
+      user: users,
+      session: authSessions,
+      account: authKeys,
+      verification,
+      passkey: passkeys
+    }
+  }),
+  advanced: {
+    database: {
+      generateId: () => randomUUID()
+    }
+  },
+  account: {
+    fields: {
+      accountId: 'providerUserId',
+      providerId: 'provider',
+      password: 'hashedPassword'
+    }
+  },
   emailAndPassword: {
     enabled: true
   },
