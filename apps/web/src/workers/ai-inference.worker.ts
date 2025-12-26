@@ -31,8 +31,16 @@ export type AiWorkerResponse =
       runtime?: Runtime
       deviceMode?: DeviceMode
       modelId?: WebLlmModelId
+      threads?: number
     }
-  | { type: 'ready'; message: string; runtime: Runtime; deviceMode: DeviceMode; modelId: WebLlmModelId }
+  | {
+      type: 'ready'
+      message: string
+      runtime: Runtime
+      deviceMode: DeviceMode
+      modelId: WebLlmModelId
+      threads?: number
+    }
   | { type: 'token'; chunk: string }
   | { type: 'complete'; content: string }
   | { type: 'error'; error: string; loadState?: LoadState }
@@ -63,8 +71,26 @@ let moduleRef: typeof import('@mlc-ai/web-llm') | null = null
 let transformersRef: typeof TransformersTypes | null = null
 const engineCache: Partial<Record<WebLlmModelId, MLCEngine>> = {}
 const pipelineCache: Partial<Record<string, TextGenerationPipeline>> = {}
+let wasmThreadCount: number | null = null
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
+const getHardwareThreadCount = () => {
+  if (typeof navigator === 'undefined') return 1
+  const cores = navigator.hardwareConcurrency ?? 1
+  if (!Number.isFinite(cores)) return 1
+  return Math.max(1, cores)
+}
+const resolveWasmThreadCount = () => {
+  const isCrossOriginIsolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated
+  if (!isCrossOriginIsolated) return 1
+  const capped = Math.min(getHardwareThreadCount(), 4)
+  return Math.max(1, capped)
+}
+const getWasmThreadCount = () => {
+  if (wasmThreadCount !== null) return wasmThreadCount
+  wasmThreadCount = resolveWasmThreadCount()
+  return wasmThreadCount
+}
 const formatProgress = (report: InitProgressReport) => {
   const pct = Math.max(0, Math.min(100, Math.round(report.progress * 100)))
   const details = report.text ? ` · ${report.text}` : ''
@@ -121,6 +147,11 @@ const ensureTransformers = async () => {
   const mod = await import('@huggingface/transformers')
   mod.env.allowLocalModels = false
   mod.env.allowRemoteModels = true
+  const threads = getWasmThreadCount()
+  mod.env.wasm = {
+    ...mod.env.wasm,
+    numThreads: threads
+  }
   const ortWasmPath = '/ort/'
   const ortCdnFallback = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
   const backends = mod.env.backends ?? {}
@@ -225,7 +256,8 @@ const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: Accel
         message: `Ready via Transformers.js: ${loadedLabel} (${deviceLabel})`,
         runtime,
         deviceMode,
-        modelId
+        modelId,
+        threads: getWasmThreadCount()
       })
       return
     } catch (err) {
@@ -270,7 +302,8 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
     loadState: 'loading',
     runtime: 'transformers',
     deviceMode: message.acceleration === 'npu' ? 'webnn-npu' : hasWebGpu() ? 'webgpu' : 'wasm',
-    modelId: message.modelId
+    modelId: message.modelId,
+    threads: getWasmThreadCount()
   })
 
   await loadTransformersModel(message.modelId, message.acceleration)

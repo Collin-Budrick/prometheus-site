@@ -47,6 +47,13 @@ services:
       - traefik.http.routers.prometheus-web.entrypoints=web
       - traefik.http.routers.prometheus-web.priority=1
       - traefik.http.routers.prometheus-web.service=prometheus-web
+      - traefik.http.routers.prometheus-web-ai.rule=Host(`prometheus.prod`) && (PathPrefix(`/ai`) || PathPrefixRegexp(`^/[a-z]{2}/ai`))
+      - traefik.http.routers.prometheus-web-ai.entrypoints=web
+      - traefik.http.routers.prometheus-web-ai.priority=30
+      - traefik.http.routers.prometheus-web-ai.service=prometheus-web
+      - traefik.http.routers.prometheus-web-ai.middlewares=prometheus-web-ai-headers
+      - traefik.http.middlewares.prometheus-web-ai-headers.headers.customResponseHeaders.Cross-Origin-Opener-Policy=same-origin
+      - traefik.http.middlewares.prometheus-web-ai-headers.headers.customResponseHeaders.Cross-Origin-Embedder-Policy=require-corp
       - traefik.http.services.prometheus-web.loadbalancer.server.port=4173
 
   api:

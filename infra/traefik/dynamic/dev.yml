@@ -14,6 +14,15 @@ http:
       service: prometheus-dev-web
       tls: {}
       priority: 1
+    prometheus-dev-web-ai:
+      rule: Host(`prometheus.dev`) && (PathPrefix(`/ai`) || PathPrefixRegexp(`^/[a-z]{2}/ai`))
+      entryPoints:
+        - websecure
+      service: prometheus-dev-web
+      middlewares:
+        - prometheus-dev-web-ai-headers
+      tls: {}
+      priority: 30
     prometheus-dev-api:
       rule: Host(`prometheus.dev`) && PathPrefix(`/api`)
       entryPoints:
@@ -33,6 +42,11 @@ http:
         servers:
           - url: http://host.docker.internal:4000
   middlewares:
+    prometheus-dev-web-ai-headers:
+      headers:
+        customResponseHeaders:
+          Cross-Origin-Opener-Policy: same-origin
+          Cross-Origin-Embedder-Policy: require-corp
     prometheus-dev-api-strip:
       stripPrefix:
         prefixes:
