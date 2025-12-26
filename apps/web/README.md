@@ -11,6 +11,17 @@ Qwik City SSR app with UnoCSS, Lightning CSS, view transitions, speculation rule
 - `bun run format` – apply Oxfmt formatting.
 - `bun run test` – execute Qwik tests.
 
+## Environment
+
+Copy `.env.example` to `.env` and set:
+
+- **Ports + preview:** `WEB_PORT`, `WEB_PREVIEW_PORT` (or `PREVIEW_PORT`), `VITE_PREVIEW_CACHE`
+- **HMR (Docker/WSL/HTTPS):** `HMR_HOST`, `HMR_PORT`, `HMR_CLIENT_PORT`, `HMR_PROTOCOL`
+- **Better Auth:** `BETTER_AUTH_COOKIE_SECRET`, `BETTER_AUTH_RP_ID`, `BETTER_AUTH_RP_ORIGIN`
+- **OAuth (optional):** `BETTER_AUTH_<PROVIDER>_CLIENT_ID` / `BETTER_AUTH_<PROVIDER>_CLIENT_SECRET` pairs for Google, GitHub, Apple, Discord, Microsoft
+
+Passkeys/WebAuthn need HTTPS and a matching RP ID + origin. When using Traefik + mkcert locally, set `BETTER_AUTH_RP_ID=localhost` and `BETTER_AUTH_RP_ORIGIN=https://localhost:${WEB_PORT}` (or your forwarded dev host). If you access the dev server via a custom hostname, update both values to match that origin so `navigator.credentials` can register/assert correctly.
+
 ## Bundle analysis
 
 - `VITE_ANALYZE=1 bun run --cwd apps/web build` – generates bundle inspection output. Visualizer stats land in `apps/web/dist/stats/rollup-visualizer.html`, and Inspect artifacts live under `apps/web/dist/stats/inspect/`.

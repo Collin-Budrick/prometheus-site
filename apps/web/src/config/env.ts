@@ -30,6 +30,33 @@ const hmrPort = numberFromEnv(pickEnv(process.env.HMR_PORT, process.env.WEB_PORT
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
 const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
 const hmrClientPort = numberFromEnv(process.env.HMR_CLIENT_PORT, hmrPort)
+const ensureString = (value: string | undefined, fallback: string, name: string) => {
+  const resolved = (value ?? fallback).trim()
+  if (!resolved) {
+    throw new Error(`${name} is required`)
+  }
+  return resolved
+}
+
+type OAuthProvider = 'google' | 'github' | 'apple' | 'discord' | 'microsoft'
+
+type OAuthClient = {
+  clientId: string
+  clientSecret: string
+}
+
+const parseOAuth = (provider: OAuthProvider): OAuthClient | null => {
+  const key = provider.toUpperCase()
+  const clientId = process.env[`BETTER_AUTH_${key}_CLIENT_ID`]?.trim()
+  const clientSecret = process.env[`BETTER_AUTH_${key}_CLIENT_SECRET`]?.trim()
+
+  if (!clientId && !clientSecret) return null
+  if (!clientId || !clientSecret) {
+    throw new Error(`BETTER_AUTH_${key}_CLIENT_ID and BETTER_AUTH_${key}_CLIENT_SECRET must both be set`)
+  }
+
+  return { clientId, clientSecret }
+}
 
 const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
 const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
@@ -60,6 +87,20 @@ const hmr: HmrConfig = devAuditMode
 
 const analyzeBundles = process.env.VITE_ANALYZE === '1'
 const codeInspectorEnabled = process.env.VITE_CODE_INSPECTOR === '1'
+const betterAuthCookieSecret = ensureString(process.env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
+const betterAuthRpId = ensureString(process.env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
+const betterAuthRpOrigin = ensureString(
+  process.env.BETTER_AUTH_RP_ORIGIN ?? process.env.BETTER_AUTH_ORIGIN ?? process.env.PRERENDER_ORIGIN,
+  'https://localhost:4173',
+  'BETTER_AUTH_RP_ORIGIN'
+)
+
+const oauthProviders: OAuthProvider[] = ['google', 'github', 'apple', 'discord', 'microsoft']
+const betterAuthOAuth = oauthProviders.reduce<Partial<Record<OAuthProvider, OAuthClient>>>((all, provider) => {
+  const parsed = parseOAuth(provider)
+  if (parsed) all[provider] = parsed
+  return all
+}, {})
 
 export const env = {
   devPort,
@@ -69,5 +110,11 @@ export const env = {
   shouldUseHmrPolling,
   analyzeBundles,
   codeInspectorEnabled,
-  hmr
+  hmr,
+  betterAuth: {
+    cookieSecret: betterAuthCookieSecret,
+    rpId: betterAuthRpId,
+    rpOrigin: betterAuthRpOrigin,
+    oauth: betterAuthOAuth
+  }
 }

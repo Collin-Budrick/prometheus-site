@@ -51,6 +51,12 @@
 - **Serverful default:** Primary target is the existing Bun/Elysia server; DB-backed sessions and Valkey rate limiting run there.
 - **Edge optionality:** If deploying Qwik SSR to an edge runtime, prefer the stateless token option for session checks and reserve refresh/session rotation for the centralized Elysia origin to avoid blocking on database connections at the edge.
 
+## Configuration surface
+
+- Core secrets live in `.env` and are validated in both apps: `BETTER_AUTH_COOKIE_SECRET`, `BETTER_AUTH_RP_ID`, and `BETTER_AUTH_RP_ORIGIN` (falls back to `BETTER_AUTH_ORIGIN` / `PRERENDER_ORIGIN` for SSR preview).
+- OAuth providers are opt-in by setting paired env vars per provider (e.g., `BETTER_AUTH_GOOGLE_CLIENT_ID` and `BETTER_AUTH_GOOGLE_CLIENT_SECRET`). Validation requires both halves when either is present.
+- Passkeys require HTTPS and an RP ID + origin matching the browser host (e.g., `localhost` + `https://localhost:4173` when fronted by Traefik + mkcert in dev).
+
 ## Next steps
 
 - Model the required auth tables (users, sessions, passkeys, OAuth accounts) in Drizzle and plan migrations.
