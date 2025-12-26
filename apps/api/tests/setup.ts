@@ -1,6 +1,9 @@
 import { mock } from 'bun:test'
 import { chatMessages, storeItems } from '../src/db/schema'
 
+type AuthSession = { id: string; userId: string }
+type PasskeyEvent = { type: 'registration' | 'authentication'; payload: unknown }
+
 const defaultStoreItems = Array.from({ length: 15 }, (_, index) => ({
   id: index + 1,
   name: `Item ${index + 1}`,
@@ -15,10 +18,22 @@ const defaultChatMessages = [
 
 export const storeItemsData = structuredClone(defaultStoreItems)
 export const chatMessagesData = structuredClone(defaultChatMessages)
+export const authUsersData = [
+  { id: 'user-1', email: 'existing@example.com', name: 'Existing User' }
+]
+export const authSessionsData: AuthSession[] = []
+export const passkeyEvents: PasskeyEvent[] = []
+export const oauthStarts: Array<{ provider: string; redirect: string }> = []
+export const oauthCallbacks: Array<{ provider: string; code: string | null; state: string | null }> = []
 
 let nextChatId = chatMessagesData.length + 1
+let nextUserId = authUsersData.length + 1
+let nextSessionId = 1
+let registerChallenge = 'register-challenge'
+let authenticationChallenge = 'authenticate-challenge'
 
 const cacheStorage = new Map<string, string>()
+const valkeyCounters = new Map<string, { count: number; expiry: number }>()
 export const cacheKeysWritten: string[] = []
 export const publishedMessages: string[] = []
 const subscribers: ((message: string) => void)[] = []
@@ -84,8 +99,179 @@ const fakeDb = {
   }
 }
 
-mock.module('../src/db/client', () => ({ db: fakeDb }))
+const pgClient = {
+  async end() {},
+  async query() {},
+  async listen(_channel: string, _handler: (payload: string) => void, onListen?: () => void) {
+    onListen?.()
+    return {
+      async unlisten() {}
+    }
+  }
+}
+
+mock.module('../src/db/client', () => ({ db: fakeDb, pgClient }))
 mock.module('../src/db/prepare', () => ({ prepareDatabase: async () => {} }))
+
+const authJson = (body: unknown, init?: ResponseInit) => {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (init?.headers) {
+    Object.assign(headers, init.headers)
+  }
+  return new Response(JSON.stringify(body), {
+    status: init?.status ?? 200,
+    headers
+  })
+}
+
+const createSession = (userId: string) => {
+  const id = `sess-${nextSessionId}`
+  nextSessionId += 1
+  const cookie = `session=${id}; Path=/; HttpOnly; SameSite=Lax`
+  authSessionsData.push({ id, userId })
+  return { id, cookie }
+}
+
+const getSessionIdFromHeaders = (headers?: HeadersInit) => {
+  const cookies = new Headers(headers).get('cookie') ?? ''
+  const match = cookies.match(/session=([^;]+)/)
+  return match ? match[1] : null
+}
+
+const findUserByEmail = (email: string) => authUsersData.find((user) => user.email === email)
+
+const signInWithEmail = async (body: { email: string; password: string }, _context?: { request?: Request }) => {
+  const user = findUserByEmail(body.email)
+  if (!user) {
+    return authJson({ message: 'Invalid credentials' }, { status: 401 })
+  }
+
+  const session = createSession(user.id)
+  return authJson(
+    {
+      user,
+      session: { token: session.id, userId: user.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
+    },
+    { headers: { 'set-cookie': session.cookie } }
+  )
+}
+
+const signUpWithEmail = async (
+  body: { name: string; email: string; password: string },
+  _context?: { request?: Request }
+) => {
+  if (findUserByEmail(body.email)) {
+    return authJson({ message: 'User already exists' }, { status: 409 })
+  }
+
+  const user = { id: `user-${nextUserId}`, email: body.email, name: body.name }
+  nextUserId += 1
+  authUsersData.push(user)
+  const session = createSession(user.id)
+
+  return authJson(
+    {
+      user,
+      session: { token: session.id, userId: user.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
+    },
+    { headers: { 'set-cookie': session.cookie } }
+  )
+}
+
+const validateSession = async (context?: { request?: Request; headers?: HeadersInit }) => {
+  const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
+  if (!sessionId) return authJson({ message: 'No active session' }, { status: 401 })
+
+  const session = authSessionsData.find((record) => record.id === sessionId)
+  if (!session) return authJson({ message: 'No active session' }, { status: 401 })
+
+  const user = authUsersData.find((candidate) => candidate.id === session.userId)
+  if (!user) return authJson({ message: 'No active session' }, { status: 401 })
+
+  return authJson(
+    {
+      user,
+      session: { token: session.id, userId: user.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
+    },
+    { headers: { 'set-cookie': `session=${session.id}; Path=/; HttpOnly; SameSite=Lax` } }
+  )
+}
+
+const handleAuthRequest = async (request: Request) => {
+  const url = new URL(request.url)
+  const { pathname } = url
+
+  if (pathname.endsWith('/passkey/generate-register-options')) {
+    return authJson({
+      challenge: registerChallenge,
+      user: { id: authUsersData[0]?.id ?? 'user-1', name: authUsersData[0]?.name ?? 'Passkey User' },
+      rpId: 'localhost'
+    })
+  }
+
+  if (pathname.endsWith('/passkey/verify-registration')) {
+    let payload: unknown
+    try {
+      payload = await request.json()
+    } catch {
+      payload = null
+    }
+    passkeyEvents.push({ type: 'registration', payload })
+    const session = createSession(authUsersData[0]?.id ?? 'user-1')
+    return authJson({ verified: true }, { headers: { 'set-cookie': session.cookie } })
+  }
+
+  if (pathname.endsWith('/passkey/generate-authenticate-options')) {
+    return authJson({
+      challenge: authenticationChallenge,
+      allowCredentials: [{ id: 'cred-123', type: 'public-key' }]
+    })
+  }
+
+  if (pathname.endsWith('/passkey/verify-authentication')) {
+    let payload: unknown
+    try {
+      payload = await request.json()
+    } catch {
+      payload = null
+    }
+    passkeyEvents.push({ type: 'authentication', payload })
+    const session = createSession(authUsersData[0]?.id ?? 'user-1')
+    return authJson({ authenticated: true }, { headers: { 'set-cookie': session.cookie } })
+  }
+
+  const oauthStart = pathname.match(/\/api\/auth\/oauth\/(.+?)\/start/)
+  if (oauthStart) {
+    const provider = oauthStart[1]
+    const redirect = `/api/auth/oauth/${provider}/callback?code=mock-code&state=mock-state`
+    oauthStarts.push({ provider, redirect })
+    return new Response(null, {
+      status: 302,
+      headers: { location: redirect }
+    })
+  }
+
+  const oauthCallback = pathname.match(/\/api\/auth\/oauth\/(.+?)\/callback/)
+  if (oauthCallback) {
+    const provider = oauthCallback[1]
+    oauthCallbacks.push({ provider, code: url.searchParams.get('code'), state: url.searchParams.get('state') })
+    const session = createSession(authUsersData[0]?.id ?? 'user-1')
+    return new Response(null, {
+      status: 302,
+      headers: { location: '/', 'set-cookie': session.cookie }
+    })
+  }
+
+  return authJson({ message: 'Unhandled auth route' }, { status: 404 })
+}
+
+mock.module('../src/auth/auth', () => ({
+  auth: {},
+  handleAuthRequest,
+  signInWithEmail,
+  signUpWithEmail,
+  validateSession
+}))
 
 let valkeyReady = true
 
@@ -104,6 +290,37 @@ const valkey = {
       handler(message)
     }
     return 1
+  },
+  multi() {
+    const commands: Array<() => [null, number]> = []
+    return {
+      incr(key: string) {
+        const now = Date.now()
+        const record = valkeyCounters.get(key) ?? { count: 0, expiry: now + 60_000 }
+        record.count += 1
+        valkeyCounters.set(key, record)
+        commands.push(() => [null, record.count])
+        return this
+      },
+      pTTL(key: string) {
+        const record = valkeyCounters.get(key)
+        const ttl = record ? Math.max(0, record.expiry - Date.now()) : -1
+        commands.push(() => [null, ttl])
+        return this
+      },
+      async exec() {
+        return commands.map((command) => command())
+      }
+    }
+  },
+  async pExpire(key: string, windowMs: number) {
+    const now = Date.now()
+    const record = valkeyCounters.get(key) ?? { count: 0, expiry: now + windowMs }
+    record.expiry = now + windowMs
+    valkeyCounters.set(key, record)
+  },
+  async ping() {
+    return 'PONG'
   },
   duplicate() {
     return {
@@ -134,8 +351,18 @@ let startPromise: Promise<void> | null = null
 export const resetTestState = () => {
   storeItemsData.splice(0, storeItemsData.length, ...structuredClone(defaultStoreItems))
   chatMessagesData.splice(0, chatMessagesData.length, ...structuredClone(defaultChatMessages))
+  authUsersData.splice(0, authUsersData.length, { id: 'user-1', email: 'existing@example.com', name: 'Existing User' })
+  authSessionsData.splice(0, authSessionsData.length)
+  passkeyEvents.splice(0, passkeyEvents.length)
+  oauthStarts.splice(0, oauthStarts.length)
+  oauthCallbacks.splice(0, oauthCallbacks.length)
   nextChatId = chatMessagesData.length + 1
+  nextUserId = authUsersData.length + 1
+  nextSessionId = 1
+  registerChallenge = 'register-challenge'
+  authenticationChallenge = 'authenticate-challenge'
   cacheStorage.clear()
+  valkeyCounters.clear()
   cacheKeysWritten.splice(0, cacheKeysWritten.length)
   publishedMessages.splice(0, publishedMessages.length)
   subscribers.splice(0, subscribers.length)
