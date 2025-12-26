@@ -1,6 +1,13 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam, InitProgressReport, MLCEngine } from '@mlc-ai/web-llm'
 import type * as TransformersTypes from '@huggingface/transformers'
-import { webLlmModelRecords, webLlmModels, type WebLlmModelId } from '../config/ai-models'
+import {
+  getTransformersModel,
+  isWebLlmModelId,
+  webLlmModelRecords,
+  webLlmModels,
+  type AiModelId,
+  type WebLlmModelId
+} from '../config/ai-models'
 import type { AccelerationPreference } from '../config/ai-acceleration'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
@@ -18,8 +25,8 @@ type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown
 }
 
 export type AiWorkerRequest =
-  | { type: 'load-model'; modelId: WebLlmModelId; acceleration: AccelerationPreference }
-  | { type: 'generate'; modelId: WebLlmModelId; prompt: string; transcript: TranscriptEntry[] }
+  | { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference }
+  | { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] }
   | { type: 'stop' }
   | { type: 'reset' }
 
@@ -30,7 +37,7 @@ export type AiWorkerResponse =
       loadState?: LoadState
       runtime?: Runtime
       deviceMode?: DeviceMode
-      modelId?: WebLlmModelId
+      modelId?: AiModelId
       threads?: number
     }
   | {
@@ -38,7 +45,7 @@ export type AiWorkerResponse =
       message: string
       runtime: Runtime
       deviceMode: DeviceMode
-      modelId: WebLlmModelId
+      modelId: AiModelId
       threads?: number
     }
   | { type: 'token'; chunk: string }
@@ -63,7 +70,7 @@ const mapChunkToText = (chunk: ChatCompletionChunk) => {
 let loadState: LoadState = 'idle'
 let runtime: Runtime = 'web-llm'
 let deviceMode: DeviceMode = 'webgpu'
-let loadedModelId: WebLlmModelId | null = null
+let loadedModelId: AiModelId | null = null
 let transformersAbortController: AbortController | null = null
 let engineRef: MLCEngine | null = null
 let pipelineRef: TextGenerationPipeline | null = null
@@ -231,9 +238,9 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
   }
 }
 
-const loadTransformersModel = async (modelId: WebLlmModelId, acceleration: AccelerationPreference) => {
+const loadTransformersModel = async (modelId: AiModelId, acceleration: AccelerationPreference) => {
   const mod = await ensureTransformers()
-  const modelInfo = webLlmModels.find((model) => model.id === modelId)
+  const modelInfo = getTransformersModel(modelId)
   const transformersSpec = modelInfo?.transformers
   if (!transformersSpec) {
     setLoadState('error')
@@ -337,9 +344,13 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
     loadState
   })
 
-  const shouldTryWebLlm = message.acceleration !== 'npu' && hasWebGpu()
-  const webLlmLoaded = shouldTryWebLlm ? await loadWebLlmModel(message.modelId, message.acceleration) : false
-  if (webLlmLoaded) return
+  const webLlmModelId =
+    message.acceleration !== 'npu' && hasWebGpu() && isWebLlmModelId(message.modelId) ? message.modelId : null
+  const shouldTryWebLlm = webLlmModelId !== null
+  if (webLlmModelId) {
+    const webLlmLoaded = await loadWebLlmModel(webLlmModelId, message.acceleration)
+    if (webLlmLoaded) return
+  }
 
   send({
     type: 'progress',

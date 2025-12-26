@@ -5,6 +5,7 @@ import type { AccelerationTarget } from '../../../config/ai-acceleration'
 import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 import { WebLlmIsland } from './web-llm-island'
+import { WebNnOrtIsland } from './webnn-ort-island'
 
 export default component$(() => {
   const selectedAcceleration = useSignal<AccelerationTarget>('gpu')
@@ -39,10 +40,17 @@ export default component$(() => {
       />
 
       <div class="mt-6 space-y-6" onQVisible$={$(() => undefined)}>
-        <WebLlmIsland
-          preferredAcceleration={selectedAcceleration.value}
-          accelerationReady={accelerationReady.value}
-        />
+        {selectedAcceleration.value === 'npu' ? (
+          <WebNnOrtIsland
+            preferredAcceleration={selectedAcceleration.value}
+            accelerationReady={accelerationReady.value}
+          />
+        ) : (
+          <WebLlmIsland
+            preferredAcceleration={selectedAcceleration.value}
+            accelerationReady={accelerationReady.value}
+          />
+        )}
 
         <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
           <p class="text-xs uppercase tracking-wide text-emerald-300">{_`API fallback`}</p>
