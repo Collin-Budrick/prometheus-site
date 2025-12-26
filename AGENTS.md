@@ -63,7 +63,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Non-critical/global styles live in `apps/web/src/global.css` and UnoCSS output is `apps/web/public/assets/app.css` (generated).
 - Shared components live in `apps/web/src/components/...`.
 - Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
-- Non-locale entry routes (e.g., `apps/web/src/routes/ai/index.tsx`) should wrap `[locale]` pages via `LocaleEntry` from `apps/web/src/routes/_shared/locale/entry.tsx` so locale detection stays consistent.
+- Non-locale paths redirect to locale-prefixed routes via `apps/web/src/routes/plugin@locale.ts`; avoid adding non-locale wrapper routes unless you explicitly need non-redirect access.
 
 ### Page config (central JSON)
 

@@ -1,3 +1,4 @@
+import { defaultLocale } from 'compiled-i18n'
 import pageConfig from './page-config.json'
 import { stripLocalePrefix } from '../routes/_shared/locale/locale-routing'
 
@@ -49,6 +50,7 @@ export const getPrerenderRoutes = () => {
   return Object.entries(routes)
     .filter(([, routeConfig]) => (routeConfig.render ?? defaults.render) === 'ssg')
     .map(([path]) => normalizeConfigPath(path))
+    .map((path) => (path === '/' ? `/${defaultLocale}` : `/${defaultLocale}${path}`))
 }
 
 export const prerenderRoutes = getPrerenderRoutes()
