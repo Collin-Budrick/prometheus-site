@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "prometheus-site",
@@ -116,6 +117,7 @@
   },
   "patchedDependencies": {
     "compiled-i18n@1.2.1": "patches/compiled-i18n+1.2.1.patch",
+    "@mlc-ai/web-llm@0.2.80": "patches/@mlc-ai+web-llm+0.2.80.patch",
     "@builder.io/qwik@1.18.0": "patches/@builder.io+qwik+1.18.0.patch",
     "@builder.io/qwik-city@1.18.0": "patches/@builder.io+qwik-city+1.18.0.patch",
   },

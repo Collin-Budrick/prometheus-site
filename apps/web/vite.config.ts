@@ -360,7 +360,7 @@ export default defineConfig((configEnv) => {
         treeshake: treeshakeOptions
       },
       // Keep WASM assets externalized for worker scope (Transformers.js / ONNX runtime).
-      plugins: [tsconfigPaths()]
+      plugins: () => [tsconfigPaths()]
     },
     ssr: {
       noExternal: ['typegpu', 'typegpu/data', 'typed-binary', 'tinyest']

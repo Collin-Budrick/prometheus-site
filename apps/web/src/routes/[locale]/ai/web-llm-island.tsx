@@ -8,8 +8,8 @@ import type {
   LoadState,
   Runtime,
   TranscriptEntry
-} from '../../workers/ai-inference.worker'
-import workerUrl from '../../workers/ai-inference.worker?worker&url'
+} from '../../../workers/ai-inference.worker'
+import workerUrl from '../../../workers/ai-inference.worker?worker&url'
 
 const formatBytes = (bytes: number) => {
   const gb = bytes / 1024 ** 3
