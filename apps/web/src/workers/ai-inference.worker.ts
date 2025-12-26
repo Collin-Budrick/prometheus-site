@@ -121,8 +121,22 @@ const ensureTransformers = async () => {
   const mod = await import('@huggingface/transformers')
   mod.env.allowLocalModels = false
   mod.env.allowRemoteModels = true
-  if (mod.env.backends?.onnx?.wasm) {
-    mod.env.backends.onnx.wasm.wasmPaths = mod.env.backends.onnx.wasm.wasmPaths ?? 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+  const ortWasmPath = '/ort/'
+  const ortCdnFallback = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+  const backends = mod.env.backends ?? {}
+  const onnxBackend = backends.onnx ?? {}
+  const wasmBackend = {
+    ...onnxBackend.wasm,
+    wasmPaths: ortWasmPath,
+    fallbackWasmPaths: onnxBackend.wasm?.fallbackWasmPaths ?? ortCdnFallback
+  }
+
+  mod.env.backends = {
+    ...backends,
+    onnx: {
+      ...onnxBackend,
+      wasm: wasmBackend
+    }
   }
   transformersRef = mod
   return mod
