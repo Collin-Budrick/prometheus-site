@@ -144,7 +144,12 @@ export default component$(() => {
           >
             {_`Continue`}
           </button>
-          <a class="self-start text-sm font-medium text-emerald-300 hover:text-emerald-200" href="/reset">
+          <a
+            class="self-start text-sm font-medium text-emerald-300 hover:text-emerald-200"
+            href="/reset"
+            data-speculate="false"
+            rel="nofollow"
+          >
             {_`Forgot password?`}
           </a>
         </Form>
