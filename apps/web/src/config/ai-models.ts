@@ -3,9 +3,22 @@ export type WebLlmModelId =
   | 'Phi-3.5-mini-instruct-q4f16_1-MLC'
   | 'Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC'
 
-export type WebNnModelId = 'Xenova/gpt2' | 'Xenova/distilgpt2' | 'Xenova/opt-125m'
+export type WebNnModelId =
+  | 'Xenova/gpt2'
+  | 'Xenova/distilgpt2'
+  | 'Xenova/opt-125m'
+  | 'onnx-community/LFM2-2.6B-Exp-ONNX'
 
 export type AiModelId = WebLlmModelId | WebNnModelId
+
+export type TransformersDtype = 'auto' | 'fp32' | 'fp16' | 'int8' | 'uint8' | 'q4' | 'q4f16' | 'q8' | 'bnb4'
+
+export interface TransformersModelSpec {
+  id: string
+  label: string
+  task: 'text-generation'
+  dtype?: TransformersDtype
+}
 
 export interface WebLlmModel {
   id: WebLlmModelId
@@ -16,11 +29,7 @@ export interface WebLlmModel {
   contextLength: string
   recommendedTier: string
   description: string
-  transformers: {
-    id: string
-    label: string
-    task: 'text-generation'
-  }
+  transformers: TransformersModelSpec
 }
 
 export interface WebNnModel {
@@ -32,11 +41,8 @@ export interface WebNnModel {
   contextLength: string
   recommendedTier: string
   description: string
-  transformers: {
-    id: string
-    label: string
-    task: 'text-generation'
-  }
+  transformers: TransformersModelSpec
+  webnnUnsupportedReason?: string
 }
 
 export const webLlmModels: WebLlmModel[] = [
@@ -132,6 +138,23 @@ export const webNnModels: WebNnModel[] = [
       label: 'OPT 125M (ORT)',
       task: 'text-generation'
     }
+  },
+  {
+    id: 'onnx-community/LFM2-2.6B-Exp-ONNX',
+    label: 'LFM2 2.6B (ORT)',
+    format: 'ONNX (q4f16)',
+    size: '~1.6 GB',
+    sizeBytes: 1_569_556_014,
+    contextLength: '128K tokens',
+    recommendedTier: 'High-end NPU / 16+ GB shared memory',
+    description: 'Liquid foundation model with long context; heavy download but strong on-device responses.',
+    transformers: {
+      id: 'onnx-community/LFM2-2.6B-Exp-ONNX',
+      label: 'LFM2 2.6B (ONNX)',
+      task: 'text-generation',
+      dtype: 'q4f16'
+    },
+    webnnUnsupportedReason: 'Uses WebGPU-only ORT ops (GroupQueryAttention, SimplifiedLayerNormalization).'
   }
 ]
 

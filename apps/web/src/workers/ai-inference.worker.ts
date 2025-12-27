@@ -150,18 +150,22 @@ const shouldRetryWithCdn = (err: unknown) => {
   return normalized.includes('wasm') && normalized.includes('fetch')
 }
 
-const getTransformersDeviceCandidates = (acceleration: AccelerationPreference): DeviceMode[] => {
+const getTransformersDeviceCandidates = (
+  acceleration: AccelerationPreference,
+  webnnUnsupportedReason?: string
+): DeviceMode[] => {
+  const webnnAllowed = !webnnUnsupportedReason
   if (acceleration === 'npu') {
-    const devices: DeviceMode[] = ['webnn-npu', 'webnn-gpu', 'webnn-cpu', 'webnn']
-    if (hasWebGpu()) devices.push('webgpu')
-    devices.push('wasm')
-    return uniqueDevices(devices)
+    return webnnAllowed ? ['webnn-npu'] : hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
   }
 
   if (acceleration === 'auto') {
     const devices: DeviceMode[] = []
     if (hasWebGpu()) devices.push('webgpu')
-    devices.push('webnn', 'webnn-gpu', 'webnn-cpu', 'wasm')
+    if (webnnAllowed) {
+      devices.push('webnn', 'webnn-gpu', 'webnn-cpu')
+    }
+    devices.push('wasm')
     return uniqueDevices(devices)
   }
 
@@ -241,7 +245,22 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
     send({ type: 'error', error: 'Selected model is not available for Transformers.js.', loadState })
     return
   }
-  const devices = getTransformersDeviceCandidates(acceleration)
+  const webnnUnsupportedReason =
+    modelInfo && 'webnnUnsupportedReason' in modelInfo ? modelInfo.webnnUnsupportedReason : undefined
+  const devices = getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason)
+  const attemptedWebnn = devices.some((device) => device.startsWith('webnn'))
+
+  if (acceleration === 'npu' && webnnUnsupportedReason) {
+    send({
+      type: 'progress',
+      message: `WebNN NPU is unavailable for this model. ${webnnUnsupportedReason} Falling back...`,
+      loadState: 'loading',
+      runtime: 'transformers',
+      deviceMode: hasWebGpu() ? 'webgpu' : 'wasm',
+      modelId,
+      threads: getWasmThreadCount()
+    })
+  }
   let lastError: Error | null = null
 
   const loadPipelineForDevice = async (device: DeviceMode) => {
@@ -251,7 +270,13 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
       pipelineRef = cachedPipeline
       return
     }
-    const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, { device })) as TextGenerationPipeline
+    const pipelineOptions: Record<string, unknown> = { device }
+    if (transformersSpec.dtype) {
+      pipelineOptions.dtype = transformersSpec.dtype
+    } else if (device.startsWith('webnn')) {
+      pipelineOptions.dtype = 'auto'
+    }
+    const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, pipelineOptions)) as TextGenerationPipeline
     pipelineRef = pipeline
     pipelineCache[cacheKey] = pipeline
   }
@@ -320,7 +345,15 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
     console.error(lastError)
   }
   setLoadState('error')
-  send({ type: 'error', error: lastError?.message ?? 'Unable to load the fallback pipeline.', loadState })
+  const errorMessage =
+    acceleration === 'npu'
+      ? attemptedWebnn
+        ? `WebNN NPU failed: ${lastError?.message ?? 'Unable to initialize the selected device.'}`
+        : webnnUnsupportedReason
+          ? `WebNN NPU is not supported for this model. ${webnnUnsupportedReason} ${lastError?.message ?? ''}`.trim()
+          : lastError?.message ?? 'Unable to load the fallback pipeline.'
+      : lastError?.message ?? 'Unable to load the fallback pipeline.'
+  send({ type: 'error', error: errorMessage, loadState })
 }
 
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {

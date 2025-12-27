@@ -251,6 +251,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const isAccelerationReady = accelerationReady !== false
   const isWebNn = deviceMode.value.startsWith('webnn')
   const isWebNnNpu = deviceMode.value === 'webnn-npu'
+  const webnnUnsupportedReason = selectedModel?.webnnUnsupportedReason
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
   const shouldShowWebNnFallback = isAccelerationReady && loadState.value === 'ready' && !isWebNn
@@ -404,6 +405,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
           {shouldShowWebNnFallback && (
             <p class="text-sm text-amber-200">{_`WebNN was not detected; using a fallback backend.`}</p>
+          )}
+          {webnnUnsupportedReason && (
+            <p class="text-sm text-amber-200">
+              {_`WebNN NPU cannot load this model. ${webnnUnsupportedReason} We will attempt a fallback backend.`}
+            </p>
           )}
           {loadedModelId.value && !isSelectedModelLoaded && (
             <p class="text-sm text-amber-200">
