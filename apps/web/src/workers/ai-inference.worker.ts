@@ -984,6 +984,20 @@ const isWebGpuRuntimeFailure = (err: unknown) => {
   return markers.some((marker) => normalized.includes(marker))
 }
 
+const isWebNnRuntimeFailure = (err: unknown) => {
+  const cause = (err as { cause?: unknown })?.cause
+  const normalized = `${getErrorText(err)} ${getErrorText(cause)}`.toLowerCase()
+  if (!normalized.trim()) return false
+  const markers = [
+    'webnn',
+    'mlcontext',
+    'createtensor',
+    'invalid descriptor',
+    'all dimensions should be positive'
+  ]
+  return markers.some((marker) => normalized.includes(marker))
+}
+
 const isWebLlmDeviceLost = (err: unknown) => {
   const cause = (err as { cause?: unknown })?.cause
   const normalized = `${getErrorText(err)} ${getErrorText(cause)}`.toLowerCase()
@@ -1647,19 +1661,56 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
     return total
   }
 
+  const ensureGenerationRoom = (tokenized: any, maxLength: number) => {
+    const promptTokenCount = resolveTokenCount(tokenized?.attention_mask)
+    if (typeof promptTokenCount !== 'number' || promptTokenCount < maxLength) {
+      return { tokenized, promptTokenCount: promptTokenCount ?? 0 }
+    }
+
+    const attentionMask = tokenized?.attention_mask
+    const inputIds = tokenized?.input_ids
+    if (!attentionMask?.data || !inputIds?.data || !Array.isArray(attentionMask.dims) || !Array.isArray(inputIds.dims)) {
+      return { tokenized, promptTokenCount: promptTokenCount ?? 0 }
+    }
+
+    const padTokenId =
+      typeof tokenizer?.pad_token_id === 'number'
+        ? tokenizer.pad_token_id
+        : typeof tokenizer?.eos_token_id === 'number'
+          ? tokenizer.eos_token_id
+          : 0
+    const idsData = BigInt64Array.from(inputIds.data as ArrayLike<bigint>)
+    const maskData = BigInt64Array.from(attentionMask.data as ArrayLike<bigint>)
+    if (idsData.length && maskData.length) {
+      idsData[0] = BigInt(padTokenId)
+      maskData[0] = 0n
+      tokenized.input_ids = new mod.Tensor('int64', idsData, inputIds.dims)
+      tokenized.attention_mask = new mod.Tensor('int64', maskData, attentionMask.dims)
+    }
+
+    const adjustedCount = resolveTokenCount(tokenized.attention_mask) ?? 0
+    return { tokenized, promptTokenCount: adjustedCount }
+  }
+
   if (canRunFixedInput && model && typeof fixedInputLength === 'number') {
     const fixedLength = fixedInputLength
     const targetLength = Math.min(fixedLength, generationLimits.maxSequenceLength)
     const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
     tokenizer.padding_side = 'left'
-    const tokenized = tokenizer([composedPrompt], {
+    let tokenized = tokenizer([composedPrompt], {
       add_special_tokens: addSpecialTokens,
       padding: 'max_length',
       truncation: true,
       max_length: targetLength
     })
-    const promptTokenCount = resolveTokenCount(tokenized.attention_mask) ?? 0
-    const maxNewTokens = Math.max(1, Math.min(generationLimits.maxNewTokens, targetLength - promptTokenCount))
+    const adjusted = ensureGenerationRoom(tokenized, targetLength)
+    tokenized = adjusted.tokenized
+    const promptTokenCount = adjusted.promptTokenCount
+    const availableTokens = targetLength - promptTokenCount
+    if (availableTokens <= 0) {
+      throw new Error('Prompt exceeds the model context window. Shorten the prompt or reset the conversation.')
+    }
+    const maxNewTokens = Math.min(generationLimits.maxNewTokens, availableTokens)
     const outputTokenIds = await model.generate({
       ...tokenized,
       max_new_tokens: maxNewTokens,
@@ -1677,11 +1728,19 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
 
   if (model?.generate) {
     const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
-    const tokenized = tokenizer([composedPrompt], {
+    let tokenized = tokenizer([composedPrompt], {
       add_special_tokens: addSpecialTokens,
       truncation: true,
       max_length: generationLimits.maxSequenceLength
     })
+    const adjusted = ensureGenerationRoom(tokenized, generationLimits.maxSequenceLength)
+    tokenized = adjusted.tokenized
+    const promptTokenCount = adjusted.promptTokenCount
+    const availableTokens = generationLimits.maxSequenceLength - promptTokenCount
+    if (availableTokens <= 0) {
+      throw new Error('Prompt exceeds the model context window. Shorten the prompt or reset the conversation.')
+    }
+    const maxNewTokens = Math.min(generationLimits.maxNewTokens, availableTokens)
     const tokenData = resolveTokenData(tokenized.input_ids)
     let inputIds = tokenized.input_ids
     let pastKeyValues: unknown
@@ -1705,7 +1764,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
       input_ids: inputIds,
       attention_mask: tokenized.attention_mask,
       past_key_values: pastKeyValues,
-      max_new_tokens: generationLimits.maxNewTokens,
+      max_new_tokens: maxNewTokens,
       temperature: 0.6,
       streamer,
       signal: abortController.signal,
@@ -1782,6 +1841,41 @@ const handleGenerate = async (message: Extract<AiWorkerRequest, { type: 'generat
         type: 'error',
         error: 'WebLLM lost the GPU device. A fallback backend is ready; please retry your prompt.'
       })
+      return
+    }
+    const shouldFallbackFromWebNn =
+      runtime === 'transformers' &&
+      deviceMode.startsWith('webnn') &&
+      modelId &&
+      isWebNnRuntimeFailure(err) &&
+      !['webgpu', 'wasm'].includes(forcedTransformersDevices.get(modelId) ?? '')
+    if (shouldFallbackFromWebNn && modelId) {
+      transformersAbortController?.abort()
+      transformersAbortController = null
+      resetTransformersConversationCache()
+      let fallbackDevice: DeviceMode = hasWebGpu() ? 'webgpu' : 'wasm'
+      if (fallbackDevice === 'webgpu' && modelId.startsWith(onnxCommunityModelPrefix)) {
+        const skipWebGpu = await resolveOnnxCommunityWebGpuSkip(modelId)
+        if (skipWebGpu) {
+          fallbackDevice = 'wasm'
+        }
+      }
+      forcedTransformersDevices.set(modelId, fallbackDevice)
+      setLoadState('loading')
+      send({
+        type: 'progress',
+        message: 'WebNN execution failed; switching to a fallback backend...',
+        loadState,
+        runtime: 'transformers',
+        deviceMode: fallbackDevice,
+        modelId,
+        threads: getWasmThreadCount()
+      })
+      const fallbackReady = await loadTransformersModel(modelId, 'gpu', lastLoadDtype, { preferNpu: false })
+      if (fallbackReady) {
+        const assistantText = await handleTransformersGeneration(message.prompt, message.transcript)
+        send({ type: 'complete', content: assistantText })
+      }
       return
     }
     const shouldFallbackToWasm =
