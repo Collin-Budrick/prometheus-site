@@ -160,14 +160,45 @@ type NavLink = {
   dataSpeculate?: SpeculationCandidate['action']
 }
 
-const navLinks: NavLink[] = [
+const baseNavLinks: NavLink[] = [
   { path: '/', label: () => _`Home`, dataSpeculate: getPageSpeculation('/') },
-  { path: '/store', label: () => _`Store`, dataSpeculate: getPageSpeculation('/store') },
+  { path: '/store', label: () => _`Store`, dataSpeculate: getPageSpeculation('/store') }
+]
+
+const anonymousNavLinks: NavLink[] = [
+  { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
+  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
+  { path: '/login', label: () => _`Login`, dataSpeculate: getPageSpeculation('/login') }
+]
+
+const authenticatedNavLinks: NavLink[] = [
+  { path: '/dashboard', label: () => _`User Dashboard`, dataSpeculate: getPageSpeculation('/dashboard') },
+  { path: '/account', label: () => _`Account`, dataSpeculate: getPageSpeculation('/account') },
   { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
   { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
   { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
-  { path: '/login', label: () => _`Login`, dataSpeculate: getPageSpeculation('/login') }
+  { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
 ]
+
+const resolveNavLinks = (hasSession: boolean): NavLink[] => [
+  ...baseNavLinks,
+  ...(hasSession ? authenticatedNavLinks : anonymousNavLinks)
+]
+
+const uniqueNavLinks = (links: NavLink[]): NavLink[] => {
+  const seen = new Set<string>()
+  return links.filter(({ path }) => {
+    if (seen.has(path)) return false
+    seen.add(path)
+    return true
+  })
+}
+
+const speculationNavLinks = uniqueNavLinks([
+  ...resolveNavLinks(false),
+  ...resolveNavLinks(true)
+])
 
 export const useSignOut = routeAction$(async (_, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
@@ -191,7 +222,7 @@ export const useSessionLoader = routeLoader$(async (event) => {
   }
 })
 
-const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))
+const resolveNavOrder = (links: NavLink[]) => links.map((link) => (link.path === '/' ? '/' : link.path))
 
 const normalizeNavPath = (pathname: string) => {
   const stripped = stripLocalePrefix(pathname) || '/'
@@ -199,18 +230,18 @@ const normalizeNavPath = (pathname: string) => {
   return stripped
 }
 
-const resolveNavIndex = (href: string) => {
+const resolveNavIndex = (href: string, order: string[]) => {
   try {
     const path = normalizeNavPath(new URL(href, 'http://qwik.local').pathname)
-    return navOrder.indexOf(path)
+    return order.indexOf(path)
   } catch {
     return -1
   }
 }
 
-const resolveNavDirection = (fromHref: string, toHref: string) => {
-  const fromIndex = resolveNavIndex(fromHref)
-  const toIndex = resolveNavIndex(toHref)
+const resolveNavDirection = (fromHref: string, toHref: string, order: string[]) => {
+  const fromIndex = resolveNavIndex(fromHref, order)
+  const toIndex = resolveNavIndex(toHref, order)
   if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return null
   return toIndex > fromIndex ? 'left' : 'right'
 }
@@ -250,7 +281,7 @@ const allowedPreloadHrefs = new Set(
 )
 
 const resolveSpeculationCandidates = (pathname: string, prefix: string): SpeculationCandidate[] =>
-  navLinks
+  speculationNavLinks
     .filter(
       (
         link
@@ -568,6 +599,8 @@ export default component$(() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
   })()
+  const navLinks = resolveNavLinks(session.value.hasSession)
+  const navOrder = resolveNavOrder(navLinks)
   const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
   const handleNavClick$ = $((event: MouseEvent, element: HTMLAnchorElement) => {
     if (!featureFlags.viewTransitions) return
@@ -577,7 +610,7 @@ export default component$(() => {
     if (element.hasAttribute('download')) return
     if (element.origin !== window.location.origin) return
 
-    const direction = resolveNavDirection(window.location.href, element.href)
+    const direction = resolveNavDirection(window.location.href, element.href, navOrder)
     if (direction) {
       document.documentElement.dataset.vtDirection = direction
     } else {
@@ -594,30 +627,17 @@ export default component$(() => {
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
-            {navLinks
-              .filter(({ path }) => path !== '/login')
-              .map(({ path, label, dataSpeculate }) => (
-                <Link
-                  key={path}
-                  href={linkHref(path)}
-                  data-speculate={dataSpeculate}
-                  onClick$={handleNavClick$}
-                  class="hover:text-emerald-300 transition-colors"
-                >
-                  {label()}
-                </Link>
-              ))}
-            {!session.value.hasSession && (
+            {navLinks.map(({ path, label, dataSpeculate }) => (
               <Link
-                key="/login"
-                href={linkHref('/login')}
-                data-speculate={getPageSpeculation('/login')}
+                key={path}
+                href={linkHref(path)}
+                data-speculate={dataSpeculate}
                 onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
-                {_`Login`}
+                {label()}
               </Link>
-            )}
+            ))}
             {session.value.hasSession && (
               <Form action={signOutAction} class="flex">
                 <button
