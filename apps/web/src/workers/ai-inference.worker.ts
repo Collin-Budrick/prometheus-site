@@ -33,6 +33,8 @@ export type AiWorkerRequest =
   | { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] }
   | { type: 'stop' }
   | { type: 'reset' }
+  | { type: 'clear-cache' }
+  | { type: 'shutdown' }
 
 export type AiWorkerResponse =
   | {
@@ -76,6 +78,7 @@ export type AiWorkerResponse =
   | { type: 'complete'; content: string }
   | { type: 'error'; error: string; loadState?: LoadState }
   | { type: 'stopped' }
+  | { type: 'terminated' }
 
 type WorkerScope = {
   postMessage: (message: AiWorkerResponse) => void
@@ -101,8 +104,11 @@ let pipelineRef: TextGenerationPipeline | null = null
 let moduleRef: typeof import('@mlc-ai/web-llm') | null = null
 let transformersRef: typeof TransformersTypes | null = null
 let lastLoadDtype: TransformersDtype | undefined
-const engineCache: Partial<Record<WebLlmModelId, MLCEngine>> = {}
-const pipelineCache: Partial<Record<string, TextGenerationPipeline>> = {}
+type PipelineCacheEntry = { pipeline: TextGenerationPipeline; modelId: AiModelId }
+const engineCache = new Map<WebLlmModelId, MLCEngine>()
+const pipelineCache = new Map<string, PipelineCacheEntry>()
+const engineCacheLimit = 2
+const pipelineCacheLimit = 2
 const fixedInputLengths = new Map<AiModelId, number>()
 const forcedTransformersDevices = new Map<AiModelId, DeviceMode>()
 const onnxTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
@@ -128,6 +134,9 @@ const webLlmCacheScopes = {
   model: 'webllm/model',
   wasm: 'webllm/wasm'
 }
+const fetchTimeoutMs = 15_000
+const fetchRetryAttempts = 3
+const fetchBackoffBaseMs = 500
 const transformersConfigFiles = new Set([
   'config.json',
   'generation_config.json',
@@ -277,10 +286,50 @@ const ensureCache = async (cacheName: string) => {
   return caches.open(cacheName)
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+type FetchWithRetryOptions = RequestInit & { timeoutMs?: number }
+const fetchWithRetry = async (url: string, options: FetchWithRetryOptions = {}) => {
+  if (isOffline()) {
+    throw new Error('Network offline; cannot reach model repository.')
+  }
+
+  let lastError: unknown = null
+  const timeoutMs = options.timeoutMs ?? fetchTimeoutMs
+  for (let attempt = 1; attempt <= fetchRetryAttempts; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal })
+      if (!response.ok) {
+        lastError = new Error(`Request failed (${response.status}).`)
+      } else {
+        return response
+      }
+    } catch (err) {
+      lastError = err
+      const isAbort = (err as DOMException)?.name === 'AbortError'
+      if (attempt >= fetchRetryAttempts) {
+        throw isAbort ? new Error(`Request timed out after ${timeoutMs}ms.`) : (err as Error)
+      }
+      const backoff = fetchBackoffBaseMs * 2 ** (attempt - 1) + Math.random() * fetchBackoffBaseMs
+      await sleep(backoff)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  throw lastError ?? new Error('Request failed.')
+}
+
 const cacheUrl = async (cache: Cache, url: string) => {
   const cached = await cache.match(url)
   if (cached) return
-  await cache.add(url)
+  const response = await fetchWithRetry(url)
+  if (!response.ok) {
+    throw new Error(`Unable to fetch ${url} (${response.status}).`)
+  }
+  await cache.put(url, response.clone())
 }
 
 const fetchJsonWithCache = async <T>(cache: Cache, url: string): Promise<T> => {
@@ -288,7 +337,7 @@ const fetchJsonWithCache = async <T>(cache: Cache, url: string): Promise<T> => {
   if (cached) {
     return (await cached.json()) as T
   }
-  const response = await fetch(url)
+  const response = await fetchWithRetry(url)
   if (!response.ok) {
     throw new Error(`Unable to fetch ${url} (${response.status}).`)
   }
@@ -299,7 +348,7 @@ const fetchJsonWithCache = async <T>(cache: Cache, url: string): Promise<T> => {
 const fetchHuggingFaceTree = async (modelId: AiModelId) => {
   const cached = hfTreeCache.get(modelId)
   if (cached) return cached
-  const response = await fetch(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
+  const response = await fetchWithRetry(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
   if (!response.ok) {
     throw new Error(`Unable to fetch model manifest (${response.status}).`)
   }
@@ -319,7 +368,7 @@ const fetchHuggingFaceTree = async (modelId: AiModelId) => {
 const fetchOnnxCommunityTree = async (modelId: AiModelId) => {
   const cached = onnxTreeCache.get(modelId)
   if (cached) return cached
-  const response = await fetch(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
+  const response = await fetchWithRetry(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
   if (!response.ok) {
     throw new Error(`Unable to fetch model manifest (${response.status}).`)
   }
@@ -343,7 +392,7 @@ const fetchOnnxCommunityConfig = async (modelId: AiModelId) => {
 
   let sequenceLength = defaultWebNnSequenceLength
   try {
-    const response = await fetch(`https://huggingface.co/${modelId}/raw/main/config.json`)
+    const response = await fetchWithRetry(`https://huggingface.co/${modelId}/raw/main/config.json`)
     if (response.ok) {
       const config = await response.json()
       const candidates = [
@@ -588,6 +637,100 @@ const updateTransformersConversationCache = (modelId: AiModelId, tokenIds: BigIn
   }
 }
 
+const disposeEngine = async (engine: MLCEngine | null | undefined) => {
+  if (!engine) return
+  try {
+    await engine.unload()
+  } catch {
+    // Ignore unload failures during shutdown.
+  }
+}
+
+const disposePipelineEntry = async (entry: PipelineCacheEntry | null | undefined) => {
+  if (!entry) return
+  const pipeline = entry.pipeline
+  const pipelineDispose = (pipeline as { dispose?: () => Promise<void> | void }).dispose
+  try {
+    if (typeof pipelineDispose === 'function') {
+      await pipelineDispose.call(pipeline)
+    }
+  } catch {
+    // Ignore dispose failures.
+  }
+  const model = (pipeline as { model?: { dispose?: () => Promise<void> | void } }).model
+  try {
+    if (model && typeof model.dispose === 'function') {
+      await model.dispose.call(model)
+    }
+  } catch {
+    // Ignore model dispose failures.
+  }
+  const tokenizer = (pipeline as { tokenizer?: { dispose?: () => void } }).tokenizer
+  try {
+    if (tokenizer && typeof tokenizer.dispose === 'function') {
+      tokenizer.dispose.call(tokenizer)
+    }
+  } catch {
+    // Ignore tokenizer dispose failures.
+  }
+  if (transformersConversationCache?.modelId === entry.modelId) {
+    resetTransformersConversationCache()
+  }
+}
+
+const touchEngineCache = (modelId: WebLlmModelId) => {
+  const cached = engineCache.get(modelId)
+  if (!cached) return null
+  engineCache.delete(modelId)
+  engineCache.set(modelId, cached)
+  return cached
+}
+
+const touchPipelineCache = (cacheKey: string) => {
+  const cached = pipelineCache.get(cacheKey)
+  if (!cached) return null
+  pipelineCache.delete(cacheKey)
+  pipelineCache.set(cacheKey, cached)
+  return cached
+}
+
+const enforceEngineCacheBudget = async () => {
+  while (engineCache.size > engineCacheLimit) {
+    const [evictedId, evictedEngine] = engineCache.entries().next().value as [WebLlmModelId, MLCEngine]
+    engineCache.delete(evictedId)
+    await disposeEngine(evictedEngine)
+  }
+}
+
+const enforcePipelineCacheBudget = async () => {
+  while (pipelineCache.size > pipelineCacheLimit) {
+    const [evictedKey, evictedEntry] = pipelineCache.entries().next().value as [string, PipelineCacheEntry]
+    pipelineCache.delete(evictedKey)
+    await disposePipelineEntry(evictedEntry)
+  }
+}
+
+const clearAllCaches = async () => {
+  const engines = Array.from(engineCache.values())
+  engineCache.clear()
+  await Promise.all(engines.map((engine) => disposeEngine(engine)))
+
+  const pipelines = Array.from(pipelineCache.values())
+  pipelineCache.clear()
+  await Promise.all(pipelines.map((entry) => disposePipelineEntry(entry)))
+
+  await disposeEngine(engineRef)
+  engineRef = null
+  await disposePipelineEntry(pipelineRef ? { pipeline: pipelineRef, modelId: loadedModelId ?? '' } : null)
+  pipelineRef = null
+  resetTransformersConversationCache()
+  loadedModelId = null
+  runtime = 'web-llm'
+  deviceMode = 'webgpu'
+  lastLoadDtype = undefined
+  setLoadState('idle')
+}
+
 const getErrorText = (err: unknown) => {
   if (!err) return ''
   if (typeof err === 'string') return err
@@ -626,14 +769,12 @@ const unloadWebLlmEngine = async (modelId: AiModelId | null) => {
   const engine = engineRef
   engineRef = null
   if (modelId) {
-    delete engineCache[modelId as WebLlmModelId]
+    const cached = engineCache.get(modelId as WebLlmModelId)
+    if (cached === engine) {
+      engineCache.delete(modelId as WebLlmModelId)
+    }
   }
-  if (!engine) return
-  try {
-    await engine.unload()
-  } catch {
-    // Ignore unload failures during device loss.
-  }
+  await disposeEngine(engine)
 }
 
 const getTransformersDeviceCandidates = (
@@ -699,6 +840,9 @@ const prefetchTransformersModel = async (modelId: AiModelId, dtypeOverride?: Tra
     })
     return
   }
+  if (isOffline()) {
+    throw new Error('Offline: connect to the internet to prefetch model assets.')
+  }
   const dtype = resolveTransformersPrefetchDtype(modelId, dtypeOverride)
   sendPrefetchProgress({
     modelId,
@@ -733,6 +877,9 @@ const prefetchWebLlmModel = async (modelId: WebLlmModelId) => {
   const record = webLlmModelRecords.find((item) => item.model_id === modelId)
   if (!record) {
     throw new Error(`Missing WebLLM model record for ${modelId}.`)
+  }
+  if (isOffline()) {
+    throw new Error('Offline: connect to the internet to prefetch model assets.')
   }
   const modelUrl = normalizeWebLlmModelUrl(record.model)
   sendPrefetchProgress({
@@ -791,7 +938,7 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
   const mod = await ensureModule()
 
   try {
-    const cachedEngine = engineCache[modelId]
+    const cachedEngine = touchEngineCache(modelId)
     if (cachedEngine) {
       cachedEngine.setInitProgressCallback((report) => send({ type: 'progress', message: formatProgress(report) }))
       engineRef = cachedEngine
@@ -801,7 +948,8 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
         initProgressCallback: (report) => send({ type: 'progress', message: formatProgress(report) })
       })
       engineRef = engine
-      engineCache[modelId] = engine
+      engineCache.set(modelId, engine)
+      await enforceEngineCacheBudget()
     }
 
     loadedModelId = modelId
@@ -916,10 +1064,10 @@ const loadTransformersModel = async (
     for (const [index, dtype] of dtypeCandidates.entries()) {
       const dtypeKey = dtype ?? 'default'
       const cacheKey = `${transformersSpec.id}:${device}:${dtypeKey}`
-      const cachedPipeline = pipelineCache[cacheKey]
+      const cachedPipeline = touchPipelineCache(cacheKey)
       if (cachedPipeline) {
-        pipelineRef = cachedPipeline
-        const fixedLength = updateFixedInputLength(modelId, cachedPipeline)
+        pipelineRef = cachedPipeline.pipeline
+        const fixedLength = updateFixedInputLength(modelId, cachedPipeline.pipeline)
         if (!fixedLength && webnnOverrides?.sequenceLength) {
           fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
         }
@@ -942,7 +1090,8 @@ const loadTransformersModel = async (
       try {
         const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, pipelineOptions)) as TextGenerationPipeline
         pipelineRef = pipeline
-        pipelineCache[cacheKey] = pipeline
+        pipelineCache.set(cacheKey, { pipeline, modelId })
+        await enforcePipelineCacheBudget()
         const fixedLength = updateFixedInputLength(modelId, pipeline)
         if (!fixedLength && webnnOverrides?.sequenceLength) {
           fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
@@ -1400,6 +1549,10 @@ const stopStreaming = async () => {
   send({ type: 'stopped' })
 }
 
+ctx.addEventListener('close', () => {
+  void clearAllCaches()
+})
+
 ctx.addEventListener('message', (event: MessageEvent<AiWorkerRequest>) => {
   const data = event.data
   if (!data) return
@@ -1422,6 +1575,20 @@ ctx.addEventListener('message', (event: MessageEvent<AiWorkerRequest>) => {
       transformersAbortController = null
       resetTransformersConversationCache()
       send({ type: 'stopped' })
+      break
+    case 'clear-cache':
+      transformersAbortController?.abort()
+      transformersAbortController = null
+      void clearAllCaches()
+      break
+    case 'shutdown':
+      transformersAbortController?.abort()
+      transformersAbortController = null
+      void (async () => {
+        await clearAllCaches()
+        send({ type: 'terminated' })
+        ctx.close()
+      })()
       break
   }
 })
