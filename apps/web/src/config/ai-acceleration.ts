@@ -15,6 +15,7 @@ export const pickAccelerationTarget = (gpuTier: GpuTier, npuTier: NpuTier): Acce
   const gpuScore = tierScore[gpuTier] ?? 0
   const npuScore = tierScore[npuTier] ?? 0
 
-  if (npuScore > gpuScore) return 'npu'
+  if (npuScore > 0) return 'npu'
+  if (gpuScore > 0) return 'gpu'
   return 'gpu'
 }

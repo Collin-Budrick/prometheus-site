@@ -8,7 +8,7 @@ import { WebLlmIsland } from './web-llm-island'
 import { WebNnOrtIsland } from './webnn-ort-island'
 
 export default component$(() => {
-  const selectedAcceleration = useSignal<AccelerationTarget>('gpu')
+  const selectedAcceleration = useSignal<AccelerationTarget>('npu')
   const accelerationReady = useSignal(false)
   const manualOverride = useSignal(false)
 
