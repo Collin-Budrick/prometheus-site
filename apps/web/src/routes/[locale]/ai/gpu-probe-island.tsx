@@ -84,7 +84,11 @@ export const GpuProbeIsland = component$<Props>(
         gpuTier: gpuResult.tier,
         npuTier: npuResult.tier,
         adapter: gpuResult.adapterLimits,
-        deviceMemory: typeof deviceMemory === 'number' ? deviceMemory : null
+        deviceMemory: typeof deviceMemory === 'number' ? deviceMemory : null,
+        probe: {
+          gpu: gpuResult.metrics,
+          npu: npuResult.metrics
+        }
       })
     }
 
