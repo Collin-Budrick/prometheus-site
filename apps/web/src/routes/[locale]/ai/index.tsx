@@ -37,7 +37,11 @@ export default component$(() => {
     const next: AiDeviceCapabilities = {
       ...capabilities.value,
       ...partial,
-      adapter: partial.adapter ?? capabilities.value.adapter
+      adapter: partial.adapter ?? capabilities.value.adapter,
+      probe: {
+        gpu: partial.probe?.gpu ?? capabilities.value.probe?.gpu,
+        npu: partial.probe?.npu ?? capabilities.value.probe?.npu
+      }
     }
     capabilities.value = next
     if (partial.gpuTier) {
@@ -77,12 +81,14 @@ export default component$(() => {
             preferredAcceleration={selectedAcceleration.value}
             accelerationReady={accelerationReady.value}
             capabilities={capabilities.value}
+            manualOverride={manualOverride.value}
           />
         ) : (
           <WebLlmIsland
             preferredAcceleration={selectedAcceleration.value}
             accelerationReady={accelerationReady.value}
             capabilities={capabilities.value}
+            manualOverride={manualOverride.value}
           />
         )}
 

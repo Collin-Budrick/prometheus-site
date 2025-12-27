@@ -85,10 +85,11 @@ interface WebNnOrtIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
   capabilities?: AiDeviceCapabilities
+  manualOverride?: boolean
 }
 
 export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
-  ({ preferredAcceleration, accelerationReady, capabilities }) => {
+  ({ preferredAcceleration, accelerationReady, capabilities, manualOverride }) => {
   const workerRef = useSignal<Worker | null>(null)
   const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
   const selectedModelId = useSignal<WebNnModelId>(defaultWebNnModelId)
@@ -120,6 +121,8 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
   const freeStorageBytes = useSignal<number | null>(null)
   const isStorageBlocked = useSignal(false)
   const storageCheckUnavailable = useSignal(false)
+  const isAutoWarming = useSignal(false)
+  const autoWarmQueued = useSignal(false)
 
   const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
@@ -324,6 +327,62 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
   useVisibleTask$(({ track }) => {
     track(() => selectedModelId.value)
     void updateStorageEstimate(selectedModelId.value)
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => cacheCheckComplete.value)
+    track(() => hasTransformersCache.value)
+    track(() => installState.value)
+    track(() => loadState.value)
+    track(() => selectedModelId.value)
+    track(() => isStorageBlocked.value)
+    track(() => manualOverride)
+    track(() => accelerationReady)
+    track(() => capabilities?.probe?.npu?.opsPerSecond)
+    track(() => capabilities?.npuTier)
+
+    const connection =
+      typeof navigator === 'undefined'
+        ? null
+        : (navigator as Navigator & { connection?: { downlink?: number; saveData?: boolean } }).connection ?? null
+
+    const hasCache = hasTransformersCache.value
+    const saveData = connection?.saveData ?? false
+    const downlink = connection?.downlink ?? 0
+    const npuOps = capabilities?.probe?.npu?.opsPerSecond ?? 0
+    const npuGops = npuOps > 0 ? npuOps / 1_000_000_000 : 0
+    const connectionHealthy = downlink >= 25
+    const probeHealthy = npuGops >= 10 || capabilities?.npuTier === 'high'
+
+    if (
+      typeof navigator === 'undefined' ||
+      autoWarmQueued.value ||
+      manualOverride ||
+      !accelerationReady ||
+      !cacheCheckComplete.value ||
+      hasCache ||
+      isStorageBlocked.value ||
+      isCustomModelSelected.value ||
+      selectedModelId.value !== defaultWebNnModelId ||
+      installState.value === 'installing' ||
+      loadState.value === 'loading' ||
+      saveData ||
+      (!connectionHealthy && !probeHealthy)
+    ) {
+      return
+    }
+
+    autoWarmQueued.value = true
+    isAutoWarming.value = true
+    void prefetchModel(selectedModelId.value)
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => installState.value)
+    if (!isAutoWarming.value) return
+    if (installState.value === 'done' || installState.value === 'error') {
+      isAutoWarming.value = false
+    }
   })
 
   const handleModelChange = $(async (event: Event) => {
@@ -615,6 +674,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
             )}
             {isInstallForSelected && installState.value === 'error' && installProgress.value && (
               <span class="text-rose-300">{_`Background install failed: ${installProgress.value}`}</span>
+            )}
+            {isAutoWarming.value && installState.value === 'installing' && (
+              <span class="inline-flex items-center bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-400/50 text-[10px] font-semibold text-cyan-100">
+                {_`Warming...`}
+              </span>
             )}
             {runtime.value === 'transformers' && (
               <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">

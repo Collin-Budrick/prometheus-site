@@ -66,9 +66,11 @@ interface WebLlmIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
   capabilities?: AiDeviceCapabilities
+  manualOverride?: boolean
 }
 
-export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAcceleration, accelerationReady, capabilities }) => {
+export const WebLlmIsland = component$<WebLlmIslandProps>(
+  ({ preferredAcceleration, accelerationReady, capabilities, manualOverride }) => {
   const workerRef = useSignal<Worker | null>(null)
   const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
   const selectedModelId = useSignal<AiModelId>(defaultWebLlmModelId)
@@ -102,6 +104,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const freeStorageBytes = useSignal<number | null>(null)
   const isStorageBlocked = useSignal(false)
   const storageCheckUnavailable = useSignal(false)
+  const isAutoWarming = useSignal(false)
+  const autoWarmQueued = useSignal(false)
 
   const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
@@ -324,6 +328,62 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   useVisibleTask$(({ track }) => {
     track(() => selectedModelId.value)
     void updateStorageEstimate$(selectedModelId.value)
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => cacheCheckComplete.value)
+    track(() => hasWebLlmCache.value)
+    track(() => hasTransformersCache.value)
+    track(() => installState.value)
+    track(() => loadState.value)
+    track(() => selectedModelId.value)
+    track(() => isStorageBlocked.value)
+    track(() => manualOverride)
+    track(() => accelerationReady)
+    track(() => capabilities?.probe?.gpu?.bestBandwidthGBps)
+    track(() => capabilities?.gpuTier)
+
+    const connection =
+      typeof navigator === 'undefined'
+        ? null
+        : (navigator as Navigator & { connection?: { downlink?: number; saveData?: boolean } }).connection ?? null
+
+    const hasCache = hasWebLlmCache.value || hasTransformersCache.value
+    const saveData = connection?.saveData ?? false
+    const downlink = connection?.downlink ?? 0
+    const gpuBandwidth = capabilities?.probe?.gpu?.bestBandwidthGBps ?? 0
+    const connectionHealthy = downlink >= 40
+    const probeHealthy = gpuBandwidth >= 35 || capabilities?.gpuTier === 'high'
+
+    if (
+      typeof navigator === 'undefined' ||
+      autoWarmQueued.value ||
+      manualOverride ||
+      !accelerationReady ||
+      !cacheCheckComplete.value ||
+      hasCache ||
+      isStorageBlocked.value ||
+      isCustomModelSelected.value ||
+      selectedModelId.value !== defaultWebLlmModelId ||
+      installState.value === 'installing' ||
+      loadState.value === 'loading' ||
+      saveData ||
+      (!connectionHealthy && !probeHealthy)
+    ) {
+      return
+    }
+
+    autoWarmQueued.value = true
+    isAutoWarming.value = true
+    void prefetchModel$(selectedModelId.value)
+  })
+
+  useVisibleTask$(({ track }) => {
+    track(() => installState.value)
+    if (!isAutoWarming.value) return
+    if (installState.value === 'done' || installState.value === 'error') {
+      isAutoWarming.value = false
+    }
   })
 
   const handleModelChange = $(async (event: Event) => {
@@ -623,6 +683,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
             )}
             {isInstallForSelected && installState.value === 'error' && installProgress.value && (
               <span class="text-rose-300">{_`Background install failed: ${installProgress.value}`}</span>
+            )}
+            {isAutoWarming.value && installState.value === 'installing' && (
+              <span class="inline-flex items-center rounded-full border border-emerald-400/50 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-100">
+                {_`Warming...`}
+              </span>
             )}
             {runtime.value === 'transformers' && (
               <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">

@@ -10,8 +10,8 @@ import {
   type WebLlmModelId
 } from '../config/ai-models'
 import type { AccelerationPreference } from '../config/ai-acceleration'
-import type { GpuTier } from '../components/gpu/capability-probe'
-import type { NpuTier } from '../components/gpu/npu-probe'
+import type { GpuProbeMetrics, GpuTier } from '../components/gpu/capability-probe'
+import type { NpuProbeMetrics, NpuTier } from '../components/gpu/npu-probe'
 import { webLlmModelRecords } from './web-llm-records'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
@@ -32,6 +32,10 @@ export interface AiDeviceCapabilities {
     maxStorageBufferBindingSize?: number | null
   }
   deviceMemory?: number | null
+  probe?: {
+    gpu?: Partial<GpuProbeMetrics>
+    npu?: Partial<NpuProbeMetrics>
+  }
 }
 
 type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown>) => Promise<any>) & {
