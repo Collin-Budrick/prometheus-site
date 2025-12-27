@@ -31,6 +31,18 @@
     "/register": {
       "render": "ssr",
       "speculation": "prerender"
+    },
+    "/dashboard": {
+      "render": "ssr",
+      "speculation": "prefetch"
+    },
+    "/account": {
+      "render": "ssr",
+      "speculation": "prefetch"
+    },
+    "/settings": {
+      "render": "ssr",
+      "speculation": "prefetch"
     }
   }
 }
