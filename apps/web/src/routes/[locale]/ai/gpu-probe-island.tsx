@@ -19,13 +19,41 @@ export const GpuProbeIsland = component$<Props>(
   ({ selectedAcceleration, onAccelerationSelect$, onAutoSelect$, onTierDetected$, onNpuTierDetected$ }) => {
   const gpuStatus = useSignal<GpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const npuStatus = useSignal<NpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
+  const probeTimeoutMs = 5_000
 
-  const runProbe = $(async () => {
-    gpuStatus.value = { status: 'running', tier: 'unavailable' }
-    npuStatus.value = { status: 'running', tier: 'unavailable' }
+  const buildCacheKey = () => {
+    if (typeof navigator === 'undefined') return 'gpu-probe'
+    const platform = navigator.platform || 'unknown'
+    return `gpu-probe:${navigator.userAgent}:${platform}`
+  }
 
-    const [gpuResult, npuResult] = await Promise.all([probeGpuCapabilities(), probeNpuCapabilities()])
+  const loadCachedProbe = () => {
+    if (typeof sessionStorage === 'undefined') return null
+    const cached = sessionStorage.getItem(buildCacheKey())
+    if (!cached) return null
+    try {
+      const parsed = JSON.parse(cached) as { gpu: GpuProbeResult; npu: NpuProbeResult }
+      if (parsed?.gpu && parsed?.npu) return parsed
+    } catch (error) {
+      console.warn('Failed to parse cached GPU probe result', error)
+    }
+    return null
+  }
 
+  const saveCachedProbe = (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
+    if (typeof sessionStorage === 'undefined') return
+    if (gpuResult.status === 'running' || npuResult.status === 'running') return
+    try {
+      sessionStorage.setItem(buildCacheKey(), JSON.stringify({ gpu: gpuResult, npu: npuResult }))
+    } catch (error) {
+      console.warn('Unable to persist GPU probe cache', error)
+    }
+  }
+
+  const withTimeout = async <T,>(promise: Promise<T>, fallback: T) =>
+    Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), probeTimeoutMs))])
+
+  const applyResults = $(async (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
     gpuStatus.value = gpuResult
     npuStatus.value = npuResult
 
@@ -40,6 +68,45 @@ export const GpuProbeIsland = component$<Props>(
       const preferred = pickAccelerationTarget(gpuResult.tier, npuResult.tier)
       await onAutoSelect$(preferred)
     }
+  })
+
+  const runProbe = $(async (options?: { ignoreCache?: boolean }) => {
+    if (!options?.ignoreCache) {
+      const cached = loadCachedProbe()
+      if (cached) {
+        await applyResults(cached.gpu, cached.npu)
+        return
+      }
+    }
+
+    const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
+    const hasWebNn = typeof navigator !== 'undefined' && 'ml' in navigator
+
+    gpuStatus.value = hasWebGpu
+      ? { status: 'running', tier: 'unavailable' }
+      : { status: 'unavailable', tier: 'unavailable', message: _`WebGPU not supported on this device.` }
+    npuStatus.value = hasWebNn
+      ? { status: 'running', tier: 'unavailable' }
+      : { status: 'unavailable', tier: 'unavailable', message: _`WebNN not supported on this device.` }
+
+    const gpuFallback: GpuProbeResult = {
+      status: 'error',
+      tier: 'unavailable',
+      error: _`Probe timed out after ${probeTimeoutMs / 1000}s.`
+    }
+    const npuFallback: NpuProbeResult = {
+      status: 'error',
+      tier: 'unavailable',
+      error: _`Probe timed out after ${probeTimeoutMs / 1000}s.`
+    }
+
+    const [gpuResult, npuResult] = await Promise.all([
+      hasWebGpu ? withTimeout(probeGpuCapabilities(), gpuFallback) : Promise.resolve(gpuStatus.value),
+      hasWebNn ? withTimeout(probeNpuCapabilities(), npuFallback) : Promise.resolve(npuStatus.value)
+    ])
+
+    await applyResults(gpuResult, npuResult)
+    saveCachedProbe(gpuResult, npuResult)
   })
 
   useVisibleTask$(async () => {
@@ -62,7 +129,7 @@ export const GpuProbeIsland = component$<Props>(
           type="button"
           class="rounded-md border border-emerald-400/40 px-3 py-1 text-xs font-semibold text-emerald-300 disabled:opacity-50"
           disabled={gpuStatus.value.status === 'running' || npuStatus.value.status === 'running'}
-          onClick$={runProbe}
+          onClick$={$(() => runProbe({ ignoreCache: true }))}
         >
           {gpuStatus.value.status === 'running' || npuStatus.value.status === 'running'
             ? _`Running...`

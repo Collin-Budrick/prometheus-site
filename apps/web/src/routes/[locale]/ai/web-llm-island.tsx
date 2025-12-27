@@ -19,6 +19,7 @@ import type {
   TranscriptEntry
 } from '../../../workers/ai-inference.worker'
 import { acquireAiWorker, releaseAiWorker } from '../../../workers/ai-worker-client'
+import { checkStorageGuard } from './storage-guard'
 
 const formatBytes = (bytes: number) => {
   const gb = bytes / 1024 ** 3
@@ -97,6 +98,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const downloadWarningDismissed = useSignal(false)
   const storageWarning = useSignal('')
   const freeStorageBytes = useSignal<number | null>(null)
+  const isStorageBlocked = useSignal(false)
+  const storageCheckUnavailable = useSignal(false)
 
   const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
@@ -199,6 +202,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           streamingText.value = ''
           pendingPrompt.value = ''
           break
+        case 'terminated':
+          loadState.value = 'idle'
+          runtime.value = 'web-llm'
+          deviceMode.value = 'webgpu'
+          break
       }
     }
 
@@ -211,21 +219,20 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const getSelectedModel = () => webLlmModels.find((model) => model.id === selectedModelId.value)
 
   const updateStorageEstimate$ = $(async (modelId: AiModelId) => {
-    if (typeof navigator === 'undefined' || !navigator.storage?.estimate) return
-
-    try {
-      const { quota, usage } = await navigator.storage.estimate()
-      if (!quota || typeof usage !== 'number') return
-      const free = quota - usage
-      freeStorageBytes.value = free
-      const model = webLlmModels.find((item) => item.id === modelId)
-      if (model?.sizeBytes && free < model.sizeBytes) {
-        storageWarning.value = _`Only ${formatBytes(free)} free; ${model.label} needs about ${model.size}.`
-      } else {
-        storageWarning.value = ''
-      }
-    } catch (err) {
-      console.error(err)
+    const model = webLlmModels.find((item) => item.id === modelId)
+    const guard = await checkStorageGuard(model?.sizeBytes)
+    freeStorageBytes.value = guard.freeBytes
+    isStorageBlocked.value = guard.blocked
+    storageCheckUnavailable.value = guard.unavailable
+    if (guard.blocked && guard.freeBytes !== null && model?.sizeBytes) {
+      storageWarning.value = _`Only ${formatBytes(guard.freeBytes)} free; ${model.label} needs about ${model.size}. Free up space or pick a smaller model.`
+    } else if (guard.unavailable) {
+      storageWarning.value = _`Storage estimate unavailable; your browser skipped the storage safety check.`
+    } else {
+      storageWarning.value = ''
+    }
+    if (guard.unavailable) {
+      console.warn('Storage guard skipped: Storage API unavailable.')
     }
   })
 
@@ -239,6 +246,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const loadModel$ = $(async (modelId: AiModelId, acceleration?: AccelerationTarget) => {
     if (hasCustomModelError()) {
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
+      return
+    }
+    if (isStorageBlocked.value) {
+      error.value = storageWarning.value || _`Not enough free storage for the selected model.`
+      installState.value = 'error'
       return
     }
     const resolvedAcceleration = acceleration ?? preferredAcceleration ?? 'gpu'
@@ -265,6 +277,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
       return
     }
+    if (isStorageBlocked.value) {
+      error.value = storageWarning.value || _`Not enough free storage for the selected model.`
+      installState.value = 'error'
+      return
+    }
     const worker = await ensureWorker$()
     installState.value = 'installing'
     installProgress.value = _`Starting background download...`
@@ -287,6 +304,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     void updateStorageEstimate$(selectedModelId.value)
 
     return () => {
+      workerRef.value?.postMessage({ type: 'clear-cache' } satisfies AiWorkerRequest)
       if (workerListenerRef.value) {
         releaseAiWorker(workerListenerRef.value)
       }
@@ -415,7 +433,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           <button
             type="button"
             class="rounded-md border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-100 disabled:opacity-50"
-            disabled={installState.value === 'installing' || isCustomModelInvalid}
+            disabled={installState.value === 'installing' || isCustomModelInvalid || isStorageBlocked.value}
             onClick$={$(() => prefetchModel$(selectedModelId.value))}
           >
             {_`Install (background)`}
@@ -423,11 +441,22 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           <button
             type="button"
             class="rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
-            disabled={loadState.value === 'loading' || installState.value === 'installing' || !isAccelerationReady || isCustomModelInvalid}
+            disabled={
+              loadState.value === 'loading' ||
+              installState.value === 'installing' ||
+              !isAccelerationReady ||
+              isCustomModelInvalid ||
+              isStorageBlocked.value
+            }
             onClick$={$(() => loadModel$(selectedModelId.value, preferredAcceleration ?? 'gpu'))}
           >
             {isSelectedModelLoaded ? _`Reload model` : _`Activate model`}
           </button>
+          {storageCheckUnavailable.value && (
+            <span class="rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-50">
+              {_`Storage check unavailable`}
+            </span>
+          )}
         </div>
       </div>
 

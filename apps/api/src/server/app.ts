@@ -52,13 +52,14 @@ const broadcastStoreEvent = (event: StoreRealtimeEvent) => {
 type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
 type WsData = { subscriber?: ValkeySubscriber }
 
-const jsonError = (status: number, error: string) =>
-  new Response(JSON.stringify({ error }), {
+const jsonError = (status: number, error: string, meta: Record<string, unknown> = {}) =>
+  new Response(JSON.stringify({ error, ...meta }), {
     status,
     headers: { 'Content-Type': 'application/json' }
   })
 
 const maxPromptLength = 2000
+const maxPromptPayloadBytes = 32 * 1024
 const maxChatLength = 1000
 
 const rateLimitWindowMs = 60_000
@@ -135,6 +136,93 @@ const checkWsQuota = async (ws: any) => {
   const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
 
   return { allowed, retryAfter }
+}
+
+class PromptBodyError extends Error {
+  status: number
+  meta: Record<string, unknown>
+
+  constructor(status: number, message: string, meta: Record<string, unknown> = {}) {
+    super(message)
+    this.status = status
+    this.meta = meta
+  }
+}
+
+const concatUint8 = (chunks: Uint8Array[]) => {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return result
+}
+
+const readPromptBody = async (request: Request) => {
+  const contentLengthHeader = request.headers.get('content-length')
+  if (contentLengthHeader) {
+    const contentLength = Number.parseInt(contentLengthHeader, 10)
+    if (Number.isFinite(contentLength) && contentLength > maxPromptPayloadBytes) {
+      throw new PromptBodyError(413, 'Request body too large', {
+        limitBytes: maxPromptPayloadBytes,
+        retryAfter: 1
+      })
+    }
+  }
+
+  const reader = request.body?.getReader()
+  if (!reader) {
+    throw new PromptBodyError(400, 'Missing request body')
+  }
+
+  const decoder = new TextDecoder()
+  const chunks: Uint8Array[] = []
+  let received = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      received += value.byteLength
+      if (received > maxPromptPayloadBytes) {
+        throw new PromptBodyError(413, 'Request body too large', {
+          limitBytes: maxPromptPayloadBytes,
+          retryAfter: 1
+        })
+      }
+      chunks.push(value)
+    }
+  }
+
+  const rawBody = decoder.decode(concatUint8(chunks))
+  if (!rawBody.trim()) {
+    throw new PromptBodyError(400, 'Prompt cannot be empty')
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(rawBody)
+  } catch {
+    throw new PromptBodyError(400, 'Invalid JSON payload')
+  }
+
+  const promptRaw = typeof (payload as { prompt?: unknown })?.prompt === 'string' ? (payload as { prompt: string }).prompt : ''
+  const prompt = promptRaw.trim()
+
+  if (!prompt) {
+    throw new PromptBodyError(400, 'Prompt cannot be empty')
+  }
+
+  if (prompt.length > maxPromptLength) {
+    throw new PromptBodyError(400, `Prompt too long (max ${maxPromptLength} characters)`, {
+      limitBytes: maxPromptPayloadBytes,
+      promptLimit: maxPromptLength
+    })
+  }
+
+  return prompt
 }
 
 const app = new Elysia()
@@ -265,28 +353,26 @@ const app = new Elysia()
   })
   .post(
     '/ai/echo',
-    async ({ body, request }) => {
+    async ({ request }) => {
       const clientIp = getClientIp(request)
       const { allowed, retryAfter } = await checkRateLimit('/ai/echo', clientIp)
 
       if (!allowed) {
-        return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`, { retryAfter })
       }
 
-      const prompt = body.prompt.trim()
-
-      if (!prompt) {
-        return jsonError(400, 'Prompt cannot be empty')
-      }
-
-      if (prompt.length > maxPromptLength) {
-        return jsonError(400, `Prompt too long (max ${maxPromptLength} characters)`) 
+      let prompt: string
+      try {
+        prompt = await readPromptBody(request)
+      } catch (error) {
+        if (error instanceof PromptBodyError) {
+          return jsonError(error.status, error.message, error.meta)
+        }
+        console.error('Unexpected prompt parse failure', error)
+        return jsonError(400, 'Invalid request body')
       }
 
       return { echo: `You said: ${prompt}` }
-    },
-    {
-      body: t.Object({ prompt: t.String() })
     }
   )
   .ws('/store/ws', {
