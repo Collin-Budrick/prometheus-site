@@ -86,12 +86,21 @@ const fixedInputLengths = new Map<AiModelId, number>()
 const forcedTransformersDevices = new Map<AiModelId, DeviceMode>()
 const onnxTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
 const webGpuSkipCache = new Map<AiModelId, boolean>()
+const onnxConfigCache = new Map<AiModelId, { sequenceLength: number }>()
+type TransformersConversationCache = {
+  modelId: AiModelId
+  tokenIds: BigInt64Array
+  pastKeyValues: unknown
+}
+let transformersConversationCache: TransformersConversationCache | null = null
 let wasmThreadCount: number | null = null
 const ortLocalWasmPath = '/ort/'
 const ortCdnWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
 let ortWasmPath = ortLocalWasmPath
 const allowWebNnNpu = false
 const webGpuMaxStorageBufferBytes = 256 * 1024 * 1024
+const defaultWebNnSequenceLength = 1024
+const maxWasmThreads = 8
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getHardwareThreadCount = () => {
@@ -103,7 +112,7 @@ const getHardwareThreadCount = () => {
 const resolveWasmThreadCount = () => {
   const isCrossOriginIsolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated
   if (!isCrossOriginIsolated) return 1
-  const capped = Math.min(getHardwareThreadCount(), 4)
+  const capped = Math.min(getHardwareThreadCount(), maxWasmThreads)
   return Math.max(1, capped)
 }
 const getWasmThreadCount = () => {
@@ -201,6 +210,17 @@ const shouldRetryWithCdn = (err: unknown) => {
   return normalized.includes('wasm') && normalized.includes('fetch')
 }
 
+const coercePositiveInt = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.floor(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return null
+}
+
 const isOnnxFilePath = (path: string) => path.endsWith('.onnx') || path.includes('.onnx_data')
 
 const fetchOnnxCommunityTree = async (modelId: AiModelId) => {
@@ -221,6 +241,38 @@ const fetchOnnxCommunityTree = async (modelId: AiModelId) => {
     .filter((file) => file.path)
   onnxTreeCache.set(modelId, parsed)
   return parsed
+}
+
+const fetchOnnxCommunityConfig = async (modelId: AiModelId) => {
+  const cached = onnxConfigCache.get(modelId)
+  if (cached) return cached
+  if (!modelId.startsWith(onnxCommunityModelPrefix)) return null
+
+  let sequenceLength = defaultWebNnSequenceLength
+  try {
+    const response = await fetch(`https://huggingface.co/${modelId}/raw/main/config.json`)
+    if (response.ok) {
+      const config = await response.json()
+      const candidates = [
+        config?.max_position_embeddings,
+        config?.max_seq_len,
+        config?.max_sequence_length,
+        config?.seq_length,
+        config?.n_ctx,
+        config?.context_length
+      ]
+      const resolved = candidates.map(coercePositiveInt).find((value) => typeof value === 'number' && value > 0)
+      if (resolved) {
+        sequenceLength = Math.max(1, Math.min(resolved, defaultWebNnSequenceLength))
+      }
+    }
+  } catch (err) {
+    // Fall back to a safe default when config.json is unavailable.
+  }
+
+  const resolved = { sequenceLength }
+  onnxConfigCache.set(modelId, resolved)
+  return resolved
 }
 
 const resolveMaxOnnxFileSize = (files: Array<{ path: string; size: number }>, prefixes: string[]) => {
@@ -266,6 +318,82 @@ const resolveOnnxCommunityWebGpuSkip = async (modelId: AiModelId) => {
   }
 }
 
+const buildWebNnFreeDims = (sequenceLength: number) => ({
+  batch_size: 1,
+  sequence_length: sequenceLength,
+  total_sequence_length: sequenceLength,
+  past_sequence_length: sequenceLength,
+  max_length: sequenceLength
+})
+
+const resolveOnnxCommunityWebNnOverrides = async (modelId: AiModelId) => {
+  const config = await fetchOnnxCommunityConfig(modelId)
+  if (!config) return null
+  return {
+    freeDims: buildWebNnFreeDims(config.sequenceLength),
+    sequenceLength: config.sequenceLength
+  }
+}
+
+const resolveTokenData = (inputIds: any) => {
+  const data = inputIds?.data
+  if (data instanceof BigInt64Array) return data
+  if (Array.isArray(data)) {
+    return BigInt64Array.from(data as Array<bigint | number>)
+  }
+  return null
+}
+
+const hasTokenPrefix = (prefix: BigInt64Array, tokens: BigInt64Array) => {
+  if (prefix.length > tokens.length) return false
+  for (let i = 0; i < prefix.length; i += 1) {
+    if (prefix[i] !== tokens[i]) return false
+  }
+  return true
+}
+
+const disposeTensor = (tensor: unknown) => {
+  if (!tensor || typeof tensor !== 'object') return
+  const maybeDispose = (tensor as { dispose?: () => void }).dispose
+  if (typeof maybeDispose === 'function') {
+    maybeDispose.call(tensor)
+  }
+}
+
+const disposePastKeyValues = (pastKeyValues: unknown) => {
+  if (!pastKeyValues) return
+  if (typeof (pastKeyValues as { dispose?: () => void }).dispose === 'function') {
+    disposeTensor(pastKeyValues)
+    return
+  }
+  for (const value of Object.values(pastKeyValues as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => disposeTensor(item))
+    } else {
+      disposeTensor(value)
+    }
+  }
+}
+
+const resetTransformersConversationCache = () => {
+  if (transformersConversationCache?.pastKeyValues) {
+    disposePastKeyValues(transformersConversationCache.pastKeyValues)
+  }
+  transformersConversationCache = null
+}
+
+const updateTransformersConversationCache = (modelId: AiModelId, tokenIds: BigInt64Array, pastKeyValues: unknown) => {
+  if (!pastKeyValues) return
+  if (transformersConversationCache?.pastKeyValues) {
+    disposePastKeyValues(transformersConversationCache.pastKeyValues)
+  }
+  transformersConversationCache = {
+    modelId,
+    tokenIds,
+    pastKeyValues
+  }
+}
+
 const getErrorText = (err: unknown) => {
   if (!err) return ''
   if (typeof err === 'string') return err
@@ -307,13 +435,17 @@ const getTransformersDeviceCandidates = (
     const devices: DeviceMode[] = []
     if (hasWebGpu() && !skipWebGpu) devices.push('webgpu')
     if (webnnAllowed) {
-      devices.push('webnn', 'webnn-gpu', 'webnn-cpu')
+      devices.push('webnn-gpu', 'webnn-cpu')
     }
     devices.push('wasm')
     return uniqueDevices(devices)
   }
 
-  return hasWebGpu() && !skipWebGpu ? ['webgpu', 'wasm'] : ['wasm']
+  const devices: DeviceMode[] = []
+  if (webnnAllowed) devices.push('webnn-gpu')
+  if (hasWebGpu() && !skipWebGpu) devices.push('webgpu')
+  devices.push('wasm')
+  return uniqueDevices(devices)
 }
 
 const ensureModule = async () => {
@@ -440,6 +572,31 @@ const loadTransformersModel = async (
   }
 
   const loadPipelineForDevice = async (device: DeviceMode) => {
+    const webnnOverrides = device.startsWith('webnn')
+      ? webnnFreeDims
+        ? {
+            freeDims: webnnFreeDims,
+            sequenceLength:
+              webnnFreeDims['sequence_length'] ??
+              webnnFreeDims['total_sequence_length'] ??
+              webnnFreeDims['past_sequence_length']
+          }
+        : isOnnxCommunityModel
+          ? await resolveOnnxCommunityWebNnOverrides(modelId)
+          : null
+      : null
+    if (webnnOverrides && isOnnxCommunityModel && !webnnFreeDims) {
+      send({
+        type: 'progress',
+        message: `WebNN requires fixed shapes; using sequence length ${webnnOverrides.sequenceLength}.`,
+        loadState: 'loading',
+        runtime: 'transformers',
+        deviceMode: device,
+        modelId,
+        threads: getWasmThreadCount()
+      })
+    }
+
     const dtypeCandidates = resolveDtypeCandidates(device)
     let lastError: Error | null = null
 
@@ -449,13 +606,16 @@ const loadTransformersModel = async (
       const cachedPipeline = pipelineCache[cacheKey]
       if (cachedPipeline) {
         pipelineRef = cachedPipeline
-        updateFixedInputLength(modelId, cachedPipeline)
+        const fixedLength = updateFixedInputLength(modelId, cachedPipeline)
+        if (!fixedLength && webnnOverrides?.sequenceLength) {
+          fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
+        }
         return
       }
       const pipelineOptions: Record<string, unknown> = { device }
-      if (device.startsWith('webnn') && webnnFreeDims) {
+      if (webnnOverrides) {
         pipelineOptions.session_options = {
-          freeDimensionOverrides: webnnFreeDims
+          freeDimensionOverrides: webnnOverrides.freeDims
         }
       }
       if (dtype) {
@@ -467,7 +627,10 @@ const loadTransformersModel = async (
         const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, pipelineOptions)) as TextGenerationPipeline
         pipelineRef = pipeline
         pipelineCache[cacheKey] = pipeline
-        updateFixedInputLength(modelId, pipeline)
+        const fixedLength = updateFixedInputLength(modelId, pipeline)
+        if (!fixedLength && webnnOverrides?.sequenceLength) {
+          fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
+        }
         return
       } catch (err) {
         lastError = err as Error
@@ -586,6 +749,7 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
   transformersAbortController?.abort()
   transformersAbortController = null
   lastLoadDtype = message.dtype
+  resetTransformersConversationCache()
   setLoadState('loading')
   const npuDisabled = message.acceleration === 'npu' && !allowWebNnNpu
   const effectiveAcceleration: AccelerationPreference = npuDisabled ? 'gpu' : message.acceleration
@@ -699,6 +863,8 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
     ? `${conversation}\nUser: ${prompt}\nAssistant:`
     : `User: ${prompt}\nAssistant:`
 
+  const tokenizer = pipelineRef.tokenizer as any
+  const model = pipelineRef.model
   const fixedInputLength = loadedModelId ? fixedInputLengths.get(loadedModelId) : undefined
   const canRunFixedInput = Boolean(
     typeof fixedInputLength === 'number' && fixedInputLength > 0 && pipelineRef.model?.generate
@@ -713,13 +879,12 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
     return total
   }
 
-  if (canRunFixedInput && pipelineRef.model && typeof fixedInputLength === 'number') {
+  if (canRunFixedInput && model && typeof fixedInputLength === 'number') {
     const fixedLength = fixedInputLength
-    const tokenizer = pipelineRef.tokenizer as any
-    const model = pipelineRef.model
+    const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
     tokenizer.padding_side = 'left'
     const tokenized = tokenizer([composedPrompt], {
-      add_special_tokens: (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false,
+      add_special_tokens: addSpecialTokens,
       padding: 'max_length',
       truncation: true,
       max_length: fixedLength
@@ -738,6 +903,56 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
       .batch_decode(tokenized.input_ids, { skip_special_tokens: true })
       .map((text: string) => text.length)
     const generatedText = decoded[0]?.slice(promptLengths[0] ?? 0) ?? ''
+    return generatedText.trim()
+  }
+
+  if (model?.generate) {
+    const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
+    const tokenized = tokenizer([composedPrompt], {
+      add_special_tokens: addSpecialTokens,
+      truncation: false
+    })
+    const tokenData = resolveTokenData(tokenized.input_ids)
+    let inputIds = tokenized.input_ids
+    let pastKeyValues: unknown
+    if (
+      loadedModelId &&
+      transformersConversationCache?.modelId === loadedModelId &&
+      transformersConversationCache.pastKeyValues &&
+      tokenData &&
+      hasTokenPrefix(transformersConversationCache.tokenIds, tokenData)
+    ) {
+      const delta = tokenData.slice(transformersConversationCache.tokenIds.length)
+      if (delta.length > 0) {
+        inputIds = new mod.Tensor('int64', delta, [1, delta.length])
+        pastKeyValues = transformersConversationCache.pastKeyValues
+      }
+    } else if (transformersConversationCache && loadedModelId === transformersConversationCache.modelId) {
+      resetTransformersConversationCache()
+    }
+
+    const output = await model.generate({
+      input_ids: inputIds,
+      attention_mask: tokenized.attention_mask,
+      past_key_values: pastKeyValues,
+      max_new_tokens: 200,
+      temperature: 0.6,
+      streamer,
+      signal: abortController.signal,
+      return_dict_in_generate: true
+    })
+
+    const sequences = (output as { sequences?: any })?.sequences ?? output
+    const decoded = tokenizer.batch_decode(sequences, { skip_special_tokens: true })
+    const promptLengths = tokenizer
+      .batch_decode(tokenized.input_ids, { skip_special_tokens: true })
+      .map((text: string) => text.length)
+    const generatedText = decoded[0]?.slice(promptLengths[0] ?? 0) ?? ''
+    const sequenceData = resolveTokenData(sequences)
+    const outputPastKeyValues = (output as { past_key_values?: Record<string, unknown> })?.past_key_values
+    if (loadedModelId && sequenceData && outputPastKeyValues) {
+      updateTransformersConversationCache(loadedModelId, sequenceData.slice(), outputPastKeyValues)
+    }
     return generatedText.trim()
   }
 
@@ -840,6 +1055,7 @@ ctx.addEventListener('message', (event: MessageEvent<AiWorkerRequest>) => {
     case 'reset':
       transformersAbortController?.abort()
       transformersAbortController = null
+      resetTransformersConversationCache()
       send({ type: 'stopped' })
       break
   }

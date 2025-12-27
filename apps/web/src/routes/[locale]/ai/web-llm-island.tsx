@@ -1,7 +1,15 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
 import type { AccelerationTarget } from '../../../config/ai-acceleration'
-import { defaultWebLlmModelId, webLlmModels, type AiModelId, type WebLlmModelId } from '../../../config/ai-models'
+import {
+  defaultWebLlmModelId,
+  onnxCommunityModelPrefix,
+  webLlmModels,
+  webNnModels,
+  type AiModelId,
+  type TransformersDtype,
+  type WebLlmModelId
+} from '../../../config/ai-models'
 import type {
   AiWorkerRequest,
   AiWorkerResponse,
@@ -10,7 +18,7 @@ import type {
   Runtime,
   TranscriptEntry
 } from '../../../workers/ai-inference.worker'
-import workerUrl from '../../../workers/ai-inference.worker?worker&url'
+import { acquireAiWorker, releaseAiWorker } from '../../../workers/ai-worker-client'
 
 const formatBytes = (bytes: number) => {
   const gb = bytes / 1024 ** 3
@@ -22,6 +30,36 @@ const formatBytes = (bytes: number) => {
   return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
 }
 
+const customModelKey = '__custom-onnx-community__'
+const defaultOnnxCommunityModelId =
+  webNnModels.find((model) => model.id.startsWith(onnxCommunityModelPrefix))?.id ??
+  `onnx-community/gemma-3-270m-it-ONNX`
+
+const normalizeOnnxCommunityModelId = (input: string) => {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+
+  const withoutProtocol = trimmed.replace(/^https?:\/\//i, '')
+  const hfMatch = withoutProtocol.match(/huggingface\.co\/([^/]+\/[^/]+)(?:\/.*)?$/i)
+  if (hfMatch) {
+    const repoId = hfMatch[1]
+    return repoId.startsWith(onnxCommunityModelPrefix) ? repoId : null
+  }
+
+  if (withoutProtocol.startsWith(onnxCommunityModelPrefix)) {
+    const [org, repo] = withoutProtocol.split('/')
+    if (org === 'onnx-community' && repo) {
+      return `${org}/${repo}`
+    }
+  }
+
+  if (!withoutProtocol.includes('/')) {
+    return `${onnxCommunityModelPrefix}${withoutProtocol}`
+  }
+
+  return null
+}
+
 interface WebLlmIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
@@ -29,7 +67,13 @@ interface WebLlmIslandProps {
 
 export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAcceleration, accelerationReady }) => {
   const workerRef = useSignal<Worker | null>(null)
-  const selectedModelId = useSignal<WebLlmModelId>(defaultWebLlmModelId)
+  const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
+  const selectedModelId = useSignal<AiModelId>(defaultWebLlmModelId)
+  const isCustomModelSelected = useSignal(false)
+  const customModelInput = useSignal(defaultOnnxCommunityModelId)
+  const customModelId = useSignal<AiModelId>(defaultOnnxCommunityModelId)
+  const customModelError = useSignal('')
+  const customModelDtype = useSignal<TransformersDtype>('q4f16')
   const loadedModelId = useSignal<AiModelId | null>(null)
   const loadState = useSignal<LoadState>('idle')
   const progress = useSignal('')
@@ -51,10 +95,12 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const storageWarning = useSignal('')
   const freeStorageBytes = useSignal<number | null>(null)
 
+  const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
+  const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
+
   const ensureWorker$ = $(async () => {
     if (workerRef.value) return workerRef.value
-    const worker = new Worker(workerUrl, { type: 'module' })
-    worker.addEventListener('message', (event: MessageEvent<AiWorkerResponse>) => {
+    const listener = (event: MessageEvent<AiWorkerResponse>) => {
       const data = event.data
       if (!data) return
 
@@ -102,15 +148,17 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           pendingPrompt.value = ''
           break
       }
-    })
+    }
 
+    const worker = acquireAiWorker(listener)
+    workerListenerRef.value = listener
     workerRef.value = worker
     return worker
   })
 
   const getSelectedModel = () => webLlmModels.find((model) => model.id === selectedModelId.value)
 
-  const updateStorageEstimate$ = $(async (modelId: WebLlmModelId) => {
+  const updateStorageEstimate$ = $(async (modelId: AiModelId) => {
     if (typeof navigator === 'undefined' || !navigator.storage?.estimate) return
 
     try {
@@ -136,7 +184,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     workerRef.value?.postMessage({ type: 'reset' } satisfies AiWorkerRequest)
   })
 
-  const loadModel$ = $(async (modelId: WebLlmModelId, acceleration?: AccelerationTarget) => {
+  const loadModel$ = $(async (modelId: AiModelId, acceleration?: AccelerationTarget) => {
+    if (hasCustomModelError()) {
+      error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
+      return
+    }
     const resolvedAcceleration = acceleration ?? preferredAcceleration ?? 'gpu'
     const worker = await ensureWorker$()
     loadState.value = 'loading'
@@ -144,13 +196,16 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     error.value = ''
     wasmThreads.value = null
     progress.value =
-      resolvedAcceleration === 'npu'
-        ? _`Starting WebNN inference...`
-        : hasWebGpu.value
-          ? _`Starting WebLLM...`
-          : _`Loading Transformers.js fallback...`
+      isCustomModelSelected.value
+        ? _`Loading Transformers.js...`
+        : resolvedAcceleration === 'npu'
+          ? _`Starting WebNN inference...`
+          : hasWebGpu.value
+            ? _`Starting WebLLM...`
+            : _`Loading Transformers.js fallback...`
 
-    worker.postMessage({ type: 'load-model', modelId, acceleration: resolvedAcceleration } satisfies AiWorkerRequest)
+    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    worker.postMessage({ type: 'load-model', modelId, acceleration: resolvedAcceleration, dtype } satisfies AiWorkerRequest)
   })
 
   useVisibleTask$(() => {
@@ -199,8 +254,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     void updateStorageEstimate$(selectedModelId.value)
 
     return () => {
-      workerRef.value?.terminate()
+      if (workerListenerRef.value) {
+        releaseAiWorker(workerListenerRef.value)
+      }
       workerRef.value = null
+      workerListenerRef.value = null
     }
   })
 
@@ -211,8 +269,42 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
 
   const handleModelChange = $(async (event: Event) => {
     const target = event.target as HTMLSelectElement
-    const nextModel = target.value as WebLlmModelId
-    selectedModelId.value = nextModel
+    const nextModel = target.value
+    if (nextModel === customModelKey) {
+      isCustomModelSelected.value = true
+      selectedModelId.value = customModelId.value
+      customModelError.value = customModelId.value
+        ? ''
+        : _`Enter an onnx-community model id to continue.`
+      return
+    }
+    isCustomModelSelected.value = false
+    selectedModelId.value = nextModel as WebLlmModelId
+  })
+
+  const handleCustomModelInput = $((event: Event) => {
+    const target = event.target as HTMLInputElement
+    const nextValue = target.value
+    customModelInput.value = nextValue
+    const normalized = normalizeOnnxCommunityModelId(nextValue)
+    if (!normalized) {
+      customModelError.value = _`Use an onnx-community model id or Hugging Face URL.`
+      customModelId.value = ''
+      if (isCustomModelSelected.value) {
+        selectedModelId.value = ''
+      }
+      return
+    }
+    customModelError.value = ''
+    customModelId.value = normalized
+    if (isCustomModelSelected.value) {
+      selectedModelId.value = normalized
+    }
+  })
+
+  const handleCustomDtypeChange = $((event: Event) => {
+    const target = event.target as HTMLSelectElement
+    customModelDtype.value = target.value as TransformersDtype
   })
 
   const stopStreaming = $(async () => {
@@ -264,6 +356,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
   const isWebNnSelected = preferredAcceleration === 'npu'
+  const isCustomModelInvalid = hasCustomModelError()
 
   return (
     <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-slate-200">
@@ -288,7 +381,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           <button
             type="button"
             class="rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
-            disabled={loadState.value === 'loading' || !isAccelerationReady}
+            disabled={loadState.value === 'loading' || !isAccelerationReady || isCustomModelInvalid}
             onClick$={$(() => loadModel$(selectedModelId.value, preferredAcceleration ?? 'gpu'))}
           >
             {isSelectedModelLoaded ? _`Reload model` : _`Install model`}
@@ -321,7 +414,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
           </label>
           <select
             class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
-            value={selectedModelId.value}
+            value={isCustomModelSelected.value ? customModelKey : selectedModelId.value}
             onChange$={handleModelChange}
           >
             {webLlmModels.map((model) => (
@@ -329,7 +422,60 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
                 {model.label}
               </option>
             ))}
+            <option value={customModelKey}>
+              {customModelId.value ? _`Custom: ${customModelId.value}` : _`Custom (onnx-community/...)`}
+            </option>
           </select>
+
+          <div
+            class={`space-y-2 rounded-md border border-slate-800 bg-slate-950/40 p-3 ${
+              isCustomModelSelected.value ? '' : 'hidden'
+            }`}
+            aria-hidden={!isCustomModelSelected.value}
+          >
+            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {_`Custom onnx-community model`}
+            </label>
+            <input
+              type="text"
+              class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              placeholder={_`onnx-community/<model-id>`}
+              value={customModelInput.value}
+              onInput$={handleCustomModelInput}
+              disabled={!isCustomModelSelected.value}
+            />
+            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {_`Precision`}
+            </label>
+            <select
+              class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              value={customModelDtype.value}
+              onChange$={handleCustomDtypeChange}
+              disabled={!isCustomModelSelected.value}
+            >
+              <option value="q4f16">{_`q4f16 (smallest download)`}</option>
+              <option value="fp16">{_`fp16`}</option>
+              <option value="fp32">{_`fp32 (largest download)`}</option>
+              <option value="auto">{_`Auto (try q4f16 -> fp16 -> fp32)`}</option>
+            </select>
+            <p class="text-xs text-slate-400">
+              {_`Paste a Hugging Face URL or repo id. Use text-generation ONNX models from onnx-community.`}
+            </p>
+            <p class="text-xs text-slate-400">
+              {_`Pick q4f16 when you have local files; fp16/fp32 will download larger shards.`}
+            </p>
+            {customModelError.value && <p class="text-xs text-rose-300">{customModelError.value}</p>}
+            {!customModelError.value && customModelId.value && (
+              <a
+                class="text-xs font-semibold text-emerald-200 underline underline-offset-4"
+                href={`https://huggingface.co/${customModelId.value}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {_`View on Hugging Face`}
+              </a>
+            )}
+          </div>
 
           {webLlmModels.map((model) => (
             <div key={model.id} class={model.id === selectedModelId.value ? 'block' : 'hidden'}>
@@ -353,6 +499,21 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
               </div>
             </div>
           ))}
+          {isCustomModelSelected.value && (
+            <div class="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p class="text-sm text-slate-300">
+                {_`Custom ONNX model hosted on Hugging Face and loaded with Transformers.js.`}
+              </p>
+              <div class="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
+                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Format: ONNX`}</span>
+                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Size: varies`}</span>
+                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Context: varies`}</span>
+                <span class="rounded-md border border-slate-800 px-2 py-1 sm:col-span-3">
+                  {_`Recommended tier: depends on model size`}
+                </span>
+              </div>
+            </div>
+          )}
 
           <div class="mt-3 flex items-center gap-2 text-sm">
             <span

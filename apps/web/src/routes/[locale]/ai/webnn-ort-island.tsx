@@ -17,7 +17,7 @@ import type {
   Runtime,
   TranscriptEntry
 } from '../../../workers/ai-inference.worker'
-import workerUrl from '../../../workers/ai-inference.worker?worker&url'
+import { acquireAiWorker, releaseAiWorker } from '../../../workers/ai-worker-client'
 
 const formatBytes = (bytes: number) => {
   const gb = bytes / 1024 ** 3
@@ -86,6 +86,7 @@ interface WebNnOrtIslandProps {
 
 export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAcceleration, accelerationReady }) => {
   const workerRef = useSignal<Worker | null>(null)
+  const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
   const selectedModelId = useSignal<WebNnModelId>(defaultWebNnModelId)
   const isCustomModelSelected = useSignal(false)
   const customModelInput = useSignal(defaultOnnxCommunityModelId)
@@ -116,8 +117,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
 
   const ensureWorker = async () => {
     if (workerRef.value) return workerRef.value
-    const worker = new Worker(workerUrl, { type: 'module' })
-    worker.addEventListener('message', (event: MessageEvent<AiWorkerResponse>) => {
+    const listener = (event: MessageEvent<AiWorkerResponse>) => {
       const data = event.data
       if (!data) return
 
@@ -164,8 +164,10 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           pendingPrompt.value = ''
           break
       }
-    })
+    }
 
+    const worker = acquireAiWorker(listener)
+    workerListenerRef.value = listener
     workerRef.value = worker
     return worker
   }
@@ -259,8 +261,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
     void updateStorageEstimate(selectedModelId.value)
 
     return () => {
-      workerRef.value?.terminate()
+      if (workerListenerRef.value) {
+        releaseAiWorker(workerListenerRef.value)
+      }
       workerRef.value = null
+      workerListenerRef.value = null
     }
   })
 
@@ -364,26 +369,26 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const shouldShowWebNnFallback = isAccelerationReady && loadState.value === 'ready' && !isWebNn
 
   return (
-    <div class="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-slate-200">
-      <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-lg text-slate-200">
+      <div class="flex flex-wrap justify-between items-start gap-3">
         <div>
-          <p class="text-xs uppercase tracking-wide text-cyan-200">{_`On-device WebNN`}</p>
-          <p class="text-lg font-semibold text-slate-50">{_`Stream tokens locally over ONNX Runtime`}</p>
-          <p class="mt-1 max-w-2xl text-sm text-slate-300">
+          <p class="text-cyan-200 text-xs uppercase tracking-wide">{_`On-device WebNN`}</p>
+          <p class="font-semibold text-slate-50 text-lg">{_`Stream tokens locally over ONNX Runtime`}</p>
+          <p class="mt-1 max-w-2xl text-slate-300 text-sm">
             {_`Select an ORT-optimized model, watch load progress, and chat without sending prompts to the server.`}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            class="rounded-md border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-100"
+            class="px-3 py-2 border border-slate-700 rounded-md font-semibold text-slate-100 text-xs"
             onClick$={$(() => resetConversation())}
           >
             {_`Reset conversation`}
           </button>
           <button
             type="button"
-            class="rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-emerald-950 disabled:opacity-50"
+            class="bg-emerald-500 disabled:opacity-50 px-3 py-2 rounded-md font-semibold text-emerald-950 text-xs"
             disabled={loadState.value === 'loading' || !isAccelerationReady || isCustomModelInvalid}
             onClick$={$(() => loadModel(selectedModelId.value, resolveAcceleration()))}
           >
@@ -393,7 +398,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
       </div>
 
       {shouldShowDownloadWarning.value && (
-        <div class="mt-3 flex flex-wrap items-start gap-3 rounded-md border border-amber-700/50 bg-amber-500/10 p-3 text-sm text-amber-100">
+        <div class="flex flex-wrap items-start gap-3 bg-amber-500/10 mt-3 p-3 border border-amber-700/50 rounded-md text-amber-100 text-sm">
           <div class="space-y-1">
             <p class="font-semibold">{_`First download is large`}</p>
             <p>
@@ -402,7 +407,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           </div>
           <button
             type="button"
-            class="rounded-md border border-amber-400/60 px-3 py-2 text-xs font-semibold text-amber-50"
+            class="px-3 py-2 border border-amber-400/60 rounded-md font-semibold text-amber-50 text-xs"
             onClick$={dismissDownloadWarning}
           >
             {_`Got it`}
@@ -410,11 +415,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
         </div>
       )}
 
-      <div class="mt-4 grid gap-3 lg:grid-cols-[2fr_1.3fr]">
+      <div class="gap-3 grid lg:grid-cols-[2fr_1.3fr] mt-4">
         <div class="space-y-3">
-          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-400">{_`Model`}</label>
+          <label class="block font-semibold text-slate-400 text-xs uppercase tracking-wide">{_`Model`}</label>
           <select
-            class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+            class="bg-slate-950 px-3 py-2 border border-slate-800 rounded-md w-full text-sm"
             value={isCustomModelSelected.value ? customModelKey : selectedModelId.value}
             onChange$={handleModelChange}
           >
@@ -434,22 +439,22 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
             }`}
             aria-hidden={!isCustomModelSelected.value}
           >
-            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <label class="block font-semibold text-slate-400 text-xs uppercase tracking-wide">
               {_`Custom onnx-community model`}
             </label>
             <input
               type="text"
-              class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              class="bg-slate-950 px-3 py-2 border border-slate-800 rounded-md w-full text-sm"
               placeholder={_`onnx-community/<model-id>`}
               value={customModelInput.value}
               onInput$={handleCustomModelInput}
               disabled={!isCustomModelSelected.value}
             />
-            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <label class="block font-semibold text-slate-400 text-xs uppercase tracking-wide">
               {_`Precision`}
             </label>
             <select
-              class="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+              class="bg-slate-950 px-3 py-2 border border-slate-800 rounded-md w-full text-sm"
               value={customModelDtype.value}
               onChange$={handleCustomDtypeChange}
               disabled={!isCustomModelSelected.value}
@@ -459,16 +464,16 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
               <option value="fp32">{_`fp32 (largest download)`}</option>
               <option value="auto">{_`Auto (try q4f16 -> fp16 -> fp32)`}</option>
             </select>
-            <p class="text-xs text-slate-400">
+            <p class="text-slate-400 text-xs">
               {_`Paste a Hugging Face URL or repo id. Use text-generation ONNX models from onnx-community.`}
             </p>
-            <p class="text-xs text-slate-400">
+            <p class="text-slate-400 text-xs">
               {_`Pick q4f16 when you have local files; fp16/fp32 will download larger shards.`}
             </p>
-            {customModelError.value && <p class="text-xs text-rose-300">{customModelError.value}</p>}
+            {customModelError.value && <p class="text-rose-300 text-xs">{customModelError.value}</p>}
             {!customModelError.value && customModelId.value && (
               <a
-                class="text-xs font-semibold text-cyan-200 underline underline-offset-4"
+                class="font-semibold text-cyan-200 text-xs underline underline-offset-4"
                 href={`https://huggingface.co/${customModelId.value}`}
                 target="_blank"
                 rel="noreferrer"
@@ -480,36 +485,36 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
 
           {webNnModels.map((model) => (
             <div key={model.id} class={model.id === selectedModelId.value ? 'block' : 'hidden'}>
-              <p class="text-sm text-slate-300">{model.description}</p>
-              <div class="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
-                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Format: ${model.format}`}</span>
-                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Size: ${model.size}`}</span>
-                <span class="rounded-md border border-slate-800 px-2 py-1">
+              <p class="text-slate-300 text-sm">{model.description}</p>
+              <div class="gap-2 grid sm:grid-cols-3 mt-2 text-slate-400 text-xs">
+                <span class="px-2 py-1 border border-slate-800 rounded-md">{_`Format: ${model.format}`}</span>
+                <span class="px-2 py-1 border border-slate-800 rounded-md">{_`Size: ${model.size}`}</span>
+                <span class="px-2 py-1 border border-slate-800 rounded-md">
                   {_`Context: ${model.contextLength}`}
                 </span>
-                <span class="rounded-md border border-slate-800 px-2 py-1 sm:col-span-3">
+                <span class="sm:col-span-3 px-2 py-1 border border-slate-800 rounded-md">
                   {_`Recommended tier: ${model.recommendedTier}`}
                 </span>
               </div>
             </div>
           ))}
           {isCustomModelSelected.value && (
-            <div class="rounded-md border border-slate-800 bg-slate-950/40 p-3">
-              <p class="text-sm text-slate-300">
+            <div class="bg-slate-950/40 p-3 border border-slate-800 rounded-md">
+              <p class="text-slate-300 text-sm">
                 {_`Custom ONNX model hosted on Hugging Face and loaded with Transformers.js.`}
               </p>
-              <div class="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
-                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Format: ONNX`}</span>
-                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Size: varies`}</span>
-                <span class="rounded-md border border-slate-800 px-2 py-1">{_`Context: varies`}</span>
-                <span class="rounded-md border border-slate-800 px-2 py-1 sm:col-span-3">
+              <div class="gap-2 grid sm:grid-cols-3 mt-2 text-slate-400 text-xs">
+                <span class="px-2 py-1 border border-slate-800 rounded-md">{_`Format: ONNX`}</span>
+                <span class="px-2 py-1 border border-slate-800 rounded-md">{_`Size: varies`}</span>
+                <span class="px-2 py-1 border border-slate-800 rounded-md">{_`Context: varies`}</span>
+                <span class="sm:col-span-3 px-2 py-1 border border-slate-800 rounded-md">
                   {_`Recommended tier: depends on model size`}
                 </span>
               </div>
             </div>
           )}
 
-          <div class="mt-3 flex items-center gap-2 text-sm">
+          <div class="flex items-center gap-2 mt-3 text-sm">
             <span
               class={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                 loadState.value === 'ready'
@@ -531,12 +536,12 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
             </span>
             {progress.value && <span class="text-slate-300">{progress.value}</span>}
             {runtime.value === 'transformers' && (
-              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
+              <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">
                 {_`Transformers.js`}
               </span>
             )}
             {runtime.value === 'transformers' && wasmThreads.value !== null && (
-              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
+              <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">
                 {_`Threads: ${wasmThreads.value}`}
               </span>
             )}
@@ -549,7 +554,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
             </span>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-200">
+          <div class="flex flex-wrap items-center gap-2 text-slate-200 text-xs">
             <span
               class={`inline-flex items-center rounded-full px-3 py-1 font-semibold ${
                 cacheCheckComplete.value
@@ -566,71 +571,71 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
                 : _`Checking caches...`}
             </span>
             {hasTransformersCache.value && (
-              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 font-semibold text-emerald-100">
+              <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-emerald-100">
                 {_`Transformers.js cache detected`}
               </span>
             )}
             {freeStorageBytes.value !== null && (
-              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 font-semibold text-slate-100">
+              <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100">
                 {_`Free storage: ${formatBytes(freeStorageBytes.value)}`}
               </span>
             )}
           </div>
 
-          {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
+          {error.value && <p class="text-rose-300 text-sm">{error.value}</p>}
           {shouldShowWebNnFallback && (
-            <p class="text-sm text-amber-200">
+            <p class="text-amber-200 text-sm">
               {_`WebNN failed or was unavailable; using ${fallbackDeviceLabel || _`a fallback backend`}.`}
             </p>
           )}
           {webnnUnsupportedReason && (
-            <p class="text-sm text-amber-200">
+            <p class="text-amber-200 text-sm">
               {_`WebNN NPU cannot load this model. ${webnnUnsupportedReason} We will attempt a fallback backend.`}
             </p>
           )}
           {loadedModelId.value && !isSelectedModelLoaded && (
-            <p class="text-sm text-amber-200">
+            <p class="text-amber-200 text-sm">
               {_`Selected model is not installed yet. Click install to switch.`}
             </p>
           )}
           {isLocalModel && (
-            <p class="text-xs text-slate-400">
+            <p class="text-slate-400 text-xs">
               {_`Local models must include config.json, tokenizer.json, and ONNX files in the model folder.`}
             </p>
           )}
-          {storageWarning.value && <p class="text-sm text-amber-200">{storageWarning.value}</p>}
+          {storageWarning.value && <p class="text-amber-200 text-sm">{storageWarning.value}</p>}
           {selectedModel?.size && (
-            <p class="text-xs text-slate-400">
+            <p class="text-slate-400 text-xs">
               {_`Offline cache target: ${selectedModel.size} (~${formatBytes(selectedModel.sizeBytes)})`}
             </p>
           )}
         </div>
 
-        <div class="rounded-md border border-slate-800 bg-slate-950/60 p-3">
-          <p class="text-xs uppercase tracking-wide text-cyan-200">{_`Chat transcript`}</p>
-          <div class="mt-3 space-y-3 overflow-y-auto rounded-md bg-slate-950/40 p-3 text-sm max-h-72">
+        <div class="bg-slate-950/60 p-3 border border-slate-800 rounded-md">
+          <p class="text-cyan-200 text-xs uppercase tracking-wide">{_`Chat transcript`}</p>
+          <div class="space-y-3 bg-slate-950/40 mt-3 p-3 rounded-md max-h-72 overflow-y-auto text-sm">
             {transcript.value.length === 0 && (
               <p class="text-slate-400">{_`No messages yet. Ask a quick question to warm the model.`}</p>
             )}
             {transcript.value.map((entry, index) => (
-              <div key={`${entry.role}-${index}`} class="space-y-1 rounded-md border border-slate-800/70 bg-slate-900/60 p-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <div key={`${entry.role}-${index}`} class="space-y-1 bg-slate-900/60 p-2 border border-slate-800/70 rounded-md">
+                <p class="font-semibold text-slate-400 text-xs uppercase tracking-wide">
                   {entry.role === 'user' ? _`You` : _`WebNN`}
                 </p>
-                <p class="whitespace-pre-wrap text-slate-100">{entry.content}</p>
+                <p class="text-slate-100 whitespace-pre-wrap">{entry.content}</p>
               </div>
             ))}
             {isStreaming.value && (
-              <div class="space-y-1 rounded-md border border-slate-800/70 bg-slate-900/60 p-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">{_`WebNN`}</p>
-                <p class="whitespace-pre-wrap text-slate-100">{streamingText.value || _`...`}</p>
+              <div class="space-y-1 bg-slate-900/60 p-2 border border-slate-800/70 rounded-md">
+                <p class="font-semibold text-slate-400 text-xs uppercase tracking-wide">{_`WebNN`}</p>
+                <p class="text-slate-100 whitespace-pre-wrap">{streamingText.value || _`...`}</p>
               </div>
             )}
           </div>
 
-          <div class="mt-3 space-y-2">
+          <div class="space-y-2 mt-3">
             <textarea
-              class="h-24 w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+              class="bg-slate-950 px-3 py-2 border border-slate-800 rounded-md w-full h-24 text-slate-100 text-sm"
               placeholder={_`Ask something on-device`}
               value={prompt.value}
               onInput$={$((event) => {
@@ -641,7 +646,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                class="rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-950 disabled:opacity-50"
+                class="bg-emerald-500 disabled:opacity-50 px-3 py-2 rounded-md font-semibold text-emerald-950 text-sm"
                 disabled={!isSelectedModelReady || isStreaming.value}
                 onClick$={sendPrompt}
               >
@@ -649,7 +654,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
               </button>
               <button
                 type="button"
-                class="rounded-md border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50"
+                class="disabled:opacity-50 px-3 py-2 border border-slate-700 rounded-md font-semibold text-slate-100 text-sm"
                 disabled={!isStreaming.value}
                 onClick$={stopStreaming}
               >
