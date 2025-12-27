@@ -32,6 +32,7 @@ export interface AiDeviceCapabilities {
     maxStorageBufferBindingSize?: number | null
   }
   deviceMemory?: number | null
+  hardwareConcurrency?: number | null
   probe?: {
     gpu?: Partial<GpuProbeMetrics>
     npu?: Partial<NpuProbeMetrics>
@@ -63,6 +64,7 @@ export type AiWorkerResponse =
       deviceMode?: DeviceMode
       modelId?: AiModelId
       threads?: number
+      dtype?: TransformersDtype | 'auto'
     }
   | {
       type: 'prefetch-progress'
@@ -91,6 +93,7 @@ export type AiWorkerResponse =
       deviceMode: DeviceMode
       modelId: AiModelId
       threads?: number
+      dtype?: TransformersDtype | 'auto'
     }
   | { type: 'token'; chunk: string }
   | { type: 'complete'; content: string }
@@ -141,6 +144,8 @@ type TransformersConversationCache = {
 }
 let transformersConversationCache: TransformersConversationCache | null = null
 let wasmThreadCount: number | null = null
+let wasmExecutionMode: 'parallel' | 'sequential' = 'sequential'
+let activeTransformersDtype: TransformersDtype | 'auto' | undefined
 const ortLocalWasmPath = '/ort/'
 const ortCdnWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
 let ortWasmPath = ortLocalWasmPath
@@ -207,38 +212,110 @@ const resolveWebGpuBufferLimit = (capabilities?: AiDeviceCapabilities | null) =>
   return Math.max(minWebGpuMaxStorageBufferBytes, Math.min(limit, maxWebGpuMaxStorageBufferBytes))
 }
 
-const applyCapabilities = (capabilities?: AiDeviceCapabilities) => {
-  if (capabilities) {
-    latestCapabilities = capabilities
-  }
-  const active = capabilities ?? latestCapabilities ?? null
-  allowWebNnNpu = Boolean(active?.npuTier && active.npuTier !== 'unavailable')
-  webGpuMaxStorageBufferBytes = resolveWebGpuBufferLimit(active)
+const mergeCapabilities = (capabilities?: AiDeviceCapabilities | null) => {
+  if (!capabilities) return latestCapabilities
+  const previous = latestCapabilities
+  latestCapabilities = previous
+    ? {
+        ...previous,
+        ...capabilities,
+        adapter: capabilities.adapter ?? previous.adapter,
+        probe: {
+          gpu: capabilities.probe?.gpu ?? previous.probe?.gpu,
+          npu: capabilities.probe?.npu ?? previous.probe?.npu
+        }
+      }
+    : {
+        ...capabilities,
+        adapter: capabilities.adapter,
+        probe: {
+          gpu: capabilities.probe?.gpu,
+          npu: capabilities.probe?.npu
+        }
+      }
+  return latestCapabilities
 }
 
-const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
-const getHardwareThreadCount = () => {
+const resolveHardwareThreadCount = (capabilities?: AiDeviceCapabilities | null) => {
+  const provided = capabilities?.hardwareConcurrency
+  if (typeof provided === 'number' && Number.isFinite(provided)) {
+    return Math.max(1, Math.floor(provided))
+  }
   if (typeof navigator === 'undefined') return 1
   const cores = navigator.hardwareConcurrency ?? 1
   if (!Number.isFinite(cores)) return 1
   return Math.max(1, cores)
 }
-const resolveWasmThreadCount = () => {
-  const isCrossOriginIsolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated
-  if (!isCrossOriginIsolated) return 1
-  const detected = getHardwareThreadCount()
-  return Math.max(1, detected)
+
+type ResourceTier = 'low' | 'mid' | 'high'
+const resolveResourceTier = (capabilities?: AiDeviceCapabilities | null): ResourceTier => {
+  const memory = capabilities?.deviceMemory
+  if (typeof memory === 'number' && Number.isFinite(memory)) {
+    if (memory < 4) return 'low'
+    if (memory < 8) return 'mid'
+    if (memory >= 12) return 'high'
+  }
+  if (capabilities?.gpuTier === 'high' || capabilities?.npuTier === 'high') return 'high'
+  if (capabilities?.gpuTier === 'mid' || capabilities?.npuTier === 'mid') return 'mid'
+  return 'low'
 }
+
+const hasThroughputHeadroom = (capabilities?: AiDeviceCapabilities | null) => {
+  const bandwidth = capabilities?.probe?.gpu?.bestBandwidthGBps ?? 0
+  const npuOps = capabilities?.probe?.npu?.opsPerSecond ?? 0
+  const cores = resolveHardwareThreadCount(capabilities)
+  const memory = capabilities?.deviceMemory ?? null
+  const memoryHeadroom = typeof memory === 'number' && memory >= 12
+  return bandwidth >= 80 || npuOps >= 15_000_000_000 || cores >= 12 || memoryHeadroom
+}
+
+const resolveTargetThreadCount = (capabilities?: AiDeviceCapabilities | null) => {
+  const cores = resolveHardwareThreadCount(capabilities)
+  const tier = resolveResourceTier(capabilities)
+  const throughputBoost = hasThroughputHeadroom(capabilities)
+  const threadsSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined'
+  let target = Math.max(1, Math.round(cores * 0.6))
+  if (tier === 'low') {
+    target = Math.min(target, 2)
+  } else if (tier === 'mid') {
+    target = Math.min(target, 4)
+  } else {
+    target = Math.min(target, 8)
+  }
+  if (throughputBoost) {
+    target = Math.max(target, Math.min(8, Math.round(cores * 0.75)))
+  }
+  if (!threadsSupported) {
+    target = Math.min(target, 6)
+  }
+  return Math.max(1, target)
+}
+
+const applyCapabilities = (capabilities?: AiDeviceCapabilities) => {
+  const active = mergeCapabilities(capabilities) ?? capabilities ?? latestCapabilities ?? null
+  allowWebNnNpu = Boolean(active?.npuTier && active.npuTier !== 'unavailable')
+  webGpuMaxStorageBufferBytes = resolveWebGpuBufferLimit(active)
+  const threads = resolveTargetThreadCount(active)
+  wasmThreadCount = threads
+  wasmExecutionMode = threads > 1 ? 'parallel' : 'sequential'
+  if (transformersRef) {
+    configureOnnxWasmBackend(transformersRef, ortWasmPath, threads)
+  }
+}
+
+const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getWasmThreadCount = () => {
   if (wasmThreadCount !== null) return wasmThreadCount
-  wasmThreadCount = resolveWasmThreadCount()
+  wasmThreadCount = resolveTargetThreadCount(latestCapabilities)
+  wasmExecutionMode = wasmThreadCount > 1 ? 'parallel' : 'sequential'
   return wasmThreadCount
 }
+const getWasmExecutionMode = () => wasmExecutionMode
 const buildWasmSessionOptions = () => ({
   graphOptimizationLevel: 'all',
   enableCpuMemArena: true,
   enableMemPattern: true,
-  executionMode: getWasmThreadCount() > 1 ? 'parallel' : 'sequential'
+  executionMode: getWasmExecutionMode()
 })
 const formatProgress = (report: InitProgressReport) => {
   const pct = Math.max(0, Math.min(100, Math.round(report.progress * 100)))
@@ -542,6 +619,36 @@ const shouldPreferNpuFromCapabilities = (capabilities: AiDeviceCapabilities | nu
   return capabilities.npuTier === 'mid' || capabilities.npuTier === 'high' || capabilities.npuTier === 'low'
 }
 
+const resolveGenerationLimits = (fixedLength?: number) => {
+  const tier = resolveResourceTier(latestCapabilities)
+  const baseLength = fixedLength && fixedLength > 0 ? fixedLength : defaultWebNnSequenceLength
+  const memory = latestCapabilities?.deviceMemory ?? null
+  const throughputBoost = hasThroughputHeadroom(latestCapabilities)
+  let maxSequenceLength = baseLength
+  let maxNewTokens = 200
+
+  if (tier === 'low') {
+    maxSequenceLength = Math.min(baseLength, 768)
+    maxNewTokens = 140
+    if (typeof memory === 'number' && memory < 3.5) {
+      maxSequenceLength = Math.min(maxSequenceLength, 640)
+      maxNewTokens = 120
+    }
+  } else if (tier === 'mid') {
+    maxSequenceLength = Math.min(baseLength, 960)
+    maxNewTokens = 200
+  } else {
+    maxSequenceLength = baseLength
+    maxNewTokens = 280
+  }
+
+  if (throughputBoost && tier !== 'low') {
+    maxNewTokens = Math.min(360, maxNewTokens + 60)
+  }
+
+  return { maxNewTokens, maxSequenceLength }
+}
+
 const buildWebNnFreeDims = (sequenceLength: number) => ({
   batch_size: 1,
   sequence_length: sequenceLength,
@@ -561,11 +668,48 @@ const resolveOnnxCommunityWebNnOverrides = async (modelId: AiModelId) => {
 
 const resolveTransformersPrefetchDtype = (modelId: AiModelId, dtypeOverride?: TransformersDtype) => {
   if (dtypeOverride) return dtypeOverride
+  const tier = resolveResourceTier(latestCapabilities)
+  const preferCompact = tier === 'low'
+  const isOnnxCommunityModel = modelId.startsWith(onnxCommunityModelPrefix)
   const modelInfo = getTransformersModel(modelId)
   const modelDtype = modelInfo?.transformers?.dtype
   if (modelDtype) return modelDtype
-  if (modelId.startsWith(onnxCommunityModelPrefix)) return 'q4f16'
+  if (preferCompact && isOnnxCommunityModel) return 'q4f16'
+  if (isOnnxCommunityModel) return 'q4f16'
   return undefined
+}
+
+const resolveTransformersDtypeCandidates = (
+  modelId: AiModelId,
+  device: DeviceMode,
+  dtypeOverride?: TransformersDtype,
+  transformersSpecDtype?: TransformersDtype
+) => {
+  if (dtypeOverride) return [dtypeOverride]
+  const tier = resolveResourceTier(latestCapabilities)
+  const preferCompact = tier === 'low'
+  const preferHeavier = tier === 'high' && hasThroughputHeadroom(latestCapabilities)
+  const isOnnxCommunityModel = modelId.startsWith(onnxCommunityModelPrefix)
+
+  if (device.startsWith('webnn')) {
+    const candidates = preferCompact ? ['q4f16', 'auto', 'fp16'] : ['auto', 'fp16', 'q4f16']
+    return Array.from(new Set(candidates))
+  }
+
+  if (isOnnxCommunityModel) {
+    const candidates = preferCompact
+      ? ['q4f16', 'fp16', 'fp32']
+      : preferHeavier
+        ? ['fp16', 'q4f16', 'fp32']
+        : ['q4f16', 'fp16', 'fp32']
+    return Array.from(new Set(candidates))
+  }
+
+  if (transformersSpecDtype) {
+    return Array.from(new Set(preferCompact ? ['q4f16', transformersSpecDtype] : [transformersSpecDtype]))
+  }
+
+  return preferCompact ? ['q4f16', undefined] : [undefined]
 }
 
 const isTransformersConfigFile = (path: string) => {
@@ -810,6 +954,7 @@ const clearAllCaches = async () => {
   runtime = 'web-llm'
   deviceMode = 'webgpu'
   lastLoadDtype = undefined
+  activeTransformersDtype = undefined
   setLoadState('idle')
 }
 
@@ -1113,13 +1258,8 @@ const loadTransformersModel = async (
   }
   let lastError: Error | null = null
 
-  const resolveDtypeCandidates = (device: DeviceMode): Array<TransformersDtype | undefined> => {
-    if (dtypeOverride) return [dtypeOverride]
-    if (transformersSpec.dtype) return [transformersSpec.dtype]
-    if (isOnnxCommunityModel) return ['q4f16', 'fp16', 'fp32']
-    if (device.startsWith('webnn')) return ['auto']
-    return [undefined]
-  }
+  const resolveDtypeCandidates = (device: DeviceMode): Array<TransformersDtype | undefined> =>
+    resolveTransformersDtypeCandidates(modelId, device, dtypeOverride, transformersSpec.dtype)
 
   const loadPipelineForDevice = async (device: DeviceMode) => {
     const webnnOverrides = device.startsWith('webnn')
@@ -1135,10 +1275,19 @@ const loadTransformersModel = async (
           ? await resolveOnnxCommunityWebNnOverrides(modelId)
           : null
       : null
+    const generationLimits = resolveGenerationLimits(webnnOverrides?.sequenceLength)
+    const resolvedSequenceLength = Math.min(
+      webnnOverrides?.sequenceLength ?? generationLimits.maxSequenceLength,
+      generationLimits.maxSequenceLength
+    )
+    const resolvedWebnnFreeDims =
+      webnnOverrides && resolvedSequenceLength
+        ? { ...webnnOverrides.freeDims, ...buildWebNnFreeDims(resolvedSequenceLength) }
+        : null
     if (webnnOverrides && isOnnxCommunityModel && !webnnFreeDims) {
       send({
         type: 'progress',
-        message: `WebNN requires fixed shapes; using sequence length ${webnnOverrides.sequenceLength}.`,
+        message: `WebNN requires fixed shapes; using sequence length ${resolvedSequenceLength}.`,
         loadState: 'loading',
         runtime: 'transformers',
         deviceMode: device,
@@ -1157,17 +1306,20 @@ const loadTransformersModel = async (
       if (cachedPipeline) {
         pipelineRef = cachedPipeline.pipeline
         const fixedLength = updateFixedInputLength(modelId, cachedPipeline.pipeline)
-        if (!fixedLength && webnnOverrides?.sequenceLength) {
-          fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
+        if (!fixedLength && resolvedSequenceLength) {
+          fixedInputLengths.set(modelId, resolvedSequenceLength)
         }
+        const resolvedDtype = dtype ?? transformersSpec.dtype ?? (device.startsWith('webnn') ? 'auto' : undefined)
+        activeTransformersDtype = resolvedDtype
         return
       }
       const pipelineOptions: Record<string, unknown> = { device }
-      const sessionOptions = webnnOverrides
-        ? { freeDimensionOverrides: webnnOverrides.freeDims }
-        : device === 'wasm'
-          ? buildWasmSessionOptions()
-          : null
+      const sessionOptions =
+        webnnOverrides && resolvedWebnnFreeDims
+          ? { freeDimensionOverrides: resolvedWebnnFreeDims }
+          : device === 'wasm'
+            ? buildWasmSessionOptions()
+            : null
       if (sessionOptions) {
         pipelineOptions.session_options = sessionOptions
       }
@@ -1182,9 +1334,11 @@ const loadTransformersModel = async (
         pipelineCache.set(cacheKey, { pipeline, modelId })
         await enforcePipelineCacheBudget()
         const fixedLength = updateFixedInputLength(modelId, pipeline)
-        if (!fixedLength && webnnOverrides?.sequenceLength) {
-          fixedInputLengths.set(modelId, webnnOverrides.sequenceLength)
+        if (!fixedLength && resolvedSequenceLength) {
+          fixedInputLengths.set(modelId, resolvedSequenceLength)
         }
+        const resolvedDtype = dtype ?? transformersSpec.dtype ?? (device.startsWith('webnn') ? 'auto' : undefined)
+        activeTransformersDtype = resolvedDtype
         return
       } catch (err) {
         lastError = err as Error
@@ -1226,7 +1380,8 @@ const loadTransformersModel = async (
         runtime,
         deviceMode,
         modelId,
-        threads: getWasmThreadCount()
+        threads: getWasmThreadCount(),
+        dtype: activeTransformersDtype
       })
       return true
     } catch (err) {
@@ -1257,7 +1412,8 @@ const loadTransformersModel = async (
             runtime,
             deviceMode,
             modelId,
-            threads: getWasmThreadCount()
+            threads: getWasmThreadCount(),
+            dtype: activeTransformersDtype
           })
           return true
         } catch (retryErr) {
@@ -1301,6 +1457,7 @@ const loadTransformersModel = async (
 
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {
   applyCapabilities(message.capabilities)
+  activeTransformersDtype = undefined
   transformersAbortController?.abort()
   transformersAbortController = null
   lastLoadDtype = message.dtype
@@ -1469,6 +1626,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
   const tokenizer = pipelineRef.tokenizer as any
   const model = pipelineRef.model
   const fixedInputLength = loadedModelId ? fixedInputLengths.get(loadedModelId) : undefined
+  const generationLimits = resolveGenerationLimits(fixedInputLength)
   const canRunFixedInput = Boolean(
     typeof fixedInputLength === 'number' && fixedInputLength > 0 && pipelineRef.model?.generate
   )
@@ -1484,16 +1642,17 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
 
   if (canRunFixedInput && model && typeof fixedInputLength === 'number') {
     const fixedLength = fixedInputLength
+    const targetLength = Math.min(fixedLength, generationLimits.maxSequenceLength)
     const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
     tokenizer.padding_side = 'left'
     const tokenized = tokenizer([composedPrompt], {
       add_special_tokens: addSpecialTokens,
       padding: 'max_length',
       truncation: true,
-      max_length: fixedLength
+      max_length: targetLength
     })
     const promptTokenCount = resolveTokenCount(tokenized.attention_mask) ?? 0
-    const maxNewTokens = Math.max(1, Math.min(200, fixedLength - promptTokenCount))
+    const maxNewTokens = Math.max(1, Math.min(generationLimits.maxNewTokens, targetLength - promptTokenCount))
     const outputTokenIds = await model.generate({
       ...tokenized,
       max_new_tokens: maxNewTokens,
@@ -1513,7 +1672,8 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
     const addSpecialTokens = (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false
     const tokenized = tokenizer([composedPrompt], {
       add_special_tokens: addSpecialTokens,
-      truncation: false
+      truncation: true,
+      max_length: generationLimits.maxSequenceLength
     })
     const tokenData = resolveTokenData(tokenized.input_ids)
     let inputIds = tokenized.input_ids
@@ -1538,7 +1698,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
       input_ids: inputIds,
       attention_mask: tokenized.attention_mask,
       past_key_values: pastKeyValues,
-      max_new_tokens: 200,
+      max_new_tokens: generationLimits.maxNewTokens,
       temperature: 0.6,
       streamer,
       signal: abortController.signal,
@@ -1560,7 +1720,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
   }
 
   const outputs = await pipelineRef(composedPrompt, {
-    max_new_tokens: 200,
+    max_new_tokens: generationLimits.maxNewTokens,
     temperature: 0.6,
     streamer,
     signal: abortController.signal
@@ -1576,6 +1736,7 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
 }
 
 const handleGenerate = async (message: Extract<AiWorkerRequest, { type: 'generate' }>) => {
+  applyCapabilities(message.capabilities)
   if (loadState !== 'ready') {
     send({ type: 'error', error: 'Model is not ready yet.', loadState })
     return
