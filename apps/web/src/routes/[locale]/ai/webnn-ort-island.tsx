@@ -10,6 +10,7 @@ import {
   type WebNnModelId
 } from '../../../config/ai-models'
 import type {
+  AiDeviceCapabilities,
   AiWorkerRequest,
   AiWorkerResponse,
   DeviceMode,
@@ -83,9 +84,11 @@ const normalizeOnnxCommunityModelId = (input: string) => {
 interface WebNnOrtIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
+  capabilities?: AiDeviceCapabilities
 }
 
-export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAcceleration, accelerationReady }) => {
+export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
+  ({ preferredAcceleration, accelerationReady, capabilities }) => {
   const workerRef = useSignal<Worker | null>(null)
   const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
   const selectedModelId = useSignal<WebNnModelId>(defaultWebNnModelId)
@@ -275,7 +278,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
     progress.value = _`Starting WebNN inference...`
 
     const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'load-model', modelId, acceleration, dtype } satisfies AiWorkerRequest)
+    worker.postMessage({ type: 'load-model', modelId, acceleration, dtype, capabilities } satisfies AiWorkerRequest)
   }
 
   const prefetchModel = $(async (modelId: WebNnModelId) => {
@@ -293,7 +296,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
     const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'prefetch-model', modelId, dtype } satisfies AiWorkerRequest)
+    worker.postMessage({ type: 'prefetch-model', modelId, dtype, capabilities } satisfies AiWorkerRequest)
   })
 
   useVisibleTask$(() => {

@@ -28,6 +28,10 @@ type GpuDevice = {
 
 type GpuAdapter = {
   name?: string
+  limits?: {
+    maxBufferSize?: number
+    maxStorageBufferBindingSize?: number
+  }
   requestDevice: () => Promise<GpuDevice>
 }
 
@@ -63,6 +67,11 @@ export interface GpuProbeResult {
   tier: GpuTier
   adapterLabel?: string
   metrics?: GpuProbeMetrics
+  adapterLimits?: {
+    maxBufferSize?: number
+    maxStorageBufferBindingSize?: number
+  }
+  deviceMemory?: number
   message?: string
   error?: string
 }
@@ -170,6 +179,8 @@ export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
     }
 
     const device = await adapter.requestDevice()
+    const adapterLimits = adapter.limits ?? {}
+    const deviceMemory = typeof nav.deviceMemory === 'number' ? nav.deviceMemory : undefined
     const root = initTypeGpu(device)
 
     const maxCandidateSize = Math.min(device.limits.maxBufferSize, 512 * MB)
@@ -204,6 +215,11 @@ export const probeGpuCapabilities = async (): Promise<GpuProbeResult> => {
       status: 'complete',
       tier,
       adapterLabel: adapter.name,
+      adapterLimits: {
+        maxBufferSize: adapterLimits.maxBufferSize,
+        maxStorageBufferBindingSize: adapterLimits.maxStorageBufferBindingSize
+      },
+      deviceMemory,
       metrics: {
         peakBufferBytes,
         bestBandwidthGBps,

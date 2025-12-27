@@ -1,7 +1,10 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _, defaultLocale } from 'compiled-i18n'
+import type { GpuTier } from '../../../components/gpu/capability-probe'
+import type { NpuTier } from '../../../components/gpu/npu-probe'
 import type { AccelerationTarget } from '../../../config/ai-acceleration'
+import type { AiDeviceCapabilities } from '../../../workers/ai-inference.worker'
 import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 import { WebLlmIsland } from './web-llm-island'
@@ -11,6 +14,11 @@ export default component$(() => {
   const selectedAcceleration = useSignal<AccelerationTarget>('npu')
   const accelerationReady = useSignal(false)
   const manualOverride = useSignal(false)
+  const gpuTier = useSignal<GpuTier>('unavailable')
+  const npuTier = useSignal<NpuTier>('unavailable')
+  const adapterLimits = useSignal<AiDeviceCapabilities['adapter'] | undefined>(undefined)
+  const deviceMemory = useSignal<number | null>(null)
+  const capabilities = useSignal<AiDeviceCapabilities>({})
 
   const handleAutoSelect = $((target: AccelerationTarget) => {
     if (!manualOverride.value) {
@@ -25,6 +33,27 @@ export default component$(() => {
     accelerationReady.value = true
   })
 
+  const updateCapabilities = $((partial: AiDeviceCapabilities) => {
+    const next: AiDeviceCapabilities = {
+      ...capabilities.value,
+      ...partial,
+      adapter: partial.adapter ?? capabilities.value.adapter
+    }
+    capabilities.value = next
+    if (partial.gpuTier) {
+      gpuTier.value = partial.gpuTier
+    }
+    if (partial.npuTier) {
+      npuTier.value = partial.npuTier
+    }
+    if (partial.adapter) {
+      adapterLimits.value = partial.adapter
+    }
+    if (partial.deviceMemory !== undefined) {
+      deviceMemory.value = partial.deviceMemory
+    }
+  })
+
   return (
     <section class="surface p-6">
       <p class="text-sm uppercase tracking-wide text-emerald-300">{_`AI tools`}</p>
@@ -37,6 +66,9 @@ export default component$(() => {
         selectedAcceleration={selectedAcceleration.value}
         onAutoSelect$={handleAutoSelect}
         onAccelerationSelect$={handleManualSelect}
+        onTierDetected$={$((tier) => updateCapabilities({ gpuTier: tier }))}
+        onNpuTierDetected$={$((tier) => updateCapabilities({ npuTier: tier }))}
+        onCapabilitiesDetected$={updateCapabilities}
       />
 
       <div class="mt-6 space-y-6" onQVisible$={$(() => undefined)}>
@@ -44,11 +76,13 @@ export default component$(() => {
           <WebNnOrtIsland
             preferredAcceleration={selectedAcceleration.value}
             accelerationReady={accelerationReady.value}
+            capabilities={capabilities.value}
           />
         ) : (
           <WebLlmIsland
             preferredAcceleration={selectedAcceleration.value}
             accelerationReady={accelerationReady.value}
+            capabilities={capabilities.value}
           />
         )}
 

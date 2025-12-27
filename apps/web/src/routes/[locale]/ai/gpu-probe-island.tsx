@@ -6,6 +6,7 @@ import type { GpuProbeResult, GpuTier } from '../../../components/gpu/capability
 import { probeGpuCapabilities } from '../../../components/gpu/capability-probe'
 import type { NpuProbeResult, NpuTier } from '../../../components/gpu/npu-probe'
 import { probeNpuCapabilities } from '../../../components/gpu/npu-probe'
+import type { AiDeviceCapabilities } from '../../../workers/ai-inference.worker'
 
 interface Props {
   selectedAcceleration?: AccelerationTarget
@@ -13,10 +14,18 @@ interface Props {
   onAutoSelect$?: (target: AccelerationTarget) => void
   onTierDetected$?: (tier: GpuTier) => void
   onNpuTierDetected$?: (tier: NpuTier) => void
+  onCapabilitiesDetected$?: (capabilities: AiDeviceCapabilities) => void
 }
 
 export const GpuProbeIsland = component$<Props>(
-  ({ selectedAcceleration, onAccelerationSelect$, onAutoSelect$, onTierDetected$, onNpuTierDetected$ }) => {
+  ({
+    selectedAcceleration,
+    onAccelerationSelect$,
+    onAutoSelect$,
+    onTierDetected$,
+    onNpuTierDetected$,
+    onCapabilitiesDetected$
+  }) => {
   const gpuStatus = useSignal<GpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const npuStatus = useSignal<NpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const probeTimeoutMs = 5_000
@@ -53,6 +62,11 @@ export const GpuProbeIsland = component$<Props>(
   const withTimeout = async <T,>(promise: Promise<T>, fallback: T) =>
     Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), probeTimeoutMs))])
 
+  const resolveDeviceMemory = () => {
+    if (typeof navigator === 'undefined') return undefined
+    return typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : undefined
+  }
+
   const applyResults = $(async (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
     gpuStatus.value = gpuResult
     npuStatus.value = npuResult
@@ -62,6 +76,16 @@ export const GpuProbeIsland = component$<Props>(
     }
     if (npuResult.status === 'complete' && onNpuTierDetected$) {
       await onNpuTierDetected$(npuResult.tier)
+    }
+
+    if (onCapabilitiesDetected$) {
+      const deviceMemory = gpuResult.deviceMemory ?? resolveDeviceMemory()
+      await onCapabilitiesDetected$({
+        gpuTier: gpuResult.tier,
+        npuTier: npuResult.tier,
+        adapter: gpuResult.adapterLimits,
+        deviceMemory: typeof deviceMemory === 'number' ? deviceMemory : null
+      })
     }
 
     if (onAutoSelect$) {
