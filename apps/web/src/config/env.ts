@@ -108,9 +108,11 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
 
   const analyzeBundles = process.env.VITE_ANALYZE === '1'
   const codeInspectorEnabled = process.env.VITE_CODE_INSPECTOR === '1'
+  const betterAuthSecret = process.env.BETTER_AUTH_SECRET ?? process.env.BETTER_AUTH_COOKIE_SECRET
+  const secretName = process.env.BETTER_AUTH_SECRET ? 'BETTER_AUTH_SECRET' : 'BETTER_AUTH_COOKIE_SECRET'
   const betterAuthCookieSecret = allowDevDefaults
-    ? ensureString(process.env.BETTER_AUTH_COOKIE_SECRET, 'dev-cookie-secret', 'BETTER_AUTH_COOKIE_SECRET')
-    : requireString(process.env.BETTER_AUTH_COOKIE_SECRET, 'BETTER_AUTH_COOKIE_SECRET')
+    ? ensureString(betterAuthSecret, 'dev-cookie-secret-please-change-32', secretName)
+    : requireString(betterAuthSecret, secretName)
   const betterAuthRpId = allowDevDefaults
     ? ensureString(process.env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID')
     : requireString(process.env.BETTER_AUTH_RP_ID, 'BETTER_AUTH_RP_ID')

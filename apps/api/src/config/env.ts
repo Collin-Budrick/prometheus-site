@@ -93,6 +93,43 @@ const resolveAuthString = (
   allowDevDefaults: boolean
 ) => (allowDevDefaults ? ensureString(value, fallback, name) : requireString(value, name))
 
+const resolveWebProtocol = (env: Env) => {
+  const hmrProtocol = env.HMR_PROTOCOL?.trim().toLowerCase()
+  if (hmrProtocol === 'wss') return 'https'
+  if (hmrProtocol === 'ws') return 'http'
+  const webProtocol = env.WEB_PROTOCOL?.trim().toLowerCase()
+  if (webProtocol === 'https' || webProtocol === 'http') return webProtocol
+  return 'https'
+}
+
+const resolveDevRpId = (env: Env) => {
+  const inferred = env.HMR_HOST?.trim() || env.WEB_HOST?.trim()
+  if (inferred && inferred !== 'localhost') return inferred
+  return 'localhost'
+}
+
+const resolveRpId = (env: Env, allowDevDefaults: boolean) => {
+  const explicit = env.BETTER_AUTH_RP_ID?.trim()
+  if (!allowDevDefaults) return requireString(explicit, 'BETTER_AUTH_RP_ID')
+  if (explicit && explicit !== 'localhost') return explicit
+  const fallback = resolveDevRpId(env)
+  if (explicit === 'localhost' && fallback !== 'localhost') return fallback
+  return explicit || fallback
+}
+
+const resolveRpOrigin = (env: Env, allowDevDefaults: boolean, rpId: string) => {
+  const explicit = (env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN)?.trim()
+  if (!allowDevDefaults) return requireString(explicit, 'BETTER_AUTH_RP_ORIGIN')
+
+  const protocol = resolveWebProtocol(env)
+  const webPort = (env.WEB_PORT?.trim() || '4173').replace(/^:/, '')
+  const localhostOrigin = `${protocol}://localhost:${webPort}`
+
+  if (explicit && explicit !== localhostOrigin) return explicit
+  if (rpId !== 'localhost') return `${protocol}://${rpId}`
+  return explicit || localhostOrigin
+}
+
 const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: string): OAuthClient | null => {
   const providerKey = provider.toUpperCase()
   const clientIdKey = `BETTER_AUTH_${providerKey}_CLIENT_ID`
@@ -109,19 +146,16 @@ const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: st
 }
 
 const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
+  const resolvedSecret = env.BETTER_AUTH_SECRET ?? env.BETTER_AUTH_COOKIE_SECRET
+  const secretName = env.BETTER_AUTH_SECRET ? 'BETTER_AUTH_SECRET' : 'BETTER_AUTH_COOKIE_SECRET'
   const cookieSecret = resolveAuthString(
-    env.BETTER_AUTH_COOKIE_SECRET,
-    'dev-cookie-secret',
-    'BETTER_AUTH_COOKIE_SECRET',
+    resolvedSecret,
+    'dev-cookie-secret-please-change-32',
+    secretName,
     allowDevDefaults
   )
-  const rpId = resolveAuthString(env.BETTER_AUTH_RP_ID, 'localhost', 'BETTER_AUTH_RP_ID', allowDevDefaults)
-  const rpOrigin = resolveAuthString(
-    env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN,
-    'https://localhost:4173',
-    'BETTER_AUTH_RP_ORIGIN',
-    allowDevDefaults
-  )
+  const rpId = resolveRpId(env, allowDevDefaults)
+  const rpOrigin = resolveRpOrigin(env, allowDevDefaults, rpId)
 
   const oauth: AuthConfig['oauth'] = {}
   const providers: Array<[OAuthProvider, string]> = [

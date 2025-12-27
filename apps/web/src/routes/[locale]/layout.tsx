@@ -173,18 +173,14 @@ const anonymousNavLinks: NavLink[] = [
 ]
 
 const authenticatedNavLinks: NavLink[] = [
-  { path: '/dashboard', label: () => _`User Dashboard`, dataSpeculate: getPageSpeculation('/dashboard') },
   { path: '/account', label: () => _`Account`, dataSpeculate: getPageSpeculation('/account') },
   { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
   { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
-  { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
   { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
 ]
 
-const resolveNavLinks = (hasSession: boolean): NavLink[] => [
-  ...baseNavLinks,
-  ...(hasSession ? authenticatedNavLinks : anonymousNavLinks)
-]
+const resolveNavLinks = (hasSession: boolean): NavLink[] =>
+  hasSession ? authenticatedNavLinks : [...baseNavLinks, ...anonymousNavLinks]
 
 const uniqueNavLinks = (links: NavLink[]): NavLink[] => {
   const seen = new Set<string>()
