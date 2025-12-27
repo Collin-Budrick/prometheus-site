@@ -1,6 +1,14 @@
 import type { ChatCompletionChunk, ChatCompletionMessageParam, InitProgressReport, MLCEngine } from '@mlc-ai/web-llm'
 import type * as TransformersTypes from '@huggingface/transformers'
-import { getTransformersModel, isWebLlmModelId, webLlmModels, type AiModelId, type WebLlmModelId } from '../config/ai-models'
+import {
+  getTransformersModel,
+  isWebLlmModelId,
+  onnxCommunityModelPrefix,
+  webLlmModels,
+  type AiModelId,
+  type TransformersDtype,
+  type WebLlmModelId
+} from '../config/ai-models'
 import type { AccelerationPreference } from '../config/ai-acceleration'
 import { webLlmModelRecords } from './web-llm-records'
 
@@ -15,11 +23,12 @@ export interface TranscriptEntry {
 }
 
 type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown>) => Promise<any>) & {
-  tokenizer: unknown
+  tokenizer: any
+  model?: { generate: (options: Record<string, unknown>) => Promise<any> }
 }
 
 export type AiWorkerRequest =
-  | { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference }
+  | { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference; dtype?: TransformersDtype }
   | { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] }
   | { type: 'stop' }
   | { type: 'reset' }
@@ -70,12 +79,19 @@ let engineRef: MLCEngine | null = null
 let pipelineRef: TextGenerationPipeline | null = null
 let moduleRef: typeof import('@mlc-ai/web-llm') | null = null
 let transformersRef: typeof TransformersTypes | null = null
+let lastLoadDtype: TransformersDtype | undefined
 const engineCache: Partial<Record<WebLlmModelId, MLCEngine>> = {}
 const pipelineCache: Partial<Record<string, TextGenerationPipeline>> = {}
+const fixedInputLengths = new Map<AiModelId, number>()
+const forcedTransformersDevices = new Map<AiModelId, DeviceMode>()
+const onnxTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
+const webGpuSkipCache = new Map<AiModelId, boolean>()
 let wasmThreadCount: number | null = null
 const ortLocalWasmPath = '/ort/'
 const ortCdnWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
 let ortWasmPath = ortLocalWasmPath
+const allowWebNnNpu = false
+const webGpuMaxStorageBufferBytes = 256 * 1024 * 1024
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getHardwareThreadCount = () => {
@@ -122,6 +138,41 @@ const formatDeviceLabel = (device: DeviceMode) => {
 
 const uniqueDevices = (devices: DeviceMode[]) => Array.from(new Set(devices))
 
+const resolveInputMetadata = (session: any, inputName: string) => {
+  const inputNames = session?.inputNames
+  const inputMetadata = session?.inputMetadata
+  if (!Array.isArray(inputNames) || !Array.isArray(inputMetadata)) return null
+  const index = inputNames.findIndex((name) => name === inputName || name.includes(inputName))
+  if (index < 0) return null
+  return inputMetadata[index] ?? null
+}
+
+const resolveFixedSequenceLength = (pipeline: TextGenerationPipeline) => {
+  const sessions = (pipeline as any)?.model?.sessions
+  if (!sessions || typeof sessions !== 'object') return null
+  for (const session of Object.values(sessions)) {
+    const metadata = resolveInputMetadata(session, 'input_ids')
+    const shape = metadata?.shape
+    if (Array.isArray(shape) && shape.length > 1) {
+      const lastDim = shape[shape.length - 1]
+      if (typeof lastDim === 'number' && Number.isFinite(lastDim) && lastDim > 0) {
+        return lastDim
+      }
+    }
+  }
+  return null
+}
+
+const updateFixedInputLength = (modelId: AiModelId, pipeline: TextGenerationPipeline) => {
+  const fixedLength = resolveFixedSequenceLength(pipeline)
+  if (fixedLength) {
+    fixedInputLengths.set(modelId, fixedLength)
+  } else {
+    fixedInputLengths.delete(modelId)
+  }
+  return fixedLength
+}
+
 const configureOnnxWasmBackend = (mod: typeof TransformersTypes, wasmPaths: string, threads: number) => {
   const backends = mod.env.backends
   const onnxBackend = backends.onnx ?? {}
@@ -150,15 +201,102 @@ const shouldRetryWithCdn = (err: unknown) => {
   return normalized.includes('wasm') && normalized.includes('fetch')
 }
 
+const isOnnxFilePath = (path: string) => path.endsWith('.onnx') || path.includes('.onnx_data')
+
+const fetchOnnxCommunityTree = async (modelId: AiModelId) => {
+  const cached = onnxTreeCache.get(modelId)
+  if (cached) return cached
+  const response = await fetch(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
+  if (!response.ok) {
+    throw new Error(`Unable to fetch model manifest (${response.status}).`)
+  }
+  const data = await response.json()
+  const files = Array.isArray(data) ? data : []
+  const parsed = files
+    .map((file) => {
+      const path = typeof file?.path === 'string' ? file.path : ''
+      const size = typeof file?.size === 'number' ? file.size : 0
+      return { path, size }
+    })
+    .filter((file) => file.path)
+  onnxTreeCache.set(modelId, parsed)
+  return parsed
+}
+
+const resolveMaxOnnxFileSize = (files: Array<{ path: string; size: number }>, prefixes: string[]) => {
+  const sizes = files
+    .filter(
+      (file) =>
+        prefixes.some((prefix) => file.path.startsWith(prefix) && file.path.charAt(prefix.length) === '.') &&
+        isOnnxFilePath(file.path)
+    )
+    .map((file) => file.size)
+    .filter((size) => size > 0)
+  return sizes.length ? Math.max(...sizes) : null
+}
+
+const resolveOnnxCommunityWebGpuSkip = async (modelId: AiModelId) => {
+  const cached = webGpuSkipCache.get(modelId)
+  if (typeof cached === 'boolean') return cached
+  if (!modelId.startsWith(onnxCommunityModelPrefix)) return false
+
+  try {
+    const files = await fetchOnnxCommunityTree(modelId)
+    const prefixGroups = [
+      ['onnx/model_q4f16', 'model_q4f16'],
+      ['onnx/model_fp16', 'model_fp16'],
+      ['onnx/model', 'model']
+    ]
+    const maxSizes = prefixGroups
+      .map((prefixes) => resolveMaxOnnxFileSize(files, prefixes))
+      .filter((value): value is number => typeof value === 'number')
+
+    if (!maxSizes.length) {
+      webGpuSkipCache.set(modelId, false)
+      return false
+    }
+
+    const smallestMax = Math.min(...maxSizes)
+    const shouldSkip = smallestMax > webGpuMaxStorageBufferBytes
+    webGpuSkipCache.set(modelId, shouldSkip)
+    return shouldSkip
+  } catch (err) {
+    webGpuSkipCache.set(modelId, false)
+    return false
+  }
+}
+
+const getErrorText = (err: unknown) => {
+  if (!err) return ''
+  if (typeof err === 'string') return err
+  if (err instanceof Error) return err.message ?? ''
+  if (typeof err === 'object') {
+    const message = (err as { message?: unknown }).message
+    if (typeof message === 'string') return message
+  }
+  return ''
+}
+
+const isWebGpuRuntimeFailure = (err: unknown) => {
+  const cause = (err as { cause?: unknown })?.cause
+  const normalized = `${getErrorText(err)} ${getErrorText(cause)}`.toLowerCase()
+  if (!normalized.trim()) return false
+  const markers = ['webgpu', 'bindgroup', 'commandbuffer', 'shaderstage', 'storage buffer', 'binding size']
+  return markers.some((marker) => normalized.includes(marker))
+}
+
 const getTransformersDeviceCandidates = (
   acceleration: AccelerationPreference,
-  webnnUnsupportedReason?: string
+  webnnUnsupportedReason?: string,
+  options?: { skipWebGpu?: boolean }
 ): DeviceMode[] => {
   const webnnAllowed = !webnnUnsupportedReason
-  const fallbackDevices = hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
+  const skipWebGpu = options?.skipWebGpu ?? false
+  const fallbackDevices: DeviceMode[] =
+    hasWebGpu() && !skipWebGpu ? ['webgpu', 'wasm'] : ['wasm']
   if (acceleration === 'npu') {
     const devices: DeviceMode[] = []
-    if (webnnAllowed) {
+    if (webnnAllowed && allowWebNnNpu) {
       devices.push('webnn-npu')
     }
     devices.push(...fallbackDevices)
@@ -167,7 +305,7 @@ const getTransformersDeviceCandidates = (
 
   if (acceleration === 'auto') {
     const devices: DeviceMode[] = []
-    if (hasWebGpu()) devices.push('webgpu')
+    if (hasWebGpu() && !skipWebGpu) devices.push('webgpu')
     if (webnnAllowed) {
       devices.push('webnn', 'webnn-gpu', 'webnn-cpu')
     }
@@ -175,7 +313,7 @@ const getTransformersDeviceCandidates = (
     return uniqueDevices(devices)
   }
 
-  return hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
+  return hasWebGpu() && !skipWebGpu ? ['webgpu', 'wasm'] : ['wasm']
 }
 
 const ensureModule = async () => {
@@ -244,7 +382,8 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
 
 const loadTransformersModel = async (
   modelId: AiModelId,
-  acceleration: AccelerationPreference
+  acceleration: AccelerationPreference,
+  dtypeOverride?: TransformersDtype
 ): Promise<boolean> => {
   const mod = await ensureTransformers()
   const modelInfo = getTransformersModel(modelId)
@@ -257,8 +396,27 @@ const loadTransformersModel = async (
   const webnnUnsupportedReason =
     modelInfo && 'webnnUnsupportedReason' in modelInfo ? modelInfo.webnnUnsupportedReason : undefined
   const webnnFreeDims = modelInfo && 'webnnFreeDims' in modelInfo ? modelInfo.webnnFreeDims : undefined
-  const devices = getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason)
+  const isOnnxCommunityModel = modelId.startsWith(onnxCommunityModelPrefix)
+  const skipWebGpu = isOnnxCommunityModel ? await resolveOnnxCommunityWebGpuSkip(modelId) : false
+  const forcedDevice = forcedTransformersDevices.get(modelId)
+  const devices = forcedDevice
+    ? [forcedDevice]
+    : getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason, { skipWebGpu })
   const attemptedWebnn = devices.some((device) => device.startsWith('webnn'))
+
+  if (skipWebGpu && hasWebGpu()) {
+    const fallbackDevice =
+      acceleration === 'gpu' || acceleration === 'npu' || webnnUnsupportedReason ? 'wasm' : 'webnn'
+    send({
+      type: 'progress',
+      message: 'Skipping WebGPU for this model due to buffer limits; using a fallback backend...',
+      loadState: 'loading',
+      runtime: 'transformers',
+      deviceMode: fallbackDevice,
+      modelId,
+      threads: getWasmThreadCount()
+    })
+  }
 
   if (acceleration === 'npu' && webnnUnsupportedReason) {
     send({
@@ -273,27 +431,65 @@ const loadTransformersModel = async (
   }
   let lastError: Error | null = null
 
+  const resolveDtypeCandidates = (device: DeviceMode): Array<TransformersDtype | undefined> => {
+    if (dtypeOverride) return [dtypeOverride]
+    if (transformersSpec.dtype) return [transformersSpec.dtype]
+    if (isOnnxCommunityModel) return ['q4f16', 'fp16', 'fp32']
+    if (device.startsWith('webnn')) return ['auto']
+    return [undefined]
+  }
+
   const loadPipelineForDevice = async (device: DeviceMode) => {
-    const cacheKey = `${transformersSpec.id}:${device}`
-    const cachedPipeline = pipelineCache[cacheKey]
-    if (cachedPipeline) {
-      pipelineRef = cachedPipeline
-      return
-    }
-    const pipelineOptions: Record<string, unknown> = { device }
-    if (device.startsWith('webnn') && webnnFreeDims) {
-      pipelineOptions.session_options = {
-        freeDimensionOverrides: webnnFreeDims
+    const dtypeCandidates = resolveDtypeCandidates(device)
+    let lastError: Error | null = null
+
+    for (const [index, dtype] of dtypeCandidates.entries()) {
+      const dtypeKey = dtype ?? 'default'
+      const cacheKey = `${transformersSpec.id}:${device}:${dtypeKey}`
+      const cachedPipeline = pipelineCache[cacheKey]
+      if (cachedPipeline) {
+        pipelineRef = cachedPipeline
+        updateFixedInputLength(modelId, cachedPipeline)
+        return
+      }
+      const pipelineOptions: Record<string, unknown> = { device }
+      if (device.startsWith('webnn') && webnnFreeDims) {
+        pipelineOptions.session_options = {
+          freeDimensionOverrides: webnnFreeDims
+        }
+      }
+      if (dtype) {
+        pipelineOptions.dtype = dtype
+      } else if (device.startsWith('webnn')) {
+        pipelineOptions.dtype = 'auto'
+      }
+      try {
+        const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, pipelineOptions)) as TextGenerationPipeline
+        pipelineRef = pipeline
+        pipelineCache[cacheKey] = pipeline
+        updateFixedInputLength(modelId, pipeline)
+        return
+      } catch (err) {
+        lastError = err as Error
+        const nextDtype = dtypeCandidates[index + 1]
+        if (nextDtype) {
+          const deviceLabel = formatDeviceLabel(device)
+          send({
+            type: 'progress',
+            message: `${deviceLabel} (${dtypeKey}) failed; trying ${nextDtype}...`,
+            loadState: 'loading',
+            runtime: 'transformers',
+            deviceMode: device,
+            modelId,
+            threads: getWasmThreadCount()
+          })
+        }
       }
     }
-    if (transformersSpec.dtype) {
-      pipelineOptions.dtype = transformersSpec.dtype
-    } else if (device.startsWith('webnn')) {
-      pipelineOptions.dtype = 'auto'
+
+    if (lastError) {
+      throw lastError
     }
-    const pipeline = (await mod.pipeline(transformersSpec.task, transformersSpec.id, pipelineOptions)) as TextGenerationPipeline
-    pipelineRef = pipeline
-    pipelineCache[cacheKey] = pipeline
   }
 
   for (const [index, device] of devices.entries()) {
@@ -389,45 +585,52 @@ const loadTransformersModel = async (
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {
   transformersAbortController?.abort()
   transformersAbortController = null
+  lastLoadDtype = message.dtype
   setLoadState('loading')
+  const npuDisabled = message.acceleration === 'npu' && !allowWebNnNpu
+  const effectiveAcceleration: AccelerationPreference = npuDisabled ? 'gpu' : message.acceleration
   send({
     type: 'progress',
     message:
-      message.acceleration === 'npu'
-        ? 'Starting Transformers.js with WebNN...'
-        : hasWebGpu()
-          ? 'Starting WebLLM...'
-          : 'Loading Transformers.js fallback...',
+      npuDisabled
+        ? 'WebNN NPU disabled; loading Transformers.js fallback...'
+        : effectiveAcceleration === 'npu'
+          ? 'Starting Transformers.js with WebNN...'
+          : hasWebGpu()
+            ? 'Starting WebLLM...'
+            : 'Loading Transformers.js fallback...',
     loadState
   })
 
   const webLlmModelId =
-    message.acceleration !== 'npu' && hasWebGpu() && isWebLlmModelId(message.modelId) ? message.modelId : null
+    effectiveAcceleration !== 'npu' && hasWebGpu() && isWebLlmModelId(message.modelId) ? message.modelId : null
   const shouldTryWebLlm = webLlmModelId !== null
   if (webLlmModelId) {
-    const webLlmLoaded = await loadWebLlmModel(webLlmModelId, message.acceleration)
+    const webLlmLoaded = await loadWebLlmModel(webLlmModelId, effectiveAcceleration)
     if (webLlmLoaded) return
   }
 
   send({
     type: 'progress',
     message:
-      message.acceleration === 'npu'
-        ? 'WebNN requested; loading Transformers.js.'
-        : shouldTryWebLlm
-          ? 'WebLLM failed; switching to Transformers.js.'
-          : 'WebGPU unavailable; using Transformers.js.',
+      npuDisabled
+        ? 'WebNN NPU disabled; loading Transformers.js.'
+        : effectiveAcceleration === 'npu'
+          ? 'WebNN requested; loading Transformers.js.'
+          : shouldTryWebLlm
+            ? 'WebLLM failed; switching to Transformers.js.'
+            : 'WebGPU unavailable; using Transformers.js.',
     loadState: 'loading',
     runtime: 'transformers',
-    deviceMode: message.acceleration === 'npu' ? 'webnn-npu' : hasWebGpu() ? 'webgpu' : 'wasm',
+    deviceMode: effectiveAcceleration === 'npu' ? 'webnn-npu' : hasWebGpu() ? 'webgpu' : 'wasm',
     modelId: message.modelId,
     threads: getWasmThreadCount()
   })
 
-  const transformersLoaded = await loadTransformersModel(message.modelId, message.acceleration)
+  const transformersLoaded = await loadTransformersModel(message.modelId, effectiveAcceleration, message.dtype)
   if (transformersLoaded) return
 
-  if (message.acceleration === 'npu' && hasWebGpu()) {
+  if (effectiveAcceleration === 'npu' && hasWebGpu()) {
     send({
       type: 'progress',
       message: 'WebNN failed; switching to WebGPU/WebLLM...',
@@ -442,7 +645,7 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
       if (webLlmLoaded) return
     }
 
-    await loadTransformersModel(message.modelId, 'gpu')
+    await loadTransformersModel(message.modelId, 'gpu', message.dtype)
   }
 }
 
@@ -496,6 +699,48 @@ const handleTransformersGeneration = async (prompt: string, transcript: Transcri
     ? `${conversation}\nUser: ${prompt}\nAssistant:`
     : `User: ${prompt}\nAssistant:`
 
+  const fixedInputLength = loadedModelId ? fixedInputLengths.get(loadedModelId) : undefined
+  const canRunFixedInput = Boolean(
+    typeof fixedInputLength === 'number' && fixedInputLength > 0 && pipelineRef.model?.generate
+  )
+  const resolveTokenCount = (mask: any) => {
+    const data = mask?.data
+    if (!data) return null
+    let total = 0
+    for (const value of data) {
+      total += typeof value === 'bigint' ? Number(value) : Number(value)
+    }
+    return total
+  }
+
+  if (canRunFixedInput && pipelineRef.model && typeof fixedInputLength === 'number') {
+    const fixedLength = fixedInputLength
+    const tokenizer = pipelineRef.tokenizer as any
+    const model = pipelineRef.model
+    tokenizer.padding_side = 'left'
+    const tokenized = tokenizer([composedPrompt], {
+      add_special_tokens: (tokenizer?.add_bos_token || tokenizer?.add_eos_token) ?? false,
+      padding: 'max_length',
+      truncation: true,
+      max_length: fixedLength
+    })
+    const promptTokenCount = resolveTokenCount(tokenized.attention_mask) ?? 0
+    const maxNewTokens = Math.max(1, Math.min(200, fixedLength - promptTokenCount))
+    const outputTokenIds = await model.generate({
+      ...tokenized,
+      max_new_tokens: maxNewTokens,
+      temperature: 0.6,
+      streamer,
+      signal: abortController.signal
+    })
+    const decoded = tokenizer.batch_decode(outputTokenIds, { skip_special_tokens: true })
+    const promptLengths = tokenizer
+      .batch_decode(tokenized.input_ids, { skip_special_tokens: true })
+      .map((text: string) => text.length)
+    const generatedText = decoded[0]?.slice(promptLengths[0] ?? 0) ?? ''
+    return generatedText.trim()
+  }
+
   const outputs = await pipelineRef(composedPrompt, {
     max_new_tokens: 200,
     temperature: 0.6,
@@ -528,6 +773,34 @@ const handleGenerate = async (message: Extract<AiWorkerRequest, { type: 'generat
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') {
       send({ type: 'stopped' })
+      return
+    }
+    const modelId = loadedModelId
+    const shouldFallbackToWasm =
+      runtime === 'transformers' &&
+      deviceMode === 'webgpu' &&
+      modelId &&
+      isWebGpuRuntimeFailure(err) &&
+      forcedTransformersDevices.get(modelId) !== 'wasm'
+    if (shouldFallbackToWasm && modelId) {
+      transformersAbortController?.abort()
+      transformersAbortController = null
+      forcedTransformersDevices.set(modelId, 'wasm')
+      setLoadState('loading')
+      send({
+        type: 'progress',
+        message: 'WebGPU execution failed; switching to WASM fallback...',
+        loadState,
+        runtime: 'transformers',
+        deviceMode: 'wasm',
+        modelId,
+        threads: getWasmThreadCount()
+      })
+      const fallbackReady = await loadTransformersModel(modelId, 'gpu', lastLoadDtype)
+      if (fallbackReady) {
+        const assistantText = await handleTransformersGeneration(message.prompt, message.transcript)
+        send({ type: 'complete', content: assistantText })
+      }
       return
     }
     console.error(err)

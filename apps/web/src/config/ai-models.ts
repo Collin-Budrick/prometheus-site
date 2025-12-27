@@ -11,6 +11,8 @@ export type AiModelId = WebLlmModelId | WebNnModelId
 
 export type TransformersDtype = 'auto' | 'fp32' | 'fp16' | 'int8' | 'uint8' | 'q4' | 'q4f16' | 'q8' | 'bnb4'
 
+export const onnxCommunityModelPrefix = 'onnx-community/'
+
 export interface TransformersModelSpec {
   id: string
   label: string
@@ -39,6 +41,13 @@ export interface WebNnModel {
   contextLength: string
   recommendedTier: string
   description: string
+  transformers: TransformersModelSpec
+  webnnUnsupportedReason?: string
+  webnnFreeDims?: Record<string, number>
+}
+
+export interface TransformersModelInfo {
+  id: string
   transformers: TransformersModelSpec
   webnnUnsupportedReason?: string
   webnnFreeDims?: Record<string, number>
@@ -170,5 +179,18 @@ const webLlmModelIds = new Set(webLlmModels.map((model) => model.id))
 
 export const isWebLlmModelId = (value: string): value is WebLlmModelId => webLlmModelIds.has(value as WebLlmModelId)
 
-export const getTransformersModel = (modelId: AiModelId) =>
-  webNnModels.find((model) => model.id === modelId) ?? webLlmModels.find((model) => model.id === modelId)
+export const getTransformersModel = (modelId: AiModelId): TransformersModelInfo | undefined => {
+  const knownModel = webNnModels.find((model) => model.id === modelId) ?? webLlmModels.find((model) => model.id === modelId)
+  if (knownModel) return knownModel
+  if (modelId.startsWith(onnxCommunityModelPrefix)) {
+    return {
+      id: modelId,
+      transformers: {
+        id: modelId,
+        label: modelId,
+        task: 'text-generation'
+      }
+    }
+  }
+  return undefined
+}
