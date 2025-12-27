@@ -3,6 +3,7 @@ import {
   Form,
   Link,
   routeAction$,
+  routeLoader$,
   useDocumentHead,
   useLocation,
   type DocumentLink,
@@ -19,7 +20,7 @@ import criticalCss from '../critical.css?raw'
 import { ensureLocaleDictionary } from '../../i18n/dictionaries'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
-import { forwardAuthCookies } from '../../server/auth/session'
+import { fetchSessionFromApi, forwardAuthCookies } from '../../server/auth/session'
 import {
   buildSpeculationRulesGuard,
   conservativeViewportRules,
@@ -181,6 +182,13 @@ export const useSignOut = routeAction$(async (_, event) => {
 
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   throw event.redirect(302, localePrefix || '/')
+})
+
+export const useSessionLoader = routeLoader$(async (event) => {
+  const session = await fetchSessionFromApi(event)
+  return {
+    hasSession: Boolean(session?.session)
+  }
 })
 
 const navOrder = navLinks.map((link) => (link.path === '/' ? '/' : link.path))
@@ -555,6 +563,7 @@ export default component$(() => {
 
   const loc = useLocation()
   const signOutAction = useSignOut()
+  const session = useSessionLoader()
   const localePrefix = (() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
@@ -585,25 +594,40 @@ export default component$(() => {
             <span class="text-slate-400">{_`Performance Lab`}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
-            {navLinks.map(({ path, label, dataSpeculate }) => (
+            {navLinks
+              .filter(({ path }) => path !== '/login')
+              .map(({ path, label, dataSpeculate }) => (
+                <Link
+                  key={path}
+                  href={linkHref(path)}
+                  data-speculate={dataSpeculate}
+                  onClick$={handleNavClick$}
+                  class="hover:text-emerald-300 transition-colors"
+                >
+                  {label()}
+                </Link>
+              ))}
+            {!session.value.hasSession && (
               <Link
-                key={path}
-                href={linkHref(path)}
-                data-speculate={dataSpeculate}
+                key="/login"
+                href={linkHref('/login')}
+                data-speculate={getPageSpeculation('/login')}
                 onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
-                {label()}
+                {_`Login`}
               </Link>
-            ))}
-            <Form action={signOutAction} class="flex">
-              <button
-                type="submit"
-                class="text-slate-200 hover:text-emerald-300 transition-colors bg-transparent border-0 p-0"
-              >
-                {_`Sign out`}
-              </button>
-            </Form>
+            )}
+            {session.value.hasSession && (
+              <Form action={signOutAction} class="flex">
+                <button
+                  type="submit"
+                  class="text-slate-200 hover:text-emerald-300 transition-colors bg-transparent border-0 p-0"
+                >
+                  {_`Sign out`}
+                </button>
+              </Form>
+            )}
             <LocaleSelector />
           </div>
         </nav>
