@@ -11,6 +11,7 @@ import {
   type WebLlmModelId
 } from '../../../config/ai-models'
 import type {
+  AiDeviceCapabilities,
   AiWorkerRequest,
   AiWorkerResponse,
   DeviceMode,
@@ -64,9 +65,10 @@ const normalizeOnnxCommunityModelId = (input: string) => {
 interface WebLlmIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
+  capabilities?: AiDeviceCapabilities
 }
 
-export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAcceleration, accelerationReady }) => {
+export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAcceleration, accelerationReady, capabilities }) => {
   const workerRef = useSignal<Worker | null>(null)
   const workerListenerRef = useSignal<((event: MessageEvent<AiWorkerResponse>) => void) | null>(null)
   const selectedModelId = useSignal<AiModelId>(defaultWebLlmModelId)
@@ -269,7 +271,13 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
             : _`Loading Transformers.js fallback...`
 
     const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'load-model', modelId, acceleration: resolvedAcceleration, dtype } satisfies AiWorkerRequest)
+    worker.postMessage({
+      type: 'load-model',
+      modelId,
+      acceleration: resolvedAcceleration,
+      dtype,
+      capabilities
+    } satisfies AiWorkerRequest)
   })
 
   const prefetchModel$ = $(async (modelId: AiModelId) => {
@@ -287,7 +295,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(({ preferredAccelerati
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
     const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'prefetch-model', modelId, dtype } satisfies AiWorkerRequest)
+    worker.postMessage({ type: 'prefetch-model', modelId, dtype, capabilities } satisfies AiWorkerRequest)
   })
 
   useVisibleTask$(() => {

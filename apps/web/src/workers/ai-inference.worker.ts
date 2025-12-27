@@ -10,6 +10,8 @@ import {
   type WebLlmModelId
 } from '../config/ai-models'
 import type { AccelerationPreference } from '../config/ai-acceleration'
+import type { GpuTier } from '../components/gpu/capability-probe'
+import type { NpuTier } from '../components/gpu/npu-probe'
 import { webLlmModelRecords } from './web-llm-records'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'
@@ -22,19 +24,31 @@ export interface TranscriptEntry {
   content: string
 }
 
+export interface AiDeviceCapabilities {
+  gpuTier?: GpuTier
+  npuTier?: NpuTier
+  adapter?: {
+    maxBufferSize?: number | null
+    maxStorageBufferBindingSize?: number | null
+  }
+  deviceMemory?: number | null
+}
+
 type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown>) => Promise<any>) & {
   tokenizer: any
   model?: { generate: (options: Record<string, unknown>) => Promise<any> }
 }
 
+type AiWorkerRequestBase = { capabilities?: AiDeviceCapabilities }
+
 export type AiWorkerRequest =
-  | { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference; dtype?: TransformersDtype }
-  | { type: 'prefetch-model'; modelId: AiModelId; dtype?: TransformersDtype }
-  | { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] }
-  | { type: 'stop' }
-  | { type: 'reset' }
-  | { type: 'clear-cache' }
-  | { type: 'shutdown' }
+  | (AiWorkerRequestBase & { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference; dtype?: TransformersDtype })
+  | (AiWorkerRequestBase & { type: 'prefetch-model'; modelId: AiModelId; dtype?: TransformersDtype })
+  | (AiWorkerRequestBase & { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] })
+  | (AiWorkerRequestBase & { type: 'stop' })
+  | (AiWorkerRequestBase & { type: 'reset' })
+  | (AiWorkerRequestBase & { type: 'clear-cache' })
+  | (AiWorkerRequestBase & { type: 'shutdown' })
 
 export type AiWorkerResponse =
   | {
@@ -115,6 +129,7 @@ const onnxTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>(
 const webGpuSkipCache = new Map<AiModelId, boolean>()
 const onnxConfigCache = new Map<AiModelId, { sequenceLength: number }>()
 const hfTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
+let latestCapabilities: AiDeviceCapabilities | null = null
 type TransformersConversationCache = {
   modelId: AiModelId
   tokenIds: BigInt64Array
@@ -125,8 +140,12 @@ let wasmThreadCount: number | null = null
 const ortLocalWasmPath = '/ort/'
 const ortCdnWasmPath = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
 let ortWasmPath = ortLocalWasmPath
-const allowWebNnNpu = false
-const webGpuMaxStorageBufferBytes = 256 * 1024 * 1024
+const MB = 1024 * 1024
+let allowWebNnNpu = false
+const defaultWebGpuMaxStorageBufferBytes = 256 * MB
+const minWebGpuMaxStorageBufferBytes = 128 * MB
+const maxWebGpuMaxStorageBufferBytes = 512 * MB
+let webGpuMaxStorageBufferBytes = defaultWebGpuMaxStorageBufferBytes
 const defaultWebNnSequenceLength = 1024
 const transformersCacheName = 'transformers-cache'
 const webLlmCacheScopes = {
@@ -152,6 +171,46 @@ const transformersConfigFiles = new Set([
 
 let prefetchQueue = Promise.resolve()
 let prefetchQueueDepth = 0
+
+const resolveWebGpuBufferLimit = (capabilities?: AiDeviceCapabilities | null) => {
+  let limit = defaultWebGpuMaxStorageBufferBytes
+  const adapterLimit =
+    typeof capabilities?.adapter?.maxStorageBufferBindingSize === 'number'
+      ? capabilities.adapter.maxStorageBufferBindingSize
+      : capabilities?.adapter?.maxBufferSize ?? null
+  if (adapterLimit && Number.isFinite(adapterLimit)) {
+    limit = Math.min(limit, adapterLimit)
+  }
+
+  if (capabilities?.gpuTier === 'high') {
+    limit = Math.max(limit, 384 * MB)
+  } else if (capabilities?.gpuTier === 'mid') {
+    limit = Math.max(limit, 320 * MB)
+  } else if (capabilities?.gpuTier === 'low') {
+    limit = Math.min(limit, 192 * MB)
+  } else if (capabilities?.gpuTier === 'unavailable') {
+    limit = Math.min(limit, 160 * MB)
+  }
+
+  if (typeof capabilities?.deviceMemory === 'number' && Number.isFinite(capabilities.deviceMemory)) {
+    const memoryBytes = capabilities.deviceMemory * 1024 * 1024 * 1024
+    const memoryBudget = memoryBytes * 0.35
+    if (memoryBudget > 0) {
+      limit = Math.min(limit, memoryBudget)
+    }
+  }
+
+  return Math.max(minWebGpuMaxStorageBufferBytes, Math.min(limit, maxWebGpuMaxStorageBufferBytes))
+}
+
+const applyCapabilities = (capabilities?: AiDeviceCapabilities) => {
+  if (capabilities) {
+    latestCapabilities = capabilities
+  }
+  const active = capabilities ?? latestCapabilities ?? null
+  allowWebNnNpu = Boolean(active?.npuTier && active.npuTier !== 'unavailable')
+  webGpuMaxStorageBufferBytes = resolveWebGpuBufferLimit(active)
+}
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getHardwareThreadCount = () => {
@@ -458,6 +517,25 @@ const resolveOnnxCommunityWebGpuSkip = async (modelId: AiModelId) => {
     webGpuSkipCache.set(modelId, false)
     return false
   }
+}
+
+const shouldSkipWebLlmWithCapabilities = (capabilities: AiDeviceCapabilities | null) => {
+  if (!capabilities) return false
+  const tier = capabilities.gpuTier
+  if (tier === 'unavailable' || tier === 'low') return true
+  if (webGpuMaxStorageBufferBytes <= 192 * MB) return true
+  const adapterLimit =
+    typeof capabilities.adapter?.maxStorageBufferBindingSize === 'number'
+      ? capabilities.adapter.maxStorageBufferBindingSize
+      : capabilities.adapter?.maxBufferSize ?? null
+  if (adapterLimit && adapterLimit < 192 * MB) return true
+  return false
+}
+
+const shouldPreferNpuFromCapabilities = (capabilities: AiDeviceCapabilities | null, webnnUnsupportedReason?: string) => {
+  if (!capabilities) return false
+  if (webnnUnsupportedReason) return false
+  return capabilities.npuTier === 'mid' || capabilities.npuTier === 'high' || capabilities.npuTier === 'low'
 }
 
 const buildWebNnFreeDims = (sequenceLength: number) => ({
@@ -780,36 +858,39 @@ const unloadWebLlmEngine = async (modelId: AiModelId | null) => {
 const getTransformersDeviceCandidates = (
   acceleration: AccelerationPreference,
   webnnUnsupportedReason?: string,
-  options?: { skipWebGpu?: boolean }
+  options?: { skipWebGpu?: boolean; preferNpu?: boolean }
 ): DeviceMode[] => {
   const webnnAllowed = !webnnUnsupportedReason
   const skipWebGpu = options?.skipWebGpu ?? false
-  const fallbackDevices: DeviceMode[] =
-    hasWebGpu() && !skipWebGpu ? ['webgpu', 'wasm'] : ['wasm']
+  const preferNpu = Boolean(options?.preferNpu && webnnAllowed && allowWebNnNpu)
+  const fallbackDevices: DeviceMode[] = hasWebGpu() && !skipWebGpu ? ['webgpu', 'wasm'] : ['wasm']
+  const prioritizedDevices: DeviceMode[] = []
+
+  if ((acceleration === 'npu' || preferNpu) && webnnAllowed && allowWebNnNpu) {
+    prioritizedDevices.push('webnn-npu')
+  }
+
   if (acceleration === 'npu') {
-    const devices: DeviceMode[] = []
-    if (webnnAllowed && allowWebNnNpu) {
-      devices.push('webnn-npu')
+    if (webnnAllowed) {
+      prioritizedDevices.push('webnn-gpu', 'webnn-cpu')
     }
-    devices.push(...fallbackDevices)
-    return uniqueDevices(devices)
+    prioritizedDevices.push(...fallbackDevices)
+    return uniqueDevices(prioritizedDevices)
   }
 
   if (acceleration === 'auto') {
-    const devices: DeviceMode[] = []
-    if (hasWebGpu() && !skipWebGpu) devices.push('webgpu')
+    if (hasWebGpu() && !skipWebGpu) prioritizedDevices.push('webgpu')
     if (webnnAllowed) {
-      devices.push('webnn-gpu', 'webnn-cpu')
+      prioritizedDevices.push('webnn-gpu', 'webnn-cpu')
     }
-    devices.push('wasm')
-    return uniqueDevices(devices)
+    prioritizedDevices.push('wasm')
+    return uniqueDevices(prioritizedDevices)
   }
 
-  const devices: DeviceMode[] = []
-  if (webnnAllowed) devices.push('webnn-gpu')
-  if (hasWebGpu() && !skipWebGpu) devices.push('webgpu')
-  devices.push('wasm')
-  return uniqueDevices(devices)
+  if (webnnAllowed) prioritizedDevices.push('webnn-gpu')
+  if (hasWebGpu() && !skipWebGpu) prioritizedDevices.push('webgpu')
+  prioritizedDevices.push('wasm')
+  return uniqueDevices(prioritizedDevices)
 }
 
 const ensureModule = async () => {
@@ -976,7 +1057,8 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
 const loadTransformersModel = async (
   modelId: AiModelId,
   acceleration: AccelerationPreference,
-  dtypeOverride?: TransformersDtype
+  dtypeOverride?: TransformersDtype,
+  options?: { preferNpu?: boolean }
 ): Promise<boolean> => {
   const mod = await ensureTransformers()
   const modelInfo = getTransformersModel(modelId)
@@ -994,7 +1076,10 @@ const loadTransformersModel = async (
   const forcedDevice = forcedTransformersDevices.get(modelId)
   const devices = forcedDevice
     ? [forcedDevice]
-    : getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason, { skipWebGpu })
+    : getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason, {
+        skipWebGpu,
+        preferNpu: options?.preferNpu
+      })
   const attemptedWebnn = devices.some((device) => device.startsWith('webnn'))
 
   if (skipWebGpu && hasWebGpu()) {
@@ -1211,13 +1296,20 @@ const loadTransformersModel = async (
 }
 
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {
+  applyCapabilities(message.capabilities)
   transformersAbortController?.abort()
   transformersAbortController = null
   lastLoadDtype = message.dtype
   resetTransformersConversationCache()
   setLoadState('loading')
-  const npuDisabled = message.acceleration === 'npu' && !allowWebNnNpu
-  const effectiveAcceleration: AccelerationPreference = npuDisabled ? 'gpu' : message.acceleration
+  const modelInfo = getTransformersModel(message.modelId)
+  const webnnUnsupportedReason = modelInfo?.webnnUnsupportedReason
+  const preferNpu = shouldPreferNpuFromCapabilities(latestCapabilities, webnnUnsupportedReason)
+  const requestedAcceleration: AccelerationPreference =
+    preferNpu && message.acceleration !== 'npu' ? 'npu' : message.acceleration
+  const npuDisabled = requestedAcceleration === 'npu' && !allowWebNnNpu
+  const effectiveAcceleration: AccelerationPreference = npuDisabled ? 'gpu' : requestedAcceleration
+  const skipWebLlm = shouldSkipWebLlmWithCapabilities(latestCapabilities)
   send({
     type: 'progress',
     message:
@@ -1225,15 +1317,30 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
         ? 'WebNN NPU disabled; loading Transformers.js fallback...'
         : effectiveAcceleration === 'npu'
           ? 'Starting Transformers.js with WebNN...'
-          : hasWebGpu()
-            ? 'Starting WebLLM...'
-            : 'Loading Transformers.js fallback...',
+          : preferNpu
+            ? 'Detected NPU tier; preferring WebNN before WebGPU...'
+            : hasWebGpu() && !skipWebLlm
+              ? 'Starting WebLLM...'
+              : 'Loading Transformers.js fallback...',
     loadState
   })
 
   const webLlmModelId =
-    effectiveAcceleration !== 'npu' && hasWebGpu() && isWebLlmModelId(message.modelId) ? message.modelId : null
+    effectiveAcceleration !== 'npu' && hasWebGpu() && !skipWebLlm && isWebLlmModelId(message.modelId)
+      ? message.modelId
+      : null
   const shouldTryWebLlm = webLlmModelId !== null
+  if (!shouldTryWebLlm && skipWebLlm && isWebLlmModelId(message.modelId) && hasWebGpu()) {
+    send({
+      type: 'progress',
+      message: 'WebGPU buffer budget looks low; skipping WebLLM and preferring Transformers.js.',
+      loadState: 'loading',
+      runtime: 'transformers',
+      deviceMode: effectiveAcceleration === 'npu' ? 'webnn-npu' : hasWebGpu() ? 'webgpu' : 'wasm',
+      modelId: message.modelId,
+      threads: getWasmThreadCount()
+    })
+  }
   if (webLlmModelId) {
     const webLlmLoaded = await loadWebLlmModel(webLlmModelId, effectiveAcceleration)
     if (webLlmLoaded) return
@@ -1256,7 +1363,9 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
     threads: getWasmThreadCount()
   })
 
-  const transformersLoaded = await loadTransformersModel(message.modelId, effectiveAcceleration, message.dtype)
+  const transformersLoaded = await loadTransformersModel(message.modelId, effectiveAcceleration, message.dtype, {
+    preferNpu
+  })
   if (transformersLoaded) return
 
   if (effectiveAcceleration === 'npu' && hasWebGpu()) {
@@ -1274,11 +1383,12 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
       if (webLlmLoaded) return
     }
 
-    await loadTransformersModel(message.modelId, 'gpu', message.dtype)
+    await loadTransformersModel(message.modelId, 'gpu', message.dtype, { preferNpu: false })
   }
 }
 
 const handlePrefetchModel = (message: Extract<AiWorkerRequest, { type: 'prefetch-model' }>) => {
+  applyCapabilities(message.capabilities)
   const modelId = message.modelId
   const runtime: Runtime = isWebLlmModelId(modelId) ? 'web-llm' : 'transformers'
   const task = async () => {
