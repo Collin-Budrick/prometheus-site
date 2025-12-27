@@ -107,6 +107,9 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const wasmThreads = useSignal<number | null>(null)
   const hasTransformersCache = useSignal(false)
   const cacheCheckComplete = useSignal(false)
+  const installState = useSignal<'idle' | 'installing' | 'done' | 'error'>('idle')
+  const installProgress = useSignal('')
+  const installModelId = useSignal<AiModelId | null>(null)
   const shouldShowDownloadWarning = useSignal(false)
   const downloadWarningDismissed = useSignal(false)
   const storageWarning = useSignal('')
@@ -114,6 +117,34 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
 
   const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
+
+  const checkCaches = async () => {
+    if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
+      try {
+        const databases = await indexedDB.databases()
+        const names = databases.map((db) => db?.name?.toLowerCase() ?? '')
+        hasTransformersCache.value = names.some((name) => name?.includes('transformers') || name?.includes('huggingface'))
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+      try {
+        const cacheNames = await caches.keys()
+        if (cacheNames.some((name) => name.includes('transformers'))) {
+          hasTransformersCache.value = true
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    cacheCheckComplete.value = true
+    if (!downloadWarningDismissed.value) {
+      shouldShowDownloadWarning.value = !hasTransformersCache.value
+    }
+  }
 
   const ensureWorker = async () => {
     if (workerRef.value) return workerRef.value
@@ -129,6 +160,23 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           if (data.deviceMode) deviceMode.value = data.deviceMode
           if (data.modelId) loadedModelId.value = data.modelId
           if (typeof data.threads === 'number') wasmThreads.value = data.threads
+          break
+        case 'prefetch-progress':
+          installState.value = 'installing'
+          installProgress.value = data.message
+          installModelId.value = data.modelId
+          break
+        case 'prefetch-complete':
+          installState.value = 'done'
+          installProgress.value = _`Background install complete.`
+          installModelId.value = data.modelId
+          shouldShowDownloadWarning.value = false
+          void checkCaches()
+          break
+        case 'prefetch-error':
+          installState.value = 'error'
+          installProgress.value = data.error
+          installModelId.value = data.modelId
           break
         case 'ready':
           loadState.value = 'ready'
@@ -218,42 +266,25 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
     worker.postMessage({ type: 'load-model', modelId, acceleration, dtype } satisfies AiWorkerRequest)
   }
 
+  const prefetchModel = $(async (modelId: WebNnModelId) => {
+    if (hasCustomModelError()) {
+      error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
+      return
+    }
+    const worker = await ensureWorker()
+    installState.value = 'installing'
+    installProgress.value = _`Starting background download...`
+    installModelId.value = modelId
+    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    worker.postMessage({ type: 'prefetch-model', modelId, dtype } satisfies AiWorkerRequest)
+  })
+
   useVisibleTask$(() => {
     const restoreDownloadWarning = () => {
       if (typeof sessionStorage === 'undefined') return
       const dismissed = sessionStorage.getItem('ai-download-warning-dismissed') === '1'
       downloadWarningDismissed.value = dismissed
       shouldShowDownloadWarning.value = !dismissed
-    }
-
-    const checkCaches = async () => {
-      if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
-        try {
-          const databases = await indexedDB.databases()
-          const names = databases.map((db) => db?.name?.toLowerCase() ?? '')
-          hasTransformersCache.value = names.some(
-            (name) => name?.includes('transformers') || name?.includes('huggingface')
-          )
-        } catch (err) {
-          console.error(err)
-        }
-      }
-
-      if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
-        try {
-          const cacheNames = await caches.keys()
-          if (cacheNames.some((name) => name.includes('transformers'))) {
-            hasTransformersCache.value = true
-          }
-        } catch (err) {
-          console.error(err)
-        }
-      }
-
-      cacheCheckComplete.value = true
-      if (!downloadWarningDismissed.value) {
-        shouldShowDownloadWarning.value = !hasTransformersCache.value
-      }
     }
 
     restoreDownloadWarning()
@@ -367,6 +398,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
   const isCustomModelInvalid = hasCustomModelError()
   const shouldShowWebNnFallback = isAccelerationReady && loadState.value === 'ready' && !isWebNn
+  const isInstallForSelected = installModelId.value === selectedModelId.value
 
   return (
     <div class="bg-slate-900/60 p-4 border border-slate-800 rounded-lg text-slate-200">
@@ -388,11 +420,19 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           </button>
           <button
             type="button"
+            class="border border-slate-700 px-3 py-2 rounded-md font-semibold text-slate-100 text-xs disabled:opacity-50"
+            disabled={installState.value === 'installing' || isCustomModelInvalid}
+            onClick$={$(() => prefetchModel(selectedModelId.value))}
+          >
+            {_`Install (background)`}
+          </button>
+          <button
+            type="button"
             class="bg-emerald-500 disabled:opacity-50 px-3 py-2 rounded-md font-semibold text-emerald-950 text-xs"
-            disabled={loadState.value === 'loading' || !isAccelerationReady || isCustomModelInvalid}
+            disabled={loadState.value === 'loading' || installState.value === 'installing' || !isAccelerationReady || isCustomModelInvalid}
             onClick$={$(() => loadModel(selectedModelId.value, resolveAcceleration()))}
           >
-            {isSelectedModelLoaded ? _`Reload model` : _`Install model`}
+            {isSelectedModelLoaded ? _`Reload model` : _`Activate model`}
           </button>
         </div>
       </div>
@@ -535,6 +575,15 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
                     : _`Idle`}
             </span>
             {progress.value && <span class="text-slate-300">{progress.value}</span>}
+            {isInstallForSelected && installState.value === 'installing' && installProgress.value && (
+              <span class="text-slate-300">{_`Background install: ${installProgress.value}`}</span>
+            )}
+            {isInstallForSelected && installState.value === 'done' && (
+              <span class="text-emerald-200">{_`Background install complete`}</span>
+            )}
+            {isInstallForSelected && installState.value === 'error' && installProgress.value && (
+              <span class="text-rose-300">{_`Background install failed: ${installProgress.value}`}</span>
+            )}
             {runtime.value === 'transformers' && (
               <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">
                 {_`Transformers.js`}

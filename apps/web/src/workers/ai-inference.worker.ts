@@ -29,6 +29,7 @@ type TextGenerationPipeline = ((prompt: string, options?: Record<string, unknown
 
 export type AiWorkerRequest =
   | { type: 'load-model'; modelId: AiModelId; acceleration: AccelerationPreference; dtype?: TransformersDtype }
+  | { type: 'prefetch-model'; modelId: AiModelId; dtype?: TransformersDtype }
   | { type: 'generate'; modelId: AiModelId; prompt: string; transcript: TranscriptEntry[] }
   | { type: 'stop' }
   | { type: 'reset' }
@@ -42,6 +43,26 @@ export type AiWorkerResponse =
       deviceMode?: DeviceMode
       modelId?: AiModelId
       threads?: number
+    }
+  | {
+      type: 'prefetch-progress'
+      modelId: AiModelId
+      message: string
+      completed?: number
+      total?: number
+      runtime?: Runtime
+      deviceMode?: DeviceMode
+    }
+  | {
+      type: 'prefetch-complete'
+      modelId: AiModelId
+      runtime: Runtime
+    }
+  | {
+      type: 'prefetch-error'
+      modelId: AiModelId
+      error: string
+      runtime: Runtime
     }
   | {
       type: 'ready'
@@ -87,6 +108,7 @@ const forcedTransformersDevices = new Map<AiModelId, DeviceMode>()
 const onnxTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
 const webGpuSkipCache = new Map<AiModelId, boolean>()
 const onnxConfigCache = new Map<AiModelId, { sequenceLength: number }>()
+const hfTreeCache = new Map<AiModelId, Array<{ path: string; size: number }>>()
 type TransformersConversationCache = {
   modelId: AiModelId
   tokenIds: BigInt64Array
@@ -100,7 +122,27 @@ let ortWasmPath = ortLocalWasmPath
 const allowWebNnNpu = false
 const webGpuMaxStorageBufferBytes = 256 * 1024 * 1024
 const defaultWebNnSequenceLength = 1024
-const maxWasmThreads = 8
+const transformersCacheName = 'transformers-cache'
+const webLlmCacheScopes = {
+  config: 'webllm/config',
+  model: 'webllm/model',
+  wasm: 'webllm/wasm'
+}
+const transformersConfigFiles = new Set([
+  'config.json',
+  'generation_config.json',
+  'tokenizer.json',
+  'tokenizer.model',
+  'tokenizer_config.json',
+  'special_tokens_map.json',
+  'added_tokens.json',
+  'vocab.json',
+  'merges.txt',
+  'preprocessor_config.json'
+])
+
+let prefetchQueue = Promise.resolve()
+let prefetchQueueDepth = 0
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && 'gpu' in navigator
 const getHardwareThreadCount = () => {
@@ -112,14 +154,20 @@ const getHardwareThreadCount = () => {
 const resolveWasmThreadCount = () => {
   const isCrossOriginIsolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated
   if (!isCrossOriginIsolated) return 1
-  const capped = Math.min(getHardwareThreadCount(), maxWasmThreads)
-  return Math.max(1, capped)
+  const detected = getHardwareThreadCount()
+  return Math.max(1, detected)
 }
 const getWasmThreadCount = () => {
   if (wasmThreadCount !== null) return wasmThreadCount
   wasmThreadCount = resolveWasmThreadCount()
   return wasmThreadCount
 }
+const buildWasmSessionOptions = () => ({
+  graphOptimizationLevel: 'all',
+  enableCpuMemArena: true,
+  enableMemPattern: true,
+  executionMode: getWasmThreadCount() > 1 ? 'parallel' : 'sequential'
+})
 const formatProgress = (report: InitProgressReport) => {
   const pct = Math.max(0, Math.min(100, Math.round(report.progress * 100)))
   const details = report.text ? ` · ${report.text}` : ''
@@ -222,6 +270,51 @@ const coercePositiveInt = (value: unknown) => {
 }
 
 const isOnnxFilePath = (path: string) => path.endsWith('.onnx') || path.includes('.onnx_data')
+const ensureCache = async (cacheName: string) => {
+  if (typeof caches === 'undefined') {
+    throw new Error('Cache API is not available in this environment.')
+  }
+  return caches.open(cacheName)
+}
+
+const cacheUrl = async (cache: Cache, url: string) => {
+  const cached = await cache.match(url)
+  if (cached) return
+  await cache.add(url)
+}
+
+const fetchJsonWithCache = async <T>(cache: Cache, url: string): Promise<T> => {
+  const cached = await cache.match(url)
+  if (cached) {
+    return (await cached.json()) as T
+  }
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Unable to fetch ${url} (${response.status}).`)
+  }
+  await cache.put(url, response.clone())
+  return (await response.json()) as T
+}
+
+const fetchHuggingFaceTree = async (modelId: AiModelId) => {
+  const cached = hfTreeCache.get(modelId)
+  if (cached) return cached
+  const response = await fetch(`https://huggingface.co/api/models/${modelId}/tree/main?recursive=1`)
+  if (!response.ok) {
+    throw new Error(`Unable to fetch model manifest (${response.status}).`)
+  }
+  const data = await response.json()
+  const files = Array.isArray(data) ? data : []
+  const parsed = files
+    .map((file) => {
+      const path = typeof file?.path === 'string' ? file.path : ''
+      const size = typeof file?.size === 'number' ? file.size : 0
+      return { path, size }
+    })
+    .filter((file) => file.path)
+  hfTreeCache.set(modelId, parsed)
+  return parsed
+}
 
 const fetchOnnxCommunityTree = async (modelId: AiModelId) => {
   const cached = onnxTreeCache.get(modelId)
@@ -335,6 +428,107 @@ const resolveOnnxCommunityWebNnOverrides = async (modelId: AiModelId) => {
   }
 }
 
+const resolveTransformersPrefetchDtype = (modelId: AiModelId, dtypeOverride?: TransformersDtype) => {
+  if (dtypeOverride) return dtypeOverride
+  const modelInfo = getTransformersModel(modelId)
+  const modelDtype = modelInfo?.transformers?.dtype
+  if (modelDtype) return modelDtype
+  if (modelId.startsWith(onnxCommunityModelPrefix)) return 'q4f16'
+  return undefined
+}
+
+const isTransformersConfigFile = (path: string) => {
+  const name = path.split('/').pop()?.toLowerCase() ?? ''
+  return transformersConfigFiles.has(name)
+}
+
+const filterOnnxCommunityFiles = (paths: string[], dtype?: TransformersDtype) => {
+  const normalized = dtype ?? ''
+  const variantTags =
+    normalized === 'q4f16'
+      ? ['q4f16']
+      : normalized === 'q4'
+        ? ['q4', 'q4f16']
+        : normalized === 'fp16'
+          ? ['fp16']
+          : normalized === 'fp32'
+            ? []
+            : []
+  if (variantTags.length) {
+    const filtered = paths.filter((path) =>
+      variantTags.some((tag) => path.includes(`model_${tag}.onnx`))
+    )
+    if (filtered.length) return filtered
+  }
+  const base = paths.filter((path) => /model\.onnx(_data.*)?$/i.test(path) && !/model_[^/]+\.onnx/i.test(path))
+  return base.length ? base : paths
+}
+
+const selectTransformersFiles = (modelId: AiModelId, files: Array<{ path: string }>, dtype?: TransformersDtype) => {
+  const configPaths = files.filter((file) => isTransformersConfigFile(file.path)).map((file) => file.path)
+  let onnxPaths = files.filter((file) => isOnnxFilePath(file.path)).map((file) => file.path)
+  if (modelId.startsWith(onnxCommunityModelPrefix)) {
+    onnxPaths = filterOnnxCommunityFiles(onnxPaths, dtype)
+  }
+  const merged = [...configPaths, ...onnxPaths]
+  return Array.from(new Set(merged))
+}
+
+const buildHuggingFaceFileUrl = (modelId: AiModelId, filePath: string) =>
+  `https://huggingface.co/${modelId}/resolve/main/${filePath}`
+
+const normalizeWebLlmModelUrl = (modelUrl: string) => {
+  let normalized = modelUrl.endsWith('/') ? modelUrl : `${modelUrl}/`
+  if (!normalized.match(/.+\/resolve\/.+\//)) {
+    normalized += 'resolve/main/'
+  }
+  const baseUrl = typeof location !== 'undefined' ? location.origin : ''
+  if (!normalized.startsWith('http')) {
+    return new URL(normalized, baseUrl).href
+  }
+  return new URL(normalized).href
+}
+
+const sendPrefetchProgress = (payload: {
+  modelId: AiModelId
+  message: string
+  runtime: Runtime
+  deviceMode?: DeviceMode
+  completed?: number
+  total?: number
+}) => {
+  send({
+    type: 'prefetch-progress',
+    modelId: payload.modelId,
+    message: payload.message,
+    completed: payload.completed,
+    total: payload.total,
+    runtime: payload.runtime,
+    deviceMode: payload.deviceMode
+  })
+}
+
+const enqueuePrefetch = (modelId: AiModelId, runtime: Runtime, task: () => Promise<void>) => {
+  prefetchQueueDepth += 1
+  const position = prefetchQueueDepth
+  if (position > 1) {
+    sendPrefetchProgress({
+      modelId,
+      runtime,
+      message: `Queued (${position - 1} ahead)`
+    })
+  }
+  const run = async () => {
+    try {
+      await task()
+    } finally {
+      prefetchQueueDepth = Math.max(0, prefetchQueueDepth - 1)
+    }
+  }
+  prefetchQueue = prefetchQueue.then(run, run)
+  return prefetchQueue
+}
+
 const resolveTokenData = (inputIds: any) => {
   const data = inputIds?.data
   if (data instanceof BigInt64Array) return data
@@ -413,6 +607,35 @@ const isWebGpuRuntimeFailure = (err: unknown) => {
   return markers.some((marker) => normalized.includes(marker))
 }
 
+const isWebLlmDeviceLost = (err: unknown) => {
+  const cause = (err as { cause?: unknown })?.cause
+  const normalized = `${getErrorText(err)} ${getErrorText(cause)}`.toLowerCase()
+  if (!normalized.trim()) return false
+  const markers = [
+    'device was lost',
+    'device lost',
+    'gpudevicelostinfo',
+    'instance reference no longer exists',
+    'poperrorscope',
+    'operationerror'
+  ]
+  return markers.some((marker) => normalized.includes(marker))
+}
+
+const unloadWebLlmEngine = async (modelId: AiModelId | null) => {
+  const engine = engineRef
+  engineRef = null
+  if (modelId) {
+    delete engineCache[modelId as WebLlmModelId]
+  }
+  if (!engine) return
+  try {
+    await engine.unload()
+  } catch {
+    // Ignore unload failures during device loss.
+  }
+}
+
 const getTransformersDeviceCandidates = (
   acceleration: AccelerationPreference,
   webnnUnsupportedReason?: string,
@@ -466,6 +689,96 @@ const ensureTransformers = async () => {
 }
 
 const send = (message: AiWorkerResponse) => ctx.postMessage(message)
+
+const prefetchTransformersModel = async (modelId: AiModelId, dtypeOverride?: TransformersDtype) => {
+  if (modelId.startsWith('/models/')) {
+    sendPrefetchProgress({
+      modelId,
+      runtime: 'transformers',
+      message: 'Local model path detected; no remote download needed.'
+    })
+    return
+  }
+  const dtype = resolveTransformersPrefetchDtype(modelId, dtypeOverride)
+  sendPrefetchProgress({
+    modelId,
+    runtime: 'transformers',
+    message: 'Building download list...'
+  })
+  const files = modelId.startsWith(onnxCommunityModelPrefix)
+    ? await fetchOnnxCommunityTree(modelId)
+    : await fetchHuggingFaceTree(modelId)
+  const filePaths = selectTransformersFiles(modelId, files, dtype)
+  if (!filePaths.length) {
+    throw new Error('No ONNX assets found to cache for this model.')
+  }
+  const urls = filePaths.map((filePath) => buildHuggingFaceFileUrl(modelId, filePath))
+  const cache = await ensureCache(transformersCacheName)
+  let completed = 0
+  const total = urls.length
+  for (const url of urls) {
+    await cacheUrl(cache, url)
+    completed += 1
+    sendPrefetchProgress({
+      modelId,
+      runtime: 'transformers',
+      completed,
+      total,
+      message: `Cached ${completed}/${total}: ${url.split('/').pop() ?? 'file'}`
+    })
+  }
+}
+
+const prefetchWebLlmModel = async (modelId: WebLlmModelId) => {
+  const record = webLlmModelRecords.find((item) => item.model_id === modelId)
+  if (!record) {
+    throw new Error(`Missing WebLLM model record for ${modelId}.`)
+  }
+  const modelUrl = normalizeWebLlmModelUrl(record.model)
+  sendPrefetchProgress({
+    modelId,
+    runtime: 'web-llm',
+    message: 'Building download list...'
+  })
+  const configCache = await ensureCache(webLlmCacheScopes.config)
+  const modelCache = await ensureCache(webLlmCacheScopes.model)
+  const wasmCache = await ensureCache(webLlmCacheScopes.wasm)
+  const configUrl = new URL('mlc-chat-config.json', modelUrl).href
+  const config = await fetchJsonWithCache<{ tokenizer_files?: string[] }>(configCache, configUrl)
+  const tokenizerFiles = Array.isArray(config?.tokenizer_files)
+    ? config.tokenizer_files.filter((file) => typeof file === 'string' && file.length > 0)
+    : []
+  const tokenizerUrls = tokenizerFiles.map((file) => new URL(file, modelUrl).href)
+  const tensorCacheUrl = new URL('tensor-cache.json', modelUrl).href
+  const tensorCache = await fetchJsonWithCache<{ records?: Array<{ dataPath?: string }> }>(modelCache, tensorCacheUrl)
+  const dataUrls = Array.isArray(tensorCache?.records)
+    ? tensorCache.records
+        .map((record) => (typeof record?.dataPath === 'string' ? record.dataPath : ''))
+        .filter((path) => path)
+        .map((path) => new URL(path, modelUrl).href)
+    : []
+  const shouldCacheWasm = record.model_lib?.startsWith('http') && !record.model_lib.includes('localhost')
+  const tasks: Array<{ cache: Cache; url: string }> = [
+    { cache: configCache, url: configUrl },
+    ...tokenizerUrls.map((url) => ({ cache: modelCache, url })),
+    { cache: modelCache, url: tensorCacheUrl },
+    ...dataUrls.map((url) => ({ cache: modelCache, url })),
+    ...(shouldCacheWasm && record.model_lib ? [{ cache: wasmCache, url: record.model_lib }] : [])
+  ]
+  let completed = 0
+  const total = tasks.length
+  for (const task of tasks) {
+    await cacheUrl(task.cache, task.url)
+    completed += 1
+    sendPrefetchProgress({
+      modelId,
+      runtime: 'web-llm',
+      completed,
+      total,
+      message: `Cached ${completed}/${total}: ${task.url.split('/').pop() ?? 'file'}`
+    })
+  }
+}
 
 const setLoadState = (next: LoadState) => {
   loadState = next
@@ -613,10 +926,13 @@ const loadTransformersModel = async (
         return
       }
       const pipelineOptions: Record<string, unknown> = { device }
-      if (webnnOverrides) {
-        pipelineOptions.session_options = {
-          freeDimensionOverrides: webnnOverrides.freeDims
-        }
+      const sessionOptions = webnnOverrides
+        ? { freeDimensionOverrides: webnnOverrides.freeDims }
+        : device === 'wasm'
+          ? buildWasmSessionOptions()
+          : null
+      if (sessionOptions) {
+        pipelineOptions.session_options = sessionOptions
       }
       if (dtype) {
         pipelineOptions.dtype = dtype
@@ -813,6 +1129,30 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
   }
 }
 
+const handlePrefetchModel = (message: Extract<AiWorkerRequest, { type: 'prefetch-model' }>) => {
+  const modelId = message.modelId
+  const runtime: Runtime = isWebLlmModelId(modelId) ? 'web-llm' : 'transformers'
+  const task = async () => {
+    try {
+      if (runtime === 'web-llm') {
+        await prefetchWebLlmModel(modelId as WebLlmModelId)
+      } else {
+        await prefetchTransformersModel(modelId, message.dtype)
+      }
+      send({ type: 'prefetch-complete', modelId, runtime })
+    } catch (err) {
+      console.error(err)
+      send({
+        type: 'prefetch-error',
+        modelId,
+        runtime,
+        error: getErrorText(err) || 'Unable to prefetch model assets.'
+      })
+    }
+  }
+  enqueuePrefetch(modelId, runtime, task)
+}
+
 const handleWebLlmGeneration = async (prompt: string, transcript: TranscriptEntry[]) => {
   if (!engineRef) throw new Error('WebLLM engine is not ready yet.')
 
@@ -991,6 +1331,28 @@ const handleGenerate = async (message: Extract<AiWorkerRequest, { type: 'generat
       return
     }
     const modelId = loadedModelId
+    if (runtime === 'web-llm' && isWebLlmDeviceLost(err)) {
+      await unloadWebLlmEngine(modelId)
+      resetTransformersConversationCache()
+      setLoadState('loading')
+      send({
+        type: 'progress',
+        message: 'WebGPU device lost; switching to Transformers.js fallback...',
+        loadState,
+        runtime: 'transformers',
+        deviceMode: 'wasm',
+        modelId: modelId ?? undefined,
+        threads: getWasmThreadCount()
+      })
+      if (modelId) {
+        await loadTransformersModel(modelId, 'gpu', lastLoadDtype)
+      }
+      send({
+        type: 'error',
+        error: 'WebLLM lost the GPU device. A fallback backend is ready; please retry your prompt.'
+      })
+      return
+    }
     const shouldFallbackToWasm =
       runtime === 'transformers' &&
       deviceMode === 'webgpu' &&
@@ -1045,6 +1407,9 @@ ctx.addEventListener('message', (event: MessageEvent<AiWorkerRequest>) => {
   switch (data.type) {
     case 'load-model':
       handleLoadModel(data)
+      break
+    case 'prefetch-model':
+      handlePrefetchModel(data)
       break
     case 'generate':
       handleGenerate(data)
