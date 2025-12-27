@@ -105,6 +105,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   const freeStorageBytes = useSignal<number | null>(null)
   const isStorageBlocked = useSignal(false)
   const storageCheckUnavailable = useSignal(false)
+  const storageCheckComplete = useSignal(false)
   const isAutoWarming = useSignal(false)
   const autoWarmQueued = useSignal(false)
 
@@ -234,20 +235,25 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   const getSelectedModel = () => webLlmModels.find((model) => model.id === selectedModelId.value)
 
   const updateStorageEstimate$ = $(async (modelId: AiModelId) => {
-    const model = webLlmModels.find((item) => item.id === modelId)
-    const guard = await checkStorageGuard(model?.sizeBytes)
-    freeStorageBytes.value = guard.freeBytes
-    isStorageBlocked.value = guard.blocked
-    storageCheckUnavailable.value = guard.unavailable
-    if (guard.blocked && guard.freeBytes !== null && model?.sizeBytes) {
-      storageWarning.value = _`Only ${formatBytes(guard.freeBytes)} free; ${model.label} needs about ${model.size}. Free up space or pick a smaller model.`
-    } else if (guard.unavailable) {
-      storageWarning.value = _`Storage estimate unavailable; your browser skipped the storage safety check.`
-    } else {
-      storageWarning.value = ''
-    }
-    if (guard.unavailable) {
-      console.warn('Storage guard skipped: Storage API unavailable.')
+    storageCheckComplete.value = false
+    try {
+      const model = webLlmModels.find((item) => item.id === modelId)
+      const guard = await checkStorageGuard(model?.sizeBytes)
+      freeStorageBytes.value = guard.freeBytes
+      isStorageBlocked.value = guard.blocked
+      storageCheckUnavailable.value = guard.unavailable
+      if (guard.blocked && guard.freeBytes !== null && model?.sizeBytes) {
+        storageWarning.value = _`Only ${formatBytes(guard.freeBytes)} free; ${model.label} needs about ${model.size}. Free up space or pick a smaller model.`
+      } else if (guard.unavailable) {
+        storageWarning.value = _`Storage estimate unavailable; your browser skipped the storage safety check.`
+      } else {
+        storageWarning.value = ''
+      }
+      if (guard.unavailable) {
+        console.warn('Storage guard skipped: Storage API unavailable.')
+      }
+    } finally {
+      storageCheckComplete.value = true
     }
   })
 
@@ -348,6 +354,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
     track(() => loadState.value)
     track(() => selectedModelId.value)
     track(() => isStorageBlocked.value)
+    track(() => storageCheckComplete.value)
     track(() => manualOverride)
     track(() => accelerationReady)
     track(() => capabilities?.probe?.gpu?.bestBandwidthGBps)
@@ -371,6 +378,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
       manualOverride ||
       !accelerationReady ||
       !cacheCheckComplete.value ||
+      !storageCheckComplete.value ||
       hasCache ||
       isStorageBlocked.value ||
       isCustomModelSelected.value ||
