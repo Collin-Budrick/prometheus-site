@@ -187,8 +187,9 @@ const resolveWebGpuBufferLimit = (capabilities?: AiDeviceCapabilities | null) =>
     typeof capabilities?.adapter?.maxStorageBufferBindingSize === 'number'
       ? capabilities.adapter.maxStorageBufferBindingSize
       : capabilities?.adapter?.maxBufferSize ?? null
+  const upperBounds = [maxWebGpuMaxStorageBufferBytes]
   if (adapterLimit && Number.isFinite(adapterLimit)) {
-    limit = Math.min(limit, adapterLimit)
+    upperBounds.push(adapterLimit)
   }
 
   if (capabilities?.gpuTier === 'high') {
@@ -205,11 +206,12 @@ const resolveWebGpuBufferLimit = (capabilities?: AiDeviceCapabilities | null) =>
     const memoryBytes = capabilities.deviceMemory * 1024 * 1024 * 1024
     const memoryBudget = memoryBytes * 0.35
     if (memoryBudget > 0) {
-      limit = Math.min(limit, memoryBudget)
+      upperBounds.push(memoryBudget)
     }
   }
 
-  return Math.max(minWebGpuMaxStorageBufferBytes, Math.min(limit, maxWebGpuMaxStorageBufferBytes))
+  const upperBound = Math.min(...upperBounds)
+  return Math.max(minWebGpuMaxStorageBufferBytes, Math.min(limit, upperBound))
 }
 
 const mergeCapabilities = (capabilities?: AiDeviceCapabilities | null) => {
