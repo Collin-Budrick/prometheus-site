@@ -32,16 +32,22 @@ const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
 }
 
-const socialProviders = Object.entries(config.auth.oauth).reduce<SocialProviders>((acc, [provider, credentials]) => {
+type ConfiguredSocialProvider = Extract<keyof SocialProviders, keyof typeof config.auth.oauth>
+
+const socialProviders = Object.entries(config.auth.oauth).reduce<
+  Partial<Record<ConfiguredSocialProvider, SocialProviders[ConfiguredSocialProvider]>>
+>((acc, [provider, credentials]) => {
   if (!credentials) return acc
-  acc[provider as keyof SocialProviders] = {
+  const key = provider as ConfiguredSocialProvider
+  acc[key] = {
     clientId: credentials.clientId,
     clientSecret: credentials.clientSecret
   }
   return acc
 }, {})
 
-const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
+const socialProvidersConfig =
+  Object.keys(socialProviders).length > 0 ? (socialProviders as SocialProviders) : undefined
 
 export const auth = betterAuth({
   appName: 'Prometheus',

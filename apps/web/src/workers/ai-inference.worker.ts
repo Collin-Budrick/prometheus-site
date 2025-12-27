@@ -359,7 +359,7 @@ const fetchOnnxCommunityConfig = async (modelId: AiModelId) => {
         sequenceLength = Math.max(1, Math.min(resolved, defaultWebNnSequenceLength))
       }
     }
-  } catch (err) {
+  } catch {
     // Fall back to a safe default when config.json is unavailable.
   }
 
@@ -405,7 +405,7 @@ const resolveOnnxCommunityWebGpuSkip = async (modelId: AiModelId) => {
     const shouldSkip = smallestMax > webGpuMaxStorageBufferBytes
     webGpuSkipCache.set(modelId, shouldSkip)
     return shouldSkip
-  } catch (err) {
+  } catch {
     webGpuSkipCache.set(modelId, false)
     return false
   }
