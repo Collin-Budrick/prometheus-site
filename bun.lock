@@ -79,7 +79,7 @@
         "@unocss/transformer-directives": "66.5.11",
         "@unocss/transformer-variant-group": "66.5.11",
         "@vitejs/plugin-basic-ssl": "2.1.0",
-        "bun-types": "1.3.6-canary.20251226T140703",
+        "bun-types": "1.3.6-canary.20251227T140550",
         "drizzle-kit": "1.0.0-beta.6-ea4d663",
         "ignore": "7.0.5",
         "lightningcss": "1.30.2",
@@ -2334,7 +2334,7 @@
 
     "vite-tsconfig-paths/vite": ["vite@8.0.0-beta.4", "", { "dependencies": { "@oxc-project/runtime": "0.103.0", "fdir": "^6.5.0", "lightningcss": "^1.30.2", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rolldown": "1.0.0-beta.56", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "esbuild": "^0.25.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-fTUZD8GE4HLfiq4JnQoHYPQozsVzD6AfMhqnzG0+whHaM2HVSuS8rPlFdptONr4YDfnsbPigEiyDQ6ngmCtOYQ=="],
 
-    "web/bun-types": ["bun-types@1.3.6-canary.20251226T140703", "", { "dependencies": { "@types/node": "*" } }, "sha512-KTlQ7b0ADzJnYap+quDiRJml/1teFOfC2AOI4i7vXCe41dZ26DUdQEqlOjcxFW5b5+RKrVuLsf90jIDxiATbtQ=="],
+    "web/bun-types": ["bun-types@1.3.6-canary.20251227T140550", "", { "dependencies": { "@types/node": "*" } }, "sha512-hoT1/wdDb9kXWX6cfLkPcsbDdroimvL+GI9yrdyMe32P8UofOs483R3cX7Dog1wbCQ0PS9tN6fuLgrb31XY/Dg=="],
 
     "web/drizzle-kit": ["drizzle-kit@1.0.0-beta.6-ea4d663", "", { "dependencies": { "@drizzle-team/brocli": "^0.11.0", "@js-temporal/polyfill": "^0.5.1", "esbuild": "^0.25.10", "esbuild-register": "^3.6.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-HU0H5mqPKmdcIEjnV4amHchNfoZOBAhY08fGdv9RRvA7lObD2M0g8McaCOY/cnPUQII9e/KuJAZM4s0y6FW1Iw=="],
 
@@ -2521,6 +2521,8 @@
     "vite/rolldown/@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.0.0-beta.57", "", { "os": "win32", "cpu": "x64" }, "sha512-OqIUyNid1M4xTj6VRXp/Lht/qIP8fo25QyAZlCP+p6D2ATCEhyW4ZIFLnC9zAGN/HMbXoCzvwfa8Jjg/8J4YEg=="],
 
     "vite/rolldown/@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.57", "", {}, "sha512-aQNelgx14tGA+n2tNSa9x6/jeoCL9fkDeCei7nOKnHx0fEFRRMu5ReiITo+zZD5TzWDGGRjbSYCs93IfRIyTuQ=="],
+
+    "web/drizzle-orm/bun-types": ["bun-types@1.3.6-canary.20251226T140703", "", { "dependencies": { "@types/node": "*" } }, "sha512-KTlQ7b0ADzJnYap+quDiRJml/1teFOfC2AOI4i7vXCe41dZ26DUdQEqlOjcxFW5b5+RKrVuLsf90jIDxiATbtQ=="],
 
     "web/drizzle-zod/zod": ["zod@4.2.1", "", {}, "sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw=="],
 
