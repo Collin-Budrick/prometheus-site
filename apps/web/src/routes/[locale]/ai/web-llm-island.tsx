@@ -92,6 +92,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   const runtime = useSignal<Runtime>('web-llm')
   const deviceMode = useSignal<DeviceMode>('webgpu')
   const wasmThreads = useSignal<number | null>(null)
+  const dtype = useSignal<TransformersDtype | 'auto' | null>(null)
   const hasWebLlmCache = useSignal(false)
   const hasTransformersCache = useSignal(false)
   const cacheCheckComplete = useSignal(false)
@@ -156,6 +157,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
           if (data.deviceMode) deviceMode.value = data.deviceMode
           if (data.modelId) loadedModelId.value = data.modelId
           if (typeof data.threads === 'number') wasmThreads.value = data.threads
+          if (data.dtype) {
+            dtype.value = data.dtype
+          } else if (data.runtime === 'web-llm') {
+            dtype.value = null
+          }
           break
         case 'prefetch-progress':
           installState.value = 'installing'
@@ -182,6 +188,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
           loadedModelId.value = data.modelId
           wasmThreads.value =
             typeof data.threads === 'number' ? data.threads : data.runtime === 'web-llm' ? null : wasmThreads.value
+          dtype.value = data.runtime === 'transformers' ? data.dtype ?? dtype.value ?? null : null
           error.value = ''
           break
         case 'token':
@@ -212,6 +219,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
           loadState.value = 'idle'
           runtime.value = 'web-llm'
           deviceMode.value = 'webgpu'
+          wasmThreads.value = null
+          dtype.value = null
           break
       }
     }
@@ -265,6 +274,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
     loadedModelId.value = null
     error.value = ''
     wasmThreads.value = null
+    dtype.value = null
     progress.value =
       isCustomModelSelected.value
         ? _`Loading Transformers.js...`
@@ -454,7 +464,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
         type: 'generate',
         modelId: selectedModelId.value,
         prompt: promptValue,
-        transcript: transcriptPayload
+        transcript: transcriptPayload,
+        capabilities
       } satisfies AiWorkerRequest
     )
   })
@@ -697,6 +708,11 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
             {runtime.value === 'transformers' && wasmThreads.value !== null && (
               <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
                 {_`Threads: ${wasmThreads.value}`}
+              </span>
+            )}
+            {runtime.value === 'transformers' && dtype.value && (
+              <span class="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-100">
+                {_`Precision: ${dtype.value}`}
               </span>
             )}
             <span

@@ -110,6 +110,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
   const runtime = useSignal<Runtime>('transformers')
   const deviceMode = useSignal<DeviceMode>('webnn')
   const wasmThreads = useSignal<number | null>(null)
+  const dtype = useSignal<TransformersDtype | 'auto' | null>(null)
   const hasTransformersCache = useSignal(false)
   const cacheCheckComplete = useSignal(false)
   const installState = useSignal<'idle' | 'installing' | 'done' | 'error'>('idle')
@@ -169,6 +170,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
           if (data.deviceMode) deviceMode.value = data.deviceMode
           if (data.modelId) loadedModelId.value = data.modelId
           if (typeof data.threads === 'number') wasmThreads.value = data.threads
+          if (data.dtype) {
+            dtype.value = data.dtype
+          } else if (data.runtime === 'web-llm') {
+            dtype.value = null
+          }
           break
         case 'prefetch-progress':
           installState.value = 'installing'
@@ -194,6 +200,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
           deviceMode.value = data.deviceMode
           loadedModelId.value = data.modelId
           wasmThreads.value = typeof data.threads === 'number' ? data.threads : wasmThreads.value
+          dtype.value = data.runtime === 'transformers' ? data.dtype ?? dtype.value ?? null : null
           error.value = ''
           break
         case 'token':
@@ -224,6 +231,8 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
           loadState.value = 'idle'
           runtime.value = 'transformers'
           deviceMode.value = 'webnn'
+          wasmThreads.value = null
+          dtype.value = null
           break
       }
     }
@@ -278,6 +287,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     loadedModelId.value = null
     error.value = ''
     wasmThreads.value = null
+    dtype.value = null
     progress.value = _`Starting WebNN inference...`
 
     const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
@@ -453,7 +463,8 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
         type: 'generate',
         modelId: selectedModelId.value,
         prompt: promptValue,
-        transcript: transcriptPayload
+        transcript: transcriptPayload,
+        capabilities
       } satisfies AiWorkerRequest
     )
   })
@@ -688,6 +699,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
             {runtime.value === 'transformers' && wasmThreads.value !== null && (
               <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">
                 {_`Threads: ${wasmThreads.value}`}
+              </span>
+            )}
+            {runtime.value === 'transformers' && dtype.value && (
+              <span class="inline-flex items-center bg-slate-800 px-3 py-1 rounded-full font-semibold text-slate-100 text-xs">
+                {_`Precision: ${dtype.value}`}
               </span>
             )}
             <span

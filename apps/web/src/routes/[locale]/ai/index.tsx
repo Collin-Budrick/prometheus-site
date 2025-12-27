@@ -1,4 +1,4 @@
-import { $, component$, useSignal } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _, defaultLocale } from 'compiled-i18n'
 import type { GpuTier } from '../../../components/gpu/capability-probe'
@@ -56,6 +56,19 @@ export default component$(() => {
     if (partial.deviceMemory !== undefined) {
       deviceMemory.value = partial.deviceMemory
     }
+  })
+
+  useVisibleTask$(() => {
+    const hardwareConcurrency =
+      typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+        ? navigator.hardwareConcurrency
+        : null
+    const memory =
+      typeof navigator !== 'undefined' && typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : null
+    void updateCapabilities({
+      hardwareConcurrency,
+      deviceMemory: memory
+    })
   })
 
   return (

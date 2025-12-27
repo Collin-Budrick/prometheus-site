@@ -80,11 +80,16 @@ export const GpuProbeIsland = component$<Props>(
 
     if (onCapabilitiesDetected$) {
       const deviceMemory = gpuResult.deviceMemory ?? resolveDeviceMemory()
+      const hardwareConcurrency =
+        typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
+          ? navigator.hardwareConcurrency
+          : null
       await onCapabilitiesDetected$({
         gpuTier: gpuResult.tier,
         npuTier: npuResult.tier,
         adapter: gpuResult.adapterLimits,
         deviceMemory: typeof deviceMemory === 'number' ? deviceMemory : null,
+        hardwareConcurrency,
         probe: {
           gpu: gpuResult.metrics,
           npu: npuResult.metrics
