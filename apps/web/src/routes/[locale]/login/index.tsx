@@ -5,18 +5,11 @@ import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
 import { forwardAuthCookies } from '../../../server/auth/session'
-
-const normalizeCallback = (value: unknown, locale?: string) => {
-  const normalizedLocale = locale ? `/${locale}` : ''
-  const fallback = `${normalizedLocale}/`
-  const stringValue = typeof value === 'string' ? value : null
-  if (stringValue && stringValue.startsWith('/') && !stringValue.startsWith('//')) return stringValue
-  return fallback.replace(/\/+$/, '/') // ensure trailing slash
-}
+import { normalizeAuthCallback } from '../auth-callback'
 
 export const useEmailLogin = routeAction$(async (data, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeCallback(data.callback, event.params.locale)
+  const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
     method: 'POST',
     headers: {
@@ -52,7 +45,7 @@ export const useSocialLogin = routeAction$(async (data, event) => {
   }
 
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeCallback(data.callback, event.params.locale)
+  const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/login?error=oauth`
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
@@ -92,7 +85,9 @@ export default component$(() => {
   const action = useEmailLogin()
   const socialAction = useSocialLogin()
   const location = useLocation()
-  const callback = useSignal(normalizeCallback(location.url.searchParams.get('callback'), location.params.locale))
+  const callback = useSignal(
+    normalizeAuthCallback(location.url.searchParams.get('callback'), location.params.locale)
+  )
   const localePrefix = location.params.locale ? `/${location.params.locale}` : ''
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(callback.value)}`
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
