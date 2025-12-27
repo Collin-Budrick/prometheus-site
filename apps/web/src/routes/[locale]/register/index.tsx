@@ -5,46 +5,10 @@ import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
 import { forwardAuthCookies } from '../../../server/auth/session'
+import { emailRegisterAction } from './actions'
+import { normalizeAuthCallback } from '../auth-callback'
 
-const normalizeCallback = (value: unknown, locale?: string) => {
-  const normalizedLocale = locale ? `/${locale}` : ''
-  const fallback = `${normalizedLocale}/`
-  const stringValue = typeof value === 'string' ? value : null
-  if (stringValue && stringValue.startsWith('/') && !stringValue.startsWith('//')) return stringValue
-  return fallback.replace(/\/+$/, '/')
-}
-
-export const useEmailRegister = routeAction$(async (data, event) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeCallback(data.callback, event.params.locale)
-  const response = await fetch(`${apiBase}/api/auth/sign-up/email`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
-    body: JSON.stringify({
-      name: data.name,
-      email: data.email,
-      password: data.password,
-      rememberMe: data.remember === 'on' || data.remember === 'true',
-      callbackURL: callback
-    })
-  })
-
-  forwardAuthCookies(response, event)
-
-  if (!response.ok) {
-    let message = _`Unable to create your account right now.`
-    try {
-      const payload = (await response.json()) as { message?: string }
-      if (payload?.message) message = payload.message
-    } catch {}
-    return event.fail(response.status, { message })
-  }
-
-  return { success: true, callback }
-})
+export const useEmailRegister = routeAction$(emailRegisterAction)
 
 export const useSocialRegister = routeAction$(async (data, event) => {
   const provider = typeof data.provider === 'string' ? data.provider : ''
@@ -53,7 +17,7 @@ export const useSocialRegister = routeAction$(async (data, event) => {
   }
 
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeCallback(data.callback, event.params.locale)
+  const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/register?error=oauth`
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
@@ -94,7 +58,9 @@ export default component$(() => {
   const action = useEmailRegister()
   const socialAction = useSocialRegister()
   const location = useLocation()
-  const callback = useSignal(normalizeCallback(location.url.searchParams.get('callback'), location.params.locale))
+  const callback = useSignal(
+    normalizeAuthCallback(location.url.searchParams.get('callback'), location.params.locale)
+  )
   const passkeyError = useSignal<string>('')
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const oauthProviders = resolveOAuthProviders()
@@ -199,9 +165,6 @@ export default component$(() => {
             <span>{_`Keep me signed in on this device`}</span>
           </label>
           {action.value?.message ? <p class="text-sm text-rose-300">{action.value.message}</p> : null}
-          {action.value?.success ? (
-            <p class="text-sm text-emerald-300">{_`Account created. You can add a passkey below or continue browsing.`}</p>
-          ) : null}
           <button
             type="submit"
             class="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
