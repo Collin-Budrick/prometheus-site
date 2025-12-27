@@ -27,16 +27,20 @@ export const forwardAuthCookies = (response: Response, event: RequestEventBase) 
 
 export const fetchSessionFromApi = async (event: RequestEventBase) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const response = await fetch(`${apiBase}/api/auth/session`, {
-    headers: {
-      cookie: event.request.headers.get('cookie') ?? ''
-    }
-  })
+  try {
+    const response = await fetch(`${apiBase}/api/auth/session`, {
+      headers: {
+        cookie: event.request.headers.get('cookie') ?? ''
+      }
+    })
 
-  forwardAuthCookies(response, event)
+    forwardAuthCookies(response, event)
 
-  if (!response.ok) return null
+    if (!response.ok) return null
 
-  const payload = (await response.json()) as AuthSession | null
-  return payload
+    const payload = (await response.json()) as AuthSession | null
+    return payload
+  } catch {
+    return null
+  }
 }
