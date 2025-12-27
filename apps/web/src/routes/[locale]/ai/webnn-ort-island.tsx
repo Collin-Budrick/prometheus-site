@@ -22,6 +22,24 @@ const formatBytes = (bytes: number) => {
   return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
 }
 
+const formatDeviceModeLabel = (device: DeviceMode) => {
+  switch (device) {
+    case 'webnn-npu':
+      return _`WebNN NPU`
+    case 'webnn-gpu':
+      return _`WebNN GPU`
+    case 'webnn-cpu':
+      return _`WebNN CPU`
+    case 'webgpu':
+      return _`WebGPU`
+    case 'wasm':
+      return _`WASM`
+    case 'webnn':
+    default:
+      return _`WebNN`
+  }
+}
+
 interface WebNnOrtIslandProps {
   preferredAcceleration?: AccelerationTarget
   accelerationReady?: boolean
@@ -251,6 +269,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const isAccelerationReady = accelerationReady !== false
   const isWebNn = deviceMode.value.startsWith('webnn')
   const isWebNnNpu = deviceMode.value === 'webnn-npu'
+  const fallbackDeviceLabel = isWebNn ? '' : formatDeviceModeLabel(deviceMode.value)
   const webnnUnsupportedReason = selectedModel?.webnnUnsupportedReason
   const isLocalModel = selectedModelId.value.startsWith('/models/')
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
@@ -405,7 +424,9 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
 
           {error.value && <p class="text-sm text-rose-300">{error.value}</p>}
           {shouldShowWebNnFallback && (
-            <p class="text-sm text-amber-200">{_`WebNN was not detected; using a fallback backend.`}</p>
+            <p class="text-sm text-amber-200">
+              {_`WebNN failed or was unavailable; using ${fallbackDeviceLabel || _`a fallback backend`}.`}
+            </p>
           )}
           {webnnUnsupportedReason && (
             <p class="text-sm text-amber-200">

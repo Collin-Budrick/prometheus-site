@@ -155,8 +155,14 @@ const getTransformersDeviceCandidates = (
   webnnUnsupportedReason?: string
 ): DeviceMode[] => {
   const webnnAllowed = !webnnUnsupportedReason
+  const fallbackDevices = hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
   if (acceleration === 'npu') {
-    return webnnAllowed ? ['webnn-npu'] : hasWebGpu() ? ['webgpu', 'wasm'] : ['wasm']
+    const devices: DeviceMode[] = []
+    if (webnnAllowed) {
+      devices.push('webnn-npu')
+    }
+    devices.push(...fallbackDevices)
+    return uniqueDevices(devices)
   }
 
   if (acceleration === 'auto') {
@@ -236,14 +242,17 @@ const loadWebLlmModel = async (modelId: WebLlmModelId, acceleration: Acceleratio
   }
 }
 
-const loadTransformersModel = async (modelId: AiModelId, acceleration: AccelerationPreference) => {
+const loadTransformersModel = async (
+  modelId: AiModelId,
+  acceleration: AccelerationPreference
+): Promise<boolean> => {
   const mod = await ensureTransformers()
   const modelInfo = getTransformersModel(modelId)
   const transformersSpec = modelInfo?.transformers
   if (!transformersSpec) {
     setLoadState('error')
     send({ type: 'error', error: 'Selected model is not available for Transformers.js.', loadState })
-    return
+    return false
   }
   const webnnUnsupportedReason =
     modelInfo && 'webnnUnsupportedReason' in modelInfo ? modelInfo.webnnUnsupportedReason : undefined
@@ -287,7 +296,7 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
     pipelineCache[cacheKey] = pipeline
   }
 
-  for (const device of devices) {
+  for (const [index, device] of devices.entries()) {
     try {
       await loadPipelineForDevice(device)
 
@@ -306,7 +315,7 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
         modelId,
         threads: getWasmThreadCount()
       })
-      return
+      return true
     } catch (err) {
       if (shouldRetryWithCdn(err)) {
         ortWasmPath = ortCdnWasmPath
@@ -337,11 +346,25 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
             modelId,
             threads: getWasmThreadCount()
           })
-          return
+          return true
         } catch (retryErr) {
           lastError = retryErr as Error
           continue
         }
+      }
+      const nextDevice = devices[index + 1]
+      if (nextDevice) {
+        const nextDeviceLabel = formatDeviceLabel(nextDevice)
+        const currentDeviceLabel = formatDeviceLabel(device)
+        send({
+          type: 'progress',
+          message: `${currentDeviceLabel} failed; switching to ${nextDeviceLabel}...`,
+          loadState: 'loading',
+          runtime: 'transformers',
+          deviceMode: nextDevice,
+          modelId,
+          threads: getWasmThreadCount()
+        })
       }
       lastError = err as Error
     }
@@ -360,6 +383,7 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
           : lastError?.message ?? 'Unable to load the fallback pipeline.'
       : lastError?.message ?? 'Unable to load the fallback pipeline.'
   send({ type: 'error', error: errorMessage, loadState })
+  return false
 }
 
 const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-model' }>) => {
@@ -400,7 +424,26 @@ const handleLoadModel = async (message: Extract<AiWorkerRequest, { type: 'load-m
     threads: getWasmThreadCount()
   })
 
-  await loadTransformersModel(message.modelId, message.acceleration)
+  const transformersLoaded = await loadTransformersModel(message.modelId, message.acceleration)
+  if (transformersLoaded) return
+
+  if (message.acceleration === 'npu' && hasWebGpu()) {
+    send({
+      type: 'progress',
+      message: 'WebNN failed; switching to WebGPU/WebLLM...',
+      loadState: 'loading',
+      runtime: 'web-llm',
+      deviceMode: 'webgpu',
+      modelId: message.modelId
+    })
+
+    if (webLlmModelId) {
+      const webLlmLoaded = await loadWebLlmModel(webLlmModelId, 'gpu')
+      if (webLlmLoaded) return
+    }
+
+    await loadTransformersModel(message.modelId, 'gpu')
+  }
 }
 
 const handleWebLlmGeneration = async (prompt: string, transcript: TranscriptEntry[]) => {
