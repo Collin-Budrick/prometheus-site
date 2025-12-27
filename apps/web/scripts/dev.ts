@@ -2,11 +2,24 @@ import fs from 'node:fs'
 import os from 'node:os'
 import { execSync, spawn } from 'node:child_process'
 import path from 'node:path'
+import { loadEnv } from 'vite'
+
+const repoRoot = path.resolve(process.cwd(), '..', '..')
+const mode = process.env.NODE_ENV?.trim() || 'development'
+const viteEnv = {
+  ...loadEnv(mode, repoRoot, ''),
+  ...loadEnv(mode, process.cwd(), '')
+}
+
+for (const [key, value] of Object.entries(viteEnv)) {
+  if (process.env[key] === undefined) {
+    process.env[key] = value
+  }
+}
 
 const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
 const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
 const bunBin = process.execPath
-const repoRoot = path.resolve(process.cwd(), '..', '..')
 const traefikTlsPath = path.join(repoRoot, 'infra', 'traefik', 'dynamic', 'tls.yml')
 const devHttps = process.env.DEV_HTTPS
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? ''

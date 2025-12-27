@@ -1,13 +1,11 @@
+import { webNnLocalModels } from './webnn-local-models'
+
 export type WebLlmModelId =
   | 'Llama-3.2-3B-Instruct-q4f16_1-MLC'
   | 'Phi-3.5-mini-instruct-q4f16_1-MLC'
   | 'Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC'
 
-export type WebNnModelId =
-  | 'Xenova/gpt2'
-  | 'Xenova/distilgpt2'
-  | 'Xenova/opt-125m'
-  | 'onnx-community/LFM2-2.6B-Exp-ONNX'
+export type WebNnModelId = string
 
 export type AiModelId = WebLlmModelId | WebNnModelId
 
@@ -43,6 +41,7 @@ export interface WebNnModel {
   description: string
   transformers: TransformersModelSpec
   webnnUnsupportedReason?: string
+  webnnFreeDims?: Record<string, number>
 }
 
 export const webLlmModels: WebLlmModel[] = [
@@ -95,6 +94,28 @@ export const webLlmModels: WebLlmModel[] = [
 
 export const webNnModels: WebNnModel[] = [
   {
+    id: 'onnx-community/gemma-3-270m-it-ONNX',
+    label: 'Gemma 3 270M IT (ORT)',
+    format: 'ONNX (fp16)',
+    size: '~570 MB',
+    sizeBytes: 570_135_687,
+    contextLength: '32K tokens',
+    recommendedTier: 'WebNN / NPU friendly',
+    description: 'Remote ONNX package hosted on Hugging Face for WebNN via ONNX Runtime.',
+    transformers: {
+      id: 'onnx-community/gemma-3-270m-it-ONNX',
+      label: 'Gemma 3 270M IT (ORT)',
+      task: 'text-generation',
+      dtype: 'fp16'
+    },
+    webnnFreeDims: {
+      batch_size: 1,
+      sequence_length: 1024,
+      total_sequence_length: 1024,
+      past_sequence_length: 1024
+    }
+  },
+  {
     id: 'Xenova/gpt2',
     label: 'GPT-2 (ORT)',
     format: 'ONNX (fp16)',
@@ -139,23 +160,7 @@ export const webNnModels: WebNnModel[] = [
       task: 'text-generation'
     }
   },
-  {
-    id: 'onnx-community/LFM2-2.6B-Exp-ONNX',
-    label: 'LFM2 2.6B (ORT)',
-    format: 'ONNX (q4f16)',
-    size: '~1.6 GB',
-    sizeBytes: 1_569_556_014,
-    contextLength: '128K tokens',
-    recommendedTier: 'High-end NPU / 16+ GB shared memory',
-    description: 'Liquid foundation model with long context; heavy download but strong on-device responses.',
-    transformers: {
-      id: 'onnx-community/LFM2-2.6B-Exp-ONNX',
-      label: 'LFM2 2.6B (ONNX)',
-      task: 'text-generation',
-      dtype: 'q4f16'
-    },
-    webnnUnsupportedReason: 'Uses WebGPU-only ORT ops (GroupQueryAttention, SimplifiedLayerNormalization).'
-  }
+  ...webNnLocalModels
 ]
 
 export const defaultWebLlmModelId: WebLlmModelId = webLlmModels[0]?.id ?? 'Llama-3.2-3B-Instruct-q4f16_1-MLC'

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, type Plugin, type PluginOption, type UserConfig } from 'vite'
+import { defineConfig, loadEnv as loadViteEnv, type Plugin, type PluginOption, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -33,6 +33,7 @@ import {
 } from './vite.plugins'
 
 const appRoot = fileURLToPath(new URL('.', import.meta.url))
+const repoRoot = path.resolve(appRoot, '..', '..')
 const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
 const partytownDest = fileURLToPath(new URL('./public/~partytown', import.meta.url))
 const localesDir = fileURLToPath(new URL('../../i18n', import.meta.url))
@@ -95,6 +96,15 @@ export default defineConfig((configEnv) => {
     (configEnv as { ssrBuild?: boolean }).ssrBuild ?? (configEnv as { isSsrBuild?: boolean }).isSsrBuild ?? false
   const isPreview = (configEnv as { isPreview?: boolean }).isPreview ?? false
   const mode = configEnv.mode ?? (configEnv.command === 'serve' ? 'development' : 'production')
+  const viteEnv = {
+    ...loadViteEnv(mode, repoRoot, ''),
+    ...loadViteEnv(mode, appRoot, '')
+  }
+  for (const [key, value] of Object.entries(viteEnv)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
   const env = loadEnv({ command: configEnv.command, mode, isPreview })
   const apiUrl = process.env.API_URL?.trim() || 'http://localhost:4000'
   const rewriteApiPath = (value: string) => {
@@ -403,7 +413,7 @@ export default defineConfig((configEnv) => {
       },
       watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined,
       fs: {
-        allow: [appRoot, localesDir]
+        allow: [appRoot, localesDir, cacheDir]
       }
     },
     preview: {

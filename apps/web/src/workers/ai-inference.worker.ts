@@ -181,7 +181,7 @@ const ensureModule = async () => {
 const ensureTransformers = async () => {
   if (transformersRef) return transformersRef
   const mod = await import('@huggingface/transformers')
-  mod.env.allowLocalModels = false
+  mod.env.allowLocalModels = true
   mod.env.allowRemoteModels = true
   const threads = getWasmThreadCount()
   configureOnnxWasmBackend(mod, ortWasmPath, threads)
@@ -247,6 +247,7 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
   }
   const webnnUnsupportedReason =
     modelInfo && 'webnnUnsupportedReason' in modelInfo ? modelInfo.webnnUnsupportedReason : undefined
+  const webnnFreeDims = modelInfo && 'webnnFreeDims' in modelInfo ? modelInfo.webnnFreeDims : undefined
   const devices = getTransformersDeviceCandidates(acceleration, webnnUnsupportedReason)
   const attemptedWebnn = devices.some((device) => device.startsWith('webnn'))
 
@@ -271,6 +272,11 @@ const loadTransformersModel = async (modelId: AiModelId, acceleration: Accelerat
       return
     }
     const pipelineOptions: Record<string, unknown> = { device }
+    if (device.startsWith('webnn') && webnnFreeDims) {
+      pipelineOptions.session_options = {
+        freeDimensionOverrides: webnnFreeDims
+      }
+    }
     if (transformersSpec.dtype) {
       pipelineOptions.dtype = transformersSpec.dtype
     } else if (device.startsWith('webnn')) {

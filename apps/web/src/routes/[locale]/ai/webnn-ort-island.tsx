@@ -252,6 +252,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
   const isWebNn = deviceMode.value.startsWith('webnn')
   const isWebNnNpu = deviceMode.value === 'webnn-npu'
   const webnnUnsupportedReason = selectedModel?.webnnUnsupportedReason
+  const isLocalModel = selectedModelId.value.startsWith('/models/')
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
   const shouldShowWebNnFallback = isAccelerationReady && loadState.value === 'ready' && !isWebNn
@@ -414,6 +415,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(({ preferredAccele
           {loadedModelId.value && !isSelectedModelLoaded && (
             <p class="text-sm text-amber-200">
               {_`Selected model is not installed yet. Click install to switch.`}
+            </p>
+          )}
+          {isLocalModel && (
+            <p class="text-xs text-slate-400">
+              {_`Local models must include config.json, tokenizer.json, and ONNX files in the model folder.`}
             </p>
           )}
           {storageWarning.value && <p class="text-sm text-amber-200">{storageWarning.value}</p>}
