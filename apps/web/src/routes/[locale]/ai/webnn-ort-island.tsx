@@ -296,8 +296,14 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     dtype.value = null
     progress.value = _`Starting WebNN inference...`
 
-    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'load-model', modelId, acceleration, dtype, capabilities } satisfies AiWorkerRequest)
+    const resolvedDtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    worker.postMessage({
+      type: 'load-model',
+      modelId,
+      acceleration,
+      dtype: resolvedDtype,
+      capabilities,
+    } satisfies AiWorkerRequest)
   }
 
   const prefetchModel = $(async (modelId: WebNnModelId) => {
@@ -314,8 +320,13 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     installState.value = 'installing'
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
-    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'prefetch-model', modelId, dtype, capabilities } satisfies AiWorkerRequest)
+    const resolvedDtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    worker.postMessage({
+      type: 'prefetch-model',
+      modelId,
+      dtype: resolvedDtype,
+      capabilities,
+    } satisfies AiWorkerRequest)
   })
 
   useVisibleTask$(() => {

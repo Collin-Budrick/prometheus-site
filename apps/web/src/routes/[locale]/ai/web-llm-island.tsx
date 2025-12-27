@@ -290,12 +290,12 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
             ? _`Starting WebLLM...`
             : _`Loading Transformers.js fallback...`
 
-    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    const dtypeOverride = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
     worker.postMessage({
       type: 'load-model',
       modelId,
       acceleration: resolvedAcceleration,
-      dtype,
+      dtype: dtypeOverride,
       capabilities
     } satisfies AiWorkerRequest)
   })
@@ -314,8 +314,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
     installState.value = 'installing'
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
-    const dtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
-    worker.postMessage({ type: 'prefetch-model', modelId, dtype, capabilities } satisfies AiWorkerRequest)
+    const dtypeOverride = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    worker.postMessage({ type: 'prefetch-model', modelId, dtype: dtypeOverride, capabilities } satisfies AiWorkerRequest)
   })
 
   useVisibleTask$(() => {

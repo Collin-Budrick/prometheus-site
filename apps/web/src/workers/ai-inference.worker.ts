@@ -103,7 +103,9 @@ export type AiWorkerResponse =
 
 type WorkerScope = {
   postMessage: (message: AiWorkerResponse) => void
-  addEventListener: (type: 'message', listener: (event: MessageEvent<AiWorkerRequest>) => void) => void
+  close: () => void
+  addEventListener(type: 'message', listener: (event: MessageEvent<AiWorkerRequest>) => void): void
+  addEventListener(type: 'close', listener: () => void): void
 }
 
 const ctx = self as unknown as WorkerScope
@@ -686,7 +688,7 @@ const resolveTransformersDtypeCandidates = (
   device: DeviceMode,
   dtypeOverride?: TransformersDtype,
   transformersSpecDtype?: TransformersDtype
-) => {
+): Array<TransformersDtype | undefined> => {
   if (dtypeOverride) return [dtypeOverride]
   const tier = resolveResourceTier(latestCapabilities)
   const preferCompact = tier === 'low'
@@ -694,21 +696,24 @@ const resolveTransformersDtypeCandidates = (
   const isOnnxCommunityModel = modelId.startsWith(onnxCommunityModelPrefix)
 
   if (device.startsWith('webnn')) {
-    const candidates = preferCompact ? ['q4f16', 'auto', 'fp16'] : ['auto', 'fp16', 'q4f16']
-    return Array.from(new Set(candidates))
+    const candidates: TransformersDtype[] = preferCompact ? ['q4f16', 'auto', 'fp16'] : ['auto', 'fp16', 'q4f16']
+    return Array.from(new Set<TransformersDtype>(candidates))
   }
 
   if (isOnnxCommunityModel) {
-    const candidates = preferCompact
+    const candidates: TransformersDtype[] = preferCompact
       ? ['q4f16', 'fp16', 'fp32']
       : preferHeavier
         ? ['fp16', 'q4f16', 'fp32']
         : ['q4f16', 'fp16', 'fp32']
-    return Array.from(new Set(candidates))
+    return Array.from(new Set<TransformersDtype>(candidates))
   }
 
   if (transformersSpecDtype) {
-    return Array.from(new Set(preferCompact ? ['q4f16', transformersSpecDtype] : [transformersSpecDtype]))
+    const candidates: TransformersDtype[] = preferCompact
+      ? ['q4f16', transformersSpecDtype]
+      : [transformersSpecDtype]
+    return Array.from(new Set<TransformersDtype>(candidates))
   }
 
   return preferCompact ? ['q4f16', undefined] : [undefined]
