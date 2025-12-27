@@ -32,6 +32,10 @@
       "render": "ssr",
       "speculation": "prerender"
     },
+    "/register-passkey": {
+      "render": "ssr",
+      "speculation": "prerender"
+    },
     "/dashboard": {
       "render": "ssr",
       "speculation": "prefetch"

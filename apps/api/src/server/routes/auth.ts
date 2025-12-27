@@ -1,5 +1,11 @@
 import { Elysia, t } from 'elysia'
-import { handleAuthRequest, signInWithEmail, signUpWithEmail, validateSession } from '../../auth/auth'
+import {
+  handleAuthRequest,
+  signInWithEmail,
+  signUpWithEmail,
+  signUpWithPasskey,
+  validateSession
+} from '../../auth/auth'
 
 export const authRoutes = new Elysia({ prefix: '/api/auth' })
   .post(
@@ -22,6 +28,18 @@ export const authRoutes = new Elysia({ prefix: '/api/auth' })
         name: t.String(),
         email: t.String({ format: 'email' }),
         password: t.String(),
+        callbackURL: t.Optional(t.String()),
+        rememberMe: t.Optional(t.Boolean())
+      })
+    }
+  )
+  .post(
+    '/sign-up/passkey',
+    async ({ body, request }) => signUpWithPasskey(body, { request }),
+    {
+      body: t.Object({
+        name: t.String(),
+        email: t.String({ format: 'email' }),
         callbackURL: t.Optional(t.String()),
         rememberMe: t.Optional(t.Boolean())
       })

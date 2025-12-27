@@ -19,14 +19,18 @@ type SignInBody = {
   rememberMe?: boolean
 }
 
-type SignUpBody = {
+type SignUpBodyBase = {
   name: string
   email: string
   password: string
   image?: string
   callbackURL?: string
   rememberMe?: boolean
-} & Record<string, unknown>
+}
+
+type SignUpBody = SignUpBodyBase & Record<string, unknown>
+
+type PasskeySignUpBody = Omit<SignUpBodyBase, 'password'> & Record<string, unknown>
 
 const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
@@ -104,6 +108,22 @@ export const signUpWithEmail = (body: SignUpBody, context?: AuthRequestContext) 
     request: context?.request,
     asResponse: true
   })
+
+const generatePasskeyPassword = () => `${randomUUID()}${randomUUID()}`
+
+export const signUpWithPasskey = (body: PasskeySignUpBody, context?: AuthRequestContext) => {
+  const passkeyBody: SignUpBody = {
+    ...body,
+    password: generatePasskeyPassword()
+  }
+
+  return auth.api.signUpEmail({
+    body: passkeyBody,
+    headers: resolveHeaders(context),
+    request: context?.request,
+    asResponse: true
+  })
+}
 
 export const validateSession = (context?: AuthRequestContext) =>
   auth.api.getSession({
