@@ -1,8 +1,22 @@
 import type { RequestEventBase } from '@builder.io/qwik-city'
 
-const splitSetCookies = (value: string | null) => {
-  if (!value) return []
-  return value.split(/,(?=[^\\s]+=)/g).map((part) => part.trim())
+type HeadersWithGetSetCookie = Headers & {
+  getSetCookie?: () => string[]
+}
+
+const splitHeaderValue = (value: string | null) =>
+  (value ?? '')
+    .split(/,(?=\s*[^\s]+=)/g)
+    .map((part) => part.trim())
+    .filter(Boolean)
+
+const splitSetCookies = (headers: HeadersWithGetSetCookie) => {
+  const fromGetSetCookie = headers.getSetCookie?.()
+  if (fromGetSetCookie?.length) {
+    return fromGetSetCookie.flatMap((cookie) => splitHeaderValue(cookie))
+  }
+
+  return splitHeaderValue(headers.get('set-cookie'))
 }
 
 export type AuthSession = {
@@ -19,8 +33,7 @@ export type AuthSession = {
 }
 
 export const forwardAuthCookies = (response: Response, event: RequestEventBase) => {
-  const raw = response.headers.get('set-cookie')
-  for (const cookie of splitSetCookies(raw)) {
+  for (const cookie of splitSetCookies(response.headers as HeadersWithGetSetCookie)) {
     event.headers.append('set-cookie', cookie)
   }
 }
