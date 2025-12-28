@@ -208,7 +208,7 @@ test.describe('auth redirect (stubbed api)', () => {
 
     const loginUrl = new URL(page.url())
     const locale = loginUrl.pathname.split('/')[1] || 'en'
-    const expectedCallback = new URL(`/${locale}/dashboard/`, baseURL).toString()
+    const expectedCallback = new URL(`/${locale}/dashboard`, baseURL).toString()
 
     await page.getByLabel(/Email/i).fill('demo@prometheus.dev')
     await page.getByLabel(/Password/i).fill('password123')

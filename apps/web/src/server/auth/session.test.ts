@@ -50,6 +50,43 @@ describe('forwardAuthCookies', () => {
 
     expect(forwarded).toEqual(cookies)
   })
+
+  it('stores cookies on the event when the cookie API is available', () => {
+    const response = new Response('ok', {
+      headers: {
+        'set-cookie': 'session=abc; Path=/; HttpOnly; SameSite=Lax'
+      }
+    })
+    const forwarded: string[] = []
+    const stored: Array<{ name: string; value: string; options: Record<string, unknown> }> = []
+    const event = {
+      headers: {
+        append: (_name: string, value: string) => {
+          forwarded.push(value)
+        }
+      },
+      cookie: {
+        set: (name: string, value: string, options: Record<string, unknown>) => {
+          stored.push({ name, value, options })
+        }
+      }
+    } as unknown as RequestEventBase
+
+    forwardAuthCookies(response, event)
+
+    expect(forwarded).toEqual([])
+    expect(stored).toEqual([
+      {
+        name: 'session',
+        value: 'abc',
+        options: {
+          httpOnly: true,
+          path: '/',
+          sameSite: 'lax'
+        }
+      }
+    ])
+  })
 })
 
 describe('buildAuthHeaders', () => {

@@ -5,9 +5,9 @@ export const normalizeAuthCallback = (value: unknown, locale?: string) => {
   if (stringValue && stringValue.startsWith('/') && !stringValue.startsWith('//')) {
     const trimmed = stringValue.replace(/\/+$/, '') || '/'
     if (trimmed === '/' || (normalizedLocale && trimmed === normalizedLocale)) {
-      return `${fallback.replace(/\/+$/, '')}/`
+      return fallback
     }
-    return stringValue
+    return trimmed
   }
-  return `${fallback.replace(/\/+$/, '')}/`
+  return fallback
 }

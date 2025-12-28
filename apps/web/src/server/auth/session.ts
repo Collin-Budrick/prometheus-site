@@ -19,6 +19,106 @@ const splitSetCookies = (headers: HeadersWithGetSetCookie) => {
   return splitHeaderValue(headers.get('set-cookie'))
 }
 
+const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+
+export const buildRedirectHtml = (target: string) => {
+  const safeTarget = escapeHtml(target)
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0;url=${safeTarget}" />
+    <meta name="robots" content="noindex" />
+    <title>Redirecting...</title>
+  </head>
+  <body>
+    <p>Redirecting...</p>
+    <p><a href="${safeTarget}">Continue</a></p>
+  </body>
+</html>`
+}
+
+type CookieOptions = {
+  domain?: string
+  path?: string
+  maxAge?: number
+  expires?: string
+  sameSite?: 'lax' | 'strict' | 'none' | boolean
+  secure?: boolean
+  httpOnly?: boolean
+}
+
+const parseSetCookie = (cookie: string) => {
+  const parts = cookie
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (!parts.length) return null
+
+  const [nameValue, ...attributes] = parts
+  const separatorIndex = nameValue.indexOf('=')
+  if (separatorIndex === -1) return null
+
+  const name = nameValue.slice(0, separatorIndex).trim()
+  const value = nameValue.slice(separatorIndex + 1)
+  if (!name) return null
+
+  const options: CookieOptions = {}
+
+  for (const attribute of attributes) {
+    const [rawKey, ...rawValue] = attribute.split('=')
+    const key = rawKey.trim().toLowerCase()
+    const valuePart = rawValue.join('=').trim()
+
+    if (!key) continue
+
+    if (key === 'secure') {
+      options.secure = true
+      continue
+    }
+
+    if (key === 'httponly') {
+      options.httpOnly = true
+      continue
+    }
+
+    if (!valuePart) continue
+
+    switch (key) {
+      case 'domain':
+        options.domain = valuePart
+        break
+      case 'path':
+        options.path = valuePart
+        break
+      case 'max-age': {
+        const parsed = Number.parseInt(valuePart, 10)
+        if (!Number.isNaN(parsed)) options.maxAge = parsed
+        break
+      }
+      case 'expires':
+        options.expires = valuePart
+        break
+      case 'samesite': {
+        const normalized = valuePart.toLowerCase()
+        if (normalized === 'lax' || normalized === 'strict' || normalized === 'none') {
+          options.sameSite = normalized
+        }
+        break
+      }
+    }
+  }
+
+  return { name, value, options }
+}
+
+const hasCookieSetter = (event: RequestEventBase): event is RequestEventBase & {
+  cookie: { set: (name: string, value: string, options?: CookieOptions) => void }
+} => {
+  const candidate = (event as { cookie?: { set?: unknown } }).cookie
+  return typeof candidate?.set === 'function'
+}
+
 export type AuthSession = {
   session: {
     token: string
@@ -33,7 +133,20 @@ export type AuthSession = {
 }
 
 export const forwardAuthCookies = (response: Response, event: RequestEventBase) => {
-  for (const cookie of splitSetCookies(response.headers as HeadersWithGetSetCookie)) {
+  const cookies = splitSetCookies(response.headers as HeadersWithGetSetCookie)
+  if (hasCookieSetter(event)) {
+    for (const cookie of cookies) {
+      const parsed = parseSetCookie(cookie)
+      if (!parsed) {
+        event.headers.append('set-cookie', cookie)
+        continue
+      }
+      event.cookie.set(parsed.name, parsed.value, parsed.options)
+    }
+    return
+  }
+
+  for (const cookie of cookies) {
     event.headers.append('set-cookie', cookie)
   }
 }

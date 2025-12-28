@@ -1,6 +1,11 @@
 import type { RequestEventAction } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
+import {
+  buildAuthHeaders,
+  buildRedirectHtml,
+  forwardAuthCookies,
+  resolveAuthCallbackUrl
+} from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const emailRegisterAction = async (data: Record<string, any>, event: RequestEventAction) => {
@@ -32,5 +37,5 @@ export const emailRegisterAction = async (data: Record<string, any>, event: Requ
     return event.fail(response.status, { message })
   }
 
-  throw event.redirect(302, callback)
+  throw event.html(200, buildRedirectHtml(callback))
 }

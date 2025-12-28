@@ -4,7 +4,12 @@ import { Form, routeAction$, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
+import {
+  buildAuthHeaders,
+  buildRedirectHtml,
+  forwardAuthCookies,
+  resolveAuthCallbackUrl
+} from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const useEmailLogin = routeAction$(async (data, event) => {
@@ -35,7 +40,7 @@ export const useEmailLogin = routeAction$(async (data, event) => {
     return event.fail(response.status, { message })
   }
 
-  throw event.redirect(302, callback)
+  throw event.html(200, buildRedirectHtml(callback))
 })
 
 export const useSocialLogin = routeAction$(async (data, event) => {
