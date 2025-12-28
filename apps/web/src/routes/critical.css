@@ -266,8 +266,8 @@ a {
   pointer-events: none;
 }
 
-:root.supports-view-transition[data-vt-direction] .settings-panel {
-  display: none;
+.settings-menu[open] .settings-panel {
+  view-transition-name: settings-panel;
 }
 
 .settings-group {
@@ -729,6 +729,15 @@ a {
 
 :root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
   animation-name: route-slide-in-left;
+}
+
+:root.supports-view-transition::view-transition-group(settings-panel) {
+  z-index: 60;
+}
+
+:root.supports-view-transition::view-transition-old(settings-panel),
+:root.supports-view-transition::view-transition-new(settings-panel) {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
