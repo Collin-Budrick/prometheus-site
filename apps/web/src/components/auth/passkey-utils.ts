@@ -21,14 +21,18 @@ export const toPublicKeyCreationOptions = (options: any): PublicKeyCredentialCre
 })
 
 export const publicKeyCredentialToCreateJSON = (credential: PublicKeyCredential) => {
-  const response = credential.response as AuthenticatorAttestationResponse
+  const response = credential.response as AuthenticatorAttestationResponse & {
+    getTransports?: () => string[]
+  }
+  const transports = response.getTransports?.() ?? []
   return {
     id: credential.id,
     rawId: encodeBuffer(credential.rawId),
     type: credential.type,
     response: {
       clientDataJSON: encodeBuffer(response.clientDataJSON),
-      attestationObject: encodeBuffer(response.attestationObject)
+      attestationObject: encodeBuffer(response.attestationObject),
+      transports
     }
   }
 }

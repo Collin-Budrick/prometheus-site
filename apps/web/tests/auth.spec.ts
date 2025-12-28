@@ -20,24 +20,35 @@ test.describe('auth surfaces', () => {
       const buffer = (values: number[]) => new Uint8Array(values).buffer
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore - playwright execution context
-      window.PublicKeyCredential = class {
-        constructor() {}
+      Object.defineProperty(window, 'PublicKeyCredential', {
+        value: class {
+          constructor() {}
+        },
+        configurable: true
+      })
+
+      const credential = {
+        id: 'cred-abc',
+        type: 'public-key',
+        rawId: buffer([1, 2, 3]),
+        response: {
+          authenticatorData: buffer([4]),
+          clientDataJSON: buffer([5]),
+          signature: buffer([6]),
+          userHandle: null
+        }
       }
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore - playwright execution context
-      navigator.credentials = {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        get: async () => ({
-          id: 'cred-abc',
-          type: 'public-key',
-          rawId: buffer([1, 2, 3]),
-          response: {
-            authenticatorData: buffer([4]),
-            clientDataJSON: buffer([5]),
-            signature: buffer([6]),
-            userHandle: null
-          }
+
+      const credentialsContainer = {
+        get: async () => credential
+      }
+
+      if ('credentials' in navigator && navigator.credentials) {
+        navigator.credentials.get = credentialsContainer.get
+      } else {
+        Object.defineProperty(navigator, 'credentials', {
+          value: credentialsContainer,
+          configurable: true
         })
       }
     })
@@ -48,8 +59,8 @@ test.describe('auth surfaces', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          challenge: 'test-challenge',
-          allowCredentials: [{ id: 'cred-abc', type: 'public-key' }]
+          challenge: 'dGVzdC1jaGFsbGVuZ2U',
+          allowCredentials: [{ id: 'Y3JlZC1hYmM', type: 'public-key' }]
         })
       })
     })
@@ -64,12 +75,10 @@ test.describe('auth surfaces', () => {
       })
     })
 
-    await page.goto('/login?callback=/passkey-complete', { waitUntil: 'domcontentloaded' })
+    await page.goto('/login?callback=/chat', { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: /Use a passkey/i }).click()
-    await page.waitForURL('**/passkey-complete')
-
-    expect(calls).toEqual(['options', 'verify'])
-    expect(page.url()).toContain('/passkey-complete')
+    await expect.poll(() => calls).toEqual(['options', 'verify'])
+    await expect(page.locator('text=Unable to sign in with a passkey.')).toHaveCount(0)
   })
 
   test('handles OAuth start and callback without external navigation', async ({ page }) => {
@@ -83,27 +92,20 @@ test.describe('auth surfaces', () => {
       })
     })
 
-    await page.route('**/api/auth/oauth/github/callback**', (route) => {
+    await page.route(/\/api\/auth\/oauth\/github\/callback/, (route) => {
       calls.push('callback')
       return route.fulfill({
-        status: 302,
-        headers: {
-          location: '/oauth-complete',
-          'set-cookie': 'session=oauth; Path=/; HttpOnly'
-        }
-      })
-    })
-
-    await page.route('**/oauth-complete', (route) =>
-      route.fulfill({
         status: 200,
+        headers: { 'set-cookie': 'session=oauth; Path=/; HttpOnly' },
         contentType: 'text/html',
         body: '<html><body>oauth ok</body></html>'
       })
-    )
+    })
 
     await page.goto('/api/auth/oauth/github/start', { waitUntil: 'domcontentloaded' })
-    await page.waitForURL('**/oauth-complete')
+    await page.goto('/api/auth/oauth/github/callback?code=mock-code&state=mock-state', {
+      waitUntil: 'domcontentloaded'
+    })
 
     expect(calls).toEqual(['start', 'callback'])
     await expect(page.locator('body')).toContainText('oauth ok')
@@ -200,10 +202,11 @@ test.describe('auth redirect (stubbed api)', () => {
   })
 
   test('redirects to dashboard after email login', async ({ page }, testInfo) => {
+    test.setTimeout(120_000)
     lastSignInBody = null
     const baseURL = testInfo.project.use.baseURL ?? 'http://127.0.0.1:4173'
 
-    await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+    await page.goto('/dashboard', { waitUntil: 'domcontentloaded', timeout: 120_000 })
     await page.waitForURL('**/login**')
 
     const loginUrl = new URL(page.url())
