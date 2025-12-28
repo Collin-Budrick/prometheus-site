@@ -1,6 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { Form, routeAction$, useLocation, useNavigate } from '@builder.io/qwik-city'
+import { Form, routeAction$, server$, useLocation, useNavigate } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
@@ -11,6 +11,10 @@ import {
   resolveAuthCallbackUrl
 } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
+import {
+  fetchPasskeyAuthenticateOptions,
+  fetchPasskeyAuthenticationVerification
+} from './passkey-api'
 
 const resolveActionCallback = (data: Record<string, unknown>, event: { request: Request; params: { locale?: string } }) => {
   const callbackValue = typeof data.callback === 'string' ? data.callback : null
@@ -103,6 +107,26 @@ export const useSocialLogin = routeAction$(async (data, event) => {
   return event.fail(500, { message: _`Unable to sign in right now.` })
 })
 
+const loadPasskeyOptions = server$(async function () {
+  const response = await fetchPasskeyAuthenticateOptions(this)
+  if (!response.ok) throw new Error('challenge')
+  return response.json()
+})
+
+const verifyPasskey = server$(async function (payload: unknown) {
+  const response = await fetchPasskeyAuthenticationVerification(this, {
+    response: payload
+  })
+
+  if (!response.ok) throw new Error('verify')
+
+  try {
+    await response.json()
+  } catch {
+    /* ignore */
+  }
+})
+
 export default component$(() => {
   const action = useEmailLogin()
   const socialAction = useSocialLogin()
@@ -139,11 +163,7 @@ export default component$(() => {
       passkeyStatus.value = 'pending'
       passkeyError.value = ''
 
-      const optionsResponse = await fetch('/api/auth/passkey/generate-authenticate-options', {
-        credentials: 'include'
-      })
-      if (!optionsResponse.ok) throw new Error('challenge')
-      const options = await optionsResponse.json()
+      const options = await loadPasskeyOptions()
 
       const credential = (await navigator.credentials.get({
         publicKey: toPublicKeyRequestOptions(options)
@@ -151,14 +171,7 @@ export default component$(() => {
 
       if (!credential) throw new Error('credential')
 
-      const verify = await fetch('/api/auth/passkey/verify-authentication', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ response: publicKeyCredentialToJSON(credential) })
-      })
-
-      if (!verify.ok) throw new Error('verify')
+      await verifyPasskey(publicKeyCredentialToJSON(credential))
 
       passkeyStatus.value = 'idle'
       passkeyRedirect.value = callback.value
