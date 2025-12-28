@@ -119,6 +119,14 @@ const normalizeOrigin = (value: string) => {
   }
 }
 
+const resolveRpIdFromOrigin = (origin: string) => {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return ''
+  }
+}
+
 const createAuthInstance = (rpId: string, rpOrigin: string) =>
   betterAuth({
     ...baseAuthConfig,
@@ -185,9 +193,22 @@ const resolveRequestProtocol = (request: Request) => {
 }
 
 const resolveRequestOrigin = (request: Request) => {
+  const originHeader = request.headers.get('origin')?.trim()
+  if (originHeader) {
+    const normalized = normalizeOrigin(originHeader)
+    if (normalized) return normalized
+  }
+
   const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
   const hostHeader = forwardedHost || request.headers.get('host')?.trim() || ''
-  const host = normalizeHost(hostHeader)
+  let host = normalizeHost(hostHeader)
+  if (!host) {
+    try {
+      host = new URL(request.url).host.toLowerCase()
+    } catch {
+      host = ''
+    }
+  }
   const protocol = resolveRequestProtocol(request)
   if (!host || !protocol) return ''
   return `${protocol}://${host}`
@@ -233,6 +254,16 @@ const getAuthForRequest = (request?: Request) => {
       }
       return match
     }
+  }
+
+  if (allowDynamicOrigins && origin) {
+    const existing = authByOrigin.get(origin)
+    if (existing) return existing
+
+    const derivedRpId = resolveRpIdFromOrigin(origin) || config.auth.rpId
+    const fallback = createAuthInstance(derivedRpId, origin)
+    authByOrigin.set(origin, fallback)
+    return fallback
   }
 
   const urlHost = normalizeHost(request.url)

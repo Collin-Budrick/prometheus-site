@@ -38,16 +38,38 @@ export const forwardAuthCookies = (response: Response, event: RequestEventBase) 
   }
 }
 
-const resolveForwardedHost = (event: RequestEventBase) =>
-  event.request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ||
-  event.request.headers.get('host')?.trim() ||
-  ''
+const resolveForwardedHost = (event: RequestEventBase) => {
+  const forwardedHost =
+    event.request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ||
+    event.request.headers.get('host')?.trim() ||
+    ''
+
+  if (forwardedHost) return forwardedHost
+
+  try {
+    return new URL(event.request.url).host
+  } catch {
+    return ''
+  }
+}
 
 const resolveForwardedProto = (event: RequestEventBase) => {
   const forwarded = event.request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
   if (forwarded === 'http' || forwarded === 'https') return forwarded
   try {
     return new URL(event.request.url).protocol.replace(':', '').toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+export const resolveAuthOrigin = (event: RequestEventBase) => {
+  const forwardedHost = resolveForwardedHost(event)
+  const forwardedProto = resolveForwardedProto(event)
+  if (forwardedHost && forwardedProto) return `${forwardedProto}://${forwardedHost}`
+
+  try {
+    return new URL(event.request.url).origin
   } catch {
     return ''
   }
@@ -64,7 +86,21 @@ export const buildAuthHeaders = (event: RequestEventBase, init?: HeadersInit) =>
   const forwardedProto = resolveForwardedProto(event)
   if (forwardedProto) headers.set('x-forwarded-proto', forwardedProto)
 
+  if (forwardedHost && forwardedProto) {
+    headers.set('origin', `${forwardedProto}://${forwardedHost}`)
+  }
+
   return headers
+}
+
+export const resolveAuthCallbackUrl = (event: RequestEventBase, callback: string) => {
+  const origin = resolveAuthOrigin(event)
+  if (!origin) return callback
+  try {
+    return new URL(callback, origin).toString()
+  } catch {
+    return callback
+  }
 }
 
 export const fetchSessionFromApi = async (event: RequestEventBase) => {

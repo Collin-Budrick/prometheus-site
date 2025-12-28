@@ -4,12 +4,13 @@ import { Form, routeAction$, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const useEmailLogin = routeAction$(async (data, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
+  const callbackURL = resolveAuthCallbackUrl(event, callback)
   const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
     method: 'POST',
     headers: buildAuthHeaders(event, {
@@ -19,7 +20,7 @@ export const useEmailLogin = routeAction$(async (data, event) => {
       email: data.email,
       password: data.password,
       rememberMe: data.remember === 'on' || data.remember === 'true',
-      callbackURL: callback
+      callbackURL
     })
   })
 
@@ -47,6 +48,8 @@ export const useSocialLogin = routeAction$(async (data, event) => {
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/login?error=oauth`
+  const callbackURL = resolveAuthCallbackUrl(event, callback)
+  const errorCallbackURL = resolveAuthCallbackUrl(event, errorCallback)
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
     method: 'POST',
     headers: buildAuthHeaders(event, {
@@ -54,8 +57,8 @@ export const useSocialLogin = routeAction$(async (data, event) => {
     }),
     body: JSON.stringify({
       provider,
-      callbackURL: callback,
-      errorCallbackURL: errorCallback,
+      callbackURL,
+      errorCallbackURL,
       disableRedirect: true
     })
   })
@@ -144,6 +147,7 @@ export default component$(() => {
       <div class="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
         <Form
           action={action}
+          reloadDocument
           class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30"
         >
           <input type="hidden" name="callback" value={callback.value} />

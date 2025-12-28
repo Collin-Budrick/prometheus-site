@@ -1,6 +1,5 @@
 import { $, Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import {
-  Form,
   Link,
   routeAction$,
   routeLoader$,
@@ -168,8 +167,7 @@ const baseNavLinks: NavLink[] = [
 const anonymousNavLinks: NavLink[] = [
   { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
   { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
-  { path: '/login', label: () => _`Login`, dataSpeculate: getPageSpeculation('/login') }
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') }
 ]
 
 const authenticatedNavLinks: NavLink[] = [
@@ -649,17 +647,7 @@ export default component$(() => {
                 {label()}
               </Link>
             ))}
-            {session.value.hasSession && (
-              <Form action={signOutAction} class="flex">
-                <button
-                  type="submit"
-                  class="text-slate-200 hover:text-emerald-300 transition-colors bg-transparent border-0 p-0"
-                >
-                  {_`Sign out`}
-                </button>
-              </Form>
-            )}
-            <LocaleSelector />
+            <LocaleSelector hasSession={session.value.hasSession} signOutAction={signOutAction} />
           </div>
         </nav>
       </header>

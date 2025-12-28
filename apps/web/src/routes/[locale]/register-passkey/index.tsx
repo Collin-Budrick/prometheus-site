@@ -6,13 +6,14 @@ import {
   publicKeyCredentialToCreateJSON,
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
-import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 import { useSessionLoader } from '../layout'
 
 export const usePasskeySignup = routeAction$(async (data, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
+  const callbackURL = resolveAuthCallbackUrl(event, callback)
   const response = await fetch(`${apiBase}/api/auth/sign-up/passkey`, {
     method: 'POST',
     headers: buildAuthHeaders(event, {
@@ -22,7 +23,7 @@ export const usePasskeySignup = routeAction$(async (data, event) => {
       name: data.name,
       email: data.email,
       rememberMe: data.remember === 'on' || data.remember === 'true',
-      callbackURL: callback
+      callbackURL
     })
   })
 

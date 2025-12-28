@@ -13,6 +13,12 @@ describe('normalizeAuthCallback', () => {
     expect(normalizeAuthCallback('/welcome', 'en')).toBe('/welcome')
   })
 
+  it('normalizes root callbacks to the dashboard', () => {
+    expect(normalizeAuthCallback('/', 'en')).toBe('/en/dashboard/')
+    expect(normalizeAuthCallback('/en', 'en')).toBe('/en/dashboard/')
+    expect(normalizeAuthCallback('/en/', 'en')).toBe('/en/dashboard/')
+  })
+
   it('rejects external callbacks', () => {
     expect(normalizeAuthCallback('https://example.com', 'en')).toBe('/en/dashboard/')
     expect(normalizeAuthCallback('//example.com', 'en')).toBe('/en/dashboard/')
@@ -57,7 +63,7 @@ describe('emailRegisterAction', () => {
     )
     expect(fetchCalls[0]?.body && JSON.parse(fetchCalls[0].body)).toEqual(
       expect.objectContaining({
-        callbackURL: '/en/dashboard/'
+        callbackURL: 'https://example.com/en/dashboard/'
       })
     )
     expect(event.headers.get('set-cookie')).toBe('session=abc')
@@ -77,7 +83,7 @@ describe('emailRegisterAction', () => {
     expect(fetchCalls).toHaveLength(1)
     expect(fetchCalls[0]?.body && JSON.parse(fetchCalls[0].body)).toEqual(
       expect.objectContaining({
-        callbackURL: '/welcome'
+        callbackURL: 'https://example.com/welcome'
       })
     )
     expect(event.headers.get('set-cookie')).toBe('session=def')

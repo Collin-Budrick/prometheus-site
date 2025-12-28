@@ -70,6 +70,7 @@ describe('buildAuthHeaders', () => {
     expect(headers.get('cookie')).toBe('session=abc')
     expect(headers.get('x-forwarded-host')).toBe('edge.test')
     expect(headers.get('x-forwarded-proto')).toBe('https')
+    expect(headers.get('origin')).toBe('https://edge.test')
   })
 
   it('falls back to request url when forwarded proto is missing', () => {
@@ -85,5 +86,6 @@ describe('buildAuthHeaders', () => {
 
     expect(headers.get('x-forwarded-proto')).toBe('https')
     expect(headers.get('x-forwarded-host')).toBe('example.test')
+    expect(headers.get('origin')).toBe('https://example.test')
   })
 })

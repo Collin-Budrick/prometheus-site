@@ -22,7 +22,7 @@ export const OAuthButtons = component$<OAuthButtonsProps>(({ action, callback, p
       {action.value?.message ? <p class="text-sm text-rose-300">{action.value.message}</p> : null}
       <div class="grid gap-2">
         {providers.map((provider) => (
-          <Form action={action} key={provider.id} class="flex">
+          <Form action={action} reloadDocument key={provider.id} class="flex">
             <input type="hidden" name="provider" value={provider.id} />
             <input type="hidden" name="callback" value={callback} />
             <button

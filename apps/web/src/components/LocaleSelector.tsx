@@ -1,11 +1,16 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useLocation } from '@builder.io/qwik-city'
-import { localeNames, locales } from 'compiled-i18n'
+import { Form, type ActionStore, useLocation } from '@builder.io/qwik-city'
+import { _, localeNames, locales } from 'compiled-i18n'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
 
-export const LocaleSelector = component$(() => {
+type LocaleSelectorProps = {
+  hasSession: boolean
+  signOutAction?: ActionStore<any, any>
+}
+
+export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, signOutAction }) => {
   const loc = useLocation()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()
@@ -297,9 +302,22 @@ export const LocaleSelector = component$(() => {
     return `${pathname}${search ? `?${search}` : ''}`
   }
 
+  const localePrefix = (() => {
+    const segment = loc.url.pathname.split('/')[1] ?? ''
+    return locales.includes(segment as any) ? `/${segment}` : ''
+  })()
+  const dashboardPath = `${localePrefix}/dashboard`
+  const loginHref = `${localePrefix}/login?callback=${encodeURIComponent(dashboardPath)}`
+  const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(dashboardPath)}`
+
   return (
     <details ref={menuRef} class="settings-menu animated-details">
-      <summary ref={summaryRef} class="settings-trigger" aria-label="Settings" data-qwik-prime="settings">
+      <summary
+        ref={summaryRef}
+        class="settings-trigger"
+        aria-label={_`Settings`}
+        data-qwik-prime="settings"
+      >
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065Z"
@@ -314,7 +332,7 @@ export const LocaleSelector = component$(() => {
       </summary>
       <div ref={panelRef} class="settings-panel animated-panel">
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">Language</summary>
+          <summary class="settings-group-trigger">{_`Language`}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               {locales.map((locale) => {
@@ -337,17 +355,42 @@ export const LocaleSelector = component$(() => {
           </div>
         </details>
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">Theme</summary>
+          <summary class="settings-group-trigger">{_`Account`}</summary>
+          <div class="settings-group-panel animated-panel">
+            <div class="settings-group-panel-inner">
+              {hasSession ? (
+                signOutAction ? (
+                  <Form action={signOutAction} class="flex">
+                    <button type="submit" class="settings-option">
+                      {_`Sign out`}
+                    </button>
+                  </Form>
+                ) : null
+              ) : (
+                <>
+                  <a class="settings-option" href={loginHref}>
+                    {_`Login`}
+                  </a>
+                  <a class="settings-option" href={registerHref}>
+                    {_`Create an account`}
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
+        </details>
+        <details class="settings-group animated-details">
+          <summary class="settings-group-trigger">{_`Theme`}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               <button type="button" class="settings-option" onClick$={() => applyTheme('system')}>
-                System
+                {_`System`}
               </button>
               <button type="button" class="settings-option" onClick$={() => applyTheme('light')}>
-                Light
+                {_`Light`}
               </button>
               <button type="button" class="settings-option" onClick$={() => applyTheme('dark')}>
-                Dark
+                {_`Dark`}
               </button>
             </div>
           </div>

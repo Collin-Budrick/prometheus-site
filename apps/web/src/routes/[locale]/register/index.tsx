@@ -8,7 +8,7 @@ import {
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
 import { emailRegisterAction } from './actions'
 import { normalizeAuthCallback } from '../auth-callback'
 import { useSessionLoader } from '../layout'
@@ -25,6 +25,8 @@ export const useSocialRegister = routeAction$(async (data, event) => {
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/register?error=oauth`
+  const callbackURL = resolveAuthCallbackUrl(event, callback)
+  const errorCallbackURL = resolveAuthCallbackUrl(event, errorCallback)
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
     method: 'POST',
     headers: buildAuthHeaders(event, {
@@ -32,8 +34,8 @@ export const useSocialRegister = routeAction$(async (data, event) => {
     }),
     body: JSON.stringify({
       provider,
-      callbackURL: callback,
-      errorCallbackURL: errorCallback,
+      callbackURL,
+      errorCallbackURL,
       requestSignUp: true,
       disableRedirect: true
     })
@@ -135,6 +137,7 @@ export default component$(() => {
       <div class="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
         <Form
           action={action}
+          reloadDocument
           class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30"
         >
           <input type="hidden" name="callback" value={callback.value} />
