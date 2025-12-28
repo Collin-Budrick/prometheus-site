@@ -6,7 +6,7 @@ import {
   publicKeyCredentialToCreateJSON,
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
-import { forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 import { useSessionLoader } from '../layout'
 
@@ -15,10 +15,9 @@ export const usePasskeySignup = routeAction$(async (data, event) => {
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const response = await fetch(`${apiBase}/api/auth/sign-up/passkey`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({
       name: data.name,
       email: data.email,

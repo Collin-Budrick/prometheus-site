@@ -4,7 +4,7 @@ import { Form, routeAction$, useLocation } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const useEmailLogin = routeAction$(async (data, event) => {
@@ -12,10 +12,9 @@ export const useEmailLogin = routeAction$(async (data, event) => {
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({
       email: data.email,
       password: data.password,
@@ -50,10 +49,9 @@ export const useSocialLogin = routeAction$(async (data, event) => {
   const errorCallback = `${localePrefix}/login?error=oauth`
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({
       provider,
       callbackURL: callback,

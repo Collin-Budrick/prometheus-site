@@ -107,6 +107,18 @@ const normalizeHostname = (value: string) => {
   }
 }
 
+const normalizeOrigin = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+  try {
+    const url = new URL(candidate)
+    return `${url.protocol}//${url.host}`.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
 const createAuthInstance = (rpId: string, rpOrigin: string) =>
   betterAuth({
     ...baseAuthConfig,
@@ -121,6 +133,8 @@ const createAuthInstance = (rpId: string, rpOrigin: string) =>
 
 const buildAuthByHost = () => {
   const authByHost = new Map<string, ReturnType<typeof createAuthInstance>>()
+  const authByOrigin = new Map<string, ReturnType<typeof createAuthInstance>>()
+  const rpByHost = new Map<string, RelyingPartyConfig>()
   const relyingParties = config.auth.relyingParties
   const authInstances: Array<ReturnType<typeof createAuthInstance>> = []
 
@@ -128,24 +142,56 @@ const buildAuthByHost = () => {
     const authInstance = createAuthInstance(rp.rpId, rp.rpOrigin)
     authInstances.push(authInstance)
 
+    const originKey = normalizeOrigin(rp.rpOrigin)
+    if (originKey) authByOrigin.set(originKey, authInstance)
+
+    const registerHost = (key: string) => {
+      if (!key) return
+      authByHost.set(key, authInstance)
+      rpByHost.set(key, rp)
+    }
+
     const originHost = normalizeHost(rp.rpOrigin)
     const originHostname = normalizeHostname(rp.rpOrigin)
-    if (originHost) authByHost.set(originHost, authInstance)
-    if (originHostname) authByHost.set(originHostname, authInstance)
+    registerHost(originHost)
+    registerHost(originHostname)
 
     const rpHost = normalizeHost(rp.rpId)
     const rpHostname = normalizeHostname(rp.rpId)
-    if (rpHost) authByHost.set(rpHost, authInstance)
-    if (rpHostname) authByHost.set(rpHostname, authInstance)
+    registerHost(rpHost)
+    registerHost(rpHostname)
   }
 
   return {
     authByHost,
+    authByOrigin,
+    rpByHost,
     primary: authInstances[0]
   }
 }
 
-const { authByHost, primary: primaryAuth } = buildAuthByHost()
+const { authByHost, authByOrigin, rpByHost, primary: primaryAuth } = buildAuthByHost()
+
+const allowDynamicOrigins = process.env.NODE_ENV !== 'production'
+
+const resolveRequestProtocol = (request: Request) => {
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
+  if (forwardedProto === 'http' || forwardedProto === 'https') return forwardedProto
+  try {
+    return new URL(request.url).protocol.replace(':', '').toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+const resolveRequestOrigin = (request: Request) => {
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const hostHeader = forwardedHost || request.headers.get('host')?.trim() || ''
+  const host = normalizeHost(hostHeader)
+  const protocol = resolveRequestProtocol(request)
+  if (!host || !protocol) return ''
+  return `${protocol}://${host}`
+}
 
 const getAuthForRequest = (request?: Request) => {
   if (!request) return primaryAuth
@@ -154,13 +200,39 @@ const getAuthForRequest = (request?: Request) => {
   const host = normalizeHost(hostHeader)
   const hostname = normalizeHostname(hostHeader)
 
+  const origin = resolveRequestOrigin(request)
+  if (origin) {
+    const originMatch = authByOrigin.get(origin)
+    if (originMatch) return originMatch
+  }
+
   if (host) {
     const match = authByHost.get(host)
-    if (match) return match
+    if (match) {
+      if (allowDynamicOrigins && origin) {
+        const rp = rpByHost.get(host)
+        if (rp && !authByOrigin.has(origin)) {
+          const fallback = createAuthInstance(rp.rpId, origin)
+          authByOrigin.set(origin, fallback)
+          return fallback
+        }
+      }
+      return match
+    }
   }
   if (hostname) {
     const match = authByHost.get(hostname)
-    if (match) return match
+    if (match) {
+      if (allowDynamicOrigins && origin) {
+        const rp = rpByHost.get(hostname)
+        if (rp && !authByOrigin.has(origin)) {
+          const fallback = createAuthInstance(rp.rpId, origin)
+          authByOrigin.set(origin, fallback)
+          return fallback
+        }
+      }
+      return match
+    }
   }
 
   const urlHost = normalizeHost(request.url)

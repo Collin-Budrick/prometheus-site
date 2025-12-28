@@ -1,6 +1,6 @@
 import type { RequestEventAction } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import { forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const emailRegisterAction = async (data: Record<string, any>, event: RequestEventAction) => {
@@ -8,10 +8,9 @@ export const emailRegisterAction = async (data: Record<string, any>, event: Requ
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const response = await fetch(`${apiBase}/api/auth/sign-up/email`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({
       name: data.name,
       email: data.email,

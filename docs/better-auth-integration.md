@@ -37,6 +37,7 @@
 ## Cookie and session strategy
 
 - **Cookies:** Use `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/` cookies for `session` and `refresh` (if using a sliding refresh model). Domain should be configurable (e.g., `APP_COOKIE_DOMAIN`) to align app and API origins. Add a non-HttpOnly `csrf_token` for double-submit checks on state-changing POSTs from SSR forms.
+- **Origin-aware cookies:** SSR calls forward `x-forwarded-host` and `x-forwarded-proto` so the API selects the correct relying party. In non-production, if the request origin doesn't match a configured RP origin (common with HTTP dev or custom ports), the API falls back to the request origin for cookie issuance; passkeys still require HTTPS.
 - **Session storage:** Default to database-backed sessions (Postgres) managed by Better Auth. Optionally enable a signed, short-lived stateless access token for edge SSR while keeping refresh tokens server-only.
 - **Rotation:** Rotate session IDs on every OAuth/passkey/email-password login and on refresh to limit replay. Enforce device-bound metadata (user agent hash, IP slice) when verifying refresh tokens.
 

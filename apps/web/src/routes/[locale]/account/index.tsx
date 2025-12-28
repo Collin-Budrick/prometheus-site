@@ -6,7 +6,7 @@ import {
   publicKeyCredentialToCreateJSON,
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
-import { forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
 import { useSessionLoader } from '../layout'
 
 type PasskeySummary = {
@@ -19,9 +19,7 @@ export const usePasskeyList = routeLoader$(async (event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
   try {
     const response = await fetch(`${apiBase}/api/auth/passkey/list-user-passkeys`, {
-      headers: {
-        cookie: event.request.headers.get('cookie') ?? ''
-      }
+      headers: buildAuthHeaders(event)
     })
 
     forwardAuthCookies(response, event)
@@ -58,10 +56,9 @@ export const useDeletePasskey = routeAction$(async (data, event) => {
   const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
   const response = await fetch(`${apiBase}/api/auth/passkey/delete-passkey`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({ id })
   })
 

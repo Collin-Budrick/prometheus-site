@@ -8,7 +8,7 @@ import {
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { forwardAuthCookies } from '../../../server/auth/session'
+import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
 import { emailRegisterAction } from './actions'
 import { normalizeAuthCallback } from '../auth-callback'
 import { useSessionLoader } from '../layout'
@@ -27,10 +27,9 @@ export const useSocialRegister = routeAction$(async (data, event) => {
   const errorCallback = `${localePrefix}/register?error=oauth`
   const response = await fetch(`${apiBase}/api/auth/sign-in/social`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      cookie: event.request.headers.get('cookie') ?? ''
-    },
+    headers: buildAuthHeaders(event, {
+      'content-type': 'application/json'
+    }),
     body: JSON.stringify({
       provider,
       callbackURL: callback,
