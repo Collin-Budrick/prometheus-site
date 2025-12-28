@@ -3,5 +3,7 @@ services:
     command: ["bun", "run", "--watch", "src/index.ts"]
     volumes:
       - ./apps/api:/app/apps/api
+    ports:
+      - '4000:4000'
     environment:
       - NODE_ENV=development
