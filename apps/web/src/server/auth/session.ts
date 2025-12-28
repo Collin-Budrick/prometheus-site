@@ -196,6 +196,60 @@ export const resolveApiBase = (event?: RequestEventBase) => {
   return origin || 'http://localhost:4000'
 }
 
+const normalizeWebSocketProtocol = (url: URL) => {
+  if (url.protocol === 'http:') {
+    url.protocol = 'ws:'
+    return url
+  }
+
+  if (url.protocol === 'https:') {
+    url.protocol = 'wss:'
+    return url
+  }
+
+  if (url.protocol === 'ws:' || url.protocol === 'wss:') return url
+
+  throw new Error(`Unsupported protocol: ${url.protocol}`)
+}
+
+const resolveBrowserOrigin = () => {
+  if (typeof window === 'undefined') return ''
+  const { origin } = window.location
+  return origin || ''
+}
+
+const resolveWsBaseCandidate = (event?: RequestEventBase) => {
+  const importMetaEnv = (import.meta as { env?: Record<string, string | undefined> }).env
+  const fromEnv =
+    event?.env.get('API_URL') ?? process.env.API_URL ?? importMetaEnv?.API_URL ?? importMetaEnv?.PUBLIC_API_URL
+  if (fromEnv) return fromEnv
+  if (event) return resolveAuthOrigin(event)
+  return resolveBrowserOrigin()
+}
+
+export const resolveWebSocketUrl = (path: string, event?: RequestEventBase) => {
+  const baseCandidate = resolveWsBaseCandidate(event)
+  if (!baseCandidate) return ''
+
+  try {
+    const baseUrl = normalizeWebSocketProtocol(new URL(baseCandidate))
+    const normalizedPath = path.replace(/^\/+/, '')
+    const basePath = baseUrl.pathname.replace(/\/+$/, '').replace(/^\/+/, '')
+    const hasBasePrefix =
+      basePath.length > 0 &&
+      (normalizedPath === basePath || normalizedPath.startsWith(`${basePath}/`))
+    const joinedPath = hasBasePrefix ? normalizedPath : [basePath, normalizedPath].filter(Boolean).join('/')
+
+    baseUrl.pathname = joinedPath ? `/${joinedPath}` : '/'
+    baseUrl.search = ''
+    baseUrl.hash = ''
+
+    return baseUrl.toString()
+  } catch {
+    return ''
+  }
+}
+
 export const buildAuthHeaders = (event: RequestEventBase, init?: HeadersInit) => {
   const headers = new Headers(init)
   const cookie = event.request.headers.get('cookie')

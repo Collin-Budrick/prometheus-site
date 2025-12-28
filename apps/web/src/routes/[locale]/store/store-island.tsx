@@ -1,6 +1,7 @@
 import { $, component$, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
+import { resolveWebSocketUrl } from '../../../server/auth/session'
 import {
   fetchStoreItems,
   type StoreItem,
@@ -208,8 +209,12 @@ export const StoreIsland = component$(() => {
     if (typeof window === 'undefined') return
 
     realtimeStatus.value = 'connecting'
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${protocol}://${window.location.host}/api/store/ws`)
+    const url = resolveWebSocketUrl('/api/store/ws')
+    if (!url) {
+      realtimeStatus.value = 'error'
+      return
+    }
+    const ws = new WebSocket(url)
     const currentToken = realtimeToken.value
 
     const updateStatus = (status: 'connecting' | 'connected' | 'disconnected' | 'error') => {

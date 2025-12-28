@@ -1,5 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
+import { resolveWebSocketUrl } from '../../../server/auth/session'
 
 export const ChatIsland = component$(() => {
   const messages = useSignal<{ id: string; from: string; text: string }[]>([])
@@ -35,8 +36,12 @@ export const ChatIsland = component$(() => {
     if (!shouldConnect.value) return
     if (connectionStatus.value === 'connected' || connectionStatus.value === 'connecting') return
     connectionStatus.value = 'connecting'
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${protocol}://${window.location.host}/api/ws`)
+    const url = resolveWebSocketUrl('/api/ws')
+    if (!url) {
+      connectionStatus.value = 'error'
+      return
+    }
+    const ws = new WebSocket(url)
     ws.onopen = () => {
       connectionStatus.value = 'connected'
     }
