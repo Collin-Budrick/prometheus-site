@@ -15,6 +15,44 @@ test.describe('auth surfaces', () => {
 
   test('completes passkey happy path with mocked WebAuthn', async ({ page }) => {
     const calls: string[] = []
+    const apiUrl = new URL(process.env.API_URL ?? 'http://127.0.0.1:4400')
+
+    const server = createServer((req, res) => {
+      if (!req.url) {
+        res.statusCode = 404
+        res.end()
+        return
+      }
+
+      if (req.method === 'GET' && req.url.startsWith('/api/auth/passkey/generate-authenticate-options')) {
+        calls.push('options')
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            challenge: 'dGVzdC1jaGFsbGVuZ2U',
+            allowCredentials: [{ id: 'Y3JlZC1hYmM', type: 'public-key' }]
+          })
+        )
+        return
+      }
+
+      if (req.method === 'POST' && req.url.startsWith('/api/auth/passkey/verify-authentication')) {
+        calls.push('verify')
+        res.writeHead(200, {
+          'set-cookie': 'session=abc; Path=/; HttpOnly',
+          'content-type': 'application/json'
+        })
+        res.end(JSON.stringify({ authenticated: true }))
+        return
+      }
+
+      res.statusCode = 404
+      res.end('not found')
+    })
+
+    await new Promise<void>((resolve) => {
+      server.listen(Number.parseInt(apiUrl.port || '80', 10), apiUrl.hostname || '127.0.0.1', resolve)
+    })
 
     await page.addInitScript(() => {
       const buffer = (values: number[]) => new Uint8Array(values).buffer
@@ -53,34 +91,16 @@ test.describe('auth surfaces', () => {
       }
     })
 
-    await page.route('**/api/auth/passkey/generate-authenticate-options', (route) => {
-      calls.push('options')
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          challenge: 'dGVzdC1jaGFsbGVuZ2U',
-          allowCredentials: [{ id: 'Y3JlZC1hYmM', type: 'public-key' }]
-        })
-      })
-    })
-
-    await page.route('**/api/auth/passkey/verify-authentication', (route) => {
-      calls.push('verify')
-      return route.fulfill({
-        status: 200,
-        headers: { 'set-cookie': 'session=abc; Path=/; HttpOnly' },
-        contentType: 'application/json',
-        body: JSON.stringify({ authenticated: true })
-      })
-    })
-
-    await page.goto('/login?callback=/chat', { waitUntil: 'domcontentloaded' })
-    await page.getByRole('button', { name: /Use a passkey/i }).click()
-    await expect.poll(() => calls).toEqual(['options', 'verify'])
-    await page.waitForURL(/\/chat(\/|$)/)
-    await expect(page.getByRole('heading', { name: /WebSocket chat via Valkey pub\/sub/i })).toBeVisible()
-    await expect(page.locator('text=Unable to sign in with a passkey.')).toHaveCount(0)
+    try {
+      await page.goto('/login?callback=/chat', { waitUntil: 'domcontentloaded' })
+      await page.getByRole('button', { name: /Use a passkey/i }).click()
+      await expect.poll(() => calls).toEqual(['options', 'verify'])
+      await page.waitForURL(/\/chat(\/|$)/)
+      await expect(page.getByRole('heading', { name: /WebSocket chat via Valkey pub\/sub/i })).toBeVisible()
+      await expect(page.locator('text=Unable to sign in with a passkey.')).toHaveCount(0)
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 
   test('handles OAuth start and callback without external navigation', async ({ page }) => {
