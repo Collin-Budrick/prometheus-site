@@ -57,6 +57,14 @@
 - In non-production (`NODE_ENV` not set to `production`), missing Better Auth core secrets fall back to the local dev defaults (`dev-cookie-secret`, `localhost`, `https://localhost:4173`); production requires explicit values.
 - OAuth providers are opt-in by setting paired env vars per provider (e.g., `BETTER_AUTH_GOOGLE_CLIENT_ID` and `BETTER_AUTH_GOOGLE_CLIENT_SECRET`). Validation requires both halves when either is present.
 - Passkeys require HTTPS and an RP ID + origin matching the browser host (e.g., `localhost` + `https://localhost:4173` when fronted by Traefik + mkcert in dev).
+- Production should use `BETTER_AUTH_RP_ID=prometheus.prod` (host only, no scheme/port) and `BETTER_AUTH_RP_ORIGIN=https://prometheus.prod` (or omit the origin to derive it from the RP ID); dev stays on `prometheus.dev`.
+- If one deployment serves multiple hosts, set `BETTER_AUTH_RP_IDS` and `BETTER_AUTH_RP_ORIGINS` as comma-separated lists in the same order (for example: `prometheus.prod,prometheus.dev` + `https://prometheus.prod,https://prometheus.dev`). The first entry is treated as the primary default.
+- If prod serves a subdomain (for example `https://app.prometheus.prod`), set `BETTER_AUTH_RP_ID=app.prometheus.prod` or host `https://prometheus.prod/.well-known/webauthn` with:
+  ```json
+  { "origins": ["https://app.prometheus.prod"] }
+  ```
+
+- After updating prod env, restart/redeploy the API so the new values load. Sanity check: `GET /api/auth/passkey/generate-register-options` should return `rp.id` = `prometheus.prod`.
 
 ## Next steps
 

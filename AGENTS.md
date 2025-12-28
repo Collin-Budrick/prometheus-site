@@ -24,6 +24,7 @@
 - Start dev server: `bun run dev`
 - Run tests/checks: `bun run test`
 - Fix local TLS (mkcert + Traefik): `bun run certs:fix`
+- Docker Compose envs: use `.env` for dev and `--env-file .env.prod` for prod deploys.
 
 ## Build/tooling expectations
 

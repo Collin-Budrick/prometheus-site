@@ -17,10 +17,16 @@ type OAuthClient = {
   clientSecret: string
 }
 
+type RelyingPartyConfig = {
+  rpId: string
+  rpOrigin: string
+}
+
 type AuthConfig = {
   cookieSecret: string
   rpId: string
   rpOrigin: string
+  relyingParties: RelyingPartyConfig[]
   oauth: Partial<Record<OAuthProvider, OAuthClient>>
 }
 
@@ -93,6 +99,23 @@ const resolveAuthString = (
   allowDevDefaults: boolean
 ) => (allowDevDefaults ? ensureString(value, fallback, name) : requireString(value, name))
 
+const splitList = (value: string | undefined) =>
+  (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+const normalizeRpId = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+  try {
+    return new URL(candidate).hostname
+  } catch {
+    return trimmed
+  }
+}
+
 const resolveWebProtocol = (env: Env) => {
   const hmrProtocol = env.HMR_PROTOCOL?.trim().toLowerCase()
   if (hmrProtocol === 'wss') return 'https'
@@ -104,17 +127,18 @@ const resolveWebProtocol = (env: Env) => {
 
 const resolveDevRpId = (env: Env) => {
   const inferred = env.HMR_HOST?.trim() || env.WEB_HOST?.trim()
-  if (inferred && inferred !== 'localhost') return inferred
+  if (inferred && inferred !== 'localhost') return normalizeRpId(inferred)
   return 'localhost'
 }
 
 const resolveRpId = (env: Env, allowDevDefaults: boolean) => {
   const explicit = env.BETTER_AUTH_RP_ID?.trim()
-  if (!allowDevDefaults) return requireString(explicit, 'BETTER_AUTH_RP_ID')
-  if (explicit && explicit !== 'localhost') return explicit
+  const normalizedExplicit = explicit ? normalizeRpId(explicit) : undefined
+  if (!allowDevDefaults) return requireString(normalizedExplicit, 'BETTER_AUTH_RP_ID')
+  if (normalizedExplicit && normalizedExplicit !== 'localhost') return normalizedExplicit
   const fallback = resolveDevRpId(env)
-  if (explicit === 'localhost' && fallback !== 'localhost') return fallback
-  return explicit || fallback
+  if (normalizedExplicit === 'localhost' && fallback !== 'localhost') return fallback
+  return normalizedExplicit || fallback
 }
 
 const resolveRpOrigin = (env: Env, allowDevDefaults: boolean, rpId: string) => {
@@ -128,6 +152,54 @@ const resolveRpOrigin = (env: Env, allowDevDefaults: boolean, rpId: string) => {
   if (explicit && explicit !== localhostOrigin) return explicit
   if (rpId !== 'localhost') return `${protocol}://${rpId}`
   return explicit || localhostOrigin
+}
+
+const resolveRpConfigs = (env: Env, allowDevDefaults: boolean) => {
+  const ids = splitList(env.BETTER_AUTH_RP_IDS)
+  const origins = splitList(env.BETTER_AUTH_RP_ORIGINS)
+
+  if (ids.length === 0 && origins.length === 0) {
+    const rpId = resolveRpId(env, allowDevDefaults)
+    const rpOrigin = resolveRpOrigin(env, allowDevDefaults, rpId)
+    return {
+      primary: { rpId, rpOrigin },
+      relyingParties: [{ rpId, rpOrigin }]
+    }
+  }
+
+  let resolvedIds = ids
+  let resolvedOrigins = origins
+
+  if (resolvedIds.length === 0 && resolvedOrigins.length > 0) {
+    resolvedIds = resolvedOrigins.map((origin) => normalizeRpId(origin))
+  }
+
+  if (resolvedOrigins.length === 0 && resolvedIds.length > 0) {
+    const protocol = resolveWebProtocol(env)
+    resolvedOrigins = resolvedIds.map((rpId) => `${protocol}://${normalizeRpId(rpId)}`)
+  }
+
+  if (resolvedIds.length !== resolvedOrigins.length) {
+    throw new Error('BETTER_AUTH_RP_IDS and BETTER_AUTH_RP_ORIGINS must have the same number of entries')
+  }
+
+  const entries = resolvedIds.map((rpId, index) => ({
+    rpId: requireString(normalizeRpId(rpId), 'BETTER_AUTH_RP_IDS'),
+    rpOrigin: requireString(resolvedOrigins[index], 'BETTER_AUTH_RP_ORIGINS')
+  }))
+
+  const unique = new Map<string, RelyingPartyConfig>()
+  for (const entry of entries) {
+    const key = `${entry.rpId}::${entry.rpOrigin}`
+    if (!unique.has(key)) unique.set(key, entry)
+  }
+  const relyingParties = [...unique.values()]
+
+  if (relyingParties.length === 0) {
+    throw new Error('BETTER_AUTH_RP_IDS and BETTER_AUTH_RP_ORIGINS must include at least one entry')
+  }
+
+  return { primary: relyingParties[0], relyingParties }
 }
 
 const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: string): OAuthClient | null => {
@@ -154,8 +226,7 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
     secretName,
     allowDevDefaults
   )
-  const rpId = resolveRpId(env, allowDevDefaults)
-  const rpOrigin = resolveRpOrigin(env, allowDevDefaults, rpId)
+  const { primary, relyingParties } = resolveRpConfigs(env, allowDevDefaults)
 
   const oauth: AuthConfig['oauth'] = {}
   const providers: Array<[OAuthProvider, string]> = [
@@ -171,7 +242,13 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
     if (config) oauth[provider] = config
   }
 
-  return { cookieSecret, rpId, rpOrigin, oauth }
+  return {
+    cookieSecret,
+    rpId: primary.rpId,
+    rpOrigin: primary.rpOrigin,
+    relyingParties,
+    oauth
+  }
 }
 
 const buildConnectionString = (env: Env) => {

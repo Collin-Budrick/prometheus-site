@@ -36,11 +36,11 @@ http:
     prometheus-dev-web:
       loadBalancer:
         servers:
-          - url: http://host.docker.internal:4173
+          - url: http://web:4173
     prometheus-dev-api:
       loadBalancer:
         servers:
-          - url: http://host.docker.internal:4000
+          - url: http://api:4000
   middlewares:
     prometheus-dev-web-ai-headers:
       headers:
