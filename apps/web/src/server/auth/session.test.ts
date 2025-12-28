@@ -1,7 +1,7 @@
 import type { RequestEventBase } from '@builder.io/qwik-city'
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 
-import { buildAuthHeaders, forwardAuthCookies } from './session'
+import { buildAuthHeaders, forwardAuthCookies, resolveWebSocketUrl } from './session'
 
 const createEvent = () => {
   const forwarded: string[] = []
@@ -124,5 +124,49 @@ describe('buildAuthHeaders', () => {
     expect(headers.get('x-forwarded-proto')).toBe('https')
     expect(headers.get('x-forwarded-host')).toBe('example.test')
     expect(headers.get('origin')).toBe('https://example.test')
+  })
+})
+
+describe('resolveWebSocketUrl', () => {
+  const originalApiUrl = process.env.API_URL
+  const originalWindow = typeof window === 'undefined' ? undefined : window
+
+  afterEach(() => {
+    if (typeof originalApiUrl === 'undefined') {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete process.env.API_URL
+    } else {
+      process.env.API_URL = originalApiUrl
+    }
+    // @ts-expect-error - clean up test window stub
+    if (typeof originalWindow === 'undefined') {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete (globalThis as Record<string, unknown>).window
+    } else {
+      // @ts-expect-error - restore window
+      globalThis.window = originalWindow
+    }
+  })
+
+  it('prefers API_URL and preserves path prefixes', () => {
+    process.env.API_URL = 'http://api.example.com/prefix'
+
+    const url = resolveWebSocketUrl('/api/ws')
+
+    expect(url).toBe('ws://api.example.com/prefix/api/ws')
+  })
+
+  it('falls back to the page origin when API_URL is not set', () => {
+    process.env.API_URL = ''
+    // @ts-expect-error - define minimal window for test
+    globalThis.window = {
+      location: {
+        origin: 'https://site.test'
+      }
+    }
+
+    const url = resolveWebSocketUrl('/api/ws')
+
+    expect(url).toBe('wss://site.test/api/ws')
   })
 })
