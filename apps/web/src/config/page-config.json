@@ -1,7 +1,7 @@
 {
   "defaults": {
     "render": "ssr",
-    "speculation": "prerender"
+    "speculation": "prefetch"
   },
   "routes": {
     "/": {
@@ -14,11 +14,11 @@
     },
     "/chat": {
       "render": "ssr",
-      "speculation": "prerender"
+      "speculation": "prefetch"
     },
     "/store": {
       "render": "ssr",
-      "speculation": "prerender"
+      "speculation": "prefetch"
     },
     "/labs": {
       "render": "ssg",
@@ -26,15 +26,15 @@
     },
     "/login": {
       "render": "ssr",
-      "speculation": "prerender"
+      "speculation": "none"
     },
     "/register": {
       "render": "ssr",
-      "speculation": "prerender"
+      "speculation": "none"
     },
     "/register-passkey": {
       "render": "ssr",
-      "speculation": "prerender"
+      "speculation": "none"
     },
     "/dashboard": {
       "render": "ssr",

@@ -32,7 +32,7 @@ import {
   slowSpeculationConnectionTypes,
   type SpeculationRules
 } from '../../config/speculation-rules'
-import { getPageConfig, getPageSpeculation } from '../../config/page-config'
+import { getPageConfig, getSpeculationConfigSnapshot, getSpeculationMode } from '../../config/page-config'
 import {
   localeCookieOptions,
   normalizeLocaleParam,
@@ -161,31 +161,31 @@ type SpeculationCandidate = {
 type NavLink = {
   path: string
   label: () => string
-  dataSpeculate?: SpeculationCandidate['action']
+  dataSpeculate?: 'prefetch' | 'prerender' | 'none'
 }
 
 const baseNavLinks: NavLink[] = [
-  { path: '/', label: () => _`Home`, dataSpeculate: getPageSpeculation('/') },
-  { path: '/store', label: () => _`Store`, dataSpeculate: getPageSpeculation('/store') }
+  { path: '/', label: () => _`Home`, dataSpeculate: getSpeculationMode('/') },
+  { path: '/store', label: () => _`Store`, dataSpeculate: getSpeculationMode('/store') }
 ]
 
 const anonymousNavLinks: NavLink[] = [
-  { path: '/labs', label: () => _`Labs`, dataSpeculate: getPageSpeculation('/labs') },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') }
+  { path: '/labs', label: () => _`Labs`, dataSpeculate: getSpeculationMode('/labs') },
+  { path: '/ai', label: () => _`AI`, dataSpeculate: getSpeculationMode('/ai') },
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: getSpeculationMode('/chat') }
 ]
 
 const authenticatedNavLinks: NavLink[] = [
-  { path: '/account', label: () => _`Account`, dataSpeculate: getPageSpeculation('/account') },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: getPageSpeculation('/chat') },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: getPageSpeculation('/ai') },
-  { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
+  { path: '/account', label: () => _`Account`, dataSpeculate: getSpeculationMode('/account') },
+  { path: '/chat', label: () => _`Chat`, dataSpeculate: getSpeculationMode('/chat') },
+  { path: '/ai', label: () => _`AI`, dataSpeculate: getSpeculationMode('/ai') },
+  { path: '/settings', label: () => _`Settings`, dataSpeculate: getSpeculationMode('/settings') }
 ]
 
 const authAreaNavLinks: NavLink[] = [
-  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getPageSpeculation('/dashboard') },
-  { path: '/account', label: () => _`Account`, dataSpeculate: getPageSpeculation('/account') },
-  { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
+  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getSpeculationMode('/dashboard') },
+  { path: '/account', label: () => _`Account`, dataSpeculate: getSpeculationMode('/account') },
+  { path: '/settings', label: () => _`Settings`, dataSpeculate: getSpeculationMode('/settings') }
 ]
 
 const authAreaPaths = authAreaNavLinks.map(({ path }) => path)
@@ -215,6 +215,10 @@ const speculationNavLinks = uniqueNavLinks([
   ...resolveNavLinks(true, '/'),
   ...authAreaNavLinks
 ])
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const localePatternSource = locales.map(escapeRegex).join('|')
+const speculationConfigSnapshot = getSpeculationConfigSnapshot()
 
 export const useSignOut = routeAction$(async (_, event) => {
   const apiBase = resolveApiBase(event)
@@ -300,12 +304,15 @@ const resolveSpeculationCandidates = (pathname: string, prefix: string): Specula
       (
         link
       ): link is NavLink & { dataSpeculate: SpeculationCandidate['action'] } =>
-        Boolean(link.dataSpeculate) && `${prefix}${link.path === '/' ? '' : link.path}` !== pathname
+        (link.dataSpeculate === 'prefetch' || link.dataSpeculate === 'prerender') &&
+        `${prefix}${link.path === '/' ? '' : link.path}` !== pathname
     )
     .map(({ path, dataSpeculate }) => ({
       url: `${prefix}${path === '/' ? '' : path}`,
       action: dataSpeculate
     }))
+
+export const resolveNavigationSpeculationCandidates = resolveSpeculationCandidates
 
 const toSpeculationRules = (candidates: SpeculationCandidate[]): SpeculationRules | null => {
   const rules: SpeculationRules = { prefetch: [], prerender: [] }
@@ -445,6 +452,17 @@ export const RouterHead = component$(() => {
   const prefersReducedData = window.matchMedia?.('(prefers-reduced-data: reduce)')?.matches
   if (isSlow || prefersReducedData) return
 
+  const localePattern = ${localePatternSource ? `new RegExp('^/(?:${localePatternSource})(?=/|$)')` : 'null'}
+  const speculationConfig = ${JSON.stringify(speculationConfigSnapshot)}
+  const resolveSpeculationMode = (pathname) => {
+    let normalized = pathname || '/'
+    if (localePattern) normalized = normalized.replace(localePattern, '') || '/'
+    if (!normalized.startsWith('/')) normalized = '/' + normalized
+    if (normalized.length > 1 && normalized.endsWith('/')) normalized = normalized.slice(0, -1)
+    const mode = speculationConfig.routes[normalized]
+    return mode || speculationConfig.defaultSpeculation || 'none'
+  }
+
   const isDocumentUrl = (url) => {
     const path = url.pathname
     if (path.startsWith('/@fs/')) return false
@@ -457,10 +475,12 @@ export const RouterHead = component$(() => {
     const anchors = Array.from(document.querySelectorAll('a[href]'))
     if (!anchors.length) return
 
-    const urls = new Set()
+    const prefetchUrls = new Set()
+    const prerenderUrls = new Set()
     for (const anchor of anchors) {
       if (!anchor.closest || !anchor.closest('.app-frame')) continue
-      if (anchor.dataset && anchor.dataset.speculate === 'false') continue
+      const dataSpeculate = anchor.dataset?.speculate
+      if (dataSpeculate === 'false' || dataSpeculate === 'none') continue
       if (anchor.rel && anchor.rel.split(' ').includes('nofollow')) continue
       const raw = anchor.getAttribute('href')
       if (!raw || raw.startsWith('#')) continue
@@ -470,22 +490,41 @@ export const RouterHead = component$(() => {
       if (!isDocumentUrl(url)) continue
       if (url.pathname === window.location.pathname && url.search === window.location.search) continue
 
-      urls.add('' + url.pathname + url.search)
+      const mode =
+        dataSpeculate === 'prefetch' || dataSpeculate === 'prerender'
+          ? dataSpeculate
+          : resolveSpeculationMode(url.pathname)
+      if (mode === 'none') continue
+
+      const target = mode === 'prefetch' ? prefetchUrls : prerenderUrls
+      target.add('' + url.pathname + url.search)
     }
 
-    if (!urls.size) return
+    const hasPrefetch = prefetchUrls.size > 0
+    const hasPrerender = prerenderUrls.size > 0
+    if (!hasPrefetch && !hasPrerender) return
 
     const script = document.createElement('script')
     script.type = 'speculationrules'
     script.dataset.source = 'document'
-    script.text = JSON.stringify({
-      prerender: [
+    const payload = {}
+    if (hasPrefetch) {
+      payload.prefetch = [
         {
           source: 'list',
-          urls: Array.from(urls)
+          urls: Array.from(prefetchUrls)
         }
       ]
-    })
+    }
+    if (hasPrerender) {
+      payload.prerender = [
+        {
+          source: 'list',
+          urls: Array.from(prerenderUrls)
+        }
+      ]
+    }
+    script.text = JSON.stringify(payload)
     document.head.append(script)
   }
 
