@@ -188,6 +188,14 @@ export const resolveAuthOrigin = (event: RequestEventBase) => {
   }
 }
 
+export const resolveApiBase = (event?: RequestEventBase) => {
+  const fromEnv = event?.env.get('API_URL') ?? process.env.API_URL
+  if (fromEnv) return fromEnv
+  if (!event) return 'http://localhost:4000'
+  const origin = resolveAuthOrigin(event)
+  return origin || 'http://localhost:4000'
+}
+
 export const buildAuthHeaders = (event: RequestEventBase, init?: HeadersInit) => {
   const headers = new Headers(init)
   const cookie = event.request.headers.get('cookie')
@@ -217,7 +225,7 @@ export const resolveAuthCallbackUrl = (event: RequestEventBase, callback: string
 }
 
 export const fetchSessionFromApi = async (event: RequestEventBase) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   try {
     const response = await fetch(`${apiBase}/api/auth/session`, {
       headers: buildAuthHeaders(event)

@@ -8,7 +8,12 @@ import {
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
-import { buildAuthHeaders, forwardAuthCookies, resolveAuthCallbackUrl } from '../../../server/auth/session'
+import {
+  buildAuthHeaders,
+  forwardAuthCookies,
+  resolveApiBase,
+  resolveAuthCallbackUrl
+} from '../../../server/auth/session'
 import { emailRegisterAction } from './actions'
 import { normalizeAuthCallback } from '../auth-callback'
 import { useSessionLoader } from '../layout'
@@ -21,7 +26,7 @@ export const useSocialRegister = routeAction$(async (data, event) => {
     return event.fail(400, { message: _`Unable to create your account right now.` })
   }
 
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/register?error=oauth`

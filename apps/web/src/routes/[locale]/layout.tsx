@@ -19,7 +19,12 @@ import criticalCss from '../critical.css?raw'
 import { ensureLocaleDictionary } from '../../i18n/dictionaries'
 import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
-import { buildAuthHeaders, fetchSessionFromApi, forwardAuthCookies } from '../../server/auth/session'
+import {
+  buildAuthHeaders,
+  fetchSessionFromApi,
+  forwardAuthCookies,
+  resolveApiBase
+} from '../../server/auth/session'
 import {
   buildSpeculationRulesGuard,
   conservativeViewportRules,
@@ -212,7 +217,7 @@ const speculationNavLinks = uniqueNavLinks([
 ])
 
 export const useSignOut = routeAction$(async (_, event) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   const response = await fetch(`${apiBase}/api/auth/sign-out`, {
     method: 'POST',
     headers: buildAuthHeaders(event)

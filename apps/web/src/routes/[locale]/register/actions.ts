@@ -4,12 +4,13 @@ import {
   buildAuthHeaders,
   buildRedirectHtml,
   forwardAuthCookies,
+  resolveApiBase,
   resolveAuthCallbackUrl
 } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
 export const emailRegisterAction = async (data: Record<string, any>, event: RequestEventAction) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   const callback = normalizeAuthCallback(data.callback, event.params.locale)
   const callbackURL = resolveAuthCallbackUrl(event, callback)
   const response = await fetch(`${apiBase}/api/auth/sign-up/email`, {

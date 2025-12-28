@@ -201,24 +201,24 @@ test.describe('auth redirect (stubbed api)', () => {
     await new Promise<void>((resolve) => server?.close(() => resolve()))
   })
 
-  test('redirects to dashboard after email login', async ({ page }, testInfo) => {
+  test('redirects to account after email login', async ({ page }, testInfo) => {
     test.setTimeout(120_000)
     lastSignInBody = null
     const baseURL = testInfo.project.use.baseURL ?? 'http://127.0.0.1:4173'
 
-    await page.goto('/dashboard', { waitUntil: 'domcontentloaded', timeout: 120_000 })
+    await page.goto('/account', { waitUntil: 'domcontentloaded', timeout: 120_000 })
     await page.waitForURL('**/login**')
 
     const loginUrl = new URL(page.url())
     const locale = loginUrl.pathname.split('/')[1] || 'en'
-    const expectedCallback = new URL(`/${locale}/dashboard`, baseURL).toString()
+    const expectedCallback = new URL(`/${locale}/account`, baseURL).toString()
 
     await page.getByLabel(/Email/i).fill('demo@prometheus.dev')
     await page.getByLabel(/Password/i).fill('password123')
     await page.getByRole('button', { name: /Continue/i }).click()
 
-    await page.waitForURL(`**/${locale}/dashboard**`)
-    await expect(page.getByRole('heading', { level: 1, name: /Welcome back/i })).toBeVisible()
+    await page.waitForURL(`**/${locale}/account**`)
+    await expect(page.getByRole('heading', { level: 1, name: /Keep your profile current/i })).toBeVisible()
     await expect.poll(() => lastSignInBody).not.toBeNull()
     expect(lastSignInBody?.callbackURL).toBe(expectedCallback)
   })

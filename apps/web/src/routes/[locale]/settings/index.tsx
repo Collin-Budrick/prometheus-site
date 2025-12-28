@@ -1,6 +1,18 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
+import { fetchSessionFromApi } from '../../../server/auth/session'
+
+export const onRequest: RequestHandler = async (event) => {
+  const session = await fetchSessionFromApi(event)
+  if (!session?.session) {
+    const callback = `${event.url.pathname}${event.url.search}`
+    throw event.redirect(
+      302,
+      `/${event.params.locale}/login?callback=${encodeURIComponent(callback)}`
+    )
+  }
+}
 
 export default component$(() => {
   return (

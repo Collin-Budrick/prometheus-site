@@ -1,12 +1,17 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 import { Form, routeAction$, routeLoader$ } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import {
   publicKeyCredentialToCreateJSON,
   toPublicKeyCreationOptions
 } from '../../../components/auth/passkey-utils'
-import { buildAuthHeaders, forwardAuthCookies } from '../../../server/auth/session'
+import {
+  buildAuthHeaders,
+  fetchSessionFromApi,
+  forwardAuthCookies,
+  resolveApiBase
+} from '../../../server/auth/session'
 import { useSessionLoader } from '../layout'
 
 type PasskeySummary = {
@@ -15,8 +20,19 @@ type PasskeySummary = {
   credentialID: string
 }
 
+export const onRequest: RequestHandler = async (event) => {
+  const session = await fetchSessionFromApi(event)
+  if (!session?.session) {
+    const callback = `${event.url.pathname}${event.url.search}`
+    throw event.redirect(
+      302,
+      `/${event.params.locale}/login?callback=${encodeURIComponent(callback)}`
+    )
+  }
+}
+
 export const usePasskeyList = routeLoader$(async (event) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   try {
     const response = await fetch(`${apiBase}/api/auth/passkey/list-user-passkeys`, {
       headers: buildAuthHeaders(event)
@@ -53,7 +69,7 @@ export const useDeletePasskey = routeAction$(async (data, event) => {
   const id = typeof data.id === 'string' ? data.id : ''
   if (!id) return event.fail(400, { message: _`Unable to delete a passkey right now.` })
 
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
+  const apiBase = resolveApiBase(event)
   const response = await fetch(`${apiBase}/api/auth/passkey/delete-passkey`, {
     method: 'POST',
     headers: buildAuthHeaders(event, {

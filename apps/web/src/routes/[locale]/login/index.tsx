@@ -8,13 +8,26 @@ import {
   buildAuthHeaders,
   buildRedirectHtml,
   forwardAuthCookies,
+  resolveApiBase,
   resolveAuthCallbackUrl
 } from '../../../server/auth/session'
 import { normalizeAuthCallback } from '../auth-callback'
 
+const resolveActionCallback = (data: Record<string, unknown>, event: { request: Request; params: { locale?: string } }) => {
+  const callbackValue = typeof data.callback === 'string' ? data.callback : null
+  let refererCallback: string | null = null
+  const referer = event.request.headers.get('referer')
+  if (referer) {
+    try {
+      refererCallback = new URL(referer).searchParams.get('callback')
+    } catch {}
+  }
+  return normalizeAuthCallback(refererCallback ?? callbackValue, event.params.locale)
+}
+
 export const useEmailLogin = routeAction$(async (data, event) => {
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeAuthCallback(data.callback, event.params.locale)
+  const apiBase = resolveApiBase(event)
+  const callback = resolveActionCallback(data as Record<string, unknown>, event)
   const callbackURL = resolveAuthCallbackUrl(event, callback)
   const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
     method: 'POST',
@@ -49,8 +62,8 @@ export const useSocialLogin = routeAction$(async (data, event) => {
     return event.fail(400, { message: _`Unable to sign in right now.` })
   }
 
-  const apiBase = event.env.get('API_URL') ?? 'http://localhost:4000'
-  const callback = normalizeAuthCallback(data.callback, event.params.locale)
+  const apiBase = resolveApiBase(event)
+  const callback = resolveActionCallback(data as Record<string, unknown>, event)
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   const errorCallback = `${localePrefix}/login?error=oauth`
   const callbackURL = resolveAuthCallbackUrl(event, callback)
