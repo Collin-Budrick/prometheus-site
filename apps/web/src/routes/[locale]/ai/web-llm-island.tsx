@@ -109,10 +109,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   const isAutoWarming = useSignal(false)
   const autoWarmQueued = useSignal(false)
 
-  const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
-  const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
-
-  const checkCaches = async () => {
+  const checkCaches$ = $(async () => {
     if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
       try {
         const databases = await indexedDB.databases()
@@ -142,7 +139,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
       const cached = hasWebLlmCache.value || hasTransformersCache.value
       shouldShowDownloadWarning.value = !cached
     }
-  }
+  })
 
   const ensureWorker$ = $(async () => {
     if (workerRef.value) return workerRef.value
@@ -174,7 +171,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
           installProgress.value = _`Background install complete.`
           installModelId.value = data.modelId
           shouldShowDownloadWarning.value = false
-          void checkCaches()
+          void checkCaches$()
           break
         case 'prefetch-error':
           installState.value = 'error'
@@ -265,7 +262,9 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   })
 
   const loadModel$ = $(async (modelId: AiModelId, acceleration?: AccelerationTarget) => {
-    if (hasCustomModelError()) {
+    const isCustomInvalid =
+      isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
+    if (isCustomInvalid) {
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
       return
     }
@@ -290,7 +289,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
             ? _`Starting WebLLM...`
             : _`Loading Transformers.js fallback...`
 
-    const dtypeOverride = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    const dtypeOverride =
+      isCustomModelSelected.value && customModelDtype.value !== 'auto' ? customModelDtype.value : undefined
     worker.postMessage({
       type: 'load-model',
       modelId,
@@ -301,7 +301,9 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   })
 
   const prefetchModel$ = $(async (modelId: AiModelId) => {
-    if (hasCustomModelError()) {
+    const isCustomInvalid =
+      isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
+    if (isCustomInvalid) {
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
       return
     }
@@ -314,7 +316,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
     installState.value = 'installing'
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
-    const dtypeOverride = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    const dtypeOverride =
+      isCustomModelSelected.value && customModelDtype.value !== 'auto' ? customModelDtype.value : undefined
     worker.postMessage({ type: 'prefetch-model', modelId, dtype: dtypeOverride, capabilities } satisfies AiWorkerRequest)
   })
 
@@ -328,7 +331,7 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
 
     hasWebGpu.value = typeof navigator !== 'undefined' && 'gpu' in navigator
     restoreDownloadWarning()
-    void checkCaches()
+    void checkCaches$()
     void updateStorageEstimate$(selectedModelId.value)
 
     return () => {
@@ -494,7 +497,8 @@ export const WebLlmIsland = component$<WebLlmIslandProps>(
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
   const isWebNnSelected = preferredAcceleration === 'npu'
-  const isCustomModelInvalid = hasCustomModelError()
+  const isCustomModelInvalid =
+    isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const isInstallForSelected = installModelId.value === selectedModelId.value
 
   return (

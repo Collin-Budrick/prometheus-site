@@ -17,6 +17,45 @@ interface Props {
   onCapabilitiesDetected$?: (capabilities: AiDeviceCapabilities) => void
 }
 
+const PROBE_TIMEOUT_MS = 5_000
+
+const buildCacheKey = () => {
+  if (typeof navigator === 'undefined') return 'gpu-probe'
+  const platform = navigator.platform || 'unknown'
+  return `gpu-probe:${navigator.userAgent}:${platform}`
+}
+
+const loadCachedProbe = () => {
+  if (typeof sessionStorage === 'undefined') return null
+  const cached = sessionStorage.getItem(buildCacheKey())
+  if (!cached) return null
+  try {
+    const parsed = JSON.parse(cached) as { gpu: GpuProbeResult; npu: NpuProbeResult }
+    if (parsed?.gpu && parsed?.npu) return parsed
+  } catch (error) {
+    console.warn('Failed to parse cached GPU probe result', error)
+  }
+  return null
+}
+
+const saveCachedProbe = (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
+  if (typeof sessionStorage === 'undefined') return
+  if (gpuResult.status === 'running' || npuResult.status === 'running') return
+  try {
+    sessionStorage.setItem(buildCacheKey(), JSON.stringify({ gpu: gpuResult, npu: npuResult }))
+  } catch (error) {
+    console.warn('Unable to persist GPU probe cache', error)
+  }
+}
+
+const withTimeout = async <T,>(promise: Promise<T>, fallback: T) =>
+  Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), PROBE_TIMEOUT_MS))])
+
+const resolveDeviceMemory = () => {
+  if (typeof navigator === 'undefined') return undefined
+  return typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : undefined
+}
+
 export const GpuProbeIsland = component$<Props>(
   ({
     selectedAcceleration,
@@ -28,45 +67,6 @@ export const GpuProbeIsland = component$<Props>(
   }) => {
   const gpuStatus = useSignal<GpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const npuStatus = useSignal<NpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
-  const probeTimeoutMs = 5_000
-
-  const buildCacheKey = () => {
-    if (typeof navigator === 'undefined') return 'gpu-probe'
-    const platform = navigator.platform || 'unknown'
-    return `gpu-probe:${navigator.userAgent}:${platform}`
-  }
-
-  const loadCachedProbe = () => {
-    if (typeof sessionStorage === 'undefined') return null
-    const cached = sessionStorage.getItem(buildCacheKey())
-    if (!cached) return null
-    try {
-      const parsed = JSON.parse(cached) as { gpu: GpuProbeResult; npu: NpuProbeResult }
-      if (parsed?.gpu && parsed?.npu) return parsed
-    } catch (error) {
-      console.warn('Failed to parse cached GPU probe result', error)
-    }
-    return null
-  }
-
-  const saveCachedProbe = (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
-    if (typeof sessionStorage === 'undefined') return
-    if (gpuResult.status === 'running' || npuResult.status === 'running') return
-    try {
-      sessionStorage.setItem(buildCacheKey(), JSON.stringify({ gpu: gpuResult, npu: npuResult }))
-    } catch (error) {
-      console.warn('Unable to persist GPU probe cache', error)
-    }
-  }
-
-  const withTimeout = async <T,>(promise: Promise<T>, fallback: T) =>
-    Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), probeTimeoutMs))])
-
-  const resolveDeviceMemory = () => {
-    if (typeof navigator === 'undefined') return undefined
-    return typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : undefined
-  }
-
   const applyResults = $(async (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
     gpuStatus.value = gpuResult
     npuStatus.value = npuResult
@@ -125,12 +125,12 @@ export const GpuProbeIsland = component$<Props>(
     const gpuFallback: GpuProbeResult = {
       status: 'error',
       tier: 'unavailable',
-      error: _`Probe timed out after ${probeTimeoutMs / 1000}s.`
+      error: _`Probe timed out after ${PROBE_TIMEOUT_MS / 1000}s.`
     }
     const npuFallback: NpuProbeResult = {
       status: 'error',
       tier: 'unavailable',
-      error: _`Probe timed out after ${probeTimeoutMs / 1000}s.`
+      error: _`Probe timed out after ${PROBE_TIMEOUT_MS / 1000}s.`
     }
 
     const [gpuResult, npuResult] = await Promise.all([

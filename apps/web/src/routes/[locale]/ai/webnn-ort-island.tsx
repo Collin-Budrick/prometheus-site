@@ -126,10 +126,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
   const isAutoWarming = useSignal(false)
   const autoWarmQueued = useSignal(false)
 
-  const hasCustomModelError = () => isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
-  const resolveCustomModelDtype = () => (customModelDtype.value === 'auto' ? undefined : customModelDtype.value)
-
-  const checkCaches = async () => {
+  const checkCaches = $(async () => {
     if (typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function') {
       try {
         const databases = await indexedDB.databases()
@@ -155,9 +152,9 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     if (!downloadWarningDismissed.value) {
       shouldShowDownloadWarning.value = !hasTransformersCache.value
     }
-  }
+  })
 
-  const ensureWorker = async () => {
+  const ensureWorker = $(async () => {
     if (workerRef.value) return workerRef.value
     const listener = (event: MessageEvent<AiWorkerResponse>) => {
       const data = event.data
@@ -242,11 +239,11 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     workerListenerRef.value = listener
     workerRef.value = worker
     return worker
-  }
+  })
 
   const getSelectedModel = () => webNnModels.find((model) => model.id === selectedModelId.value)
 
-  const updateStorageEstimate = async (modelId: WebNnModelId) => {
+  const updateStorageEstimate = $(async (modelId: WebNnModelId) => {
     storageCheckComplete.value = false
     try {
       const model = webNnModels.find((item) => item.id === modelId)
@@ -267,19 +264,19 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     } finally {
       storageCheckComplete.value = true
     }
-  }
+  })
 
-  const resetConversation = () => {
+  const resetConversation = $(() => {
     streamingText.value = ''
     transcript.value = []
     error.value = ''
     workerRef.value?.postMessage({ type: 'reset' } satisfies AiWorkerRequest)
-  }
+  })
 
-  const resolveAcceleration = () => preferredAcceleration ?? 'npu'
-
-  const loadModel = async (modelId: WebNnModelId, acceleration: AccelerationTarget = resolveAcceleration()) => {
-    if (hasCustomModelError()) {
+  const loadModel = $(async (modelId: WebNnModelId, acceleration?: AccelerationTarget) => {
+    const isCustomInvalid =
+      isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
+    if (isCustomInvalid) {
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
       return
     }
@@ -288,6 +285,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
       installState.value = 'error'
       return
     }
+    const resolvedAcceleration = acceleration ?? preferredAcceleration ?? 'npu'
     const worker = await ensureWorker()
     loadState.value = 'loading'
     loadedModelId.value = null
@@ -296,18 +294,21 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     dtype.value = null
     progress.value = _`Starting WebNN inference...`
 
-    const resolvedDtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    const resolvedDtype =
+      isCustomModelSelected.value && customModelDtype.value !== 'auto' ? customModelDtype.value : undefined
     worker.postMessage({
       type: 'load-model',
       modelId,
-      acceleration,
+      acceleration: resolvedAcceleration,
       dtype: resolvedDtype,
       capabilities,
     } satisfies AiWorkerRequest)
-  }
+  })
 
   const prefetchModel = $(async (modelId: WebNnModelId) => {
-    if (hasCustomModelError()) {
+    const isCustomInvalid =
+      isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
+    if (isCustomInvalid) {
       error.value = customModelError.value || _`Enter a valid onnx-community model id to continue.`
       return
     }
@@ -320,7 +321,8 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
     installState.value = 'installing'
     installProgress.value = _`Starting background download...`
     installModelId.value = modelId
-    const resolvedDtype = isCustomModelSelected.value ? resolveCustomModelDtype() : undefined
+    const resolvedDtype =
+      isCustomModelSelected.value && customModelDtype.value !== 'auto' ? customModelDtype.value : undefined
     worker.postMessage({
       type: 'prefetch-model',
       modelId,
@@ -506,7 +508,8 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
   const isLocalModel = selectedModelId.value.startsWith('/models/')
   const isSelectedModelLoaded = loadedModelId.value === selectedModelId.value
   const isSelectedModelReady = loadState.value === 'ready' && isSelectedModelLoaded
-  const isCustomModelInvalid = hasCustomModelError()
+  const isCustomModelInvalid =
+    isCustomModelSelected.value && (!customModelId.value || customModelError.value.length > 0)
   const shouldShowWebNnFallback = isAccelerationReady && loadState.value === 'ready' && !isWebNn
   const isInstallForSelected = installModelId.value === selectedModelId.value
 
@@ -524,7 +527,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
           <button
             type="button"
             class="px-3 py-2 border border-slate-700 rounded-md font-semibold text-slate-100 text-xs"
-            onClick$={$(() => resetConversation())}
+            onClick$={resetConversation}
           >
             {_`Reset conversation`}
           </button>
@@ -546,7 +549,7 @@ export const WebNnOrtIsland = component$<WebNnOrtIslandProps>(
               isCustomModelInvalid ||
               isStorageBlocked.value
             }
-            onClick$={$(() => loadModel(selectedModelId.value, resolveAcceleration()))}
+            onClick$={$(() => loadModel(selectedModelId.value))}
           >
             {isSelectedModelLoaded ? _`Reload model` : _`Activate model`}
           </button>
