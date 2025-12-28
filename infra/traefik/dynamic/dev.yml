@@ -15,7 +15,7 @@ http:
       tls: {}
       priority: 1
     prometheus-dev-web-ai:
-      rule: Host(`prometheus.dev`) && (PathPrefix(`/ai`) || PathPrefixRegexp(`^/[a-z]{2}/ai`))
+      rule: Host(`prometheus.dev`) && PathRegexp(`^/(?:[a-z]{2}/)?ai(?:/|$)`)
       entryPoints:
         - websecure
       service: prometheus-dev-web

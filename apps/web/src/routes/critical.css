@@ -266,6 +266,10 @@ a {
   pointer-events: none;
 }
 
+:root.supports-view-transition[data-vt-direction] .settings-panel {
+  display: none;
+}
+
 .settings-group {
   border-radius: 0.6rem;
   border: 1px solid rgba(30, 41, 59, 0.85);
