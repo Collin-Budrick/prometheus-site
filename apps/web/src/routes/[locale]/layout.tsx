@@ -179,8 +179,24 @@ const authenticatedNavLinks: NavLink[] = [
   { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
 ]
 
-const resolveNavLinks = (hasSession: boolean): NavLink[] =>
-  hasSession ? authenticatedNavLinks : [...baseNavLinks, ...anonymousNavLinks]
+const authAreaNavLinks: NavLink[] = [
+  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getPageSpeculation('/dashboard') },
+  { path: '/account', label: () => _`Account`, dataSpeculate: getPageSpeculation('/account') },
+  { path: '/settings', label: () => _`Settings`, dataSpeculate: getPageSpeculation('/settings') }
+]
+
+const authAreaPaths = authAreaNavLinks.map(({ path }) => path)
+
+const isAuthAreaPath = (pathname: string) => {
+  const stripped = stripLocalePrefix(pathname) || '/'
+  const normalized = stripped.length > 1 && stripped.endsWith('/') ? stripped.slice(0, -1) : stripped
+  return authAreaPaths.some((authPath) => normalized === authPath || normalized.startsWith(`${authPath}/`))
+}
+
+const resolveNavLinks = (hasSession: boolean, pathname: string): NavLink[] => {
+  if (isAuthAreaPath(pathname)) return authAreaNavLinks
+  return hasSession ? authenticatedNavLinks : [...baseNavLinks, ...anonymousNavLinks]
+}
 
 const uniqueNavLinks = (links: NavLink[]): NavLink[] => {
   const seen = new Set<string>()
@@ -192,8 +208,9 @@ const uniqueNavLinks = (links: NavLink[]): NavLink[] => {
 }
 
 const speculationNavLinks = uniqueNavLinks([
-  ...resolveNavLinks(false),
-  ...resolveNavLinks(true)
+  ...resolveNavLinks(false, '/'),
+  ...resolveNavLinks(true, '/'),
+  ...authAreaNavLinks
 ])
 
 export const useSignOut = routeAction$(async (_, event) => {
@@ -595,7 +612,7 @@ export default component$(() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
   })()
-  const navLinks = resolveNavLinks(session.value.hasSession)
+  const navLinks = resolveNavLinks(session.value.hasSession, loc.url.pathname)
   const navOrder = resolveNavOrder(navLinks)
   const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
   const handleNavClick$ = $((event: MouseEvent, element: HTMLAnchorElement) => {
