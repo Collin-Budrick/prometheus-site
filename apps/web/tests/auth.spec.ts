@@ -78,6 +78,8 @@ test.describe('auth surfaces', () => {
     await page.goto('/login?callback=/chat', { waitUntil: 'domcontentloaded' })
     await page.getByRole('button', { name: /Use a passkey/i }).click()
     await expect.poll(() => calls).toEqual(['options', 'verify'])
+    await page.waitForURL(/\/chat(\/|$)/)
+    await expect(page.getByRole('heading', { name: /WebSocket chat via Valkey pub\/sub/i })).toBeVisible()
     await expect(page.locator('text=Unable to sign in with a passkey.')).toHaveCount(0)
   })
 

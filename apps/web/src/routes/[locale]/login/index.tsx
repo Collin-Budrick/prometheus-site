@@ -1,12 +1,11 @@
-import { $, component$, useSignal } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { Form, routeAction$, useLocation } from '@builder.io/qwik-city'
+import { Form, routeAction$, useLocation, useNavigate } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { OAuthButtons } from '../../../components/auth/OAuthButtons'
 import { resolveOAuthProviders } from '../../../server/auth/oauth-providers'
 import {
   buildAuthHeaders,
-  buildRedirectHtml,
   forwardAuthCookies,
   resolveApiBase,
   resolveAuthCallbackUrl
@@ -53,7 +52,11 @@ export const useEmailLogin = routeAction$(async (data, event) => {
     return event.fail(response.status, { message })
   }
 
-  throw event.html(200, buildRedirectHtml(callback))
+  if (event.pathname.endsWith('/q-data.json')) {
+    return { redirectTo: callback }
+  }
+
+  throw event.redirect(303, callback)
 })
 
 export const useSocialLogin = routeAction$(async (data, event) => {
@@ -104,6 +107,7 @@ export default component$(() => {
   const action = useEmailLogin()
   const socialAction = useSocialLogin()
   const location = useLocation()
+  const navigate = useNavigate()
   const callback = useSignal(
     normalizeAuthCallback(location.url.searchParams.get('callback'), location.params.locale)
   )
@@ -111,7 +115,18 @@ export default component$(() => {
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(callback.value)}`
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const passkeyError = useSignal<string>('')
+  const passkeyRedirect = useSignal<string | null>(null)
   const oauthProviders = resolveOAuthProviders()
+
+  useVisibleTask$(({ track }) => {
+    const redirectTo = track(() => action.value?.redirectTo)
+    const passkeyTarget = track(() => passkeyRedirect.value)
+    const target = typeof redirectTo === 'string' ? redirectTo : passkeyTarget
+    if (typeof target === 'string') {
+      if (target === passkeyTarget) passkeyRedirect.value = null
+      navigate(target)
+    }
+  })
 
   const startPasskeyLogin = $(async () => {
     if (typeof window === 'undefined' || !('PublicKeyCredential' in window)) {
@@ -146,7 +161,7 @@ export default component$(() => {
       if (!verify.ok) throw new Error('verify')
 
       passkeyStatus.value = 'idle'
-      window.location.href = callback.value
+      passkeyRedirect.value = callback.value
     } catch (error) {
       console.error('Passkey login failed', error)
       passkeyStatus.value = 'error'
@@ -165,7 +180,6 @@ export default component$(() => {
       <div class="mt-6 grid gap-6 lg:grid-cols-[2fr,1fr]">
         <Form
           action={action}
-          reloadDocument
           class="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-lg shadow-slate-900/30"
         >
           <input type="hidden" name="callback" value={callback.value} />
