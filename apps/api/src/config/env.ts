@@ -17,7 +17,7 @@ type OAuthClient = {
   clientSecret: string
 }
 
-type RelyingPartyConfig = {
+export type RelyingPartyConfig = {
   rpId: string
   rpOrigin: string
 }
