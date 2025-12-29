@@ -2,7 +2,7 @@
 
 ## How to use this file
 
-- Read this doc before making changes; treat it as the project’s guardrails.
+- Read this doc before making changes; treat it as the project’s guardrails and keep it in sync with TEMPLATE.md.
 - Follow the sections that match your task (routing, SSR/SSG, styling, animation, i18n).
 - If a request conflicts with these rules, pause and ask for clarification.
 - When adding new patterns or workflows, update this file so future work stays consistent.
@@ -20,10 +20,10 @@
 
 ## Setup commands
 
-- Install dependencies: `bun install`
-- Start dev server: `bun run dev`
-- Run tests/checks: `bun run test`
-- Fix local TLS (mkcert + Traefik): `bun run certs:fix`
+- Install dependencies: `bun install` (see TEMPLATE.md for CI-friendly flags).
+- Start dev server: `bun run dev`.
+- Run tests/checks: `bun run test`.
+- Fix local TLS (mkcert + Traefik): `bun run certs:fix`.
 - Docker Compose envs: use `.env` for dev and `--env-file .env.prod` for prod deploys.
 
 ## Build/tooling expectations
@@ -38,7 +38,7 @@
 
 - Favor TypeScript strict mode; single quotes; avoid unnecessary semicolons.
 - No hydration tax: components should be resumable/lazy-loaded; avoid global client bundles.
-- Keep main-thread JS minimal; defer third-party scripts and move them off-thread via Partytown when needed.
+- Keep main-thread JS minimal; defer third-party scripts and move them off-thread via Partytown when needed (see opt-in guidance in TEMPLATE.md).
 - Animations: prefer CSS/View Transitions; avoid large JS animation runtimes.
 - Progressive enhancement: feature-detect Speculation Rules, View Transitions, WebGPU, and WebTransport before use.
 - Realtime: WebSockets as default path; WebTransport as optional fast-path.
