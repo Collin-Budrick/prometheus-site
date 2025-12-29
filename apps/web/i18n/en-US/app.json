@@ -1,0 +1,29 @@
+{
+  "brand": {
+    "name": "Prometheus",
+    "tagline": "Performance Lab"
+  },
+  "nav": {
+    "home": "Home",
+    "store": "Store",
+    "chat": "Chat",
+    "ai": "AI",
+    "labs": "Labs",
+    "login": "Login",
+    "dashboard": "Dashboard",
+    "account": "Account",
+    "settings": "Settings"
+  },
+  "homeHero": {
+    "eyebrow": "Performance first",
+    "title": "Microscopic first load, big capability",
+    "description": "Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.",
+    "bulletImmutableHome": "- Ultra-thin home route with immutable caching",
+    "bulletLazyFeatures": "- Lazy feature routes for store, chat, and AI",
+    "bulletPartytown": "- Optional Partytown for third-party isolation",
+    "latencyTitle": "Latency budget",
+    "latencyServer": "Server render: sub-50ms target with streaming enabled",
+    "latencyCss": "Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny",
+    "latencySpeculation": "Speculative nav: prerender all internal links"
+  }
+}
