@@ -36,6 +36,7 @@ import {
 import { getPageConfig, getSpeculationConfigSnapshot, getSpeculationMode } from '../../config/page-config'
 import {
   localeCookieOptions,
+  localeParams,
   normalizeLocaleParam,
   resolvePreferredLocale,
   stripLocalePrefix
@@ -150,7 +151,7 @@ export const onRequest: RequestHandler = async ({
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: locales.map((locale) => ({ locale }))
+    params: localeParams
   }
 }
 
@@ -165,21 +166,17 @@ type NavLink = {
   dataSpeculate?: 'prefetch' | 'prerender' | 'none'
 }
 
-const baseNavLinks: NavLink[] = [
+const primaryNavLinks: NavLink[] = [
   { path: '/', label: () => _`Home`, dataSpeculate: getSpeculationMode('/') },
-  { path: '/store', label: () => _`Store`, dataSpeculate: getSpeculationMode('/store') }
-]
-
-const anonymousNavLinks: NavLink[] = [
+  { path: '/store', label: () => _`Store`, dataSpeculate: getSpeculationMode('/store') },
   { path: '/labs', label: () => _`Labs`, dataSpeculate: getSpeculationMode('/labs') },
   { path: '/ai', label: () => _`AI`, dataSpeculate: getSpeculationMode('/ai') },
   { path: '/chat', label: () => _`Chat`, dataSpeculate: getSpeculationMode('/chat') }
 ]
 
 const authenticatedNavLinks: NavLink[] = [
+  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getSpeculationMode('/dashboard') },
   { path: '/account', label: () => _`Account`, dataSpeculate: getSpeculationMode('/account') },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: getSpeculationMode('/chat') },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: getSpeculationMode('/ai') },
   { path: '/settings', label: () => _`Settings`, dataSpeculate: getSpeculationMode('/settings') }
 ]
 
@@ -199,7 +196,8 @@ const isAuthAreaPath = (pathname: string) => {
 
 const resolveNavLinks = (hasSession: boolean, pathname: string): NavLink[] => {
   if (isAuthAreaPath(pathname)) return authAreaNavLinks
-  return hasSession ? authenticatedNavLinks : [...baseNavLinks, ...anonymousNavLinks]
+  if (hasSession) return uniqueNavLinks([...primaryNavLinks, ...authenticatedNavLinks])
+  return primaryNavLinks
 }
 
 const uniqueNavLinks = (links: NavLink[]): NavLink[] => {

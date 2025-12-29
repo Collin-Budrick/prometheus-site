@@ -1,6 +1,7 @@
 import { component$ } from '@builder.io/qwik'
-import { _, locales } from 'compiled-i18n'
+import { _ } from 'compiled-i18n'
 import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
+import { localeParams } from '../_shared/locale/locale-routing'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -42,7 +43,7 @@ export default component$(() => {
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: locales.map((locale) => ({ locale }))
+    params: localeParams
   }
 }
 

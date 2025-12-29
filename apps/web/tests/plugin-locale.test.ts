@@ -4,7 +4,7 @@ mock.module('@qwik-city-plan', () => ({ default: {} }))
 mock.module('@qwik-city-sw-register', () => ({ default: () => {} }))
 
 const { resolveLocaleRedirect } = await import('../src/routes/plugin@locale')
-const { resolvePreferredLocaleLoader } = await import('../src/routes/_shared/locale/entry')
+const { resolvePreferredLocaleLoader } = await import('../src/routes/_shared/locale/locale-routing')
 
 describe('resolveLocaleRedirect', () => {
   it('rewrites locale query params into the path prefix', () => {
