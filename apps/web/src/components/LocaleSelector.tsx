@@ -1,4 +1,4 @@
-import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, getLocale, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form, type ActionStore, useLocation } from '@builder.io/qwik-city'
 import { _, localeNames, locales } from 'compiled-i18n'
 import { getSpeculationMode } from '../config/page-config'
@@ -11,7 +11,75 @@ type LocaleSelectorProps = {
   signOutAction?: ActionStore<any, any>
 }
 
+const settingsStyles = `
+.settings-trigger {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-trigger:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #a7f3d0;
+}
+
+.settings-trigger:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.6);
+  outline-offset: 2px;
+}
+
+.settings-menu[open] .settings-trigger {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(16, 185, 129, 0.12);
+  color: #ecfdf5;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.18);
+}
+
+.settings-menu[open] .settings-panel {
+  view-transition-name: settings-panel;
+}
+
+.settings-panel {
+  background: #0b1220;
+  border: 1px solid #1e293b;
+  box-shadow: 0 15px 40px rgba(2, 6, 23, 0.55);
+}
+
+.settings-group {
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(30, 41, 59, 0.85);
+}
+
+.settings-group summary {
+  color: #e2e8f0;
+}
+
+.settings-group summary::after {
+  color: #94a3b8;
+}
+
+.settings-option {
+  color: #e2e8f0;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.settings-option:hover {
+  border-color: #334155;
+  color: #a7f3d0;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.settings-option[aria-disabled='true'] {
+  pointer-events: none;
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+`
+
 export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, signOutAction }) => {
+  useStylesScoped$(settingsStyles)
   const loc = useLocation()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()

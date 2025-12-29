@@ -1,4 +1,4 @@
-import { $, Slot, component$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, Slot, component$, useStyles$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import {
   Link,
   routeAction$,
@@ -60,6 +60,94 @@ const featureFlags = {
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
 
 const criticalCssInline = criticalCss
+
+const viewTransitionStyles = `
+@keyframes route-slide-in-right {
+  from {
+    transform: translateX(22%);
+    opacity: 0.35;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes route-slide-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-22%);
+    opacity: 0.35;
+  }
+}
+
+@keyframes route-slide-in-left {
+  from {
+    transform: translateX(-22%);
+    opacity: 0.35;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes route-slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(22%);
+    opacity: 0.35;
+  }
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-old(route),
+:root.supports-view-transition[data-vt-direction='left']::view-transition-new(route),
+:root.supports-view-transition[data-vt-direction='right']::view-transition-old(route),
+:root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-old(route) {
+  animation-name: route-slide-out-left;
+}
+
+:root.supports-view-transition[data-vt-direction='left']::view-transition-new(route) {
+  animation-name: route-slide-in-right;
+}
+
+:root.supports-view-transition[data-vt-direction='right']::view-transition-old(route) {
+  animation-name: route-slide-out-right;
+}
+
+:root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
+  animation-name: route-slide-in-left;
+}
+
+:root.supports-view-transition::view-transition-group(settings-panel) {
+  z-index: 60;
+}
+
+:root.supports-view-transition::view-transition-old(settings-panel),
+:root.supports-view-transition::view-transition-new(settings-panel) {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.supports-view-transition::view-transition-old(route),
+  :root.supports-view-transition::view-transition-new(route) {
+    animation: none;
+  }
+}
+`
 
 const primeLocaleStore = () => {
   locales.forEach((locale) => {
@@ -659,6 +747,7 @@ export const RouterHead = component$(() => {
 
 export default component$(() => {
   useStylesScoped$(layoutStyles)
+  useStyles$(viewTransitionStyles)
   useVisibleTask$(() => {
     const resolved = getLocale()
     const target = locales.includes(resolved as any) ? (resolved as Locale) : defaultLocale

@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useStyles$, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { resolveWebSocketUrl } from '../../../server/auth/session'
@@ -14,6 +14,31 @@ import {
 type CubicBezier = readonly [number, number, number, number]
 const entranceEase: CubicBezier = [0.16, 1, 0.3, 1]
 const exitEase: CubicBezier = [0.4, 0, 1, 1]
+
+const storeRevealStyles = `
+:root[data-js='true'] [data-reveal='pending'][data-reveal-item],
+:root[data-js='true'] [data-reveal='pending'] [data-reveal-item] {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0) scale(0.99);
+}
+
+@keyframes store-item-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-store-ssr-item] {
+    animation: store-item-reveal 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+`
 
 const prefersReducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -52,6 +77,7 @@ const animateElements = async (elements: HTMLElement[], frames: Keyframe[], opti
 }
 
 export const StoreIsland = component$(() => {
+  useStyles$(storeRevealStyles)
   const initial = useStoreItemsLoader()
   const items = useSignal<StoreItem[]>(initial.value.items)
   const cursor = useSignal<number | null>(initial.value.cursor)

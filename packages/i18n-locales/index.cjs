@@ -18,9 +18,15 @@ const normalizeDictionary = (locale, payload) => {
   return dictionary
 }
 
+const hasTranslations = (entry) => {
+  const translations = entry?.translations
+  if (!translations || typeof translations !== 'object') return false
+  return Object.keys(translations).length > 0
+}
+
 const loadLocaleData = async (locale) => {
   const existing = store[locale]
-  if (existing?.translations) return existing
+  if (hasTranslations(existing)) return existing
 
   if (!supportedLocales.includes(locale)) throw new Error(`Unsupported locale "${locale}"`)
 

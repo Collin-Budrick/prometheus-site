@@ -22,12 +22,6 @@ const loadDictionary = async (locale: Locale) => {
     return locale
   }
 
-  const hadPlaceholder = Boolean(existing && translations && translationCount === 0)
-  if (hadPlaceholder) {
-    // Clear placeholder entries so the lazy loader doesn't short-circuit.
-    delete localeStore[locale]
-  }
-
   try {
     const loaded = await loadLocaleData(locale)
     ensureFallbackLocale(locale, loaded)
@@ -37,9 +31,6 @@ const loadDictionary = async (locale: Locale) => {
     }
     return locale
   } catch (err) {
-    if (hadPlaceholder && existing) {
-      localeStore[locale] = existing
-    }
     throw err
   }
 }
