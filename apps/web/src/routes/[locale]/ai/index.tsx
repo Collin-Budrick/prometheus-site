@@ -1,9 +1,7 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import type { GpuTier } from '../../../components/gpu/capability-probe'
-import type { NpuTier } from '../../../components/gpu/npu-probe'
-import type { AccelerationTarget } from '../../../config/ai-acceleration'
+import type { AccelerationTarget } from './acceleration'
 import type { AiDeviceCapabilities } from '../../../workers/ai-inference.worker'
 import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
@@ -15,10 +13,6 @@ export default component$(() => {
   const selectedAcceleration = useSignal<AccelerationTarget>('npu')
   const accelerationReady = useSignal(false)
   const manualOverride = useSignal(false)
-  const gpuTier = useSignal<GpuTier>('unavailable')
-  const npuTier = useSignal<NpuTier>('unavailable')
-  const adapterLimits = useSignal<AiDeviceCapabilities['adapter'] | undefined>(undefined)
-  const deviceMemory = useSignal<number | null>(null)
   const capabilities = useSignal<AiDeviceCapabilities>({})
 
   const handleAutoSelect = $((target: AccelerationTarget) => {
@@ -45,18 +39,6 @@ export default component$(() => {
       }
     }
     capabilities.value = next
-    if (partial.gpuTier) {
-      gpuTier.value = partial.gpuTier
-    }
-    if (partial.npuTier) {
-      npuTier.value = partial.npuTier
-    }
-    if (partial.adapter) {
-      adapterLimits.value = partial.adapter
-    }
-    if (partial.deviceMemory !== undefined) {
-      deviceMemory.value = partial.deviceMemory
-    }
   })
 
   useVisibleTask$(() => {
@@ -81,12 +63,10 @@ export default component$(() => {
       </p>
 
       <GpuProbeIsland
-        selectedAcceleration={selectedAcceleration.value}
+        acceleration={selectedAcceleration.value}
         onAutoSelect$={handleAutoSelect}
-        onAccelerationSelect$={handleManualSelect}
-        onTierDetected$={$((tier) => updateCapabilities({ gpuTier: tier }))}
-        onNpuTierDetected$={$((tier) => updateCapabilities({ npuTier: tier }))}
-        onCapabilitiesDetected$={updateCapabilities}
+        onManualSelect$={handleManualSelect}
+        onCapabilities$={updateCapabilities}
       />
 
       <div class="mt-6 space-y-6" onQVisible$={$(() => undefined)}>
