@@ -2,6 +2,11 @@ import { describe, expect, it, mock } from 'bun:test'
 
 mock.module('@qwik-city-plan', () => ({ default: {} }))
 mock.module('@qwik-city-sw-register', () => ({ default: () => {} }))
+mock.module('compiled-i18n', () => ({
+  locales: ['en', 'ko'],
+  defaultLocale: 'en',
+  guessLocale: () => 'en'
+}))
 
 const { resolveLocaleRedirect } = await import('../src/routes/plugin@locale')
 const { resolvePreferredLocaleLoader } = await import('../src/routes/_shared/locale/locale-routing')
@@ -10,6 +15,10 @@ describe('resolveLocaleRedirect', () => {
   it('rewrites locale query params into the path prefix', () => {
     expect(resolveLocaleRedirect('/ai', '?locale=en', 'en')).toBe('/en/ai')
     expect(resolveLocaleRedirect('/en/ai', '?locale=ko', 'ko')).toBe('/ko/ai')
+  })
+
+  it('preserves the trailing slash when redirecting the root path', () => {
+    expect(resolveLocaleRedirect('/', '?locale=en', 'en')).toBe('/en/')
   })
 
   it('removes the locale query param while preserving other search params', () => {
