@@ -95,7 +95,9 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
   const hmrProtocol = normalizeEnvValue(process.env.HMR_PROTOCOL)?.toLowerCase() === 'wss' ? 'wss' : 'ws'
   const hmrClientPort = numberFromEnv(process.env.HMR_CLIENT_PORT, hmrPort)
 
-  const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
+  const isWsl =
+    process.platform === 'linux' &&
+    Boolean(process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
   const isWindowsFs = isWsl && process.cwd().startsWith('/mnt/')
   const isDocker = (() => {
     if (fs.existsSync('/.dockerenv')) return true

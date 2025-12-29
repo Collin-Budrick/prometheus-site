@@ -6,7 +6,7 @@ import { prepareDatabase } from '../db/prepare'
 import { chatMessages, storeItems } from '../db/schema'
 import { connectValkey, isValkeyReady, valkey } from '../services/cache'
 import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache-helpers'
-import { getClientIp, resolveWsClientIp, resolveWsHeaders } from './network'
+import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from './network'
 import { checkQuota, setCleanupInterval } from './rate-limit'
 import { shouldRunMigrations } from './runtime-flags'
 import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
@@ -334,9 +334,13 @@ const app = new Elysia()
     }
   )
   .ws('/store/ws', {
+    upgrade(context) {
+      return { headers: context.request.headers, request: context.request }
+    },
     async open(ws) {
       const clientIp = resolveWsClientIp(ws)
       const headers = resolveWsHeaders(ws)
+      const request = resolveWsRequest(ws)
       const { allowed, retryAfter } = await checkWsOpenQuota('/store/ws', clientIp)
       if (!allowed) {
         ws.send(
@@ -352,7 +356,7 @@ const app = new Elysia()
 
       let sessionPayload: { user?: WsUser } | null = null
       try {
-        const sessionResponse = await validateSession({ headers })
+        const sessionResponse = await validateSession({ headers, request })
         if (sessionResponse.ok) {
           sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
         }
@@ -444,13 +448,17 @@ const app = new Elysia()
     }
   })
   .ws('/ws', {
+    upgrade(context) {
+      return { headers: context.request.headers, request: context.request }
+    },
     async open(ws) {
       const clientIp = resolveWsClientIp(ws)
       const headers = resolveWsHeaders(ws)
+      const request = resolveWsRequest(ws)
 
       let sessionPayload: { user?: WsUser } | null = null
       try {
-        const sessionResponse = await validateSession({ headers })
+        const sessionResponse = await validateSession({ headers, request })
         if (sessionResponse.ok) {
           sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
         }

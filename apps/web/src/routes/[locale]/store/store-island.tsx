@@ -75,6 +75,7 @@ export const StoreIsland = component$(() => {
   const heartbeatInterval = useSignal<number | null>(null)
   const heartbeatTimeout = useSignal<number | null>(null)
   const realtimeBanner = useSignal<{ state: 'reconnecting' | 'failed'; message: string } | null>(null)
+  const reconnectBlocked = useSignal(false)
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const updateAction = useUpdateStoreItem()
@@ -299,8 +300,9 @@ export const StoreIsland = component$(() => {
       return { id, name, price }
     }
 
-    const scheduleReconnect = () => {
+    const scheduleReconnect = (delayOverride?: number) => {
       if (!active) return
+      if (reconnectBlocked.value) return
       if (reconnectTimer.value) return
       const nextAttempt = reconnectAttempts.value + 1
       reconnectAttempts.value = nextAttempt
@@ -312,7 +314,7 @@ export const StoreIsland = component$(() => {
         updateStatus('error')
         return
       }
-      const delay = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (nextAttempt - 1))
+      const delay = delayOverride ?? Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (nextAttempt - 1))
       realtimeBanner.value = {
         state: 'reconnecting',
         message: _`Reconnecting (attempt ${nextAttempt})`
@@ -371,7 +373,13 @@ export const StoreIsland = component$(() => {
           return
         }
         if (!payload || typeof payload !== 'object') return
-        const record = payload as { type?: unknown; item?: unknown; id?: unknown; error?: unknown }
+        const record = payload as {
+          type?: unknown
+          item?: unknown
+          id?: unknown
+          error?: unknown
+          retryAfter?: unknown
+        }
 
         if (record.type === 'pong') {
           if (heartbeatTimeout.value) {
@@ -411,15 +419,32 @@ export const StoreIsland = component$(() => {
               : _`Realtime offline. Please refresh to retry.`
           realtimeBanner.value = { state: 'failed', message }
           updateStatus('error')
+          const authError = typeof record.error === 'string' && /auth/i.test(record.error)
+          if (authError) {
+            reconnectBlocked.value = true
+            return
+          }
+          const retryAfter =
+            typeof record.retryAfter === 'number' && Number.isFinite(record.retryAfter) && record.retryAfter > 0
+              ? record.retryAfter
+              : null
+          if (retryAfter) {
+            scheduleReconnect(Math.max(BASE_BACKOFF_MS, retryAfter * 1000))
+          }
         }
       }
       ws.onerror = () => {
+        if (reconnectBlocked.value) return
         realtimeBanner.value = { state: 'reconnecting', message: _`Reconnecting...` }
         scheduleReconnect()
       }
       ws.onclose = () => {
         clearHeartbeatTimers()
         if (!active) return
+        if (reconnectBlocked.value) {
+          updateStatus('error')
+          return
+        }
         updateStatus('disconnected')
         scheduleReconnect()
       }
@@ -508,6 +533,7 @@ export const StoreIsland = component$(() => {
     realtimeStatus.value = 'connecting'
     realtimeBanner.value = null
     reconnectAttempts.value = 0
+    reconnectBlocked.value = false
     realtimeToken.value += 1
   })
 
