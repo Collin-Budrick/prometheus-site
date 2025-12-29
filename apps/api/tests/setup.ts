@@ -284,6 +284,20 @@ const valkey = {
     cacheStorage.set(key, value)
     cacheKeysWritten.push(key)
   },
+  async keys(pattern: string) {
+    if (pattern.endsWith('*')) {
+      const prefix = pattern.slice(0, -1)
+      return Array.from(cacheStorage.keys()).filter((key) => key.startsWith(prefix))
+    }
+    return Array.from(cacheStorage.keys()).filter((key) => key === pattern)
+  },
+  async del(...keys: string[]) {
+    let removed = 0
+    keys.forEach((key) => {
+      if (cacheStorage.delete(key)) removed += 1
+    })
+    return removed
+  },
   async publish(_channel: string, message: string) {
     publishedMessages.push(message)
     for (const handler of subscribers) {
@@ -343,6 +357,12 @@ mock.module('../src/services/cache', () => ({
   }
 }))
 
+export const setValkeyReady = (ready: boolean) => {
+  valkeyReady = ready
+}
+
+export const testValkey = valkey
+
 export const apiPort = 4110
 export const apiUrl = `http://127.0.0.1:${apiPort}`
 
@@ -363,6 +383,7 @@ export const resetTestState = () => {
   authenticationChallenge = 'authenticate-challenge'
   cacheStorage.clear()
   valkeyCounters.clear()
+  valkeyReady = true
   cacheKeysWritten.splice(0, cacheKeysWritten.length)
   publishedMessages.splice(0, publishedMessages.length)
   subscribers.splice(0, subscribers.length)
