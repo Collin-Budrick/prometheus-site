@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
-import { localeParams } from '../_shared/locale/locale-routing'
+import { localeParams } from '../../_shared/locale/locale-routing'
 
 export default component$(() => {
   return (

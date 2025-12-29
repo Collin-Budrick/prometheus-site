@@ -9,7 +9,7 @@ import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 import { WebLlmIsland } from './web-llm-island'
 import { WebNnOrtIsland } from './webnn-ort-island'
-import { localeParams } from '../_shared/locale/locale-routing'
+import { localeParams } from '../../_shared/locale/locale-routing'
 
 export default component$(() => {
   const selectedAcceleration = useSignal<AccelerationTarget>('npu')
