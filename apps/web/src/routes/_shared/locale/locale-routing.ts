@@ -1,4 +1,4 @@
-import { guessLocale, locales } from 'compiled-i18n'
+import { defaultLocale, guessLocale, locales } from 'compiled-i18n'
 
 export const localeCookieOptions = {
   path: '/',
@@ -6,10 +6,20 @@ export const localeCookieOptions = {
   maxAge: 60 * 60 * 24 * 365
 }
 
+export const supportedLocales = (() => {
+  const unique = new Set(locales?.length ? locales : [defaultLocale])
+  return Array.from(unique)
+})()
+
+const supportedLocaleMap = supportedLocales.reduce((acc, locale) => {
+  acc.set(locale.toLowerCase(), locale)
+  return acc
+}, new Map<string, (typeof supportedLocales)[number]>())
+
 export const normalizeLocaleParam = (value?: string | null) => {
   if (!value) return null
   const candidate = value.toLowerCase()
-  return locales.includes(candidate as any) ? (candidate as any) : null
+  return supportedLocaleMap.get(candidate) ?? null
 }
 
 export const resolvePreferredLocale = (opts: {
@@ -29,13 +39,13 @@ export const stripLocalePrefix = (pathname: string) => {
   const match = pathname.match(/^\/([^/]+)(\/.*)?$/)
   if (!match) return pathname
   const [, firstSegment, rest] = match
-  if (firstSegment && locales.includes(firstSegment as any)) {
+  if (firstSegment && supportedLocaleMap.has(firstSegment.toLowerCase())) {
     return rest || '/'
   }
   return pathname
 }
 
-export const localeParams = locales.map((locale) => ({ locale }))
+export const localeParams = supportedLocales.map((locale) => ({ locale }))
 
 type PreferredLocaleLoaderEvent = {
   request: Request

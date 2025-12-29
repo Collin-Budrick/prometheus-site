@@ -1,6 +1,6 @@
-import { defaultLocale, locales } from 'compiled-i18n'
+import { defaultLocale } from 'compiled-i18n'
 import pageConfig from './page-config.json'
-import { stripLocalePrefix } from '../routes/_shared/locale/locale-routing'
+import { stripLocalePrefix, supportedLocales } from '../routes/_shared/locale/locale-routing'
 
 type RenderMode = 'ssr' | 'ssg'
 type SpeculationMode = 'prefetch' | 'prerender' | 'none'
@@ -63,7 +63,7 @@ export const getPrerenderRoutes = () => {
     .filter(([, routeConfig]) => (routeConfig.render ?? defaults.render) === 'ssg')
     .map(([path]) => normalizeConfigPath(path))
 
-  const localesToRender = locales?.length ? locales : [defaultLocale]
+  const localesToRender = supportedLocales?.length ? supportedLocales : [defaultLocale]
   const prerendered = new Set<string>()
 
   ssgPaths.forEach((path) => {
