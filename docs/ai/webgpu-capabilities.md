@@ -12,7 +12,7 @@ This route uses lightweight probes to assess available GPU (WebGPU) and NPU (Web
 
 ## WebGPU probe details
 
-The probe lives in `apps/web/src/components/gpu/capability-probe.ts` and runs client-side via a Qwik island (`apps/web/src/routes/[locale]/ai/gpu-probe-island.tsx`). It intentionally avoids DOM access during SSR.
+The probe lives in `apps/web/src/routes/[locale]/ai/probes/gpu-probe.ts` and runs client-side via a Qwik island (`apps/web/src/routes/[locale]/ai/gpu-probe-island.tsx`). It intentionally avoids DOM access during SSR.
 
 1. **Adapter selection**: request a `high-performance` adapter first, then fall back to `low-power`.
 2. **TypeGPU buffers**: initialize a TypeGPU root from the WebGPU device and allocate typed buffers sized with `d.arrayOf(d.u32, count)` so byte sizing stays deterministic.
@@ -30,7 +30,7 @@ The probe lives in `apps/web/src/components/gpu/capability-probe.ts` and runs cl
 
 ## WebNN (NPU) probe details
 
-The NPU probe lives in `apps/web/src/components/gpu/npu-probe.ts` and is triggered from the same island. It prefers an `npu` context when possible and falls back to `auto` to run on any device.
+The NPU probe lives in `apps/web/src/routes/[locale]/ai/probes/npu-probe.ts` and is triggered from the same island. It prefers an `npu` context when possible and falls back to `auto` to run on any device.
 
 1. **Context selection**: attempt `deviceType: 'npu'` (high-performance), then fall back to `deviceType: 'auto'`.
 2. **Graph build**: create a small matmul graph with a square input/weight tensor (default 256 x 256).
@@ -50,7 +50,7 @@ The NPU probe lives in `apps/web/src/components/gpu/npu-probe.ts` and is trigger
 
 - The island runs both probes in `useVisibleTask$` and exposes a re-run button.
 - Status messages cover running, unavailable, error, and complete states for WebGPU and WebNN.
-- When a tier is detected, it emits via `onTierDetected$` (GPU) and `onNpuTierDetected$` so parents can react (e.g., adjust model picks).
+- When a tier is detected, it emits aggregated capability data so parents can react (e.g., adjust model picks).
 
 ## Safety notes
 

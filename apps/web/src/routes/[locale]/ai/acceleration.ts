@@ -1,5 +1,5 @@
-import type { GpuTier } from '../components/gpu/capability-probe'
-import type { NpuTier } from '../components/gpu/npu-probe'
+import type { GpuTier } from './probes/gpu-probe'
+import type { NpuTier } from './probes/npu-probe'
 
 export type AccelerationTarget = 'gpu' | 'npu'
 export type AccelerationPreference = 'auto' | AccelerationTarget

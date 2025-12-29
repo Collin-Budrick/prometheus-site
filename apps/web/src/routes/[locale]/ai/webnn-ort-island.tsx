@@ -1,6 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
-import type { AccelerationTarget } from '../../../config/ai-acceleration'
+import type { AccelerationTarget } from './acceleration'
 import {
   defaultWebNnModelId,
   onnxCommunityModelPrefix,

@@ -1,20 +1,18 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { _ } from 'compiled-i18n'
-import type { AccelerationTarget } from '../../../config/ai-acceleration'
-import { pickAccelerationTarget } from '../../../config/ai-acceleration'
-import type { GpuProbeResult, GpuTier } from '../../../components/gpu/capability-probe'
-import { probeGpuCapabilities } from '../../../components/gpu/capability-probe'
-import type { NpuProbeResult, NpuTier } from '../../../components/gpu/npu-probe'
-import { probeNpuCapabilities } from '../../../components/gpu/npu-probe'
+import type { AccelerationTarget } from './acceleration'
+import { pickAccelerationTarget } from './acceleration'
+import type { GpuProbeResult } from './probes/gpu-probe'
+import { probeGpuCapabilities } from './probes/gpu-probe'
+import type { NpuProbeResult } from './probes/npu-probe'
+import { probeNpuCapabilities } from './probes/npu-probe'
 import type { AiDeviceCapabilities } from '../../../workers/ai-inference.worker'
 
 interface Props {
-  selectedAcceleration?: AccelerationTarget
-  onAccelerationSelect$?: (target: AccelerationTarget) => void
+  acceleration?: AccelerationTarget
+  onManualSelect$?: (target: AccelerationTarget) => void
   onAutoSelect$?: (target: AccelerationTarget) => void
-  onTierDetected$?: (tier: GpuTier) => void
-  onNpuTierDetected$?: (tier: NpuTier) => void
-  onCapabilitiesDetected$?: (capabilities: AiDeviceCapabilities) => void
+  onCapabilities$?: (capabilities: AiDeviceCapabilities) => void
 }
 
 const PROBE_TIMEOUT_MS = 5_000
@@ -56,35 +54,20 @@ const resolveDeviceMemory = () => {
   return typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : undefined
 }
 
-export const GpuProbeIsland = component$<Props>(
-  ({
-    selectedAcceleration,
-    onAccelerationSelect$,
-    onAutoSelect$,
-    onTierDetected$,
-    onNpuTierDetected$,
-    onCapabilitiesDetected$
-  }) => {
+export const GpuProbeIsland = component$<Props>(({ acceleration, onManualSelect$, onAutoSelect$, onCapabilities$ }) => {
   const gpuStatus = useSignal<GpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const npuStatus = useSignal<NpuProbeResult>({ status: 'unavailable', tier: 'unavailable' })
   const applyResults = $(async (gpuResult: GpuProbeResult, npuResult: NpuProbeResult) => {
     gpuStatus.value = gpuResult
     npuStatus.value = npuResult
 
-    if (gpuResult.status === 'complete' && onTierDetected$) {
-      await onTierDetected$(gpuResult.tier)
-    }
-    if (npuResult.status === 'complete' && onNpuTierDetected$) {
-      await onNpuTierDetected$(npuResult.tier)
-    }
-
-    if (onCapabilitiesDetected$) {
+    if (onCapabilities$) {
       const deviceMemory = gpuResult.deviceMemory ?? resolveDeviceMemory()
       const hardwareConcurrency =
         typeof navigator !== 'undefined' && Number.isFinite(navigator.hardwareConcurrency)
           ? navigator.hardwareConcurrency
           : null
-      await onCapabilitiesDetected$({
+      await onCapabilities$({
         gpuTier: gpuResult.tier,
         npuTier: npuResult.tier,
         adapter: gpuResult.adapterLimits,
@@ -174,16 +157,16 @@ export const GpuProbeIsland = component$<Props>(
         <button
           type="button"
           class={`rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 ${
-            selectedAcceleration === 'gpu'
+            acceleration === 'gpu'
               ? 'border-emerald-400/60 bg-emerald-500/10 ring-1 ring-emerald-400/30'
               : 'border-slate-800/70 bg-slate-950/40 hover:border-slate-700/80'
           }`}
-          aria-pressed={selectedAcceleration === 'gpu'}
-          onClick$={$(() => onAccelerationSelect$?.('gpu'))}
+          aria-pressed={acceleration === 'gpu'}
+          onClick$={$(() => onManualSelect$?.('gpu'))}
         >
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs uppercase tracking-wide text-emerald-300">{_`WebGPU`}</p>
-            {selectedAcceleration === 'gpu' && (
+            {acceleration === 'gpu' && (
               <span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-100">
                 {_`Selected`}
               </span>
@@ -226,16 +209,16 @@ export const GpuProbeIsland = component$<Props>(
         <button
           type="button"
           class={`rounded-md border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ${
-            selectedAcceleration === 'npu'
+            acceleration === 'npu'
               ? 'border-cyan-400/60 bg-cyan-500/10 ring-1 ring-cyan-400/30'
               : 'border-slate-800/70 bg-slate-950/40 hover:border-slate-700/80'
           }`}
-          aria-pressed={selectedAcceleration === 'npu'}
-          onClick$={$(() => onAccelerationSelect$?.('npu'))}
+          aria-pressed={acceleration === 'npu'}
+          onClick$={$(() => onManualSelect$?.('npu'))}
         >
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs uppercase tracking-wide text-cyan-300">{_`WebNN / NPU`}</p>
-            {selectedAcceleration === 'npu' && (
+            {acceleration === 'npu' && (
               <span class="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
                 {_`Selected`}
               </span>
@@ -283,5 +266,4 @@ export const GpuProbeIsland = component$<Props>(
       </div>
     </div>
   )
-  }
-)
+})
