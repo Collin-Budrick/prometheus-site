@@ -36,6 +36,10 @@
       "render": "ssr",
       "speculation": "none"
     },
+    "/reset": {
+      "render": "ssr",
+      "speculation": "none"
+    },
     "/dashboard": {
       "render": "ssr",
       "speculation": "prefetch"

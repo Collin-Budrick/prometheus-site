@@ -1,9 +1,18 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import { routeLoader$, type DocumentHead } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { ChatIsland } from './chat-island'
+import { fetchSessionFromApi } from '../../../server/auth/session'
+
+export const useChatSession = routeLoader$(async (event) => {
+  const session = await fetchSessionFromApi(event)
+  return {
+    hasSession: Boolean(session?.session)
+  }
+})
 
 export default component$(() => {
+  const session = useChatSession()
   return (
     <section class="surface p-6">
       <div class="flex items-center justify-between gap-2">
@@ -18,7 +27,7 @@ export default component$(() => {
       </p>
 
       <div onQVisible$={() => undefined}>
-        <ChatIsland />
+        <ChatIsland signedIn={session.value.hasSession} />
       </div>
     </section>
   )

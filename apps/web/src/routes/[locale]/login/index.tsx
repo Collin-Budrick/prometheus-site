@@ -137,6 +137,7 @@ export default component$(() => {
   )
   const localePrefix = location.params.locale ? `/${location.params.locale}` : ''
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(callback.value)}`
+  const resetHref = `${localePrefix}/reset`
   const passkeyStatus = useSignal<'idle' | 'pending' | 'error'>('idle')
   const passkeyError = useSignal<string>('')
   const passkeyRedirect = useSignal<string | null>(null)
@@ -237,7 +238,7 @@ export default component$(() => {
           </button>
           <a
             class="self-start text-sm font-medium text-emerald-300 hover:text-emerald-200"
-            href="/reset"
+            href={resetHref}
             data-speculate="false"
             rel="nofollow"
           >

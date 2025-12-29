@@ -70,6 +70,11 @@ export const StoreIsland = component$(() => {
   const removingIds = useSignal<Record<number, true>>({})
   const realtimeStatus = useSignal<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle')
   const realtimeToken = useSignal(0)
+  const reconnectAttempts = useSignal(0)
+  const reconnectTimer = useSignal<number | null>(null)
+  const heartbeatInterval = useSignal<number | null>(null)
+  const heartbeatTimeout = useSignal<number | null>(null)
+  const realtimeBanner = useSignal<{ state: 'reconnecting' | 'failed'; message: string } | null>(null)
   const createAction = useCreateStoreItem()
   const deleteAction = useDeleteStoreItem()
   const updateAction = useUpdateStoreItem()
@@ -208,14 +213,32 @@ export const StoreIsland = component$(() => {
     track(() => realtimeToken.value)
     if (typeof window === 'undefined') return
 
-    realtimeStatus.value = 'connecting'
-    const url = resolveWebSocketUrl('/api/store/ws')
-    if (!url) {
-      realtimeStatus.value = 'error'
-      return
-    }
-    const ws = new WebSocket(url)
     const currentToken = realtimeToken.value
+    const HEARTBEAT_INTERVAL_MS = 15000
+    const HEARTBEAT_TIMEOUT_MS = 8000
+    const MAX_RECONNECT_ATTEMPTS = 6
+    const BASE_BACKOFF_MS = 800
+    const MAX_BACKOFF_MS = 20000
+    let ws: WebSocket | null = null
+    let active = true
+
+    const clearHeartbeatTimers = () => {
+      if (heartbeatInterval.value) {
+        clearInterval(heartbeatInterval.value)
+        heartbeatInterval.value = null
+      }
+      if (heartbeatTimeout.value) {
+        clearTimeout(heartbeatTimeout.value)
+        heartbeatTimeout.value = null
+      }
+    }
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer.value) {
+        clearTimeout(reconnectTimer.value)
+        reconnectTimer.value = null
+      }
+    }
 
     const updateStatus = (status: 'connecting' | 'connected' | 'disconnected' | 'error') => {
       if (realtimeToken.value !== currentToken) return
@@ -276,43 +299,139 @@ export const StoreIsland = component$(() => {
       return { id, name, price }
     }
 
-    ws.onopen = () => {
-      updateStatus('connected')
+    const scheduleReconnect = () => {
+      if (!active) return
+      if (reconnectTimer.value) return
+      const nextAttempt = reconnectAttempts.value + 1
+      reconnectAttempts.value = nextAttempt
+      if (nextAttempt > MAX_RECONNECT_ATTEMPTS) {
+        realtimeBanner.value = {
+          state: 'failed',
+          message: _`Realtime offline. Please refresh to retry.`
+        }
+        updateStatus('error')
+        return
+      }
+      const delay = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (nextAttempt - 1))
+      realtimeBanner.value = {
+        state: 'reconnecting',
+        message: _`Reconnecting (attempt ${nextAttempt})`
+      }
+      updateStatus('connecting')
+      reconnectTimer.value = window.setTimeout(() => {
+        reconnectTimer.value = null
+        connect()
+      }, delay)
     }
-    ws.onmessage = (event) => {
-      let payload: unknown
+
+    const handleHeartbeat = () => {
+      if (!ws) return
       try {
-        payload = JSON.parse(event.data)
+        ws.send(JSON.stringify({ type: 'ping' }))
       } catch {
+        ws.close()
         return
       }
-      if (!payload || typeof payload !== 'object') return
-      const record = payload as { type?: unknown; item?: unknown; id?: unknown }
+      if (heartbeatTimeout.value) {
+        clearTimeout(heartbeatTimeout.value)
+      }
+      heartbeatTimeout.value = window.setTimeout(() => {
+        updateStatus('error')
+        ws?.close()
+      }, HEARTBEAT_TIMEOUT_MS)
+    }
 
-      if (record.type === 'store:upsert') {
-        const incoming = coerceItem(record.item)
-        if (incoming) {
-          upsertItem(incoming)
+    const connect = () => {
+      clearReconnectTimer()
+      clearHeartbeatTimers()
+      const url = resolveWebSocketUrl('/api/store/ws')
+      if (!url) {
+        realtimeBanner.value = {
+          state: 'failed',
+          message: _`Realtime offline. Please refresh to retry.`
         }
+        updateStatus('error')
         return
       }
+      updateStatus('connecting')
+      ws = new WebSocket(url)
+      ws.onopen = () => {
+        reconnectAttempts.value = 0
+        realtimeBanner.value = null
+        updateStatus('connected')
+        clearHeartbeatTimers()
+        heartbeatInterval.value = window.setInterval(handleHeartbeat, HEARTBEAT_INTERVAL_MS)
+        handleHeartbeat()
+      }
+      ws.onmessage = (event) => {
+        let payload: unknown
+        try {
+          payload = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        if (!payload || typeof payload !== 'object') return
+        const record = payload as { type?: unknown; item?: unknown; id?: unknown; error?: unknown }
 
-      if (record.type === 'store:delete') {
-        const id = Number(record.id)
-        if (Number.isFinite(id) && id > 0) {
-          removeItem(id)
+        if (record.type === 'pong') {
+          if (heartbeatTimeout.value) {
+            clearTimeout(heartbeatTimeout.value)
+            heartbeatTimeout.value = null
+          }
+          return
+        }
+
+        if (record.type === 'store:upsert') {
+          const incoming = coerceItem(record.item)
+          if (incoming) {
+            upsertItem(incoming)
+          }
+          return
+        }
+
+        if (record.type === 'ping') {
+          try {
+            ws?.send(JSON.stringify({ type: 'pong' }))
+          } catch {}
+          return
+        }
+
+        if (record.type === 'store:delete') {
+          const id = Number(record.id)
+          if (Number.isFinite(id) && id > 0) {
+            removeItem(id)
+          }
+          return
+        }
+
+        if (record.type === 'error') {
+          const message =
+            typeof record.error === 'string' && record.error.trim().length > 0
+              ? record.error
+              : _`Realtime offline. Please refresh to retry.`
+          realtimeBanner.value = { state: 'failed', message }
+          updateStatus('error')
         }
       }
+      ws.onerror = () => {
+        realtimeBanner.value = { state: 'reconnecting', message: _`Reconnecting...` }
+        scheduleReconnect()
+      }
+      ws.onclose = () => {
+        clearHeartbeatTimers()
+        if (!active) return
+        updateStatus('disconnected')
+        scheduleReconnect()
+      }
     }
-    ws.onerror = () => {
-      updateStatus('error')
-    }
-    ws.onclose = () => {
-      updateStatus('disconnected')
-    }
+
+    connect()
 
     cleanup(() => {
-      ws.close()
+      active = false
+      clearReconnectTimer()
+      clearHeartbeatTimers()
+      ws?.close()
     })
   })
 
@@ -387,6 +506,8 @@ export const StoreIsland = component$(() => {
 
   const reconnectRealtime = $(() => {
     realtimeStatus.value = 'connecting'
+    realtimeBanner.value = null
+    reconnectAttempts.value = 0
     realtimeToken.value += 1
   })
 
@@ -490,6 +611,15 @@ export const StoreIsland = component$(() => {
             )}
           </div>
         </div>
+        {realtimeBanner.value && (
+          <p
+            class={`text-xs ${
+              realtimeBanner.value.state === 'failed' ? 'text-rose-300' : 'text-amber-300'
+            }`}
+          >
+            {realtimeBanner.value.message}
+          </p>
+        )}
         {isFallback.value && (
           <p class="text-amber-300 text-xs">{_`Showing fallback data while the database is unavailable.`}</p>
         )}
