@@ -1,6 +1,7 @@
 import { $, component$, getLocale, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Form, type ActionStore, useLocation } from '@builder.io/qwik-city'
 import { _, localeNames, locales } from 'compiled-i18n'
+import { getSpeculationMode } from '../config/page-config'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
@@ -309,6 +310,8 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
   const dashboardPath = `${localePrefix}/dashboard`
   const loginHref = `${localePrefix}/login?callback=${encodeURIComponent(dashboardPath)}`
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(dashboardPath)}`
+  const loginSpeculation = getSpeculationMode('/login')
+  const registerSpeculation = getSpeculationMode('/register')
 
   return (
     <details ref={menuRef} class="settings-menu animated-details">
@@ -368,10 +371,10 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
                 ) : null
               ) : (
                 <>
-                  <a class="settings-option" href={loginHref}>
+                  <a class="settings-option" href={loginHref} data-speculate={loginSpeculation}>
                     {_`Login`}
                   </a>
-                  <a class="settings-option" href={registerHref}>
+                  <a class="settings-option" href={registerHref} data-speculate={registerSpeculation}>
                     {_`Create an account`}
                   </a>
                 </>
