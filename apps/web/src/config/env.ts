@@ -17,11 +17,26 @@ type EnvLoadOptions = {
   isPreview?: boolean
 }
 
-const pickEnv = (...candidates: Array<string | undefined>) => candidates.find((value) => value !== undefined)
+const normalizeEnvValue = (value: string | undefined) => {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+const pickEnv = (...candidates: Array<string | undefined>) =>
+  candidates.map((value) => normalizeEnvValue(value)).find((value) => value !== undefined)
 const numberFromEnv = (value: string | undefined, fallback: number) => {
-  if (value === undefined) return fallback
-  const parsed = z.coerce.number().int().safeParse(value)
-  return parsed.success ? parsed.data : Number.NaN
+  const normalized = normalizeEnvValue(value)
+  if (normalized === undefined) return fallback
+  const parsed = z.coerce.number().int().safeParse(normalized)
+  return parsed.success ? parsed.data : fallback
+}
+const truthyValues = new Set(['1', 'true', 'yes', 'on'])
+const falsyValues = new Set(['0', 'false', 'no', 'off'])
+const booleanFromEnv = (value: string | undefined, fallback: boolean) => {
+  const normalized = normalizeEnvValue(value)?.toLowerCase()
+  if (!normalized) return fallback
+  if (truthyValues.has(normalized)) return true
+  if (falsyValues.has(normalized)) return false
+  return fallback
 }
 
 const ensureString = (value: string | undefined, fallback: string, name: string) => {
@@ -64,19 +79,20 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
   const command = options.command ?? 'serve'
   const mode = options.mode ?? (command === 'serve' ? 'development' : 'production')
   const nodeEnv = process.env.NODE_ENV?.trim() ?? mode
-  const allowDevDefaults = nodeEnv !== 'production' || command === 'build' || options.isPreview === true
+  const previewEnabled = booleanFromEnv(process.env.VITE_PREVIEW, options.isPreview ?? false)
+  const allowDevDefaults = nodeEnv !== 'production' || command === 'build' || previewEnabled
 
   const devPort = numberFromEnv(process.env.WEB_PORT, 4173)
   const previewPort = numberFromEnv(pickEnv(process.env.WEB_PREVIEW_PORT, process.env.PREVIEW_PORT), 4174)
-  const devAuditMode = process.env.VITE_DEV_AUDIT === '1'
+  const devAuditMode = booleanFromEnv(process.env.VITE_DEV_AUDIT, false)
 
   if (devAuditMode) {
     console.warn('VITE_DEV_AUDIT enabled: HMR is disabled and dev will full reload on every change.')
   }
-  const previewCacheEnabled = process.env.VITE_PREVIEW_CACHE === '1'
+  const previewCacheEnabled = booleanFromEnv(process.env.VITE_PREVIEW_CACHE, false)
   const hmrPort = numberFromEnv(pickEnv(process.env.HMR_PORT, process.env.WEB_PORT), 4173)
-  const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? undefined
-  const hmrProtocol = process.env.HMR_PROTOCOL === 'wss' ? 'wss' : 'ws'
+  const hmrHost = pickEnv(process.env.HMR_HOST, process.env.WEB_HOST)
+  const hmrProtocol = normalizeEnvValue(process.env.HMR_PROTOCOL)?.toLowerCase() === 'wss' ? 'wss' : 'ws'
   const hmrClientPort = numberFromEnv(process.env.HMR_CLIENT_PORT, hmrPort)
 
   const isWsl = process.platform === 'linux' && (process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'))
@@ -90,8 +106,8 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
       return false
     }
   })()
-  const shouldUseHmrPolling = process.env.VITE_HMR_POLLING === '1' || isWindowsFs || isDocker
-  const shouldSkipMdx = process.env.QWIK_CITY_DISABLE_MDX === '1' || (isWindowsFs && process.env.QWIK_CITY_DISABLE_MDX !== '0')
+  const shouldUseHmrPolling = booleanFromEnv(process.env.VITE_HMR_POLLING, false) || isWindowsFs || isDocker
+  const shouldSkipMdx = booleanFromEnv(process.env.QWIK_CITY_DISABLE_MDX, isWindowsFs)
 
   if (shouldSkipMdx) {
     process.env.QWIK_CITY_DISABLE_MDX = '1'
@@ -106,8 +122,8 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
         clientPort: hmrClientPort
       }
 
-  const analyzeBundles = process.env.VITE_ANALYZE === '1'
-  const codeInspectorEnabled = process.env.VITE_CODE_INSPECTOR === '1'
+  const analyzeBundles = booleanFromEnv(process.env.VITE_ANALYZE, false)
+  const codeInspectorEnabled = booleanFromEnv(process.env.VITE_CODE_INSPECTOR, false)
   const betterAuthSecret = process.env.BETTER_AUTH_SECRET ?? process.env.BETTER_AUTH_COOKIE_SECRET
   const secretName = process.env.BETTER_AUTH_SECRET ? 'BETTER_AUTH_SECRET' : 'BETTER_AUTH_COOKIE_SECRET'
   const betterAuthCookieSecret = allowDevDefaults
@@ -137,6 +153,7 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
   return {
     devPort,
     previewPort,
+    previewEnabled,
     devAuditMode,
     previewCacheEnabled,
     shouldUseHmrPolling,

@@ -56,7 +56,7 @@ const RoutesWithLocaleSync = component$(() => {
 export default component$(() => {
 
   useVisibleTask$(() => {
-    if (import.meta.env.VITE_PREVIEW !== '1') return
+    if (!toBoolean(import.meta.env.VITE_PREVIEW, false)) return
     if (typeof window === 'undefined') return
 
     const setStatus = (status: string) => {

@@ -121,7 +121,7 @@ export const onRequest: RequestHandler = async ({
   }
   locale(requested)
 
-  const previewCacheEnabled = typeof process !== 'undefined' && process.env.VITE_PREVIEW_CACHE === '1'
+  const previewCacheEnabled = typeof process !== 'undefined' && toBoolean(process.env.VITE_PREVIEW_CACHE, false)
 
   if (import.meta.env.PROD && request.method === 'GET') {
     const routeConfig = getPageConfig(pathname)

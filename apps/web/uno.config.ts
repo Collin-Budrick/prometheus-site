@@ -10,14 +10,6 @@ import type { IconifyJSON } from '@iconify/types'
 
 /* cspell:ignore preflights iconify */
 
-const variantLight = (matcher: string) => {
-  if (!matcher.startsWith('light:')) return
-  return {
-    matcher: matcher.slice('light:'.length),
-    selector: (input: string) => `.light ${input}, [data-theme="light"] ${input}`
-  }
-}
-
 export default defineConfig({
   content: {
     pipeline: {
@@ -34,9 +26,6 @@ export default defineConfig({
     })
   ],
   transformers: [transformerDirectives(), transformerVariantGroup()],
-  variants: [
-    variantLight
-  ],
   shortcuts: {
     'app-shell': 'min-h-screen bg-slate-950 text-slate-100 font-sans antialiased',
     'surface': 'rounded-xl border border-slate-800 bg-slate-900',

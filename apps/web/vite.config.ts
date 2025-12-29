@@ -94,7 +94,6 @@ const patchNodeModuleRuntime = (): Plugin => {
 export default defineConfig((configEnv) => {
   const ssrBuild =
     (configEnv as { ssrBuild?: boolean }).ssrBuild ?? (configEnv as { isSsrBuild?: boolean }).isSsrBuild ?? false
-  const isPreview = (configEnv as { isPreview?: boolean }).isPreview ?? false
   const mode = configEnv.mode ?? (configEnv.command === 'serve' ? 'development' : 'production')
   const viteEnv = {
     ...loadViteEnv(mode, repoRoot, ''),
@@ -105,7 +104,8 @@ export default defineConfig((configEnv) => {
       process.env[key] = value
     }
   }
-  const env = loadEnv({ command: configEnv.command, mode, isPreview })
+  const env = loadEnv({ command: configEnv.command, mode, isPreview: (configEnv as { isPreview?: boolean }).isPreview })
+  const isPreview = env.previewEnabled
   const apiUrl = process.env.API_URL?.trim() || 'http://localhost:4000'
   const rewriteApiPath = (value: string) => {
     if (value.startsWith('/api/auth')) return value
@@ -159,7 +159,6 @@ export default defineConfig((configEnv) => {
     ...(codeInspectorEnabled ? [{ find: 'code-inspector-plugin', replacement: codeInspectorPackageRoot }] : [])
   ]
 
-  const analysisPlugins = createAnalysisPlugins(env.analyzeBundles && !ssrBuild)
   const clientBuildStubs: Plugin = {
     name: 'client-build-stubs',
     enforce: 'pre',
@@ -236,29 +235,19 @@ export default defineConfig((configEnv) => {
         treeshake: treeshakeOptions
       }
 
-  const plugins: PluginOption[] = []
-  const pushPlugin = (plugin: any) => {
-    if (!plugin) return
-    if (Array.isArray(plugin)) {
-      plugins.push(...plugin)
-      return
-    }
-    plugins.push(plugin)
-  }
-
-  pushPlugin(analysisPlugins as PluginOption[])
-  pushPlugin(checkerPlugin)
-  pushPlugin(codeInspectorPlugin)
-  pushPlugin(clientBuildStubs)
-  pushPlugin(qwikCityDevEnvDataGuard())
-  pushPlugin(qwikCity({ trailingSlash: false }))
-  pushPlugin(qwikViteNoDeprecatedEsbuild())
-  pushPlugin(preserveQwikLoader())
-  pushPlugin(forceClientBundleDeps(true))
-  pushPlugin(i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }))
-  pushPlugin(tsconfigPaths())
-  pushPlugin(UnoCSS())
-  pushPlugin(
+  const plugins = [
+    createAnalysisPlugins(env.analyzeBundles && !ssrBuild),
+    checkerPlugin,
+    codeInspectorPlugin,
+    clientBuildStubs,
+    qwikCityDevEnvDataGuard(),
+    qwikCity({ trailingSlash: false }),
+    qwikViteNoDeprecatedEsbuild(),
+    preserveQwikLoader(),
+    forceClientBundleDeps(true),
+    i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }),
+    tsconfigPaths(),
+    UnoCSS(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
@@ -338,26 +327,27 @@ export default defineConfig((configEnv) => {
         ],
         manifestTransforms: [leanWorkboxManifest]
       }
-    })
-  )
-  pushPlugin(preloadPlugin)
-  pushPlugin(speculationRulesManifest())
-  pushPlugin(partytownVite({ dest: partytownDest }))
-  pushPlugin(devAuditStripViteClient(env.devAuditMode))
-  pushPlugin(devBustedViteClient(!env.devAuditMode))
-  pushPlugin(qwikCityDevEnvDataJsonSafe())
-  pushPlugin(localeBuildFallback(['en', 'ko', 'ja']))
-  pushPlugin(devFontSilencer())
-  pushPlugin(previewBrotliAssets())
-  pushPlugin(previewImmutableAssetCache(env.previewCacheEnabled))
-  pushPlugin(fixOxcAutomaticJsx())
-  pushPlugin(patchNodeModuleRuntime())
-  pushPlugin(staticCopyPlugins)
-  pushPlugin(compressionPlugin)
+    }),
+    preloadPlugin,
+    speculationRulesManifest(),
+    partytownVite({ dest: partytownDest }),
+    devAuditStripViteClient(env.devAuditMode),
+    devBustedViteClient(!env.devAuditMode),
+    qwikCityDevEnvDataJsonSafe(),
+    localeBuildFallback(['en', 'ko', 'ja']),
+    devFontSilencer(),
+    previewBrotliAssets(),
+    previewImmutableAssetCache(env.previewCacheEnabled),
+    fixOxcAutomaticJsx(),
+    patchNodeModuleRuntime(),
+    staticCopyPlugins,
+    compressionPlugin
+  ]
+    .flat()
+    .filter(Boolean) as PluginOption[]
 
   const config = {
     cacheDir,
-    builder: {},
     assetsInclude: ['**/*.wasm'],
     plugins,
     build: {

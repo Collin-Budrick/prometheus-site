@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { validateThirdPartyEnv } from './third-party'
+import { validateThirdPartyEnv } from '../src/config/third-party'
 
 describe('validateThirdPartyEnv', () => {
   it('normalizes ids and urls while preserving valid values', () => {
