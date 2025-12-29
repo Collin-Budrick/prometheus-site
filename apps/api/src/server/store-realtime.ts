@@ -122,21 +122,22 @@ const attachListener = async () => {
     listener = await pgClient.listen(
       storeUpdatesChannel,
       async (payload) => {
+        if (stopped) return
+        const emit = (event: StoreRealtimeEvent) => {
+          const currentEmit = emitCallback
+          if (!currentEmit || stopped) return
+          currentEmit(event)
+        }
         try {
-          await handleDbEvent(payload, emitCallback)
+          await handleDbEvent(payload, emit)
         } catch (error) {
           await resetListener()
           scheduleRetry(error)
         }
       },
-      (error) => {
-        if (error) {
-          console.error('Store realtime listener error', error)
-          void resetListener().finally(() => scheduleRetry(error))
-        } else {
-          retryAttempts = 0
-          console.log(`Store realtime listening on ${storeUpdatesChannel}`)
-        }
+      () => {
+        retryAttempts = 0
+        console.log(`Store realtime listening on ${storeUpdatesChannel}`)
       }
     )
   } catch (error) {

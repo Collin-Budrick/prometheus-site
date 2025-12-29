@@ -26,7 +26,7 @@
 - **OAuth start:** `POST /api/auth/sign-in/social` returns a provider URL (PKCE + state). Qwik actions redirect to the provider and pass locale-aware `callbackURL`/`errorCallbackURL`.
 - **OAuth callback:** Provider returns to `GET /api/auth/callback/:providerId`; Better Auth finalizes login and redirects to the stored callback URL.
 - **Session introspection:** SSR handlers call `GET /api/auth/session` (or verify a stateless token) to fetch the current user/session claims.
-- **Sign-out:** `POST /api/auth/sign-out` revokes the active session (and refresh token, if present) and clears cookies; Qwik UI triggers this via a server action and redirects to the public home page.
+- **Sign-out:** `POST /api/auth/sign-out` revokes the active session (and refresh token, if present) and clears cookies; the Qwik server action forwards the API `Set-Cookie` headers and also deletes any `better-auth.*` cookies as a safety net before redirecting to the public home page.
 
 ## Implemented surface
 
@@ -36,7 +36,7 @@
 
 ## Cookie and session strategy
 
-- **Cookies:** Use `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/` cookies for `session` and `refresh` (if using a sliding refresh model). Domain should be configurable (e.g., `APP_COOKIE_DOMAIN`) to align app and API origins. Add a non-HttpOnly `csrf_token` for double-submit checks on state-changing POSTs from SSR forms.
+- **Cookies:** Use `Secure`, `HttpOnly`, `SameSite=Lax`, and `Path=/` cookies for `session` and `refresh` (if using a sliding refresh model). Domain should be configurable (e.g., `APP_COOKIE_DOMAIN`) to align app and API origins. Add a non-HttpOnly `csrf_token` for double-submit checks on state-changing POSTs from SSR forms. Passkey/WebAuthn challenge cookies are short-lived (`better-auth.better-auth-passkey`) and may appear alongside the session token.
 - **Origin-aware cookies:** SSR calls forward `x-forwarded-host`, `x-forwarded-proto`, and `Origin` so the API selects the correct relying party. In non-production, if the request origin doesn't match a configured RP origin (common with HTTP dev or custom ports), the API falls back to the request origin for cookie issuance (deriving an RP ID from the request host); passkeys still require HTTPS.
 - **Session storage:** Default to database-backed sessions (Postgres) managed by Better Auth. Optionally enable a signed, short-lived stateless access token for edge SSR while keeping refresh tokens server-only.
 - **Rotation:** Rotate session IDs on every OAuth/passkey/email-password login and on refresh to limit replay. Enforce device-bound metadata (user agent hash, IP slice) when verifying refresh tokens.

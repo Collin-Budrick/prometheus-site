@@ -21,6 +21,7 @@ import { partytownForwards, thirdPartyScripts } from '../../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
 import {
   buildAuthHeaders,
+  clearAuthCookies,
   fetchSessionFromApi,
   forwardAuthCookies,
   resolveApiBase
@@ -228,6 +229,7 @@ export const useSignOut = routeAction$(async (_, event) => {
   })
 
   forwardAuthCookies(response, event)
+  clearAuthCookies(event)
 
   const localePrefix = event.params.locale ? `/${event.params.locale}` : ''
   throw event.redirect(302, localePrefix || '/')
@@ -339,13 +341,17 @@ const resolveThirdPartyOrigins = (entries: typeof thirdPartyScripts) =>
     }, new Set<string>())
   )
 
+type HeadLink = DocumentLink & {
+  fetchPriority?: 'auto' | 'high' | 'low'
+}
+
 const validPreloadAs = new Set(['style', 'font', 'script', 'image'])
 
 export const sanitizeHeadLinks = (
-  links: readonly DocumentLink[] | undefined,
+  links: readonly HeadLink[] | undefined,
   isDev: boolean,
   allowedPreloads?: Set<string>
-): DocumentLink[] => {
+): HeadLink[] => {
   const seenPreloadHref = new Set<string>()
 
   return Array.from(links ?? []).filter((link) => {
@@ -364,7 +370,7 @@ export const sanitizeHeadLinks = (
   })
 }
 
-const dedupeLinks = (links: readonly DocumentLink[] | undefined) => {
+const dedupeLinks = (links: readonly HeadLink[] | undefined) => {
   const seen = new Set<string>()
   return Array.from(links ?? []).filter((link) => {
     const rel = link.rel || ''

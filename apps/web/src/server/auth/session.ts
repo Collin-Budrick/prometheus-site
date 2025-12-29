@@ -119,6 +119,16 @@ const hasCookieSetter = (event: RequestEventBase): event is RequestEventBase & {
   return typeof candidate?.set === 'function'
 }
 
+const hasCookieApi = (event: RequestEventBase): event is RequestEventBase & {
+  cookie: {
+    getAll: () => Record<string, unknown>
+    delete: (name: string, options?: Pick<CookieOptions, 'path' | 'domain' | 'sameSite'>) => void
+  }
+} => {
+  const candidate = (event as { cookie?: { getAll?: unknown; delete?: unknown } }).cookie
+  return typeof candidate?.getAll === 'function' && typeof candidate?.delete === 'function'
+}
+
 export type AuthSession = {
   session: {
     token: string
@@ -149,6 +159,18 @@ export const forwardAuthCookies = (response: Response, event: RequestEventBase) 
   for (const cookie of cookies) {
     event.headers.append('set-cookie', cookie)
   }
+}
+
+export const clearAuthCookies = (event: RequestEventBase) => {
+  if (!hasCookieApi(event)) return
+
+  const prefixes = ['__Secure-better-auth.', 'better-auth.']
+  const cookies = event.cookie.getAll()
+  Object.keys(cookies).forEach((name) => {
+    if (prefixes.some((prefix) => name.startsWith(prefix))) {
+      event.cookie.delete(name, { path: '/' })
+    }
+  })
 }
 
 const resolveForwardedHost = (event: RequestEventBase) => {

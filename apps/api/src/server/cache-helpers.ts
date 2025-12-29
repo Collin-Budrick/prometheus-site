@@ -11,7 +11,7 @@ export const invalidateStoreItemsCache = async () => {
   try {
     const keys = await valkey.keys(`${storeItemsCachePrefix}*`)
     if (keys.length > 0) {
-      await valkey.del(...keys)
+      await valkey.del(keys)
     }
   } catch (error) {
     console.warn('Failed to invalidate store cache keys', error)

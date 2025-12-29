@@ -22,7 +22,7 @@ const registerServiceWorker = async (): Promise<SwRegistrationStatus> => {
   const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
   if (isLocalhost) return 'skipped'
 
-  const connection = navigator.connection as { saveData?: boolean } | undefined
+  const connection = navigator.connection
   const prefersReducedData =
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-data: reduce)').matches

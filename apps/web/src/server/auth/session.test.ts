@@ -138,12 +138,10 @@ describe('resolveWebSocketUrl', () => {
     } else {
       process.env.API_URL = originalApiUrl
     }
-    // @ts-expect-error - clean up test window stub
     if (typeof originalWindow === 'undefined') {
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete (globalThis as Record<string, unknown>).window
     } else {
-      // @ts-expect-error - restore window
       globalThis.window = originalWindow
     }
   })
@@ -158,12 +156,8 @@ describe('resolveWebSocketUrl', () => {
 
   it('falls back to the page origin when API_URL is not set', () => {
     process.env.API_URL = ''
-    // @ts-expect-error - define minimal window for test
-    globalThis.window = {
-      location: {
-        origin: 'https://site.test'
-      }
-    }
+    const locationStub = { origin: 'https://site.test' } as Location
+    globalThis.window = { location: locationStub } as Window & typeof globalThis
 
     const url = resolveWebSocketUrl('/api/ws')
 
