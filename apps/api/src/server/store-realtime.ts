@@ -43,56 +43,135 @@ const normalizeStoreItem = (row: StoreItemRowSnapshot): StoreItemPayload => ({
 })
 
 let listener: Awaited<ReturnType<typeof pgClient.listen>> | null = null
+let retryTimer: NodeJS.Timeout | null = null
+let retryAttempts = 0
+let stopped = false
+let watchdog: NodeJS.Timeout | null = null
+let emitCallback: ((event: StoreRealtimeEvent) => void) | null = null
 
-export const startStoreRealtime = async (emit: (event: StoreRealtimeEvent) => void) => {
-  if (listener) return listener
+const clearRetryTimer = () => {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+}
 
-  listener = await pgClient.listen(
-    storeUpdatesChannel,
-    async (payload) => {
-      let parsedPayload: unknown
-      try {
-        parsedPayload = JSON.parse(payload)
-      } catch (error) {
-        console.warn('Store realtime payload was not JSON', error)
-        return
-      }
+const scheduleRetry = (reason?: unknown) => {
+  if (stopped) return
+  if (retryTimer) return
+  const delay = Math.min(30000, 1000 * 2 ** retryAttempts)
+  retryAttempts += 1
+  console.warn('Reconnecting store realtime listener', { attempt: retryAttempts, delay, reason })
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    void attachListener()
+  }, delay)
+}
 
-      const event = dbEventSchema.safeParse(parsedPayload)
-      if (!event.success) {
-        console.warn('Store realtime payload failed validation', event.error.flatten())
-        return
-      }
-
-      const { op, id } = event.data
-      if (op === 'DELETE') {
-        emit({ type: 'store:delete', id })
-        return
-      }
-
-      try {
-        const [row] = await db.select().from(storeItems).where(eq(storeItems.id, id)).limit(1)
-        if (!row) return
-        const parsedRow = storeItemSchema.safeParse(row)
-        if (!parsedRow.success) {
-          console.warn('Store item failed validation for realtime event', parsedRow.error.flatten())
-          return
-        }
-        emit({ type: 'store:upsert', item: normalizeStoreItem(parsedRow.data) })
-      } catch (error) {
-        console.error('Failed to load store item for realtime event', error)
-      }
-    },
-    () => {
-      console.log(`Store realtime listening on ${storeUpdatesChannel}`)
+const resetListener = async () => {
+  if (listener) {
+    try {
+      await listener.unlisten()
+    } catch (error) {
+      console.error('Failed to unlisten store realtime channel', error)
     }
-  )
+  }
+  listener = null
+}
+
+const handleDbEvent = async (payload: string, emit: (event: StoreRealtimeEvent) => void) => {
+  let parsedPayload: unknown
+  try {
+    parsedPayload = JSON.parse(payload)
+  } catch (error) {
+    console.warn('Store realtime payload was not JSON', error)
+    return
+  }
+
+  const event = dbEventSchema.safeParse(parsedPayload)
+  if (!event.success) {
+    console.warn('Store realtime payload failed validation', event.error.flatten())
+    return
+  }
+
+  const { op, id } = event.data
+  if (op === 'DELETE') {
+    emit({ type: 'store:delete', id })
+    return
+  }
+
+  try {
+    const [row] = await db.select().from(storeItems).where(eq(storeItems.id, id)).limit(1)
+    if (!row) return
+    const parsedRow = storeItemSchema.safeParse(row)
+    if (!parsedRow.success) {
+      console.warn('Store item failed validation for realtime event', parsedRow.error.flatten())
+      return
+    }
+    emit({ type: 'store:upsert', item: normalizeStoreItem(parsedRow.data) })
+  } catch (error) {
+    console.error('Failed to load store item for realtime event', error)
+    throw error
+  }
+}
+
+const attachListener = async () => {
+  if (listener || stopped || !emitCallback) return listener
+
+  try {
+    listener = await pgClient.listen(
+      storeUpdatesChannel,
+      async (payload) => {
+        try {
+          await handleDbEvent(payload, emitCallback)
+        } catch (error) {
+          await resetListener()
+          scheduleRetry(error)
+        }
+      },
+      (error) => {
+        if (error) {
+          console.error('Store realtime listener error', error)
+          void resetListener().finally(() => scheduleRetry(error))
+        } else {
+          retryAttempts = 0
+          console.log(`Store realtime listening on ${storeUpdatesChannel}`)
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Failed to start store realtime listener', error)
+    listener = null
+    scheduleRetry(error)
+  }
 
   return listener
 }
 
+export const startStoreRealtime = async (emit: (event: StoreRealtimeEvent) => void) => {
+  if (stopped === true) stopped = false
+  clearRetryTimer()
+  emitCallback = emit
+  if (!watchdog) {
+    watchdog = setInterval(() => {
+      if (stopped) return
+      if (!listener && !retryTimer) {
+        scheduleRetry('missing listener')
+      }
+    }, 30000)
+  }
+  if (listener) return listener
+  return attachListener()
+}
+
 export const stopStoreRealtime = async () => {
+  stopped = true
+  clearRetryTimer()
+  if (watchdog) {
+    clearInterval(watchdog)
+    watchdog = null
+  }
+  emitCallback = null
   if (!listener) return
-  await listener.unlisten()
-  listener = null
+  await resetListener()
 }

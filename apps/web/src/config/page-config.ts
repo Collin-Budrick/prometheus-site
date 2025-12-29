@@ -1,4 +1,4 @@
-import { defaultLocale } from 'compiled-i18n'
+import { defaultLocale, locales } from 'compiled-i18n'
 import pageConfig from './page-config.json'
 import { stripLocalePrefix } from '../routes/_shared/locale/locale-routing'
 
@@ -59,10 +59,21 @@ export const getPageSpeculation = (pathname: string): Exclude<SpeculationMode, '
 export const getPrerenderRoutes = () => {
   const defaults = config.defaults ?? {}
   const routes = config.routes ?? {}
-  return Object.entries(routes)
+  const ssgPaths = Object.entries(routes)
     .filter(([, routeConfig]) => (routeConfig.render ?? defaults.render) === 'ssg')
     .map(([path]) => normalizeConfigPath(path))
-    .map((path) => (path === '/' ? `/${defaultLocale}` : `/${defaultLocale}${path}`))
+
+  const localesToRender = locales?.length ? locales : [defaultLocale]
+  const prerendered = new Set<string>()
+
+  ssgPaths.forEach((path) => {
+    localesToRender.forEach((locale) => {
+      const localizedPath = path === '/' ? `/${locale}` : `/${locale}${path}`
+      prerendered.add(localizedPath)
+    })
+  })
+
+  return Array.from(prerendered).sort()
 }
 
 export const getSpeculationConfigSnapshot = (): SpeculationConfigSnapshot => {

@@ -5,19 +5,55 @@ import { resolveLocale } from './i18n/locale'
 import { resolvePathnameLocale } from './i18n/pathname-locale'
 import { ensureLocaleDictionary } from './i18n/dictionaries'
 
-const registerServiceWorker = () => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+type SwRegistrationStatus = 'skipped' | 'unavailable' | 'registered' | 'error'
+
+const resolvePwaEnabled = () => {
+  const flag = import.meta.env.VITE_ENABLE_PWA
+  if (typeof flag === 'boolean') return flag
+  if (typeof flag === 'string') return flag === '1' || flag.toLowerCase() === 'true'
+  return false
+}
+
+const registerServiceWorker = async (): Promise<SwRegistrationStatus> => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return 'unavailable'
+  if (!resolvePwaEnabled()) return 'skipped'
 
   const hostname = window.location.hostname
   const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-  if (isLocalhost) return
+  if (isLocalhost) return 'skipped'
+
+  const connection = navigator.connection as { saveData?: boolean } | undefined
+  const prefersReducedData =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-data: reduce)').matches
+  if (connection?.saveData || prefersReducedData) return 'skipped'
 
   const isAudit = new URLSearchParams(window.location.search).get('audit') === '1'
-  if (isAudit) return
+  if (isAudit) return 'skipped'
 
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js').catch(() => {})
-  })
+  let hasServiceWorker = false
+  try {
+    const headResponse = await fetch('/sw.js', { method: 'HEAD' })
+    hasServiceWorker = headResponse.ok
+  } catch {
+    hasServiceWorker = false
+  }
+
+  if (!hasServiceWorker) return 'unavailable'
+
+  const applyStatus = (status: SwRegistrationStatus, message?: string) => {
+    ;(window as any).__prometheusPwaStatus = { status, message }
+  }
+
+  try {
+    await navigator.serviceWorker.register('/sw.js')
+    applyStatus('registered')
+    return 'registered'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown'
+    applyStatus('error', message)
+    return 'error'
+  }
 }
 
 const resolveClientLocale = () => {
@@ -55,7 +91,7 @@ export default async function renderClient(opts: RenderOptions) {
     persistLocaleCookie(loadedLocale)
   }
 
-  registerServiceWorker()
+  void registerServiceWorker()
 
   return render(document, <Root />, opts)
 }

@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { _, defaultLocale } from 'compiled-i18n'
+import { _, locales } from 'compiled-i18n'
 import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
@@ -42,7 +42,7 @@ export default component$(() => {
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: [{ locale: defaultLocale }]
+    params: locales.map((locale) => ({ locale }))
   }
 }
 

@@ -149,7 +149,7 @@ export const onRequest: RequestHandler = async ({
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: [{ locale: defaultLocale }]
+    params: locales.map((locale) => ({ locale }))
   }
 }
 
@@ -364,6 +364,19 @@ export const sanitizeHeadLinks = (
   })
 }
 
+const dedupeLinks = (links: readonly DocumentLink[] | undefined) => {
+  const seen = new Set<string>()
+  return Array.from(links ?? []).filter((link) => {
+    const rel = link.rel || ''
+    const href = typeof link.href === 'string' ? link.href : ''
+    const hreflang = (link as any).hreflang ?? ''
+    const key = `${rel}|${href}|${hreflang}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
@@ -386,6 +399,13 @@ export const RouterHead = component$(() => {
   ])
 
   const canonical = new URL(loc.url.href)
+  const normalizedPath = (() => {
+    const stripped = stripLocalePrefix(loc.url.pathname) || '/'
+    if (stripped.length > 1 && stripped.endsWith('/')) return stripped.slice(0, -1)
+    return stripped
+  })()
+  const activeLocale = localePrefix.replace('/', '') || defaultLocale
+  canonical.pathname = `/${activeLocale}${normalizedPath === '/' ? '' : normalizedPath}`
   canonical.search = ''
   canonical.hash = ''
 
@@ -393,27 +413,53 @@ export const RouterHead = component$(() => {
   const thirdPartyOrigins = allowThirdPartyHints ? resolveThirdPartyOrigins(thirdPartyScripts) : []
   const includeGlobalStyles = import.meta.env.PROD
   const appCssHref = '/assets/app.css'
+  const localeAlternates = locales.map((locale) => {
+    const href = new URL(canonical.href)
+    href.pathname = `/${locale}${normalizedPath === '/' ? '' : normalizedPath}`
+    return {
+      rel: 'alternate' as const,
+      hreflang: locale,
+      href: href.href
+    }
+  })
+  const xDefaultHref = new URL(canonical.href)
+  xDefaultHref.pathname = `/${defaultLocale}${normalizedPath === '/' ? '' : normalizedPath}`
+  localeAlternates.push({
+    rel: 'alternate',
+    hreflang: 'x-default',
+    href: xDefaultHref.href
+  })
+  if (includeGlobalStyles) {
+    allowedPreloads.add(appCssHref)
+  }
 
-  const baseLinks = [
+  const baseLinks = dedupeLinks([
     ...head.links,
-    ...criticalPreloads
-  ]
-  const safeLinks = sanitizeHeadLinks(baseLinks, import.meta.env.DEV, allowedPreloads)
-  const prioritizedLinks = safeLinks.map((link) => {
+    ...criticalPreloads,
+    { rel: 'canonical', href: canonical.href },
+    ...localeAlternates,
+    ...(includeGlobalStyles
+      ? [
+          { rel: 'preload', href: appCssHref, as: 'style', fetchPriority: 'high' as const },
+          { rel: 'stylesheet', href: appCssHref, fetchPriority: 'high' as const }
+        ]
+      : [])
+  ])
+  const safeLinks = sanitizeHeadLinks(baseLinks, import.meta.env.DEV, allowedPreloads).map((link) => {
     if (link.rel === 'stylesheet') return { ...link, fetchPriority: 'high' as const }
     if (link.rel === 'preload' && link.as === 'style') return { ...link, fetchPriority: 'high' as const }
     return link
   })
   const linkTags = (() => {
-    const tags: typeof prioritizedLinks = []
+    const tags: typeof safeLinks = []
     const seenStylePreload = new Set<string>()
-    prioritizedLinks.forEach((link) => {
+    safeLinks.forEach((link) => {
       if (link.rel === 'preload' && link.as === 'style' && typeof link.href === 'string') {
         seenStylePreload.add(link.href)
       }
     })
 
-    prioritizedLinks.forEach((link) => {
+    safeLinks.forEach((link) => {
       const href = link.href
       if (import.meta.env.PROD && link.rel === 'stylesheet' && typeof href === 'string' && !seenStylePreload.has(href)) {
         tags.push({
@@ -428,8 +474,16 @@ export const RouterHead = component$(() => {
       tags.push(link)
     })
 
-    return tags
+    return dedupeLinks(tags)
   })()
+  const keyedLinkTags = linkTags.map((link, index) => {
+    if (link.key) return link
+    const href = typeof link.href === 'string' ? link.href : ''
+    return {
+      ...link,
+      key: `${link.rel || 'link'}:${href || index}`
+    }
+  })
   const devHeadCleanup =
     import.meta.env.DEV &&
     "document.addEventListener('DOMContentLoaded', () => {document.querySelectorAll('link[rel=\"preload\"]').forEach((link) => {const href = link.getAttribute('href') || ''; const as = link.getAttribute('as') || ''; if (!href || !as || as === 'font' || href.includes('fonts/inter-var.woff2')) {link.remove();}}); document.querySelectorAll('.view-transition').forEach((el) => el.classList.remove('view-transition'));});"
@@ -551,20 +605,13 @@ export const RouterHead = component$(() => {
     <>
       <title>{head.title || 'Prometheus'}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-      <link rel="canonical" href={canonical.href} />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <script dangerouslySetInnerHTML={jsReadyScript} />
       <style data-critical dangerouslySetInnerHTML={criticalCssInline} />
-      {includeGlobalStyles && (
-        <>
-          <link rel="preload" href={appCssHref} as="style" fetchPriority={'high' as const} />
-          <link rel="stylesheet" href={appCssHref} fetchPriority={'high' as const} />
-        </>
-      )}
       {head.meta.map((m) => (
         <meta key={m.key} {...m} />
       ))}
-      {linkTags.map((l) => (
+      {keyedLinkTags.map((l) => (
         <link key={l.key} {...l} />
       ))}
       {allowThirdPartyHints &&

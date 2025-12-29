@@ -51,14 +51,26 @@ const handleStoreRealtimeEvent = (event: StoreRealtimeEvent) => {
       ws.send(payload)
     } catch (error) {
       console.warn('Failed to broadcast store realtime event', error)
-      storeSockets.delete(ws)
+      clearStoreSocket(ws)
     }
   }
+}
+
+const clearStoreSocket = (ws: any) => {
+  storeSockets.delete(ws)
+  const data = ws?.data as StoreWsData | undefined
+  if (data?.heartbeatInterval) clearInterval(data.heartbeatInterval)
+  if (data?.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
 }
 
 type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
 type WsUser = { id: string; name?: string }
 type WsData = { subscriber?: ValkeySubscriber; clientIp?: string; user?: WsUser }
+type StoreWsData = WsData & {
+  heartbeatInterval?: NodeJS.Timeout
+  heartbeatTimeout?: NodeJS.Timeout
+  lastSeen?: number
+}
 
 const jsonError = (status: number, error: string, meta: Record<string, unknown> = {}) =>
   new Response(JSON.stringify({ error, ...meta }), {
@@ -82,6 +94,7 @@ const checkRateLimit = (route: string, clientIp: string) =>
   checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
 const checkWsQuota = (clientIp: string) => checkQuota(`ws:${clientIp}`, wsMessageLimit, wsMessageWindowMs)
+const checkWsOpenQuota = (route: string, clientIp: string) => checkQuota(`${route}:open:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
 class PromptBodyError extends Error {
   status: number
@@ -321,12 +334,113 @@ const app = new Elysia()
     }
   )
   .ws('/store/ws', {
-    open(ws) {
+    async open(ws) {
+      const clientIp = resolveWsClientIp(ws)
+      const headers = resolveWsHeaders(ws)
+      const { allowed, retryAfter } = await checkWsOpenQuota('/store/ws', clientIp)
+      if (!allowed) {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            error: `Too many realtime attempts. Try again in ${retryAfter}s`,
+            retryAfter
+          })
+        )
+        ws.close()
+        return
+      }
+
+      let sessionPayload: { user?: WsUser } | null = null
+      try {
+        const sessionResponse = await validateSession({ headers })
+        if (sessionResponse.ok) {
+          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
+        }
+      } catch (error) {
+        console.error('Failed to validate store session', error)
+      }
+
+      if (!sessionPayload?.user?.id) {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            error: 'Authentication required for store realtime'
+          })
+        )
+        ws.close()
+        return
+      }
+
+      const data = ws.data as StoreWsData
+      data.clientIp = clientIp
+      data.user = sessionPayload.user
+      data.lastSeen = Date.now()
+
       storeSockets.add(ws)
       ws.send(JSON.stringify({ type: 'store:ready' }))
+
+      const heartbeatIntervalMs = 15000
+      const heartbeatTimeoutMs = 10000
+
+      const sendPing = () => {
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }))
+        } catch (error) {
+          console.warn('Failed to send heartbeat ping', error)
+          ws.close()
+          return
+        }
+        if (data.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
+        data.heartbeatTimeout = setTimeout(() => {
+          ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
+          ws.close()
+        }, heartbeatTimeoutMs)
+      }
+
+      data.heartbeatInterval = setInterval(() => {
+        const now = Date.now()
+        const lastSeen = data.lastSeen || now
+        if (now - lastSeen > heartbeatIntervalMs + heartbeatTimeoutMs) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
+          ws.close()
+          return
+        }
+        sendPing()
+      }, heartbeatIntervalMs)
+
+      sendPing()
+    },
+    message(ws, message) {
+      const data = ws.data as StoreWsData
+      data.lastSeen = Date.now()
+      if (data.heartbeatTimeout) {
+        clearTimeout(data.heartbeatTimeout)
+        data.heartbeatTimeout = undefined
+      }
+
+      let payload: unknown
+      if (typeof message === 'string') {
+        try {
+          payload = JSON.parse(message)
+        } catch {
+          return
+        }
+      } else {
+        payload = message
+      }
+
+      if (!payload || typeof payload !== 'object') return
+      const record = payload as { type?: unknown }
+      if (record.type === 'pong') return
+      if (record.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }))
+      }
     },
     close(ws) {
-      storeSockets.delete(ws)
+      clearStoreSocket(ws)
+    },
+    error(ws) {
+      clearStoreSocket(ws)
     }
   })
   .ws('/ws', {
