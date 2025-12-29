@@ -220,8 +220,9 @@ const resolveBrowserOrigin = () => {
 
 const resolveWsBaseCandidate = (event?: RequestEventBase) => {
   const importMetaEnv = (import.meta as { env?: Record<string, string | undefined> }).env
+  const processEnvApiUrl = typeof process !== 'undefined' ? process.env.API_URL : undefined
   const fromEnv =
-    event?.env.get('API_URL') ?? process.env.API_URL ?? importMetaEnv?.API_URL ?? importMetaEnv?.PUBLIC_API_URL
+    event?.env.get('API_URL') ?? processEnvApiUrl ?? importMetaEnv?.API_URL ?? importMetaEnv?.PUBLIC_API_URL
   if (fromEnv) return fromEnv
   if (event) return resolveAuthOrigin(event)
   return resolveBrowserOrigin()
