@@ -1,5 +1,5 @@
 import { $, component$, getLocale, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
-import { Form, type ActionStore, useLocation } from '@builder.io/qwik-city'
+import { Form, Link, type ActionStore, useLocation } from '@builder.io/qwik-city'
 import { _, localeNames, locales } from 'compiled-i18n'
 import { getSpeculationMode } from '../config/page-config'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
@@ -380,6 +380,14 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
   const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(dashboardPath)}`
   const loginSpeculation = getSpeculationMode('/login')
   const registerSpeculation = getSpeculationMode('/register')
+  const persistLocaleChoice = $((nextLocale: string) => {
+    if (typeof document === 'undefined') return
+    const maxAgeSeconds = 60 * 60 * 24 * 365
+    document.cookie = `locale=${encodeURIComponent(nextLocale)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`
+    try {
+      window.localStorage.setItem('locale', nextLocale)
+    } catch {}
+  })
 
   return (
     <details ref={menuRef} class="settings-menu animated-details">
@@ -410,16 +418,17 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
                 const isCurrent = locale === (currentLocale as any)
                 const href = buildHref(locale)
                 return (
-                  <a
+                  <Link
                     key={locale}
                     href={href}
                     aria-disabled={isCurrent}
                     aria-current={isCurrent ? 'true' : undefined}
                     style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
                     class="settings-option"
+                    onClick$={$(() => persistLocaleChoice(locale))}
                   >
                     {localeNames[locale] ?? locale.toUpperCase()}
-                  </a>
+                  </Link>
                 )
               })}
             </div>

@@ -10,7 +10,8 @@ import {
   type StaticGenerateHandler
 } from '@builder.io/qwik-city'
 import localeStore from '@i18n/__locales'
-import { _, defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
+import { defaultLocale, getLocale, locales, setDefaultLocale, type Locale } from 'compiled-i18n'
+import { inlineTranslate, useSpeak } from 'qwik-speak'
 /* cspell:ignore hrefs */
 import { LocaleSelector } from '../../components/LocaleSelector'
 import { ThirdPartyScripts } from '../../components/ThirdPartyScripts'
@@ -254,28 +255,28 @@ type SpeculationCandidate = {
 
 type NavLink = {
   path: string
-  label: () => string
+  labelKey: string
   dataSpeculate?: 'prefetch' | 'prerender' | 'none'
 }
 
 const primaryNavLinks: NavLink[] = [
-  { path: '/', label: () => _`Home`, dataSpeculate: getSpeculationMode('/') },
-  { path: '/store', label: () => _`Store`, dataSpeculate: getSpeculationMode('/store') },
-  { path: '/labs', label: () => _`Labs`, dataSpeculate: getSpeculationMode('/labs') },
-  { path: '/ai', label: () => _`AI`, dataSpeculate: getSpeculationMode('/ai') },
-  { path: '/chat', label: () => _`Chat`, dataSpeculate: getSpeculationMode('/chat') }
+  { path: '/', labelKey: 'app.nav.home@@Home', dataSpeculate: getSpeculationMode('/') },
+  { path: '/store', labelKey: 'app.nav.store@@Store', dataSpeculate: getSpeculationMode('/store') },
+  { path: '/labs', labelKey: 'app.nav.labs@@Labs', dataSpeculate: getSpeculationMode('/labs') },
+  { path: '/ai', labelKey: 'app.nav.ai@@AI', dataSpeculate: getSpeculationMode('/ai') },
+  { path: '/chat', labelKey: 'app.nav.chat@@Chat', dataSpeculate: getSpeculationMode('/chat') }
 ]
 
 const authenticatedNavLinks: NavLink[] = [
-  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getSpeculationMode('/dashboard') },
-  { path: '/account', label: () => _`Account`, dataSpeculate: getSpeculationMode('/account') },
-  { path: '/settings', label: () => _`Settings`, dataSpeculate: getSpeculationMode('/settings') }
+  { path: '/dashboard', labelKey: 'app.nav.dashboard@@Dashboard', dataSpeculate: getSpeculationMode('/dashboard') },
+  { path: '/account', labelKey: 'app.nav.account@@Account', dataSpeculate: getSpeculationMode('/account') },
+  { path: '/settings', labelKey: 'app.nav.settings@@Settings', dataSpeculate: getSpeculationMode('/settings') }
 ]
 
 const authAreaNavLinks: NavLink[] = [
-  { path: '/dashboard', label: () => _`Dashboard`, dataSpeculate: getSpeculationMode('/dashboard') },
-  { path: '/account', label: () => _`Account`, dataSpeculate: getSpeculationMode('/account') },
-  { path: '/settings', label: () => _`Settings`, dataSpeculate: getSpeculationMode('/settings') }
+  { path: '/dashboard', labelKey: 'app.nav.dashboard@@Dashboard', dataSpeculate: getSpeculationMode('/dashboard') },
+  { path: '/account', labelKey: 'app.nav.account@@Account', dataSpeculate: getSpeculationMode('/account') },
+  { path: '/settings', labelKey: 'app.nav.settings@@Settings', dataSpeculate: getSpeculationMode('/settings') }
 ]
 
 const authAreaPaths = authAreaNavLinks.map(({ path }) => path)
@@ -476,6 +477,7 @@ const dedupeLinks = (links: readonly HeadLink[] | undefined) => {
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
+  const translate = inlineTranslate()
   const localePrefix = (() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
@@ -699,7 +701,7 @@ export const RouterHead = component$(() => {
     "(()=>{try{const theme=localStorage.getItem('theme');if(!theme)return;const root=document.documentElement;if(theme==='system'){root.removeAttribute('data-theme');root.classList.remove('light','dark');return;}root.setAttribute('data-theme',theme);root.classList.remove('light','dark');}catch{}})();"
   return (
     <>
-      <title>{head.title || 'Prometheus'}</title>
+      <title>{head.title || translate('app.brand.name@@Prometheus')}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <script dangerouslySetInnerHTML={jsReadyScript} />
@@ -750,6 +752,8 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
+  const translate = inlineTranslate()
+  useSpeak({ assets: ['app'] })
   useStylesScoped$(layoutStyles)
   useStyles$(viewTransitionStyles)
   useVisibleTask$(() => {
@@ -833,11 +837,13 @@ export default component$(() => {
       <header class="top-0 z-20 sticky bg-slate-950 border-slate-800 border-b app-header">
         <nav class="flex justify-between items-center mx-auto px-4 py-3 max-w-5xl font-medium text-sm app-nav">
           <div class="flex items-center gap-2 app-brand">
-            <span class="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300 app-pill">Prometheus</span>
-            <span class="text-slate-400">{_`Performance Lab`}</span>
+            <span class="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300 app-pill">
+              {translate('app.brand.name@@Prometheus')}
+            </span>
+            <span class="text-slate-400">{translate('app.brand.tagline@@Performance Lab')}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
-            {navLinks.map(({ path, label, dataSpeculate }) => (
+            {navLinks.map(({ path, labelKey, dataSpeculate }) => (
               <Link
                 key={path}
                 href={linkHref(path)}
@@ -845,7 +851,7 @@ export default component$(() => {
                 onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
-                {label()}
+                {translate(labelKey)}
               </Link>
             ))}
             <LocaleSelector hasSession={session.value.hasSession} signOutAction={signOutAction} />
