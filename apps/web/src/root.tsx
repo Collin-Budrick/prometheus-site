@@ -1,11 +1,14 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
+import { useQwikSpeak } from 'qwik-speak'
 import { setDefaultLocale } from 'compiled-i18n'
 import 'virtual:uno.css'
 import './global.css'
 import { RouterHead } from './routes/[locale]/layout'
 import { resolvePathnameLocale } from './i18n/pathname-locale'
 import { ensureLocaleDictionary } from './i18n/dictionaries'
+import { config } from './speak-config'
+import { translationFn } from './speak-functions'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
   if (value === undefined) return fallback
@@ -54,6 +57,7 @@ const RoutesWithLocaleSync = component$(() => {
 })
 
 export default component$(() => {
+  useQwikSpeak({ config, translationFn })
 
   useVisibleTask$(() => {
     if (!toBoolean(import.meta.env.VITE_PREVIEW, false)) return
