@@ -1,12 +1,17 @@
 import { Elysia, t } from 'elysia'
 import { desc, gt } from 'drizzle-orm'
+import { validateSession } from '../auth/auth'
 import { db, pgClient } from '../db/client'
 import { prepareDatabase } from '../db/prepare'
 import { chatMessages, storeItems } from '../db/schema'
 import { connectValkey, isValkeyReady, valkey } from '../services/cache'
+import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache-helpers'
+import { getClientIp, resolveWsClientIp, resolveWsHeaders } from './network'
+import { checkQuota, setCleanupInterval } from './rate-limit'
+import { shouldRunMigrations } from './runtime-flags'
 import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
 import { authRoutes } from './routes/auth'
-const shouldPrepareDatabase = process.env.RUN_MIGRATIONS === '1'
+const shouldPrepareDatabase = shouldRunMigrations(process.env.RUN_MIGRATIONS)
 
 async function bootstrap() {
   if (shouldPrepareDatabase) {
@@ -22,7 +27,7 @@ async function bootstrap() {
     console.log('RUN_MIGRATIONS not set; skipping migrations and seed step')
   }
   await connectValkey()
-  void startStoreRealtime(broadcastStoreEvent).catch((error) => {
+  void startStoreRealtime(handleStoreRealtimeEvent).catch((error) => {
     console.error('Store realtime listener failed', error)
   })
 }
@@ -37,8 +42,10 @@ const telemetry = {
   cacheSetErrors: 0
 }
 
-const broadcastStoreEvent = (event: StoreRealtimeEvent) => {
+const handleStoreRealtimeEvent = (event: StoreRealtimeEvent) => {
   const payload = JSON.stringify(event)
+  void invalidateStoreItemsCache()
+
   for (const ws of storeSockets) {
     try {
       ws.send(payload)
@@ -50,7 +57,8 @@ const broadcastStoreEvent = (event: StoreRealtimeEvent) => {
 }
 
 type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
-type WsData = { subscriber?: ValkeySubscriber }
+type WsUser = { id: string; name?: string }
+type WsData = { subscriber?: ValkeySubscriber; clientIp?: string; user?: WsUser }
 
 const jsonError = (status: number, error: string, meta: Record<string, unknown> = {}) =>
   new Response(JSON.stringify({ error, ...meta }), {
@@ -67,76 +75,13 @@ const rateLimitMaxRequests = 60
 const wsMessageWindowMs = 60_000
 const wsMessageLimit = 40
 
-const inMemoryCounters = new Map<string, { count: number; resetAt: number }>()
+const rateLimitCleanupInterval = Math.min(rateLimitWindowMs, wsMessageWindowMs)
+setCleanupInterval(rateLimitCleanupInterval)
 
-const getClientIp = (request: Request) =>
-  request.headers.get('cf-connecting-ip') ||
-  request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-  request.headers.get('x-real-ip') ||
-  request.headers.get('remote-addr') ||
-  'unknown'
+const checkRateLimit = (route: string, clientIp: string) =>
+  checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
-const getCounter = async (key: string, windowMs: number) => {
-  const now = Date.now()
-
-  if (isValkeyReady()) {
-    try {
-      const results = (await valkey
-        .multi()
-        .incr(key)
-        .pTTL(key)
-        .exec()) as Array<[unknown, unknown]> | null
-      const countRaw = results?.[0]?.[1]
-      const ttlRaw = results?.[1]?.[1]
-
-      const count = Number(countRaw)
-      let ttlMs = Number(ttlRaw)
-
-      if (Number.isNaN(ttlMs) || ttlMs < 0) {
-        ttlMs = windowMs
-        await valkey.pExpire(key, windowMs)
-      }
-
-      return { count, resetAt: now + ttlMs }
-    } catch (error) {
-      console.error('Valkey rate limiter unavailable; using local fallback', { key, error })
-    }
-  }
-
-  const counter = inMemoryCounters.get(key) || { count: 0, resetAt: now + windowMs }
-
-  if (now > counter.resetAt) {
-    counter.count = 0
-    counter.resetAt = now + windowMs
-  }
-
-  counter.count += 1
-  inMemoryCounters.set(key, counter)
-
-  return counter
-}
-
-const checkRateLimit = async (route: string, clientIp: string) => {
-  const now = Date.now()
-  const key = `${route}:${clientIp}`
-  const counter = await getCounter(key, rateLimitWindowMs)
-
-  const allowed = counter.count <= rateLimitMaxRequests
-  const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
-
-  return { allowed, retryAfter }
-}
-
-const checkWsQuota = async (ws: any) => {
-  const now = Date.now()
-  const key = `ws:${ws.remoteAddress ?? 'unknown'}`
-  const counter = await getCounter(key, wsMessageWindowMs)
-
-  const allowed = counter.count <= wsMessageLimit
-  const retryAfter = Math.max(0, Math.ceil((counter.resetAt - now) / 1000))
-
-  return { allowed, retryAfter }
-}
+const checkWsQuota = (clientIp: string) => checkQuota(`ws:${clientIp}`, wsMessageLimit, wsMessageWindowMs)
 
 class PromptBodyError extends Error {
   status: number
@@ -292,7 +237,7 @@ const app = new Elysia()
       }
 
       const limit = Math.min(limitRaw, 50)
-      const cacheKey = `store:items:${lastId}:${limit}`
+      const cacheKey = buildStoreItemsCacheKey(lastId, limit)
 
       if (isValkeyReady()) {
         try {
@@ -386,6 +331,29 @@ const app = new Elysia()
   })
   .ws('/ws', {
     async open(ws) {
+      const clientIp = resolveWsClientIp(ws)
+      const headers = resolveWsHeaders(ws)
+
+      let sessionPayload: { user?: WsUser } | null = null
+      try {
+        const sessionResponse = await validateSession({ headers })
+        if (sessionResponse.ok) {
+          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
+        }
+      } catch (error) {
+        console.error('Failed to validate chat session', error)
+      }
+
+      if (!sessionPayload?.user?.id) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' }))
+        ws.close()
+        return
+      }
+
+      const data = ws.data as WsData
+      data.clientIp = clientIp
+      data.user = sessionPayload.user
+
       ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
       if (!isValkeyReady()) {
         ws.send(JSON.stringify({ type: 'error', text: 'Chat unavailable: cache offline' }))
@@ -400,7 +368,6 @@ const app = new Elysia()
         await subscriber.subscribe(chatChannel, (message) => {
           ws.send(message)
         })
-        const data = ws.data as WsData
         data.subscriber = subscriber
       } catch (error) {
         console.error('WebSocket subscription failed', error)
@@ -422,8 +389,9 @@ const app = new Elysia()
     },
     async message(_ws, message) {
       if (!isValkeyReady()) return
-
-      const { allowed, retryAfter } = await checkWsQuota(_ws)
+      const data = _ws.data as WsData
+      const clientIp = data.clientIp ?? resolveWsClientIp(_ws)
+      const { allowed, retryAfter } = await checkWsQuota(clientIp)
 
       if (!allowed) {
         _ws.send(
@@ -466,11 +434,17 @@ const app = new Elysia()
         return
       }
 
-      const entry = { from: 'guest', text: trimmedText }
+      if (!data.user) {
+        _ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' }))
+        _ws.close()
+        return
+      }
+
+      const entry = { from: data.user.name || data.user.id, text: trimmedText, authorId: data.user.id }
 
       try {
         await db.insert(chatMessages).values({ author: entry.from, body: entry.text })
-        await valkey.publish(chatChannel, JSON.stringify({ type: 'chat', ...entry }))
+        await valkey.publish(chatChannel, JSON.stringify({ type: 'chat', from: entry.from, text: entry.text, authorId: entry.authorId }))
       } catch (error) {
         console.error('Failed to persist chat message', error)
         _ws.send(JSON.stringify({ type: 'error', error: 'Unable to send message' }))
