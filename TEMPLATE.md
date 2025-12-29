@@ -38,3 +38,5 @@ Use this template to set up local environments, opt into optional features, and 
 - Keep `apps/web/src/components` for UI shared across multiple routes; feature-specific helpers belong alongside their routes (e.g., `apps/web/src/routes/[locale]/ai/`).
 - Delete or inline single-use abstractions instead of adding shared helpers without clear reuse.
 - Keep props narrow and explicit; wire feature-only behavior at the route level instead of passing generic option bags.
+- Critical CSS is structural only: keep `apps/web/src/routes/critical.css` limited to layout stability (spacing, sizing, fallback visibility).
+  Move visual polish, animations, and non-critical states into scoped or global styles so critical CSS stays lean and avoid touching generated CSS.
