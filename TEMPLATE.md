@@ -25,6 +25,13 @@ Use this template to set up local environments, opt into optional features, and 
 - Entry points stay stable: prefer route or component edits over changes to `apps/web/src/entry.*` unless absolutely required.
 - Keep performance budgets in mind: defer or lazy-load heavy code paths, and avoid adding global client bundles.
 
+## SSR safety checklist
+
+- Keep renders pure: do not access `window`, `document`, `localStorage`, or `matchMedia` outside `useVisibleTask$`/`useTask$`, and guard with `typeof document !== 'undefined'` when you do.
+- Return only JSON-serializable data from `routeLoader$`, `routeAction$`, and `server$` functions—convert `Date`/`URL`/`Map`/`Set`/`BigInt` values to primitives first.
+- Wrap handlers in `$()` and keep them serializable; move DOM access into `useVisibleTask$` so QRLs avoid capturing non-serializable references.
+- When wiring animations or browser APIs, cancel in-flight work, respect `prefers-reduced-motion`, and avoid long-running work on the main thread.
+
 ## When to add a component (checklist)
 
 - Place shared UI under `apps/web/src/components/` (animations in `components/animations/`); route-only pieces should live alongside their route files.

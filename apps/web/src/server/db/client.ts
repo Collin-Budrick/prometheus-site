@@ -7,6 +7,6 @@ const connectionString =
     process.env.POSTGRES_HOST ?? 'localhost'
   }:${process.env.POSTGRES_PORT ?? 5433}/${process.env.POSTGRES_DB ?? 'prometheus'}`
 const ssl = process.env.POSTGRES_SSL === 'true' ? 'require' : false
+const pgClient = postgres(connectionString, { max: 5, ssl })
 
-export const pgClient = postgres(connectionString, { max: 5, ssl })
 export const db = drizzle({ client: pgClient })

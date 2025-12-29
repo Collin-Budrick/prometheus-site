@@ -1,4 +1,4 @@
-import { $, Slot, component$, useStyles$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, Slot, component$, useSignal, useStyles$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import {
   Link,
   routeAction$,
@@ -788,6 +788,7 @@ export default component$(() => {
   const loc = useLocation()
   const signOutAction = useSignOut()
   const session = useSessionLoader()
+  const navDirection = useSignal<'left' | 'right' | null>(null)
   const localePrefix = (() => {
     const segment = loc.url.pathname.split('/')[1] ?? ''
     return locales.includes(segment as any) ? `/${segment}` : ''
@@ -795,20 +796,32 @@ export default component$(() => {
   const navLinks = resolveNavLinks(session.value.hasSession, loc.url.pathname)
   const navOrder = resolveNavOrder(navLinks)
   const linkHref = (path: string) => (path === '/' ? localePrefix || '/' : `${localePrefix}${path}`)
+  useVisibleTask$(({ track }) => {
+    const direction = track(() => navDirection.value)
+    if (typeof document === 'undefined') return
+    const root = document.documentElement
+    if (!featureFlags.viewTransitions || !direction) {
+      delete root.dataset.vtDirection
+      return
+    }
+    root.dataset.vtDirection = direction
+  })
   const handleNavClick$ = $((event: MouseEvent, element: HTMLAnchorElement) => {
+    navDirection.value = null
     if (!featureFlags.viewTransitions) return
     if (event.button !== 0) return
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     if (element.target && element.target !== '_self') return
     if (element.hasAttribute('download')) return
-    if (element.origin !== window.location.origin) return
+    const targetHref = element.href
+    if (!targetHref) return
+    let targetUrl: URL | null = null
+    try {
+      targetUrl = new URL(targetHref, loc.url.href)
+    } catch {}
+    if (!targetUrl || targetUrl.origin !== loc.url.origin) return
 
-    const direction = resolveNavDirection(window.location.href, element.href, navOrder)
-    if (direction) {
-      document.documentElement.dataset.vtDirection = direction
-    } else {
-      delete document.documentElement.dataset.vtDirection
-    }
+    navDirection.value = resolveNavDirection(loc.url.href, targetUrl.href, navOrder)
   })
 
   return (
