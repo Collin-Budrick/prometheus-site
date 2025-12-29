@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { _ } from 'compiled-i18n'
+import { inlineTranslate, useSpeak } from 'qwik-speak'
 import type { DocumentHead, RequestHandler, StaticGenerateHandler } from '@builder.io/qwik-city'
 import { localeParams } from '../_shared/locale/locale-routing'
 
@@ -15,26 +15,34 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
 }
 
 export default component$(() => {
+  useSpeak({ assets: ['app'] })
+  const t = inlineTranslate()
   return (
     <section class="grid gap-6 md:grid-cols-2">
       <div class="p-6 surface">
-        <p class="text-emerald-300 text-sm uppercase tracking-wide">{_`Performance first`}</p>
-        <h1 class="mt-2 font-semibold text-slate-50 text-3xl">{_`Microscopic first load, big capability`}</h1>
+        <p class="text-emerald-300 text-sm uppercase tracking-wide">
+          {t('app.homeHero.eyebrow@@Performance first')}
+        </p>
+        <h1 class="mt-2 font-semibold text-slate-50 text-3xl">
+          {t('app.homeHero.title@@Microscopic first load, big capability')}
+        </h1>
         <p class="mt-4 text-slate-300">
-          {_`Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.`}
+          {t(
+            'app.homeHero.description@@Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.'
+          )}
         </p>
         <ul class="space-y-3 mt-6 text-slate-200 text-sm">
-          <li>{_`- Ultra-thin home route with immutable caching`}</li>
-          <li>{_`- Lazy feature routes for store, chat, and AI`}</li>
-          <li>{_`- Optional Partytown for third-party isolation`}</li>
+          <li>{t('app.homeHero.bulletImmutableHome@@- Ultra-thin home route with immutable caching')}</li>
+          <li>{t('app.homeHero.bulletLazyFeatures@@- Lazy feature routes for store, chat, and AI')}</li>
+          <li>{t('app.homeHero.bulletPartytown@@- Optional Partytown for third-party isolation')}</li>
         </ul>
       </div>
       <div class="p-6 text-slate-200 text-sm surface">
-        <h2 class="font-semibold text-slate-50 text-lg">{_`Latency budget`}</h2>
+        <h2 class="font-semibold text-slate-50 text-lg">{t('app.homeHero.latencyTitle@@Latency budget')}</h2>
         <ul class="space-y-2 mt-3">
-          <li>{_`Server render: sub-50ms target with streaming enabled`}</li>
-          <li>{_`Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny`}</li>
-          <li>{_`Speculative nav: prerender all internal links`}</li>
+          <li>{t('app.homeHero.latencyServer@@Server render: sub-50ms target with streaming enabled')}</li>
+          <li>{t('app.homeHero.latencyCss@@Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny')}</li>
+          <li>{t('app.homeHero.latencySpeculation@@Speculative nav: prerender all internal links')}</li>
         </ul>
       </div>
     </section>
@@ -48,12 +56,17 @@ export const onStaticGenerate: StaticGenerateHandler = () => {
 }
 
 export const head: DocumentHead = ({ withLocale }) =>
-  withLocale(() => ({
-    title: _`Prometheus | Ultra-fast starter`,
-    meta: [
-      {
-        name: 'description',
-        content: _`Qwik City + Bun + Valkey performance stack starter.`
-      }
-    ]
-  }))
+  withLocale(() => {
+    const translate = inlineTranslate()
+    return {
+      title: `${translate('app.brand.name@@Prometheus')} | ${translate('app.brand.tagline@@Performance Lab')}`,
+      meta: [
+        {
+          name: 'description',
+          content: translate(
+            'app.homeHero.description@@Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.'
+          )
+        }
+      ]
+    }
+  })
