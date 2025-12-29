@@ -191,24 +191,28 @@ export const onRequest: RequestHandler = async ({
   headersSent
 }) => {
   const requested = normalizeLocaleParam((params as any).locale)
-  if (!requested) {
-    const preferred = resolvePreferredLocale({
-      queryLocale: query.get('locale'),
-      cookieLocale: cookie.get('locale')?.value ?? null,
-      acceptLanguage: request.headers.get('accept-language')
-    })
-
-    const rest = stripLocalePrefix(pathname)
-    throw redirect(302, `/${preferred}${rest}${url.search}`)
-  }
+  const preferred =
+    normalizeLocaleParam(
+      resolvePreferredLocale({
+        queryLocale: query.get('locale'),
+        cookieLocale: cookie.get('locale')?.value ?? null,
+        acceptLanguage: request.headers.get('accept-language')
+      })
+    ) ?? defaultLocale
+  const activeLocale = requested ?? preferred
 
   const purposeHeader = request.headers.get('sec-purpose') || request.headers.get('purpose')
   const isSpeculationRequest = Boolean(purposeHeader && /(prefetch|prerender)/i.test(purposeHeader))
   const existingLocale = cookie.get('locale')?.value ?? null
-  if (!isSpeculationRequest && existingLocale !== requested) {
-    cookie.set('locale', requested, localeCookieOptions)
+  if (!isSpeculationRequest && existingLocale !== activeLocale) {
+    cookie.set('locale', activeLocale, localeCookieOptions)
   }
-  locale(requested)
+  locale(activeLocale)
+
+  if (!requested) {
+    const rest = stripLocalePrefix(pathname)
+    throw redirect(302, `/${activeLocale}${rest}${url.search}`)
+  }
 
   const previewCacheEnabled = typeof process !== 'undefined' && toBoolean(process.env.VITE_PREVIEW_CACHE, false)
 
