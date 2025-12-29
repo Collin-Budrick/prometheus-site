@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'bun:test'
+import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import type { StoreItemRow } from '../src/routes/[locale]/store/store-data'
-import { centsToDecimalString, centsToNumber, normalizeItem, priceToCents } from '../src/routes/[locale]/store/store-data'
+
+let centsToDecimalString: typeof import('../src/routes/[locale]/store/store-data').centsToDecimalString
+let centsToNumber: typeof import('../src/routes/[locale]/store/store-data').centsToNumber
+let normalizeItem: typeof import('../src/routes/[locale]/store/store-data').normalizeItem
+let priceToCents: typeof import('../src/routes/[locale]/store/store-data').priceToCents
+
+beforeAll(async () => {
+  mock.module('@qwik-city-plan', () => ({ default: {} }))
+  mock.module('@qwik-city-sw-register', () => ({ default: () => {} }))
+  ;({ centsToDecimalString, centsToNumber, normalizeItem, priceToCents } = await import(
+    '../src/routes/[locale]/store/store-data'
+  ))
+})
 
 const makeRow = (price: StoreItemRow['price']): StoreItemRow => ({
   id: 1,

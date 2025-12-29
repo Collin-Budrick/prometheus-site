@@ -1,6 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { DocumentHead, StaticGenerateHandler } from '@builder.io/qwik-city'
-import { _, locales } from 'compiled-i18n'
+import { _ } from 'compiled-i18n'
 import type { GpuTier } from '../../../components/gpu/capability-probe'
 import type { NpuTier } from '../../../components/gpu/npu-probe'
 import type { AccelerationTarget } from '../../../config/ai-acceleration'
@@ -9,6 +9,7 @@ import { AiEchoIsland } from './ai-echo-island'
 import { GpuProbeIsland } from './gpu-probe-island'
 import { WebLlmIsland } from './web-llm-island'
 import { WebNnOrtIsland } from './webnn-ort-island'
+import { localeParams } from '../_shared/locale/locale-routing'
 
 export default component$(() => {
   const selectedAcceleration = useSignal<AccelerationTarget>('npu')
@@ -121,7 +122,7 @@ export default component$(() => {
 
 export const onStaticGenerate: StaticGenerateHandler = () => {
   return {
-    params: locales.map((locale) => ({ locale }))
+    params: localeParams
   }
 }
 

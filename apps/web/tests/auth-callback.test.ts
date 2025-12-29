@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { RequestEventAction } from '@builder.io/qwik-city'
 import { normalizeAuthCallback } from '../src/routes/[locale]/auth-callback'
 import { emailRegisterAction } from '../src/routes/[locale]/register/actions'
@@ -27,9 +27,15 @@ describe('normalizeAuthCallback', () => {
 
 describe('emailRegisterAction', () => {
   const originalFetch = globalThis.fetch
+  const originalApiUrl = process.env.API_URL
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    process.env.API_URL = originalApiUrl
+  })
+
+  beforeEach(() => {
+    process.env.API_URL = 'http://localhost:4000'
   })
 
   const createEvent = (locale?: string) => {

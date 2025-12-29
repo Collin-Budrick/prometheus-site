@@ -8,6 +8,10 @@
       "render": "ssg",
       "speculation": "prerender"
     },
+    "/account": {
+      "render": "ssr",
+      "speculation": "prefetch"
+    },
     "/ai": {
       "render": "ssg",
       "speculation": "prerender"
@@ -16,7 +20,7 @@
       "render": "ssr",
       "speculation": "prefetch"
     },
-    "/store": {
+    "/dashboard": {
       "render": "ssr",
       "speculation": "prefetch"
     },
@@ -40,15 +44,11 @@
       "render": "ssr",
       "speculation": "none"
     },
-    "/dashboard": {
-      "render": "ssr",
-      "speculation": "prefetch"
-    },
-    "/account": {
-      "render": "ssr",
-      "speculation": "prefetch"
-    },
     "/settings": {
+      "render": "ssr",
+      "speculation": "prefetch"
+    },
+    "/store": {
       "render": "ssr",
       "speculation": "prefetch"
     }
