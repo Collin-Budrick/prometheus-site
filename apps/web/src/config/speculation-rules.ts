@@ -26,7 +26,7 @@ export const conservativeViewportRules: SpeculationRules = {
             selector_matches:
               'a[href^="/"]:not([href^="//"]):not([href^="/@fs/"]):not([href^="/node_modules/"]):not([href*="#"])'
           },
-          { not: { selector_matches: '[rel~=nofollow], [data-speculate="false"]' } }
+          { not: { selector_matches: '[rel~=nofollow], [data-speculate="false"], [data-speculate="none"]' } }
         ]
       },
       eagerness: 'eager'
