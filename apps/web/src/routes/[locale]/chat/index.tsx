@@ -1,4 +1,4 @@
-import { component$ } from '@builder.io/qwik'
+import { $, component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead } from '@builder.io/qwik-city'
 import { _ } from 'compiled-i18n'
 import { ChatIsland } from './chat-island'
@@ -26,7 +26,7 @@ export default component$(() => {
         {_`The client only loads after navigation to keep the home route microscopic. Connect on demand to keep bfcache eligibility until realtime is needed. Messages fan out through Valkey channels on the API.`}
       </p>
 
-      <div onQVisible$={() => undefined}>
+      <div onQVisible$={$(() => undefined)}>
         <ChatIsland signedIn={session.value.hasSession} />
       </div>
     </section>

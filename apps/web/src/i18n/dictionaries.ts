@@ -22,17 +22,13 @@ const loadDictionary = async (locale: Locale) => {
     return locale
   }
 
-  try {
-    const loaded = await loadLocaleData(locale)
-    ensureFallbackLocale(locale, loaded)
-    localeStore[locale] = loaded
-    if (locale !== defaultLocale) {
-      await loadDictionary(defaultLocale)
-    }
-    return locale
-  } catch (err) {
-    throw err
+  const loaded = await loadLocaleData(locale)
+  ensureFallbackLocale(locale, loaded)
+  localeStore[locale] = loaded
+  if (locale !== defaultLocale) {
+    await loadDictionary(defaultLocale)
   }
+  return locale
 }
 
 const normalizeLocale = (locale: Locale) => (locales.includes(locale) ? locale : defaultLocale)
