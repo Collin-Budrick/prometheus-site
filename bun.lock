@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "prometheus-site",
@@ -60,6 +59,7 @@
         "motion": "13.0.0-alpha.0",
         "onnxruntime-web": "^1.24.0-dev.20251116-b39e144322",
         "postgres": "3.4.7",
+        "qwik-speak": "^0.24.0",
         "typegpu": "^0.9.0",
         "zod": "4.3.0-canary.20251223T202943",
       },
@@ -1705,6 +1705,8 @@
     "quansync": ["quansync@1.0.0", "", {}, "sha512-5xZacEEufv3HSTPQuchrvV6soaiACMFnq1H8wkVioctoH3TRha9Sz66lOxRwPK/qZj7HPiSveih9yAyh98gvqA=="],
 
     "querystringify": ["querystringify@2.2.0", "", {}, "sha512-FIqgj2EUvTa7R50u0rGsyTftzjYmv/a3hO345bZNrqabNqjtgiDMgmo4mkUjd+nzU5oF3dClKqFIPUKybUyqoQ=="],
+
+    "qwik-speak": ["qwik-speak@0.24.0", "", { "peerDependencies": { "@builder.io/qwik": ">=1.5.5" }, "bin": { "qwik-speak-extract": "extract/cli.js" } }, "sha512-ZYhb5ZjHmLZX40xw/pTciyHvPAR0uKQKnoyD5XEYZsIfLNsJb22m/Ct3/FuGbiJQ3o2HkgRmC+mj8sd8SjdELg=="],
 
     "randombytes": ["randombytes@2.1.0", "", { "dependencies": { "safe-buffer": "^5.1.0" } }, "sha512-vYl3iOX+4CKUWuxGi9Ukhie6fsqXqS9FE2Zaic4tNFD2N2QQaXOMFbuKK4QmDHC0JO6B1Zp41J0LpT0oR68amQ=="],
 
