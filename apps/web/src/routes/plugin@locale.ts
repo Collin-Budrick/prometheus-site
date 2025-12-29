@@ -46,7 +46,7 @@ export const resolveLocaleRedirect = (pathname: string, search: string, queryLoc
   const params = new URLSearchParams(search)
   params.delete('locale')
   const cleanedSearch = params.toString()
-  const nextPath = rest === '/' ? '' : rest
+  const nextPath = rest === '/' ? '/' : rest
   const nextUrl = `/${normalizedQuery}${nextPath}${cleanedSearch ? `?${cleanedSearch}` : ''}`
   const currentSearch = search && !search.startsWith('?') ? `?${search}` : search
   const currentUrl = `${normalizedPath}${currentSearch}`
@@ -54,7 +54,7 @@ export const resolveLocaleRedirect = (pathname: string, search: string, queryLoc
   return nextUrl === currentUrl ? null : nextUrl
 }
 
-export const onRequest: RequestHandler = ({ pathname, cookie, locale, query, redirect, request, url }) => {
+const handleLocaleRouting: RequestHandler = ({ pathname, cookie, locale, query, redirect, request, url }) => {
   if (shouldSkipLocaleRedirect(pathname)) return
 
   const redirectTarget = resolveLocaleRedirect(pathname, url.search, query.get('locale'))
@@ -76,7 +76,7 @@ export const onRequest: RequestHandler = ({ pathname, cookie, locale, query, red
     const params = new URLSearchParams(url.search)
     params.delete('locale')
     const cleanedSearch = params.toString()
-    const suffix = normalizedPath === '/' ? '' : normalizedPath
+    const suffix = normalizedPath === '/' ? '/' : normalizedPath
     throw redirect(302, `/${preferred}${suffix}${cleanedSearch ? `?${cleanedSearch}` : ''}`)
   }
 
@@ -85,3 +85,6 @@ export const onRequest: RequestHandler = ({ pathname, cookie, locale, query, red
   cookie.set('locale', requested, localeCookieOptions)
   locale(requested)
 }
+
+export const onRequest: RequestHandler = handleLocaleRouting
+export const onGet: RequestHandler = handleLocaleRouting
