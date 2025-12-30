@@ -4,13 +4,9 @@ import { manifest } from '@qwik-client-manifest'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 import { resolveLocale } from './i18n/locale'
-import { ensureLocaleDictionary } from './i18n/dictionaries'
-import { defaultLocale, locales as supportedLocales, setLocaleGetter, type Locale } from 'compiled-i18n'
+import type { Locale } from './i18n/locales'
 
 // cspell:ignore qwikloader
-
-let ssrLocale: Locale = defaultLocale
-setLocaleGetter(() => ssrLocale)
 
 const resolveBase = (opts: RenderToStreamOptions) => {
   const base = typeof opts.base === 'function' ? opts.base(opts) : opts.base
@@ -24,13 +20,6 @@ const isManifestWrapper = (value: unknown): value is { manifest: unknown } & Rec
 
 const resolveLocaleFromRequest = (opts: RenderToStreamOptions) => {
   const url = opts.serverData?.url
-  if (url) {
-    try {
-      const pathnameLocale = new URL(url, 'http://qwik.local').pathname.split('/')[1]?.toLowerCase()
-      if (pathnameLocale && supportedLocales.includes(pathnameLocale as any)) return pathnameLocale as any
-    } catch {}
-  }
-
   const knownLocale = opts.locale || opts.serverData?.locale
   if (knownLocale) return knownLocale
 
@@ -43,10 +32,16 @@ const resolveLocaleFromRequest = (opts: RenderToStreamOptions) => {
     }
   }
 
-  const acceptLanguage =
-    (opts.serverData?.requestHeaders as Record<string, string> | undefined)?.['accept-language'] ?? undefined
+  const requestHeaders = opts.serverData?.requestHeaders as Record<string, string> | undefined
+  const acceptLanguage = requestHeaders?.['accept-language'] ?? undefined
+  const cookieHeader = requestHeaders?.cookie ?? ''
+  const cookieLocale = (() => {
+    if (!cookieHeader) return null
+    const match = cookieHeader.match(/(?:^|;\\s*)locale=([^;]+)/)
+    return match ? decodeURIComponent(match[1]) : null
+  })()
 
-  return resolveLocale({ queryLocale, acceptLanguage })
+  return resolveLocale({ queryLocale, cookieLocale, acceptLanguage })
 }
 
 const resolvePathname = (opts: RenderToStreamOptions) => {
@@ -186,8 +181,7 @@ export default async function render(opts: RenderToStreamOptions) {
   const pathname = resolvePathname(opts)
   const isAudit = resolveIsAudit(opts)
   const locale = resolveLocaleFromRequest(opts) as Locale
-  const loadedLocale = await ensureLocaleDictionary(locale)
-  const serverData = { ...opts.serverData, locale: loadedLocale } as Record<string, any>
+  const serverData = { ...opts.serverData, locale } as Record<string, any>
   const qwikCity = serverData.qwikcity as Record<string, any> | undefined
   if (qwikCity) {
     if (qwikCity.ev) qwikCity.ev = noSerialize(qwikCity.ev)
@@ -199,8 +193,8 @@ export default async function render(opts: RenderToStreamOptions) {
   const loaderSrc = `${base}${loaderFile}`
   const containerAttributes = {
     ...opts.containerAttributes,
-    lang: loadedLocale,
-    'q:locale': loadedLocale
+    lang: locale,
+    'q:locale': locale
   }
 
   const warmupModules = isProd ? resolveWarmupModules(resolvedManifest) : []
@@ -263,29 +257,23 @@ export default async function render(opts: RenderToStreamOptions) {
       : clientManifest
   ) as RenderToStreamOptions['manifest']
 
-  const previousLocale = ssrLocale
-  ssrLocale = loadedLocale
-  try {
-    return await renderToStream(<Root />, {
-      ...opts,
-      base,
-      locale,
-      serverData,
-      manifest: manifestWithLazyLoader,
-      qwikLoader: isProd ? 'never' : opts.qwikLoader,
-      preloader: isProd ? false : opts.preloader,
-      containerTagName: 'html',
-      containerAttributes,
-      stream:
-        opts.stream ??
-        {
-          static: {
-            buffer: 0
-          },
-          inOrder: ['<html']
-        }
-    })
-  } finally {
-    ssrLocale = previousLocale
-  }
+  return renderToStream(<Root />, {
+    ...opts,
+    base,
+    locale,
+    serverData,
+    manifest: manifestWithLazyLoader,
+    qwikLoader: isProd ? 'never' : opts.qwikLoader,
+    preloader: isProd ? false : opts.preloader,
+    containerTagName: 'html',
+    containerAttributes,
+    stream:
+      opts.stream ??
+      {
+        static: {
+          buffer: 0
+        },
+        inOrder: ['<html']
+      }
+  })
 }

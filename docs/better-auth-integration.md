@@ -2,7 +2,7 @@
 
 ## Current authentication surface
 
-- **Web app:** The localized login and registration pages are SSR-first, using `routeAction$` to call Better Auth email and social endpoints while keeping credentials off the client bundle. Passkey and OAuth buttons progressively enhance on interaction only. 【F:apps/web/src/routes/[locale]/login/index.tsx†L1-L260】【F:apps/web/src/routes/[locale]/register/index.tsx†L1-L250】
+- **Web app:** The login and registration pages are SSR-first with runtime locale switching, using `routeAction$` to call Better Auth email and social endpoints while keeping credentials off the client bundle. Passkey and OAuth buttons progressively enhance on interaction only. 【F:apps/web/src/routes/login/index.tsx†L1-L260】【F:apps/web/src/routes/register/index.tsx†L1-L250】
 - **API:** Elysia mounts `/api/auth` routes for email sign-in/up, social sign-in, and session introspection, then delegates remaining Better Auth routes (passkeys, OAuth callbacks, sign-out) to the handler. 【F:apps/api/src/server/routes/auth.ts†L1-L43】
 
 ## Requirements vs. Better Auth capabilities
@@ -31,8 +31,8 @@
 ## Implemented surface
 
 - **API:** Added dedicated Elysia routes for Better Auth under `/api/auth`, including email/password sign-in/up, session introspection, passkey, and OAuth callback delegation. Better Auth’s handler still owns passkey/OAuth endpoints while Elysia shapes request bodies and mirrors `Set-Cookie` headers. 【F:apps/api/src/server/routes/auth.ts†L1-L43】【F:apps/api/src/server/app.ts†L1-L95】
-- **Web:** Login and registration pages now use `routeAction$` + `<Form>` to post to the API, forward refreshed cookies, and render localized errors while keeping credentials server-side. Passkey login/registration buttons progressively enhance the forms by calling the WebAuthn challenge/verify endpoints only on user interaction. 【F:apps/web/src/routes/[locale]/login/index.tsx†L1-L219】【F:apps/web/src/routes/[locale]/register/index.tsx†L1-L211】
-- **SSR guard:** Protected SSR routes validate the Better Auth session server-side via `/api/auth/session` and redirect unauthenticated visitors to the localized login page with a callback to return post-auth. 【F:apps/web/src/routes/[locale]/store/index.tsx†L1-L30】【F:apps/web/src/server/auth/session.ts†L1-L39】
+- **Web:** Login and registration pages now use `routeAction$` + `<Form>` to post to the API, forward refreshed cookies, and render localized errors while keeping credentials server-side. Passkey login/registration buttons progressively enhance the forms by calling the WebAuthn challenge/verify endpoints only on user interaction. 【F:apps/web/src/routes/login/index.tsx†L1-L219】【F:apps/web/src/routes/register/index.tsx†L1-L211】
+- **SSR guard:** Protected SSR routes validate the Better Auth session server-side via `/api/auth/session` and redirect unauthenticated visitors to the login page with a callback to return post-auth. 【F:apps/web/src/routes/store/index.tsx†L1-L30】【F:apps/web/src/server/auth/session.ts†L1-L39】
 
 ## Cookie and session strategy
 

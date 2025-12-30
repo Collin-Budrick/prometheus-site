@@ -12,7 +12,7 @@ type PageConfigFile = {
 }
 
 const projectRoot = process.cwd()
-const routesRoot = path.join(projectRoot, 'src', 'routes', '[locale]')
+const routesRoot = path.join(projectRoot, 'src', 'routes')
 const configPath = path.join(projectRoot, 'src', 'config', 'page-config.json')
 const routeExtensions = new Set(['.tsx', '.ts', '.jsx', '.js', '.mdx', '.md'])
 

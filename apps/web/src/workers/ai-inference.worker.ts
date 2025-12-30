@@ -9,9 +9,9 @@ import {
   type TransformersDtype,
   type WebLlmModelId
 } from '../config/ai-models'
-import type { AccelerationPreference } from '../routes/[locale]/ai/acceleration'
-import type { GpuProbeMetrics, GpuTier } from '../routes/[locale]/ai/probes/gpu-probe'
-import type { NpuProbeMetrics, NpuTier } from '../routes/[locale]/ai/probes/npu-probe'
+import type { AccelerationPreference } from '../routes/ai/acceleration'
+import type { GpuProbeMetrics, GpuTier } from '../routes/ai/probes/gpu-probe'
+import type { NpuProbeMetrics, NpuTier } from '../routes/ai/probes/npu-probe'
 import { webLlmModelRecords } from './web-llm-records'
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error'

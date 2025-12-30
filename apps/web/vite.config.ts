@@ -3,7 +3,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv as loadViteEnv, type Plugin, type PluginOption, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
-import { i18nPlugin } from 'compiled-i18n/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
 import { partytownVite } from '@qwik.dev/partytown/utils'
@@ -36,7 +35,6 @@ const appRoot = fileURLToPath(new URL('.', import.meta.url))
 const repoRoot = path.resolve(appRoot, '..', '..')
 const cacheDir = fileURLToPath(new URL('../../node_modules/.vite/web', import.meta.url))
 const partytownDest = fileURLToPath(new URL('./public/~partytown', import.meta.url))
-const localesDir = fileURLToPath(new URL('../../i18n', import.meta.url))
 const qwikLoaderPattern = /@builder\.io\/qwik\/dist\/qwikloader\.m?js$/
 const normalizeModuleId = (id: string) => id.replaceAll('\\', '/')
 const treeshakeOptions = {
@@ -245,7 +243,6 @@ export default defineConfig((configEnv) => {
     qwikViteNoDeprecatedEsbuild(),
     preserveQwikLoader(),
     forceClientBundleDeps(true),
-    i18nPlugin({ locales: ['en', 'ko', 'ja'], lazy: true, localesDir }),
     tsconfigPaths(),
     UnoCSS(),
     VitePWA({
@@ -334,7 +331,7 @@ export default defineConfig((configEnv) => {
     devAuditStripViteClient(env.devAuditMode),
     devBustedViteClient(!env.devAuditMode),
     qwikCityDevEnvDataJsonSafe(),
-    localeBuildFallback(['en', 'ko', 'ja']),
+    localeBuildFallback(['en', 'ja', 'ko']),
     devFontSilencer(),
     previewBrotliAssets(),
     previewImmutableAssetCache(env.previewCacheEnabled),
@@ -376,13 +373,7 @@ export default defineConfig((configEnv) => {
     },
     optimizeDeps: {
       entries: ['src/entry.dev.tsx', 'src/entry.client.tsx', 'src/root.tsx'],
-      include: [
-        '@builder.io/qwik',
-        'compiled-i18n',
-        'compiled-i18n/qwik'
-      ],
-      // Keep the locale store singleton in dev by avoiding prebundle duplication.
-      exclude: ['@i18n/__locales', '@i18n/__data', '@i18n/__state'],
+      include: ['@builder.io/qwik'],
       rolldownOptions: {
         treeshake: treeshakeOptions
       }
@@ -403,7 +394,7 @@ export default defineConfig((configEnv) => {
       },
       watch: env.shouldUseHmrPolling ? { usePolling: true, interval: 150 } : undefined,
       fs: {
-        allow: [appRoot, localesDir, cacheDir]
+        allow: [appRoot, cacheDir]
       }
     },
     preview: {

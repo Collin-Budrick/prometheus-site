@@ -12,7 +12,7 @@ This route uses lightweight probes to assess available GPU (WebGPU) and NPU (Web
 
 ## WebGPU probe details
 
-The probe lives in `apps/web/src/routes/[locale]/ai/probes/gpu-probe.ts` and runs client-side via a Qwik island (`apps/web/src/routes/[locale]/ai/gpu-probe-island.tsx`). It intentionally avoids DOM access during SSR.
+The probe lives in `apps/web/src/routes/ai/probes/gpu-probe.ts` and runs client-side via a Qwik island (`apps/web/src/routes/ai/gpu-probe-island.tsx`). It intentionally avoids DOM access during SSR.
 
 1. **Adapter selection**: request a `high-performance` adapter first, then fall back to `low-power`.
 2. **TypeGPU buffers**: initialize a TypeGPU root from the WebGPU device and allocate typed buffers sized with `d.arrayOf(d.u32, count)` so byte sizing stays deterministic.
@@ -30,7 +30,7 @@ The probe lives in `apps/web/src/routes/[locale]/ai/probes/gpu-probe.ts` and run
 
 ## WebNN (NPU) probe details
 
-The NPU probe lives in `apps/web/src/routes/[locale]/ai/probes/npu-probe.ts` and is triggered from the same island. It prefers an `npu` context when possible and falls back to `auto` to run on any device.
+The NPU probe lives in `apps/web/src/routes/ai/probes/npu-probe.ts` and is triggered from the same island. It prefers an `npu` context when possible and falls back to `auto` to run on any device.
 
 1. **Context selection**: attempt `deviceType: 'npu'` (high-performance), then fall back to `deviceType: 'auto'`.
 2. **Graph build**: create a small matmul graph with a square input/weight tensor (default 256 x 256).

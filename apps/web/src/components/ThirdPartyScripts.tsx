@@ -37,6 +37,7 @@ export const ThirdPartyScripts = component$(() => {
   const isPreview = import.meta.env.PROD
   const consentEntries = isPreview ? entries.filter((entry) => entry.load === 'interaction') : []
   const immediateEntries = isPreview ? entries.filter((entry) => entry.load !== 'interaction') : entries
+  const renderEntries = immediateEntries.filter((entry) => entry.src || entry.inline)
 
   if (!entries.length) {
     return null
@@ -47,9 +48,7 @@ export const ThirdPartyScripts = component$(() => {
       {isPreview && consentEntries.length > 0 && (
         <script dangerouslySetInnerHTML={consentLoader(consentEntries, partytownEnabled)} />
       )}
-      {immediateEntries.map((entry) => {
-        if (!entry.src && !entry.inline) return null
-
+      {renderEntries.map((entry) => {
         const baseProps = entry.attributes ?? {}
 
         if (entry.partytown && partytownEnabled) {

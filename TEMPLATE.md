@@ -38,11 +38,11 @@ Use this template to set up local environments, opt into optional features, and 
 - Make handlers QRL-safe: use `$()` and avoid capturing `window`, `document`, or other non-serializable values inside render paths.
 - Keep styles scoped: prefer route-scoped styles or utilities; add structural/above-the-fold rules to `apps/web/src/routes/critical.css` only when necessary.
 - Prime navigation wisely: use Speculation Rules and View Transitions where appropriate, but keep the initial payload minimal.
-- Update `apps/web/src/config/page-config.json` when new routes need speculation or prerender entries, and align nav links in the locale layout.
+- Update `apps/web/src/config/page-config.json` when new routes need speculation or prerender entries, and align nav links in the layout.
 
 ## Component reuse rules
 
-- Keep `apps/web/src/components` for UI shared across multiple routes; feature-specific helpers belong alongside their routes (e.g., `apps/web/src/routes/[locale]/ai/`).
+- Keep `apps/web/src/components` for UI shared across multiple routes; feature-specific helpers belong alongside their routes (e.g., `apps/web/src/routes/ai/`).
 - Delete or inline single-use abstractions instead of adding shared helpers without clear reuse.
 - Keep props narrow and explicit; wire feature-only behavior at the route level instead of passing generic option bags.
 - Critical CSS is structural only: keep `apps/web/src/routes/critical.css` limited to layout stability (spacing, sizing, fallback visibility).

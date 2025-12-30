@@ -1,27 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { RequestEventAction } from '@builder.io/qwik-city'
-import { normalizeAuthCallback } from '../src/routes/[locale]/auth-callback'
-import { emailRegisterAction } from '../src/routes/[locale]/register/actions'
+import { normalizeAuthCallback } from '../src/routes/auth-callback'
+import { emailRegisterAction } from '../src/routes/register/actions'
 
 describe('normalizeAuthCallback', () => {
   it('defaults to the dashboard path without a trailing slash', () => {
     expect(normalizeAuthCallback(undefined)).toBe('/dashboard')
-    expect(normalizeAuthCallback(undefined, 'en')).toBe('/en/dashboard')
   })
 
   it('preserves valid callback paths', () => {
-    expect(normalizeAuthCallback('/welcome', 'en')).toBe('/welcome')
+    expect(normalizeAuthCallback('/welcome')).toBe('/welcome')
   })
 
   it('normalizes root callbacks to the dashboard', () => {
-    expect(normalizeAuthCallback('/', 'en')).toBe('/en/dashboard')
-    expect(normalizeAuthCallback('/en', 'en')).toBe('/en/dashboard')
-    expect(normalizeAuthCallback('/en/', 'en')).toBe('/en/dashboard')
+    expect(normalizeAuthCallback('/')).toBe('/dashboard')
+    expect(normalizeAuthCallback('/en')).toBe('/dashboard')
+    expect(normalizeAuthCallback('/en/')).toBe('/dashboard')
   })
 
   it('rejects external callbacks', () => {
-    expect(normalizeAuthCallback('https://example.com', 'en')).toBe('/en/dashboard')
-    expect(normalizeAuthCallback('//example.com', 'en')).toBe('/en/dashboard')
+    expect(normalizeAuthCallback('https://example.com')).toBe('/dashboard')
+    expect(normalizeAuthCallback('//example.com')).toBe('/dashboard')
   })
 })
 
@@ -38,11 +37,11 @@ describe('emailRegisterAction', () => {
     process.env.API_URL = 'http://localhost:4000'
   })
 
-  const createEvent = (locale?: string) => {
+  const createEvent = () => {
     const headers = new Headers()
     return {
       env: new Map(),
-      params: { locale },
+      params: {},
       request: new Request('https://example.com/register', { headers: { cookie: 'prefill=true' } }),
       headers,
       fail: (status: number, data: unknown) => ({ status, data }),
@@ -58,11 +57,11 @@ describe('emailRegisterAction', () => {
       return new Response('{}', { status: 200, headers: { 'set-cookie': 'session=abc' } })
     }
 
-    const event = createEvent('en')
+    const event = createEvent()
     await expect(emailRegisterAction({}, event as RequestEventAction)).rejects.toEqual(
       expect.objectContaining({
         status: 200,
-        body: expect.stringContaining('url=/en/dashboard')
+        body: expect.stringContaining('url=/dashboard')
       })
     )
     expect(fetchCalls).toHaveLength(1)
@@ -73,7 +72,7 @@ describe('emailRegisterAction', () => {
     )
     expect(fetchCalls[0]?.body && JSON.parse(fetchCalls[0].body)).toEqual(
       expect.objectContaining({
-        callbackURL: 'https://example.com/en/dashboard'
+        callbackURL: 'https://example.com/dashboard'
       })
     )
     expect(event.headers.get('set-cookie')).toBe('session=abc')
@@ -86,7 +85,7 @@ describe('emailRegisterAction', () => {
       return new Response('{}', { status: 200, headers: { 'set-cookie': 'session=def' } })
     }
 
-    const event = createEvent('en')
+    const event = createEvent()
     await expect(
       emailRegisterAction({ callback: '/welcome' }, event as RequestEventAction)
     ).rejects.toEqual(

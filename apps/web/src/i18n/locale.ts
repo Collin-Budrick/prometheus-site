@@ -1,6 +1,6 @@
-import { defaultLocale, locales } from 'compiled-i18n'
+import { defaultLocale, locales, type Locale } from './locales'
 
-const normalizeLocale = (value?: string | null) => {
+export const normalizeLocale = (value?: string | null): Locale | undefined => {
   if (!value) return undefined
   const trimmed = value.trim()
   if (!trimmed) return undefined
@@ -23,6 +23,8 @@ const fromAcceptLanguage = (header?: string | null) => {
   }
   return undefined
 }
+
+export const guessLocale = (acceptLanguage?: string | null) => fromAcceptLanguage(acceptLanguage)
 
 export const resolveLocale = ({
   queryLocale,

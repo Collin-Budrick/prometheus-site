@@ -8,18 +8,11 @@ COPY package.json bun.lock ./
 COPY bunfig.toml ./
 COPY apps/web/package.json apps/web/
 COPY apps/api/package.json apps/api/
-COPY packages/i18n-data/package.json packages/i18n-data/
-COPY packages/i18n-locales/package.json packages/i18n-locales/
-COPY packages/i18n-state/package.json packages/i18n-state/
 COPY patches ./patches
 RUN bun install --ignore-scripts
 
 COPY apps/web ./apps/web
 COPY apps/api/src ./apps/api/src
-COPY packages/i18n-data ./packages/i18n-data
-COPY packages/i18n-locales ./packages/i18n-locales
-COPY packages/i18n-state ./packages/i18n-state
-COPY i18n ./i18n
 RUN bun run --cwd apps/web build
 
 FROM node:20-alpine
@@ -31,7 +24,6 @@ ENV PATH="/root/.bun/bin:${PATH}"
 ENV WEB_PORT=4173
 COPY --from=base /app/package.json ./package.json
 COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/i18n ./i18n
 COPY --from=base /app/apps/web ./apps/web
 EXPOSE 4173
 CMD ["bun", "run", "--cwd", "apps/web", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]

@@ -1,4 +1,5 @@
-import { defaultLocale, guessLocale, locales } from 'compiled-i18n'
+import { defaultLocale, locales } from '../../../i18n/locales'
+import { guessLocale } from '../../../i18n/locale'
 
 export const localeCookieOptions = {
   path: '/',
@@ -31,7 +32,7 @@ export const resolvePreferredLocale = (opts: {
     normalizeLocaleParam(opts.queryLocale) ||
     normalizeLocaleParam(opts.cookieLocale) ||
     guessLocale(opts.acceptLanguage) ||
-    locales[0]
+    defaultLocale
   )
 }
 
@@ -43,34 +44,4 @@ export const stripLocalePrefix = (pathname: string) => {
     return rest || '/'
   }
   return pathname
-}
-
-export const localeParams = supportedLocales.map((locale) => ({ locale }))
-
-type PreferredLocaleLoaderEvent = {
-  request: Request
-  cookie: {
-    get: (name: string) => { value: string } | undefined
-    set: (name: string, value: string, options: typeof localeCookieOptions) => void
-  }
-  query: URLSearchParams
-  locale: (value: string) => void
-}
-
-export const resolvePreferredLocaleLoader = ({
-  request,
-  cookie,
-  query,
-  locale
-}: PreferredLocaleLoaderEvent) => {
-  const preferred = resolvePreferredLocale({
-    queryLocale: query.get('locale'),
-    cookieLocale: cookie.get('locale')?.value ?? null,
-    acceptLanguage: request.headers.get('accept-language')
-  })
-
-  cookie.set('locale', preferred, localeCookieOptions)
-  locale(preferred)
-
-  return preferred
 }

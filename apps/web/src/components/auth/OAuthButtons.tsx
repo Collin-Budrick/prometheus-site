@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import { Form, type ActionStore } from '@builder.io/qwik-city'
-import { _ } from 'compiled-i18n'
+import { _ } from '../../i18n/translate'
 
 type OAuthProvider = {
   id: string

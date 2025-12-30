@@ -1,9 +1,7 @@
 import { render, type RenderOptions } from '@builder.io/qwik'
-import { defaultLocale, locales, setDefaultLocale } from 'compiled-i18n'
+import { defaultLocale, locales } from './i18n/locales'
 import Root from './root'
-import { resolveLocale } from './i18n/locale'
-import { resolvePathnameLocale } from './i18n/pathname-locale'
-import { ensureLocaleDictionary } from './i18n/dictionaries'
+import { normalizeLocale, resolveLocale } from './i18n/locale'
 
 type SwRegistrationStatus = 'skipped' | 'unavailable' | 'registered' | 'error'
 
@@ -58,8 +56,10 @@ const registerServiceWorker = async (): Promise<SwRegistrationStatus> => {
 
 const resolveClientLocale = () => {
   if (typeof document === 'undefined') return undefined
-  const pathnameLocale = resolvePathnameLocale(window.location.pathname)
-  if (pathnameLocale) return pathnameLocale
+  try {
+    const stored = normalizeLocale(window.localStorage.getItem('locale'))
+    if (stored) return stored
+  } catch {}
 
   const declared = document.documentElement.getAttribute('q:locale') || document.documentElement.lang
   if (declared && locales.includes(declared as any)) return declared as any
@@ -83,12 +83,10 @@ const persistLocaleCookie = (locale: string) => {
 
 export default async function renderClient(opts: RenderOptions) {
   const locale = resolveClientLocale() ?? defaultLocale
-  const loadedLocale = await ensureLocaleDictionary(locale)
   if (typeof document !== 'undefined') {
-    document.documentElement.lang = loadedLocale
-    document.documentElement.setAttribute('q:locale', loadedLocale)
-    setDefaultLocale(loadedLocale)
-    persistLocaleCookie(loadedLocale)
+    document.documentElement.lang = locale
+    document.documentElement.setAttribute('q:locale', locale)
+    persistLocaleCookie(locale)
   }
 
   void registerServiceWorker()

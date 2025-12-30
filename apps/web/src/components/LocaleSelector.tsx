@@ -1,7 +1,9 @@
-import { $, component$, getLocale, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
-import { Form, Link, type ActionStore, useLocation } from '@builder.io/qwik-city'
-import { _, localeNames, locales } from 'compiled-i18n'
+import { $, component$, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
+import { Form, type ActionStore } from '@builder.io/qwik-city'
+import { inlineTranslate } from 'qwik-speak'
 import { getSpeculationMode } from '../config/page-config'
+import { localeToSpeakLocale } from '../i18n/locales'
+import { useLocaleSignal } from '../i18n/locale-context'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
@@ -10,6 +12,9 @@ type LocaleSelectorProps = {
   hasSession: boolean
   signOutAction?: ActionStore<any, any>
 }
+
+const supportedLocales = Object.keys(localeToSpeakLocale)
+const fallbackLocale = supportedLocales[0] ?? 'en'
 
 const settingsStyles = `
 .settings-trigger {
@@ -80,15 +85,15 @@ const settingsStyles = `
 
 export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, signOutAction }) => {
   useStylesScoped$(settingsStyles)
-  const loc = useLocation()
+  const localeSignal = useLocaleSignal()
+  const t = inlineTranslate()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLDivElement>()
   const currentLocale = (() => {
-    const segments = loc.url.pathname.split('/').filter(Boolean)
-    const segmentLocale = segments[0]
-    if (segmentLocale && locales.includes(segmentLocale as any)) return segmentLocale as any
-    return getLocale()
+    const resolved = localeSignal.value
+    if (typeof resolved === 'string' && supportedLocales.includes(resolved)) return resolved
+    return fallbackLocale
   })()
 
   useVisibleTask$(({ track }) => {
@@ -359,42 +364,32 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
     window.localStorage.setItem('theme', theme)
   })
 
-  const buildHref = (nextLocale: string) => {
-    const segments = loc.url.pathname.split('/').filter(Boolean)
-    const hasLocale = segments.length > 0 && locales.includes(segments[0] as any)
-    const rest = hasLocale ? segments.slice(1) : segments
-    const pathname = `/${nextLocale}${rest.length ? `/${rest.join('/')}` : ''}`
-
-    const params = new URLSearchParams(loc.url.search)
-    params.delete('locale')
-    const search = params.toString()
-    return `${pathname}${search ? `?${search}` : ''}`
-  }
-
-  const localePrefix = (() => {
-    const segment = loc.url.pathname.split('/')[1] ?? ''
-    return locales.includes(segment as any) ? `/${segment}` : ''
-  })()
-  const dashboardPath = `${localePrefix}/dashboard`
-  const loginHref = `${localePrefix}/login?callback=${encodeURIComponent(dashboardPath)}`
-  const registerHref = `${localePrefix}/register?callback=${encodeURIComponent(dashboardPath)}`
+  const dashboardPath = '/dashboard'
+  const loginHref = `/login?callback=${encodeURIComponent(dashboardPath)}`
+  const registerHref = `/register?callback=${encodeURIComponent(dashboardPath)}`
   const loginSpeculation = getSpeculationMode('/login')
   const registerSpeculation = getSpeculationMode('/register')
-  const persistLocaleChoice = $((nextLocale: string) => {
-    if (typeof document === 'undefined') return
-    const maxAgeSeconds = 60 * 60 * 24 * 365
-    document.cookie = `locale=${encodeURIComponent(nextLocale)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`
-    try {
-      window.localStorage.setItem('locale', nextLocale)
-    } catch {}
+  const handleLocaleSelect = $((nextLocale: string) => {
+    if (nextLocale === localeSignal.value) return
+    localeSignal.value = nextLocale as any
   })
+
+  const displayNames = (() => {
+    if (typeof Intl === 'undefined' || typeof Intl.DisplayNames !== 'function') return null
+    try {
+      return new Intl.DisplayNames([currentLocale], { type: 'language' })
+    } catch {
+      return null
+    }
+  })()
+  const localeLabel = (locale: string) => displayNames?.of(locale) ?? locale.toUpperCase()
 
   return (
     <details ref={menuRef} class="settings-menu animated-details">
       <summary
         ref={summaryRef}
         class="settings-trigger"
-        aria-label={_`Settings`}
+        aria-label={t('app.settingsMenu.label@@Settings')}
         data-qwik-prime="settings"
       >
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -411,48 +406,47 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
       </summary>
       <div ref={panelRef} class="settings-panel animated-panel">
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{_`Language`}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.language@@Language')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
-              {locales.map((locale) => {
-                const isCurrent = locale === (currentLocale as any)
-                const href = buildHref(locale)
+              {supportedLocales.map((locale) => {
+                const isCurrent = locale === currentLocale
                 return (
-                  <Link
+                  <button
                     key={locale}
-                    href={href}
-                    aria-disabled={isCurrent}
+                    type="button"
+                    aria-pressed={isCurrent}
                     aria-current={isCurrent ? 'true' : undefined}
                     style={isCurrent ? { viewTransitionName: 'locale-pill' } : undefined}
                     class="settings-option"
-                    onClick$={$(() => persistLocaleChoice(locale))}
+                    onClick$={$(() => handleLocaleSelect(locale))}
                   >
-                    {localeNames[locale] ?? locale.toUpperCase()}
-                  </Link>
+                    {localeLabel(locale)}
+                  </button>
                 )
               })}
             </div>
           </div>
         </details>
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{_`Account`}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.account@@Account')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               {hasSession ? (
                 signOutAction ? (
                   <Form action={signOutAction} class="flex">
                     <button type="submit" class="settings-option">
-                      {_`Sign out`}
+                      {t('app.settingsMenu.signOut@@Sign out')}
                     </button>
                   </Form>
                 ) : null
               ) : (
                 <>
                   <a class="settings-option" href={loginHref} data-speculate={loginSpeculation}>
-                    {_`Login`}
+                    {t('app.settingsMenu.login@@Login')}
                   </a>
                   <a class="settings-option" href={registerHref} data-speculate={registerSpeculation}>
-                    {_`Create an account`}
+                    {t('app.settingsMenu.createAccount@@Create an account')}
                   </a>
                 </>
               )}
@@ -460,17 +454,17 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
           </div>
         </details>
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{_`Theme`}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.theme@@Theme')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
-              <button type="button" class="settings-option" onClick$={() => applyTheme('system')}>
-                {_`System`}
+              <button type="button" class="settings-option" onClick$={$(() => applyTheme('system'))}>
+                {t('app.settingsMenu.system@@System')}
               </button>
-              <button type="button" class="settings-option" onClick$={() => applyTheme('light')}>
-                {_`Light`}
+              <button type="button" class="settings-option" onClick$={$(() => applyTheme('light'))}>
+                {t('app.settingsMenu.light@@Light')}
               </button>
-              <button type="button" class="settings-option" onClick$={() => applyTheme('dark')}>
-                {_`Dark`}
+              <button type="button" class="settings-option" onClick$={$(() => applyTheme('dark'))}>
+                {t('app.settingsMenu.dark@@Dark')}
               </button>
             </div>
           </div>

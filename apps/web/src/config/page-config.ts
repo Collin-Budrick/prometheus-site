@@ -1,6 +1,4 @@
-import { defaultLocale } from 'compiled-i18n'
 import pageConfig from './page-config.json'
-import { stripLocalePrefix, supportedLocales } from '../routes/_shared/locale/locale-routing'
 
 type RenderMode = 'ssr' | 'ssg'
 type SpeculationMode = 'prefetch' | 'prerender' | 'none'
@@ -23,10 +21,10 @@ type PageConfigFile = {
 const config = pageConfig as PageConfigFile
 
 const normalizePath = (pathname: string) => {
-  const stripped = stripLocalePrefix(pathname) || '/'
-  if (!stripped.startsWith('/')) return `/${stripped}`
-  if (stripped.length > 1 && stripped.endsWith('/')) return stripped.slice(0, -1)
-  return stripped
+  if (!pathname) return '/'
+  if (!pathname.startsWith('/')) pathname = `/${pathname}`
+  if (pathname.length > 1 && pathname.endsWith('/')) return pathname.slice(0, -1)
+  return pathname
 }
 
 const normalizeConfigPath = (pathname: string) => {
@@ -62,18 +60,7 @@ export const getPrerenderRoutes = () => {
   const ssgPaths = Object.entries(routes)
     .filter(([, routeConfig]) => (routeConfig.render ?? defaults.render) === 'ssg')
     .map(([path]) => normalizeConfigPath(path))
-
-  const localesToRender = supportedLocales?.length ? supportedLocales : [defaultLocale]
-  const prerendered = new Set<string>()
-
-  ssgPaths.forEach((path) => {
-    localesToRender.forEach((locale) => {
-      const localizedPath = path === '/' ? `/${locale}` : `/${locale}${path}`
-      prerendered.add(localizedPath)
-    })
-  })
-
-  return Array.from(prerendered).sort()
+  return Array.from(new Set(ssgPaths)).sort()
 }
 
 export const getSpeculationConfigSnapshot = (): SpeculationConfigSnapshot => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
-import en from '../../../i18n/en.json'
-import ja from '../../../i18n/ja.json'
-import ko from '../../../i18n/ko.json'
+import en from '../i18n/en/app.json'
+import ja from '../i18n/ja/app.json'
+import ko from '../i18n/ko/app.json'
 
 const homeKeys = [
   'Performance first',
@@ -27,7 +27,7 @@ const localeDictionaries = {
 describe('home translations', () => {
   for (const [locale, dictionary] of Object.entries(localeDictionaries)) {
     it(`includes the home copy for ${locale}`, () => {
-      const translations = (dictionary as { translations: Record<string, string> }).translations
+      const translations = dictionary as Record<string, string>
       for (const key of homeKeys) {
         expect(translations[key], `${locale} missing "${key}"`).toBeTruthy()
       }

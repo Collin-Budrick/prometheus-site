@@ -4,7 +4,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   fetchPasskeyAuthenticateOptions,
   fetchPasskeyAuthenticationVerification
-} from '../src/routes/[locale]/login/passkey-api'
+} from '../src/routes/login/passkey-api'
 
 const createEvent = () => {
   const request = new Request('https://app.local/login', {

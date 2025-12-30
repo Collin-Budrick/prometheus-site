@@ -57,14 +57,14 @@ Use these rules when touching routes, layouts, components, or styles.
 
 ### Route structure + where to edit
 
-- Pages live in `apps/web/src/routes/[locale]/...` (localized routes).
-- Shared layout and nav live in `apps/web/src/routes/[locale]/layout.tsx`.
+- Pages live in `apps/web/src/routes/...` (single URL, runtime locale).
+- Shared layout and nav live in `apps/web/src/routes/layout.tsx`.
 - Global app shell lives in `apps/web/src/root.tsx`.
-- Critical CSS is `apps/web/src/routes/critical.css` and is inlined directly from the locale layout via a raw import.
+- Critical CSS is `apps/web/src/routes/critical.css` and is inlined directly from the layout via a raw import.
 - Non-critical/global styles live in `apps/web/src/global.css` and UnoCSS output is `apps/web/public/assets/app.css` (generated).
 - Shared components live in `apps/web/src/components/...`.
 - Server-only helpers live under `apps/web/src/server/...` or route `server$` calls.
-- Non-locale paths redirect to locale-prefixed routes via `apps/web/src/routes/plugin@locale.ts`; avoid adding non-locale wrapper routes unless you explicitly need non-redirect access.
+- Locale is resolved at runtime; do not reintroduce locale-prefixed routes or middleware redirects.
 
 ### Page config (central JSON)
 
@@ -73,7 +73,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `speculation: "prefetch" | "prerender" | "none"` controls link hinting.
 - Access config in code via `apps/web/src/config/page-config.ts` (`getPageConfig`, `getPageSpeculation`).
 - `bun run build` runs `sync:page-config` to auto-add new folder-based `index.*` routes; dynamic segments or non-index route files still need manual entries.
-- `getPageSpeculation` feeds the main nav in `apps/web/src/routes/[locale]/layout.tsx`; keep `page-config.json` and nav links aligned when adding top-level routes.
+- `getPageSpeculation` feeds the main nav in `apps/web/src/routes/layout.tsx`; keep `page-config.json` and nav links aligned when adding top-level routes.
 
 ### SSG/SSR safety rules (must follow)
 
@@ -82,7 +82,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Prefer `useVisibleTask$` for DOM/`window`/`document` interactions; guard with `typeof document !== 'undefined'`.
 - Any data returned from `routeLoader$`, `routeAction$`, or `server$` must be JSON-serializable. Convert `BigInt`/`Date`/`Map`/`Set` into primitives before returning.
 - Keep SSR execution pure: don’t access `window`, `document`, `localStorage`, or `matchMedia` in component render; only in `useVisibleTask$` or `useTask$` with guards.
-- When adding new routes to be statically generated, update `apps/web/src/config/page-config.ts` and ensure `onStaticGenerate` includes the locale.
+- When adding new routes to be statically generated, update `apps/web/src/config/page-config.ts`/`apps/web/src/config/page-config.json`; no locale-prefixed variants are generated.
 
 ### Styling + critical path rules
 
@@ -120,20 +120,19 @@ Use these rules when touching routes, layouts, components, or styles.
 
 ### Locale + navigation rules
 
-- Use `locales`/`localeNames` from `compiled-i18n`.
-- Locale-aware links should be built from `useLocation()` and preserve the non-locale path when swapping locales.
-- When building locale switchers, derive the base path from `useLocation().url.pathname` (strip the leading locale segment) and rebuild links with the target locale plus the preserved remainder.
-- For labels in UI, use `compiled-i18n` `_`` strings so they localize correctly.
+- Locale is client-controlled via Qwik Speak + `LocaleContext` (`apps/web/src/i18n/locale-context.ts`).
+- Locale switchers should update `useLocaleSignal()`; do not navigate or rewrite URLs.
+- Locale persistence is handled in `apps/web/src/root.tsx` (cookie + localStorage); avoid duplicating that logic in components.
+- For labels in UI, use Qwik Speak (`inlineTranslate`) or the `_` tag from `apps/web/src/i18n/translate.ts`.
 
 ### Adding a new language
 
-- Add the locale code to `i18nPlugin` and `localeBuildFallback` in `apps/web/vite.config.ts`.
-- Create `i18n/<locale>.json` by copying `i18n/en.json`; set `locale`, `name` (selector label), optional `fallback`, and translate all keys.
-- Update locale loaders in `packages/i18n-locales/index.mjs` and `packages/i18n-locales/index.cjs`.
-- Locale routes are served through the dynamic `apps/web/src/routes/[locale]` tree; add new locales there instead of creating alias folders (the former `en`/`ko` aliases have been removed).
-- Restart `bun run dev` after changing `vite.config.ts` or adding locale JSON files.
+- Add the locale code to `locales` + `localeToSpeakLocale` in `apps/web/src/i18n/locales.ts` and to `localeBuildFallback` in `apps/web/vite.config.ts`.
+- Create `apps/web/i18n/<locale>/app.json` by copying `apps/web/i18n/en/app.json` and translating values.
+- Routes are single-URL; locale is resolved at runtime via Qwik Speak, not via path prefixes.
+- Restart `bun run dev` after changing `vite.config.ts` or adding Qwik Speak locale files.
 - Optional: update locale-specific tests or `apps/web/src/config/page-config.ts` if you want localized prerender coverage.
-- Checklist: update `apps/web/vite.config.ts` locale lists, add `i18n/<locale>.json`, extend `packages/i18n-locales/index.{mjs,cjs}`, ensure `[locale]` routes exist, and restart the dev server.
+- Checklist: update `apps/web/src/i18n/locales.ts`, update `apps/web/vite.config.ts` locale lists, add `apps/web/i18n/<locale>/app.json`, and restart the dev server.
 
 ### Testing + preview expectations
 
@@ -150,13 +149,12 @@ Use these rules when touching routes, layouts, components, or styles.
 ## Repository map (what lives where)
 
 - `apps/web/` — Qwik City web app (this is where page work happens).
-- `apps/web/src/routes/` — Route tree; `apps/web/src/routes/[locale]/` holds localized pages.
-- `apps/web/src/routes/[locale]/layout.tsx` — Shared layout/header/nav and `<RouterHead />`.
-- `apps/web/src/routes/[locale]/index.tsx` — Home page content.
-- `apps/web/src/routes/[locale]/ai/` — AI route UI (`index.tsx`) and island logic.
-- `apps/web/src/routes/[locale]/chat/` — Chat route UI and islands.
-- `apps/web/src/routes/[locale]/store/` — Store route UI, data loaders, and islands.
-- `apps/web/src/routes/index/`, `apps/web/src/routes/ai/`, `apps/web/src/routes/chat/`, `apps/web/src/routes/store/` — Locale entry wrappers for non-`[locale]` paths.
+- `apps/web/src/routes/` — Route tree (single URL, runtime locale).
+- `apps/web/src/routes/layout.tsx` — Shared layout/header/nav and `<RouterHead />`.
+- `apps/web/src/routes/index.tsx` — Home page content.
+- `apps/web/src/routes/ai/` — AI route UI (`index.tsx`) and island logic.
+- `apps/web/src/routes/chat/` — Chat route UI and islands.
+- `apps/web/src/routes/store/` — Store route UI, data loaders, and islands.
 - `apps/web/src/config/page-config.ts` — SSG route list helper (`prerenderRoutes`).
 - `apps/web/src/routes/critical.css` — Critical CSS (inlined on SSR/SSG from the locale layout).
 - `apps/web/src/routes/layout.css` — Layout-level CSS for the shell.
@@ -167,7 +165,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/config/page-config.json` — Central per-route settings (render/speculation).
 - `apps/web/src/config/page-config.ts` — Helpers for reading page config.
 - `apps/web/src/server/` — Server-only helpers (DB, API, adapters).
-- `apps/web/src/i18n/` — Locale helpers and dictionaries.
+- `apps/web/src/i18n/` — Locale helpers and Qwik Speak wrappers.
 - `apps/web/src/global.css` — Global styling (non-critical).
 - `apps/web/public/` — Static assets served as-is.
 - `apps/web/public/assets/app.css` — Generated global CSS (do not edit by hand).
@@ -179,8 +177,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - `apps/web/src/i18n/pathname-locale.test.ts` — Locale resolver unit test.
 - `apps/web/dist/` — Client build output (generated).
 - `apps/web/server/` — SSR build output (generated).
-- `packages/i18n-*` — Shared i18n helper packages (data, locale registry, shared state).
-- `i18n/` — Shared locale resources for the monorepo.
+- `packages/i18n-*` — Legacy compiled i18n helpers (unused by web; Qwik Speak is the source of truth).
 - `patches/` — Dependency patches (e.g., Qwik tweaks).
 - `scripts/` — Repo-level scripts (outside `apps/web`).
 
@@ -206,7 +203,7 @@ Use these rules when touching routes, layouts, components, or styles.
 - Database change fan-out should be event-driven (no polling): use Postgres `LISTEN/NOTIFY` with a trigger that emits a minimal payload (table/op/id only) and keep payloads under the ~8KB NOTIFY limit.
 - API listens via `pgClient.listen`, validates/normalizes with `drizzle-zod` + `zod`, and emits **semantic** events (e.g., `store:upsert`, `store:delete`) over WebSocket routes like `/api/store/ws`—never forward raw DB payloads.
 - Clients update Qwik `Signal`s inside `useVisibleTask$` WebSocket handlers; mutate signal state directly and keep render/SSR pure.
-- For store realtime specifically: channel `store_items_updates` + trigger `store_items_notify` in `apps/api/drizzle`, listener in `apps/api/src/server/store-realtime.ts`, broadcast from `apps/api/src/server/app.ts`, and UI signal updates in `apps/web/src/routes/[locale]/store/store-island.tsx`.
+- For store realtime specifically: channel `store_items_updates` + trigger `store_items_notify` in `apps/api/drizzle`, listener in `apps/api/src/server/store-realtime.ts`, broadcast from `apps/api/src/server/app.ts`, and UI signal updates in `apps/web/src/routes/store/store-island.tsx`.
 
 ## Styling + tooling notes
 

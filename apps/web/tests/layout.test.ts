@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import { getSpeculationMode } from '../src/config/page-config'
 
-let sanitizeHeadLinks: typeof import('../src/routes/[locale]/layout').sanitizeHeadLinks
-let resolveNavigationSpeculationCandidates: typeof import('../src/routes/[locale]/layout').resolveNavigationSpeculationCandidates
+let sanitizeHeadLinks: typeof import('../src/routes/layout').sanitizeHeadLinks
+let resolveNavigationSpeculationCandidates: typeof import('../src/routes/layout').resolveNavigationSpeculationCandidates
 
 beforeAll(async () => {
   mock.module('@qwik-city-plan', () => ({ default: {} }))
   mock.module('@qwik-city-sw-register', () => ({ default: () => null }))
-  ;({ sanitizeHeadLinks, resolveNavigationSpeculationCandidates } = await import('../src/routes/[locale]/layout'))
+  ;({ sanitizeHeadLinks, resolveNavigationSpeculationCandidates } = await import('../src/routes/layout'))
 })
 
 const l = (input: Record<string, unknown>) => input
@@ -58,7 +58,7 @@ describe('speculation safety', () => {
   })
 
   it('avoids prerender hints for sensitive navigation targets', () => {
-    const candidates = resolveNavigationSpeculationCandidates('/noop', '')
+    const candidates = resolveNavigationSpeculationCandidates('/noop')
     const sensitiveHints = candidates.filter(
       ({ url, action }) => action === 'prerender' && sensitiveRoutes.some((path) => url === path)
     )
