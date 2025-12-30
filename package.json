@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@webgpu/types": "^0.1.68",
+    "swup": "^4.8.2",
     "typegpu": "^0.9.0"
   }
 }
