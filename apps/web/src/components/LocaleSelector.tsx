@@ -1,8 +1,15 @@
 import { $, component$, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form, type ActionStore } from '@builder.io/qwik-city'
+import { useSpeakContext } from 'qwik-speak'
 import { getSpeculationMode } from '../config/page-config'
-import { localeToSpeakLocale } from '../i18n/locales'
-import { useLocaleSignal } from '../i18n/locale-context'
+import { localeToSpeakLocale, type Locale } from '../i18n/locales'
+import { useLocaleSignal, useRenderLocaleSignal } from '../i18n/locale-context'
+import {
+  applyLocaleToDom,
+  ensureSpeakLocale,
+  persistLocaleCookie,
+  persistLocaleStorage
+} from '../i18n/locale-sync'
 import { useInlineTranslate } from '../i18n/translate'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
@@ -13,7 +20,7 @@ type LocaleSelectorProps = {
   signOutAction?: ActionStore<any, any>
 }
 
-const supportedLocales = Object.keys(localeToSpeakLocale)
+const supportedLocales = Object.keys(localeToSpeakLocale) as Locale[]
 const fallbackLocale = supportedLocales[0] ?? 'en'
 
 const settingsStyles = `
@@ -86,6 +93,8 @@ const settingsStyles = `
 export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, signOutAction }) => {
   useStylesScoped$(settingsStyles)
   const localeSignal = useLocaleSignal()
+  const renderLocaleSignal = useRenderLocaleSignal()
+  const speak = useSpeakContext()
   const t = useInlineTranslate()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()
@@ -349,6 +358,17 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
       menu.removeEventListener('toggle', handleToggle)
       groupCleanup.forEach((cleanup) => cleanup())
     }
+  })
+
+  useVisibleTask$(async ({ track }) => {
+    const nextLocale = track(() => localeSignal.value)
+    if (!supportedLocales.includes(nextLocale)) return
+
+    await ensureSpeakLocale(nextLocale, speak)
+    applyLocaleToDom(nextLocale)
+    persistLocaleCookie(nextLocale)
+    persistLocaleStorage(nextLocale)
+    renderLocaleSignal.value = nextLocale
   })
 
   const applyTheme = $((theme: 'light' | 'dark' | 'system') => {

@@ -4,9 +4,17 @@ import { useQwikSpeak, useSpeakContext } from 'qwik-speak'
 import 'virtual:uno.css'
 import './global.css'
 import { RouterHead } from './routes/layout'
-import { defaultLocale, localeToSpeakLocale, locales, type Locale } from './i18n/locales'
+import { defaultLocale, locales, type Locale } from './i18n/locales'
 import { normalizeLocale } from './i18n/locale'
-import { LocaleContext, registerLocaleSignal, useLocaleSignal } from './i18n/locale-context'
+import { LocaleContext, registerLocaleSignal, useLocaleSignal, useRenderLocaleSignal } from './i18n/locale-context'
+import { registerSpeakContext } from './i18n/speak-context'
+import {
+  applyLocaleToDom,
+  ensureSpeakLocale,
+  persistLocaleCookie,
+  persistLocaleStorage,
+  readStoredLocale
+} from './i18n/locale-sync'
 import { config } from './speak-config'
 import { translationFn } from './speak-functions'
 
@@ -27,71 +35,15 @@ const experimentalGlobal =
   (typeof __EXPERIMENTAL__ !== 'undefined' && __EXPERIMENTAL__) || (globalThis as typeof globalThis & { __EXPERIMENTAL__?: Record<string, unknown> }).__EXPERIMENTAL__ || {}
 ;(globalThis as typeof globalThis & { __EXPERIMENTAL__: Record<string, unknown> }).__EXPERIMENTAL__ = experimentalGlobal
 
-const persistLocaleCookie = (locale: string) => {
-  if (typeof document === 'undefined') return
-  const maxAge = 60 * 60 * 24 * 365
-  document.cookie = `locale=${encodeURIComponent(locale)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`
-}
-
-const readStoredLocale = (): Locale | null => {
-  if (typeof document === 'undefined') return null
-  try {
-    const stored = window.localStorage.getItem('locale')
-    return normalizeLocale(stored) ?? null
-  } catch {
-    return null
-  }
-}
-
-const persistLocaleStorage = (locale: string) => {
-  if (typeof document === 'undefined') return
-  try {
-    window.localStorage.setItem('locale', locale)
-  } catch {}
-}
-
-const applyLocaleToDom = (locale: Locale) => {
-  if (typeof document === 'undefined') return
-  document.documentElement.lang = locale
-  document.documentElement.setAttribute('q:locale', locale)
-}
-
-const ensureSpeakLocale = async (
-  locale: Locale,
-  ctx: ReturnType<typeof useSpeakContext>
-) => {
-  const mapping = localeToSpeakLocale[locale]
-  if (mapping) {
-    Object.assign(ctx.locale, mapping)
-  } else {
-    ctx.locale.lang = locale
-  }
-
-  const assets = ctx.config.assets ?? []
-  if (!assets.length) return
-
-  if (!ctx.translation[locale]) {
-    ctx.translation[locale] = {}
-  }
-
-  const existing = ctx.translation[locale]
-  if (existing && Object.keys(existing).length > 0) return
-
-  const results = await Promise.all(
-    assets.map((asset) => ctx.translationFn.loadTranslation$(locale, asset))
-  )
-  results.forEach((payload) => {
-    if (payload) Object.assign(existing, payload)
-  })
-}
 
 const RoutesWithLocaleSync = component$(() => {
   const localeSignal = useLocaleSignal()
   const speak = useSpeakContext()
-  const renderLocale = useSignal<Locale>(localeSignal.value)
+  const renderLocale = useRenderLocaleSignal()
 
   useVisibleTask$(() => {
-    registerLocaleSignal(localeSignal)
+    registerLocaleSignal(renderLocale)
+    registerSpeakContext(speak)
     const stored = readStoredLocale()
     if (stored && stored !== localeSignal.value) {
       localeSignal.value = stored
@@ -109,13 +61,18 @@ const RoutesWithLocaleSync = component$(() => {
     renderLocale.value = nextLocale
   })
 
-  return <RouterOutlet key={renderLocale.value} />
+  return (
+    <div key={renderLocale.value} data-locale={renderLocale.value}>
+      <RouterOutlet />
+    </div>
+  )
 })
 
 export default component$(() => {
   const initialLocale = normalizeLocale(getLocale(defaultLocale)) ?? defaultLocale
   const localeSignal = useSignal<Locale>(initialLocale)
-  useContextProvider(LocaleContext, { locale: localeSignal })
+  const renderLocaleSignal = useSignal<Locale>(initialLocale)
+  useContextProvider(LocaleContext, { locale: localeSignal, renderLocale: renderLocaleSignal })
 
   useQwikSpeak({ config, translationFn })
 

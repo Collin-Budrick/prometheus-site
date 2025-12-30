@@ -3,11 +3,13 @@ import type { Locale } from './locales'
 
 export type LocaleContextState = {
   locale: Signal<Locale>
+  renderLocale: Signal<Locale>
 }
 
 export const LocaleContext = createContextId<LocaleContextState>('app.locale')
 
 export const useLocaleSignal = () => useContext(LocaleContext).locale
+export const useRenderLocaleSignal = () => useContext(LocaleContext).renderLocale
 
 let clientLocaleSignal: Signal<Locale> | null = null
 

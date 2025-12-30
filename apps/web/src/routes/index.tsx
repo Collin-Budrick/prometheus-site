@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
-import { useInlineTranslate } from '../i18n/translate'
+import { translateStatic, useInlineTranslate } from '../i18n/translate'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -48,17 +48,14 @@ export default component$(() => {
 })
 
 export const head: DocumentHead = ({ withLocale }) =>
-  withLocale(() => {
-    const translate = useInlineTranslate()
-    return {
-      title: `${translate('app.brand.name@@Prometheus')} | ${translate('app.brand.tagline@@Performance Lab')}`,
-      meta: [
-        {
-          name: 'description',
-          content: translate(
-            'app.homeHero.description@@Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.'
-          )
-        }
-      ]
-    }
-  })
+  withLocale(() => ({
+    title: `${translateStatic('app.brand.name@@Prometheus')} | ${translateStatic('app.brand.tagline@@Performance Lab')}`,
+    meta: [
+      {
+        name: 'description',
+        content: translateStatic(
+          'app.homeHero.description@@Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.'
+        )
+      }
+    ]
+  }))
