@@ -1,6 +1,5 @@
 import { $, Slot, component$, useSignal, useStyles$, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import {
-  Link,
   routeAction$,
   routeLoader$,
   useDocumentHead,
@@ -15,6 +14,7 @@ import layoutStyles from './layout.css?inline'
 import criticalCss from './critical.css?raw'
 import { partytownForwards, thirdPartyScripts } from '../config/third-party'
 import { partytownSnippet } from '@qwik.dev/partytown/integration'
+import type { Swup as SwupInstance, Visit } from 'swup'
 import {
   buildAuthHeaders,
   clearAuthCookies,
@@ -49,6 +49,8 @@ const featureFlags = {
 }
 
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
+
+type SwupFetchOptions = NonNullable<Parameters<SwupInstance['fetchPage']>[1]> & { visit?: Visit }
 
 const criticalCssInline = criticalCss
 
@@ -713,6 +715,277 @@ export default component$(() => {
       document.removeEventListener('qviewTransition', handleTransition as EventListener)
     }
   })
+  useVisibleTask$(({ cleanup }) => {
+    if (typeof window === 'undefined') return
+
+    let observer: IntersectionObserver | null = null
+    let swup: SwupInstance | null = null
+    let ownsSwup = false
+
+    const dispatchIdle = (callback: () => void) => {
+      if ('requestIdleCallback' in window) {
+        ;(window as Window & { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(callback)
+      } else {
+        setTimeout(callback, 0)
+      }
+    }
+
+    const primeQwikTasks = (roots: Element[]) => {
+      const global = window as Window & { qwikevents?: { push?: (...roots: Element[]) => void } }
+      const qwikEvents = global.qwikevents
+      if (qwikEvents?.push) {
+        roots.forEach((root) => qwikEvents.push?.(root))
+      }
+
+      document.dispatchEvent(new CustomEvent('qinit'))
+      dispatchIdle(() => {
+        document.dispatchEvent(new CustomEvent('qidle'))
+      })
+
+      const targets = roots.flatMap((root) => {
+        const direct = root.matches?.('[on\\:qvisible]') ? [root] : []
+        return direct.concat(Array.from(root.querySelectorAll('[on\\:qvisible]')))
+      })
+      if (!targets.length) return
+
+      if (typeof IntersectionObserver === 'undefined') {
+        targets.forEach((target) => {
+          target.dispatchEvent(new CustomEvent('qvisible', { detail: { target }, bubbles: true }))
+        })
+        return
+      }
+
+      observer?.disconnect()
+      observer = new IntersectionObserver((entries, observed) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          observed.unobserve(entry.target)
+          entry.target.dispatchEvent(new CustomEvent('qvisible', { detail: entry, bubbles: true }))
+        }
+      })
+      targets.forEach((target) => observer?.observe(target))
+    }
+
+    const setup = async () => {
+      const global = window as Window & { __swup?: SwupInstance }
+      if (global.__swup) {
+        swup = global.__swup
+        return
+      }
+
+      const [{ default: Swup }, { default: SwupParallelPlugin }] = await Promise.all([
+        import('swup'),
+        import('@swup/parallel-plugin')
+      ])
+      const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      const originalStartViewTransition = document.startViewTransition?.bind(document)
+      const supportsViewTransition =
+        featureFlags.viewTransitions && typeof originalStartViewTransition === 'function' && !prefersReducedMotion
+      if (supportsViewTransition) {
+        const global = window as Window & { __swupViewTransitionWrapped?: boolean }
+        if (!global.__swupViewTransitionWrapped && originalStartViewTransition) {
+          const timeoutMs = 800
+          document.startViewTransition = ((callback: () => void) => {
+            const transition = originalStartViewTransition(callback)
+            const finished = Promise.race([
+              transition.finished,
+              new Promise<void>((resolve) => {
+                setTimeout(resolve, timeoutMs)
+              })
+            ])
+            return { ...transition, finished }
+          }) as typeof document.startViewTransition
+          global.__swupViewTransitionWrapped = true
+        }
+      }
+      const animationSelector = supportsViewTransition ? false : prefersReducedMotion ? false : '[class*="transition-"]'
+      const plugins = supportsViewTransition ? [] : [new SwupParallelPlugin({ containers: ['#swup'] })]
+      const instance = new Swup({
+        containers: ['.app-header', '#swup'],
+        animateHistoryBrowsing: true,
+        animationSelector,
+        native: supportsViewTransition,
+        linkSelector: 'a[data-swup-link]',
+        requestHeaders: {
+          Accept: 'text/html, application/xhtml+xml'
+        },
+        plugins
+      })
+      const originalFetchPage = instance.fetchPage.bind(instance)
+      // Qwik dev responses to fetch() are HTML proxies; use a same-origin iframe to obtain DOM markup for Swup.
+      const waitForContainers = (doc: Document, timeoutMs: number) =>
+        new Promise<boolean>((resolve) => {
+          const started = window.performance?.now?.() ?? Date.now()
+          const check = () => {
+            const hasHeader = Boolean(doc.querySelector('.app-header'))
+            const hasSwup = Boolean(doc.querySelector('#swup'))
+            if (hasHeader && hasSwup) {
+              resolve(true)
+              return
+            }
+            const now = window.performance?.now?.() ?? Date.now()
+            if (now - started > timeoutMs) {
+              resolve(false)
+              return
+            }
+            window.setTimeout(check, 50)
+          }
+          check()
+        })
+      const loadDocumentHtml = (url: URL, timeoutMs = 12_000) =>
+        new Promise<string>((resolve, reject) => {
+          const frame = document.createElement('iframe')
+          frame.style.position = 'fixed'
+          frame.style.width = '0'
+          frame.style.height = '0'
+          frame.style.opacity = '0'
+          frame.style.pointerEvents = 'none'
+          frame.style.border = '0'
+          frame.setAttribute('aria-hidden', 'true')
+          frame.setAttribute('sandbox', 'allow-same-origin allow-scripts')
+
+          const cleanup = (error?: unknown) => {
+            clearTimeout(timeoutId)
+            frame.remove()
+            if (error) reject(error)
+          }
+
+          const timeoutId = window.setTimeout(() => {
+            cleanup(new Error('swup: iframe timeout'))
+          }, timeoutMs)
+
+          frame.addEventListener(
+            'load',
+            () => {
+              void (async () => {
+                try {
+                  const doc = frame.contentDocument
+                  if (!doc) {
+                    cleanup(new Error('swup: iframe missing document'))
+                    return
+                  }
+                  await waitForContainers(doc, 2000)
+                  const html = doc.documentElement.outerHTML
+                  clearTimeout(timeoutId)
+                  frame.remove()
+                  resolve(html)
+                } catch (error) {
+                  cleanup(error)
+                }
+              })()
+            },
+            { once: true }
+          )
+
+          const mountTarget = document.body || document.documentElement
+          mountTarget.appendChild(frame)
+          frame.src = url.href
+        })
+
+      const fetchPage: SwupInstance['fetchPage'] = async (url, options = {}) => {
+        const typedOptions = options as SwupFetchOptions
+        const method = typedOptions.method ?? 'GET'
+        if (method !== 'GET' || typeof window === 'undefined') {
+          return originalFetchPage(url, typedOptions)
+        }
+
+        const targetUrl = new URL(String(url), window.location.href)
+        const timeout = typeof typedOptions.timeout === 'number' && typedOptions.timeout > 0 ? typedOptions.timeout : 12_000
+        const hasContainers = (html: string) => html.includes('app-header') && html.includes('id="swup"')
+        let fallbackPage: { url: string; html: string } | null = null
+
+        if (!import.meta.env.DEV) {
+          try {
+            const page = await originalFetchPage(url, typedOptions)
+            if (hasContainers(page.html)) return page
+            fallbackPage = page
+          } catch {}
+        }
+
+        try {
+          const html = await loadDocumentHtml(targetUrl, timeout)
+          const pageUrl = `${targetUrl.pathname}${targetUrl.search}`
+          const page = { url: pageUrl, html }
+          const visit = typedOptions.visit ?? instance.visit
+          if (visit?.cache?.write) {
+            instance.cache.set(pageUrl, page)
+          }
+          return page
+        } catch {
+          return fallbackPage ?? originalFetchPage(url, typedOptions)
+        }
+      }
+      instance.fetchPage = fetchPage
+      swup = instance
+
+      const handleDocumentClick = (event: MouseEvent) => {
+        if (event.button !== 0) return
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        if (!swup) return
+
+        let target = event.target
+        if (target && !(target instanceof Element)) {
+          target = (target as Node).parentElement
+        }
+        if (!(target instanceof Element)) return
+
+        const anchor = target.closest('a[href]') as HTMLAnchorElement | null
+        if (!anchor) return
+        if (anchor.closest('[data-no-swup]')) return
+        if (anchor.hasAttribute('download')) return
+        if (anchor.target && anchor.target !== '_self') return
+        const rawHref = anchor.getAttribute('href')?.trim()
+        if (!rawHref || rawHref.startsWith('#')) return
+
+        let url: URL
+        try {
+          url = new URL(anchor.href, window.location.href)
+        } catch {
+          return
+        }
+        if (url.origin !== window.location.origin) return
+
+        event.preventDefault()
+        swup.navigate(url.href, {}, { el: anchor, event })
+      }
+
+      window.addEventListener('click', handleDocumentClick, true)
+
+      instance.hooks.on('content:replace', () => {
+        const roots = [document.querySelector('.app-header'), document.querySelector('#swup')].filter(Boolean) as Element[]
+        if (!roots.length) return
+        requestAnimationFrame(() => {
+          primeQwikTasks(roots)
+        })
+      })
+      instance.hooks.on('visit:end', () => {
+        const root = document.documentElement
+        if (root.dataset.vtDirection) {
+          delete root.dataset.vtDirection
+        }
+      })
+
+      global.__swup = instance
+      ownsSwup = true
+
+      cleanup(() => {
+        window.removeEventListener('click', handleDocumentClick, true)
+      })
+    }
+
+    void setup()
+
+    cleanup(() => {
+      observer?.disconnect()
+      if (swup && ownsSwup) {
+        swup.destroy()
+        const global = window as Window & { __swup?: SwupInstance }
+        if (global.__swup === swup) {
+          delete global.__swup
+        }
+      }
+    })
+  })
 
   const loc = useLocation()
   const signOutAction = useSignOut()
@@ -748,7 +1021,6 @@ export default component$(() => {
 
     navDirection.value = resolveNavDirection(loc.url.href, targetUrl.href, navOrder)
   })
-
   return (
     <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame">
       <header class="top-0 z-20 sticky bg-slate-950 border-slate-800 border-b app-header">
@@ -761,7 +1033,7 @@ export default component$(() => {
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
             {navLinks.map(({ path, labelKey, dataSpeculate }) => (
-              <Link
+              <a
                 key={path}
                 href={linkHref(path)}
                 data-speculate={dataSpeculate}
@@ -769,15 +1041,17 @@ export default component$(() => {
                 class="hover:text-emerald-300 transition-colors"
               >
                 {translate(labelKey)}
-              </Link>
+              </a>
             ))}
             <LocaleSelector hasSession={session.value.hasSession} signOutAction={signOutAction} />
           </div>
         </nav>
       </header>
-      <main class="flex flex-col gap-6 mx-auto px-4 py-10 max-w-5xl route-transition app-main">
-        <Slot />
-      </main>
+      <div class="swup-stack">
+        <main id="swup" class="flex flex-col gap-6 mx-auto px-4 py-10 max-w-5xl route-transition transition-swipe app-main">
+          <Slot />
+        </main>
+      </div>
     </div>
   )
 })

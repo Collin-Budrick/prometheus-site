@@ -36,6 +36,7 @@
     "@mlc-ai/web-llm": "^0.2.80",
     "@modular-forms/qwik": "0.29.1",
     "@qwik.dev/partytown": "0.11.2",
+    "@swup/parallel-plugin": "0.4.0",
     "@unocss/reset": "66.5.12",
     "@unocss/runtime": "66.5.12",
     "@unocss/vite": "66.5.12",
@@ -45,6 +46,7 @@
     "onnxruntime-web": "^1.24.0-dev.20251227-38355ba07c",
     "postgres": "3.4.7",
     "qwik-speak": "0.24.0",
+    "swup": "4.8.2",
     "typegpu": "0.9.0",
     "zod": "4.3.0-canary.20251230T021842"
   },

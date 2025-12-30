@@ -2,3 +2,53 @@
   view-transition-name: route;
   contain: paint;
 }
+
+.app-frame {
+  --swup-duration: 280ms;
+  --swup-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.swup-stack {
+  display: grid;
+  grid-template-areas: 'main';
+  overflow-x: clip;
+}
+
+.swup-stack > #swup {
+  grid-area: main;
+  width: 100%;
+}
+
+.transition-swipe.is-changing,
+.is-changing .transition-swipe {
+  transition: transform var(--swup-duration) var(--swup-ease), opacity var(--swup-duration) var(--swup-ease),
+    filter var(--swup-duration) var(--swup-ease);
+  will-change: transform, opacity, filter;
+}
+
+.transition-swipe.is-previous-container {
+  transform: translateX(-6%);
+  opacity: 0;
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.transition-swipe.is-next-container {
+  transform: translateX(6%);
+  opacity: 0;
+  filter: blur(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transition-swipe.is-changing,
+  .is-changing .transition-swipe {
+    transition: none;
+  }
+
+  .transition-swipe.is-previous-container,
+  .transition-swipe.is-next-container {
+    transform: none;
+    opacity: 1;
+    filter: none;
+  }
+}

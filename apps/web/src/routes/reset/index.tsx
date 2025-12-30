@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { Link, type DocumentHead } from '@builder.io/qwik-city'
+import { type DocumentHead } from '@builder.io/qwik-city'
 import { _ } from '../../i18n/translate'
 
 export default component$(() => {
@@ -14,12 +14,12 @@ export default component$(() => {
         <p class="text-sm text-slate-200">
           {_`Password reset is handled by your authentication provider. Follow the email instructions sent after requesting a reset.`}
         </p>
-        <Link
+        <a
           class="self-start rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400"
           href="../login"
         >
           {_`Back to login`}
-        </Link>
+        </a>
       </div>
     </section>
   )

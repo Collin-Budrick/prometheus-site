@@ -122,6 +122,15 @@ a {
   gap: 1.5rem;
 }
 
+.swup-stack {
+  display: grid;
+  grid-template-areas: 'main';
+}
+
+.swup-stack > #swup {
+  grid-area: main;
+}
+
 .surface {
   border-radius: 0.75rem;
   border: 1px solid #1e293b;
