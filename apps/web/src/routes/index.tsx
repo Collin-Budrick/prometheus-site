@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
-import { inlineTranslate } from 'qwik-speak'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
+import { useInlineTranslate } from '../i18n/translate'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -14,7 +14,7 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
 }
 
 export default component$(() => {
-  const t = inlineTranslate()
+  const t = useInlineTranslate()
   return (
     <section class="grid gap-6 md:grid-cols-2">
       <div class="p-6 surface">
@@ -49,7 +49,7 @@ export default component$(() => {
 
 export const head: DocumentHead = ({ withLocale }) =>
   withLocale(() => {
-    const translate = inlineTranslate()
+    const translate = useInlineTranslate()
     return {
       title: `${translate('app.brand.name@@Prometheus')} | ${translate('app.brand.tagline@@Performance Lab')}`,
       meta: [

@@ -1,9 +1,9 @@
 import { $, component$, useSignal, useStylesScoped$, useVisibleTask$ } from '@builder.io/qwik'
 import { Form, type ActionStore } from '@builder.io/qwik-city'
-import { inlineTranslate } from 'qwik-speak'
 import { getSpeculationMode } from '../config/page-config'
 import { localeToSpeakLocale } from '../i18n/locales'
 import { useLocaleSignal } from '../i18n/locale-context'
+import { useInlineTranslate } from '../i18n/translate'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
@@ -86,7 +86,7 @@ const settingsStyles = `
 export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, signOutAction }) => {
   useStylesScoped$(settingsStyles)
   const localeSignal = useLocaleSignal()
-  const t = inlineTranslate()
+  const t = useInlineTranslate()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLDivElement>()

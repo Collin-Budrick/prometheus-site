@@ -8,7 +8,6 @@ import {
   type DocumentLink,
   type RequestHandler
 } from '@builder.io/qwik-city'
-import { inlineTranslate } from 'qwik-speak'
 /* cspell:ignore hrefs */
 import { LocaleSelector } from '../components/LocaleSelector'
 import { ThirdPartyScripts } from '../components/ThirdPartyScripts'
@@ -31,6 +30,7 @@ import {
   type SpeculationRules
 } from '../config/speculation-rules'
 import { getPageConfig, getSpeculationConfigSnapshot, getSpeculationMode } from '../config/page-config'
+import { useInlineTranslate } from '../i18n/translate'
 import { localeCookieOptions, resolvePreferredLocale } from './_shared/locale/locale-routing'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
@@ -430,7 +430,7 @@ const dedupeLinks = (links: readonly HeadLink[] | undefined) => {
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
-  const translate = inlineTranslate()
+  const translate = useInlineTranslate()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
@@ -683,7 +683,7 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const translate = inlineTranslate()
+  const translate = useInlineTranslate()
   useStylesScoped$(layoutStyles)
   useStyles$(viewTransitionStyles)
   useVisibleTask$(() => {

@@ -8,3 +8,12 @@ export type LocaleContextState = {
 export const LocaleContext = createContextId<LocaleContextState>('app.locale')
 
 export const useLocaleSignal = () => useContext(LocaleContext).locale
+
+let clientLocaleSignal: Signal<Locale> | null = null
+
+export const registerLocaleSignal = (signal: Signal<Locale>) => {
+  if (typeof document === 'undefined') return
+  clientLocaleSignal = signal
+}
+
+export const getClientLocaleSignal = () => clientLocaleSignal

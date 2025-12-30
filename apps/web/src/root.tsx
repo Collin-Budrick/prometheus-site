@@ -6,7 +6,7 @@ import './global.css'
 import { RouterHead } from './routes/layout'
 import { defaultLocale, localeToSpeakLocale, locales, type Locale } from './i18n/locales'
 import { normalizeLocale } from './i18n/locale'
-import { LocaleContext, useLocaleSignal } from './i18n/locale-context'
+import { LocaleContext, registerLocaleSignal, useLocaleSignal } from './i18n/locale-context'
 import { config } from './speak-config'
 import { translationFn } from './speak-functions'
 
@@ -91,6 +91,7 @@ const RoutesWithLocaleSync = component$(() => {
   const renderLocale = useSignal<Locale>(localeSignal.value)
 
   useVisibleTask$(() => {
+    registerLocaleSignal(localeSignal)
     const stored = readStoredLocale()
     if (stored && stored !== localeSignal.value) {
       localeSignal.value = stored
