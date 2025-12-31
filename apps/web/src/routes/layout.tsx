@@ -727,7 +727,7 @@ export default component$(() => {
     let swup: SwupInstance | null = null
     let ownsSwup = false
     let ownsClickHandler = false
-    const shouldSyncQwikResume = import.meta.env.DEV && swupDevEnabled
+    const shouldSyncQwikResume = !import.meta.env.DEV || swupDevEnabled
 
     type SwupFetchPage = (
       url: Parameters<SwupInstance['fetchPage']>[0],
