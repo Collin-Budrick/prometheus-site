@@ -90,7 +90,7 @@ const RoutesWithLocaleSync = component$(() => {
   })
 
   return (
-    <div key={renderLocale.value} data-locale={renderLocale.value}>
+    <div data-locale={renderLocale.value}>
       <RouterOutlet />
     </div>
   )

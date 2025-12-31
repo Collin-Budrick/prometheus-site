@@ -1,5 +1,5 @@
-import { getLocale } from '@builder.io/qwik'
-import { inlineTranslate, useSpeakContext } from 'qwik-speak'
+import { getLocale, noSerialize } from '@builder.io/qwik'
+import { inlineTranslate } from 'qwik-speak'
 import { normalizeLocale } from './locale'
 import { defaultLocale, type Locale } from './locales'
 import { getClientLocaleSignal, useRenderLocaleSignal } from './locale-context'
@@ -101,12 +101,16 @@ const translateRuntime = (keys: string | string[], params: Record<string, unknow
 }
 
 export const useInlineTranslate = () => {
-  const speak = useSpeakContext()
   const renderLocaleSignal = useRenderLocaleSignal()
-  return ((keys: string | string[], params?: Record<string, unknown>) => {
+  const translate = inlineTranslate()
+  const fn = ((keys: string | string[], params?: Record<string, unknown>) => {
     const locale = renderLocaleSignal.value
-    return translateWithState(keys, params, locale, speak) as string | string[]
+    if (Array.isArray(keys)) {
+      return translate(keys as string[], params, locale)
+    }
+    return translate(keys as string, params, locale)
   }) as ReturnType<typeof inlineTranslate>
+  return noSerialize(fn) as ReturnType<typeof inlineTranslate>
 }
 
 export const translateStatic = (keys: string | string[], params?: Record<string, unknown>) => {

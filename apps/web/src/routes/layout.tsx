@@ -30,7 +30,8 @@ import {
   type SpeculationRules
 } from '../config/speculation-rules'
 import { getPageConfig, getSpeculationConfigSnapshot, getSpeculationMode } from '../config/page-config'
-import { translateStatic } from '../i18n/translate'
+import { useRenderLocaleSignal } from '../i18n/locale-context'
+import { translateStatic, useInlineTranslate } from '../i18n/translate'
 import { localeCookieOptions, resolvePreferredLocale } from './_shared/locale/locale-routing'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
@@ -434,6 +435,7 @@ const dedupeLinks = (links: readonly HeadLink[] | undefined) => {
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
+  const localeToken = useRenderLocaleSignal().value
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
@@ -639,7 +641,7 @@ export const RouterHead = component$(() => {
     .map((style) => <style key={style.key} {...style.props} dangerouslySetInnerHTML={style.style} />)
   return (
     <>
-      <title>{head.title || translateStatic('app.brand.name@@Prometheus')}</title>
+      <title key={`title:${localeToken}`}>{head.title || translateStatic('app.brand.name@@Prometheus')}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <script dangerouslySetInnerHTML={jsReadyScript} />
@@ -688,6 +690,8 @@ export const RouterHead = component$(() => {
 export default component$(() => {
   useStylesScoped$(layoutStyles)
   useStyles$(viewTransitionStyles)
+  const localeToken = useRenderLocaleSignal().value
+  const t = useInlineTranslate()
   useVisibleTask$(() => {
     if (!featureFlags.viewTransitions) return
     if (typeof document === 'undefined') return
@@ -1233,14 +1237,14 @@ export default component$(() => {
     navDirection.value = resolveNavDirection(currentHref, targetUrl.href, navOrder)
   })
   return (
-    <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame">
+    <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame" data-locale={localeToken}>
       <header class="top-0 z-20 sticky bg-slate-950 border-slate-800 border-b app-header">
         <nav class="flex justify-between items-center mx-auto px-4 py-3 max-w-5xl font-medium text-sm app-nav">
           <div class="flex items-center gap-2 app-brand">
             <span class="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300 app-pill">
-              {translateStatic('app.brand.name@@Prometheus')}
+              {t('app.brand.name@@Prometheus')}
             </span>
-            <span class="text-slate-400">{translateStatic('app.brand.tagline@@Performance Lab')}</span>
+            <span class="text-slate-400">{t('app.brand.tagline@@Performance Lab')}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
             {navLinks.map(({ path, labelKey, dataSpeculate }) => (
@@ -1251,7 +1255,7 @@ export default component$(() => {
                 onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
-                {translateStatic(labelKey)}
+                {t(labelKey)}
               </a>
             ))}
             <LocaleSelector hasSession={session.value.hasSession} signOutAction={signOutAction} />

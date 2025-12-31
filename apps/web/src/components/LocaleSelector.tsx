@@ -10,7 +10,7 @@ import {
   persistLocaleCookie,
   persistLocaleStorage
 } from '../i18n/locale-sync'
-import { translateStatic } from '../i18n/translate'
+import { useInlineTranslate } from '../i18n/translate'
 import { useMotionMini, type MotionMiniAnimateFn, type MotionMiniAnimationHandle } from './animations/use-motion-mini'
 
 type MotionMiniAnimateOptions = NonNullable<Parameters<MotionMiniAnimateFn>[2]>
@@ -95,6 +95,7 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
   const localeSignal = useLocaleSignal()
   const renderLocaleSignal = useRenderLocaleSignal()
   const speak = useSpeakContext()
+  const t = useInlineTranslate()
   const menuRef = useSignal<HTMLDetailsElement>()
   const summaryRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLDivElement>()
@@ -412,7 +413,7 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
       <summary
         ref={summaryRef}
         class="settings-trigger"
-        aria-label={translateStatic('app.settingsMenu.label@@Settings')}
+        aria-label={t('app.settingsMenu.label@@Settings')}
         data-qwik-prime="settings"
       >
         <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -429,7 +430,7 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
       </summary>
       <div ref={panelRef} class="settings-panel animated-panel">
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{translateStatic('app.settingsMenu.language@@Language')}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.language@@Language')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               {supportedLocales.map((locale) => {
@@ -453,24 +454,24 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
           </div>
         </details>
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{translateStatic('app.settingsMenu.account@@Account')}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.account@@Account')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               {hasSession ? (
                 signOutAction ? (
                   <Form action={signOutAction} class="flex">
                     <button type="submit" class="settings-option">
-                      {translateStatic('app.settingsMenu.signOut@@Sign out')}
+                      {t('app.settingsMenu.signOut@@Sign out')}
                     </button>
                   </Form>
                 ) : null
               ) : (
                 <>
                   <a class="settings-option" href={loginHref} data-speculate={loginSpeculation}>
-                    {translateStatic('app.settingsMenu.login@@Login')}
+                    {t('app.settingsMenu.login@@Login')}
                   </a>
                   <a class="settings-option" href={registerHref} data-speculate={registerSpeculation}>
-                    {translateStatic('app.settingsMenu.createAccount@@Create an account')}
+                    {t('app.settingsMenu.createAccount@@Create an account')}
                   </a>
                 </>
               )}
@@ -478,17 +479,17 @@ export const LocaleSelector = component$<LocaleSelectorProps>(({ hasSession, sig
           </div>
         </details>
         <details class="settings-group animated-details">
-          <summary class="settings-group-trigger">{translateStatic('app.settingsMenu.theme@@Theme')}</summary>
+          <summary class="settings-group-trigger">{t('app.settingsMenu.theme@@Theme')}</summary>
           <div class="settings-group-panel animated-panel">
             <div class="settings-group-panel-inner">
               <button type="button" class="settings-option" data-theme="system" onClick$={applyTheme$}>
-                {translateStatic('app.settingsMenu.system@@System')}
+                {t('app.settingsMenu.system@@System')}
               </button>
               <button type="button" class="settings-option" data-theme="light" onClick$={applyTheme$}>
-                {translateStatic('app.settingsMenu.light@@Light')}
+                {t('app.settingsMenu.light@@Light')}
               </button>
               <button type="button" class="settings-option" data-theme="dark" onClick$={applyTheme$}>
-                {translateStatic('app.settingsMenu.dark@@Dark')}
+                {t('app.settingsMenu.dark@@Dark')}
               </button>
             </div>
           </div>
