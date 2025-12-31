@@ -53,7 +53,7 @@ const getValue = (
   }
   if (defaultValue) {
     const trimmed = defaultValue.trim()
-    if (!/^[[{].*[\\]}]$/.test(trimmed) || /^{{/.test(trimmed)) {
+    if (!/^[[{].*[\\]}]$/.test(trimmed) || trimmed.startsWith('{{')) {
       return transpileParams(defaultValue, params)
     }
     const parsed = params ? transpileParams(trimmed, params) : trimmed
