@@ -110,7 +110,8 @@ export const devPrimeSpeakFunctions = (): Plugin => ({
       try {
         await server.transformRequest('/src/speak-functions.ts')
       } catch (error) {
-        server.config.logger.warn('[dev] Failed to prime speak-functions module graph.', error)
+        const message = error instanceof Error ? error.message : String(error)
+        server.config.logger.warn(`[dev] Failed to prime speak-functions module graph. ${message}`)
       }
     }
     server.watcher.on('ready', () => {

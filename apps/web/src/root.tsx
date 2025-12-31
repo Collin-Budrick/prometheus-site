@@ -61,21 +61,6 @@ const RoutesWithLocaleSync = component$(() => {
     renderLocale.value = nextLocale
   })
 
-  return (
-    <div key={renderLocale.value} data-locale={renderLocale.value}>
-      <RouterOutlet />
-    </div>
-  )
-})
-
-export default component$(() => {
-  const initialLocale = normalizeLocale(getLocale(defaultLocale)) ?? defaultLocale
-  const localeSignal = useSignal<Locale>(initialLocale)
-  const renderLocaleSignal = useSignal<Locale>(initialLocale)
-  useContextProvider(LocaleContext, { locale: localeSignal, renderLocale: renderLocaleSignal })
-
-  useQwikSpeak({ config, translationFn })
-
   useVisibleTask$(() => {
     if (!toBoolean(import.meta.env.VITE_PREVIEW, false)) return
     if (typeof window === 'undefined') return
@@ -103,6 +88,21 @@ export default component$(() => {
       window.removeEventListener('pagehide', handlePageHide)
     }
   })
+
+  return (
+    <div key={renderLocale.value} data-locale={renderLocale.value}>
+      <RouterOutlet />
+    </div>
+  )
+})
+
+export default component$(() => {
+  const initialLocale = normalizeLocale(getLocale(defaultLocale)) ?? defaultLocale
+  const localeSignal = useSignal<Locale>(initialLocale)
+  const renderLocaleSignal = useSignal<Locale>(initialLocale)
+  useContextProvider(LocaleContext, { locale: localeSignal, renderLocale: renderLocaleSignal })
+
+  useQwikSpeak({ config, translationFn })
 
   const localeKey = localeSignal.value
   return (

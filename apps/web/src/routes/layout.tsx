@@ -48,6 +48,8 @@ const featureFlags = {
   partytown: defaultProd(import.meta.env.VITE_ENABLE_PARTYTOWN ?? import.meta.env.ENABLE_PARTYTOWN, true)
 }
 
+const swupDevEnabled = toBoolean(import.meta.env.VITE_SWUP_DEV, false)
+
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
 
 type SwupFetchOptions = NonNullable<Parameters<SwupInstance['fetchPage']>[1]> & { visit?: Visit }
@@ -715,11 +717,13 @@ export default component$(() => {
   })
   useVisibleTask$(({ cleanup }) => {
     if (typeof window === 'undefined') return
+    if (import.meta.env.DEV && !swupDevEnabled) return
 
     let observer: IntersectionObserver | null = null
     let swup: SwupInstance | null = null
     let ownsSwup = false
     let ownsClickHandler = false
+    const shouldSyncQwikResume = import.meta.env.DEV && swupDevEnabled
 
     type SwupFetchPage = (
       url: Parameters<SwupInstance['fetchPage']>[0],
@@ -778,6 +782,123 @@ export default component$(() => {
         }
       })
       targets.forEach((target) => observer?.observe(target))
+    }
+
+    type QwikResumePayload = {
+      attributes: Record<string, string>
+      qwikJson: string
+      qwikFuncs: string
+      events: string[]
+    }
+
+    const qwikRootAttributes = [
+      'q:container',
+      'q:render',
+      'q:route',
+      'q:locale',
+      'q:version',
+      'q:base',
+      'q:manifest-hash',
+      'q:instance'
+    ]
+
+    const extractQwikEvents = (scriptText: string | null | undefined) => {
+      if (!scriptText) return []
+      const events: string[] = []
+      for (const match of scriptText.matchAll(/['"]([^'"]+)['"]/g)) {
+        events.push(match[1])
+      }
+      return events
+    }
+
+    const parseQwikResumePayload = (html: string): QwikResumePayload | null => {
+      try {
+        const parsed = new DOMParser().parseFromString(html, 'text/html')
+        const root = parsed.documentElement
+        if (!root) return null
+
+        const attributes: Record<string, string> = {}
+        qwikRootAttributes.forEach((attr) => {
+          const value = root.getAttribute(attr)
+          if (value !== null) {
+            attributes[attr] = value
+          }
+        })
+
+        const lang = root.getAttribute('lang')
+        if (lang) attributes.lang = lang
+        const dir = root.getAttribute('dir')
+        if (dir) attributes.dir = dir
+
+        const qwikJson = parsed.querySelector('script[type="qwik/json"]')?.textContent ?? ''
+        const qwikFuncs = parsed.querySelector('script[q\\:func="qwik/json"]')?.textContent ?? ''
+        if (!qwikJson || !qwikFuncs) return null
+
+        const eventScript = Array.from(parsed.querySelectorAll('script')).find((script) =>
+          script.textContent?.includes('qwikevents')
+        )
+        const events = extractQwikEvents(eventScript?.textContent)
+
+        return { attributes, qwikJson, qwikFuncs, events }
+      } catch {
+        return null
+      }
+    }
+
+    const applyQwikResumePayload = (payload: QwikResumePayload) => {
+      const root = document.documentElement
+      const oldInstance = root.getAttribute('q:instance')
+
+      qwikRootAttributes.forEach((attr) => {
+        const value = payload.attributes[attr]
+        if (value === undefined) {
+          root.removeAttribute(attr)
+          return
+        }
+        root.setAttribute(attr, value)
+      })
+
+      if (payload.attributes.lang) {
+        root.setAttribute('lang', payload.attributes.lang)
+      } else {
+        root.removeAttribute('lang')
+      }
+      if (payload.attributes.dir) {
+        root.setAttribute('dir', payload.attributes.dir)
+      } else {
+        root.removeAttribute('dir')
+      }
+
+      document.querySelector('script[type="qwik/json"]')?.remove()
+      document.querySelector('script[q\\:func="qwik/json"]')?.remove()
+
+      const jsonScript = document.createElement('script')
+      jsonScript.type = 'qwik/json'
+      jsonScript.textContent = payload.qwikJson
+
+      const funcScript = document.createElement('script')
+      funcScript.setAttribute('q:func', 'qwik/json')
+      funcScript.textContent = payload.qwikFuncs
+
+      const mountTarget = document.body || document.documentElement
+      mountTarget.appendChild(jsonScript)
+      mountTarget.appendChild(funcScript)
+
+      ;(root as { _qwikjson_?: unknown })._qwikjson_ = null
+
+      const newInstance = payload.attributes['q:instance']
+      if (oldInstance && newInstance && oldInstance !== newInstance) {
+        const key = `qFuncs_${oldInstance}`
+        if (key in document) {
+          const docRecord = document as unknown as Record<string, unknown>
+          delete docRecord[key]
+        }
+      }
+
+      const qwikEvents = (window as Window & { qwikevents?: { push?: (...events: string[]) => void } }).qwikevents
+      if (payload.events.length && qwikEvents?.push) {
+        qwikEvents.push(...payload.events)
+      }
     }
 
     const setup = async () => {
@@ -1027,11 +1148,17 @@ export default component$(() => {
       }
 
       if (!global.__swupHooksAttached) {
-        instance.hooks.on('content:replace', () => {
+        instance.hooks.on('content:replace', (_visit, { page }) => {
           const roots = [document.querySelector('.app-header'), document.querySelector('#swup')].filter(Boolean) as Element[]
-          if (!roots.length) return
+          const resumePayload = shouldSyncQwikResume ? parseQwikResumePayload(page?.html ?? '') : null
+          if (!resumePayload && !roots.length) return
           requestAnimationFrame(() => {
-            primeQwikTasks(roots)
+            if (resumePayload) {
+              applyQwikResumePayload(resumePayload)
+            }
+            if (roots.length) {
+              primeQwikTasks(roots)
+            }
           })
         })
         instance.hooks.on('visit:end', () => {

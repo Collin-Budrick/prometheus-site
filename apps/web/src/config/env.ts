@@ -85,6 +85,7 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
   const devPort = numberFromEnv(process.env.WEB_PORT, 4173)
   const previewPort = numberFromEnv(pickEnv(process.env.WEB_PREVIEW_PORT, process.env.PREVIEW_PORT), 4174)
   const devAuditMode = booleanFromEnv(process.env.VITE_DEV_AUDIT, false)
+  const swupDevEnabled = booleanFromEnv(process.env.VITE_SWUP_DEV, false)
 
   if (devAuditMode) {
     console.warn('VITE_DEV_AUDIT enabled: HMR is disabled and dev will full reload on every change.')
@@ -157,6 +158,7 @@ export const loadEnv = (options: EnvLoadOptions = {}) => {
     previewPort,
     previewEnabled,
     devAuditMode,
+    swupDevEnabled,
     previewCacheEnabled,
     shouldUseHmrPolling,
     analyzeBundles,
