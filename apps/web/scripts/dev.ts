@@ -18,8 +18,13 @@ for (const [key, value] of Object.entries(viteEnv)) {
 }
 
 const port = Number.parseInt(process.env.WEB_PORT ?? '4173', 10)
+const skipPortCleanup = process.env.SKIP_PORT_CLEANUP === '1'
 const auditMode = process.env.VITE_DEV_AUDIT === '1' || process.env.DEV_AUDIT === '1'
+const devSsrEnabled = process.env.VITE_DEV_SSR !== '0'
+const devMode = devSsrEnabled ? 'ssr' : 'development'
 const bunBin = process.execPath
+const isBun = typeof process.versions?.bun === 'string'
+const forceWasi = process.env.NAPI_RS_FORCE_WASI ?? (isBun ? '1' : undefined)
 const traefikTlsPath = path.join(repoRoot, 'infra', 'traefik', 'dynamic', 'tls.yml')
 const devHttps = process.env.DEV_HTTPS
 const hmrHost = process.env.HMR_HOST ?? process.env.WEB_HOST ?? ''
@@ -49,13 +54,64 @@ const useHttps =
 const inferredClientPort = inferredPort || (useHttps ? '443' : String(port))
 const hmrClientPort = process.env.HMR_CLIENT_PORT ?? inferredClientPort
 const hmrProtocol = process.env.HMR_PROTOCOL ?? (useHttps ? 'wss' : 'ws')
-const bunEnv = {
+const bunEnv: NodeJS.ProcessEnv = {
   ...process.env,
   HMR_CLIENT_PORT: hmrClientPort,
   HMR_PROTOCOL: hmrProtocol,
   PATH: `${path.dirname(bunBin)}${path.delimiter}${process.env.PATH ?? ''}`
 }
+if (forceWasi) {
+  bunEnv.NAPI_RS_FORCE_WASI = forceWasi
+}
 const viteBin = path.resolve(process.cwd(), '..', '..', 'node_modules', 'vite', 'bin', 'vite.js')
+
+const shouldForceWasi =
+  isBun && forceWasi !== undefined && forceWasi !== '0' && forceWasi.toLowerCase() !== 'false'
+const ensureRolldownWasiBinding = async () => {
+  if (!shouldForceWasi) return
+  const bindingRoot = path.join(repoRoot, 'node_modules', '@rolldown', 'binding-wasm32-wasi')
+  if (fs.existsSync(bindingRoot)) return
+
+  const rolldownPackageCandidates = [
+    path.join(repoRoot, 'node_modules', 'vite', 'node_modules', 'rolldown', 'package.json'),
+    path.join(repoRoot, 'node_modules', 'rolldown', 'package.json')
+  ]
+  let rolldownVersion = '1.0.0-beta.57'
+  for (const candidate of rolldownPackageCandidates) {
+    if (!fs.existsSync(candidate)) continue
+    try {
+      const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { version?: string }
+      if (pkg.version) {
+        rolldownVersion = pkg.version
+        break
+      }
+    } catch {
+      // Ignore malformed package.json, fall back to default.
+    }
+  }
+
+  const tarballUrl = `https://registry.npmjs.org/@rolldown/binding-wasm32-wasi/-/binding-wasm32-wasi-${rolldownVersion}.tgz`
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rolldown-wasi-'))
+  const tarballPath = path.join(tmpDir, 'binding-wasm32-wasi.tgz')
+
+  const response = await fetch(tarballUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to download ${tarballUrl}: ${response.status} ${response.statusText}`)
+  }
+  const buffer = Buffer.from(await response.arrayBuffer())
+  fs.writeFileSync(tarballPath, buffer)
+
+  execSync(`tar -xzf ${tarballPath} -C ${tmpDir}`)
+
+  const extracted = path.join(tmpDir, 'package')
+  if (!fs.existsSync(extracted)) {
+    throw new Error('Rolldown WASI tarball did not extract a package directory.')
+  }
+
+  fs.mkdirSync(path.dirname(bindingRoot), { recursive: true })
+  fs.rmSync(bindingRoot, { recursive: true, force: true })
+  fs.renameSync(extracted, bindingRoot)
+}
 
 const tryExec = (command: string) => {
   try {
@@ -111,11 +167,20 @@ const freePort = (targetPort: number) => {
   }
 }
 
-freePort(port)
+if (!skipPortCleanup) {
+  freePort(port)
+}
+
+try {
+  await ensureRolldownWasiBinding()
+} catch (err) {
+  console.error('Failed to prepare the Rolldown WASI binding for Bun.', err)
+  process.exit(1)
+}
 
 if (auditMode) {
   console.log('Audit mode enabled: building once and serving preview without HMR or the Vite client.')
-  const buildEnv = { ...bunEnv, VITE_DEV_AUDIT: '1' }
+  const buildEnv: NodeJS.ProcessEnv = { ...bunEnv, VITE_DEV_AUDIT: '1' }
   if (!('SKIP_PRERENDER' in buildEnv)) {
     buildEnv.SKIP_PRERENDER = '1'
   }
@@ -143,7 +208,8 @@ if (auditMode) {
     process.exit(code ?? 0)
   })
 } else {
-  const dev = spawn(bunBin, [viteBin, 'dev'], {
+  const devArgs = ['dev', ...(devMode === 'development' ? [] : ['--mode', devMode])]
+  const dev = spawn(bunBin, [viteBin, ...devArgs], {
     stdio: 'inherit',
     env: bunEnv
   })

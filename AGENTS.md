@@ -22,6 +22,8 @@
 
 - Install dependencies: `bun install` (see TEMPLATE.md for CI-friendly flags).
 - Start dev server: `bun run dev`.
+- Dev SSR: `bun run dev` runs Vite with `--mode ssr` by default; set `VITE_DEV_SSR=0` to opt out.
+- Vite runner: dev uses Bun; the dev script forces Rolldown WASI (`NAPI_RS_FORCE_WASI=1`) to avoid N-API crashes (override with `NAPI_RS_FORCE_WASI=0`).
 - Run tests/checks: `bun run test`.
 - Fix local TLS (mkcert + Traefik): `bun run certs:fix`.
 - Docker Compose envs: use `.env` for dev and `--env-file .env.prod` for prod deploys.

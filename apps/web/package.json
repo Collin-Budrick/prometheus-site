@@ -53,8 +53,10 @@
   "devDependencies": {
     "@axe-core/playwright": "4.11.1-c8a87ee.0",
     "@iconify-json/solar": "1.2.5",
+    "@napi-rs/wasm-runtime": "1.1.1",
     "@playwright/test": "1.58.0-alpha-2025-12-30",
     "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.9-commit.d91dfb5",
+    "@rolldown/binding-wasm32-wasi": "1.0.0-beta.57",
     "@types/node": "25.0.3",
     "@unocss/preset-icons": "66.5.12",
     "@unocss/preset-mini": "66.5.12",

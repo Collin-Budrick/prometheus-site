@@ -102,6 +102,23 @@ export const devFontSilencer = () => ({
   }
 })
 
+export const devPrimeSpeakFunctions = (): Plugin => ({
+  name: 'dev-prime-speak-functions',
+  apply: (_config: UserConfig, env: ConfigEnv) => env.command === 'serve' && !env.isPreview,
+  configureServer(server: ViteDevServer) {
+    const prime = async () => {
+      try {
+        await server.transformRequest('/src/speak-functions.ts')
+      } catch (error) {
+        server.config.logger.warn('[dev] Failed to prime speak-functions module graph.', error)
+      }
+    }
+    server.watcher.on('ready', () => {
+      void prime()
+    })
+  }
+})
+
 const immutableAssetPrefixes = ['/build/', '/assets/', '/icons/', '/~partytown/']
 const immutableAssetCacheHeader = 'public, max-age=31536000, s-maxage=31536000, immutable'
 const brotliMimeTypes = new Map<string, string>([
@@ -302,6 +319,13 @@ export function qwikCityDevEnvDataGuard(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use((_req: IncomingMessage, res: DevResponse, next: (err?: unknown) => void) => {
         let stored: DevResponse['_qwikEnvData']
+        const shouldSkipJsonSafe = (value: unknown) => {
+          if (!value || typeof value !== 'object') return false
+          const env = value as DevEnvData
+          const qwikcity = env.qwikcity
+          if (!qwikcity || typeof qwikcity !== 'object') return false
+          return 'loadedRoute' in qwikcity || 'ev' in qwikcity
+        }
         Object.defineProperty(res, '_qwikEnvData', {
           configurable: true,
           enumerable: false,
@@ -309,6 +333,10 @@ export function qwikCityDevEnvDataGuard(): Plugin {
             return stored
           },
           set(value) {
+            if (shouldSkipJsonSafe(value)) {
+              stored = value as DevEnvData
+              return
+            }
             stored = value ? toJSONSafe(value) : value
           }
         })

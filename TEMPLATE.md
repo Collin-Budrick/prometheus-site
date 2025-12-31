@@ -7,6 +7,8 @@ Use this template to set up local environments, opt into optional features, and 
 - Clone and install: `git clone <repo> && cd prometheus-site && bun install` (use `--ignore-scripts` if you are bootstrapping inside CI).
 - Configure env: copy `.env.example` to `.env` and adjust ports or hosts as needed.
 - Run the stack: `bun run dev` for web + API, or `make dev` to start the docker-compose **dev** profile. Stop with `Ctrl+C`; view logs with `make logs`.
+- Dev SSR: `bun run dev` starts Vite with `--mode ssr` by default; set `VITE_DEV_SSR=0` to opt out.
+- Vite runner: dev uses Bun; the dev script forces Rolldown WASI (`NAPI_RS_FORCE_WASI=1`) to avoid N-API crashes (override with `NAPI_RS_FORCE_WASI=0`).
 - Preview build: `bun run build` then `bun run preview` (expects the API to be running, e.g., `bun run --cwd apps/api dev`).
 - Quality gates: `bun run lint` and `bun run test` (web tests live under `apps/web/tests`).
 - TLS: mkcert-issued certs live under `infra/traefik/certs`; run `bun run certs:mkcert` (WSL Bash) or `./scripts/setup-mkcert.ps1` (PowerShell) when you need trusted HTTPS locally.

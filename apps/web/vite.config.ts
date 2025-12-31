@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv as loadViteEnv, type Plugin, type PluginOption, type UserConfig } from 'vite'
+import { defineConfig, loadEnv as loadViteEnv, type CSSOptions, type Plugin, type PluginOption, type UserConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import UnoCSS from 'unocss/vite'
@@ -18,6 +18,7 @@ import {
   devAuditStripViteClient,
   devBustedViteClient,
   devFontSilencer,
+  devPrimeSpeakFunctions,
   fixOxcAutomaticJsx,
   forceClientBundleDeps,
   leanWorkboxManifest,
@@ -134,6 +135,8 @@ export default defineConfig((configEnv) => {
   const motionUtilsEsmPath = fileURLToPath(new URL('../../node_modules/motion-utils/dist/es/index.mjs', import.meta.url))
   const shouldStubPartytown = configEnv.command === 'build' && !ssrBuild
   const isDevServer = configEnv.command === 'serve' && !isPreview
+  const isBun = typeof process.versions?.bun === 'string'
+  const useLightningCss = !isDevServer || !isBun
   const codeInspectorEnabled = isDevServer && !env.devAuditMode && env.codeInspectorEnabled
   const aiIsolationHeaders = {
     'Cross-Origin-Opener-Policy': 'same-origin',
@@ -330,6 +333,7 @@ export default defineConfig((configEnv) => {
     partytownVite({ dest: partytownDest }),
     devAuditStripViteClient(env.devAuditMode),
     devBustedViteClient(!env.devAuditMode),
+    devPrimeSpeakFunctions(),
     qwikCityDevEnvDataJsonSafe(),
     localeBuildFallback(['en', 'ja', 'ko']),
     devFontSilencer(),
@@ -342,6 +346,17 @@ export default defineConfig((configEnv) => {
   ]
     .flat()
     .filter(Boolean) as PluginOption[]
+
+  const cssConfig: CSSOptions = useLightningCss
+    ? {
+        transformer: 'lightningcss',
+        lightningcss: {
+          drafts: {
+            customMedia: true
+          }
+        }
+      }
+    : { transformer: 'postcss' }
 
   const config = {
     cacheDir,
@@ -407,14 +422,7 @@ export default defineConfig((configEnv) => {
         '/api': apiProxy
       }
     },
-    css: {
-      transformer: 'lightningcss',
-      lightningcss: {
-        drafts: {
-          customMedia: true
-        }
-      }
-    },
+    css: cssConfig,
     experimental: {
       importGlobRestoreExtension: true
     }

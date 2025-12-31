@@ -719,6 +719,22 @@ export default component$(() => {
     let observer: IntersectionObserver | null = null
     let swup: SwupInstance | null = null
     let ownsSwup = false
+    let ownsClickHandler = false
+
+    type SwupFetchPage = (
+      url: Parameters<SwupInstance['fetchPage']>[0],
+      options?: Parameters<SwupInstance['fetchPage']>[1]
+    ) => ReturnType<SwupInstance['fetchPage']>
+    type SwupGlobal = Window & {
+      __swup?: SwupInstance
+      __swupBaseFetchPage?: SwupFetchPage
+      __swupClickHandler?: (event: MouseEvent) => void
+      __swupHooksAttached?: boolean
+      __swupDevCheck?: Promise<boolean>
+      __swupDevChecked?: boolean
+      __swupDevDisabled?: boolean
+      __swupViewTransitionWrapped?: boolean
+    }
 
     const dispatchIdle = (callback: () => void) => {
       if ('requestIdleCallback' in window) {
@@ -765,52 +781,20 @@ export default component$(() => {
     }
 
     const setup = async () => {
-      const global = window as Window & { __swup?: SwupInstance }
-      if (global.__swup) {
-        swup = global.__swup
-        return
-      }
-
-      const [{ default: Swup }, { default: SwupParallelPlugin }] = await Promise.all([
-        import('swup'),
-        import('@swup/parallel-plugin')
-      ])
-      const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-      const originalStartViewTransition = document.startViewTransition?.bind(document)
-      const supportsViewTransition =
-        featureFlags.viewTransitions && typeof originalStartViewTransition === 'function' && !prefersReducedMotion
-      if (supportsViewTransition) {
-        const global = window as Window & { __swupViewTransitionWrapped?: boolean }
-        if (!global.__swupViewTransitionWrapped && originalStartViewTransition) {
-          const timeoutMs = 800
-          document.startViewTransition = ((callback: () => void) => {
-            const transition = originalStartViewTransition(callback)
-            const finished = Promise.race([
-              transition.finished,
-              new Promise<void>((resolve) => {
-                setTimeout(resolve, timeoutMs)
-              })
-            ])
-            return { ...transition, finished }
-          }) as typeof document.startViewTransition
-          global.__swupViewTransitionWrapped = true
-        }
-      }
-      const animationSelector = supportsViewTransition ? false : prefersReducedMotion ? false : '[class*="transition-"]'
-      const plugins = supportsViewTransition ? [] : [new SwupParallelPlugin({ containers: ['#swup'] })]
-      const instance = new Swup({
-        containers: ['#swup'],
-        animateHistoryBrowsing: true,
-        animationSelector,
-        native: supportsViewTransition,
-        linkSelector: 'a[data-swup-link]',
-        requestHeaders: {
-          Accept: 'text/html, application/xhtml+xml'
-        },
-        plugins
-      })
-      const originalFetchPage = instance.fetchPage.bind(instance)
+      const global = window as SwupGlobal
       const useIframe = import.meta.env.DEV
+      const teardownSwup = () => {
+        if (global.__swupClickHandler) {
+          window.removeEventListener('click', global.__swupClickHandler, true)
+          delete global.__swupClickHandler
+        }
+        if (global.__swup) {
+          global.__swup.destroy()
+          delete global.__swup
+        }
+        delete global.__swupBaseFetchPage
+        global.__swupHooksAttached = false
+      }
       // Qwik dev responses to fetch() are HTML proxies; use a same-origin iframe to obtain DOM markup for Swup.
       const waitForContainers = (doc: Document, timeoutMs: number) =>
         new Promise<boolean>((resolve) => {
@@ -861,7 +845,7 @@ export default component$(() => {
                     cleanup(new Error('swup: iframe missing document'))
                     return
                   }
-                  const ready = await waitForContainers(doc, 2000)
+                  const ready = await waitForContainers(doc, Math.min(8000, timeoutMs))
                   if (!ready) {
                     cleanup(new Error('swup: iframe missing container'))
                     return
@@ -882,12 +866,93 @@ export default component$(() => {
           frame.src = url.href
           mountTarget.appendChild(frame)
         })
+      const ensureDevIframeAccess = async () => {
+        if (!useIframe) return true
+        if (global.__swupDevChecked) return !global.__swupDevDisabled
+        if (global.__swupDevCheck) return global.__swupDevCheck
+        const probe = (async () => {
+          try {
+            const html = await loadDocumentHtml(new URL(window.location.href), 12_000)
+            return html.includes('id="swup"')
+          } catch {
+            return false
+          }
+        })()
+        global.__swupDevCheck = probe
+        const ok = await probe
+        global.__swupDevChecked = true
+        global.__swupDevDisabled = !ok
+        global.__swupDevCheck = undefined
+        if (!ok) {
+          teardownSwup()
+        }
+        return ok
+      }
+
+      if (global.__swupDevDisabled) {
+        teardownSwup()
+        return
+      }
+
+      if (useIframe) {
+        const canUseSwup = await ensureDevIframeAccess()
+        if (!canUseSwup) return
+      }
+
+      const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      const originalStartViewTransition = document.startViewTransition?.bind(document)
+      const supportsViewTransition =
+        featureFlags.viewTransitions && typeof originalStartViewTransition === 'function' && !prefersReducedMotion
+      if (supportsViewTransition) {
+        if (!global.__swupViewTransitionWrapped && originalStartViewTransition) {
+          const timeoutMs = 800
+          document.startViewTransition = ((callback: () => void) => {
+            const transition = originalStartViewTransition(callback)
+            const finished = Promise.race([
+              transition.finished,
+              new Promise<void>((resolve) => {
+                setTimeout(resolve, timeoutMs)
+              })
+            ])
+            return { ...transition, finished }
+          }) as typeof document.startViewTransition
+          global.__swupViewTransitionWrapped = true
+        }
+      }
+
+      let instance = global.__swup
+      if (!instance) {
+        const [{ default: Swup }, { default: SwupParallelPlugin }] = await Promise.all([
+          import('swup'),
+          import('@swup/parallel-plugin')
+        ])
+        const animationSelector = supportsViewTransition ? false : prefersReducedMotion ? false : '[class*="transition-"]'
+        const plugins = supportsViewTransition ? [] : [new SwupParallelPlugin({ containers: ['#swup'] })]
+        instance = new Swup({
+          containers: ['#swup'],
+          animateHistoryBrowsing: true,
+          animationSelector,
+          native: supportsViewTransition,
+          linkSelector: 'a[data-swup-link]',
+          requestHeaders: {
+            Accept: 'text/html, application/xhtml+xml'
+          },
+          plugins
+        })
+        global.__swup = instance
+        ownsSwup = true
+      }
+
+      const baseFetchPage = (global.__swupBaseFetchPage ?? instance.fetchPage.bind(instance)) as SwupFetchPage
+      if (ownsSwup || !global.__swupBaseFetchPage) {
+        global.__swupBaseFetchPage = baseFetchPage
+      }
 
       const fetchPage: SwupInstance['fetchPage'] = async (url, options = {}) => {
         const typedOptions = options as SwupFetchOptions
         const method = typedOptions.method ?? 'GET'
         if (method !== 'GET' || typeof window === 'undefined') {
-          return originalFetchPage(url, typedOptions)
+          return baseFetchPage(url, typedOptions)
         }
 
         const targetUrl = new URL(String(url), window.location.href)
@@ -902,7 +967,7 @@ export default component$(() => {
         }
 
         if (!useIframe) {
-          return originalFetchPage(url, typedOptions)
+          return baseFetchPage(url, typedOptions)
         }
 
         try {
@@ -918,7 +983,7 @@ export default component$(() => {
           }
         } catch {}
 
-        return originalFetchPage(url, typedOptions)
+        return baseFetchPage(url, typedOptions)
       }
       instance.fetchPage = fetchPage
       swup = instance
@@ -926,6 +991,7 @@ export default component$(() => {
       const handleDocumentClick = (event: MouseEvent) => {
         if (event.button !== 0) return
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        if (global.__swupDevDisabled) return
         if (!swup) return
 
         let target = event.target
@@ -954,28 +1020,37 @@ export default component$(() => {
         swup.navigate(url.href, {}, { el: anchor, event })
       }
 
-      window.addEventListener('click', handleDocumentClick, true)
+      if (!global.__swupClickHandler) {
+        global.__swupClickHandler = handleDocumentClick
+        window.addEventListener('click', handleDocumentClick, true)
+        ownsClickHandler = true
+      }
 
-      instance.hooks.on('content:replace', () => {
-        const roots = [document.querySelector('.app-header'), document.querySelector('#swup')].filter(Boolean) as Element[]
-        if (!roots.length) return
-        requestAnimationFrame(() => {
-          primeQwikTasks(roots)
+      if (!global.__swupHooksAttached) {
+        instance.hooks.on('content:replace', () => {
+          const roots = [document.querySelector('.app-header'), document.querySelector('#swup')].filter(Boolean) as Element[]
+          if (!roots.length) return
+          requestAnimationFrame(() => {
+            primeQwikTasks(roots)
+          })
         })
-      })
-      instance.hooks.on('visit:end', () => {
-        const root = document.documentElement
-        if (root.dataset.vtDirection) {
-          delete root.dataset.vtDirection
-        }
-      })
+        instance.hooks.on('visit:end', () => {
+          const root = document.documentElement
+          if (root.dataset.vtDirection) {
+            delete root.dataset.vtDirection
+          }
+        })
+        global.__swupHooksAttached = true
+      }
 
-      global.__swup = instance
-      ownsSwup = true
-
-      cleanup(() => {
-        window.removeEventListener('click', handleDocumentClick, true)
-      })
+      if (ownsClickHandler) {
+        cleanup(() => {
+          if (global.__swupClickHandler === handleDocumentClick) {
+            window.removeEventListener('click', handleDocumentClick, true)
+            delete global.__swupClickHandler
+          }
+        })
+      }
     }
 
     void setup()
@@ -984,9 +1059,11 @@ export default component$(() => {
       observer?.disconnect()
       if (swup && ownsSwup) {
         swup.destroy()
-        const global = window as Window & { __swup?: SwupInstance }
+        const global = window as SwupGlobal
         if (global.__swup === swup) {
           delete global.__swup
+          delete global.__swupBaseFetchPage
+          global.__swupHooksAttached = false
         }
       }
     })

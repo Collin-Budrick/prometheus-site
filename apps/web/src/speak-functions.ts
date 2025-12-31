@@ -1,14 +1,10 @@
 import { inlinedQrl } from '@builder.io/qwik'
-import type { LoadTranslationFn, Translation, TranslationFn } from 'qwik-speak'
+import type { LoadTranslationFn, TranslationFn } from 'qwik-speak'
 
 const loadTranslation$: LoadTranslationFn = inlinedQrl(
   async (lang: string, asset: string) => {
-    const translationData = import.meta.glob<Translation>('/i18n/**/*.json')
-    const loadAsset = translationData[`/i18n/${lang}/${asset}.json`]
-    if (!loadAsset) return null
-
-    const module = await loadAsset()
-    return (module as { default: Translation }).default ?? (module as Translation)
+    const { speakLoadTranslation } = await import('./i18n/speak-loaders')
+    return speakLoadTranslation(lang, asset)
   },
   'speakLoadTranslation'
 )
