@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
-import { translateStatic, useInlineTranslate } from '../i18n/translate'
+import { translateStatic } from '../i18n/translate'
 
 export const onGet: RequestHandler = ({ cacheControl }) => {
   if (import.meta.env.PROD) {
@@ -14,33 +14,32 @@ export const onGet: RequestHandler = ({ cacheControl }) => {
 }
 
 export default component$(() => {
-  const t = useInlineTranslate()
   return (
     <section class="grid gap-6 md:grid-cols-2">
       <div class="p-6 surface">
         <p class="text-emerald-300 text-sm uppercase tracking-wide">
-          {t('app.homeHero.eyebrow@@Performance first')}
+          {translateStatic('app.homeHero.eyebrow@@Performance first')}
         </p>
         <h1 class="mt-2 font-semibold text-slate-50 text-3xl">
-          {t('app.homeHero.title@@Microscopic first load, big capability')}
+          {translateStatic('app.homeHero.title@@Microscopic first load, big capability')}
         </h1>
         <p class="mt-4 text-slate-300">
-          {t(
+          {translateStatic(
             'app.homeHero.description@@Qwik City SSR keeps the shell light. Navigation is enhanced with View Transitions and Speculation Rules when the browser supports them, and third-party scripts stay off the main thread.'
           )}
         </p>
         <ul class="space-y-3 mt-6 text-slate-200 text-sm">
-          <li>{t('app.homeHero.bulletImmutableHome@@- Ultra-thin home route with immutable caching')}</li>
-          <li>{t('app.homeHero.bulletLazyFeatures@@- Lazy feature routes for store, chat, and AI')}</li>
-          <li>{t('app.homeHero.bulletPartytown@@- Optional Partytown for third-party isolation')}</li>
+          <li>{translateStatic('app.homeHero.bulletImmutableHome@@- Ultra-thin home route with immutable caching')}</li>
+          <li>{translateStatic('app.homeHero.bulletLazyFeatures@@- Lazy feature routes for store, chat, and AI')}</li>
+          <li>{translateStatic('app.homeHero.bulletPartytown@@- Optional Partytown for third-party isolation')}</li>
         </ul>
       </div>
       <div class="p-6 text-slate-200 text-sm surface">
-        <h2 class="font-semibold text-slate-50 text-lg">{t('app.homeHero.latencyTitle@@Latency budget')}</h2>
+        <h2 class="font-semibold text-slate-50 text-lg">{translateStatic('app.homeHero.latencyTitle@@Latency budget')}</h2>
         <ul class="space-y-2 mt-3">
-          <li>{t('app.homeHero.latencyServer@@Server render: sub-50ms target with streaming enabled')}</li>
-          <li>{t('app.homeHero.latencyCss@@Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny')}</li>
-          <li>{t('app.homeHero.latencySpeculation@@Speculative nav: prerender all internal links')}</li>
+          <li>{translateStatic('app.homeHero.latencyServer@@Server render: sub-50ms target with streaming enabled')}</li>
+          <li>{translateStatic('app.homeHero.latencyCss@@Critical CSS: UnoCSS + Lightning CSS keeps payloads tiny')}</li>
+          <li>{translateStatic('app.homeHero.latencySpeculation@@Speculative nav: prerender all internal links')}</li>
         </ul>
       </div>
     </section>

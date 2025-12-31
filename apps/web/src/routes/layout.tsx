@@ -30,7 +30,7 @@ import {
   type SpeculationRules
 } from '../config/speculation-rules'
 import { getPageConfig, getSpeculationConfigSnapshot, getSpeculationMode } from '../config/page-config'
-import { useInlineTranslate } from '../i18n/translate'
+import { translateStatic } from '../i18n/translate'
 import { localeCookieOptions, resolvePreferredLocale } from './_shared/locale/locale-routing'
 
 const toBoolean = (value: string | boolean | undefined, fallback: boolean): boolean => {
@@ -57,8 +57,8 @@ const criticalCssInline = criticalCss
 const viewTransitionStyles = `
 @keyframes route-slide-in-right {
   from {
-    transform: translateX(22%);
-    opacity: 0.35;
+    transform: translateX(1em);
+    opacity: 0;
   }
   to {
     transform: translateX(0);
@@ -72,15 +72,15 @@ const viewTransitionStyles = `
     opacity: 1;
   }
   to {
-    transform: translateX(-22%);
-    opacity: 0.35;
+    transform: translateX(-1em);
+    opacity: 0;
   }
 }
 
 @keyframes route-slide-in-left {
   from {
-    transform: translateX(-22%);
-    opacity: 0.35;
+    transform: translateX(-1em);
+    opacity: 0;
   }
   to {
     transform: translateX(0);
@@ -94,8 +94,8 @@ const viewTransitionStyles = `
     opacity: 1;
   }
   to {
-    transform: translateX(22%);
-    opacity: 0.35;
+    transform: translateX(1em);
+    opacity: 0;
   }
 }
 
@@ -103,8 +103,8 @@ const viewTransitionStyles = `
 :root.supports-view-transition[data-vt-direction='left']::view-transition-new(route),
 :root.supports-view-transition[data-vt-direction='right']::view-transition-old(route),
 :root.supports-view-transition[data-vt-direction='right']::view-transition-new(route) {
-  animation-duration: 260ms;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-duration: 250ms;
+  animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
   animation-fill-mode: both;
   mix-blend-mode: normal;
 }
@@ -432,7 +432,6 @@ const dedupeLinks = (links: readonly HeadLink[] | undefined) => {
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const loc = useLocation()
-  const translate = useInlineTranslate()
   const isAudit = import.meta.env.VITE_DEV_AUDIT === '1' || loc.url.searchParams.get('audit') === '1'
   const allowSpeculationRules = featureFlags.speculationRules && !isAudit
   const allowLegacySpeculationHints = !allowSpeculationRules && !isAudit
@@ -638,7 +637,7 @@ export const RouterHead = component$(() => {
     .map((style) => <style key={style.key} {...style.props} dangerouslySetInnerHTML={style.style} />)
   return (
     <>
-      <title>{head.title || translate('app.brand.name@@Prometheus')}</title>
+      <title>{head.title || translateStatic('app.brand.name@@Prometheus')}</title>
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <link rel="icon" href="/icons/prometheus.svg" type="image/svg+xml" />
       <script dangerouslySetInnerHTML={jsReadyScript} />
@@ -685,7 +684,6 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const translate = useInlineTranslate()
   useStylesScoped$(layoutStyles)
   useStyles$(viewTransitionStyles)
   useVisibleTask$(() => {
@@ -801,7 +799,7 @@ export default component$(() => {
       const animationSelector = supportsViewTransition ? false : prefersReducedMotion ? false : '[class*="transition-"]'
       const plugins = supportsViewTransition ? [] : [new SwupParallelPlugin({ containers: ['#swup'] })]
       const instance = new Swup({
-        containers: ['.app-header', '#swup'],
+        containers: ['#swup'],
         animateHistoryBrowsing: true,
         animationSelector,
         native: supportsViewTransition,
@@ -812,14 +810,14 @@ export default component$(() => {
         plugins
       })
       const originalFetchPage = instance.fetchPage.bind(instance)
+      const useIframe = import.meta.env.DEV
       // Qwik dev responses to fetch() are HTML proxies; use a same-origin iframe to obtain DOM markup for Swup.
       const waitForContainers = (doc: Document, timeoutMs: number) =>
         new Promise<boolean>((resolve) => {
           const started = window.performance?.now?.() ?? Date.now()
           const check = () => {
-            const hasHeader = Boolean(doc.querySelector('.app-header'))
             const hasSwup = Boolean(doc.querySelector('#swup'))
-            if (hasHeader && hasSwup) {
+            if (hasSwup) {
               resolve(true)
               return
             }
@@ -842,7 +840,6 @@ export default component$(() => {
           frame.style.pointerEvents = 'none'
           frame.style.border = '0'
           frame.setAttribute('aria-hidden', 'true')
-          frame.setAttribute('sandbox', 'allow-same-origin allow-scripts')
 
           const cleanup = (error?: unknown) => {
             clearTimeout(timeoutId)
@@ -864,7 +861,11 @@ export default component$(() => {
                     cleanup(new Error('swup: iframe missing document'))
                     return
                   }
-                  await waitForContainers(doc, 2000)
+                  const ready = await waitForContainers(doc, 2000)
+                  if (!ready) {
+                    cleanup(new Error('swup: iframe missing container'))
+                    return
+                  }
                   const html = doc.documentElement.outerHTML
                   clearTimeout(timeoutId)
                   frame.remove()
@@ -878,8 +879,8 @@ export default component$(() => {
           )
 
           const mountTarget = document.body || document.documentElement
-          mountTarget.appendChild(frame)
           frame.src = url.href
+          mountTarget.appendChild(frame)
         })
 
       const fetchPage: SwupInstance['fetchPage'] = async (url, options = {}) => {
@@ -891,29 +892,33 @@ export default component$(() => {
 
         const targetUrl = new URL(String(url), window.location.href)
         const timeout = typeof typedOptions.timeout === 'number' && typedOptions.timeout > 0 ? typedOptions.timeout : 12_000
-        const hasContainers = (html: string) => html.includes('app-header') && html.includes('id="swup"')
-        let fallbackPage: { url: string; html: string } | null = null
-
-        if (!import.meta.env.DEV) {
+        const hasContainers = (html: string) => {
           try {
-            const page = await originalFetchPage(url, typedOptions)
-            if (hasContainers(page.html)) return page
-            fallbackPage = page
-          } catch {}
+            const parsed = new DOMParser().parseFromString(html, 'text/html')
+            return Boolean(parsed.querySelector('#swup'))
+          } catch {
+            return false
+          }
+        }
+
+        if (!useIframe) {
+          return originalFetchPage(url, typedOptions)
         }
 
         try {
           const html = await loadDocumentHtml(targetUrl, timeout)
-          const pageUrl = `${targetUrl.pathname}${targetUrl.search}`
-          const page = { url: pageUrl, html }
-          const visit = typedOptions.visit ?? instance.visit
-          if (visit?.cache?.write) {
-            instance.cache.set(pageUrl, page)
+          if (hasContainers(html)) {
+            const pageUrl = `${targetUrl.pathname}${targetUrl.search}`
+            const page = { url: pageUrl, html }
+            const visit = typedOptions.visit ?? instance.visit
+            if (visit?.cache?.write) {
+              instance.cache.set(pageUrl, page)
+            }
+            return page
           }
-          return page
-        } catch {
-          return fallbackPage ?? originalFetchPage(url, typedOptions)
-        }
+        } catch {}
+
+        return originalFetchPage(url, typedOptions)
       }
       instance.fetchPage = fetchPage
       swup = instance
@@ -994,6 +999,8 @@ export default component$(() => {
   const navLinks = resolveNavLinks(session.value.hasSession, loc.url.pathname)
   const navOrder = resolveNavOrder(navLinks)
   const linkHref = (path: string) => (path === '/' ? '/' : path)
+  const currentHref = loc.url.href
+  const currentOrigin = loc.url.origin
   useVisibleTask$(({ track }) => {
     const direction = track(() => navDirection.value)
     if (typeof document === 'undefined') return
@@ -1015,11 +1022,11 @@ export default component$(() => {
     if (!targetHref) return
     let targetUrl: URL | null = null
     try {
-      targetUrl = new URL(targetHref, loc.url.href)
+      targetUrl = new URL(targetHref, currentHref)
     } catch {}
-    if (!targetUrl || targetUrl.origin !== loc.url.origin) return
+    if (!targetUrl || targetUrl.origin !== currentOrigin) return
 
-    navDirection.value = resolveNavDirection(loc.url.href, targetUrl.href, navOrder)
+    navDirection.value = resolveNavDirection(currentHref, targetUrl.href, navOrder)
   })
   return (
     <div class="bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen app-frame">
@@ -1027,9 +1034,9 @@ export default component$(() => {
         <nav class="flex justify-between items-center mx-auto px-4 py-3 max-w-5xl font-medium text-sm app-nav">
           <div class="flex items-center gap-2 app-brand">
             <span class="bg-emerald-500/10 px-3 py-1 rounded-full text-emerald-300 app-pill">
-              {translate('app.brand.name@@Prometheus')}
+              {translateStatic('app.brand.name@@Prometheus')}
             </span>
-            <span class="text-slate-400">{translate('app.brand.tagline@@Performance Lab')}</span>
+            <span class="text-slate-400">{translateStatic('app.brand.tagline@@Performance Lab')}</span>
           </div>
           <div class="flex items-center gap-4 text-slate-200 app-links">
             {navLinks.map(({ path, labelKey, dataSpeculate }) => (
@@ -1040,7 +1047,7 @@ export default component$(() => {
                 onClick$={handleNavClick$}
                 class="hover:text-emerald-300 transition-colors"
               >
-                {translate(labelKey)}
+                {translateStatic(labelKey)}
               </a>
             ))}
             <LocaleSelector hasSession={session.value.hasSession} signOutAction={signOutAction} />
@@ -1048,7 +1055,7 @@ export default component$(() => {
         </nav>
       </header>
       <div class="swup-stack">
-        <main id="swup" class="flex flex-col gap-6 mx-auto px-4 py-10 max-w-5xl route-transition transition-swipe app-main">
+        <main id="swup" class="flex flex-col gap-6 mx-auto px-4 py-10 max-w-5xl route-transition transition-main app-main">
           <Slot />
         </main>
       </div>

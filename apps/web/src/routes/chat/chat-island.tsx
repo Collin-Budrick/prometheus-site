@@ -166,6 +166,10 @@ export const ChatIsland = component$<ChatIslandProps>(({ signedIn }) => {
     draft.value = ''
   })
 
+  const handleDraftInput = $((event: Event) => {
+    draft.value = (event.target as HTMLInputElement).value
+  })
+
   const renderedMessages = Array.from(messages.value)
 
   return (
@@ -200,9 +204,7 @@ export const ChatIsland = component$<ChatIslandProps>(({ signedIn }) => {
         <div class="flex gap-2">
           <input
             value={draft.value}
-            onInput$={(event) => {
-              draft.value = (event.target as HTMLInputElement).value
-            }}
+            onInput$={handleDraftInput}
             class="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100"
             placeholder={_`Say something quick`}
             disabled={!signedIn}

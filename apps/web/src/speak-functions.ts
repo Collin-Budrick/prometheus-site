@@ -1,10 +1,9 @@
 import { inlinedQrl } from '@builder.io/qwik'
 import type { LoadTranslationFn, Translation, TranslationFn } from 'qwik-speak'
 
-const translationData = import.meta.glob<Translation>('/i18n/**/*.json')
-
 const loadTranslation$: LoadTranslationFn = inlinedQrl(
   async (lang: string, asset: string) => {
+    const translationData = import.meta.glob<Translation>('/i18n/**/*.json')
     const loadAsset = translationData[`/i18n/${lang}/${asset}.json`]
     if (!loadAsset) return null
 

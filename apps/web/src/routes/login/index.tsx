@@ -138,7 +138,13 @@ export default component$(() => {
   const passkeyError = useSignal<string>('')
   const passkeyRedirect = useSignal<string | null>(null)
   const oauthProviders = resolveOAuthProviders()
-  const navigateWithSwup = (target: string) => {
+
+  useVisibleTask$(({ track }) => {
+    const redirectTo = track(() => action.value?.redirectTo)
+    const passkeyTarget = track(() => passkeyRedirect.value)
+    const target = typeof redirectTo === 'string' ? redirectTo : passkeyTarget
+    if (typeof target !== 'string') return
+    if (target === passkeyTarget) passkeyRedirect.value = null
     if (typeof window !== 'undefined') {
       const swup = (window as Window & { __swup?: { navigate?: (url: string) => void } }).__swup
       if (swup?.navigate) {
@@ -147,16 +153,6 @@ export default component$(() => {
       }
     }
     navigate(target)
-  }
-
-  useVisibleTask$(({ track }) => {
-    const redirectTo = track(() => action.value?.redirectTo)
-    const passkeyTarget = track(() => passkeyRedirect.value)
-    const target = typeof redirectTo === 'string' ? redirectTo : passkeyTarget
-    if (typeof target === 'string') {
-      if (target === passkeyTarget) passkeyRedirect.value = null
-      navigateWithSwup(target)
-    }
   })
 
   const startPasskeyLogin = $(async () => {

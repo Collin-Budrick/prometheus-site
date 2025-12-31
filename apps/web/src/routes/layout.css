@@ -4,8 +4,9 @@
 }
 
 .app-frame {
-  --swup-duration: 280ms;
-  --swup-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --swup-duration: 250ms;
+  --swup-ease: cubic-bezier(0.77, 0, 0.175, 1);
+  --swup-offset: 1em;
 }
 
 .swup-stack {
@@ -19,36 +20,46 @@
   width: 100%;
 }
 
-.transition-swipe.is-changing,
-.is-changing .transition-swipe {
-  transition: transform var(--swup-duration) var(--swup-ease), opacity var(--swup-duration) var(--swup-ease),
-    filter var(--swup-duration) var(--swup-ease);
-  will-change: transform, opacity, filter;
+.transition-main {
+  transition-property: opacity, transform;
+  transition-duration: var(--swup-duration);
+  transition-timing-function: var(--swup-ease);
+  transform: translateX(0);
+  opacity: 1;
+  will-change: transform, opacity;
 }
 
-.transition-swipe.is-previous-container {
-  transform: translateX(-6%);
+.is-changing .transition-main {
+  transition-property: opacity, transform;
+}
+
+.transition-main.is-previous-container {
+  transform: translateX(calc(-1 * var(--swup-offset)));
   opacity: 0;
-  filter: blur(2px);
   pointer-events: none;
 }
 
-.transition-swipe.is-next-container {
-  transform: translateX(6%);
+.transition-main.is-next-container {
+  transform: translateX(var(--swup-offset));
   opacity: 0;
-  filter: blur(6px);
+}
+
+:root[data-vt-direction='right'] .transition-main.is-previous-container {
+  transform: translateX(var(--swup-offset));
+}
+
+:root[data-vt-direction='right'] .transition-main.is-next-container {
+  transform: translateX(calc(-1 * var(--swup-offset)));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .transition-swipe.is-changing,
-  .is-changing .transition-swipe {
+  .is-changing .transition-main {
     transition: none;
   }
 
-  .transition-swipe.is-previous-container,
-  .transition-swipe.is-next-container {
+  .transition-main.is-previous-container,
+  .transition-main.is-next-container {
     transform: none;
     opacity: 1;
-    filter: none;
   }
 }
