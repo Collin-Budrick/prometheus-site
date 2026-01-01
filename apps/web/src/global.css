@@ -14,6 +14,12 @@
     --signal-strong: 13 148 136;
     --shadow: 0 30px 60px rgba(15, 23, 42, 0.14);
     --radius: 26px;
+    --motion-distance: 12px;
+    --view-transition-duration: 320ms;
+    --view-transition-duration-long: 520ms;
+    --view-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --skeleton-base: 226 232 240;
+    --skeleton-highlight: 248 250 252;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
       monospace;
   }
@@ -38,6 +44,24 @@
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
+    }
+  }
+
+  @supports (view-transition-name: root) {
+    :root {
+      view-transition-name: root;
+    }
+
+    ::view-transition-group(root) {
+      animation-duration: var(--view-transition-duration-long);
+      animation-timing-function: var(--view-transition-ease);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --view-transition-duration: 0ms;
+      --view-transition-duration-long: 0ms;
     }
   }
 
@@ -92,6 +116,15 @@
       box-shadow: 0 0 16px rgba(249, 115, 22, 0.5);
     }
   }
+
+  @keyframes skeleton-shimmer {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(120%);
+    }
+  }
 }
 
 @layer components {
@@ -102,12 +135,69 @@
 
   html[data-motion-ready='true'] [data-motion] {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(var(--motion-distance));
+    will-change: transform, opacity;
   }
 
   html[data-motion-ready='true'] [data-motion][data-motion-state='in'] {
     opacity: 1;
     transform: translateY(0);
+    will-change: transform, opacity;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html[data-motion-ready='true'] [data-motion],
+    html[data-motion-ready='true'] [data-motion][data-motion-state='in'] {
+      opacity: 1;
+      transform: none;
+      will-change: auto;
+    }
+  }
+
+  @supports (view-transition-name: root) {
+    [data-view-transition='shell-header'] {
+      view-transition-name: shell-header;
+    }
+
+    [data-view-transition='shell-nav'] {
+      view-transition-name: shell-nav;
+    }
+
+    [data-view-transition='shell-main'] {
+      view-transition-name: shell-main;
+    }
+
+    ::view-transition-old(shell-header),
+    ::view-transition-new(shell-header),
+    ::view-transition-old(shell-nav),
+    ::view-transition-new(shell-nav) {
+      animation-duration: var(--view-transition-duration);
+      animation-timing-function: var(--view-transition-ease);
+    }
+
+    ::view-transition-old(shell-main),
+    ::view-transition-new(shell-main) {
+      animation-duration: var(--view-transition-duration-long);
+      animation-timing-function: var(--view-transition-ease);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    @supports (view-transition-name: root) {
+      [data-view-transition] {
+        view-transition-name: none !important;
+      }
+
+      ::view-transition-old(shell-header),
+      ::view-transition-new(shell-header),
+      ::view-transition-old(shell-nav),
+      ::view-transition-new(shell-nav),
+      ::view-transition-old(shell-main),
+      ::view-transition-new(shell-main) {
+        animation-duration: 0.001ms !important;
+        animation-delay: 0s !important;
+      }
+    }
   }
 
   .layout-shell {
@@ -116,7 +206,8 @@
 
   .topbar {
     @apply flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between;
-    animation: header-in 0.8s ease-out both;
+    animation: header-in 0.8s var(--view-transition-ease) both;
+    will-change: transform, opacity;
   }
 
   .brand {
@@ -162,6 +253,46 @@
 
   .nav-links a {
     @apply border-b border-transparent pb-1 transition-all hover:border-amber-400 hover:text-slate-900;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden;
+    background-color: rgb(var(--skeleton-base) / 0.6);
+    color: transparent;
+    border-radius: 14px;
+    isolation: isolate;
+  }
+
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgb(var(--skeleton-highlight) / 0.95), transparent);
+    transform: translateX(-120%);
+    animation: skeleton-shimmer 1.4s var(--view-transition-ease) infinite;
+    will-change: transform, opacity;
+    opacity: 0.85;
+  }
+
+  .skeleton.inline {
+    height: 0.9em;
+    border-radius: 9999px;
+  }
+
+  .skeleton.block {
+    min-height: 120px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .topbar {
+      animation: none;
+      will-change: auto;
+    }
+
+    .skeleton::after {
+      animation-duration: 0.001ms;
+      opacity: 0.6;
+    }
   }
 
   .fragment-shell {
