@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Fragment Prime icon">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#0ea5e9" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="90" fill="url(#bg)" />
+  <rect x="78" y="78" width="356" height="356" rx="74" fill="#0f172a" />
+  <path d="M182 366V146h92c62 0 96 34 96 82 0 42-23 73-61 80l68 86h-62l-62-82h-43v82Zm44-132h50c26 0 42-14 42-38 0-25-16-38-42-38h-50Z" fill="#f8f2e7" />
+</svg>
