@@ -1,9 +1,19 @@
 import { component$, Slot } from '@builder.io/qwik'
-import { useDocumentHead } from '@builder.io/qwik-city'
+import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
+import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { resolveSpeculationRules } from './layout-helpers'
 
 const speculationRules = resolveSpeculationRules()
+
+export const onRequest: RequestHandler = ({ headers, method }) => {
+  if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
+    headers.set(
+      'Cache-Control',
+      PUBLIC_CACHE_CONTROL // 0s freshness, allow 60s stale-while-revalidate to keep streams aligned.
+    )
+  }
+}
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
