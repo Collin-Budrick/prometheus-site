@@ -27,6 +27,7 @@
     "drizzle-zod": "1.0.0-beta.8-734e789",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
+    "react": "19.2.3",
     "undici": "7.16.0",
     "zod": "4.4.0-canary.20251231T230035"
   },

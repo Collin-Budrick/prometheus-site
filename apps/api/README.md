@@ -13,7 +13,7 @@ Bun-powered Elysia service with Postgres via Drizzle ORM and Valkey for cache/pu
 
 ## Environment
 
-Copy `.env.example` to `.env` and set:
+Create a `.env` (or pass env vars at runtime) and set:
 
 - **Core:** `API_PORT`, `API_HOST`, `API_URL`
 - **Database:** `DATABASE_URL` (or `POSTGRES_*` + `POSTGRES_SSL`)
@@ -23,6 +23,20 @@ Copy `.env.example` to `.env` and set:
 - **Better Auth OAuth (optional):** provider pairs such as `BETTER_AUTH_GOOGLE_CLIENT_ID` / `BETTER_AUTH_GOOGLE_CLIENT_SECRET`, plus GitHub/Apple/Discord/Microsoft variants
 
 Passkeys require an RP ID + origin that match the host you serve over HTTPS. For local dev with Traefik + mkcert, set `BETTER_AUTH_RP_ID=localhost` and `BETTER_AUTH_RP_ORIGIN=https://localhost:4173` (or your forwarded dev host) so the WebAuthn challenge matches the browser origin.
+
+## Docker
+
+Build from the repo root so workspaces resolve correctly:
+
+```
+docker build -f apps/api/Dockerfile -t prometheus-api .
+```
+
+Run the container (map ports and provide env vars):
+
+```
+docker run --rm -p 4000:4000 --env-file .env prometheus-api
+```
 
 ## Routes
 

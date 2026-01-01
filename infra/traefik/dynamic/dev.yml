@@ -36,7 +36,7 @@ http:
     prometheus-dev-web:
       loadBalancer:
         servers:
-          - url: http://host.docker.internal:4173
+          - url: http://172.27.130.51:4173
     prometheus-dev-api:
       loadBalancer:
         servers:

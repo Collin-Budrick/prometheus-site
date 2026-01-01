@@ -11,6 +11,7 @@ import { checkQuota, setCleanupInterval } from './rate-limit'
 import { shouldRunMigrations } from './runtime-flags'
 import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
 import { authRoutes } from './routes/auth'
+import { fragmentRoutes } from './routes/fragments'
 const shouldPrepareDatabase = shouldRunMigrations(process.env.RUN_MIGRATIONS)
 
 async function bootstrap() {
@@ -185,6 +186,7 @@ const readPromptBody = async (request: Request) => {
 
 const app = new Elysia()
   .use(authRoutes)
+  .use(fragmentRoutes)
   .decorate('valkey', valkey)
   .get('/health', async () => {
     const dependencies: {

@@ -1,23 +1,24 @@
-FROM oven/bun:1.3.4 AS deps
+FROM oven/bun:1.3.5 AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
 COPY bunfig.toml ./
 COPY apps/api/package.json apps/api/package.json
-COPY patches ./patches
-RUN bun install --ignore-scripts
+COPY apps/web/package.json apps/web/package.json
+RUN bun install --ignore-scripts --frozen-lockfile
 
-FROM oven/bun:1.3.4 AS builder
+FROM oven/bun:1.3.5 AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/apps/api/package.json ./apps/api/package.json
+COPY --from=deps /app/apps/web/package.json ./apps/web/package.json
 
 COPY apps/api ./apps/api
 RUN bun run --cwd apps/api build
 
-FROM oven/bun:1.3.4 AS runner
+FROM oven/bun:1.3.5 AS runner
 WORKDIR /app/apps/api
 ENV NODE_ENV=production
 ENV API_HOST=0.0.0.0

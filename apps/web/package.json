@@ -1,0 +1,22 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode ssr --port 4173",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@builder.io/qwik": "1.18.0",
+    "@builder.io/qwik-city": "1.18.0",
+    "preact": "11.0.0-experimental.1"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.3",
+    "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.9-commit.d91dfb5",
+    "typescript": "6.0.0-dev.20251231",
+    "vite": "8.0.0-beta.5"
+  }
+}
