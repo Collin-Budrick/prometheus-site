@@ -3,6 +3,7 @@ import type { FragmentMeta } from './types'
 
 type StoredFragment = {
   payload: Uint8Array
+  html?: string
   meta: FragmentMeta
   updatedAt: number
   staleAt: number
@@ -25,6 +26,7 @@ const createLockToken = () =>
 const encodeEntry = (entry: StoredFragment) =>
   JSON.stringify({
     payload: Buffer.from(entry.payload).toString('base64'),
+    html: entry.html,
     meta: entry.meta,
     updatedAt: entry.updatedAt,
     staleAt: entry.staleAt,
@@ -35,6 +37,7 @@ const decodeEntry = (raw: string): StoredFragment | null => {
   try {
     const parsed = JSON.parse(raw) as {
       payload?: string
+      html?: string
       meta?: FragmentMeta
       updatedAt?: number
       staleAt?: number
@@ -43,6 +46,7 @@ const decodeEntry = (raw: string): StoredFragment | null => {
     if (!parsed.payload || !parsed.meta) return null
     return {
       payload: Uint8Array.from(Buffer.from(parsed.payload, 'base64')),
+      html: typeof parsed.html === 'string' ? parsed.html : undefined,
       meta: parsed.meta,
       updatedAt: parsed.updatedAt ?? Date.now(),
       staleAt: parsed.staleAt ?? Date.now(),

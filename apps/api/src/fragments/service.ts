@@ -1,4 +1,4 @@
-import { encodeFragmentPayload } from './binary'
+import { encodeFragmentPayloadFromTree } from './binary'
 import { getFragmentDefinition } from './definitions'
 import { planForPath } from './planner'
 import {
@@ -10,7 +10,7 @@ import {
   type StoredFragment,
   writeFragment
 } from './store'
-import { h, t } from './tree'
+import { h, renderToHtml, t } from './tree'
 import type { FragmentCacheStatus, FragmentPlan, FragmentPlanEntry } from './types'
 
 const inflight = new Map<string, Promise<StoredFragment>>()
@@ -22,12 +22,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const buildEntry = async (
   id: string,
   payload: Uint8Array,
+  html: string | undefined,
   ttlSeconds: number,
   staleSeconds: number
 ): Promise<StoredFragment> => {
   const now = Date.now()
   return {
     payload,
+    html,
     meta: {
       cacheKey: id,
       ttl: ttlSeconds,
@@ -59,12 +61,16 @@ const renderDefinition = async (id: string): Promise<StoredFragment> => {
           h('p', null, t(`No renderer registered for ${id}.`))
         ])
     }
-    const payload = await encodeFragmentPayload(fallback)
-    return buildEntry(id, payload, fallback.ttl, fallback.staleTtl)
+    const tree = await fallback.render()
+    const payload = encodeFragmentPayloadFromTree(fallback, tree)
+    const html = renderToHtml(tree)
+    return buildEntry(id, payload, html, fallback.ttl, fallback.staleTtl)
   }
 
-  const payload = await encodeFragmentPayload(definition)
-  const entry = await buildEntry(definition.id, payload, definition.ttl, definition.staleTtl)
+  const tree = await definition.render()
+  const payload = encodeFragmentPayloadFromTree(definition, tree)
+  const html = renderToHtml(tree)
+  const entry = await buildEntry(definition.id, payload, html, definition.ttl, definition.staleTtl)
   entry.meta.tags = definition.tags
   entry.meta.runtime = definition.runtime
   return entry
@@ -116,8 +122,10 @@ const refreshFragment = async (id: string): Promise<StoredFragment> => {
             h('p', null, t(`Last error: ${error instanceof Error ? error.message : 'unknown'}`))
           ])
       }
-      const payload = await encodeFragmentPayload(fallback)
-      return buildEntry(id, payload, fallback.ttl, fallback.staleTtl)
+      const tree = await fallback.render()
+      const payload = encodeFragmentPayloadFromTree(fallback, tree)
+      const html = renderToHtml(tree)
+      return buildEntry(id, payload, html, fallback.ttl, fallback.staleTtl)
     } finally {
       if (lockToken) {
         void releaseFragmentLock(id, lockToken)
@@ -154,7 +162,7 @@ const getOrRender = async (id: string): Promise<StoredFragment> => {
   return refreshFragment(id)
 }
 
-const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
+export const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
   if (!cached) {
     return { status: 'miss' }
   }
@@ -199,10 +207,10 @@ export const getFragmentPlan = async (path: string): Promise<FragmentPlan> => {
   return { ...plan, fragments }
 }
 
-export const getFragmentPayload = async (id: string) => {
-  const entry = await getOrRender(id)
-  return entry.payload
-}
+export const getFragmentEntry = async (id: string) => getOrRender(id)
+
+export const getFragmentPayload = async (id: string) => (await getFragmentEntry(id)).payload
+export const getFragmentHtml = async (id: string) => (await getFragmentEntry(id)).html
 
 export const streamFragmentsForPath = async (path: string) => {
   const plan = await getFragmentPlan(path)

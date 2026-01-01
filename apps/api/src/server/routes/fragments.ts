@@ -1,13 +1,25 @@
 import { Elysia, t } from 'elysia'
-import { getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
+import { buildCacheStatus, getFragmentEntry, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
+import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
+import type { StoredFragment } from '../../fragments/store'
 
-const fragmentResponse = (payload: Uint8Array) => {
-  const body = payload.slice().buffer as ArrayBuffer
+const buildCacheHeaders = (entry: StoredFragment) => {
+  const status = buildCacheStatus(entry, Date.now())
+  const headers = new Headers({
+    'content-type': 'application/octet-stream',
+    'cache-control': `public, max-age=0, s-maxage=${entry.meta.ttl}, stale-while-revalidate=${entry.meta.staleTtl}`,
+    'x-fragment-cache': status.status
+  })
+  if (status.updatedAt) headers.set('x-fragment-cache-updated', String(status.updatedAt))
+  if (status.staleAt) headers.set('x-fragment-cache-stale-at', String(status.staleAt))
+  if (status.expiresAt) headers.set('x-fragment-cache-expires-at', String(status.expiresAt))
+  return headers
+}
+
+const fragmentResponse = (entry: StoredFragment) => {
+  const body = entry.payload.slice().buffer as ArrayBuffer
   return new Response(body, {
-    headers: {
-      'content-type': 'application/octet-stream',
-      'cache-control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=120'
-    }
+    headers: buildCacheHeaders(entry)
   })
 }
 
@@ -16,7 +28,17 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     '/plan',
     async ({ query }) => {
       const path = typeof query.path === 'string' ? query.path : '/'
-      return getFragmentPlan(path)
+      const cacheKey = buildFragmentPlanCacheKey(path)
+      const cached = await readCache<unknown>(cacheKey)
+      if (cached) {
+        return cached
+      }
+      const start = performance.now()
+      const plan = await getFragmentPlan(path)
+      const elapsed = performance.now() - start
+      void recordLatencySample('fragment-plan', elapsed)
+      await writeCache(cacheKey, plan, 30)
+      return plan
     },
     {
       query: t.Object({
@@ -32,7 +54,7 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       return new Response(stream, {
         headers: {
           'content-type': 'application/octet-stream',
-          'cache-control': 'no-store'
+          'cache-control': buildCacheControlHeader(0, 0)
         }
       })
     },
@@ -49,8 +71,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       if (!id) {
         return new Response('Missing fragment id', { status: 400 })
       }
-      const payload = await getFragmentPayload(id)
-      return fragmentResponse(payload)
+      const entry = await getFragmentEntry(id)
+      return fragmentResponse(entry)
     },
     {
       query: t.Object({
@@ -60,6 +82,6 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   )
   .get('/:id', async ({ params }) => {
     const id = params.id
-    const payload = await getFragmentPayload(id)
-    return fragmentResponse(payload)
+    const entry = await getFragmentEntry(id)
+    return fragmentResponse(entry)
   })
