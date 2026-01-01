@@ -76,3 +76,14 @@ const resolveWebTransportFlag = (env: EnvConfig) => {
 }
 
 export const isWebTransportPreferred = (env: EnvConfig = getEnv()) => isTruthyFlag(resolveWebTransportFlag(env))
+
+const resolveCompressionFlag = (env: EnvConfig) => {
+  const processFlag =
+    typeof process !== 'undefined' && typeof process.env?.ENABLE_FRAGMENT_COMPRESSION !== 'undefined'
+      ? process.env.ENABLE_FRAGMENT_COMPRESSION
+      : undefined
+
+  return processFlag ?? env.ENABLE_FRAGMENT_COMPRESSION ?? env.VITE_ENABLE_FRAGMENT_COMPRESSION
+}
+
+export const isFragmentCompressionPreferred = (env: EnvConfig = getEnv()) => isTruthyFlag(resolveCompressionFlag(env))
