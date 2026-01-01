@@ -44,8 +44,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       }
     }
 
-    const hasMissing = plan.fragments.some((entry) => !fragments.value[entry.id])
-    const fallbackTimer = hasMissing
+    const missingAtMount = plan.fragments.map((entry) => entry.id).filter((id) => !initialFragments[id])
+    const fallbackTimer = missingAtMount.length
       ? window.setTimeout(() => {
           if (!active) return
           void hydrateMissingFragments()
