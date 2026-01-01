@@ -26,16 +26,21 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       const results = await Promise.allSettled(missing.map((id) => fetchFragment(id)))
       if (!active) return
 
-      const updates: Record<string, FragmentPayload> = {}
+      const current = fragments.value
+      let next: Record<string, FragmentPayload> | null = null
+
       results.forEach((result, index) => {
         if (result.status !== 'fulfilled') return
         const payload = result.value
         applyFragmentEffects(payload)
-        updates[missing[index]] = payload
+        if (current[missing[index]] !== payload) {
+          next ??= structuredClone(current)
+          next[missing[index]] = payload
+        }
       })
 
-      if (Object.keys(updates).length) {
-        fragments.value = { ...fragments.value, ...updates }
+      if (next) {
+        fragments.value = next
       }
     }
 
@@ -51,7 +56,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       if (!active) return
       applyFragmentEffects(payload)
       const update = () => {
-        fragments.value = { ...fragments.value, [payload.id]: payload }
+        const current = fragments.value
+        if (current[payload.id] === payload) return
+        const next = structuredClone(current)
+        next[payload.id] = payload
+        fragments.value = next
       }
       const startTransition = document.startViewTransition
       if (typeof startTransition === 'function') {
