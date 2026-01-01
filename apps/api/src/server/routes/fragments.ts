@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia'
 import { buildCacheStatus, getFragmentEntry, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
+import { isWebTransportEnabled } from '../runtime-flags'
 import type { StoredFragment } from '../../fragments/store'
 
 const buildCacheHeaders = (entry: StoredFragment) => {
@@ -55,6 +56,42 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
         headers: {
           'content-type': 'application/octet-stream',
           'cache-control': buildCacheControlHeader(0, 0)
+        }
+      })
+    },
+    {
+      query: t.Object({
+        path: t.Optional(t.String())
+      })
+    }
+  )
+  .get(
+    '/transport',
+    async ({ query }) => {
+      if (!isWebTransportEnabled(process.env.ENABLE_WEBTRANSPORT_FRAGMENTS)) {
+        return new Response(
+          JSON.stringify({
+            error: 'WebTransport fragment streaming is disabled',
+            flag: 'ENABLE_WEBTRANSPORT_FRAGMENTS'
+          }),
+          {
+            status: 501,
+            headers: { 'content-type': 'application/json' }
+          }
+        )
+      }
+
+      const path = typeof query.path === 'string' ? query.path : '/'
+      const start = performance.now()
+      const stream = await streamFragmentsForPath(path)
+      const elapsed = performance.now() - start
+      void recordLatencySample('fragment-transport-init', elapsed)
+
+      return new Response(stream, {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'cache-control': buildCacheControlHeader(0, 0),
+          'x-fragment-transport': 'webtransport-proxy'
         }
       })
     },

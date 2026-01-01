@@ -4,6 +4,15 @@ const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
 
 const getEnv = (): EnvConfig => (import.meta as ImportMeta & { env?: EnvConfig }).env ?? {}
 
+const isTruthyFlag = (value: unknown) => {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === '1' || normalized === 'true' || normalized === 'yes'
+  }
+  return false
+}
+
 const isDevEnv = (env: EnvConfig) => {
   const devFlag = env.DEV ?? (env.NODE_ENV === 'development' || env.MODE === 'development')
   if (typeof devFlag === 'boolean') return devFlag
@@ -51,3 +60,19 @@ export const getApiBase = (env: EnvConfig = getEnv()) => {
 
   return isDevEnv(env) ? DEFAULT_DEV_API_BASE : ''
 }
+
+const resolveWebTransportFlag = (env: EnvConfig) => {
+  const processFlag =
+    typeof process !== 'undefined' && typeof process.env?.ENABLE_WEBTRANSPORT_FRAGMENTS !== 'undefined'
+      ? process.env.ENABLE_WEBTRANSPORT_FRAGMENTS
+      : undefined
+
+  return (
+    processFlag ??
+    env.ENABLE_WEBTRANSPORT_FRAGMENTS ??
+    env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS ??
+    env.VITE_USE_WEBTRANSPORT_FRAGMENTS
+  )
+}
+
+export const isWebTransportPreferred = (env: EnvConfig = getEnv()) => isTruthyFlag(resolveWebTransportFlag(env))
