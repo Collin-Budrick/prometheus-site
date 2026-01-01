@@ -39,6 +39,7 @@ const loadQwikBinding = async () => {
 export default defineConfig(async () => {
   const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
   const useProxyHttps = process.env.VITE_DEV_HTTPS === '1' || process.env.VITE_DEV_HTTPS === 'true'
+  const devHttpsPort = process.env.VITE_DEV_HTTPS_PORT?.trim()
   const hmrHost = process.env.VITE_HMR_HOST?.trim() || (useProxyHttps ? devHost : undefined)
   const hmrProtocol =
     process.env.VITE_HMR_PROTOCOL?.trim() || (useProxyHttps ? 'wss' : undefined)
@@ -67,7 +68,9 @@ export default defineConfig(async () => {
       host: true,
       port: 4173,
       strictPort: true,
-      origin: useProxyHttps ? `https://${devHost}` : undefined,
+      origin: useProxyHttps
+        ? `https://${devHost}${devHttpsPort && devHttpsPort !== '443' ? `:${devHttpsPort}` : ''}`
+        : undefined,
       allowedHosts: useProxyHttps ? [devHost] : undefined,
       hmr: hmrEnabled
         ? {

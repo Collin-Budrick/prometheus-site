@@ -1,0 +1,92 @@
+http:
+  routers:
+    prometheus-dev-auth:
+      rule: Host(`prometheus.dev`) && PathPrefix(`/api/auth`)
+      entryPoints:
+        - websecure
+      service: prometheus-dev-api
+      tls: {}
+      priority: 20
+    prometheus-dev-web:
+      rule: Host(`prometheus.dev`)
+      entryPoints:
+        - websecure
+      service: prometheus-dev-web
+      tls: {}
+      priority: 1
+    prometheus-dev-web-ai:
+      rule: Host(`prometheus.dev`) && PathRegexp(`^/(?:[a-z]{2}/)?ai(?:/|$)`)
+      entryPoints:
+        - websecure
+      service: prometheus-dev-web
+      middlewares:
+        - prometheus-dev-web-ai-headers
+      tls: {}
+      priority: 30
+    prometheus-dev-api:
+      rule: Host(`prometheus.dev`) && PathPrefix(`/api`)
+      entryPoints:
+        - websecure
+      service: prometheus-dev-api
+      middlewares:
+        - prometheus-dev-api-strip
+      tls: {}
+      priority: 10
+    prometheus-prod-auth:
+      rule: Host(`prometheus.prod`) && PathPrefix(`/api/auth`)
+      entryPoints:
+        - websecure
+      service: prometheus-prod-api
+      tls: {}
+      priority: 20
+    prometheus-prod-web:
+      rule: Host(`prometheus.prod`)
+      entryPoints:
+        - websecure
+      service: prometheus-prod-web
+      tls: {}
+      priority: 1
+    prometheus-prod-api:
+      rule: Host(`prometheus.prod`) && PathPrefix(`/api`)
+      entryPoints:
+        - websecure
+      service: prometheus-prod-api
+      middlewares:
+        - prometheus-prod-api-strip
+      tls: {}
+      priority: 10
+  services:
+    prometheus-dev-web:
+      loadBalancer:
+        servers:
+          - url: http://172.27.130.51:4173
+    prometheus-dev-api:
+      loadBalancer:
+        servers:
+          - url: http://api:4000
+    prometheus-prod-web:
+      loadBalancer:
+        servers:
+          - url: http://web:4173
+    prometheus-prod-api:
+      loadBalancer:
+        servers:
+          - url: http://api:4000
+  middlewares:
+    prometheus-dev-web-ai-headers:
+      headers:
+        customResponseHeaders:
+          Cross-Origin-Opener-Policy: same-origin
+          Cross-Origin-Embedder-Policy: require-corp
+    prometheus-dev-api-strip:
+      stripPrefix:
+        prefixes:
+          - /api
+    prometheus-prod-api-strip:
+      stripPrefix:
+        prefixes:
+          - /api
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.pem
+      keyFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.key
