@@ -21,6 +21,8 @@ const speculationRules = {
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
+  const fontsHref =
+    'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
   return (
     <>
       <title>{head.title}</title>
@@ -33,11 +35,9 @@ export const RouterHead = component$(() => {
       <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       <link rel="icon" href="/favicon.ico" sizes="any" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link rel="preload" as="style" href={fontsHref} />
+      <link rel="stylesheet" href={fontsHref} />
       <script type="speculationrules" dangerouslySetInnerHTML={JSON.stringify(speculationRules)} />
     </>
   )
