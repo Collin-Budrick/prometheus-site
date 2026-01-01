@@ -12,6 +12,12 @@ const devApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
 const devPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
 const devValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
+const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
+const devEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
+const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
+const devEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
+const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 
 const composeEnv = {
   ...process.env,
@@ -21,6 +27,7 @@ const composeEnv = {
   PROMETHEUS_API_PORT: devApiPort,
   PROMETHEUS_POSTGRES_PORT: devPostgresPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
+  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
   TRAEFIK_DYNAMIC: 'stack'
 }
 
@@ -69,6 +76,11 @@ const webEnv = {
   VITE_HMR_CLIENT_PORT: devHttpsPort,
   VITE_HMR_PORT: '4173',
   VITE_API_BASE: `https://${devHttpsHost}/api`,
+  VITE_ENABLE_PREFETCH: devEnablePrefetch,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: devEnableCompression,
+  VITE_ENABLE_ANALYTICS: devEnableAnalytics,
+  VITE_REPORT_CLIENT_ERRORS: devEnableClientErrors,
   API_BASE: `http://127.0.0.1:${devApiPort}`
 }
 

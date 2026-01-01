@@ -23,6 +23,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures `stack.yml`, starts Qwik dev server on 4173 with HTTPS routed through Traefik at `https://prometheus.dev`).
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Traefik/containers and runs `vite preview` for the web app.
+- **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_REPORT_CLIENT_ERRORS`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on; override via env if needed.
 - **API base resolution:** Frontend resolves API origin via `API_BASE`/`VITE_API_BASE` (absolute URL or `/api` prefix). Default dev fallback is `http://127.0.0.1:4000`. Set the envs explicitly when front/back aren’t co-located.
 - **Database bootstrap:** When `RUN_MIGRATIONS=1`, the API runs Drizzle migrations + seed (`apps/api/src/db/prepare.ts`). Compose dev flow sets this automatically via scripts.
 - **Networking:** Traefik expects `prometheus.dev` to resolve to localhost. On WSL/non-macOS, set `DEV_WEB_UPSTREAM` if `host.docker.internal` is unsuitable.

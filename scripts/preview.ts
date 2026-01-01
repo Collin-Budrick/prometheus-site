@@ -14,6 +14,12 @@ const previewPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '543
 const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
+const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
+const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
+const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
+const previewEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
+const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 
 const composeEnv = {
   ...process.env,
@@ -25,7 +31,13 @@ const composeEnv = {
   PROMETHEUS_VALKEY_PORT: previewValkeyPort,
   TRAEFIK_DYNAMIC: 'stack',
   PROMETHEUS_WEB_HOST: previewWebHost,
-  PROMETHEUS_VITE_API_BASE: '/api'
+  PROMETHEUS_VITE_API_BASE: '/api',
+  VITE_ENABLE_PREFETCH: previewEnablePrefetch,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
+  VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
+  VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors,
+  ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport
 }
 
 ensureTraefikStackConfig(process.env.DEV_WEB_UPSTREAM?.trim())
@@ -44,7 +56,12 @@ const cache = loadBuildCache()
 const fingerprint = computeFingerprint(buildInputs, {
   PROMETHEUS_WEB_HOST: composeEnv.PROMETHEUS_WEB_HOST,
   PROMETHEUS_VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
-  TRAEFIK_DYNAMIC: composeEnv.TRAEFIK_DYNAMIC
+  TRAEFIK_DYNAMIC: composeEnv.TRAEFIK_DYNAMIC,
+  VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
+  VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
+  VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS
 })
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
