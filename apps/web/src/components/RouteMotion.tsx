@@ -4,25 +4,62 @@ import { useLocation } from '@builder.io/qwik-city'
 export const RouteMotion = component$(() => {
   const location = useLocation()
 
-  useVisibleTask$(async ({ track }) => {
+  useVisibleTask$(async ({ cleanup, track }) => {
     track(() => location.url.pathname + location.url.search)
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-    const root = document.querySelector('[data-motion-root]')
-    if (!root) return
+    document.documentElement.dataset.motionReady = 'true'
 
-    const targets = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
-    if (!targets.length) return
+    const root = document.querySelector('[data-motion-root]') ?? document.body
+    const { animate } = await import('@motionone/dom')
 
-    const { animate, stagger } = await import('@motionone/dom')
-    const delay = stagger(0.06, { start: 0.04 })
+    const reveal = (element: HTMLElement) => {
+      if (element.dataset.motionSeen === 'true') return
+      const animation = animate(
+        element,
+        { opacity: [0, 1], transform: ['translateY(12px)', 'translateY(0px)'] },
+        { duration: 0.5, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      )
+      animation.finished.finally(() => {
+        element.dataset.motionSeen = 'true'
+        element.style.opacity = ''
+        element.style.transform = ''
+      })
+    }
 
-    animate(
-      targets,
-      { opacity: [0, 1], transform: ['translateY(14px)', 'translateY(0px)'] },
-      { duration: 0.45, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', delay }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return
+          const target = entry.target as HTMLElement
+          observer.unobserve(target)
+          reveal(target)
+        })
+      },
+      { threshold: 0.2 }
     )
+
+    const observeTargets = () => {
+      const targets = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+      targets.forEach((element) => {
+        if (element.dataset.motionSeen === 'true') return
+        observer.observe(element)
+      })
+    }
+
+    observeTargets()
+
+    const mutationObserver = new MutationObserver(() => {
+      observeTargets()
+    })
+
+    mutationObserver.observe(root, { childList: true, subtree: true })
+
+    cleanup(() => {
+      observer.disconnect()
+      mutationObserver.disconnect()
+    })
   })
 
   return null
