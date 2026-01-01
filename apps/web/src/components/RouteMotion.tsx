@@ -26,6 +26,8 @@ export const RouteMotion = component$(() => {
       const current = animations.get(element)
       if (current) current.cancel()
 
+      element.style.willChange = 'transform, opacity'
+
       const animation = animate(
         element,
         next === 'in'
@@ -42,6 +44,7 @@ export const RouteMotion = component$(() => {
         if (targets.get(element) !== next) return
         element.style.opacity = ''
         element.style.transform = ''
+        element.style.willChange = ''
       })
     }
 
