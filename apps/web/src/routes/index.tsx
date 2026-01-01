@@ -76,12 +76,16 @@ export const useFragmentData = routeLoader$(async ({ url }) => {
 
   try {
     const plan = await loadFragmentPlan(path, env)
-    const criticalIds = plan.fragments.filter((fragment) => fragment.critical).map((fragment) => fragment.id)
+    const primaryGroup =
+      plan.fetchGroups && plan.fetchGroups.length
+        ? plan.fetchGroups[0]
+        : plan.fragments.map((fragment) => fragment.id)
+    const initialIds = Array.from(new Set(primaryGroup))
     let fragments: Record<string, FragmentPayload> = {}
 
-    if (criticalIds.length) {
+    if (initialIds.length) {
       try {
-        fragments = await loadFragments(criticalIds, env)
+        fragments = await loadFragments(initialIds, env)
       } catch (error) {
         console.error('Fragment load failed', error)
       }
