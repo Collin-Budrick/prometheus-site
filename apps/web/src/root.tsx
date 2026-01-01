@@ -1,8 +1,9 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
-import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
+import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
+import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
 import './global.css'
 
 type RequestIdleCallback = (
@@ -100,6 +101,36 @@ const ClientSignals = component$(() => {
   return null
 })
 
+const PrefetchSignals = component$(() => {
+  const location = useLocation()
+
+  useVisibleTask$(({ cleanup, track }) => {
+    track(() => location.url.pathname + location.url.search)
+
+    if (!isPrefetchEnabled(import.meta.env)) return
+
+    let stopPrefetch: (() => void) | undefined
+    let cancelled = false
+
+    initQuicklinkPrefetch(import.meta.env, true)
+      .then((stop) => {
+        if (cancelled) {
+          stop?.()
+          return
+        }
+        stopPrefetch = stop
+      })
+      .catch((error) => console.warn('[prefetch] Quicklink initialization failed', error))
+
+    cleanup(() => {
+      cancelled = true
+      stopPrefetch?.()
+    })
+  })
+
+  return null
+})
+
 export default component$(() => (
   <QwikCityProvider viewTransition>
     <head>
@@ -110,6 +141,7 @@ export default component$(() => (
     <body class="app-shell">
       <DocumentLang />
       <ClientSignals />
+      <PrefetchSignals />
       <RouteMotion />
       <RouterOutlet />
     </body>
