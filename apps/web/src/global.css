@@ -1,337 +1,298 @@
-:root {
-  color-scheme: dark;
-  --bg: #07090e;
-  --bg-deep: #05070b;
-  --panel: #111827;
-  --panel-strong: #0f1a2b;
-  --panel-glow: #1d2a44;
-  --ink: #e5e7eb;
-  --muted: #9aa4b2;
-  --accent: #7ee787;
-  --accent-strong: #4ade80;
-  --accent-soft: rgba(126, 231, 135, 0.12);
-  --signal: #60a5fa;
-  --signal-soft: rgba(96, 165, 250, 0.18);
-  --warning: #facc15;
-  --danger: #fb7185;
-  --radius: 18px;
-  --shadow: 0 18px 45px rgba(6, 10, 20, 0.45);
-  --grid-gap: clamp(16px, 2vw, 24px);
-  font-family: "Iowan Old Style", "Palatino Linotype", "Palatino", "Book Antiqua", serif;
-  background: var(--bg);
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --ink: 15 23 42;
+    --muted: 71 85 105;
+    --surface: 255 255 255;
+    --surface-warm: 248 242 231;
+    --surface-cool: 234 242 241;
+    --accent: 249 115 22;
+    --accent-strong: 194 65 12;
+    --signal: 20 184 166;
+    --signal-strong: 13 148 136;
+    --shadow: 0 30px 60px rgba(15, 23, 42, 0.14);
+    --radius: 26px;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+      monospace;
+  }
+
+  body {
+    @apply min-h-screen antialiased;
+    color: rgb(var(--ink));
+    font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    background-color: rgb(var(--surface-warm));
+    background-image:
+      radial-gradient(circle at 12% 8%, rgb(var(--accent) / 0.18), transparent 52%),
+      radial-gradient(circle at 86% 12%, rgb(var(--signal) / 0.16), transparent 48%),
+      linear-gradient(140deg, rgb(var(--surface-warm)), rgb(var(--surface-cool)));
+    background-attachment: fixed;
+    position: relative;
+    isolation: isolate;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+    background-size: 120px 120px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
 }
 
-* {
-  box-sizing: border-box;
+@layer utilities {
+  @keyframes header-in {
+    0% {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes card-in {
+    0% {
+      opacity: 0;
+      transform: translateY(16px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes pulse-dot {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 rgba(249, 115, 22, 0.3);
+    }
+    100% {
+      transform: scale(1.12);
+      box-shadow: 0 0 16px rgba(249, 115, 22, 0.5);
+    }
+  }
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at 20% 0%, rgba(96, 165, 250, 0.12), transparent 45%),
-    radial-gradient(circle at 80% 20%, rgba(126, 231, 135, 0.16), transparent 40%),
-    linear-gradient(150deg, var(--bg), var(--bg-deep));
-  color: var(--ink);
-}
+@layer components {
+  .app-shell {
+    @apply relative flex min-h-screen flex-col;
+    z-index: 1;
+  }
 
-.app-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
+  .layout-shell {
+    @apply mx-auto w-full max-w-6xl px-6 py-10 sm:px-10;
+  }
 
-main {
-  flex: 1;
-}
+  .topbar {
+    @apply flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between;
+    animation: header-in 0.8s ease-out both;
+  }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+  .brand {
+    @apply flex items-center gap-4;
+  }
 
-.layout-shell {
-  padding: clamp(24px, 4vw, 56px);
-}
+  .brand-mark {
+    @apply relative h-12 w-12 rounded-[18px];
+    background: conic-gradient(
+      from 140deg,
+      rgb(var(--accent) / 0.95),
+      rgb(var(--signal) / 0.9),
+      rgb(var(--accent) / 0.9)
+    );
+    box-shadow: 0 18px 40px rgba(249, 115, 22, 0.18);
+  }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: clamp(24px, 5vw, 48px);
-}
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+    box-shadow: inset 0 0 12px rgba(15, 23, 42, 0.1);
+  }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
+  .brand-title {
+    @apply flex flex-col leading-tight;
+  }
 
-.brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, var(--accent), transparent 60%),
-    radial-gradient(circle at 70% 70%, var(--signal), transparent 55%),
-    var(--panel);
-  box-shadow: inset 0 0 18px rgba(96, 165, 250, 0.35), 0 0 24px rgba(15, 23, 42, 0.6);
-}
+  .brand-title strong {
+    @apply text-lg font-semibold tracking-[0.4em] text-slate-900;
+  }
 
-.brand-title {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-}
+  .brand-title span {
+    @apply text-[11px] uppercase tracking-[0.4em] text-slate-500;
+  }
 
-.brand-title strong {
-  font-size: clamp(18px, 2.2vw, 24px);
-  letter-spacing: 0.04em;
-}
+  .nav-links {
+    @apply flex flex-wrap gap-4;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+  }
 
-.brand-title span {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--muted);
-}
+  .nav-links a {
+    @apply border-b border-transparent pb-1 transition-all hover:border-amber-400 hover:text-slate-900;
+  }
 
-.nav-links {
-  display: flex;
-  gap: 16px;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--muted);
-}
+  .fragment-shell {
+    @apply mt-6 space-y-5;
+  }
 
-.nav-links a {
-  padding-bottom: 6px;
-  border-bottom: 1px solid transparent;
-  transition: border-color 180ms ease, color 180ms ease;
-}
+  .fragment-status {
+    @apply inline-flex items-center gap-2 rounded-full border border-amber-200/70 bg-white/70 px-4 py-2;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-600;
+  }
 
-.nav-links a:hover {
-  color: var(--ink);
-  border-color: var(--accent);
-}
+  .fragment-status .dot {
+    @apply h-2 w-2 rounded-full bg-amber-400;
+    animation: pulse-dot 1.4s ease-in-out infinite alternate;
+  }
 
-.fragment-grid {
-  display: grid;
-  gap: var(--grid-gap);
-}
-
-@media (min-width: 900px) {
   .fragment-grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    @apply grid gap-6;
   }
-}
 
-.fragment-card {
-  background: linear-gradient(160deg, var(--panel), var(--panel-strong));
-  border-radius: var(--radius);
-  padding: clamp(18px, 3vw, 28px);
-  box-shadow: var(--shadow);
-  border: 1px solid rgba(148, 163, 184, 0.08);
-  position: relative;
-  overflow: hidden;
-}
-
-.fragment-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at top right, rgba(126, 231, 135, 0.15), transparent 45%);
-  opacity: 0;
-  transition: opacity 240ms ease;
-}
-
-.fragment-card:hover::after {
-  opacity: 1;
-}
-
-.fragment-card h1,
-.fragment-card h2,
-.fragment-card h3 {
-  margin: 0 0 12px 0;
-  font-weight: 600;
-}
-
-.fragment-card p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.fragment-card .meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--muted);
-  margin-bottom: 12px;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-}
-
-.badge.accent {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: rgba(126, 231, 135, 0.3);
-}
-
-.badge.signal {
-  background: var(--signal-soft);
-  color: var(--signal);
-  border-color: rgba(96, 165, 250, 0.4);
-}
-
-.inline-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 18px 0 0;
-  padding: 0;
-  list-style: none;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.inline-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.inline-list span {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 12px rgba(126, 231, 135, 0.4);
-}
-
-.fragment-placeholder {
-  border-radius: var(--radius);
-  border: 1px dashed rgba(148, 163, 184, 0.25);
-  padding: 24px;
-  color: var(--muted);
-  font-size: 13px;
-  background: rgba(15, 23, 42, 0.4);
-}
-
-.fragment-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.fragment-status .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--warning);
-  box-shadow: 0 0 12px rgba(250, 204, 21, 0.5);
-}
-
-@keyframes glow {
-  0% {
-    box-shadow: 0 0 0 rgba(126, 231, 135, 0.4);
+  @media (min-width: 900px) {
+    .fragment-grid {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
   }
-  100% {
-    box-shadow: 0 0 24px rgba(126, 231, 135, 0.65);
+
+  .fragment-card {
+    @apply relative overflow-hidden rounded-[var(--radius)] border border-amber-100/80 bg-white/80 p-6;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(8px);
+    animation: card-in 0.7s ease-out both;
   }
-}
 
-.action-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #08130c;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 0 18px rgba(126, 231, 135, 0.4);
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
+  .fragment-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at top right, rgb(var(--accent) / 0.18), transparent 45%),
+      radial-gradient(circle at bottom left, rgb(var(--signal) / 0.18), transparent 40%);
+    opacity: 0;
+    transition: opacity 200ms ease;
+    pointer-events: none;
+  }
 
-.action-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 28px rgba(126, 231, 135, 0.6);
-}
+  .fragment-card:hover::after {
+    opacity: 1;
+  }
 
-.matrix {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
+  .fragment-card:nth-child(2) {
+    animation-delay: 0.08s;
+  }
 
-.matrix .cell {
-  padding: 14px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 12px;
-  color: var(--muted);
-}
+  .fragment-card:nth-child(3) {
+    animation-delay: 0.16s;
+  }
 
-.matrix .cell strong {
-  display: block;
-  color: var(--ink);
-  font-size: 16px;
-  margin-top: 6px;
-  letter-spacing: 0.05em;
-}
+  .fragment-card:nth-child(4) {
+    animation-delay: 0.24s;
+  }
 
-.preact-island {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  background: rgba(5, 8, 14, 0.6);
-  border: 1px solid rgba(96, 165, 250, 0.25);
-}
+  .fragment-card:nth-child(5) {
+    animation-delay: 0.32s;
+  }
 
-.preact-island button {
-  margin-top: 10px;
-  background: transparent;
-  border: 1px solid rgba(96, 165, 250, 0.6);
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 8px 14px;
-  cursor: pointer;
-  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-}
+  .fragment-card h1,
+  .fragment-card h2,
+  .fragment-card h3 {
+    @apply mb-3 text-xl font-semibold text-slate-900;
+  }
 
-.preact-island button:hover {
-  border-color: var(--signal);
-  color: var(--signal);
+  .fragment-card p {
+    @apply text-sm leading-6 text-slate-600;
+  }
+
+  .fragment-placeholder {
+    @apply rounded-[20px] border border-dashed border-amber-200/70 bg-amber-50/40 p-5 text-sm text-slate-500;
+  }
+
+  .meta-line {
+    @apply mb-3 flex flex-wrap gap-2 font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-600;
+  }
+
+  .badge.accent {
+    @apply border-amber-200/80 bg-amber-50 text-amber-700;
+  }
+
+  .badge.signal {
+    @apply border-teal-200/80 bg-teal-50 text-teal-700;
+  }
+
+  .inline-list {
+    @apply mt-4 flex flex-col gap-3 p-0;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+    list-style: none;
+  }
+
+  .inline-list li {
+    @apply flex items-center gap-3;
+  }
+
+  .inline-list span {
+    @apply h-2.5 w-2.5 rounded-full bg-amber-400;
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.35);
+  }
+
+  .matrix {
+    @apply mt-4 grid gap-3;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .matrix .cell {
+    @apply rounded-2xl border border-slate-200/70 bg-white/70 p-4;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+  }
+
+  .matrix .cell strong {
+    @apply mt-2 block text-base font-semibold text-slate-900;
+  }
+
+  .action-button {
+    @apply inline-flex items-center gap-2 rounded-full bg-amber-400 px-5 py-3;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-900;
+    box-shadow: 0 16px 30px rgba(249, 115, 22, 0.3);
+    transition: transform 160ms ease, box-shadow 160ms ease;
+  }
+
+  .action-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 22px 36px rgba(249, 115, 22, 0.35);
+  }
+
+  .preact-island {
+    @apply mt-4 rounded-2xl border border-teal-200/80 bg-white/70 p-4;
+  }
+
+  .preact-island button {
+    @apply mt-3 rounded-full border border-slate-200 bg-white px-4 py-2;
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-600;
+    transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  .preact-island button:hover {
+    @apply border-teal-300 text-teal-700;
+    transform: translateY(-1px);
+  }
 }

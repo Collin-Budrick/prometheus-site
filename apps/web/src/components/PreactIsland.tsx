@@ -22,8 +22,8 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
       const Island = () => {
         const [count, setCount] = useState(0)
         return h('div', null, [
-          h('div', { style: 'letter-spacing:0.2em;text-transform:uppercase;font-size:11px;color:#9aa4b2;' }, label),
-          h('div', { style: 'font-size:20px;margin-top:8px;color:#e5e7eb;' }, `Pulse ${count}`),
+          h('div', { class: 'font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500' }, label),
+          h('div', { class: 'mt-2 text-lg font-semibold text-slate-900' }, `Pulse ${count}`),
           h(
             'button',
             {

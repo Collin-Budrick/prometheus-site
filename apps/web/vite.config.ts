@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
+import tailwindcss from '@tailwindcss/vite'
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -54,7 +55,7 @@ export default defineConfig(async () => {
   const binding = await loadQwikBinding()
 
   return {
-    plugins: [qwikCity(), qwikVite({ optimizerOptions: { binding } })],
+    plugins: [tailwindcss(), qwikCity(), qwikVite({ optimizerOptions: { binding } })],
     oxc: false,
     server: {
       host: true,

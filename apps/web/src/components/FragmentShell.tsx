@@ -45,12 +45,12 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
   })
 
   return (
-    <section>
+    <section class="fragment-shell">
       <div class="fragment-status">
         <span class="dot" />
         <span>{status.value === 'streaming' ? 'Streaming fragments' : status.value === 'error' ? 'Stream stalled' : 'Idle'}</span>
       </div>
-      <div class="fragment-grid" style={{ marginTop: '16px' }}>
+      <div class="fragment-grid">
         {plan.fragments.map((entry) => {
           const fragment = fragments.value[entry.id]
           return (
