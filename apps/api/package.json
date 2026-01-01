@@ -40,6 +40,6 @@
     "typescript": "6.0.0-dev.20251231"
   },
   "optionalDependencies": {
-    "@oxlint/win32-arm64": "1.36.0"
+    "@oxlint/win32-arm64": "^1.36.0"
   }
 }

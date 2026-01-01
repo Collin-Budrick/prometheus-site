@@ -2,4 +2,4 @@ pre-commit:
   parallel: false
   commands:
     lint:
-      run: PATH="$HOME/.bun/bin:$PATH" bun run lint
+      run: PATH="$HOME/.bun/bin:$PATH" bun run scripts/lefthook-lint.ts

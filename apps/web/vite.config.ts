@@ -1,8 +1,41 @@
 import { defineConfig } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
+import { createRequire } from 'node:module'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 
-export default defineConfig(() => {
+const require = createRequire(import.meta.url)
+
+const nativeBindingMap: Record<string, string> = {
+  'linux-x64': 'qwik.linux-x64-gnu.node',
+  'darwin-x64': 'qwik.darwin-x64.node',
+  'darwin-arm64': 'qwik.darwin-arm64.node',
+  'win32-x64': 'qwik.win32-x64-msvc.node'
+}
+const bindingsDir = path.resolve(path.dirname(require.resolve('@builder.io/qwik/optimizer')), '..', 'bindings')
+
+const loadQwikBinding = async () => {
+  const key = `${process.platform}-${process.arch}`
+  const bindingFile = nativeBindingMap[key]
+
+  if (bindingFile) {
+    try {
+      return require(path.join(bindingsDir, bindingFile))
+    } catch {
+      // fallback to wasm binding
+    }
+  }
+
+  const mod = require(path.join(bindingsDir, 'qwik.wasm.cjs'))
+  const wasmPath = path.join(bindingsDir, 'qwik_wasm_bg.wasm')
+  const wasmBuffer = await readFile(wasmPath)
+  const wasmModule = await WebAssembly.compile(wasmBuffer)
+  await mod.default({ module_or_path: wasmModule })
+  return mod
+}
+
+export default defineConfig(async () => {
   const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
   const useProxyHttps = process.env.VITE_DEV_HTTPS === '1' || process.env.VITE_DEV_HTTPS === 'true'
   const hmrHost = process.env.VITE_HMR_HOST?.trim() || (useProxyHttps ? devHost : undefined)
@@ -18,9 +51,11 @@ export default defineConfig(() => {
     Number.isFinite(hmrClientPort) ||
     Number.isFinite(hmrPort) ||
     !!hmrPath
+  const binding = await loadQwikBinding()
 
   return {
-    plugins: [qwikCity(), qwikVite()],
+    plugins: [qwikCity(), qwikVite({ optimizerOptions: { binding } })],
+    oxc: false,
     server: {
       host: true,
       port: 4173,

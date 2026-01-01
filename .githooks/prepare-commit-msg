@@ -13,28 +13,28 @@ call_lefthook()
   if test -n "$LEFTHOOK_BIN"
   then
     "$LEFTHOOK_BIN" "$@"
-  elif lefthook -h >/dev/null 2>&1
+  elif lefthook.exe -h >/dev/null 2>&1
   then
-    lefthook "$@"
+    lefthook.exe "$@"
+  elif lefthook.bat -h >/dev/null 2>&1
+  then
+    lefthook.bat "$@"
+  elif C:\Users\colli\Documents\Project\prometheus-site\node_modules\lefthook-windows-x64\bin\lefthook.exe -h >/dev/null 2>&1
+  then
+    C:\Users\colli\Documents\Project\prometheus-site\node_modules\lefthook-windows-x64\bin\lefthook.exe "$@"
   else
     dir="$(git rev-parse --show-toplevel)"
     osArch=$(uname | tr '[:upper:]' '[:lower:]')
-    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/;s/amd64/x64/')
-    extension=""
-    case "$osArch" in
-      mingw*|msys*|cygwin*) osArch="windows"; extension=".exe" ;;
-      darwin*) osArch="darwin" ;;
-      linux*) osArch="linux" ;;
-    esac
-    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook${extension}"
+    cpuArch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')
+    if test -f "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook.exe"
     then
-      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook${extension}" "$@"
-    elif test -f "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook"
+      "$dir/node_modules/lefthook-${osArch}-${cpuArch}/bin/lefthook.exe" "$@"
+    elif test -f "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook.exe"
     then
-      "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook" "$@"
-    elif test -f "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook"
+      "$dir/node_modules/@evilmartians/lefthook/bin/lefthook-${osArch}-${cpuArch}/lefthook.exe" "$@"
+    elif test -f "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook.exe"
     then
-      "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook" "$@"
+      "$dir/node_modules/@evilmartians/lefthook-installer/bin/lefthook.exe" "$@"
     elif test -f "$dir/node_modules/lefthook/bin/index.js"
     then
       "$dir/node_modules/lefthook/bin/index.js" "$@"
