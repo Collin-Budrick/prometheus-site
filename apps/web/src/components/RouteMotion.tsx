@@ -15,6 +15,7 @@ export const RouteMotion = component$(() => {
     const root = document.querySelector('[data-motion-root]') ?? document.body
     const { animate } = await import('@motionone/dom')
 
+    const observedElements = new WeakSet<HTMLElement>()
     const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
     const animations = new WeakMap<HTMLElement, AnimationControls>()
 
@@ -65,15 +66,65 @@ export const RouteMotion = component$(() => {
     const observeTargets = () => {
       const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
       elements.forEach((element) => {
+        if (observedElements.has(element)) return
         if (!element.dataset.motionState) element.dataset.motionState = 'out'
         observer.observe(element)
+        observedElements.add(element)
       })
+    }
+
+    const unobserveNode = (node: Node) => {
+      if (!(node instanceof HTMLElement)) return
+
+      const elements = node.matches('[data-motion]')
+        ? [node, ...Array.from(node.querySelectorAll<HTMLElement>('[data-motion]'))]
+        : Array.from(node.querySelectorAll<HTMLElement>('[data-motion]'))
+
+      elements.forEach((element) => {
+        observer.unobserve(element)
+        observedElements.delete(element)
+      })
+    }
+
+    const runObservedTargets = () => {
+      idleHandle = null
+      timeoutHandle = null
+      observeTargets()
+    }
+
+    let idleHandle: number | null = null
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleObserveTargets = () => {
+      if (idleHandle !== null || timeoutHandle !== null) return
+
+      if ('requestIdleCallback' in window) {
+        idleHandle = window.requestIdleCallback(() => {
+          idleHandle = null
+          if (timeoutHandle !== null) {
+            clearTimeout(timeoutHandle)
+            timeoutHandle = null
+          }
+          observeTargets()
+        })
+      }
+
+      timeoutHandle = window.setTimeout(() => {
+        if (idleHandle !== null && 'cancelIdleCallback' in window) {
+          window.cancelIdleCallback(idleHandle)
+          idleHandle = null
+        }
+        runObservedTargets()
+      }, 50)
     }
 
     observeTargets()
 
-    const mutationObserver = new MutationObserver(() => {
-      observeTargets()
+    const mutationObserver = new MutationObserver((records) => {
+      records.forEach((record) => {
+        record.removedNodes.forEach(unobserveNode)
+      })
+      scheduleObserveTargets()
     })
 
     mutationObserver.observe(root, { childList: true, subtree: true })
@@ -81,6 +132,12 @@ export const RouteMotion = component$(() => {
     cleanup(() => {
       observer.disconnect()
       mutationObserver.disconnect()
+      if (idleHandle !== null && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleHandle)
+      }
+      if (timeoutHandle !== null) {
+        clearTimeout(timeoutHandle)
+      }
     })
   })
 
