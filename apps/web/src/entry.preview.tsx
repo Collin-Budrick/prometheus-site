@@ -5,7 +5,7 @@ import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
 
 export default createQwikCity({
-  render: (opts) => renderToStream(<Root />, { manifest, ...opts }),
+  render: (opts) => renderToStream(<Root />, { manifest, ...opts, qwikLoader: opts.qwikLoader ?? 'inline' }),
   manifest,
   qwikCityPlan
 })

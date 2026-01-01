@@ -8,6 +8,7 @@ export default function (opts: RenderToStreamOptions) {
   return renderToStream(<Root />, {
     manifest,
     ...opts,
+    qwikLoader: opts.qwikLoader ?? 'inline',
     containerAttributes: {
       lang,
       ...opts.containerAttributes
