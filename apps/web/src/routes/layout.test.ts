@@ -1,24 +1,19 @@
 import { describe, expect, it } from 'bun:test'
 
-import { resolveApiBase, resolveSpeculationRules } from './layout-helpers'
-
-describe('resolveApiBase', () => {
-  it('normalizes valid http origins and trims trailing slash', () => {
-    expect(resolveApiBase({ VITE_API_BASE: ' https://api.example.com/root/ ' })).toBe(
-      'https://api.example.com/root'
-    )
-  })
-
-  it('rejects relative paths and unsupported protocols', () => {
-    expect(resolveApiBase({ VITE_API_BASE: '/api' })).toBe('')
-    expect(resolveApiBase({ VITE_API_BASE: 'ftp://api.example.com' })).toBe('')
-    expect(resolveApiBase({ VITE_API_BASE: '' })).toBe('')
-  })
-})
+import { resolveSpeculationRules } from './layout-helpers'
 
 describe('speculation rules', () => {
   it('omits speculation rules when the API base is absent', () => {
     expect(resolveSpeculationRules({})).toBeNull()
+  })
+
+  it('prefetches relative API URLs when the base is relative', () => {
+    const rules = resolveSpeculationRules({ VITE_API_BASE: '/api' })
+
+    expect(rules?.prefetch[0].urls).toEqual([
+      '/api/fragments/plan?path=/',
+      '/api/fragments/stream?path=/'
+    ])
   })
 
   it('prefetches absolute API URLs when the base is present', () => {

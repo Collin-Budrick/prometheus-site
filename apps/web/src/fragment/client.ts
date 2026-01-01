@@ -1,12 +1,6 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
 import { decodeFragmentPayload } from './binary'
-
-const DEFAULT_API_BASE = 'http://127.0.0.1:4000'
-
-const getApiBase = () => {
-  const env = import.meta.env as { VITE_API_BASE?: string }
-  return env?.VITE_API_BASE?.trim() || DEFAULT_API_BASE
-}
+import { getApiBase } from './config'
 
 const concat = (a: Uint8Array, b: Uint8Array) => {
   const next = new Uint8Array(a.length + b.length)
@@ -126,16 +120,20 @@ export const fetchFragment = async (id: string): Promise<FragmentPayload> => {
     throw new Error(`Fragment fetch failed: ${response.status}`)
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
-  return decodeFragmentPayload(bytes)
+  const payload = decodeFragmentPayload(bytes)
+  return { ...payload, id }
 }
 
 export const streamFragments = async (
   path: string,
   onFragment: (payload: FragmentPayload) => void,
-  onError?: (error: unknown) => void
+  onError?: (error: unknown) => void,
+  signal?: AbortSignal
 ) => {
   const api = getApiBase()
-  const response = await fetch(`${api}/fragments/stream?path=${encodeURIComponent(path)}`)
+  if (signal?.aborted) return
+
+  const response = await fetch(`${api}/fragments/stream?path=${encodeURIComponent(path)}`, { signal })
   if (!response.ok || !response.body) {
     throw new Error(`Fragment stream failed: ${response.status}`)
   }
@@ -160,7 +158,26 @@ export const streamFragments = async (
   }
 
   while (true) {
-    const { value, done } = await reader.read()
+    if (signal?.aborted) {
+      try {
+        await reader.cancel()
+      } catch {
+        // ignore cancellation errors
+      }
+      break
+    }
+
+    let chunk: ReadableStreamReadResult<Uint8Array>
+
+    try {
+      chunk = await reader.read()
+    } catch (error) {
+      if (signal?.aborted) break
+      onError?.(error)
+      throw error
+    }
+
+    const { value, done } = chunk
     if (done) break
     if (value) {
       buffer = concat(buffer, value)

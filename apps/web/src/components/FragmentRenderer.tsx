@@ -1,5 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import type { RenderNode } from '../fragment/types'
+import { sanitizeAttributes } from '../fragment/sanitize'
 import { PreactIsland } from './PreactIsland'
 
 type NodeProps = {
@@ -52,7 +53,7 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
 
   const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap
   const children = node.children?.map((child, index) => <FragmentRenderer key={index} node={child} />)
-  const props = node.attrs ?? {}
+  const props = sanitizeAttributes(node.attrs)
 
   if (isVoidTag(tagName)) {
     const VoidTag = tagName as any
