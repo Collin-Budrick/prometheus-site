@@ -1,13 +1,15 @@
 import { Elysia, t } from 'elysia'
 import { getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 
-const fragmentResponse = (payload: Uint8Array) =>
-  new Response(payload, {
+const fragmentResponse = (payload: Uint8Array) => {
+  const body = payload.slice().buffer as ArrayBuffer
+  return new Response(body, {
     headers: {
       'content-type': 'application/octet-stream',
       'cache-control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=120'
     }
   })
+}
 
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(

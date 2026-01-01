@@ -3,6 +3,14 @@ import type { ReactElement, ReactNode } from 'react'
 import type { RenderNode } from './types'
 import { h, t } from './tree'
 
+type ElementProps = {
+  children?: ReactNode
+  [key: string]: unknown
+}
+
+const isFunctionComponent = (value: unknown): value is (props: ElementProps) => ReactNode =>
+  typeof value === 'function' && !(value as { prototype?: { isReactComponent?: boolean } }).prototype?.isReactComponent
+
 const normalizeStyle = (style: Record<string, string | number> | string | undefined) => {
   if (!style) return undefined
   if (typeof style === 'string') return style
@@ -44,14 +52,14 @@ const toRenderNodes = (node: ReactNode): RenderNode[] => {
     return []
   }
 
-  const element = node as ReactElement
+  const element = node as ReactElement<ElementProps>
   const elementType = element.type
 
   if (elementType === Fragment) {
     return toRenderNodes(element.props.children)
   }
 
-  if (typeof elementType === 'function') {
+  if (isFunctionComponent(elementType)) {
     const rendered = elementType(element.props)
     return toRenderNodes(rendered)
   }

@@ -1,4 +1,5 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
+import type { AnimationControls } from '@motionone/types'
 import { useLocation } from '@builder.io/qwik-city'
 
 export const RouteMotion = component$(() => {
@@ -15,7 +16,7 @@ export const RouteMotion = component$(() => {
     const { animate } = await import('@motionone/dom')
 
     const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
-    const animations = new WeakMap<HTMLElement, Animation>()
+    const animations = new WeakMap<HTMLElement, AnimationControls>()
 
     const setTarget = (element: HTMLElement, next: 'in' | 'out') => {
       if (targets.get(element) === next) return
@@ -32,7 +33,7 @@ export const RouteMotion = component$(() => {
           : { opacity: [1, 0], transform: ['translateY(0px)', 'translateY(12px)'] },
         {
           duration: next === 'in' ? 0.55 : 0.35,
-          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          easing: [0.22, 1, 0.36, 1],
         }
       )
       animations.set(element, animation)

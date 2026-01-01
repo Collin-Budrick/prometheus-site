@@ -6,6 +6,41 @@ type NodeProps = {
   node: RenderNode
 }
 
+type VoidTag =
+  | 'area'
+  | 'base'
+  | 'br'
+  | 'col'
+  | 'embed'
+  | 'hr'
+  | 'img'
+  | 'input'
+  | 'link'
+  | 'meta'
+  | 'param'
+  | 'source'
+  | 'track'
+  | 'wbr'
+
+const voidTags = new Set<VoidTag>([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+])
+
+const isVoidTag = (tag: string): tag is VoidTag => voidTags.has(tag as VoidTag)
+
 export const FragmentRenderer = component$(({ node }: NodeProps) => {
   if (node.type === 'text') {
     return <>{node.text ?? ''}</>
@@ -15,12 +50,15 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
     return <PreactIsland label={node.attrs?.label} />
   }
 
-  const Tag = (node.tag || 'div') as keyof HTMLElementTagNameMap
+  const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap
   const children = node.children?.map((child, index) => <FragmentRenderer key={index} node={child} />)
+  const props = node.attrs ?? {}
 
-  return (
-    <Tag {...(node.attrs ?? {})}>
-      {children}
-    </Tag>
-  )
+  if (isVoidTag(tagName)) {
+    const VoidTag = tagName as any
+    return <VoidTag {...props} />
+  }
+
+  const Tag = tagName as any
+  return <Tag {...props}>{children}</Tag>
 })

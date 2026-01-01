@@ -19,7 +19,12 @@ const lockPollMs = 50
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const buildEntry = async (id: string, payload: Uint8Array, ttlSeconds: number, staleSeconds: number) => {
+const buildEntry = async (
+  id: string,
+  payload: Uint8Array,
+  ttlSeconds: number,
+  staleSeconds: number
+): Promise<StoredFragment> => {
   const now = Date.now()
   return {
     payload,
@@ -28,7 +33,7 @@ const buildEntry = async (id: string, payload: Uint8Array, ttlSeconds: number, s
       ttl: ttlSeconds,
       staleTtl: staleSeconds,
       tags: ['rendered'],
-      runtime: 'edge' as const
+      runtime: 'edge'
     },
     updatedAt: now,
     staleAt: now + ttlSeconds * 1000,

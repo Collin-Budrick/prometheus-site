@@ -17,7 +17,8 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
         import('preact/hooks')
       ])
 
-      if (!host.value || !active) return
+      const target = host.value
+      if (!target || !active) return
 
       const Island = () => {
         const [count, setCount] = useState(0)
@@ -27,15 +28,15 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
           h(
             'button',
             {
-              onClick: () => setCount((value) => value + 1)
+              onClick: () => setCount((value: number) => value + 1)
             },
             'Amplify'
           )
         ])
       }
 
-      render(h(Island, null), host.value)
-      dispose = () => render(null, host.value)
+      render(h(Island, null), target)
+      dispose = () => render(null, target)
     }
 
     void mount()
