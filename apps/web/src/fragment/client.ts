@@ -150,6 +150,16 @@ const getDecompressionStreamCtor = () =>
     DecompressionStream?: new (format: CompressionEncoding) => TransformStream<Uint8Array, Uint8Array>
   }).DecompressionStream ?? null
 
+const toAbsoluteApiBase = (apiBase: string) => {
+  if (!apiBase) return ''
+  if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const path = apiBase.startsWith('/') ? apiBase : `/${apiBase}`
+    return `${window.location.origin}${path}`
+  }
+  return apiBase
+}
+
 const idDecoder = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null
 
 const parseFrame = (bytes: Uint8Array) => {
@@ -203,7 +213,7 @@ const readFragmentStream = async (
       return 'aborted'
     }
 
-    let chunk: ReadableStreamReadResult<Uint8Array>
+    let chunk: Awaited<ReturnType<typeof reader.read>>
 
     try {
       chunk = await reader.read()
@@ -252,7 +262,8 @@ const buildStreamReader = (
     return stream.getReader()
   }
   try {
-    return stream.pipeThrough(new ctor(encoding)).getReader()
+    const transform = new ctor(encoding) as unknown as TransformStream<Uint8Array, Uint8Array>
+    return stream.pipeThrough(transform).getReader()
   } catch {
     return stream.getReader()
   }
@@ -303,7 +314,7 @@ const streamFragmentsWithWebTransport = async (
   const ctor = getWebTransportCtor()
   if (!ctor) return false
 
-  const api = getApiBase()
+  const api = toAbsoluteApiBase(getApiBase())
   const metrics: StreamMetrics = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(), frames: 0 }
   const transport = new ctor(`${api}/fragments/transport?path=${encodeURIComponent(path)}`)
 

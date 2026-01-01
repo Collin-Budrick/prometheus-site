@@ -36,13 +36,13 @@ const escapeHtml = (value: string) =>
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\"/g, '&quot;')
+    .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
 const renderAttributes = (attrs?: Record<string, string>) => {
   if (!attrs) return ''
   return Object.entries(attrs)
-    .map(([key, value]) => (value === '' ? ` ${key}` : ` ${key}=\"${escapeHtml(value)}\"`))
+    .map(([key, value]) => (value === '' ? ` ${key}` : ` ${key}="${escapeHtml(value)}"`))
     .join('')
 }
 

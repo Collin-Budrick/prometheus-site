@@ -4,8 +4,10 @@ import type { EnvConfig } from '../fragment/config'
 import { getApiBase } from '../fragment/config'
 import type { FragmentPayloadMap, FragmentPlan } from '../fragment/types'
 
+type PrefetchNode = { href?: string; parentNode?: Node | null }
+
 type PrefetchDocument = {
-  querySelectorAll: (selectors: string) => ArrayLike<{ href?: string }>
+  querySelectorAll: (selectors: string) => ArrayLike<PrefetchNode>
 }
 
 type ScriptDocument = PrefetchDocument & {

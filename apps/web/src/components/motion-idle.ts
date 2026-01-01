@@ -1,6 +1,6 @@
 type IdleHandles = {
   idle: number | null
-  timeout: ReturnType<typeof setTimeout> | null
+  timeout: number | null
 }
 
 /**

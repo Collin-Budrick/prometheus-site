@@ -4,6 +4,7 @@ import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLa
 import { isWebTransportEnabled } from '../runtime-flags'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
+import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { createDeflate, createGzip } from 'node:zlib'
 
 const supportedEncodings = ['gzip', 'deflate'] as const
@@ -41,10 +42,31 @@ const selectEncoding = (raw: string | null) => {
 const resolveStreamEncoding = (request: Request): CompressionEncoding | null =>
   selectEncoding(request.headers.get('x-fragment-accept-encoding'))
 
+const toWebReadableStream = (stream: ReadableStream<Uint8Array>): WebReadableStream<Uint8Array> =>
+  stream as unknown as WebReadableStream<Uint8Array>
+
+const getCompressionStreamCtor = () =>
+  (globalThis as typeof globalThis & {
+    CompressionStream?: new (format: CompressionEncoding) => CompressionStream
+  }).CompressionStream ?? null
+
 const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: CompressionEncoding) => {
-  const readable = Readable.fromWeb(stream)
-  const compressor = encoding === 'gzip' ? createGzip() : createDeflate()
-  return Readable.toWeb(readable.pipe(compressor)) as ReadableStream<Uint8Array>
+  const ctor = getCompressionStreamCtor()
+  if (ctor) {
+    try {
+      return { stream: stream.pipeThrough(new ctor(encoding)), encoding }
+    } catch {
+      // fall through to zlib
+    }
+  }
+
+  try {
+    const readable = Readable.fromWeb(toWebReadableStream(stream))
+    const compressor = encoding === 'gzip' ? createGzip() : createDeflate()
+    return { stream: Readable.toWeb(readable.pipe(compressor)) as unknown as ReadableStream<Uint8Array>, encoding }
+  } catch {
+    return { stream, encoding: null }
+  }
 }
 
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
@@ -81,9 +103,15 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
         'cache-control': buildCacheControlHeader(0, 0),
         vary: 'x-fragment-accept-encoding'
       })
-      const body = encoding ? compressFragmentStream(stream, encoding) : stream
+      let body = stream
+      let responseEncoding: CompressionEncoding | null = null
       if (encoding) {
-        headers.set('x-fragment-content-encoding', encoding)
+        const compressed = compressFragmentStream(stream, encoding)
+        body = compressed.stream
+        responseEncoding = compressed.encoding
+      }
+      if (responseEncoding) {
+        headers.set('x-fragment-content-encoding', responseEncoding)
       }
       return new Response(body, { headers })
     },

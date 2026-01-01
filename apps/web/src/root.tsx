@@ -24,9 +24,9 @@ const ClientSignals = component$(() => {
     const { VITE_ENABLE_ANALYTICS, VITE_ANALYTICS_BEACON_URL, VITE_REPORT_CLIENT_ERRORS, VITE_ERROR_BEACON_URL } =
       import.meta.env
     const analyticsEnabled =
-      VITE_ENABLE_ANALYTICS === '1' || VITE_ENABLE_ANALYTICS === 'true' || VITE_ENABLE_ANALYTICS === true
+      VITE_ENABLE_ANALYTICS === '1' || VITE_ENABLE_ANALYTICS === 'true'
     const errorReportingEnabled =
-      VITE_REPORT_CLIENT_ERRORS === '1' || VITE_REPORT_CLIENT_ERRORS === 'true' || VITE_REPORT_CLIENT_ERRORS === true
+      VITE_REPORT_CLIENT_ERRORS === '1' || VITE_REPORT_CLIENT_ERRORS === 'true'
 
     if (!analyticsEnabled && !errorReportingEnabled) return
 

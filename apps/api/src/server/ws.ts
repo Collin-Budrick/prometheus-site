@@ -1,4 +1,5 @@
-import type { Elysia } from 'elysia'
+import type { AnyElysia, Context } from 'elysia'
+import type { ElysiaWS } from 'elysia/ws'
 import { chatMessages } from '../db/schema'
 import type { validateSession } from '../auth/auth'
 import type { isValkeyReady, valkey as valkeyClient } from '../services/cache'
@@ -39,12 +40,14 @@ type WsData = {
   lastSeen?: number
 }
 
+type WsContext = Context<any, any, any>
+type WsSocket = ElysiaWS<WsContext, any>
+
 type ChatMessagePayload = { type: 'chat'; text: string }
 type ChatServerEvent = { type: 'chat'; from: string; text: string; authorId: string }
 type ChatErrorEvent = { type: 'error'; error: string }
 
 type StoreServerReady = { type: 'store:ready' }
-type StoreServerEvent = { type: 'store:upsert' | 'store:delete'; [key: string]: unknown }
 type StoreErrorEvent = { type: 'error'; error: string; retryAfter?: number }
 
 const parseMessage = (raw: unknown): Record<string, unknown> | null => {
@@ -96,14 +99,14 @@ const clearHeartbeat = (ws: any) => {
   if (data.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
 }
 
-export const registerWsRoutes = (app: Elysia, options: RegisterWsOptions) => {
+export const registerWsRoutes = <App extends AnyElysia>(app: App, options: RegisterWsOptions) => {
   const { valkey, isValkeyReady, validateSession, checkWsOpenQuota, checkWsQuota, db, maxChatLength } = options
 
   app.ws('/store/ws', {
-    upgrade(context) {
+    upgrade(context: WsContext) {
       return { headers: context.request.headers, request: context.request }
     },
-    async open(ws) {
+    async open(ws: WsSocket) {
       const clientIp = resolveWsClientIp(ws)
       const headers = resolveWsHeaders(ws)
       const request = resolveWsRequest(ws)
@@ -166,7 +169,7 @@ export const registerWsRoutes = (app: Elysia, options: RegisterWsOptions) => {
       ws.send(JSON.stringify({ type: 'store:ready' } satisfies StoreServerReady))
       attachHeartbeat(ws)
     },
-    message(ws, message) {
+    message(ws: WsSocket, message: unknown) {
       const data = ws.data as WsData
       data.lastSeen = Date.now()
       if (data.heartbeatTimeout) {
@@ -178,23 +181,18 @@ export const registerWsRoutes = (app: Elysia, options: RegisterWsOptions) => {
       if (parsed.type === 'pong') return
       if (parsed.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }))
     },
-    async close(ws) {
+    async close(ws: WsSocket) {
       clearHeartbeat(ws)
       const data = ws.data as WsData
       if (data.subscriber) await data.subscriber.quit()
     },
-    async error(ws) {
-      clearHeartbeat(ws)
-      const data = ws.data as WsData
-      if (data.subscriber) await data.subscriber.quit()
-    }
   })
 
   app.ws('/ws', {
-    upgrade(context) {
+    upgrade(context: WsContext) {
       return { headers: context.request.headers, request: context.request }
     },
-    async open(ws) {
+    async open(ws: WsSocket) {
       const clientIp = resolveWsClientIp(ws)
       const headers = resolveWsHeaders(ws)
       const request = resolveWsRequest(ws)
@@ -249,11 +247,11 @@ export const registerWsRoutes = (app: Elysia, options: RegisterWsOptions) => {
         return
       }
     },
-    async close(ws) {
+    async close(ws: WsSocket) {
       const data = ws.data as WsData
       if (data.subscriber) await data.subscriber.quit()
     },
-    async message(ws, message) {
+    async message(ws: WsSocket, message: unknown) {
       if (!isValkeyReady()) return
       const data = ws.data as WsData
       const clientIp = data.clientIp ?? resolveWsClientIp(ws)
