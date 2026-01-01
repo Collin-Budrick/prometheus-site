@@ -1,6 +1,6 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayload, FragmentPlan } from '../fragment/types'
-import { applyFragmentEffects, fetchFragment, streamFragments } from '../fragment/client'
+import { applyFragmentEffects, fetchFragment, streamFragments, teardownFragmentEffects } from '../fragment/client'
 import { FragmentRenderer } from './FragmentRenderer'
 
 type FragmentShellProps = {
@@ -88,6 +88,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
     cleanup(() => {
       active = false
       if (fallbackTimer) window.clearTimeout(fallbackTimer)
+      teardownFragmentEffects(Object.keys(fragments.value))
     })
   })
 

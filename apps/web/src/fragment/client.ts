@@ -15,25 +15,42 @@ const concat = (a: Uint8Array, b: Uint8Array) => {
   return next
 }
 
-const appliedCss = new Set<string>()
-const appliedHead = new Set<string>()
+const appliedCss = new Map<string, HTMLStyleElement>()
+const appliedHeadCounts = new Map<string, number>()
+const appliedHeadElements = new Map<string, HTMLElement>()
+const fragmentHeadKeys = new Map<string, Set<string>>()
+
+const getFragmentHeadKeys = (id: string) => {
+  let keys = fragmentHeadKeys.get(id)
+  if (!keys) {
+    keys = new Set<string>()
+    fragmentHeadKeys.set(id, keys)
+  }
+  return keys
+}
 
 export const applyFragmentEffects = (payload: FragmentPayload) => {
   if (typeof document === 'undefined') return
+
+  teardownFragmentEffects([payload.id])
 
   if (payload.css && !appliedCss.has(payload.id)) {
     const style = document.createElement('style')
     style.dataset.fragmentCss = payload.id
     style.textContent = payload.css
     document.head.appendChild(style)
-    appliedCss.add(payload.id)
+    appliedCss.set(payload.id, style)
   }
 
   payload.head.forEach((op) => {
     const key = JSON.stringify(op)
-    if (appliedHead.has(key)) return
-    appliedHead.add(key)
-    applyHeadOp(op)
+    const currentCount = appliedHeadCounts.get(key) ?? 0
+    appliedHeadCounts.set(key, currentCount + 1)
+    const keys = getFragmentHeadKeys(payload.id)
+    keys.add(key)
+    if (currentCount > 0) return
+    const element = applyHeadOp(op)
+    if (element) appliedHeadElements.set(key, element)
   })
 }
 
@@ -41,7 +58,7 @@ const applyHeadOp = (op: HeadOp) => {
   if (typeof document === 'undefined') return
   if (op.op === 'title') {
     document.title = op.value
-    return
+    return null
   }
   if (op.op === 'meta') {
     const meta = document.createElement('meta')
@@ -49,14 +66,48 @@ const applyHeadOp = (op: HeadOp) => {
     if (op.property) meta.setAttribute('property', op.property)
     meta.setAttribute('content', op.content)
     document.head.appendChild(meta)
-    return
+    return meta
   }
   if (op.op === 'link') {
     const link = document.createElement('link')
     link.setAttribute('rel', op.rel)
     link.setAttribute('href', op.href)
     document.head.appendChild(link)
+    return link
   }
+  return null
+}
+
+export const teardownFragmentEffects = (fragmentIds: string[]) => {
+  if (typeof document === 'undefined') return
+
+  fragmentIds.forEach((id) => {
+    const keys = fragmentHeadKeys.get(id)
+    if (keys) {
+      keys.forEach((key) => {
+        const count = appliedHeadCounts.get(key)
+        if (typeof count !== 'number') return
+        const next = count - 1
+        if (next <= 0) {
+          appliedHeadCounts.delete(key)
+          const element = appliedHeadElements.get(key)
+          if (element?.parentNode) {
+            element.parentNode.removeChild(element)
+          }
+          appliedHeadElements.delete(key)
+        } else {
+          appliedHeadCounts.set(key, next)
+        }
+      })
+      fragmentHeadKeys.delete(id)
+    }
+
+    const styleElement = appliedCss.get(id)
+    if (styleElement?.parentNode) {
+      styleElement.parentNode.removeChild(styleElement)
+    }
+    appliedCss.delete(id)
+  })
 }
 
 export const fetchFragmentPlan = async (path: string): Promise<FragmentPlan> => {
