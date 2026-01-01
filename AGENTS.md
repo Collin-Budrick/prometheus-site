@@ -16,6 +16,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
   - Health checks, chat echo endpoint, and AI prompt validation limits.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Traefik terminates TLS and routes `prometheus.dev` traffic to web/API containers.
+  - Traefik is configured for HTTP/3 on the `websecure` entrypoint (UDP 443 exposed).
   - Postgres 16 + Valkey 8 containers with healthchecks and persistent volumes.
   - Dynamic Traefik config generated for dev via `scripts/compose-utils.ts` (writes `infra/traefik/dynamic/stack.yml`).
 
