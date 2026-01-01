@@ -38,7 +38,7 @@ export const RouterHead = component$(() => {
 
 export default component$(() => (
   <div class="layout-shell">
-    <header class="topbar">
+    <header class="topbar" data-view-transition="shell-header">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true" />
         <div class="brand-title">
@@ -46,7 +46,7 @@ export default component$(() => (
           <span>Binary Rendering OS</span>
         </div>
       </div>
-      <nav class="nav-links">
+      <nav class="nav-links" data-view-transition="shell-nav">
         <a href="/" data-fragment-link>
           Home
         </a>
@@ -61,7 +61,7 @@ export default component$(() => (
         </a>
       </nav>
     </header>
-    <main data-motion-root>
+    <main data-motion-root data-view-transition="shell-main">
       <Slot />
     </main>
   </div>
