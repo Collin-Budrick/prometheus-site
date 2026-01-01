@@ -9,9 +9,10 @@ export default function (opts: RenderToStreamOptions) {
     manifest,
     ...opts,
     qwikLoader: opts.qwikLoader ?? 'inline',
+    containerTagName: opts.containerTagName ?? 'html',
     containerAttributes: {
-      lang,
-      ...opts.containerAttributes
+      ...opts.containerAttributes,
+      lang
     }
   })
 }
