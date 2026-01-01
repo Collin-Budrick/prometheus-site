@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "bun": ">=1.3.4"
+    "bun": ">=1.3.5"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
@@ -19,23 +19,26 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "^1.4.9",
-    "@better-auth/passkey": "^1.4.9",
+    "@better-auth/oauth-provider": "^1.5.0-beta.2",
+    "@better-auth/passkey": "^1.5.0-beta.2",
     "@valkey/client": "1.0.0",
-    "better-auth": "^1.4.9",
-    "drizzle-orm": "1.0.0-beta.5-e0482ac",
-    "drizzle-zod": "1.0.0-beta.5-e0482ac",
+    "better-auth": "^1.5.0-beta.2",
+    "drizzle-orm": "1.0.0-beta.8-734e789",
+    "drizzle-zod": "1.0.0-beta.8-734e789",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
     "undici": "7.16.0",
-    "zod": "4.3.0-canary.20251223T202943"
+    "zod": "4.4.0-canary.20251231T230035"
   },
   "devDependencies": {
     "@types/node": "25.0.3",
-    "bun-types": "1.3.6-canary.20251224T140738",
-    "drizzle-kit": "1.0.0-beta.5-e0482ac",
-    "oxfmt": "0.20.0",
-    "oxlint": "1.35.0",
-    "typescript": "6.0.0-dev.20251224"
+    "bun-types": "1.3.6-canary.20251231T140709",
+    "drizzle-kit": "1.0.0-beta.8-734e789",
+    "oxfmt": "0.21.0",
+    "oxlint": "1.36.0",
+    "typescript": "6.0.0-dev.20251231"
+  },
+  "optionalDependencies": {
+    "@oxlint/win32-arm64": "1.36.0"
   }
 }

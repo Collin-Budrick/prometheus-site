@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-if ! command -v lhci >/dev/null 2>&1; then
-  echo "Install Lighthouse CI (npm i -g @lhci/cli) before running." >&2
-  exit 1
-fi
-
-lhci autorun --collect.staticDistDir=apps/web/dist --assert.preset=lighthouse:recommended

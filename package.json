@@ -3,43 +3,23 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "bun@1.3.5",
-  "description": "Performance-forward monorepo for Qwik City web and Bun Elysia API services.",
+  "description": "Performance-forward monorepo for Bun Elysia API services.",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/api"
   ],
   "scripts": {
-    "dev": "bun run scripts/dev.ts",
-    "storybook": "bun run --cwd apps/web storybook",
-    "docker:prod": "sh -c \"docker compose -f docker-compose.yml --profile prod stop web || true; docker compose -f docker-compose.yml --profile prod rm -f web || true; docker compose -f docker-compose.yml --profile prod up --build -d\"",
-    "build": "bun run --cwd apps/web build && bun run --cwd apps/api build",
-    "preview": "bun run --cwd apps/web preview",
-    "lint": "bun run --cwd apps/web check:scripts && bunx --bun oxlint apps/web apps/api",
-    "lint:all": "bun run typecheck && bunx --bun oxlint . --ignore-pattern node_modules",
-    "typecheck": "bunx --bun tsc -p apps/web/tsconfig.json --noEmit && bunx --bun tsc -p apps/api/tsconfig.json --noEmit",
-    "format": "bun run --cwd apps/web format && bun run --cwd apps/api format",
-    "test": "bun run --cwd apps/web test && bun run --cwd apps/api test",
-    "certs:mkcert": "scripts/setup-mkcert.sh",
-    "certs:fix": "bun run scripts/fix-ssl.ts",
-    "hooks:install": "git config core.hooksPath .githooks",
-    "prepare": "bun run lint"
+    "dev": "bun run --cwd apps/api dev",
+    "build": "bun run --cwd apps/api build",
+    "lint": "bun run --cwd apps/api lint",
+    "typecheck": "bunx --bun tsc -p apps/api/tsconfig.json --noEmit",
+    "format": "bun run --cwd apps/api format",
+    "test": "bun run --cwd apps/api test",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "optionalDependencies": {
     "lefthook-windows-arm64": "2.0.13"
   },
-  "patchedDependencies": {
-    "@builder.io/qwik@1.18.0": "patches/@builder.io+qwik+1.18.0.patch",
-    "@builder.io/qwik-city@1.18.0": "patches/@builder.io+qwik-city+1.18.0.patch",
-    "@mlc-ai/web-llm@0.2.80": "patches/@mlc-ai+web-llm+0.2.80.patch"
-  },
   "devDependencies": {
-    "@rolldown/binding-win32-arm64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
-    "@rolldown/binding-win32-x64-msvc": "^1.0.0-beta.9-commit.d91dfb5",
     "lefthook": "^2.0.13"
-  },
-  "dependencies": {
-    "@webgpu/types": "^0.1.68",
-    "swup": "^4.8.2",
-    "typegpu": "^0.9.0"
   }
 }
