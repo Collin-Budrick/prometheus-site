@@ -1,6 +1,14 @@
 import { Elysia, t } from 'elysia'
 import { getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 
+const fragmentResponse = (payload: Uint8Array) =>
+  new Response(payload, {
+    headers: {
+      'content-type': 'application/octet-stream',
+      'cache-control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=120'
+    }
+  })
+
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/plan',
@@ -32,13 +40,24 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       })
     }
   )
+  .get(
+    '/',
+    async ({ query }) => {
+      const id = typeof query.id === 'string' ? query.id : ''
+      if (!id) {
+        return new Response('Missing fragment id', { status: 400 })
+      }
+      const payload = await getFragmentPayload(id)
+      return fragmentResponse(payload)
+    },
+    {
+      query: t.Object({
+        id: t.String()
+      })
+    }
+  )
   .get('/:id', async ({ params }) => {
     const id = params.id
     const payload = await getFragmentPayload(id)
-    return new Response(payload, {
-      headers: {
-        'content-type': 'application/octet-stream',
-        'cache-control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=120'
-      }
-    })
+    return fragmentResponse(payload)
   })

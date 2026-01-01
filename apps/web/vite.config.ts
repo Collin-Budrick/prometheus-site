@@ -80,7 +80,8 @@ export default defineConfig(async () => {
         : undefined
     },
     preview: {
-      port: 4173
+      port: 4173,
+      allowedHosts: ['prometheus.prod', 'prometheus.dev']
     }
   }
 })

@@ -70,7 +70,7 @@ export const fetchFragmentPlan = async (path: string): Promise<FragmentPlan> => 
 
 export const fetchFragment = async (id: string): Promise<FragmentPayload> => {
   const api = getApiBase()
-  const response = await fetch(`${api}/fragments/${encodeURIComponent(id)}`)
+  const response = await fetch(`${api}/fragments?id=${encodeURIComponent(id)}`)
   if (!response.ok) {
     throw new Error(`Fragment fetch failed: ${response.status}`)
   }

@@ -6,7 +6,7 @@ entryPoints:
 
 providers:
   file:
-    filename: /etc/traefik/dynamic/dev.yml
+    filename: /etc/traefik/dynamic/dynamic.yml
     watch: true
 
 api:

@@ -27,7 +27,7 @@ export const loadFragments = async (
   const api = getApiBase(env)
   const entries = await Promise.all(
     ids.map(async (id) => {
-      const response = await fetch(`${api}/fragments/${encodeURIComponent(id)}`)
+      const response = await fetch(`${api}/fragments?id=${encodeURIComponent(id)}`)
       if (!response.ok) {
         throw new Error(`Fragment fetch failed: ${response.status}`)
       }

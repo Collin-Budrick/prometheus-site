@@ -6,7 +6,7 @@ services:
       - "443:443"
     volumes:
       - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./infra/traefik/dynamic/dev.yml:/etc/traefik/dynamic/dev.yml:ro
+      - ./infra/traefik/dynamic/${TRAEFIK_DYNAMIC:-dev}.yml:/etc/traefik/dynamic/dynamic.yml:ro
       - ./infra/traefik/certs:/etc/traefik/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -50,7 +50,7 @@ services:
       valkey:
         condition: service_healthy
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${API_NODE_ENV:-development}
       API_HOST: 0.0.0.0
       API_PORT: 4000
       POSTGRES_HOST: postgres
@@ -63,10 +63,22 @@ services:
       VALKEY_PORT: 6379
       WEB_PROTOCOL: https
       WEB_PORT: 443
-      WEB_HOST: prometheus.dev
+      WEB_HOST: ${PROMETHEUS_WEB_HOST:-prometheus.dev}
       BETTER_AUTH_COOKIE_SECRET: dev-cookie-secret-please-change-32
     ports:
       - "4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ${PROMETHEUS_VITE_API_BASE:-/api}
+    environment:
+      API_BASE: http://api:4000
+    depends_on:
+      api:
+        condition: service_started
 
 volumes:
   postgres_data:

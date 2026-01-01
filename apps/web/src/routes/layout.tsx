@@ -30,6 +30,8 @@ export const RouterHead = component$(() => {
       {head.links.map((link) => (
         <link key={`${link.rel}-${link.href}`} {...link} />
       ))}
+      <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      <link rel="icon" href="/favicon.ico" sizes="any" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link

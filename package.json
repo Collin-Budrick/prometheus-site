@@ -14,7 +14,7 @@
     "build:web": "bun run --cwd apps/web build",
     "build:api": "bun run --cwd apps/api build",
     "build": "bun run build:web && bun run build:api",
-    "preview": "bun run --cwd apps/web preview",
+    "preview": "bun run scripts/preview.ts",
     "lint": "bun run --cwd apps/api lint",
     "typecheck": "bunx --bun tsc -p apps/api/tsconfig.json --noEmit",
     "format": "bun run --cwd apps/api format",
