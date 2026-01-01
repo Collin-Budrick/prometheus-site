@@ -2,17 +2,8 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead } from '@builder.io/qwik-city'
 import { FragmentShell } from '../components/FragmentShell'
 import { loadFragmentPlan, loadFragments } from '../fragment/server'
+import { getApiBase } from '../fragment/config'
 import type { FragmentPayload, FragmentPlan, RenderNode } from '../fragment/types'
-
-const DEFAULT_API_BASE = 'http://127.0.0.1:4000'
-
-const resolveApiBase = (env: Record<string, string | undefined>) => {
-  const serverBase =
-    typeof process !== 'undefined' && typeof process.env.API_BASE === 'string'
-      ? process.env.API_BASE.trim()
-      : ''
-  return serverBase || env.VITE_API_BASE?.trim() || env.API_BASE?.trim() || DEFAULT_API_BASE
-}
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 
@@ -72,7 +63,7 @@ const buildFallbackFragment = (id: string, apiBase: string, path: string, error?
 export const useFragmentData = routeLoader$(async ({ url }) => {
   const env = import.meta.env as Record<string, string | undefined>
   const path = url.pathname || '/'
-  const apiBase = resolveApiBase(env)
+  const apiBase = getApiBase(env)
 
   try {
     const plan = await loadFragmentPlan(path, env)

@@ -1,15 +1,6 @@
 import type { FragmentPayload, FragmentPlan } from './types'
 import { decodeFragmentPayload } from './binary'
-
-const DEFAULT_API_BASE = 'http://127.0.0.1:4000'
-
-const getApiBase = (env: Record<string, string | undefined>) => {
-  const serverBase =
-    typeof process !== 'undefined' && typeof process.env.API_BASE === 'string'
-      ? process.env.API_BASE.trim()
-      : ''
-  return serverBase || env.VITE_API_BASE?.trim() || env.API_BASE?.trim() || DEFAULT_API_BASE
-}
+import { getApiBase } from './config'
 
 export const loadFragmentPlan = async (path: string, env: Record<string, string | undefined>) => {
   const api = getApiBase(env)
@@ -33,7 +24,7 @@ export const loadFragments = async (
       }
       const bytes = new Uint8Array(await response.arrayBuffer())
       const payload = decodeFragmentPayload(bytes)
-      return [id, payload] as const
+      return [id, { ...payload, id }] as const
     })
   )
 

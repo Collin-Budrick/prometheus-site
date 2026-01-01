@@ -15,6 +15,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
 
   useVisibleTask$(({ cleanup }) => {
     let active = true
+    const controller = new AbortController()
     status.value = 'streaming'
 
     Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
@@ -70,7 +71,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       }
     }
 
-    streamFragments(path, handleFragment)
+    streamFragments(path, handleFragment, undefined, controller.signal)
       .then(() => {
         if (!active) return
         if (fallbackTimer) window.clearTimeout(fallbackTimer)
@@ -80,6 +81,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       .catch((error) => {
         if (!active) return
         if (fallbackTimer) window.clearTimeout(fallbackTimer)
+        if ((error as Error)?.name === 'AbortError' || controller.signal.aborted) {
+          status.value = 'idle'
+          return
+        }
         console.error('Fragment stream failed', error)
         status.value = 'error'
         void hydrateMissingFragments()
@@ -87,6 +92,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
 
     cleanup(() => {
       active = false
+      controller.abort()
       if (fallbackTimer) window.clearTimeout(fallbackTimer)
       teardownFragmentEffects(Object.keys(fragments.value))
     })

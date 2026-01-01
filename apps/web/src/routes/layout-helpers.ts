@@ -1,30 +1,10 @@
-type EnvConfig = Record<string, string | undefined>
+import { getApiBase } from '../fragment/config'
+import type { EnvConfig } from '../fragment/config'
 
-const getEnv = (): EnvConfig => (import.meta as ImportMeta & { env?: EnvConfig }).env ?? {}
-
-export const resolveApiBase = (env: EnvConfig = getEnv()) => {
-  const base = env.VITE_API_BASE?.trim()
-
-  if (!base) {
-    return ''
-  }
-
-  try {
-    const url = new URL(base)
-
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return ''
-    }
-
-    const normalizedPath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname
-    return `${url.origin}${normalizedPath}`
-  } catch {
-    return ''
-  }
-}
+export const resolveApiBase = (env?: EnvConfig) => getApiBase(env)
 
 export const resolveSpeculationRules = (env?: EnvConfig) => {
-  const apiBase = resolveApiBase(env)
+  const apiBase = getApiBase(env)
 
   if (!apiBase) {
     return null
