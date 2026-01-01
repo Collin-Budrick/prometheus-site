@@ -100,7 +100,7 @@ export const RouteMotion = component$(() => {
     }
 
     let idleHandle: number | null = null
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    let timeoutHandle: number | null = null
 
     const scheduleObserveTargets = () => {
       if (idleHandle !== null || timeoutHandle !== null) return
@@ -109,7 +109,7 @@ export const RouteMotion = component$(() => {
         idleHandle = window.requestIdleCallback(() => {
           idleHandle = null
           if (timeoutHandle !== null) {
-            clearTimeout(timeoutHandle)
+            window.clearTimeout(timeoutHandle)
             timeoutHandle = null
           }
           observeTargets()
@@ -143,7 +143,7 @@ export const RouteMotion = component$(() => {
         window.cancelIdleCallback(idleHandle)
       }
       if (timeoutHandle !== null) {
-        clearTimeout(timeoutHandle)
+        window.clearTimeout(timeoutHandle)
       }
     })
   })
