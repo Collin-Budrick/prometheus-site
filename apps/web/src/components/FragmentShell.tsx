@@ -92,7 +92,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
         {plan.fragments.map((entry) => {
           const fragment = fragments.value[entry.id]
           return (
-            <article key={entry.id} class="fragment-card" style={{ gridColumn: entry.layout.column }}>
+            <article key={entry.id} class="fragment-card" style={{ gridColumn: entry.layout.column }} data-motion>
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />
               ) : (

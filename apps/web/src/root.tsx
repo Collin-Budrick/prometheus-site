@@ -1,6 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { LenisProvider } from './components/LenisProvider'
+import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import './global.css'
 
@@ -13,6 +14,7 @@ export default component$(() => (
     </head>
     <body class="app-shell">
       <LenisProvider />
+      <RouteMotion />
       <RouterOutlet />
     </body>
   </QwikCityProvider>

@@ -55,17 +55,20 @@ export default component$(() => (
       </div>
       <nav class="nav-links">
         <a href="/" data-fragment-link>
-          home
+          Home
         </a>
-        <a href="/" data-fragment-link>
-          fragments
+        <a href="/store" data-fragment-link>
+          Store
         </a>
-        <a href="/" data-fragment-link>
-          planner
+        <a href="/lab" data-fragment-link>
+          Lab
+        </a>
+        <a href="/login" data-fragment-link>
+          Login
         </a>
       </nav>
     </header>
-    <main>
+    <main data-motion-root>
       <Slot />
     </main>
   </div>
