@@ -14,15 +14,31 @@ export const RouteMotion = component$(() => {
     const root = document.querySelector('[data-motion-root]') ?? document.body
     const { animate } = await import('@motionone/dom')
 
-    const reveal = (element: HTMLElement) => {
-      if (element.dataset.motionSeen === 'true') return
+    const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
+    const animations = new WeakMap<HTMLElement, Animation>()
+
+    const setTarget = (element: HTMLElement, next: 'in' | 'out') => {
+      if (targets.get(element) === next) return
+      targets.set(element, next)
+      element.dataset.motionState = next
+
+      const current = animations.get(element)
+      if (current) current.cancel()
+
       const animation = animate(
         element,
-        { opacity: [0, 1], transform: ['translateY(12px)', 'translateY(0px)'] },
-        { duration: 0.5, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        next === 'in'
+          ? { opacity: [0, 1], transform: ['translateY(12px)', 'translateY(0px)'] }
+          : { opacity: [1, 0], transform: ['translateY(0px)', 'translateY(12px)'] },
+        {
+          duration: next === 'in' ? 0.55 : 0.35,
+          easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        }
       )
+      animations.set(element, animation)
+
       animation.finished.finally(() => {
-        element.dataset.motionSeen = 'true'
+        if (targets.get(element) !== next) return
         element.style.opacity = ''
         element.style.transform = ''
       })
@@ -31,19 +47,21 @@ export const RouteMotion = component$(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return
           const target = entry.target as HTMLElement
-          observer.unobserve(target)
-          reveal(target)
+          if (entry.isIntersecting) {
+            setTarget(target, 'in')
+          } else {
+            setTarget(target, 'out')
+          }
         })
       },
       { threshold: 0.2 }
     )
 
     const observeTargets = () => {
-      const targets = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
-      targets.forEach((element) => {
-        if (element.dataset.motionSeen === 'true') return
+      const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+      elements.forEach((element) => {
+        if (!element.dataset.motionState) element.dataset.motionState = 'out'
         observer.observe(element)
       })
     }

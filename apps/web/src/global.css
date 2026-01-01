@@ -106,7 +106,7 @@
     transform: translateY(12px);
   }
 
-  html[data-motion-ready='true'] [data-motion][data-motion-seen='true'] {
+  html[data-motion-ready='true'] [data-motion][data-motion-state='in'] {
     opacity: 1;
     transform: translateY(0);
   }
