@@ -1,7 +1,10 @@
-import { component$, useSignal } from '@builder.io/qwik'
-import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
+import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
+import { isPrefetchEnabled } from '../../shared/prefetch'
 import { FragmentRenderer } from './FragmentRenderer'
 import { FragmentStreamController } from './FragmentStreamController'
+import { resolveFragments, resolvePlan } from './utils'
 
 type FragmentShellProps = {
   plan: FragmentPlanValue
@@ -9,12 +12,25 @@ type FragmentShellProps = {
   path: string
 }
 
-const resolvePlan = (plan: FragmentPlanValue): FragmentPlan => plan as FragmentPlan
-
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
   const planValue = resolvePlan(plan)
-  const fragments = useSignal<FragmentPayloadMap>((initialFragments as FragmentPayloadMap) ?? {})
+  const initialFragmentMap = resolveFragments(initialFragments)
+  const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
   const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
+
+  useVisibleTask$(({ cleanup, track }) => {
+    track(() => path)
+
+    if (!isPrefetchEnabled(import.meta.env)) return
+
+    const teardownSpeculation = applySpeculationRules(
+      buildSpeculationRulesForPlan(planValue, import.meta.env, {
+        knownFragments: initialFragmentMap
+      })
+    )
+
+    cleanup(() => teardownSpeculation())
+  })
 
   return (
     <section class="fragment-shell">

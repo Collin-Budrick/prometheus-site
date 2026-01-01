@@ -5,9 +5,9 @@ import type {
   FragmentPayload,
   FragmentPayloadMap,
   FragmentPayloadValue,
-  FragmentPlan,
   FragmentPlanValue
 } from '../../fragment/types'
+import { resolveFragments, resolvePlan } from './utils'
 
 type FragmentStreamControllerProps = {
   plan: FragmentPlanValue
@@ -16,10 +16,6 @@ type FragmentStreamControllerProps = {
   fragments: Signal<FragmentPayloadMap>
   status: Signal<'idle' | 'streaming' | 'error'>
 }
-
-const resolvePlan = (plan: FragmentPlanValue): FragmentPlan => plan as FragmentPlan
-
-const resolveFragments = (value: FragmentPayloadValue): FragmentPayloadMap => (value as FragmentPayloadMap) ?? {}
 
 export const FragmentStreamController = component$(
   ({ plan, initialFragments, path, fragments, status }: FragmentStreamControllerProps) => {
