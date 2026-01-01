@@ -1,7 +1,16 @@
-import { renderToStream } from '@builder.io/qwik/server'
+import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
 import Root from './root'
 
-export default function (opts: Parameters<typeof renderToStream>[1]) {
-  return renderToStream(<Root />, { manifest, ...opts })
+export default function (opts: RenderToStreamOptions) {
+  const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
+
+  return renderToStream(<Root />, {
+    manifest,
+    ...opts,
+    containerAttributes: {
+      lang,
+      ...opts.containerAttributes
+    }
+  })
 }
