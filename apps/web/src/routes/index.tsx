@@ -1,5 +1,5 @@
-import { Resource, component$, noSerialize, useResource$ } from '@builder.io/qwik'
-import { SSRStreamBlock, type DocumentHead, useLocation } from '@builder.io/qwik-city'
+import { Resource, component$, useResource$ } from '@builder.io/qwik'
+import { type DocumentHead, useLocation } from '@builder.io/qwik-city'
 import { FragmentShell } from '../features/fragments'
 import { getApiBase } from '../fragment/config'
 import { loadFragmentPlan, loadFragments } from '../fragment/server'
@@ -117,8 +117,8 @@ export default component$(() => {
       }
 
       return {
-        plan: (noSerialize(plan) ?? plan) as FragmentPlanValue,
-        fragments: (noSerialize(fragments) ?? fragments) as FragmentPayloadValue,
+        plan: plan as FragmentPlanValue,
+        fragments: fragments as FragmentPayloadValue,
         path: plan.path
       }
     } catch (error) {
@@ -137,25 +137,21 @@ export default component$(() => {
       }
 
       return {
-        plan: (noSerialize(plan) ?? plan) as FragmentPlanValue,
-        fragments: (noSerialize({
+        plan: plan as FragmentPlanValue,
+        fragments: {
           [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
-        }) ?? {
-          [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
-        }) as FragmentPayloadValue,
+        } as FragmentPayloadValue,
         path
       }
     }
   })
 
   return (
-    <SSRStreamBlock>
-      <Resource
-        value={fragmentResource}
-        onPending={() => <HomeShellSkeleton />}
-        onResolved={(data) => <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />}
-      />
-    </SSRStreamBlock>
+    <Resource
+      value={fragmentResource}
+      onPending={() => <HomeShellSkeleton />}
+      onResolved={(data) => <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />}
+    />
   )
 })
 

@@ -34,7 +34,7 @@
   "devDependencies": {
     "@types/node": "25.0.3",
     "@types/react": "^19.2.7",
-    "bun-types": "1.3.6-canary.20251231T140709",
+    "bun-types": "1.3.6-canary.20260101T140646",
     "drizzle-kit": "1.0.0-beta.8-734e789",
     "oxfmt": "0.21.0",
     "oxlint": "1.36.0",
