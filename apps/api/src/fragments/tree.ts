@@ -30,3 +30,26 @@ export const h = (tag: string, attrs?: Attrs | null, children?: Child[] | Child)
 })
 
 export const t = (text: string): RenderNode => ({ type: 'text', text })
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const renderAttributes = (attrs?: Record<string, string>) => {
+  if (!attrs) return ''
+  return Object.entries(attrs)
+    .map(([key, value]) => (value === '' ? ` ${key}` : ` ${key}=\"${escapeHtml(value)}\"`))
+    .join('')
+}
+
+export const renderToHtml = (node: RenderNode): string => {
+  if (node.type === 'text') return escapeHtml(node.text ?? '')
+  const tag = node.tag ?? 'div'
+  const attrs = renderAttributes(node.attrs)
+  const children = (node.children ?? []).map(renderToHtml).join('')
+  return `<${tag}${attrs}>${children}</${tag}>`
+}

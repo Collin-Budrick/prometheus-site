@@ -8,6 +8,14 @@ const UINT32_MAX = 0xffffffff
 
 const encoder = new TextEncoder()
 
+export const buildFragmentMeta = (definition: FragmentDefinition): FragmentMeta => ({
+  cacheKey: definition.id,
+  ttl: definition.ttl,
+  staleTtl: definition.staleTtl,
+  tags: definition.tags,
+  runtime: definition.runtime
+})
+
 type NodeRecord = {
   type: number
   tagId: number
@@ -123,20 +131,12 @@ export const encodeTree = (root: RenderNode): Uint8Array => {
   return new Uint8Array(buffer)
 }
 
-export const encodeFragmentPayload = async (definition: FragmentDefinition): Promise<Uint8Array> => {
-  const treeBytes = encodeTree(await definition.render())
-  const headBytes = definition.head.length ? encoder.encode(JSON.stringify(definition.head)) : new Uint8Array(0)
-  const cssBytes = definition.css ? encoder.encode(definition.css) : new Uint8Array(0)
-
-  const meta: FragmentMeta = {
-    cacheKey: definition.id,
-    ttl: definition.ttl,
-    staleTtl: definition.staleTtl,
-    tags: definition.tags,
-    runtime: definition.runtime
-  }
-  const metaBytes = encoder.encode(JSON.stringify(meta))
-
+const encodeFragmentPayloadFromParts = (
+  treeBytes: Uint8Array,
+  headBytes: Uint8Array,
+  cssBytes: Uint8Array,
+  metaBytes: Uint8Array
+) => {
   const headerSize = 24
   const total = headerSize + treeBytes.length + headBytes.length + cssBytes.length + metaBytes.length
   const buffer = new ArrayBuffer(total)
@@ -159,4 +159,21 @@ export const encodeFragmentPayload = async (definition: FragmentDefinition): Pro
   new Uint8Array(buffer, cursor, metaBytes.length).set(metaBytes)
 
   return new Uint8Array(buffer)
+}
+
+export const encodeFragmentPayloadFromTree = (
+  definition: FragmentDefinition,
+  tree: RenderNode
+): Uint8Array => {
+  const treeBytes = encodeTree(tree)
+  const headBytes = definition.head.length ? encoder.encode(JSON.stringify(definition.head)) : new Uint8Array(0)
+  const cssBytes = definition.css ? encoder.encode(definition.css) : new Uint8Array(0)
+  const metaBytes = encoder.encode(JSON.stringify(buildFragmentMeta(definition)))
+
+  return encodeFragmentPayloadFromParts(treeBytes, headBytes, cssBytes, metaBytes)
+}
+
+export const encodeFragmentPayload = async (definition: FragmentDefinition): Promise<Uint8Array> => {
+  const tree = await definition.render()
+  return encodeFragmentPayloadFromTree(definition, tree)
 }

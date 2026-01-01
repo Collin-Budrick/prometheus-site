@@ -5,13 +5,14 @@ import { db, pgClient } from '../db/client'
 import { prepareDatabase } from '../db/prepare'
 import { chatMessages, storeItems } from '../db/schema'
 import { connectValkey, isValkeyReady, valkey } from '../services/cache'
-import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache-helpers'
-import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from './network'
+import { buildStoreItemsCacheKey, checkEarlyLimit, invalidateStoreItemsCache, invalidateChatHistoryCache, readChatHistoryCache, recordLatencySample, writeChatHistoryCache } from './cache-helpers'
+import { getClientIp } from './network'
 import { checkQuota, setCleanupInterval } from './rate-limit'
 import { shouldRunMigrations } from './runtime-flags'
 import { startStoreRealtime, stopStoreRealtime, type StoreRealtimeEvent } from './store-realtime'
 import { authRoutes } from './routes/auth'
 import { fragmentRoutes } from './routes/fragments'
+import { registerWsRoutes, storeChannel } from './ws'
 const shouldPrepareDatabase = shouldRunMigrations(process.env.RUN_MIGRATIONS)
 
 async function bootstrap() {
@@ -33,9 +34,6 @@ async function bootstrap() {
   })
 }
 
-const chatChannel = 'chat:stream'
-const storeSockets = new Set<any>()
-
 const telemetry = {
   cacheHits: 0,
   cacheMisses: 0,
@@ -43,34 +41,15 @@ const telemetry = {
   cacheSetErrors: 0
 }
 
-const handleStoreRealtimeEvent = (event: StoreRealtimeEvent) => {
+const handleStoreRealtimeEvent = async (event: StoreRealtimeEvent) => {
   const payload = JSON.stringify(event)
   void invalidateStoreItemsCache()
-
-  for (const ws of storeSockets) {
-    try {
-      ws.send(payload)
-    } catch (error) {
-      console.warn('Failed to broadcast store realtime event', error)
-      clearStoreSocket(ws)
-    }
+  if (!isValkeyReady()) return
+  try {
+    await valkey.publish(storeChannel, payload)
+  } catch (error) {
+    console.warn('Failed to publish store realtime event', error)
   }
-}
-
-const clearStoreSocket = (ws: any) => {
-  storeSockets.delete(ws)
-  const data = ws?.data as StoreWsData | undefined
-  if (data?.heartbeatInterval) clearInterval(data.heartbeatInterval)
-  if (data?.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
-}
-
-type ValkeySubscriber = ReturnType<typeof valkey.duplicate>
-type WsUser = { id: string; name?: string }
-type WsData = { subscriber?: ValkeySubscriber; clientIp?: string; user?: WsUser }
-type StoreWsData = WsData & {
-  heartbeatInterval?: NodeJS.Timeout
-  heartbeatTimeout?: NodeJS.Timeout
-  lastSeen?: number
 }
 
 const jsonError = (status: number, error: string, meta: Record<string, unknown> = {}) =>
@@ -244,6 +223,11 @@ const app = new Elysia()
         return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
       }
 
+      const earlyLimit = await checkEarlyLimit('/store/items', 10, 5000)
+      if (!earlyLimit.allowed) {
+        return jsonError(429, 'Try again soon')
+      }
+
       const limitRaw = Number.parseInt((query.limit as string) || '10', 10)
       const lastId = Number.parseInt((query.cursor as string) || '0', 10)
 
@@ -271,6 +255,7 @@ const app = new Elysia()
       const itemsQuery = db.select().from(storeItems)
       const paginatedQuery = lastId > 0 ? itemsQuery.where(gt(storeItems.id, lastId)) : itemsQuery
 
+      const start = performance.now()
       let items
       try {
         items = await paginatedQuery.orderBy(storeItems.id).limit(limit)
@@ -279,6 +264,8 @@ const app = new Elysia()
         return jsonError(500, 'Unable to load items')
       }
 
+      const elapsed = performance.now() - start
+      void recordLatencySample('store:items', elapsed)
       const nextCursor = items.length === limit ? items[items.length - 1].id : null
       const payload = { items, cursor: nextCursor }
 
@@ -300,6 +287,18 @@ const app = new Elysia()
       })
     }
   )
+ 
+registerWsRoutes(app, {
+  valkey,
+  isValkeyReady,
+  validateSession,
+  checkWsQuota,
+  checkWsOpenQuota,
+  db,
+  maxChatLength,
+  invalidateChatHistoryCache,
+  recordLatencySample
+})
   .get('/chat/history', async ({ request }) => {
     const clientIp = getClientIp(request)
     const { allowed, retryAfter } = await checkRateLimit('/chat/history', clientIp)
@@ -308,8 +307,15 @@ const app = new Elysia()
       return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
     }
 
+    const cached = await readChatHistoryCache<any>()
+    if (cached) return cached
+
+    const start = performance.now()
     const rows = await db.select().from(chatMessages).orderBy(desc(chatMessages.createdAt)).limit(20)
-    return rows.reverse()
+    const result = rows.reverse()
+    void writeChatHistoryCache(result, 15)
+    void recordLatencySample('chat:history', performance.now() - start)
+    return result
   })
   .post(
     '/ai/echo',
@@ -319,6 +325,11 @@ const app = new Elysia()
 
       if (!allowed) {
         return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`, { retryAfter })
+      }
+
+      const earlyLimit = await checkEarlyLimit('/ai/echo', 5, 5000)
+      if (!earlyLimit.allowed) {
+        return jsonError(429, 'Slow down')
       }
 
       let prompt: string
@@ -332,249 +343,12 @@ const app = new Elysia()
         return jsonError(400, 'Invalid request body')
       }
 
-      return { echo: `You said: ${prompt}` }
+      const start = performance.now()
+      const payload = { echo: `You said: ${prompt}` }
+      void recordLatencySample('ai:echo', performance.now() - start)
+      return payload
     }
   )
-  .ws('/store/ws', {
-    upgrade(context) {
-      return { headers: context.request.headers, request: context.request }
-    },
-    async open(ws) {
-      const clientIp = resolveWsClientIp(ws)
-      const headers = resolveWsHeaders(ws)
-      const request = resolveWsRequest(ws)
-      const { allowed, retryAfter } = await checkWsOpenQuota('/store/ws', clientIp)
-      if (!allowed) {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            error: `Too many realtime attempts. Try again in ${retryAfter}s`,
-            retryAfter
-          })
-        )
-        ws.close()
-        return
-      }
-
-      let sessionPayload: { user?: WsUser } | null = null
-      try {
-        const sessionResponse = await validateSession({ headers, request })
-        if (sessionResponse.ok) {
-          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
-        }
-      } catch (error) {
-        console.error('Failed to validate store session', error)
-      }
-
-      if (!sessionPayload?.user?.id) {
-        ws.send(
-          JSON.stringify({
-            type: 'error',
-            error: 'Authentication required for store realtime'
-          })
-        )
-        ws.close()
-        return
-      }
-
-      const data = ws.data as StoreWsData
-      data.clientIp = clientIp
-      data.user = sessionPayload.user
-      data.lastSeen = Date.now()
-
-      storeSockets.add(ws)
-      ws.send(JSON.stringify({ type: 'store:ready' }))
-
-      const heartbeatIntervalMs = 15000
-      const heartbeatTimeoutMs = 10000
-
-      const sendPing = () => {
-        try {
-          ws.send(JSON.stringify({ type: 'ping' }))
-        } catch (error) {
-          console.warn('Failed to send heartbeat ping', error)
-          ws.close()
-          return
-        }
-        if (data.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
-        data.heartbeatTimeout = setTimeout(() => {
-          ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
-          ws.close()
-        }, heartbeatTimeoutMs)
-      }
-
-      data.heartbeatInterval = setInterval(() => {
-        const now = Date.now()
-        const lastSeen = data.lastSeen || now
-        if (now - lastSeen > heartbeatIntervalMs + heartbeatTimeoutMs) {
-          ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
-          ws.close()
-          return
-        }
-        sendPing()
-      }, heartbeatIntervalMs)
-
-      sendPing()
-    },
-    message(ws, message) {
-      const data = ws.data as StoreWsData
-      data.lastSeen = Date.now()
-      if (data.heartbeatTimeout) {
-        clearTimeout(data.heartbeatTimeout)
-        data.heartbeatTimeout = undefined
-      }
-
-      let payload: unknown
-      if (typeof message === 'string') {
-        try {
-          payload = JSON.parse(message)
-        } catch {
-          return
-        }
-      } else {
-        payload = message
-      }
-
-      if (!payload || typeof payload !== 'object') return
-      const record = payload as { type?: unknown }
-      if (record.type === 'pong') return
-      if (record.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }))
-      }
-    },
-    close(ws) {
-      clearStoreSocket(ws)
-    },
-    error(ws) {
-      clearStoreSocket(ws)
-    }
-  })
-  .ws('/ws', {
-    upgrade(context) {
-      return { headers: context.request.headers, request: context.request }
-    },
-    async open(ws) {
-      const clientIp = resolveWsClientIp(ws)
-      const headers = resolveWsHeaders(ws)
-      const request = resolveWsRequest(ws)
-
-      let sessionPayload: { user?: WsUser } | null = null
-      try {
-        const sessionResponse = await validateSession({ headers, request })
-        if (sessionResponse.ok) {
-          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
-        }
-      } catch (error) {
-        console.error('Failed to validate chat session', error)
-      }
-
-      if (!sessionPayload?.user?.id) {
-        ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' }))
-        ws.close()
-        return
-      }
-
-      const data = ws.data as WsData
-      data.clientIp = clientIp
-      data.user = sessionPayload.user
-
-      ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
-      if (!isValkeyReady()) {
-        ws.send(JSON.stringify({ type: 'error', text: 'Chat unavailable: cache offline' }))
-        ws.close()
-        return
-      }
-
-      let subscriber
-      try {
-        subscriber = valkey.duplicate()
-        await subscriber.connect()
-        await subscriber.subscribe(chatChannel, (message) => {
-          ws.send(message)
-        })
-        data.subscriber = subscriber
-      } catch (error) {
-        console.error('WebSocket subscription failed', error)
-        if (subscriber) {
-          try {
-            await subscriber.quit()
-          } catch (quitError) {
-            console.error('Failed to close partial subscriber', quitError)
-          }
-        }
-        ws.send(JSON.stringify({ type: 'error', error: 'Unable to join chat' }))
-        ws.close()
-      }
-    },
-    async close(ws) {
-      const data = ws.data as WsData
-      const subscriber = data.subscriber
-      if (subscriber) await subscriber.quit()
-    },
-    async message(_ws, message) {
-      if (!isValkeyReady()) return
-      const data = _ws.data as WsData
-      const clientIp = data.clientIp ?? resolveWsClientIp(_ws)
-      const { allowed, retryAfter } = await checkWsQuota(clientIp)
-
-      if (!allowed) {
-        _ws.send(
-          JSON.stringify({
-            type: 'error',
-            error: `Message quota exceeded. Try again in ${retryAfter}s`
-          })
-        )
-        _ws.close()
-        return
-      }
-
-      let payload
-      if (typeof message === 'string') {
-        try {
-          payload = JSON.parse(message)
-        } catch (error) {
-          console.error('Failed to parse chat message', error)
-          _ws.send(JSON.stringify({ type: 'error', error: 'Invalid message format' }))
-          return
-        }
-      } else {
-        payload = message
-      }
-
-      if (payload.type !== 'chat' || typeof payload.text !== 'string') {
-        _ws.send(JSON.stringify({ type: 'error', error: 'Unsupported message type' }))
-        return
-      }
-
-      const trimmedText = payload.text.trim()
-
-      if (!trimmedText) {
-        _ws.send(JSON.stringify({ type: 'error', error: 'Message cannot be empty' }))
-        return
-      }
-
-      if (trimmedText.length > maxChatLength) {
-        _ws.send(JSON.stringify({ type: 'error', error: `Message too long (max ${maxChatLength} characters)` }))
-        return
-      }
-
-      if (!data.user) {
-        _ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' }))
-        _ws.close()
-        return
-      }
-
-      const entry = { from: data.user.name || data.user.id, text: trimmedText, authorId: data.user.id }
-
-      try {
-        await db.insert(chatMessages).values({ author: entry.from, body: entry.text })
-        await valkey.publish(chatChannel, JSON.stringify({ type: 'chat', from: entry.from, text: entry.text, authorId: entry.authorId }))
-      } catch (error) {
-        console.error('Failed to persist chat message', error)
-        _ws.send(JSON.stringify({ type: 'error', error: 'Unable to send message' }))
-      }
-    }
-  })
  
 let shuttingDown = false
 let serverHandle: ReturnType<typeof app.listen> | null = null
