@@ -1,3 +1,5 @@
+import type { NoSerialize } from '@builder.io/qwik'
+
 export type FragmentMeta = {
   cacheKey: string
   ttl: number
@@ -34,6 +36,8 @@ export type FragmentPayload = {
   meta: FragmentMeta
 }
 
+export type FragmentPayloadMap = Record<string, FragmentPayload>
+
 export type FragmentPlanEntry = {
   id: string
   critical: boolean
@@ -51,3 +55,7 @@ export type FragmentPlan = {
   fetchGroups?: string[][]
   createdAt: number
 }
+
+export type FragmentPlanValue = FragmentPlan | NoSerialize<FragmentPlan>
+
+export type FragmentPayloadValue = FragmentPayloadMap | NoSerialize<FragmentPayloadMap>

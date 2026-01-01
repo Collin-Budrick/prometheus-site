@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
-import type { RenderNode } from '../fragment/types'
-import { sanitizeAttributes } from '../fragment/sanitize'
-import { PreactIsland } from './PreactIsland'
+import type { RenderNode } from '../../fragment/types'
+import { sanitizeAttributes } from '../../fragment/sanitize'
+import { PreactIsland } from '../../components/PreactIsland'
 
 type NodeProps = {
   node: RenderNode
@@ -37,7 +37,7 @@ const voidTags = new Set<VoidTag>([
   'param',
   'source',
   'track',
-  'wbr',
+  'wbr'
 ])
 
 const isVoidTag = (tag: string): tag is VoidTag => voidTags.has(tag as VoidTag)

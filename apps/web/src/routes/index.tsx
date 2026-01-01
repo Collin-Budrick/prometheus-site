@@ -1,9 +1,16 @@
-import { component$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead } from '@builder.io/qwik-city'
-import { FragmentShell } from '../components/FragmentShell'
-import { loadFragmentPlan, loadFragments } from '../fragment/server'
+import { Resource, component$, noSerialize, useResource$ } from '@builder.io/qwik'
+import { SSRStreamBlock, type DocumentHead, useLocation } from '@builder.io/qwik-city'
+import { FragmentShell } from '../features/fragments'
 import { getApiBase } from '../fragment/config'
-import type { FragmentPayload, FragmentPlan, RenderNode } from '../fragment/types'
+import { loadFragmentPlan, loadFragments } from '../fragment/server'
+import type {
+  FragmentPayload,
+  FragmentPayloadMap,
+  FragmentPayloadValue,
+  FragmentPlan,
+  FragmentPlanValue,
+  RenderNode
+} from '../fragment/types'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 
@@ -60,63 +67,95 @@ const buildFallbackFragment = (id: string, apiBase: string, path: string, error?
   }
 }
 
-export const useFragmentData = routeLoader$(async ({ url }) => {
-  const env = import.meta.env as Record<string, string | undefined>
-  const path = url.pathname || '/'
-  const apiBase = getApiBase(env)
+type FragmentResource = {
+  plan: FragmentPlanValue
+  fragments: FragmentPayloadValue
+  path: string
+}
 
-  try {
-    const plan = await loadFragmentPlan(path, env)
-    const primaryGroup =
-      plan.fetchGroups && plan.fetchGroups.length
-        ? plan.fetchGroups[0]
-        : plan.fragments.map((fragment) => fragment.id)
-    const initialIds = Array.from(new Set(primaryGroup))
-    let fragments: Record<string, FragmentPayload> = {}
-
-    if (initialIds.length) {
-      try {
-        fragments = await loadFragments(initialIds, env)
-      } catch (error) {
-        console.error('Fragment load failed', error)
-      }
-    }
-
-    return {
-      plan,
-      fragments,
-      path: plan.path
-    }
-  } catch (error) {
-    console.error('Fragment plan fetch failed', error)
-    const fallbackId = 'fragment://fallback/offline@v1'
-    const plan: FragmentPlan = {
-      path,
-      createdAt: Date.now(),
-      fragments: [
-        {
-          id: fallbackId,
-          critical: true,
-          layout: { column: 'span 12' }
-        }
-      ]
-    }
-
-    return {
-      plan,
-      fragments: {
-        [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
-      },
-      path
-    }
-  }
-
-})
+const HomeShellSkeleton = () => (
+  <section class="fragment-shell">
+    <div class="fragment-status">
+      <span class="dot" />
+      <span>Preparing fragments</span>
+    </div>
+    <div class="fragment-grid">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <article key={index} class="fragment-card" style={{ gridColumn: 'span 4' }} data-motion>
+          <div class="fragment-placeholder">
+            <div class="meta-line">loading</div>
+            <p>Fragment incoming…</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+)
 
 export default component$(() => {
-  const data = useFragmentData()
+  const location = useLocation()
+  const fragmentResource = useResource$<FragmentResource>(async () => {
+    const env = import.meta.env as Record<string, string | undefined>
+    const path = location.url.pathname || '/'
+    const apiBase = getApiBase(env)
+
+    try {
+      const plan = await loadFragmentPlan(path, env)
+      const primaryGroup =
+        plan.fetchGroups && plan.fetchGroups.length
+          ? plan.fetchGroups[0]
+          : plan.fragments.map((fragment) => fragment.id)
+      const initialIds = Array.from(new Set(primaryGroup))
+      let fragments: FragmentPayloadMap = {}
+
+      if (initialIds.length) {
+        try {
+          fragments = await loadFragments(initialIds, env)
+        } catch (error) {
+          console.error('Fragment load failed', error)
+        }
+      }
+
+      return {
+        plan: (noSerialize(plan) ?? plan) as FragmentPlanValue,
+        fragments: (noSerialize(fragments) ?? fragments) as FragmentPayloadValue,
+        path: plan.path
+      }
+    } catch (error) {
+      console.error('Fragment plan fetch failed', error)
+      const fallbackId = 'fragment://fallback/offline@v1'
+      const plan: FragmentPlan = {
+        path,
+        createdAt: Date.now(),
+        fragments: [
+          {
+            id: fallbackId,
+            critical: true,
+            layout: { column: 'span 12' }
+          }
+        ]
+      }
+
+      return {
+        plan: (noSerialize(plan) ?? plan) as FragmentPlanValue,
+        fragments: (noSerialize({
+          [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
+        }) ?? {
+          [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
+        }) as FragmentPayloadValue,
+        path
+      }
+    }
+  })
+
   return (
-    <FragmentShell plan={data.value.plan} initialFragments={data.value.fragments} path={data.value.path} />
+    <SSRStreamBlock>
+      <Resource
+        value={fragmentResource}
+        onPending={() => <HomeShellSkeleton />}
+        onResolved={(data) => <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />}
+      />
+    </SSRStreamBlock>
   )
 })
 
