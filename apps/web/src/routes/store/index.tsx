@@ -1,18 +1,17 @@
-import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import type { RequestHandler, DocumentHead } from '@builder.io/qwik-city'
+import { StaticRouteTemplate, StaticRouteSkeleton } from '../../components/StaticRouteTemplate'
+import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 
-export default component$(() => (
-  <section class="fragment-shell">
-    <div class="fragment-grid">
-      <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
-        <div class="meta-line">Store</div>
-        <h1>Store</h1>
-        <p>Browse curated modules, fragments, and templates designed for fast binary delivery.</p>
-        <button class="action-button" type="button">Browse catalog</button>
-      </article>
-    </div>
-  </section>
-))
+export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
+
+export default () => (
+  <StaticRouteTemplate
+    metaLine="Store"
+    title="Store"
+    description="Browse curated modules, fragments, and templates designed for fast binary delivery."
+    actionLabel="Browse catalog"
+  />
+)
 
 export const head: DocumentHead = {
   title: 'Store | Fragment Prime',
@@ -23,3 +22,5 @@ export const head: DocumentHead = {
     }
   ]
 }
+
+export const skeleton = () => <StaticRouteSkeleton />

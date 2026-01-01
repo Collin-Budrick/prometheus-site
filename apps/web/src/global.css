@@ -194,6 +194,42 @@
     background-color: rgb(var(--surface) / 0.9);
   }
 
+  .skeleton-line {
+    @apply block rounded-full bg-slate-200/70;
+    height: 14px;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .skeleton-line.is-short {
+    width: 20%;
+  }
+
+  .skeleton-line.is-medium {
+    width: 45%;
+  }
+
+  .skeleton-line.is-long {
+    width: 80%;
+  }
+
+  .skeleton-line.is-button {
+    width: 32%;
+    height: 42px;
+    border-radius: 9999px;
+  }
+
+  @keyframes pulse {
+    0% {
+      opacity: 0.65;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.65;
+    }
+  }
+
   @supports (backdrop-filter: blur(8px)) {
     .fragment-card {
       backdrop-filter: blur(8px);

@@ -1,18 +1,17 @@
-import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
+import type { RequestHandler, DocumentHead } from '@builder.io/qwik-city'
+import { StaticRouteTemplate, StaticRouteSkeleton } from '../../components/StaticRouteTemplate'
+import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 
-export default component$(() => (
-  <section class="fragment-shell">
-    <div class="fragment-grid">
-      <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
-        <div class="meta-line">Login</div>
-        <h1>Login</h1>
-        <p>Access your fragment workspace, release controls, and deployment history.</p>
-        <button class="action-button" type="button">Request access</button>
-      </article>
-    </div>
-  </section>
-))
+export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
+
+export default () => (
+  <StaticRouteTemplate
+    metaLine="Login"
+    title="Login"
+    description="Access your fragment workspace, release controls, and deployment history."
+    actionLabel="Request access"
+  />
+)
 
 export const head: DocumentHead = {
   title: 'Login | Fragment Prime',
@@ -23,3 +22,5 @@ export const head: DocumentHead = {
     }
   ]
 }
+
+export const skeleton = () => <StaticRouteSkeleton />
