@@ -1,11 +1,20 @@
 import { component$, Slot } from '@builder.io/qwik'
 import { useDocumentHead } from '@builder.io/qwik-city'
 
+const resolveApiBase = () => {
+  const env = import.meta.env as Record<string, string | undefined>
+  const base = env?.VITE_API_BASE?.trim() || ''
+  return base.endsWith('/') ? base.slice(0, -1) : base
+}
+
+const apiBase = resolveApiBase()
+const apiUrl = (path: string) => (apiBase ? `${apiBase}${path}` : path)
+
 const speculationRules = {
   prefetch: [
     {
       source: 'list',
-      urls: ['/fragments/plan?path=/', '/fragments/stream?path=/']
+      urls: [apiUrl('/fragments/plan?path=/'), apiUrl('/fragments/stream?path=/')]
     }
   ]
 }
@@ -21,6 +30,12 @@ export const RouterHead = component$(() => {
       {head.links.map((link) => (
         <link key={`${link.rel}-${link.href}`} {...link} />
       ))}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      />
       <script type="speculationrules" dangerouslySetInnerHTML={JSON.stringify(speculationRules)} />
     </>
   )

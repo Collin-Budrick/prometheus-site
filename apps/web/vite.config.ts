@@ -57,6 +57,12 @@ export default defineConfig(async () => {
   return {
     plugins: [tailwindcss(), qwikCity(), qwikVite({ optimizerOptions: { binding } })],
     oxc: false,
+    css: {
+      transformer: 'lightningcss'
+    },
+    build: {
+      cssMinify: 'lightningcss'
+    },
     server: {
       host: true,
       port: 4173,
