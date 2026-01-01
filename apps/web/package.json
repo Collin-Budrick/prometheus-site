@@ -13,7 +13,8 @@
     "@builder.io/qwik-city": "1.18.0",
     "@motionone/dom": "^10.18.0",
     "preact": "11.0.0-experimental.1",
-    "quicklink": "^3.0.1"
+    "quicklink": "^3.0.1",
+    "speculation-rules": "^1.0.4"
   },
   "devDependencies": {
     "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.9-commit.d91dfb5",
