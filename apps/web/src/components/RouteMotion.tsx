@@ -49,18 +49,25 @@ export const RouteMotion = component$(() => {
       })
     }
 
+    const seenElements = new WeakSet<HTMLElement>()
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const target = entry.target as HTMLElement
           if (entry.isIntersecting) {
             setTarget(target, 'in')
+            if (!seenElements.has(target)) {
+              seenElements.add(target)
+              observer.unobserve(target)
+              observedElements.delete(target)
+            }
           } else {
             setTarget(target, 'out')
           }
         })
       },
-      { threshold: 0.2 }
+      { threshold: 0.35, rootMargin: '0px 0px -10%' }
     )
 
     const observeTargets = () => {
