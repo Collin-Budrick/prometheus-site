@@ -35,7 +35,7 @@ type StreamMetrics = {
   frames: number
 }
 
-const supportedEncodings = ['gzip', 'deflate'] as const
+const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
 
 const appliedCss = new Map<string, HTMLStyleElement>()
@@ -160,6 +160,28 @@ const getDecompressionStreamCtor = () =>
   (globalThis as typeof globalThis & {
     DecompressionStream?: new (format: CompressionEncoding) => TransformStream<Uint8Array, Uint8Array>
   }).DecompressionStream ?? null
+
+let cachedDecompressionEncodings: CompressionEncoding[] | null = null
+
+const getSupportedDecompressionEncodings = () => {
+  if (cachedDecompressionEncodings) return cachedDecompressionEncodings
+  const ctor = getDecompressionStreamCtor()
+  if (!ctor) {
+    cachedDecompressionEncodings = []
+    return cachedDecompressionEncodings
+  }
+  const supported: CompressionEncoding[] = []
+  for (const encoding of supportedEncodings) {
+    try {
+      new ctor(encoding)
+      supported.push(encoding)
+    } catch {
+      // unsupported encoding
+    }
+  }
+  cachedDecompressionEncodings = supported
+  return supported
+}
 
 const toAbsoluteApiBase = (apiBase: string) => {
   if (!apiBase) return ''
@@ -306,9 +328,9 @@ const streamFragmentsWithFetch = async (
 ) => {
   const api = getApiBase()
   const preferCompression = isFragmentCompressionPreferred()
-  const supportsDecompression = preferCompression && Boolean(getDecompressionStreamCtor())
-  const headers: HeadersInit | undefined = supportsDecompression
-    ? { 'x-fragment-accept-encoding': supportedEncodings.join(',') }
+  const acceptedEncodings = preferCompression ? getSupportedDecompressionEncodings() : []
+  const headers: HeadersInit | undefined = acceptedEncodings.length
+    ? { 'x-fragment-accept-encoding': acceptedEncodings.join(',') }
     : undefined
   const metrics: StreamMetrics = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(), frames: 0 }
 
@@ -319,7 +341,8 @@ const streamFragmentsWithFetch = async (
   }
 
   const encoding = getResponseEncoding(response.headers)
-  const reader = buildStreamReader(response.body, encoding, supportsDecompression)
+  const canDecompress = Boolean(encoding && acceptedEncodings.includes(encoding))
+  const reader = buildStreamReader(response.body, encoding, canDecompress)
 
   try {
     const status = await readFragmentStream(reader, onFragment, signal, metrics)

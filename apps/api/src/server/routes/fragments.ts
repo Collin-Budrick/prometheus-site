@@ -5,10 +5,11 @@ import { isWebTransportEnabled } from '../runtime-flags'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
-import { createDeflate, createGzip } from 'node:zlib'
+import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
 
-const supportedEncodings = ['gzip', 'deflate'] as const
+const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
+const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } }
 
 const buildCacheHeaders = (entry: StoredFragment) => {
   const status = buildCacheStatus(entry, Date.now())
@@ -52,7 +53,7 @@ const getCompressionStreamCtor = () =>
 
 const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: CompressionEncoding) => {
   const ctor = getCompressionStreamCtor()
-  if (ctor) {
+  if (ctor && encoding !== 'br') {
     try {
       const input = stream as ReadableStream<BufferSource>
       return { stream: input.pipeThrough(new ctor(encoding)), encoding }
@@ -63,7 +64,8 @@ const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: Co
 
   try {
     const readable = Readable.fromWeb(toWebReadableStream(stream))
-    const compressor = encoding === 'gzip' ? createGzip() : createDeflate()
+    const compressor =
+      encoding === 'gzip' ? createGzip() : encoding === 'deflate' ? createDeflate() : createBrotliCompress(brotliOptions)
     return { stream: Readable.toWeb(readable.pipe(compressor)) as unknown as ReadableStream<Uint8Array>, encoding }
   } catch {
     return { stream, encoding: null }

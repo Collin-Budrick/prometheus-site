@@ -10,9 +10,17 @@ type IdleHandles = {
 export const scheduleIdleTask = (callback: () => void, timeout = 120) => {
   const handles: IdleHandles = { idle: null, timeout: null }
   let cancelled = false
+  let fired = false
 
   const run = () => {
-    if (cancelled) return
+    if (cancelled || fired) return
+    fired = true
+    if (handles.timeout !== null) {
+      clearTimeout(handles.timeout)
+    }
+    if (handles.idle !== null && 'cancelIdleCallback' in window) {
+      window.cancelIdleCallback(handles.idle)
+    }
     handles.idle = null
     handles.timeout = null
     callback()
@@ -23,9 +31,6 @@ export const scheduleIdleTask = (callback: () => void, timeout = 120) => {
   }
 
   handles.timeout = window.setTimeout(() => {
-    if (handles.idle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(handles.idle)
-    }
     run()
   }, timeout)
 
