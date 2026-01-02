@@ -1,5 +1,4 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
-import { decodeFragmentPayload } from './binary'
 import {
   getApiBase,
   getWebTransportBase,
@@ -13,6 +12,22 @@ const concat = (a: Uint8Array, b: Uint8Array) => {
   next.set(a, 0)
   next.set(b, a.length)
   return next
+}
+
+type DecodeFragmentPayload = (bytes: Uint8Array) => FragmentPayload
+
+let decoderPromise: Promise<DecodeFragmentPayload> | null = null
+
+const loadDecoder = async (): Promise<DecodeFragmentPayload> => {
+  if (!decoderPromise) {
+    decoderPromise = import('./binary')
+      .then((mod) => mod.decodeFragmentPayload)
+      .catch((error) => {
+        decoderPromise = null
+        throw error
+      })
+  }
+  return decoderPromise
 }
 
 type WebTransportConstructor = new (url: string, options?: Record<string, unknown>) => {
@@ -149,6 +164,7 @@ export const fetchFragment = async (id: string): Promise<FragmentPayload> => {
     throw new Error(`Fragment fetch failed: ${response.status}`)
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
+  const decodeFragmentPayload = await loadDecoder()
   const payload = decodeFragmentPayload(bytes)
   return { ...payload, id }
 }
@@ -250,7 +266,8 @@ const readFragmentStream = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   onFragment: (payload: FragmentPayload) => void,
   signal: AbortSignal | undefined,
-  metrics: StreamMetrics
+  metrics: StreamMetrics,
+  decodeFragmentPayload: DecodeFragmentPayload
 ): Promise<'ok' | 'aborted'> => {
   let buffer = new Uint8Array(0)
 
@@ -343,9 +360,10 @@ const streamFragmentsWithFetch = async (
   const encoding = getResponseEncoding(response.headers)
   const canDecompress = Boolean(encoding && acceptedEncodings.includes(encoding))
   const reader = buildStreamReader(response.body, encoding, canDecompress)
+  const decodeFragmentPayload = await loadDecoder()
 
   try {
-    const status = await readFragmentStream(reader, onFragment, signal, metrics)
+    const status = await readFragmentStream(reader, onFragment, signal, metrics, decodeFragmentPayload)
     logStreamMetrics('fetch', metrics, status)
   } catch (error) {
     if (signal?.aborted) {
@@ -385,8 +403,9 @@ const streamFragmentsWithWebTransport = async (
     await transport.ready
     const datagramReader =
       preferDatagrams && supportsDatagrams ? transport.datagrams?.readable?.getReader() ?? null : null
+    const decodeFragmentPayload = await loadDecoder()
     const datagramTask = datagramReader
-      ? readFragmentStream(datagramReader, onFragment, signal, metrics).catch((error) => {
+      ? readFragmentStream(datagramReader, onFragment, signal, metrics, decodeFragmentPayload).catch((error) => {
           if (!signal?.aborted) {
             console.warn('[fragment-stream][datagram] read failed', error)
           }
@@ -403,7 +422,7 @@ const streamFragmentsWithWebTransport = async (
     }
     const reader = bidi.readable.getReader()
 
-    const status = await readFragmentStream(reader, onFragment, signal, metrics)
+    const status = await readFragmentStream(reader, onFragment, signal, metrics, decodeFragmentPayload)
     if (datagramReader) {
       try {
         await datagramReader.cancel()

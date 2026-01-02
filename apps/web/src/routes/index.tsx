@@ -1,5 +1,5 @@
-import { Resource, component$, useResource$ } from '@builder.io/qwik'
-import { type DocumentHead, useLocation } from '@builder.io/qwik-city'
+import { component$ } from '@builder.io/qwik'
+import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { FragmentShell } from '../features/fragments'
 import { getApiBase } from '../fragment/config'
 import { loadFragmentPlan, loadFragments } from '../fragment/server'
@@ -20,9 +20,6 @@ const elementNode = (tag: string, attrs?: Record<string, string>, children: Rend
   attrs,
   children
 })
-
-const buildMotionStyle = (column: string, index: number) =>
-  ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
 const buildFallbackFragment = (id: string, apiBase: string, path: string, error?: unknown): FragmentPayload => {
   const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -76,86 +73,63 @@ type FragmentResource = {
   path: string
 }
 
-const HomeShellSkeleton = () => (
-  <section class="fragment-shell">
-    <div class="fragment-status">
-      <span class="dot" />
-      <span>Preparing fragments</span>
-    </div>
-    <div class="fragment-grid">
-      {Array.from({ length: 3 }).map((_, index) => (
-        <article key={index} class="fragment-card" style={buildMotionStyle('span 4', index)} data-motion>
-          <div class="fragment-placeholder">
-            <div class="meta-line">loading</div>
-            <p>Fragment incoming…</p>
-          </div>
-        </article>
-      ))}
-    </div>
-  </section>
-)
+export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url }) => {
+  const env = import.meta.env as Record<string, string | undefined>
+  const path = url.pathname || '/'
+  const apiBase = getApiBase(env)
 
-export default component$(() => {
-  const location = useLocation()
-  const fragmentResource = useResource$<FragmentResource>(async () => {
-    const env = import.meta.env as Record<string, string | undefined>
-    const path = location.url.pathname || '/'
-    const apiBase = getApiBase(env)
+  try {
+    const plan = await loadFragmentPlan(path, env)
+    const primaryGroup =
+      plan.fetchGroups && plan.fetchGroups.length
+        ? plan.fetchGroups[0]
+        : plan.fragments.map((fragment) => fragment.id)
+    const initialIds = Array.from(new Set(primaryGroup))
+    let fragments: FragmentPayloadMap = {}
 
-    try {
-      const plan = await loadFragmentPlan(path, env)
-      const primaryGroup =
-        plan.fetchGroups && plan.fetchGroups.length
-          ? plan.fetchGroups[0]
-          : plan.fragments.map((fragment) => fragment.id)
-      const initialIds = Array.from(new Set(primaryGroup))
-      let fragments: FragmentPayloadMap = {}
-
-      if (initialIds.length) {
-        try {
-          fragments = await loadFragments(initialIds, env)
-        } catch (error) {
-          console.error('Fragment load failed', error)
-        }
-      }
-
-      return {
-        plan: plan as FragmentPlanValue,
-        fragments: fragments as FragmentPayloadValue,
-        path: plan.path
-      }
-    } catch (error) {
-      console.error('Fragment plan fetch failed', error)
-      const fallbackId = 'fragment://fallback/offline@v1'
-      const plan: FragmentPlan = {
-        path,
-        createdAt: Date.now(),
-        fragments: [
-          {
-            id: fallbackId,
-            critical: true,
-            layout: { column: 'span 12' }
-          }
-        ]
-      }
-
-      return {
-        plan: plan as FragmentPlanValue,
-        fragments: {
-          [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
-        } as FragmentPayloadValue,
-        path
+    if (initialIds.length) {
+      try {
+        fragments = await loadFragments(initialIds, env)
+      } catch (error) {
+        console.error('Fragment load failed', error)
       }
     }
-  })
 
-  return (
-    <Resource
-      value={fragmentResource}
-      onPending={() => <HomeShellSkeleton />}
-      onResolved={(data) => <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />}
-    />
-  )
+    return {
+      plan: plan as FragmentPlanValue,
+      fragments: fragments as FragmentPayloadValue,
+      path: plan.path
+    }
+  } catch (error) {
+    console.error('Fragment plan fetch failed', error)
+    const fallbackId = 'fragment://fallback/offline@v1'
+    const plan: FragmentPlan = {
+      path,
+      createdAt: Date.now(),
+      fragments: [
+        {
+          id: fallbackId,
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    }
+
+    return {
+      plan: plan as FragmentPlanValue,
+      fragments: {
+        [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
+      } as FragmentPayloadValue,
+      path
+    }
+  }
+})
+
+export default component$(() => {
+  const fragmentResource = useFragmentResource()
+  const data = fragmentResource.value
+
+  return <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />
 })
 
 export const head: DocumentHead = {
