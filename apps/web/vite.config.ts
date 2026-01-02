@@ -48,7 +48,6 @@ type EarlyHint = {
 type QwikManifest = {
   core?: string
   preloader?: string
-  bundleGraphAsset?: string
   injections?: Array<{ tag?: string; attributes?: Record<string, string> }>
   assets?: Record<string, unknown>
 }
@@ -106,17 +105,11 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
 
   if (Array.isArray(manifest.injections)) {
     manifest.injections.forEach((injection) => {
-      if (injection.tag !== 'style') return
-      const dataSrc = injection.attributes?.['data-src']?.trim()
-      if (dataSrc) styleHrefs.add(normalizeManifestHref(dataSrc))
-    })
-  }
-
-  if (styleHrefs.size === 0 && manifest.assets) {
-    Object.keys(manifest.assets).forEach((asset) => {
-      if (asset.endsWith('-style.css')) {
-        styleHrefs.add(normalizeManifestHref(asset))
-      }
+      if (injection.tag !== 'link') return
+      const rel = injection.attributes?.rel?.toLowerCase()
+      if (rel !== 'stylesheet') return
+      const href = injection.attributes?.href?.trim()
+      if (href) styleHrefs.add(normalizeManifestHref(href))
     })
   }
 
@@ -130,10 +123,6 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   if (manifest.preloader && manifest.preloader !== manifest.core) {
     hints.push({ href: `/build/${manifest.preloader}`, rel: 'modulepreload', crossorigin: true })
   }
-  if (manifest.bundleGraphAsset) {
-    hints.push({ href: normalizeManifestHref(manifest.bundleGraphAsset), as: 'fetch', crossorigin: true })
-  }
-
   return hints
 }
 
