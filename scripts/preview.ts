@@ -1,9 +1,15 @@
 import { spawn } from 'node:child_process'
+import { existsSync, readdirSync } from 'node:fs'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
 import { computeFingerprint, ensureCaddyConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const bunBin =
+  (typeof Bun !== 'undefined' && typeof Bun.execPath === 'string' && Bun.execPath) ||
+  (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
+  'bun'
 
 const { command, prefix } = resolveComposeCommand()
 
@@ -70,7 +76,23 @@ const composeEnv = {
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
 
-ensureCaddyConfig('http://web:4173', undefined, { servePrecompressed: true })
+const webBuildEnv = {
+  ...process.env,
+  VITE_API_BASE: '/api',
+  VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
+  VITE_ENABLE_PREFETCH: previewEnablePrefetch,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
+  VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
+  VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors
+}
+
+ensureCaddyConfig('http://web:4173', undefined, {
+  servePrecompressed: true,
+  encode: 'br gzip',
+  stripAcceptEncoding: true
+})
 let keepContainers = false
 
 const buildInputs = [
@@ -78,6 +100,7 @@ const buildInputs = [
   'bun.lock',
   'bunfig.toml',
   'docker-compose.yml',
+  'infra/caddy/Dockerfile',
   'apps/api',
   'apps/web',
   'apps/webtransport'
@@ -97,8 +120,27 @@ const fingerprint = computeFingerprint(buildInputs, {
 })
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
+const hasBrotliAssets = () => {
+  const distRoot = path.join(root, 'apps', 'web', 'dist')
+  const candidates = ['build', 'assets']
+  for (const dir of candidates) {
+    const absPath = path.join(distRoot, dir)
+    if (!existsSync(absPath)) continue
+    const files = readdirSync(absPath)
+    if (files.some((file) => file.endsWith('.br'))) return true
+  }
+  return false
+}
+
+const needsWebBuild = needsBuild || !hasBrotliAssets()
+
+if (needsWebBuild) {
+  const webBuild = runSync(bunBin, ['run', '--cwd', 'apps/web', 'build'], webBuildEnv)
+  if (webBuild.status !== 0) process.exit(webBuild.status ?? 1)
+}
+
 if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api', 'web', 'webtransport'], composeEnv)
+  const build = runSync(command, [...prefix, 'build', 'api', 'web', 'webtransport', 'caddy'], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 

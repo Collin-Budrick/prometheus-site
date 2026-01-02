@@ -5,8 +5,8 @@ const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.ico',
   '/favicon.svg',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ]
 
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])

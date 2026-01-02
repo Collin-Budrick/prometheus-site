@@ -1,6 +1,8 @@
 services:
   caddy:
-    image: caddy:2.10.2
+    build:
+      context: ./infra/caddy
+      dockerfile: Dockerfile
     depends_on:
       web:
         condition: service_healthy

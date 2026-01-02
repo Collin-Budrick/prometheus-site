@@ -17,6 +17,7 @@ https://prometheus.dev {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
+	encode br gzip
 	@static {
 		path /assets/* /build/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
 		file {
@@ -33,6 +34,7 @@ https://prometheus.dev {
 
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 		}
@@ -45,6 +47,7 @@ https://prometheus.dev {
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
 		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -59,6 +62,7 @@ https://prometheus.dev {
 
 	handle {
 		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -78,6 +82,7 @@ https://prometheus.prod {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
+	encode br gzip
 	@static {
 		path /assets/* /build/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
 		file {
@@ -94,6 +99,7 @@ https://prometheus.prod {
 
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 		}
@@ -106,6 +112,7 @@ https://prometheus.prod {
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
 		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -120,6 +127,7 @@ https://prometheus.prod {
 
 	handle {
 		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints

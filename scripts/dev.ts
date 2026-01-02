@@ -46,6 +46,7 @@ const buildInputs = [
   'bun.lock',
   'bunfig.toml',
   'docker-compose.yml',
+  'infra/caddy/Dockerfile',
   'apps/api',
   'apps/webtransport',
   'apps/web/package.json'
@@ -56,7 +57,7 @@ const fingerprint = computeFingerprint(buildInputs)
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
 if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api', 'webtransport'], composeEnv)
+  const build = runSync(command, [...prefix, 'build', 'api', 'webtransport', 'caddy'], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
