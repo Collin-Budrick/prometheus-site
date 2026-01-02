@@ -135,8 +135,7 @@ export default component$(() => (
   <QwikCityProvider viewTransition>
     <head>
       <script
-        dangerouslySetInnerHTML={{
-          __html: `(function () {
+        dangerouslySetInnerHTML={`(function () {
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const markReady = () => {
     if (document.querySelector('[data-motion]')) {
@@ -155,8 +154,7 @@ export default component$(() => (
   if (document.readyState === 'loading') {
     requestAnimationFrame(check);
   }
-})();`
-        }}
+})();`}
       />
       <meta charSet="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
