@@ -13,6 +13,7 @@ const devPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
 const devValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const devWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '443'
 const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
+const devWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const devEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
@@ -70,7 +71,7 @@ const bunBin =
   (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
   'bun'
 
-const devHttpsHost = devHttpsPort === '443' ? 'prometheus.dev' : `prometheus.dev:${devHttpsPort}`
+const devHttpsHost = devHttpsPort === '443' ? devWebHost : `${devWebHost}:${devHttpsPort}`
 const normalizeBasePort = (value: string) => {
   try {
     const url = new URL(value)
@@ -86,7 +87,7 @@ const normalizeBasePort = (value: string) => {
 const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
 const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
 const defaultWebTransportBase =
-  devWebTransportPort === '443' ? 'https://prometheus.dev' : `https://prometheus.dev:${devWebTransportPort}`
+  devWebTransportPort === '443' ? `https://${devWebHost}` : `https://${devWebHost}:${devWebTransportPort}`
 const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
 const legacyMatchesPort = legacyPort ? legacyPort === devWebTransportPort : true
 const devWebTransportBase = explicitWebTransportBase
@@ -97,10 +98,10 @@ const devWebTransportBase = explicitWebTransportBase
 
 const webEnv = {
   ...process.env,
-  VITE_DEV_HOST: 'prometheus.dev',
+  VITE_DEV_HOST: devWebHost,
   VITE_DEV_HTTPS: '1',
   VITE_DEV_HTTPS_PORT: devHttpsPort,
-  VITE_HMR_HOST: 'prometheus.dev',
+  VITE_HMR_HOST: devWebHost,
   VITE_HMR_PROTOCOL: 'wss',
   VITE_HMR_CLIENT_PORT: devHttpsPort,
   VITE_HMR_PORT: '4173',
@@ -122,13 +123,13 @@ const web = Bun.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {
 })
 
 try {
-  const resolved = await lookup('prometheus.dev', { all: true })
+  const resolved = await lookup(devWebHost, { all: true })
   const isLocal = resolved.some((entry) => entry.address === '127.0.0.1' || entry.address === '::1')
   if (!isLocal) {
-    console.warn('prometheus.dev does not resolve to localhost. Add it to your hosts file to use HTTPS routing.')
+    console.warn(`${devWebHost} does not resolve to localhost. Add it to your hosts file to use HTTPS routing.`)
   }
 } catch {
-  console.warn('prometheus.dev is not resolvable. Add it to your hosts file to use HTTPS routing.')
+  console.warn(`${devWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
 }
 
 if (devUpstream.includes('host.docker.internal')) {
