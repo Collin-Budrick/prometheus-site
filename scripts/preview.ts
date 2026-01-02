@@ -70,7 +70,7 @@ const composeEnv = {
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
 
-ensureCaddyConfig('http://web:4173')
+ensureCaddyConfig('http://web:4173', undefined, { servePrecompressed: true })
 let keepContainers = false
 
 const buildInputs = [

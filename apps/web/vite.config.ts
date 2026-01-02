@@ -2,10 +2,12 @@ import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
+import { compression, defineAlgorithm } from 'vite-plugin-compression2'
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { constants } from 'node:zlib'
 
 const require = createRequire(import.meta.url)
 
@@ -231,7 +233,22 @@ export default defineConfig(async () => {
   const binding = await loadQwikBinding()
 
   return {
-    plugins: [earlyHintsPlugin(), tailwindcss(), qwikCity(), qwikVite({ optimizerOptions: { binding } })],
+    plugins: [
+      earlyHintsPlugin(),
+      tailwindcss(),
+      qwikCity(),
+      qwikVite({ optimizerOptions: { binding } }),
+      compression({
+        algorithms: [
+          defineAlgorithm('brotliCompress', {
+            params: {
+              [constants.BROTLI_PARAM_QUALITY]: 6
+            }
+          }),
+          'gzip'
+        ]
+      })
+    ],
     oxc: false,
     css: {
       transformer: 'lightningcss'

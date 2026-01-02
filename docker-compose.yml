@@ -11,6 +11,7 @@ services:
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./infra/traefik/certs:/etc/caddy/certs:ro
+      - ./apps/web/dist:/srv/web/dist:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
