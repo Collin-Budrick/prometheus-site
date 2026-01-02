@@ -310,11 +310,28 @@
   }
 
   .fragment-grid {
-    @apply grid gap-6;
+    @apply flex flex-col gap-6;
+  }
+
+  .fragment-grid > .fragment-card {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .fragment-grid {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+
+    .fragment-grid > .fragment-card {
+      flex-basis: 240px;
+    }
   }
 
   @media (min-width: 900px) {
     .fragment-grid {
+      display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
     }
   }
