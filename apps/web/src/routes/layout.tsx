@@ -31,7 +31,6 @@ export const RouterHead = component$(() => {
       <meta name="theme-color" content="#f97316" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link rel="preload" as="style" href={fontsHref} />
       <link rel="stylesheet" href={fontsHref} />
     </>
   )

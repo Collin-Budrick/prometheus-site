@@ -48,8 +48,6 @@ type EarlyHint = {
 type QwikManifest = {
   core?: string
   preloader?: string
-  injections?: Array<{ tag?: string; attributes?: Record<string, string> }>
-  assets?: Record<string, unknown>
 }
 
 const earlyHintLimit = 5
@@ -93,29 +91,9 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values()).slice(0, earlyHintLimit)
 }
 
-const normalizeManifestHref = (value: string) => {
-  if (value.startsWith('http://') || value.startsWith('https://')) return value
-  return value.startsWith('/') ? value : `/${value}`
-}
-
 const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   if (!manifest) return []
   const hints: EarlyHint[] = []
-  const styleHrefs = new Set<string>()
-
-  if (Array.isArray(manifest.injections)) {
-    manifest.injections.forEach((injection) => {
-      if (injection.tag !== 'link') return
-      const rel = injection.attributes?.rel?.toLowerCase()
-      if (rel !== 'stylesheet') return
-      const href = injection.attributes?.href?.trim()
-      if (href) styleHrefs.add(normalizeManifestHref(href))
-    })
-  }
-
-  styleHrefs.forEach((href) => {
-    hints.push({ href, as: 'style' })
-  })
 
   if (manifest.core) {
     hints.push({ href: `/build/${manifest.core}`, rel: 'modulepreload' })

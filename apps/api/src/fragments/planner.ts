@@ -1,10 +1,7 @@
 import { getFragmentDefinition } from './definitions'
 import type { EarlyHint, FragmentPlan, FragmentPlanEntry } from './types'
 
-const fontsHref =
-  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
-
-const shellEarlyHints: EarlyHint[] = [{ href: fontsHref, as: 'style' }]
+const shellEarlyHints: EarlyHint[] = []
 
 const buildEarlyHints = () => shellEarlyHints.slice(0, 5)
 
