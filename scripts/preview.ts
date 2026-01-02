@@ -17,10 +17,13 @@ const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
 const previewEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
+const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
 
 const normalizeBasePort = (value: string) => {
   try {
@@ -58,10 +61,13 @@ const composeEnv = {
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
   VITE_ENABLE_PREFETCH: previewEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
   VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
   VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
   VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors,
-  ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport
+  ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
+  WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
+  WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
 
 ensureCaddyConfig('http://web:4173')
@@ -84,6 +90,7 @@ const fingerprint = computeFingerprint(buildInputs, {
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
   VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
   VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
   VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
   VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS

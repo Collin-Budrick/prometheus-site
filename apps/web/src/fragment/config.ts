@@ -102,6 +102,18 @@ const resolveWebTransportFlag = (env: EnvConfig) => {
 
 export const isWebTransportPreferred = (env: EnvConfig = getEnv()) => isTruthyFlag(resolveWebTransportFlag(env))
 
+const resolveWebTransportDatagramsFlag = (env: EnvConfig) => {
+  const processFlag =
+    typeof process !== 'undefined' && typeof process.env?.ENABLE_WEBTRANSPORT_DATAGRAMS !== 'undefined'
+      ? process.env.ENABLE_WEBTRANSPORT_DATAGRAMS
+      : undefined
+
+  return processFlag ?? env.ENABLE_WEBTRANSPORT_DATAGRAMS ?? env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS
+}
+
+export const isWebTransportDatagramsPreferred = (env: EnvConfig = getEnv()) =>
+  isTruthyFlag(resolveWebTransportDatagramsFlag(env))
+
 const resolveCompressionFlag = (env: EnvConfig) => {
   const processFlag =
     typeof process !== 'undefined' && typeof process.env?.ENABLE_FRAGMENT_COMPRESSION !== 'undefined'

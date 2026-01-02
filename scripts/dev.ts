@@ -16,10 +16,13 @@ const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const devWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const devEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const devEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
 const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
 const devEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
 const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
+const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
+const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
 
 const composeEnv = {
   ...process.env,
@@ -30,7 +33,9 @@ const composeEnv = {
   PROMETHEUS_POSTGRES_PORT: devPostgresPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
-  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport
+  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
+  WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
+  WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
 }
 
 const { devUpstream } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim())
@@ -107,6 +112,7 @@ const webEnv = {
   VITE_WEBTRANSPORT_BASE: devWebTransportBase,
   VITE_ENABLE_PREFETCH: devEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: devEnableWebTransportDatagrams,
   VITE_ENABLE_FRAGMENT_COMPRESSION: devEnableCompression,
   VITE_ENABLE_ANALYTICS: devEnableAnalytics,
   VITE_REPORT_CLIENT_ERRORS: devEnableClientErrors,

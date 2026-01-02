@@ -2,6 +2,7 @@ package main
 
 import (
   "context"
+  "encoding/binary"
   "errors"
   "fmt"
   "io"
@@ -10,6 +11,7 @@ import (
   "net/http"
   "net/url"
   "os"
+  "strconv"
   "strings"
   "time"
 
@@ -26,6 +28,8 @@ type config struct {
   upstreamTimeout time.Duration
   allowedOrigins  map[string]struct{}
   allowAnyOrigin  bool
+  enableDatagrams bool
+  maxDatagramSize int
 }
 
 func loadConfig() config {
@@ -36,6 +40,8 @@ func loadConfig() config {
   timeout := parseDuration(getEnv("WEBTRANSPORT_UPSTREAM_TIMEOUT", "0s"))
   allowedOrigins := parseAllowedOrigins(getEnv("WEBTRANSPORT_ALLOWED_ORIGINS", ""))
   allowAnyOrigin := isTruthyFlag(getEnv("WEBTRANSPORT_ALLOW_ANY_ORIGIN", ""))
+  enableDatagrams := isTruthyFlag(getEnv("WEBTRANSPORT_ENABLE_DATAGRAMS", ""))
+  maxDatagramSize := parseInt(getEnv("WEBTRANSPORT_MAX_DATAGRAM_SIZE", "1200"), 1200)
 
   return config{
     addr:            addr,
@@ -45,6 +51,8 @@ func loadConfig() config {
     upstreamTimeout: timeout,
     allowedOrigins:  allowedOrigins,
     allowAnyOrigin:  allowAnyOrigin,
+    enableDatagrams: enableDatagrams,
+    maxDatagramSize: maxDatagramSize,
   }
 }
 
@@ -63,6 +71,18 @@ func parseDuration(raw string) time.Duration {
   parsed, err := time.ParseDuration(value)
   if err != nil {
     return 0
+  }
+  return parsed
+}
+
+func parseInt(raw string, fallback int) int {
+  value := strings.TrimSpace(raw)
+  if value == "" {
+    return fallback
+  }
+  parsed, err := strconv.Atoi(value)
+  if err != nil || parsed <= 0 {
+    return fallback
   }
   return parsed
 }
@@ -217,6 +237,10 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
     path = "/"
   }
   log.Printf("webtransport handling path=%q", path)
+  useDatagrams := cfg.enableDatagrams &&
+    cfg.maxDatagramSize > 0 &&
+    isTruthyFlag(r.URL.Query().Get("datagrams")) &&
+    session.ConnectionState().SupportsDatagrams
 
   ctx := context.Background()
   if cfg.upstreamTimeout > 0 {
@@ -268,11 +292,115 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
     return
   }
 
-  bytesWritten, err := io.Copy(stream, resp.Body)
+  if !useDatagrams {
+    bytesWritten, err := io.Copy(stream, resp.Body)
+    if err != nil {
+      log.Printf("webtransport stream copy failed after %d bytes: %v", bytesWritten, err)
+      _ = session.CloseWithError(0, "stream copy failed")
+      return
+    }
+    log.Printf("webtransport stream copy complete bytes=%d", bytesWritten)
+    return
+  }
+
+  stats, err := relayFragmentDatagrams(ctx, resp.Body, stream, session, cfg.maxDatagramSize)
   if err != nil {
-    log.Printf("webtransport stream copy failed after %d bytes: %v", bytesWritten, err)
+    log.Printf(
+      "webtransport stream copy failed streamBytes=%d datagramBytes=%d datagrams=%d: %v",
+      stats.streamBytes,
+      stats.datagramBytes,
+      stats.datagramFrames,
+      err,
+    )
     _ = session.CloseWithError(0, "stream copy failed")
     return
   }
-  log.Printf("webtransport stream copy complete bytes=%d", bytesWritten)
+  log.Printf(
+    "webtransport stream copy complete streamBytes=%d datagramBytes=%d datagrams=%d",
+    stats.streamBytes,
+    stats.datagramBytes,
+    stats.datagramFrames,
+  )
+}
+
+type relayStats struct {
+  streamBytes   int64
+  datagramBytes int64
+  streamFrames  int
+  datagramFrames int
+}
+
+func nextFrame(buffer []byte) (frame []byte, rest []byte, ok bool) {
+  if len(buffer) < 8 {
+    return nil, buffer, false
+  }
+  idLength := binary.LittleEndian.Uint32(buffer[0:4])
+  payloadLength := binary.LittleEndian.Uint32(buffer[4:8])
+  frameSize := int(8 + idLength + payloadLength)
+  if frameSize < 8 || frameSize > len(buffer) {
+    return nil, buffer, false
+  }
+  return buffer[:frameSize], buffer[frameSize:], true
+}
+
+func relayFragmentDatagrams(
+  ctx context.Context,
+  upstream io.Reader,
+  stream io.Writer,
+  session *webtransport.Session,
+  maxDatagramSize int,
+) (relayStats, error) {
+  stats := relayStats{}
+  buffer := make([]byte, 0, 64*1024)
+  scratch := make([]byte, 32*1024)
+
+  for {
+    if ctx.Err() != nil {
+      return stats, ctx.Err()
+    }
+    n, err := upstream.Read(scratch)
+    if n > 0 {
+      buffer = append(buffer, scratch[:n]...)
+    }
+
+    for {
+      frame, rest, ok := nextFrame(buffer)
+      if !ok {
+        break
+      }
+
+      sent := false
+      if maxDatagramSize > 0 && len(frame) <= maxDatagramSize {
+        if sendErr := session.SendDatagram(frame); sendErr == nil {
+          stats.datagramBytes += int64(len(frame))
+          stats.datagramFrames += 1
+          sent = true
+        }
+      }
+
+      if !sent {
+        written, writeErr := stream.Write(frame)
+        stats.streamBytes += int64(written)
+        stats.streamFrames += 1
+        if writeErr != nil {
+          return stats, writeErr
+        }
+      }
+
+      buffer = rest
+    }
+
+    if err != nil {
+      if errors.Is(err, io.EOF) {
+        break
+      }
+      return stats, err
+    }
+  }
+
+  if len(buffer) > 0 {
+    return stats, io.ErrUnexpectedEOF
+  }
+
+  return stats, nil
 }

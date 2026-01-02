@@ -1,6 +1,12 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
 import { decodeFragmentPayload } from './binary'
-import { getApiBase, getWebTransportBase, isFragmentCompressionPreferred, isWebTransportPreferred } from './config'
+import {
+  getApiBase,
+  getWebTransportBase,
+  isFragmentCompressionPreferred,
+  isWebTransportDatagramsPreferred,
+  isWebTransportPreferred
+} from './config'
 
 const concat = (a: Uint8Array, b: Uint8Array) => {
   const next = new Uint8Array(a.length + b.length)
@@ -16,6 +22,11 @@ type WebTransportConstructor = new (url: string, options?: Record<string, unknow
   incomingBidirectionalStreams?: ReadableStream<{
     readable: ReadableStream<Uint8Array>
   }>
+  datagrams?: {
+    readable: ReadableStream<Uint8Array>
+    writable: WritableStream<Uint8Array>
+    maxDatagramSize?: number
+  }
 }
 
 type StreamMetrics = {
@@ -333,11 +344,32 @@ const streamFragmentsWithWebTransport = async (
   if (!ctor) return false
 
   const api = toAbsoluteApiBase(getWebTransportBase())
+  if (!api) return false
   const metrics: StreamMetrics = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(), frames: 0 }
-  const transport = new ctor(`${api}/fragments/transport?path=${encodeURIComponent(path)}`)
+  const preferDatagrams = isWebTransportDatagramsPreferred()
+  const supportsDatagrams = Boolean(
+    (ctor as unknown as { prototype?: object })?.prototype &&
+      'datagrams' in (ctor as unknown as { prototype: object }).prototype
+  )
+  const url = new URL(`${api}/fragments/transport`)
+  url.searchParams.set('path', path)
+  if (preferDatagrams && supportsDatagrams) {
+    url.searchParams.set('datagrams', '1')
+  }
+  const transport = new ctor(url.toString())
 
   try {
     await transport.ready
+    const datagramReader =
+      preferDatagrams && supportsDatagrams ? transport.datagrams?.readable?.getReader() ?? null : null
+    const datagramTask = datagramReader
+      ? readFragmentStream(datagramReader, onFragment, signal, metrics).catch((error) => {
+          if (!signal?.aborted) {
+            console.warn('[fragment-stream][datagram] read failed', error)
+          }
+          return 'aborted'
+        })
+      : null
     const incoming = transport.incomingBidirectionalStreams?.getReader()
     if (!incoming) {
       throw new Error('WebTransport incoming bidirectional streams are unavailable')
@@ -349,6 +381,16 @@ const streamFragmentsWithWebTransport = async (
     const reader = bidi.readable.getReader()
 
     const status = await readFragmentStream(reader, onFragment, signal, metrics)
+    if (datagramReader) {
+      try {
+        await datagramReader.cancel()
+      } catch {
+        // ignore cancellation errors
+      }
+      if (datagramTask) {
+        await datagramTask
+      }
+    }
     logStreamMetrics('webtransport', metrics, status)
     return true
   } catch (error) {
