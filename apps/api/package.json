@@ -23,8 +23,8 @@
     "@better-auth/passkey": "^1.5.0-beta.2",
     "@valkey/client": "1.0.0",
     "better-auth": "^1.5.0-beta.2",
-    "drizzle-orm": "1.0.0-beta.8-734e789",
-    "drizzle-zod": "1.0.0-beta.8-734e789",
+    "drizzle-orm": "1.0.0-beta.8-dbc3565",
+    "drizzle-zod": "1.0.0-beta.8-dbc3565",
     "elysia": "1.4.19",
     "postgres": "3.4.7",
     "react": "19.3.0-canary-fd524fe0-20251121",
@@ -35,10 +35,10 @@
     "@types/node": "25.0.3",
     "@types/react": "^19.2.7",
     "bun-types": "1.3.6-canary.20260101T140646",
-    "drizzle-kit": "1.0.0-beta.8-734e789",
+    "drizzle-kit": "1.0.0-beta.8-dbc3565",
     "oxfmt": "0.21.0",
     "oxlint": "1.36.0",
-    "typescript": "6.0.0-dev.20260101"
+    "typescript": "6.0.0-dev.20260102"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "^1.36.0"

@@ -1,6 +1,9 @@
 services:
   caddy:
     image: caddy:2.10.2
+    depends_on:
+      web:
+        condition: service_healthy
     ports:
       - "${PROMETHEUS_HTTP_PORT:-80}:80"
       - "${PROMETHEUS_HTTPS_PORT:-443}:443"
@@ -111,6 +114,16 @@ services:
     depends_on:
       api:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bun -e \"fetch('http://127.0.0.1:4173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
 volumes:
   caddy_data:

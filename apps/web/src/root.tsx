@@ -134,6 +134,30 @@ const PrefetchSignals = component$(() => {
 export default component$(() => (
   <QwikCityProvider viewTransition>
     <head>
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `(function () {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const markReady = () => {
+    if (document.querySelector('[data-motion]')) {
+      document.documentElement.dataset.motionReady = 'true';
+      return true;
+    }
+    return false;
+  };
+  if (markReady()) return;
+  const check = () => {
+    if (markReady()) return;
+    if (document.readyState === 'loading') {
+      requestAnimationFrame(check);
+    }
+  };
+  if (document.readyState === 'loading') {
+    requestAnimationFrame(check);
+  }
+})();`
+        }}
+      />
       <meta charSet="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <RouterHead />
