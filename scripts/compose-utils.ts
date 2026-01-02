@@ -63,7 +63,7 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string) => {
     `${host} {\n\ttls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key\n\theader {\n\t\talt-svc \"h3=\\\":443\\\"; ma=2592000\"\n\t}\n\n\thandle_path /api/* {\n\t\treverse_proxy http://api:4000\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy \"same-origin\"\n\t\t\tCross-Origin-Embedder-Policy \"require-corp\"\n\t\t}\n\t\treverse_proxy ${upstream}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream}\n\t}\n}\n`
 
   const config =
-    `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://prometheus.dev, http://prometheus.prod {\n\tredir https://{host}{uri}\n}\n\n${buildSite(
+    `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2 h3\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://prometheus.dev, http://prometheus.prod {\n\tredir https://{host}{uri}\n}\n\n${buildSite(
       'https://prometheus.dev',
       devUpstream
     )}\n${buildSite('https://prometheus.prod', prodUpstream)}`

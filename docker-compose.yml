@@ -4,6 +4,7 @@ services:
     ports:
       - "${PROMETHEUS_HTTP_PORT:-80}:80"
       - "${PROMETHEUS_HTTPS_PORT:-443}:443"
+      - "${PROMETHEUS_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./infra/traefik/certs:/etc/caddy/certs:ro
@@ -83,7 +84,7 @@ services:
     volumes:
       - ./infra/traefik/certs:/etc/caddy/certs:ro
     ports:
-      - "${PROMETHEUS_WEBTRANSPORT_PORT:-443}:4444/udp"
+      - "${PROMETHEUS_WEBTRANSPORT_PORT:-4444}:4444/udp"
     expose:
       - "4444/udp"
     depends_on:

@@ -11,7 +11,7 @@ const devHttpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
 const devApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
 const devPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
 const devValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
-const devWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '443'
+const devWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
 const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const devWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
@@ -86,8 +86,7 @@ const normalizeBasePort = (value: string) => {
 
 const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
 const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
-const defaultWebTransportBase =
-  devWebTransportPort === '443' ? `https://${devWebHost}` : `https://${devWebHost}:${devWebTransportPort}`
+const defaultWebTransportBase = `https://${devWebHost}:${devWebTransportPort}`
 const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
 const legacyMatchesPort = legacyPort ? legacyPort === devWebTransportPort : true
 const devWebTransportBase = explicitWebTransportBase

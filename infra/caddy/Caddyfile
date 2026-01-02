@@ -1,7 +1,7 @@
 {
 	auto_https off
 	servers :443 {
-		protocols h1 h2
+		protocols h1 h2 h3
 	}
 	servers :80 {
 		protocols h1
@@ -27,11 +27,11 @@ https://prometheus.dev {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://172.27.130.51:4173
+		reverse_proxy http://web:4173
 	}
 
 	handle {
-		reverse_proxy http://172.27.130.51:4173
+		reverse_proxy http://web:4173
 	}
 }
 
@@ -51,10 +51,10 @@ https://prometheus.prod {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://172.27.130.51:4173
+		reverse_proxy http://web:4173
 	}
 
 	handle {
-		reverse_proxy http://172.27.130.51:4173
+		reverse_proxy http://web:4173
 	}
 }

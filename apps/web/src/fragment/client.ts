@@ -352,11 +352,20 @@ const streamFragmentsWithWebTransport = async (
     logStreamMetrics('webtransport', metrics, status)
     return true
   } catch (error) {
-    if (metrics.frames > 0 && isWebTransportReset(error)) {
+    if (signal?.aborted) {
+      logStreamMetrics('webtransport', metrics, 'aborted')
+      return true
+    }
+    if (metrics.frames > 0) {
       logStreamMetrics('webtransport', metrics, 'ok')
       return true
     }
-    logStreamMetrics('webtransport', metrics, signal?.aborted ? 'aborted' : 'error')
+    if (isWebTransportReset(error)) {
+      logStreamMetrics('webtransport', metrics, 'error')
+      onError?.(error)
+      return false
+    }
+    logStreamMetrics('webtransport', metrics, 'error')
     onError?.(error)
     return false
   } finally {
