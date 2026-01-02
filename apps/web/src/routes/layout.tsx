@@ -5,8 +5,14 @@ import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 
 const fontsHref =
   'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
-const fontsHrefEscaped = fontsHref.replace(/&/g, '&amp;')
-const fontsLinkMarkup = `<link rel="preload" as="style" href="${fontsHrefEscaped}" onload="this.onload=null;this.rel='stylesheet'">`
+
+const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
+  const escapedHref = href.replace(/&/g, '&amp;')
+  const crossoriginAttr = crossorigin ? ` crossorigin="${crossorigin}"` : ''
+  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr} onload="this.onload=null;this.rel='stylesheet'">`
+}
+
+const fontsLinkMarkup = buildStylesheetPreloadMarkup(fontsHref, 'anonymous')
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
@@ -25,9 +31,21 @@ export const RouterHead = component$(() => {
       {head.meta.map((meta) => (
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
-      {head.links.map((link) => (
-        <link key={`${link.rel}-${link.href}`} {...link} />
-      ))}
+      {head.links.flatMap((link) => {
+        if (link.rel === 'stylesheet' && typeof link.href === 'string') {
+          return [
+            <HTMLFragment
+              key={`preload-style-${link.href}`}
+              dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(link.href, link.crossorigin)}
+            />,
+            <noscript key={`noscript-style-${link.href}`}>
+              <link {...link} />
+            </noscript>
+          ]
+        }
+
+        return <link key={`${link.rel}-${link.href}`} {...link} />
+      })}
       <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       <link rel="icon" href="/favicon.ico" sizes="any" />
       <link rel="manifest" href="/manifest.webmanifest" />

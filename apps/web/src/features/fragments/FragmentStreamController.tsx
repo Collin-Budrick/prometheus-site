@@ -7,6 +7,7 @@ import type {
   FragmentPayloadValue,
   FragmentPlanValue
 } from '../../fragment/types'
+import { scheduleIdleTask } from '../../components/motion-idle'
 import { resolveFragments, resolvePlan } from './utils'
 
 type FragmentStreamControllerProps = {
@@ -22,7 +23,7 @@ export const FragmentStreamController = component$(
     useVisibleTask$(({ cleanup }) => {
       let active = true
       const controller = new AbortController()
-      status.value = 'streaming'
+      let fallbackTimer: number | null = null
 
       if (!fragments.value || !Object.keys(fragments.value).length) {
         fragments.value = resolveFragments(initialFragments) ?? {}
@@ -57,54 +58,61 @@ export const FragmentStreamController = component$(
         }
       }
 
-      const missingAtMount = planValue.fragments.map((entry) => entry.id).filter((id) => !fragments.value[id])
-      const fallbackTimer = missingAtMount.length
-        ? window.setTimeout(() => {
-            if (!active) return
-            void hydrateMissingFragments()
-          }, 2000)
-        : null
-
-      const handleFragment = (payload: FragmentPayload) => {
+      const startStreaming = () => {
         if (!active) return
-        applyFragmentEffects(payload)
-        const update = () => {
-          const current = fragments.value
-          if (current[payload.id] === payload) return
-          const next = structuredClone(current)
-          next[payload.id] = payload
-          fragments.value = next
+        status.value = 'streaming'
+        const missingAtMount = planValue.fragments.map((entry) => entry.id).filter((id) => !fragments.value[id])
+        fallbackTimer = missingAtMount.length
+          ? window.setTimeout(() => {
+              if (!active) return
+              void hydrateMissingFragments()
+            }, 2000)
+          : null
+
+        const handleFragment = (payload: FragmentPayload) => {
+          if (!active) return
+          applyFragmentEffects(payload)
+          const update = () => {
+            const current = fragments.value
+            if (current[payload.id] === payload) return
+            const next = structuredClone(current)
+            next[payload.id] = payload
+            fragments.value = next
+          }
+          const startTransition = document.startViewTransition
+          if (typeof startTransition === 'function') {
+            startTransition.call(document, update)
+          } else {
+            update()
+          }
         }
-        const startTransition = document.startViewTransition
-        if (typeof startTransition === 'function') {
-          startTransition.call(document, update)
-        } else {
-          update()
-        }
+
+        streamFragments(path, handleFragment, undefined, controller.signal)
+          .then(() => {
+            if (!active) return
+            if (fallbackTimer) window.clearTimeout(fallbackTimer)
+            status.value = 'idle'
+            void hydrateMissingFragments()
+          })
+          .catch((error) => {
+            if (!active) return
+            if (fallbackTimer) window.clearTimeout(fallbackTimer)
+            if ((error as Error)?.name === 'AbortError' || controller.signal.aborted) {
+              status.value = 'idle'
+              return
+            }
+            console.error('Fragment stream failed', error)
+            status.value = 'error'
+            void hydrateMissingFragments()
+          })
       }
 
-      streamFragments(path, handleFragment, undefined, controller.signal)
-        .then(() => {
-          if (!active) return
-          if (fallbackTimer) window.clearTimeout(fallbackTimer)
-          status.value = 'idle'
-          void hydrateMissingFragments()
-        })
-        .catch((error) => {
-          if (!active) return
-          if (fallbackTimer) window.clearTimeout(fallbackTimer)
-          if ((error as Error)?.name === 'AbortError' || controller.signal.aborted) {
-            status.value = 'idle'
-            return
-          }
-          console.error('Fragment stream failed', error)
-          status.value = 'error'
-          void hydrateMissingFragments()
-        })
+      const stopIdle = scheduleIdleTask(startStreaming, 320)
 
       cleanup(() => {
         active = false
         controller.abort()
+        stopIdle()
         if (fallbackTimer) window.clearTimeout(fallbackTimer)
         teardownFragmentEffects(Object.keys(fragments.value))
       })

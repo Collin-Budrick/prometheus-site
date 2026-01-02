@@ -1,6 +1,7 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
 import { CardExpandMotion } from './components/CardExpandMotion'
+import { scheduleIdleTask } from './components/motion-idle'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
@@ -113,18 +114,24 @@ const PrefetchSignals = component$(() => {
     let stopPrefetch: (() => void) | undefined
     let cancelled = false
 
-    initQuicklinkPrefetch(import.meta.env, true)
-      .then((stop) => {
-        if (cancelled) {
-          stop?.()
-          return
-        }
-        stopPrefetch = stop
-      })
-      .catch((error) => console.warn('[prefetch] Quicklink initialization failed', error))
+    const startPrefetch = () => {
+      if (cancelled) return
+      initQuicklinkPrefetch(import.meta.env, true)
+        .then((stop) => {
+          if (cancelled) {
+            stop?.()
+            return
+          }
+          stopPrefetch = stop
+        })
+        .catch((error) => console.warn('[prefetch] Quicklink initialization failed', error))
+    }
+
+    const stopIdle = scheduleIdleTask(startPrefetch, 800)
 
     cleanup(() => {
       cancelled = true
+      stopIdle()
       stopPrefetch?.()
     })
   })
