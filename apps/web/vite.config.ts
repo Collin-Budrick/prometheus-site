@@ -213,70 +213,72 @@ const earlyHintsPlugin = (): Plugin => {
   }
 }
 
-export default defineConfig(async () => {
-  const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
-  const useProxyHttps = process.env.VITE_DEV_HTTPS === '1' || process.env.VITE_DEV_HTTPS === 'true'
-  const devHttpsPort = process.env.VITE_DEV_HTTPS_PORT?.trim()
-  const hmrHost = process.env.VITE_HMR_HOST?.trim() || (useProxyHttps ? devHost : undefined)
-  const hmrProtocol =
-    process.env.VITE_HMR_PROTOCOL?.trim() || (useProxyHttps ? 'wss' : undefined)
-  const hmrClientPort = Number.parseInt(process.env.VITE_HMR_CLIENT_PORT || '', 10)
-  const hmrPort = Number.parseInt(process.env.VITE_HMR_PORT || '', 10)
-  const hmrPath = process.env.VITE_HMR_PATH?.trim()
-  const hmrEnabled =
-    useProxyHttps ||
-    !!hmrHost ||
-    !!hmrProtocol ||
-    Number.isFinite(hmrClientPort) ||
-    Number.isFinite(hmrPort) ||
-    !!hmrPath
-  const binding = await loadQwikBinding()
+export default defineConfig(
+  (async () => {
+    const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
+    const useProxyHttps = process.env.VITE_DEV_HTTPS === '1' || process.env.VITE_DEV_HTTPS === 'true'
+    const devHttpsPort = process.env.VITE_DEV_HTTPS_PORT?.trim()
+    const hmrHost = process.env.VITE_HMR_HOST?.trim() || (useProxyHttps ? devHost : undefined)
+    const hmrProtocol =
+      process.env.VITE_HMR_PROTOCOL?.trim() || (useProxyHttps ? 'wss' : undefined)
+    const hmrClientPort = Number.parseInt(process.env.VITE_HMR_CLIENT_PORT || '', 10)
+    const hmrPort = Number.parseInt(process.env.VITE_HMR_PORT || '', 10)
+    const hmrPath = process.env.VITE_HMR_PATH?.trim()
+    const hmrEnabled =
+      useProxyHttps ||
+      !!hmrHost ||
+      !!hmrProtocol ||
+      Number.isFinite(hmrClientPort) ||
+      Number.isFinite(hmrPort) ||
+      !!hmrPath
+    const binding = await loadQwikBinding()
 
-  return {
-    plugins: [
-      earlyHintsPlugin(),
-      tailwindcss(),
-      qwikCity(),
-      qwikVite({ optimizerOptions: { binding } }),
-      compression({
-        algorithms: [
-          defineAlgorithm('brotliCompress', {
-            params: {
-              [constants.BROTLI_PARAM_QUALITY]: 6
-            }
-          }),
-          'gzip'
-        ]
-      })
-    ],
-    oxc: false,
-    css: {
-      transformer: 'lightningcss'
-    },
-    build: {
-      cssMinify: 'lightningcss'
-    },
-    server: {
-      host: true,
-      port: 4173,
-      strictPort: true,
-      origin: useProxyHttps
-        ? `https://${devHost}${devHttpsPort && devHttpsPort !== '443' ? `:${devHttpsPort}` : ''}`
-        : undefined,
-      allowedHosts: useProxyHttps ? [devHost] : undefined,
-      hmr: hmrEnabled
-        ? {
-          protocol: hmrProtocol,
-          host: hmrHost,
-          clientPort: Number.isFinite(hmrClientPort) ? hmrClientPort : useProxyHttps ? 443 : undefined,
-          port: Number.isFinite(hmrPort) ? hmrPort : undefined,
-          path: hmrPath || undefined
-        }
-        : undefined
-    },
-    preview: {
-      port: 4173,
-      allowedHosts: ['prometheus.prod', 'prometheus.dev']
+    return {
+      plugins: [
+        earlyHintsPlugin(),
+        tailwindcss(),
+        qwikCity(),
+        qwikVite({ optimizerOptions: { binding } }),
+        compression({
+          algorithms: [
+            defineAlgorithm('brotliCompress', {
+              params: {
+                [constants.BROTLI_PARAM_QUALITY]: 6
+              }
+            }),
+            'gzip'
+          ]
+        })
+      ],
+      oxc: false,
+      css: {
+        transformer: 'lightningcss'
+      },
+      build: {
+        cssMinify: 'lightningcss'
+      },
+      server: {
+        host: true,
+        port: 4173,
+        strictPort: true,
+        origin: useProxyHttps
+          ? `https://${devHost}${devHttpsPort && devHttpsPort !== '443' ? `:${devHttpsPort}` : ''}`
+          : undefined,
+        allowedHosts: useProxyHttps ? [devHost] : undefined,
+        hmr: hmrEnabled
+          ? {
+            protocol: hmrProtocol,
+            host: hmrHost,
+            clientPort: Number.isFinite(hmrClientPort) ? hmrClientPort : useProxyHttps ? 443 : undefined,
+            port: Number.isFinite(hmrPort) ? hmrPort : undefined,
+            path: hmrPath || undefined
+          }
+          : undefined
+      },
+      preview: {
+        port: 4173,
+        allowedHosts: ['prometheus.prod', 'prometheus.dev']
+      }
     }
-  }
-})
+  })()
+)
