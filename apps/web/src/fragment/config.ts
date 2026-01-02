@@ -123,4 +123,8 @@ const resolveCompressionFlag = (env: EnvConfig) => {
   return processFlag ?? env.ENABLE_FRAGMENT_COMPRESSION ?? env.VITE_ENABLE_FRAGMENT_COMPRESSION
 }
 
-export const isFragmentCompressionPreferred = (env: EnvConfig = getEnv()) => isTruthyFlag(resolveCompressionFlag(env))
+export const isFragmentCompressionPreferred = (env: EnvConfig = getEnv()) => {
+  const flag = resolveCompressionFlag(env)
+  if (typeof flag === 'undefined') return true
+  return isTruthyFlag(flag)
+}
