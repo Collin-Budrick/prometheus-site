@@ -1,7 +1,12 @@
-import { component$, Slot } from '@builder.io/qwik'
+import { component$, HTMLFragment, Slot } from '@builder.io/qwik'
 import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
+
+const fontsHref =
+  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
+const fontsHrefEscaped = fontsHref.replace(/&/g, '&amp;')
+const fontsLinkMarkup = `<link rel="preload" as="style" href="${fontsHrefEscaped}" onload="this.onload=null;this.rel='stylesheet'">`
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
@@ -14,8 +19,6 @@ export const onRequest: RequestHandler = ({ headers, method }) => {
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
-  const fontsHref =
-    'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
   return (
     <>
       <title>{head.title}</title>
@@ -31,7 +34,10 @@ export const RouterHead = component$(() => {
       <meta name="theme-color" content="#f97316" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link rel="stylesheet" href={fontsHref} />
+      <HTMLFragment dangerouslySetInnerHTML={fontsLinkMarkup} />
+      <noscript>
+        <link rel="stylesheet" href={fontsHref} />
+      </noscript>
     </>
   )
 })

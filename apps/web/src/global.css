@@ -342,6 +342,72 @@
     background-color: rgb(var(--surface) / 0.9);
   }
 
+  .fragment-card.is-expanded {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 60;
+    border-radius: 0;
+    overflow: auto;
+  }
+
+  .fragment-card-close {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 70;
+    width: 38px;
+    height: 38px;
+    border-radius: 9999px;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    background: rgba(255, 255, 255, 0.88);
+    color: rgb(var(--ink));
+    display: grid;
+    place-items: center;
+    padding: 0;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+
+  .fragment-card-close::before,
+  .fragment-card-close::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 9999px;
+  }
+
+  .fragment-card-close::before {
+    transform: rotate(45deg);
+  }
+
+  .fragment-card-close::after {
+    transform: rotate(-45deg);
+  }
+
+  .fragment-card-close:hover {
+    background: rgb(var(--surface));
+    box-shadow: 0 16px 28px rgba(15, 23, 42, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .fragment-card-close:focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 3px;
+  }
+
+  .fragment-card-placeholder {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  body.card-expanded {
+    overflow: hidden;
+  }
+
   .skeleton-line {
     @apply block rounded-full bg-slate-200/70;
     height: 14px;

@@ -1,5 +1,6 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
+import { CardExpandMotion } from './components/CardExpandMotion'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
@@ -164,6 +165,7 @@ export default component$(() => (
       <DocumentLang />
       <ClientSignals />
       <PrefetchSignals />
+      <CardExpandMotion />
       <RouteMotion />
       <RouterOutlet />
     </body>
