@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { computeFingerprint, ensureTraefikStackConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
+import { computeFingerprint, ensureCaddyConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -11,6 +11,7 @@ const devHttpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
 const devApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
 const devPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
 const devValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
+const devWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '443'
 const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const devEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
@@ -27,11 +28,11 @@ const composeEnv = {
   PROMETHEUS_API_PORT: devApiPort,
   PROMETHEUS_POSTGRES_PORT: devPostgresPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
-  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
-  TRAEFIK_DYNAMIC: 'stack'
+  PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
+  ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport
 }
 
-const webUpstream = ensureTraefikStackConfig(process.env.DEV_WEB_UPSTREAM?.trim())
+const { devUpstream } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim())
 let keepContainers = false
 
 const buildInputs = [
@@ -40,6 +41,7 @@ const buildInputs = [
   'bunfig.toml',
   'docker-compose.yml',
   'apps/api',
+  'apps/webtransport',
   'apps/web/package.json'
 ]
 const cacheKey = 'dev'
@@ -48,13 +50,17 @@ const fingerprint = computeFingerprint(buildInputs)
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
 if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api'], composeEnv)
+  const build = runSync(command, [...prefix, 'build', 'api', 'webtransport'], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const up = runSync(command, [...prefix, 'up', '-d', 'postgres', 'valkey', 'api', 'traefik'], composeEnv)
+const up = runSync(
+  command,
+  [...prefix, 'up', '-d', '--remove-orphans', 'postgres', 'valkey', 'api', 'webtransport', 'caddy'],
+  composeEnv
+)
 if (up.status !== 0) process.exit(up.status ?? 1)
-runSync(command, [...prefix, 'restart', 'traefik'], composeEnv)
+runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
 
 cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
 saveBuildCache(cache)
@@ -65,6 +71,29 @@ const bunBin =
   'bun'
 
 const devHttpsHost = devHttpsPort === '443' ? 'prometheus.dev' : `prometheus.dev:${devHttpsPort}`
+const normalizeBasePort = (value: string) => {
+  try {
+    const url = new URL(value)
+    if (url.port) return url.port
+    if (url.protocol === 'https:') return '443'
+    if (url.protocol === 'http:') return '80'
+  } catch {
+    return null
+  }
+  return null
+}
+
+const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
+const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
+const defaultWebTransportBase =
+  devWebTransportPort === '443' ? 'https://prometheus.dev' : `https://prometheus.dev:${devWebTransportPort}`
+const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
+const legacyMatchesPort = legacyPort ? legacyPort === devWebTransportPort : true
+const devWebTransportBase = explicitWebTransportBase
+  ? explicitWebTransportBase
+  : legacyWebTransportBase && legacyMatchesPort
+    ? legacyWebTransportBase
+    : defaultWebTransportBase
 
 const webEnv = {
   ...process.env,
@@ -76,6 +105,7 @@ const webEnv = {
   VITE_HMR_CLIENT_PORT: devHttpsPort,
   VITE_HMR_PORT: '4173',
   VITE_API_BASE: `https://${devHttpsHost}/api`,
+  VITE_WEBTRANSPORT_BASE: devWebTransportBase,
   VITE_ENABLE_PREFETCH: devEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,
   VITE_ENABLE_FRAGMENT_COMPRESSION: devEnableCompression,
@@ -92,16 +122,17 @@ const web = Bun.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {
 })
 
 try {
-  const resolved = await lookup('prometheus.dev')
-  if (resolved.address !== '127.0.0.1' && resolved.address !== '::1') {
+  const resolved = await lookup('prometheus.dev', { all: true })
+  const isLocal = resolved.some((entry) => entry.address === '127.0.0.1' || entry.address === '::1')
+  if (!isLocal) {
     console.warn('prometheus.dev does not resolve to localhost. Add it to your hosts file to use HTTPS routing.')
   }
 } catch {
   console.warn('prometheus.dev is not resolvable. Add it to your hosts file to use HTTPS routing.')
 }
 
-if (webUpstream.includes('host.docker.internal')) {
-  console.warn('Using host.docker.internal for Traefik web upstream. If you are in WSL, set DEV_WEB_UPSTREAM.')
+if (devUpstream.includes('host.docker.internal')) {
+  console.warn('Using host.docker.internal for Caddy web upstream. If you are in WSL, set DEV_WEB_UPSTREAM.')
 }
 
 const down = () => {

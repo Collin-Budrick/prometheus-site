@@ -1,14 +1,14 @@
 services:
-  traefik:
-    image: traefik:v3.6.6
+  caddy:
+    image: caddy:2.10.2
     ports:
       - "${PROMETHEUS_HTTP_PORT:-80}:80"
       - "${PROMETHEUS_HTTPS_PORT:-443}:443"
-      - "${PROMETHEUS_HTTPS_PORT:-443}:443/udp"
     volumes:
-      - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./infra/traefik/dynamic/${TRAEFIK_DYNAMIC:-stack}.yml:/etc/traefik/dynamic/dynamic.yml:ro
-      - ./infra/traefik/certs:/etc/traefik/certs:ro
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./infra/traefik/certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -70,6 +70,26 @@ services:
     ports:
       - "${PROMETHEUS_API_PORT:-4000}:4000"
 
+  webtransport:
+    build:
+      context: .
+      dockerfile: apps/webtransport/Dockerfile
+    environment:
+      WEBTRANSPORT_API_BASE: http://api:4000
+      WEBTRANSPORT_LISTEN_ADDR: :4444
+      WEBTRANSPORT_CERT_PATH: /etc/caddy/certs/prometheus.dev+prometheus.prod.pem
+      WEBTRANSPORT_KEY_PATH: /etc/caddy/certs/prometheus.dev+prometheus.prod.key
+      WEBTRANSPORT_ALLOWED_ORIGINS: ${WEBTRANSPORT_ALLOWED_ORIGINS:-https://prometheus.dev,https://prometheus.prod}
+    volumes:
+      - ./infra/traefik/certs:/etc/caddy/certs:ro
+    ports:
+      - "${PROMETHEUS_WEBTRANSPORT_PORT:-443}:4444/udp"
+    expose:
+      - "4444/udp"
+    depends_on:
+      api:
+        condition: service_started
+
   web:
     build:
       context: .
@@ -81,6 +101,7 @@ services:
         VITE_ENABLE_FRAGMENT_COMPRESSION: ${VITE_ENABLE_FRAGMENT_COMPRESSION:-1}
         VITE_ENABLE_ANALYTICS: ${VITE_ENABLE_ANALYTICS:-1}
         VITE_REPORT_CLIENT_ERRORS: ${VITE_REPORT_CLIENT_ERRORS:-1}
+        VITE_WEBTRANSPORT_BASE: ${PROMETHEUS_VITE_WEBTRANSPORT_BASE:-}
     environment:
       API_BASE: http://api:4000
     depends_on:
@@ -88,5 +109,7 @@ services:
         condition: service_started
 
 volumes:
+  caddy_data:
+  caddy_config:
   postgres_data:
   valkey_data:

@@ -61,6 +61,20 @@ export const getApiBase = (env: EnvConfig = getEnv()) => {
   return isDevEnv(env) ? DEFAULT_DEV_API_BASE : ''
 }
 
+export const getWebTransportBase = (env: EnvConfig = getEnv()) => {
+  const processBase =
+    typeof process !== 'undefined' && typeof process.env?.WEBTRANSPORT_BASE === 'string'
+      ? process.env.WEBTRANSPORT_BASE
+      : undefined
+
+  const normalized =
+    normalizeApiBase(processBase) ||
+    normalizeApiBase(env.WEBTRANSPORT_BASE as string | undefined) ||
+    normalizeApiBase(env.VITE_WEBTRANSPORT_BASE as string | undefined)
+
+  return normalized || getApiBase(env)
+}
+
 const resolveWebTransportFlag = (env: EnvConfig) => {
   const processFlag =
     typeof process !== 'undefined' && typeof process.env?.ENABLE_WEBTRANSPORT_FRAGMENTS !== 'undefined'

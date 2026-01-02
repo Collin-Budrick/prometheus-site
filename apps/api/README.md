@@ -22,7 +22,7 @@ Create a `.env` (or pass env vars at runtime) and set:
 - **Better Auth (multi-host):** `BETTER_AUTH_RP_IDS`, `BETTER_AUTH_RP_ORIGINS` (comma-separated, same order)
 - **Better Auth OAuth (optional):** provider pairs such as `BETTER_AUTH_GOOGLE_CLIENT_ID` / `BETTER_AUTH_GOOGLE_CLIENT_SECRET`, plus GitHub/Apple/Discord/Microsoft variants
 
-Passkeys require an RP ID + origin that match the host you serve over HTTPS. For local dev with Traefik + mkcert, set `BETTER_AUTH_RP_ID=localhost` and `BETTER_AUTH_RP_ORIGIN=https://localhost:4173` (or your forwarded dev host) so the WebAuthn challenge matches the browser origin.
+Passkeys require an RP ID + origin that match the host you serve over HTTPS. For local dev with Caddy + mkcert, set `BETTER_AUTH_RP_ID=localhost` and `BETTER_AUTH_RP_ORIGIN=https://localhost:4173` (or your forwarded dev host) so the WebAuthn challenge matches the browser origin.
 
 ## Docker
 

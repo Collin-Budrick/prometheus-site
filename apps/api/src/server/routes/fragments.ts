@@ -45,14 +45,10 @@ const resolveStreamEncoding = (request: Request): CompressionEncoding | null =>
 const toWebReadableStream = (stream: ReadableStream<Uint8Array>): WebReadableStream<Uint8Array> =>
   stream as unknown as WebReadableStream<Uint8Array>
 
-const getCompressionStreamCtor = () => {
-  if (typeof Bun !== 'undefined') return null
-  return (
-    (globalThis as typeof globalThis & {
-      CompressionStream?: new (format: CompressionEncoding) => CompressionStream
-    }).CompressionStream ?? null
-  )
-}
+const getCompressionStreamCtor = () =>
+  (globalThis as typeof globalThis & {
+    CompressionStream?: new (format: CompressionEncoding) => CompressionStream
+  }).CompressionStream ?? null
 
 const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: CompressionEncoding) => {
   const ctor = getCompressionStreamCtor()

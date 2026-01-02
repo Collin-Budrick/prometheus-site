@@ -1,0 +1,60 @@
+{
+	auto_https off
+	servers :443 {
+		protocols h1 h2
+	}
+	servers :80 {
+		protocols h1
+	}
+}
+http://prometheus.dev, http://prometheus.prod {
+	redir https://{host}{uri}
+}
+
+https://prometheus.dev {
+	tls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key
+	header {
+		alt-svc "h3=\":443\"; ma=2592000"
+	}
+
+	handle_path /api/* {
+		reverse_proxy http://api:4000
+	}
+
+	@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)
+	handle @ai {
+		header {
+			Cross-Origin-Opener-Policy "same-origin"
+			Cross-Origin-Embedder-Policy "require-corp"
+		}
+		reverse_proxy http://web:4173
+	}
+
+	handle {
+		reverse_proxy http://web:4173
+	}
+}
+
+https://prometheus.prod {
+	tls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key
+	header {
+		alt-svc "h3=\":443\"; ma=2592000"
+	}
+
+	handle_path /api/* {
+		reverse_proxy http://api:4000
+	}
+
+	@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)
+	handle @ai {
+		header {
+			Cross-Origin-Opener-Policy "same-origin"
+			Cross-Origin-Embedder-Policy "require-corp"
+		}
+		reverse_proxy http://web:4173
+	}
+
+	handle {
+		reverse_proxy http://web:4173
+	}
+}

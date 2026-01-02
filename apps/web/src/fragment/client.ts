@@ -1,6 +1,6 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
 import { decodeFragmentPayload } from './binary'
-import { getApiBase, isFragmentCompressionPreferred, isWebTransportPreferred } from './config'
+import { getApiBase, getWebTransportBase, isFragmentCompressionPreferred, isWebTransportPreferred } from './config'
 
 const concat = (a: Uint8Array, b: Uint8Array) => {
   const next = new Uint8Array(a.length + b.length)
@@ -181,6 +181,24 @@ const parseFrame = (bytes: Uint8Array) => {
   }
 }
 
+const isWebTransportReset = (error: unknown) => {
+  if (!error) return false
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase()
+    return message.includes('reset_stream') || message.includes('reset stream')
+  }
+  if (typeof error === 'string') {
+    const message = error.toLowerCase()
+    return message.includes('reset_stream') || message.includes('reset stream')
+  }
+  if (typeof error === 'object' && 'message' in error && typeof (error as { message?: string }).message === 'string') {
+    const message = (error as { message: string }).message.toLowerCase()
+    return message.includes('reset_stream') || message.includes('reset stream')
+  }
+  const fallback = String(error).toLowerCase()
+  return fallback.includes('reset_stream') || fallback.includes('reset stream')
+}
+
 const logStreamMetrics = (mode: 'fetch' | 'webtransport', metrics: StreamMetrics, status: 'ok' | 'aborted' | 'error') => {
   if (typeof performance === 'undefined' || typeof console === 'undefined') return
   const total = Math.round(performance.now() - metrics.startedAt)
@@ -314,7 +332,7 @@ const streamFragmentsWithWebTransport = async (
   const ctor = getWebTransportCtor()
   if (!ctor) return false
 
-  const api = toAbsoluteApiBase(getApiBase())
+  const api = toAbsoluteApiBase(getWebTransportBase())
   const metrics: StreamMetrics = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(), frames: 0 }
   const transport = new ctor(`${api}/fragments/transport?path=${encodeURIComponent(path)}`)
 
@@ -334,6 +352,10 @@ const streamFragmentsWithWebTransport = async (
     logStreamMetrics('webtransport', metrics, status)
     return true
   } catch (error) {
+    if (metrics.frames > 0 && isWebTransportReset(error)) {
+      logStreamMetrics('webtransport', metrics, 'ok')
+      return true
+    }
     logStreamMetrics('webtransport', metrics, signal?.aborted ? 'aborted' : 'error')
     onError?.(error)
     return false

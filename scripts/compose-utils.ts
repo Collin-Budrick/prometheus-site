@@ -54,106 +54,24 @@ const resolveLocalIp = () => {
   return candidates[0] ?? null
 }
 
-export const ensureTraefikStackConfig = (override?: string) => {
+export const ensureCaddyConfig = (override?: string, prodOverride?: string) => {
   const localIp = resolveLocalIp()
-  const upstream = override || (localIp ? `http://${localIp}:4173` : 'http://host.docker.internal:4173')
+  const devUpstream = override || (localIp ? `http://${localIp}:4173` : 'http://host.docker.internal:4173')
+  const prodUpstream = prodOverride || devUpstream
 
-  const config = `http:
-  routers:
-    prometheus-dev-auth:
-      rule: Host(\`prometheus.dev\`) && PathPrefix(\`/api/auth\`)
-      entryPoints:
-        - websecure
-      service: prometheus-dev-api
-      tls: {}
-      priority: 20
-    prometheus-dev-web:
-      rule: Host(\`prometheus.dev\`)
-      entryPoints:
-        - websecure
-      service: prometheus-dev-web
-      tls: {}
-      priority: 1
-    prometheus-dev-web-ai:
-      rule: Host(\`prometheus.dev\`) && PathRegexp(\`^/(?:[a-z]{2}/)?ai(?:/|$)\`)
-      entryPoints:
-        - websecure
-      service: prometheus-dev-web
-      middlewares:
-        - prometheus-dev-web-ai-headers
-      tls: {}
-      priority: 30
-    prometheus-dev-api:
-      rule: Host(\`prometheus.dev\`) && PathPrefix(\`/api\`)
-      entryPoints:
-        - websecure
-      service: prometheus-dev-api
-      middlewares:
-        - prometheus-dev-api-strip
-      tls: {}
-      priority: 10
-    prometheus-prod-auth:
-      rule: Host(\`prometheus.prod\`) && PathPrefix(\`/api/auth\`)
-      entryPoints:
-        - websecure
-      service: prometheus-prod-api
-      tls: {}
-      priority: 20
-    prometheus-prod-web:
-      rule: Host(\`prometheus.prod\`)
-      entryPoints:
-        - websecure
-      service: prometheus-prod-web
-      tls: {}
-      priority: 1
-    prometheus-prod-api:
-      rule: Host(\`prometheus.prod\`) && PathPrefix(\`/api\`)
-      entryPoints:
-        - websecure
-      service: prometheus-prod-api
-      middlewares:
-        - prometheus-prod-api-strip
-      tls: {}
-      priority: 10
-  services:
-    prometheus-dev-web:
-      loadBalancer:
-        servers:
-          - url: ${upstream}
-    prometheus-dev-api:
-      loadBalancer:
-        servers:
-          - url: http://api:4000
-    prometheus-prod-web:
-      loadBalancer:
-        servers:
-          - url: http://web:4173
-    prometheus-prod-api:
-      loadBalancer:
-        servers:
-          - url: http://api:4000
-  middlewares:
-    prometheus-dev-web-ai-headers:
-      headers:
-        customResponseHeaders:
-          Cross-Origin-Opener-Policy: same-origin
-          Cross-Origin-Embedder-Policy: require-corp
-    prometheus-dev-api-strip:
-      stripPrefix:
-        prefixes:
-          - /api
-    prometheus-prod-api-strip:
-      stripPrefix:
-        prefixes:
-          - /api
-tls:
-  certificates:
-    - certFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.pem
-      keyFile: /etc/traefik/certs/prometheus.dev+prometheus.prod.key
-`
+  const buildSite = (host: string, upstream: string) =>
+    `${host} {\n\ttls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key\n\theader {\n\t\talt-svc \"h3=\\\":443\\\"; ma=2592000\"\n\t}\n\n\thandle_path /api/* {\n\t\treverse_proxy http://api:4000\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy \"same-origin\"\n\t\t\tCross-Origin-Embedder-Policy \"require-corp\"\n\t\t}\n\t\treverse_proxy ${upstream}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream}\n\t}\n}\n`
 
-  writeFileSync(path.join(root, 'infra', 'traefik', 'dynamic', 'stack.yml'), config, { encoding: 'ascii' })
-  return upstream
+  const config =
+    `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://prometheus.dev, http://prometheus.prod {\n\tredir https://{host}{uri}\n}\n\n${buildSite(
+      'https://prometheus.dev',
+      devUpstream
+    )}\n${buildSite('https://prometheus.prod', prodUpstream)}`
+
+  const caddyDir = path.join(root, 'infra', 'caddy')
+  mkdirSync(caddyDir, { recursive: true })
+  writeFileSync(path.join(caddyDir, 'Caddyfile'), config, { encoding: 'ascii' })
+  return { devUpstream, prodUpstream }
 }
 
 const ignoredDirs = new Set([

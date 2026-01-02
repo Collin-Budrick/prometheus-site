@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { computeFingerprint, ensureTraefikStackConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
+import { computeFingerprint, ensureCaddyConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -12,6 +12,7 @@ const previewHttpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
 const previewApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
 const previewPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
 const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
+const previewWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '443'
 const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
@@ -21,6 +22,32 @@ const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
 const previewEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 
+const normalizeBasePort = (value: string) => {
+  try {
+    const url = new URL(value)
+    if (url.port) return url.port
+    if (url.protocol === 'https:') return '443'
+    if (url.protocol === 'http:') return '80'
+  } catch {
+    return null
+  }
+  return null
+}
+
+const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
+const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
+const defaultWebTransportBase =
+  previewWebTransportPort === '443'
+    ? `https://${previewWebHost}`
+    : `https://${previewWebHost}:${previewWebTransportPort}`
+const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
+const legacyMatchesPort = legacyPort ? legacyPort === previewWebTransportPort : true
+const resolvedWebTransportBase = explicitWebTransportBase
+  ? explicitWebTransportBase
+  : legacyWebTransportBase && legacyMatchesPort
+    ? legacyWebTransportBase
+    : defaultWebTransportBase
+
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: previewProject,
@@ -29,9 +56,10 @@ const composeEnv = {
   PROMETHEUS_API_PORT: previewApiPort,
   PROMETHEUS_POSTGRES_PORT: previewPostgresPort,
   PROMETHEUS_VALKEY_PORT: previewValkeyPort,
-  TRAEFIK_DYNAMIC: 'stack',
+  PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
   PROMETHEUS_WEB_HOST: previewWebHost,
   PROMETHEUS_VITE_API_BASE: '/api',
+  PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
   VITE_ENABLE_PREFETCH: previewEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
   VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
@@ -40,7 +68,7 @@ const composeEnv = {
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport
 }
 
-ensureTraefikStackConfig(process.env.DEV_WEB_UPSTREAM?.trim())
+ensureCaddyConfig('http://web:4173')
 let keepContainers = false
 
 const buildInputs = [
@@ -49,14 +77,15 @@ const buildInputs = [
   'bunfig.toml',
   'docker-compose.yml',
   'apps/api',
-  'apps/web'
+  'apps/web',
+  'apps/webtransport'
 ]
 const cacheKey = 'preview'
 const cache = loadBuildCache()
 const fingerprint = computeFingerprint(buildInputs, {
   PROMETHEUS_WEB_HOST: composeEnv.PROMETHEUS_WEB_HOST,
   PROMETHEUS_VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
-  TRAEFIK_DYNAMIC: composeEnv.TRAEFIK_DYNAMIC,
+  PROMETHEUS_VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
   VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
   VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
@@ -66,26 +95,31 @@ const fingerprint = computeFingerprint(buildInputs, {
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
 if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api', 'web'], composeEnv)
+  const build = runSync(command, [...prefix, 'build', 'api', 'web', 'webtransport'], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const up = runSync(command, [...prefix, 'up', '-d', 'postgres', 'valkey', 'api', 'web', 'traefik'], composeEnv)
+const up = runSync(
+  command,
+  [...prefix, 'up', '-d', '--remove-orphans', 'postgres', 'valkey', 'api', 'web', 'webtransport', 'caddy'],
+  composeEnv
+)
 if (up.status !== 0) process.exit(up.status ?? 1)
 
 cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
 saveBuildCache(cache)
 
 try {
-  const resolved = await lookup('prometheus.prod')
-  if (resolved.address !== '127.0.0.1' && resolved.address !== '::1') {
-    console.warn('prometheus.prod does not resolve to localhost. Add it to your hosts file to use HTTPS routing.')
+  const resolved = await lookup(previewWebHost, { all: true })
+  const isLocal = resolved.some((entry) => entry.address === '127.0.0.1' || entry.address === '::1')
+  if (!isLocal) {
+    console.warn(`${previewWebHost} does not resolve to localhost. Add it to your hosts file to use HTTPS routing.`)
   }
 } catch {
-  console.warn('prometheus.prod is not resolvable. Add it to your hosts file to use HTTPS routing.')
+  console.warn(`${previewWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
 }
 
-const logs = spawn(command, [...prefix, 'logs', '-f', 'web', 'api', 'traefik'], {
+const logs = spawn(command, [...prefix, 'logs', '-f', 'web', 'api', 'caddy', 'webtransport'], {
   stdio: 'inherit',
   cwd: root,
   shell: false,
