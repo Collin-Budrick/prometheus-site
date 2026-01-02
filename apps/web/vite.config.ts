@@ -238,7 +238,12 @@ export default defineConfig(
         earlyHintsPlugin(),
         tailwindcss(),
         qwikCity(),
-        qwikVite({ optimizerOptions: { binding } }),
+        qwikVite({
+          optimizerOptions: {
+            binding,
+            inlineStylesUpToBytes: 60000
+          }
+        }),
         compression({
           algorithms: [
             defineAlgorithm('brotliCompress', {

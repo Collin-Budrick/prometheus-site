@@ -3,16 +3,11 @@ import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 
-const fontsHref =
-  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap'
-
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
   const crossoriginAttr = crossorigin ? ` crossorigin="${crossorigin}"` : ''
   return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr} onload="this.onload=null;this.rel='stylesheet'">`
 }
-
-const fontsLinkMarkup = buildStylesheetPreloadMarkup(fontsHref, 'anonymous')
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
@@ -50,12 +45,6 @@ export const RouterHead = component$(() => {
       <link rel="icon" href="/favicon.ico" sizes="any" />
       <link rel="manifest" href="/manifest.webmanifest" />
       <meta name="theme-color" content="#f97316" />
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <HTMLFragment dangerouslySetInnerHTML={fontsLinkMarkup} />
-      <noscript>
-        <link rel="stylesheet" href={fontsHref} />
-      </noscript>
     </>
   )
 })
