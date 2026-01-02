@@ -114,6 +114,9 @@ services:
         VITE_WEBTRANSPORT_BASE: ${PROMETHEUS_VITE_WEBTRANSPORT_BASE:-}
     environment:
       API_BASE: http://api:4000
+    volumes:
+      - ./apps/web/dist:/app/apps/web/dist:ro
+      - ./apps/web/server:/app/apps/web/server:ro
     depends_on:
       api:
         condition: service_started

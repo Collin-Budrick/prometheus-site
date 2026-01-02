@@ -18,7 +18,11 @@ export default function () {
 
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      const disableServiceWorker =
+        import.meta.env.VITE_DISABLE_SW === '1' ||
+        import.meta.env.VITE_DISABLE_SW === 'true'
       const shouldSkipServiceWorker =
+        disableServiceWorker ||
         window.__FRAGMENT_PRIME_DISABLE_SW__ ||
         (() => {
           try {
@@ -29,9 +33,10 @@ export default function () {
           }
         })()
 
-      const cleanupPromise = unregisterLegacyServiceWorker().catch((error) =>
-        console.warn('Legacy service worker cleanup failed:', error)
-      )
+      const cleanupPromise = unregisterLegacyServiceWorker()
+        .then(() => unregisterActiveServiceWorker())
+        .then(() => clearServiceWorkerCaches())
+        .catch((error) => console.warn('Service worker cleanup failed:', error))
 
       if (shouldSkipServiceWorker) {
         return
@@ -51,4 +56,21 @@ async function unregisterLegacyServiceWorker() {
   if (registration) {
     await registration.unregister()
   }
+}
+
+async function unregisterActiveServiceWorker() {
+  const registration = await navigator.serviceWorker.getRegistration('/service-worker.js')
+  if (registration) {
+    await registration.unregister()
+  }
+}
+
+async function clearServiceWorkerCaches() {
+  if (!('caches' in window)) return
+  const keys = await caches.keys()
+  await Promise.all(
+    keys
+      .filter((key) => key.startsWith('fragment-prime-shell'))
+      .map((key) => caches.delete(key))
+  )
 }

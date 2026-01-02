@@ -18,8 +18,15 @@ https://prometheus.dev {
 	}
 
 	encode br gzip
+	handle /build/* {
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
 	@static {
-		path /assets/* /build/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
+		path /assets/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
 		file {
 			root /srv/web/dist
 			try_files {path} {path}.br {path}.gz
@@ -83,8 +90,15 @@ https://prometheus.prod {
 	}
 
 	encode br gzip
+	handle /build/* {
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
 	@static {
-		path /assets/* /build/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
+		path /assets/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
 		file {
 			root /srv/web/dist
 			try_files {path} {path}.br {path}.gz

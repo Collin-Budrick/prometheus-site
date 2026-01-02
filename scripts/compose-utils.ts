@@ -70,7 +70,7 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string, opti
   const encodeBlock = encodeValue ? `\tencode ${encodeValue}\n` : ''
   const stripAcceptEncoding = options.stripAcceptEncoding ? '\t\t\theader_up -Accept-Encoding\n' : ''
   const staticBlock = options.servePrecompressed
-    ? `\t@static {\n\t\tpath /assets/* /build/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*\n\t\tfile {\n\t\t\troot ${staticRoot}\n\t\t\ttry_files {path} {path}.br {path}.gz\n\t\t}\n\t}\n\thandle @static {\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n`
+    ? `\thandle /build/* {\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n\t@static {\n\t\tpath /assets/* /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*\n\t\tfile {\n\t\t\troot ${staticRoot}\n\t\t\ttry_files {path} {path}.br {path}.gz\n\t\t}\n\t}\n\thandle @static {\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n`
     : ''
 
   const buildSite = (host: string, upstream: string) =>

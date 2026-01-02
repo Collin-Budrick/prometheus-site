@@ -80,6 +80,7 @@ const webBuildEnv = {
   ...process.env,
   VITE_API_BASE: '/api',
   VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
+  VITE_DISABLE_SW: '1',
   VITE_ENABLE_PREFETCH: previewEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
   VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
@@ -120,24 +121,15 @@ const fingerprint = computeFingerprint(buildInputs, {
 })
 const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
-const hasBrotliAssets = () => {
-  const distRoot = path.join(root, 'apps', 'web', 'dist')
-  const candidates = ['build', 'assets']
-  for (const dir of candidates) {
-    const absPath = path.join(distRoot, dir)
-    if (!existsSync(absPath)) continue
-    const files = readdirSync(absPath)
-    if (files.some((file) => file.endsWith('.br'))) return true
-  }
-  return false
-}
+const webBuild = runSync(bunBin, ['run', '--cwd', 'apps/web', 'build'], webBuildEnv)
+if (webBuild.status !== 0) process.exit(webBuild.status ?? 1)
 
-const needsWebBuild = needsBuild || !hasBrotliAssets()
-
-if (needsWebBuild) {
-  const webBuild = runSync(bunBin, ['run', '--cwd', 'apps/web', 'build'], webBuildEnv)
-  if (webBuild.status !== 0) process.exit(webBuild.status ?? 1)
-}
+const webSsrBuild = runSync(
+  bunBin,
+  ['run', '--cwd', 'apps/web', 'build', '--', '--ssr', 'src/entry.preview.tsx'],
+  webBuildEnv
+)
+if (webSsrBuild.status !== 0) process.exit(webSsrBuild.status ?? 1)
 
 if (needsBuild) {
   const build = runSync(command, [...prefix, 'build', 'api', 'web', 'webtransport', 'caddy'], composeEnv)
