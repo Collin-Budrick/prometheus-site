@@ -7,6 +7,7 @@ import Root from './root'
 export default function (opts: RenderToStreamOptions) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
   const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
+  const preloader = opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
 
   if (
     requestEv &&
@@ -23,6 +24,7 @@ export default function (opts: RenderToStreamOptions) {
     manifest,
     ...opts,
     qwikLoader: opts.qwikLoader ?? 'inline',
+    preloader,
     containerTagName: opts.containerTagName ?? 'html',
     containerAttributes: {
       ...opts.containerAttributes,

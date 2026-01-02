@@ -67,7 +67,7 @@ export const initQuicklinkPrefetch = async (env: EnvConfig, log = false) => {
     onError: (error) => {
       if (log) console.warn('[prefetch] Quicklink prefetch error', error)
     },
-    priority: true,
+    priority: false,
     timeout: 2000
   })
 

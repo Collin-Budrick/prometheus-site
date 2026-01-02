@@ -4,7 +4,7 @@ import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 
 const fontsHref =
-  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
+  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
