@@ -1,4 +1,4 @@
-import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, type Signal, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
@@ -15,25 +15,61 @@ type FragmentShellProps = {
 const buildMotionStyle = (column: string, index: number) =>
   ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
+type FragmentClientEffectsProps = {
+  planValue: FragmentPlanValue
+  initialFragmentMap: FragmentPayloadMap
+  plan: FragmentPlanValue
+  initialFragments: FragmentPayloadValue
+  path: string
+  fragments: Signal<FragmentPayloadMap>
+  status: Signal<'idle' | 'streaming' | 'error'>
+}
+
+const FragmentClientEffects = component$(
+  ({ planValue, initialFragmentMap, plan, initialFragments, path, fragments, status }: FragmentClientEffectsProps) => {
+    useVisibleTask$(
+      ({ cleanup }) => {
+        if (!isPrefetchEnabled(import.meta.env)) return
+
+        const teardownSpeculation = applySpeculationRules(
+          buildSpeculationRulesForPlan(planValue, import.meta.env, {
+            knownFragments: initialFragmentMap
+          })
+        )
+
+        cleanup(() => teardownSpeculation())
+      },
+      { strategy: 'document-idle' }
+    )
+
+    return (
+      <FragmentStreamController
+        plan={plan}
+        initialFragments={initialFragments}
+        path={path}
+        fragments={fragments}
+        status={status}
+      />
+    )
+  }
+)
+
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)
   const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
   const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
+  const initialReady =
+    typeof window !== 'undefined' &&
+    (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
+  const clientReady = useSignal(initialReady)
 
-  useVisibleTask$(({ cleanup, track }) => {
-    track(() => path)
-
-    if (!isPrefetchEnabled(import.meta.env)) return
-
-    const teardownSpeculation = applySpeculationRules(
-      buildSpeculationRulesForPlan(planValue, import.meta.env, {
-        knownFragments: initialFragmentMap
-      })
-    )
-
-    cleanup(() => teardownSpeculation())
-  })
+  useOnDocument(
+    'client-ready',
+    $(() => {
+      clientReady.value = true
+    })
+  )
 
   return (
     <section class="fragment-shell">
@@ -63,13 +99,17 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
           )
         })}
       </div>
-      <FragmentStreamController
-        plan={plan}
-        initialFragments={initialFragments}
-        path={path}
-        fragments={fragments}
-        status={status}
-      />
+      {clientReady.value ? (
+        <FragmentClientEffects
+          planValue={planValue}
+          initialFragmentMap={initialFragmentMap}
+          plan={plan}
+          initialFragments={initialFragments}
+          path={path}
+          fragments={fragments}
+          status={status}
+        />
+      ) : null}
     </section>
   )
 })
