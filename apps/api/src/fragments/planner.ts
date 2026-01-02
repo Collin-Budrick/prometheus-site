@@ -1,5 +1,12 @@
 import { getFragmentDefinition } from './definitions'
-import type { FragmentPlan, FragmentPlanEntry } from './types'
+import type { EarlyHint, FragmentPlan, FragmentPlanEntry } from './types'
+
+const fontsHref =
+  'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap'
+
+const shellEarlyHints: EarlyHint[] = [{ href: fontsHref, as: 'style' }]
+
+const buildEarlyHints = () => shellEarlyHints.slice(0, 5)
 
 const attachDependencies = (entries: FragmentPlanEntry[]) => {
   const ids = new Set(entries.map((entry) => entry.id))
@@ -108,13 +115,15 @@ export const planForPath = (path: string): FragmentPlan => {
       path: '/',
       createdAt: Date.now(),
       fragments,
-      fetchGroups
+      fetchGroups,
+      earlyHints: buildEarlyHints()
     }
   }
 
   return {
     path: normalized,
     createdAt: Date.now(),
-    fragments: []
+    fragments: [],
+    earlyHints: buildEarlyHints()
   }
 }

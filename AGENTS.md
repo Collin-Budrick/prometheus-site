@@ -3,6 +3,7 @@
 This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. Use this file as the canonical guide for how the site works, what is compatible, and repo-specific rules.
 
 ## Architecture overview
+
 - **Workspaces:** Managed with Bun (`bun@1.3.5`). Frontend lives in `apps/web`, API in `apps/api`. Shared tooling lives under `scripts/` and `infra/`.
 - **Frontend (`apps/web`):** Qwik + Qwik City SPA/SSR with view transitions. Pages hydrate a `FragmentShell` that:
   - Fetches a render plan from the API (`/fragments/plan?path=...`).
@@ -22,6 +23,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
   - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`).
 
 ## Dev and runtime flow
+
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddyfile, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the web app.
@@ -32,26 +34,31 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Networking:** Caddy expects `prometheus.dev` to resolve to localhost. On WSL/non-macOS, set `DEV_WEB_UPSTREAM` if `host.docker.internal` is unsuitable.
 
 ## Compatibility and constraints
+
 - **Runtimes:** Prefer Bun for scripts and package management. Avoid switching to npm/yarn. TypeScript target is modern (`typescript@6.0.0-dev`); Vite 8 beta + Qwik require up-to-date Node headers but the runtime is Bun.
 - **Fragments:** Keep fragment payloads binary-compatible with `apps/web/src/fragment/binary.ts` and API encoders. Changes to fragment schemas must update both sides and related tests.
+- **Early hints:** Fragment plans may include `earlyHints` for shell assets only (CSS, fonts, critical JS); never include fragment payloads or WebTransport URLs.
 - **Caching:** Valkey cache keys for store items come from `buildStoreItemsCacheKey`; invalidation is coupled to realtime events. Preserve this coupling when modifying store logic.
 - **Rate limits and payload limits:** Respect API constraints in `apps/api/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
 - **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/traefik/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
 
 ## Repo conventions and checks
+
 - **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`). API linting uses Oxlint configs in `apps/api/.oxlintrc.json`.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers both workspaces. Add targeted tests in `apps/api/tests/` or `apps/web/src/**/*.test.tsx`.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `src/global.css` and component patterns (Qwik components with `$` suffix).
 - **Git hooks:** `bun run hooks:install` sets `.githooks`; commit messages should be conventional and meaningful.
 
 ## File map (quick pointers)
+
 - **Frontend:** `apps/web/src/root.tsx` (app shell), `routes/` (pages/layout/head), `components/` (RouteMotion, FragmentShell), `fragment/` (client/server codecs + plan handling), `public/` (PWA assets/service worker).
 - **API:** `apps/api/src/server/app.ts` (Elysia setup), `auth/` (Better Auth config), `fragments/` (planner/renderers/binary codec), `db/` (Drizzle schema/migrations), `services/cache.ts` (Valkey), `server/*` (network, rate limit, realtime).
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/valkey/valkey.conf`, `scripts/*.ts` (compose helpers, preview/dev).
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
 
 ## Contribution dos and don’ts
+
 - **Do** keep frontend/API contracts in sync, especially fragment schemas and cache headers.
 - **Do** prefer HTTPS + Caddy flow for testing view transitions and HMR in dev.
 - **Do** document new env vars and update this file when site behavior or compatibility assumptions change.

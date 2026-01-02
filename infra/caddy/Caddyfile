@@ -27,11 +27,27 @@ https://prometheus.dev {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://web:4173
+		reverse_proxy http://web:4173 {
+			header_down -X-Early-Hints
+			@early_hints header X-Early-Hints *
+			handle_response @early_hints {
+				header Link "{http.reverse_proxy.header.X-Early-Hints}"
+				respond 103
+				copy_response
+			}
+		}
 	}
 
 	handle {
-		reverse_proxy http://web:4173
+		reverse_proxy http://web:4173 {
+			header_down -X-Early-Hints
+			@early_hints header X-Early-Hints *
+			handle_response @early_hints {
+				header Link "{http.reverse_proxy.header.X-Early-Hints}"
+				respond 103
+				copy_response
+			}
+		}
 	}
 }
 
@@ -51,10 +67,26 @@ https://prometheus.prod {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://web:4173
+		reverse_proxy http://web:4173 {
+			header_down -X-Early-Hints
+			@early_hints header X-Early-Hints *
+			handle_response @early_hints {
+				header Link "{http.reverse_proxy.header.X-Early-Hints}"
+				respond 103
+				copy_response
+			}
+		}
 	}
 
 	handle {
-		reverse_proxy http://web:4173
+		reverse_proxy http://web:4173 {
+			header_down -X-Early-Hints
+			@early_hints header X-Early-Hints *
+			handle_response @early_hints {
+				header Link "{http.reverse_proxy.header.X-Early-Hints}"
+				respond 103
+				copy_response
+			}
+		}
 	}
 }

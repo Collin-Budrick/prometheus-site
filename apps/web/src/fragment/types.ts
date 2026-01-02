@@ -49,10 +49,19 @@ export type FragmentPlanEntry = {
   cache?: FragmentCacheStatus
 }
 
+export type EarlyHint = {
+  href: string
+  as?: string
+  rel?: 'preload' | 'modulepreload'
+  type?: string
+  crossorigin?: boolean
+}
+
 export type FragmentPlan = {
   path: string
   fragments: FragmentPlanEntry[]
   fetchGroups?: string[][]
+  earlyHints?: EarlyHint[]
   createdAt: number
 }
 
