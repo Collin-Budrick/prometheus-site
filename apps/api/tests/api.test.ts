@@ -20,6 +20,38 @@ describe('health endpoint', () => {
   })
 })
 
+describe('fragment plan includeInitial', () => {
+  it('returns initial fragment payloads and preserves cache headers', async () => {
+    const response = await fetch(`${apiUrl}/fragments/plan?path=/&includeInitial=1`)
+    expect(response.status).toBe(200)
+    const payload = await response.json()
+
+    const initialFragments = payload.initialFragments as Record<string, string> | undefined
+    expect(initialFragments).toBeTruthy()
+    const initialIds = initialFragments ? Object.keys(initialFragments) : []
+    expect(initialIds.length).toBeGreaterThan(0)
+
+    const primaryGroup = payload.fetchGroups?.[0] ?? payload.fragments.map((fragment: { id: string }) => fragment.id)
+    initialIds.forEach((id) => {
+      expect(primaryGroup).toContain(id)
+    })
+
+    const sampleId = initialIds[0]
+    const samplePayload = initialFragments?.[sampleId] ?? ''
+    const bytes = Buffer.from(samplePayload, 'base64')
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    expect(view.getUint32(0, false)).toBe(0x46524147)
+
+    const fragmentResponse = await fetch(`${apiUrl}/fragments?id=${encodeURIComponent(sampleId)}`)
+    expect(fragmentResponse.status).toBe(200)
+    const cacheControl = fragmentResponse.headers.get('cache-control')
+    expect(cacheControl).toBeTruthy()
+    expect(cacheControl).toContain('s-maxage=')
+    expect(cacheControl).toContain('stale-while-revalidate=')
+    expect(fragmentResponse.headers.get('x-fragment-cache')).toBeTruthy()
+  })
+})
+
 describe('store pagination', () => {
   it('paginates items and sets cache entries', async () => {
     const firstPage = await fetch(`${apiUrl}/store/items`)

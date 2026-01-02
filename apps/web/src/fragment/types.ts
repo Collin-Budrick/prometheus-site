@@ -65,6 +65,12 @@ export type FragmentPlan = {
   createdAt: number
 }
 
+export type FragmentPlanInitialPayloads = Record<string, string>
+
+export type FragmentPlanResponse = FragmentPlan & {
+  initialFragments?: FragmentPlanInitialPayloads
+}
+
 export type FragmentPlanValue = FragmentPlan | NoSerialize<FragmentPlan>
 
 export type FragmentPayloadValue = FragmentPayloadMap | NoSerialize<FragmentPayloadMap>

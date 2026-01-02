@@ -79,15 +79,15 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url }
   const apiBase = getApiBase(env)
 
   try {
-    const plan = await loadFragmentPlan(path, env)
+    const { plan, initialFragments } = await loadFragmentPlan(path, env)
     const primaryGroup =
       plan.fetchGroups && plan.fetchGroups.length
         ? plan.fetchGroups[0]
         : plan.fragments.map((fragment) => fragment.id)
     const initialIds = Array.from(new Set(primaryGroup))
-    let fragments: FragmentPayloadMap = {}
+    let fragments: FragmentPayloadMap = initialFragments ?? {}
 
-    if (initialIds.length) {
+    if (!initialFragments && initialIds.length) {
       try {
         fragments = await loadFragments(initialIds, env)
       } catch (error) {

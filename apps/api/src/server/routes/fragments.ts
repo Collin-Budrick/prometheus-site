@@ -1,7 +1,8 @@
 import { Elysia, t } from 'elysia'
-import { buildCacheStatus, getFragmentEntry, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
+import { buildCacheStatus, getFragmentEntry, getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
+import type { FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
@@ -72,26 +73,57 @@ const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: Co
   }
 }
 
+const truthyValues = new Set(['1', 'true', 'yes'])
+
+const isTruthyParam = (value: string | undefined) => {
+  if (!value) return false
+  return truthyValues.has(value.trim().toLowerCase())
+}
+
+const stripInitialFragments = (plan: FragmentPlanResponse) => {
+  const { initialFragments: _initialFragments, ...rest } = plan
+  return rest
+}
+
+const buildInitialFragments = async (plan: FragmentPlanResponse): Promise<FragmentPlanInitialPayloads> => {
+  const group =
+    plan.fetchGroups && plan.fetchGroups.length ? plan.fetchGroups[0] : plan.fragments.map((entry) => entry.id)
+  const ids = Array.from(new Set(group))
+  if (!ids.length) return {}
+  const entries = await Promise.all(
+    ids.map(async (id) => [id, Buffer.from(await getFragmentPayload(id)).toString('base64')] as const)
+  )
+  return entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
+    acc[id] = payload
+    return acc
+  }, {})
+}
+
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/plan',
     async ({ query }) => {
       const path = typeof query.path === 'string' ? query.path : '/'
+      const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
       const cacheKey = buildFragmentPlanCacheKey(path)
-      const cached = await readCache<unknown>(cacheKey)
-      if (cached) {
-        return cached
+      const cached = await readCache<FragmentPlanResponse>(cacheKey)
+      let plan = cached
+      if (!plan) {
+        const start = performance.now()
+        plan = await getFragmentPlan(path)
+        const elapsed = performance.now() - start
+        void recordLatencySample('fragment-plan', elapsed)
+        await writeCache(cacheKey, plan, 30)
       }
-      const start = performance.now()
-      const plan = await getFragmentPlan(path)
-      const elapsed = performance.now() - start
-      void recordLatencySample('fragment-plan', elapsed)
-      await writeCache(cacheKey, plan, 30)
-      return plan
+      const basePlan = stripInitialFragments(plan as FragmentPlanResponse)
+      if (!includeInitial) return basePlan
+      const initialFragments = await buildInitialFragments(basePlan)
+      return { ...basePlan, initialFragments }
     },
     {
       query: t.Object({
-        path: t.Optional(t.String())
+        path: t.Optional(t.String()),
+        includeInitial: t.Optional(t.String())
       })
     }
   )

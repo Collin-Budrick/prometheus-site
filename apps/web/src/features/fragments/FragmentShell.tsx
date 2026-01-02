@@ -1,5 +1,5 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
 import { FragmentRenderer } from './FragmentRenderer'
@@ -16,7 +16,7 @@ const buildMotionStyle = (column: string, index: number) =>
   ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
 type FragmentClientEffectsProps = {
-  planValue: FragmentPlanValue
+  planValue: FragmentPlan
   initialFragmentMap: FragmentPayloadMap
 }
 

@@ -64,3 +64,9 @@ export type FragmentPlan = {
   earlyHints?: EarlyHint[]
   createdAt: number
 }
+
+export type FragmentPlanInitialPayloads = Record<string, string>
+
+export type FragmentPlanResponse = FragmentPlan & {
+  initialFragments?: FragmentPlanInitialPayloads
+}
