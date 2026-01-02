@@ -27,6 +27,10 @@ export const CardExpandMotion = component$(() => {
     let state: ExpandedState | null = null
     let animating = false
     let disposed = false
+    const nextFrame = () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve())
+      })
 
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)') as MediaQueryList | LegacyMediaQueryList
     let prefersReducedMotion = motionQuery.matches
@@ -102,6 +106,11 @@ export const CardExpandMotion = component$(() => {
       card.style.borderRadius = '0px'
       placeholder.remove()
 
+      await nextFrame()
+      if (disposed || !state) {
+        animating = false
+        return
+      }
       const toRect = card.getBoundingClientRect()
       const shrinkTransform = buildInvertTransform(fromRect, toRect)
 
@@ -180,6 +189,11 @@ export const CardExpandMotion = component$(() => {
       card.style.willChange = 'transform, border-radius'
       card.style.borderRadius = computed.borderRadius
 
+      await nextFrame()
+      if (disposed || !state || state.card !== card) {
+        animating = false
+        return
+      }
       const toRect = card.getBoundingClientRect()
       const invertedTransform = buildInvertTransform(fromRect, toRect)
       card.style.transform = invertedTransform

@@ -8,10 +8,13 @@ import Root from './root'
 export default createQwikCity({
   render: (opts: RenderToStreamOptions) => {
     const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
+    const preloader = import.meta.env.PROD ? false : opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
+    const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
     return renderToStream(<Root />, {
       manifest,
       ...opts,
-      qwikLoader: opts.qwikLoader ?? 'inline',
+      preloader,
+      qwikLoader,
       containerTagName: opts.containerTagName ?? 'html',
       containerAttributes: {
         ...opts.containerAttributes,

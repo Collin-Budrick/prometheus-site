@@ -7,11 +7,8 @@ import Root from './root'
 export default function (opts: RenderToStreamOptions) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
   const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
-  // Disable the preloader in prod unless explicitly enabled to keep the LCP path short.
-  const preloader =
-    import.meta.env.PROD
-      ? opts.preloader ?? false
-      : opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
+  const preloader = import.meta.env.PROD ? false : opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
+  const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
 
   if (
     requestEv &&
@@ -27,7 +24,7 @@ export default function (opts: RenderToStreamOptions) {
   return renderToStream(<Root />, {
     manifest,
     ...opts,
-    qwikLoader: opts.qwikLoader ?? 'inline',
+    qwikLoader,
     preloader,
     containerTagName: opts.containerTagName ?? 'html',
     containerAttributes: {
