@@ -213,6 +213,26 @@ const earlyHintsPlugin = (): Plugin => {
   }
 }
 
+const sanitizeOutputOptionsPlugin = (): Plugin => ({
+  name: 'sanitize-rollup-output-options',
+  configResolved(config) {
+    const output = config.build?.rollupOptions?.output
+    if (!output) return
+
+    const strip = (entry: Record<string, unknown>) => {
+      if ('onlyExplicitManualChunks' in entry) {
+        delete entry.onlyExplicitManualChunks
+      }
+    }
+
+    if (Array.isArray(output)) {
+      output.forEach((entry) => strip(entry as Record<string, unknown>))
+    } else {
+      strip(output as Record<string, unknown>)
+    }
+  }
+})
+
 export default defineConfig(
   (async () => {
     const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
@@ -235,6 +255,7 @@ export default defineConfig(
 
     return {
       plugins: [
+        sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),
         tailwindcss(),
         qwikCity(),

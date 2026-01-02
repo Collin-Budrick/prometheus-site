@@ -22,7 +22,7 @@ const elementNode = (tag: string, attrs?: Record<string, string>, children: Rend
 })
 
 const buildMotionStyle = (column: string, index: number) =>
-  ({ gridColumn: column, '--motion-delay': `${index * 80}ms` } as Record<string, string>)
+  ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
 const buildFallbackFragment = (id: string, apiBase: string, path: string, error?: unknown): FragmentPayload => {
   const errorMessage = error instanceof Error ? error.message : 'Unknown error'

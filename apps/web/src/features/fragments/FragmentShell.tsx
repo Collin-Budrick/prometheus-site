@@ -13,7 +13,7 @@ type FragmentShellProps = {
 }
 
 const buildMotionStyle = (column: string, index: number) =>
-  ({ gridColumn: column, '--motion-delay': `${index * 80}ms` } as Record<string, string>)
+  ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
   const planValue = resolvePlan(plan)
