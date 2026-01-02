@@ -212,10 +212,6 @@ func main() {
 }
 
 func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
-  defer func() {
-    _ = session.CloseWithError(0, "")
-  }()
-
   path := r.URL.Query().Get("path")
   if path == "" {
     path = "/"
@@ -232,6 +228,7 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
   stream, err := session.OpenStreamSync(ctx)
   if err != nil {
     log.Printf("webtransport open stream failed: %v", err)
+    _ = session.CloseWithError(0, "stream open failed")
     return
   }
   defer func() {
@@ -259,6 +256,7 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
   resp, err := client.Do(req)
   if err != nil {
     log.Printf("webtransport upstream request failed: %v", err)
+    _ = session.CloseWithError(0, "upstream request failed")
     return
   }
   defer resp.Body.Close()
@@ -266,12 +264,14 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
   log.Printf("webtransport upstream status %d", resp.StatusCode)
   if resp.StatusCode != http.StatusOK {
     log.Printf("webtransport upstream status %d", resp.StatusCode)
+    _ = session.CloseWithError(0, fmt.Sprintf("upstream status %d", resp.StatusCode))
     return
   }
 
   bytesWritten, err := io.Copy(stream, resp.Body)
   if err != nil {
     log.Printf("webtransport stream copy failed after %d bytes: %v", bytesWritten, err)
+    _ = session.CloseWithError(0, "stream copy failed")
     return
   }
   log.Printf("webtransport stream copy complete bytes=%d", bytesWritten)

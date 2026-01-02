@@ -36,14 +36,13 @@ const normalizeBasePort = (value: string) => {
 
 const explicitWebTransportBase = process.env.VITE_WEBTRANSPORT_BASE?.trim()
 const legacyWebTransportBase = process.env.PROMETHEUS_VITE_WEBTRANSPORT_BASE?.trim()
-const defaultWebTransportBase = `https://${previewWebHost}:${previewWebTransportPort}`
 const legacyPort = legacyWebTransportBase ? normalizeBasePort(legacyWebTransportBase) : null
 const legacyMatchesPort = legacyPort ? legacyPort === previewWebTransportPort : true
 const resolvedWebTransportBase = explicitWebTransportBase
   ? explicitWebTransportBase
   : legacyWebTransportBase && legacyMatchesPort
     ? legacyWebTransportBase
-    : defaultWebTransportBase
+    : ''
 
 const composeEnv = {
   ...process.env,

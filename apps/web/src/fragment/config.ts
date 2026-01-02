@@ -72,7 +72,18 @@ export const getWebTransportBase = (env: EnvConfig = getEnv()) => {
     normalizeApiBase(env.WEBTRANSPORT_BASE as string | undefined) ||
     normalizeApiBase(env.VITE_WEBTRANSPORT_BASE as string | undefined)
 
-  return normalized || getApiBase(env)
+  if (normalized) return normalized
+
+  if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+    const host = window.location.hostname
+    const port = window.location.port
+    if (!port || port === '443') {
+      return `https://${host}:4444`
+    }
+    return `https://${host}:${port}`
+  }
+
+  return getApiBase(env)
 }
 
 const resolveWebTransportFlag = (env: EnvConfig) => {
