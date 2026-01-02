@@ -30,7 +30,7 @@
       "devDependencies": {
         "@types/node": "25.0.3",
         "@types/react": "^19.2.7",
-        "bun-types": "1.3.6-canary.20260101T140646",
+        "bun-types": "1.3.6-canary.20260102T140751",
         "drizzle-kit": "1.0.0-beta.8-dbc3565",
         "oxfmt": "0.21.0",
         "oxlint": "1.36.0",
@@ -506,7 +506,7 @@
 
     "buffer-equal-constant-time": ["buffer-equal-constant-time@1.0.1", "", {}, "sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA=="],
 
-    "bun-types": ["bun-types@1.3.6-canary.20260101T140646", "", { "dependencies": { "@types/node": "*" } }, "sha512-3KN/VOAiTAcmZbDBEFn9zf/9QtraHNH36ST5fxJyzDlxGNRsx9m6erucRaIDz9wdVJP/2DaS5RnuLNTH99ExxA=="],
+    "bun-types": ["bun-types@1.3.6-canary.20260102T140751", "", { "dependencies": { "@types/node": "*" } }, "sha512-lXB1QmgugQ5y7A/NC0i3cdM0vesJqd9FI3hl0K23yHKjd2cl2sii6Xwu0q0WC33v3/7bl1X8E0fU53CizGcqhA=="],
 
     "bundle-name": ["bundle-name@4.1.0", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q=="],
 
@@ -1057,6 +1057,8 @@
     "better-auth/zod": ["zod@4.3.4", "", {}, "sha512-Zw/uYiiyF6pUT1qmKbZziChgNPRu+ZRneAsMUDU6IwmXdWt5JwcUfy2bvLOCUtz5UniaN/Zx5aFttZYbYc7O/A=="],
 
     "csso/css-tree": ["css-tree@2.2.1", "", { "dependencies": { "mdn-data": "2.0.28", "source-map-js": "^1.0.1" } }, "sha512-OA0mILzGc1kCOCSJerOeqDxDQ4HOh+G8NbOJFOTgOCzpw7fCBubk0fEyxp8AgOL/jvLgYA/uV0cMbe43ElF1JA=="],
+
+    "drizzle-orm/bun-types": ["bun-types@1.3.6-canary.20260101T140646", "", { "dependencies": { "@types/node": "*" } }, "sha512-3KN/VOAiTAcmZbDBEFn9zf/9QtraHNH36ST5fxJyzDlxGNRsx9m6erucRaIDz9wdVJP/2DaS5RnuLNTH99ExxA=="],
 
     "drizzle-zod/zod": ["zod@4.3.4", "", {}, "sha512-Zw/uYiiyF6pUT1qmKbZziChgNPRu+ZRneAsMUDU6IwmXdWt5JwcUfy2bvLOCUtz5UniaN/Zx5aFttZYbYc7O/A=="],
 
