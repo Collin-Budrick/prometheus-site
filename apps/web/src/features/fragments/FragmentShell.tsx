@@ -1,4 +1,4 @@
-import { $, component$, type Signal, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
@@ -18,41 +18,26 @@ const buildMotionStyle = (column: string, index: number) =>
 type FragmentClientEffectsProps = {
   planValue: FragmentPlanValue
   initialFragmentMap: FragmentPayloadMap
-  plan: FragmentPlanValue
-  initialFragments: FragmentPayloadValue
-  path: string
-  fragments: Signal<FragmentPayloadMap>
-  status: Signal<'idle' | 'streaming' | 'error'>
 }
 
-const FragmentClientEffects = component$(
-  ({ planValue, initialFragmentMap, plan, initialFragments, path, fragments, status }: FragmentClientEffectsProps) => {
-    useVisibleTask$(
-      ({ cleanup }) => {
-        if (!isPrefetchEnabled(import.meta.env)) return
+const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
+  useVisibleTask$(
+    ({ cleanup }) => {
+      if (!isPrefetchEnabled(import.meta.env)) return
 
-        const teardownSpeculation = applySpeculationRules(
-          buildSpeculationRulesForPlan(planValue, import.meta.env, {
-            knownFragments: initialFragmentMap
-          })
-        )
+      const teardownSpeculation = applySpeculationRules(
+        buildSpeculationRulesForPlan(planValue, import.meta.env, {
+          knownFragments: initialFragmentMap
+        })
+      )
 
-        cleanup(() => teardownSpeculation())
-      },
-      { strategy: 'document-idle' }
-    )
+      cleanup(() => teardownSpeculation())
+    },
+    { strategy: 'document-idle' }
+  )
 
-    return (
-      <FragmentStreamController
-        plan={plan}
-        initialFragments={initialFragments}
-        path={path}
-        fragments={fragments}
-        status={status}
-      />
-    )
-  }
-)
+  return null
+})
 
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
   const planValue = resolvePlan(plan)
@@ -86,6 +71,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
               class="fragment-card"
               style={buildMotionStyle(entry.layout.column, index)}
               data-motion
+              data-fragment-id={entry.id}
             >
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />
@@ -99,16 +85,15 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
           )
         })}
       </div>
+      <FragmentStreamController
+        plan={plan}
+        initialFragments={initialFragments}
+        path={path}
+        fragments={fragments}
+        status={status}
+      />
       {clientReady.value ? (
-        <FragmentClientEffects
-          planValue={planValue}
-          initialFragmentMap={initialFragmentMap}
-          plan={plan}
-          initialFragments={initialFragments}
-          path={path}
-          fragments={fragments}
-          status={status}
-        />
+        <FragmentClientEffects planValue={planValue} initialFragmentMap={initialFragmentMap} />
       ) : null}
     </section>
   )
