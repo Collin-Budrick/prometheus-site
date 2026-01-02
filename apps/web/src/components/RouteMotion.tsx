@@ -35,14 +35,39 @@ export const RouteMotion = component$(() => {
         }
 
         const root = document.querySelector('[data-motion-root]') ?? document.body
-        const { animate } = await import('@motionone/dom')
-        document.documentElement.dataset.motionReady = 'true'
-
         const observedElements = new WeakSet<HTMLElement>()
         const seenElements = new WeakSet<HTMLElement>()
         const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
         const animations = new WeakMap<HTMLElement, AnimationControls>()
         const activeAnimations = new Set<AnimationControls>()
+
+        const seedInitialTargets = () => {
+          const viewHeight = window.innerHeight || document.documentElement.clientHeight
+          const viewWidth = window.innerWidth || document.documentElement.clientWidth
+          const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+
+          elements.forEach((element) => {
+            const current = element.dataset.motionState
+            if (current === 'in' || current === 'out') {
+              targets.set(element, current)
+              return
+            }
+
+            const rect = element.getBoundingClientRect()
+            const inView =
+              rect.bottom > 0 &&
+              rect.right > 0 &&
+              rect.top < viewHeight &&
+              rect.left < viewWidth
+            const next: 'in' | 'out' = inView ? 'in' : 'out'
+            element.dataset.motionState = next
+            targets.set(element, next)
+          })
+        }
+
+        const { animate } = await import('@motionone/dom')
+        seedInitialTargets()
+        document.documentElement.dataset.motionReady = 'true'
 
         let disposed = false
         let pendingIdle: (() => void) | null = null

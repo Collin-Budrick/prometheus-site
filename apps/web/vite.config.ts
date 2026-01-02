@@ -251,7 +251,6 @@ export default defineConfig(
                 [constants.BROTLI_PARAM_QUALITY]: 6
               }
             }),
-            'gzip'
           ]
         })
       ],

@@ -21,6 +21,9 @@ const elementNode = (tag: string, attrs?: Record<string, string>, children: Rend
   children
 })
 
+const buildMotionStyle = (column: string, index: number) =>
+  ({ gridColumn: column, '--motion-delay': `${index * 80}ms` } as Record<string, string>)
+
 const buildFallbackFragment = (id: string, apiBase: string, path: string, error?: unknown): FragmentPayload => {
   const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
@@ -81,7 +84,7 @@ const HomeShellSkeleton = () => (
     </div>
     <div class="fragment-grid">
       {Array.from({ length: 3 }).map((_, index) => (
-        <article key={index} class="fragment-card" style={{ gridColumn: 'span 4' }} data-motion>
+        <article key={index} class="fragment-card" style={buildMotionStyle('span 4', index)} data-motion>
           <div class="fragment-placeholder">
             <div class="meta-line">loading</div>
             <p>Fragment incoming…</p>

@@ -12,6 +12,9 @@ type FragmentShellProps = {
   path: string
 }
 
+const buildMotionStyle = (column: string, index: number) =>
+  ({ gridColumn: column, '--motion-delay': `${index * 80}ms` } as Record<string, string>)
+
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)
@@ -39,10 +42,15 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
         <span>{status.value === 'streaming' ? 'Streaming fragments' : status.value === 'error' ? 'Stream stalled' : 'Idle'}</span>
       </div>
       <div class="fragment-grid">
-        {planValue.fragments.map((entry) => {
+        {planValue.fragments.map((entry, index) => {
           const fragment = fragments.value[entry.id]
           return (
-            <article key={entry.id} class="fragment-card" style={{ gridColumn: entry.layout.column }} data-motion>
+            <article
+              key={entry.id}
+              class="fragment-card"
+              style={buildMotionStyle(entry.layout.column, index)}
+              data-motion
+            >
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />
               ) : (
