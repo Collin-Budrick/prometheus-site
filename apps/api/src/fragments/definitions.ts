@@ -88,6 +88,7 @@ const ledger: FragmentDefinition = {
           'Critical transforms run inside WebAssembly for deterministic, edge-safe execution. Numeric outputs feed fragment composition without touching HTML.'
         )
       ),
+      h('wasm-renderer-demo', null),
       h('div', { class: 'matrix' }, [
         h('div', { class: 'cell' }, [t('Burst throughput'), h('strong', null, t(`${burst} op/s`))]),
         h('div', { class: 'cell' }, [t('Hot-path score'), h('strong', null, t(`${hotPath} pts`))]),
@@ -139,6 +140,7 @@ const reactFragment: FragmentDefinition = {
           null,
           'React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik.'
         ),
+        createElement('react-binary-demo', null),
         createElement('div', { className: 'badge' }, 'RSC-ready')
       )
     )

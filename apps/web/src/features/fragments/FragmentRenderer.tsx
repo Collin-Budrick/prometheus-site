@@ -2,6 +2,8 @@ import { component$ } from '@builder.io/qwik'
 import type { RenderNode } from '../../fragment/types'
 import { sanitizeAttributes } from '../../fragment/sanitize'
 import { PreactIsland } from '../../components/PreactIsland'
+import { ReactBinaryDemo } from '../../components/ReactBinaryDemo'
+import { WasmRendererDemo } from '../../components/WasmRendererDemo'
 
 type NodeProps = {
   node: RenderNode
@@ -49,6 +51,14 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
 
   if (node.tag === 'preact-island') {
     return <PreactIsland label={node.attrs?.label} />
+  }
+
+  if (node.tag === 'react-binary-demo') {
+    return <ReactBinaryDemo />
+  }
+
+  if (node.tag === 'wasm-renderer-demo') {
+    return <WasmRendererDemo />
   }
 
   const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap
