@@ -87,7 +87,7 @@ const waitForCachedFragment = async (id: string, deadline: number): Promise<Stor
   return null
 }
 
-const refreshFragment = async (id: string): Promise<StoredFragment> => {
+export const refreshFragment = async (id: string): Promise<StoredFragment> => {
   const existing = inflight.get(id)
   if (existing) return existing
 
@@ -207,10 +207,16 @@ export const getFragmentPlan = async (path: string): Promise<FragmentPlan> => {
   return { ...plan, fragments }
 }
 
-export const getFragmentEntry = async (id: string) => getOrRender(id)
+type FragmentFetchOptions = {
+  refresh?: boolean
+}
 
-export const getFragmentPayload = async (id: string) => (await getFragmentEntry(id)).payload
-export const getFragmentHtml = async (id: string) => (await getFragmentEntry(id)).html
+export const getFragmentEntry = async (id: string, options: FragmentFetchOptions = {}) =>
+  options.refresh ? refreshFragment(id) : getOrRender(id)
+
+export const getFragmentPayload = async (id: string, options?: FragmentFetchOptions) =>
+  (await getFragmentEntry(id, options)).payload
+export const getFragmentHtml = async (id: string, options?: FragmentFetchOptions) => (await getFragmentEntry(id, options)).html
 
 export const streamFragmentsForPath = async (path: string) => {
   const plan = await getFragmentPlan(path)

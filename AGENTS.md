@@ -26,6 +26,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddyfile, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
+- **Fragment HMR (dev):** Vite watches `apps/api/src/fragments` and emits `fragments:refresh` to re-fetch fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the web app.
 - **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_WEBTRANSPORT_DATAGRAMS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_REPORT_CLIENT_ERRORS`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on.
 - **WebTransport envs:** `WEBTRANSPORT_API_BASE` (defaults to `http://api:4000`), `WEBTRANSPORT_LISTEN_ADDR` (defaults to `:4444`), `WEBTRANSPORT_CERT_PATH`, `WEBTRANSPORT_KEY_PATH`, `WEBTRANSPORT_ALLOWED_ORIGINS`, `WEBTRANSPORT_ALLOW_ANY_ORIGIN`, `WEBTRANSPORT_ENABLE_DATAGRAMS` (defaults to on), `WEBTRANSPORT_MAX_DATAGRAM_SIZE` (defaults to `1200`), `PROMETHEUS_WEBTRANSPORT_PORT` (defaults to `4444` for host UDP), `VITE_WEBTRANSPORT_BASE` (optional client override).

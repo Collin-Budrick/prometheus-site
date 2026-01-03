@@ -74,6 +74,7 @@ const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: Co
 }
 
 const truthyValues = new Set(['1', 'true', 'yes'])
+const allowDevRefresh = process.env.NODE_ENV !== 'production'
 
 const isTruthyParam = (value: string | undefined) => {
   if (!value) return false
@@ -105,8 +106,10 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     async ({ query }) => {
       const path = typeof query.path === 'string' ? query.path : '/'
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
+      const refresh =
+        allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       const cacheKey = buildFragmentPlanCacheKey(path)
-      const cached = await readCache<FragmentPlanResponse>(cacheKey)
+      const cached = refresh ? null : await readCache<FragmentPlanResponse>(cacheKey)
       let plan = cached
       if (!plan) {
         const start = performance.now()
@@ -123,7 +126,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     {
       query: t.Object({
         path: t.Optional(t.String()),
-        includeInitial: t.Optional(t.String())
+        includeInitial: t.Optional(t.String()),
+        refresh: t.Optional(t.String())
       })
     }
   )
@@ -199,12 +203,15 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       if (!id) {
         return new Response('Missing fragment id', { status: 400 })
       }
-      const entry = await getFragmentEntry(id)
+      const refresh =
+        allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
+      const entry = await getFragmentEntry(id, refresh ? { refresh: true } : undefined)
       return fragmentResponse(entry)
     },
     {
       query: t.Object({
-        id: t.String()
+        id: t.String(),
+        refresh: t.Optional(t.String())
       })
     }
   )

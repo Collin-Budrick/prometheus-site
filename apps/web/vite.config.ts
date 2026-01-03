@@ -4,6 +4,7 @@ import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
 import { compression, defineAlgorithm } from 'vite-plugin-compression2'
 import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -213,6 +214,42 @@ const earlyHintsPlugin = (): Plugin => {
   }
 }
 
+const fragmentHmrPlugin = (): Plugin => {
+  const fragmentRoot = path.resolve(process.cwd(), '../api/src/fragments')
+  const normalizedRoot = path.normalize(fragmentRoot)
+
+  const isFragmentFile = (file: string) => path.normalize(file).startsWith(normalizedRoot)
+
+  return {
+    name: 'fragment-hmr',
+    apply: 'serve',
+    configureServer(server) {
+      if (existsSync(fragmentRoot)) {
+        server.watcher.add(fragmentRoot)
+      }
+
+      const notify = (file: string) => {
+        if (!isFragmentFile(file)) return
+        server.ws.send({
+          type: 'custom',
+          event: 'fragments:refresh',
+          data: { file }
+        })
+      }
+
+      server.watcher.on('add', notify)
+      server.watcher.on('change', notify)
+      server.watcher.on('unlink', notify)
+
+      return () => {
+        server.watcher.off('add', notify)
+        server.watcher.off('change', notify)
+        server.watcher.off('unlink', notify)
+      }
+    }
+  }
+}
+
 const sanitizeOutputOptionsPlugin = (): Plugin => ({
   name: 'sanitize-rollup-output-options',
   configResolved(config) {
@@ -257,6 +294,7 @@ export default defineConfig(
       plugins: [
         sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),
+        fragmentHmrPlugin(),
         tailwindcss(),
         qwikCity(),
         qwikVite({

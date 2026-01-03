@@ -184,9 +184,9 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />
               ) : (
-                <div class="fragment-placeholder">
-                  <div class="meta-line">fragment miss</div>
-                  <p>{entry.id}</p>
+                <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
+                  <div class="loader" aria-hidden="true" />
+                  <span class="sr-only">Loading fragment {entry.id}</span>
                 </div>
               )}
             </FragmentCard>

@@ -32,6 +32,7 @@ export const FragmentStreamController = component$(
         const needed = new Set<string>()
         const pending = new Map<string, FragmentPayload>()
         const fallbackTimers = new Map<string, number>()
+        let hmrTimer: number | null = null
         const observed = new WeakSet<Element>()
         const elementsById = new Map<string, HTMLElement>()
         let observer: IntersectionObserver | null = null
@@ -114,6 +115,46 @@ export const FragmentStreamController = component$(
           pending.delete(id)
           applyPayload(payload)
           return true
+        }
+
+        const refreshFragments = () => {
+          if (!active) return
+          const ids = planValue.fragments.map((entry) => entry.id)
+          if (!ids.length) return
+          setStreaming()
+          ids.forEach((id) => {
+            if (inFlight.has(id)) return
+            inFlight.add(id)
+            fetchFragment(id, { refresh: true })
+              .then((payload) => {
+                if (!active) return
+                applyPayload(payload)
+              })
+              .catch((error) => {
+                if (!active) return
+                if ((error as Error)?.name === 'AbortError') return
+                console.error('Fragment refresh failed', error)
+                status.value = 'error'
+              })
+              .finally(() => {
+                inFlight.delete(id)
+                markIdle()
+              })
+          })
+        }
+
+        const scheduleHmrRefresh = () => {
+          if (hmrTimer) {
+            window.clearTimeout(hmrTimer)
+          }
+          hmrTimer = window.setTimeout(() => {
+            hmrTimer = null
+            refreshFragments()
+          }, 75)
+        }
+
+        if (import.meta.hot) {
+          import.meta.hot.on('fragments:refresh', scheduleHmrRefresh)
         }
 
         const fetchMissing = (ids: string[]) => {
@@ -285,6 +326,13 @@ export const FragmentStreamController = component$(
             flushHandle = null
           }
           elementsById.clear()
+          if (hmrTimer) {
+            window.clearTimeout(hmrTimer)
+            hmrTimer = null
+          }
+          if (import.meta.hot) {
+            import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
+          }
           teardownFragmentEffects(Object.keys(fragments.value))
         })
       },

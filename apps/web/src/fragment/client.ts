@@ -157,9 +157,19 @@ export const fetchFragmentPlan = async (path: string): Promise<FragmentPlan> => 
   return response.json() as Promise<FragmentPlan>
 }
 
-export const fetchFragment = async (id: string): Promise<FragmentPayload> => {
+type FetchFragmentOptions = {
+  refresh?: boolean
+}
+
+export const fetchFragment = async (id: string, options: FetchFragmentOptions = {}): Promise<FragmentPayload> => {
   const api = getApiBase()
-  const response = await fetch(`${api}/fragments?id=${encodeURIComponent(id)}`)
+  const params = new URLSearchParams({ id })
+  if (options.refresh) {
+    params.set('refresh', '1')
+  }
+  const response = await fetch(`${api}/fragments?${params.toString()}`, {
+    cache: options.refresh ? 'no-store' : 'default'
+  })
   if (!response.ok) {
     throw new Error(`Fragment fetch failed: ${response.status}`)
   }

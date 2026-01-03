@@ -564,6 +564,45 @@
     @apply rounded-[20px] border border-dashed border-amber-200/70 bg-amber-50/40 p-5 text-sm text-slate-500;
   }
 
+  .fragment-placeholder.is-loading {
+    display: grid;
+    place-items: center;
+    min-height: 180px;
+  }
+
+  .loader {
+    display: inline-grid;
+    padding: 5px;
+    background: rgba(255, 197, 122, 0.75);
+    filter: blur(4px) contrast(12);
+    opacity: 0.85;
+  }
+
+  .loader::before {
+    content: "";
+    height: 40px;
+    aspect-ratio: 3;
+    --c: rgba(255, 208, 150, 0) 64%, rgb(var(--accent) / 0.9) 66% 98%, #0000 101%;
+    background:
+      radial-gradient(35% 146% at 50% 159%, var(--c)) 0 0,
+      radial-gradient(35% 146% at 50% -59%, var(--c)) 100% 100%;
+    background-size: calc(200% / 3) 50%;
+    background-repeat: repeat-x;
+    animation: l11 0.8s infinite linear;
+  }
+
+  @keyframes l11 {
+    to {
+      background-position: -200% 0, -100% 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loader::before {
+      animation-duration: 0.001ms;
+    }
+  }
+
   .meta-line {
     @apply flex flex-wrap gap-2 mb-3 font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
   }
@@ -643,12 +682,12 @@
   }
 
   .preact-island-label {
-    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
   }
 
   .preact-island-timer {
     @apply rounded-full border border-teal-200/70 bg-teal-50 px-3 py-1;
-    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-teal-700;
+    @apply font-mono text-[11px] text-teal-700 uppercase tracking-[0.35em];
   }
 
   .preact-island-ui[data-running='false'] .preact-island-timer {
@@ -749,16 +788,16 @@
   }
 
   .preact-island-stage-title {
-    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
   }
 
   .preact-island-stage-time {
-    @apply text-2xl font-semibold text-slate-900;
+    @apply font-semibold text-slate-900 text-2xl;
     letter-spacing: 0.04em;
   }
 
   .preact-island-stage-sub {
-    @apply text-xs text-slate-500;
+    @apply text-slate-500 text-xs;
   }
 
   .preact-island-action {
@@ -825,7 +864,7 @@
   }
 
   .planner-demo-title {
-    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
   }
 
   .planner-demo-controls {
@@ -836,7 +875,7 @@
 
   .planner-demo-action {
     @apply inline-flex items-center gap-2 rounded-full border border-amber-200/80 bg-amber-50 px-4 py-2;
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-amber-700;
+    @apply font-mono text-[10px] text-amber-700 uppercase tracking-[0.35em];
     box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
     transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
   }
@@ -854,8 +893,8 @@
   }
 
   .planner-demo-secondary {
-    @apply inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2;
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-500;
+    @apply inline-flex items-center gap-2 bg-white px-4 py-2 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
     transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
   }
 
@@ -865,7 +904,7 @@
   }
 
   .planner-demo-status {
-    @apply text-sm leading-6 text-slate-600;
+    @apply text-slate-600 text-sm leading-6;
   }
 
   .planner-demo-steps {
@@ -875,8 +914,8 @@
   }
 
   .planner-demo-step {
-    @apply inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1;
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-500;
+    @apply inline-flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
     transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
   }
 
@@ -932,11 +971,11 @@
   }
 
   .planner-demo-card-title {
-    @apply text-sm font-semibold text-slate-900;
+    @apply font-semibold text-slate-900 text-sm;
   }
 
   .planner-demo-card-meta {
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-500;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
   }
 
   .planner-demo-row {
@@ -947,17 +986,17 @@
   }
 
   .planner-demo-label {
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-500;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
   }
 
   .planner-demo-value {
-    @apply text-xs text-slate-600;
+    @apply text-slate-600 text-xs;
     justify-self: start;
   }
 
   .planner-demo-pill {
-    @apply rounded-full border border-slate-200 bg-white px-2 py-1;
-    @apply font-mono text-[9px] uppercase tracking-[0.35em] text-slate-500;
+    @apply bg-white px-2 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[9px] text-slate-500 uppercase tracking-[0.35em];
     justify-self: end;
   }
 
@@ -966,8 +1005,8 @@
   }
 
   .planner-demo-toggle {
-    @apply rounded-full border border-slate-200 bg-white px-3 py-1;
-    @apply font-mono text-[10px] uppercase tracking-[0.35em] text-slate-600;
+    @apply bg-white px-3 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-600 uppercase tracking-[0.35em];
     transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
     justify-self: start;
   }
@@ -990,8 +1029,8 @@
   }
 
   .planner-demo-outcome {
-    @apply rounded-full border border-slate-200 bg-white px-3 py-1;
-    @apply font-mono text-[9px] uppercase tracking-[0.35em] text-slate-500;
+    @apply bg-white px-3 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[9px] text-slate-500 uppercase tracking-[0.35em];
     display: flex;
     align-items: center;
     justify-content: space-between;
