@@ -30,7 +30,7 @@ const decodeTree = (bytes: Uint8Array): RenderNode => {
   const nodeCount = view.getUint32(8, true)
   const attrCount = view.getUint32(12, true)
   const stringCount = view.getUint32(16, true)
-  const stringBytesLength = view.getUint32(20, true)
+  const _stringBytesLength = view.getUint32(20, true)
 
   const nodesOffset = 24
   const attrsOffset = nodesOffset + nodeCount * TREE_NODE_SIZE
@@ -53,7 +53,7 @@ const decodeTree = (bytes: Uint8Array): RenderNode => {
     const tagId = view.getUint32(base + 4, true)
     const textId = view.getUint32(base + 8, true)
     const firstChild = view.getUint32(base + 12, true)
-    const nextSibling = view.getUint32(base + 16, true)
+    const _nextSibling = view.getUint32(base + 16, true)
     const attrStart = view.getUint32(base + 20, true)
 
     if (type === 1) {

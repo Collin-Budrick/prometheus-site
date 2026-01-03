@@ -299,13 +299,7 @@ const readFragmentStream = async (
       return 'aborted'
     }
 
-    let chunk: Awaited<ReturnType<typeof reader.read>>
-
-    try {
-      chunk = await reader.read()
-    } catch (error) {
-      throw error
-    }
+    const chunk = await reader.read()
 
     const { value, done } = chunk
     if (done) {
