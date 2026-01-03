@@ -47,14 +47,9 @@ export const FragmentStreamController = component$(
         const activeLang = track(() => langSignal.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
+        const refreshIds = new Set<string>()
 
-        if (langChanged) {
-          teardownFragmentEffects(Object.keys(fragments.value))
-          fragments.value = {}
-          status.value = 'idle'
-        }
-
-        if (!langChanged && (!fragments.value || !Object.keys(fragments.value).length)) {
+        if (!fragments.value || !Object.keys(fragments.value).length) {
           fragments.value = resolveFragments(initialFragments) ?? {}
         }
 
@@ -62,7 +57,13 @@ export const FragmentStreamController = component$(
         Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
 
         const planValue = resolvePlan(plan)
+        const refreshAllIds = langChanged ? planValue.fragments.map((entry) => entry.id) : []
+        if (refreshAllIds.length) {
+          refreshAllIds.forEach((id) => refreshIds.add(id))
+          status.value = 'streaming'
+        }
         const entryById = new Map(planValue.fragments.map((entry) => [entry.id, entry]))
+        planValue.fragments.forEach((entry) => needed.add(entry.id))
 
         const applyPayload = (payload: FragmentPayload) => {
           if (!active) return
@@ -71,6 +72,7 @@ export const FragmentStreamController = component$(
             window.clearTimeout(timer)
             fallbackTimers.delete(payload.id)
           }
+          refreshIds.delete(payload.id)
           pending.set(payload.id, payload)
           queued.add(payload.id)
           scheduleFlush()
@@ -172,7 +174,8 @@ export const FragmentStreamController = component$(
 
         const fetchMissing = (ids: string[]) => {
           ids.forEach((id) => {
-            if (fragments.value[id] || inFlight.has(id) || pending.has(id)) return
+            const needsRefresh = refreshIds.has(id)
+            if ((!needsRefresh && fragments.value[id]) || inFlight.has(id) || pending.has(id)) return
             const timer = fallbackTimers.get(id)
             if (timer) {
               window.clearTimeout(timer)
@@ -199,7 +202,9 @@ export const FragmentStreamController = component$(
         }
 
         const fetchMissingNeeded = () => {
-          const missing = Array.from(needed).filter((id) => !fragments.value[id] && !pending.has(id))
+          const missing = Array.from(needed).filter(
+            (id) => (refreshIds.has(id) || !fragments.value[id]) && !pending.has(id)
+          )
           if (!missing.length) return
           fetchMissing(missing)
         }
@@ -211,6 +216,7 @@ export const FragmentStreamController = component$(
 
           const handleFragment = (payload: FragmentPayload) => {
             if (!active) return
+            refreshIds.delete(payload.id)
             pending.set(payload.id, payload)
             if (needed.has(payload.id)) {
               applyPending(payload.id)
@@ -258,7 +264,7 @@ export const FragmentStreamController = component$(
           required.forEach((id) => {
             needed.add(id)
             if (applyPending(id)) return
-            if (!fragments.value[id]) {
+            if (refreshIds.has(id) || !fragments.value[id]) {
               missing.push(id)
             }
           })
@@ -276,15 +282,17 @@ export const FragmentStreamController = component$(
             const timer = window.setTimeout(() => {
               fallbackTimers.delete(id)
               if (!active) return
-              if (fragments.value[id] || pending.has(id) || inFlight.has(id)) return
+              const needsRefresh = refreshIds.has(id)
+              if ((!needsRefresh && fragments.value[id]) || pending.has(id) || inFlight.has(id)) return
               fetchMissing([id])
             }, STREAM_FALLBACK_DELAY)
             fallbackTimers.set(id, timer)
           })
         }
 
+        const fallbackIds = planValue.fragments.map((entry) => entry.id)
         if (!('IntersectionObserver' in window)) {
-          requestFragments(planValue.fragments.map((entry) => entry.id))
+          requestFragments(refreshAllIds.length ? refreshAllIds : fallbackIds)
           cleanup(() => {
             active = false
             teardownFragmentEffects(Object.keys(fragments.value))
@@ -315,7 +323,7 @@ export const FragmentStreamController = component$(
             if (observed.has(element)) return
             const id = element.dataset.fragmentId
             if (!id) return
-            if (fragments.value[id]) return
+            if (fragments.value[id] && !refreshIds.has(id)) return
             observer?.observe(element)
             observed.add(element)
             elementsById.set(id, element)
@@ -323,6 +331,9 @@ export const FragmentStreamController = component$(
         }
 
         observeTargets()
+        if (refreshAllIds.length) {
+          requestFragments(refreshAllIds)
+        }
 
         cleanup(() => {
           active = false
