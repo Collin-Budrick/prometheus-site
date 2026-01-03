@@ -12,4 +12,5 @@ declare module 'preact' {
 
 declare module 'preact/hooks' {
   export function useState<T>(initial: T): [T, (next: T | ((prev: T) => T)) => void]
+  export function useEffect(effect: () => void | (() => void), deps?: unknown[]): void
 }
