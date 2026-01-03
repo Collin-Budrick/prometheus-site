@@ -28,6 +28,8 @@ export const FragmentCard = component$<FragmentCardProps>(
     const placeholderRef = useSignal<HTMLDivElement>()
     const lastExpanded = useSignal(expandedId.value === id)
     const lastLayoutTick = useSignal(layoutTick.value)
+    const maxHeight = useSignal<number | null>(null)
+    const lastWidth = useSignal<number | null>(null)
 
     const handleToggle = $((event: MouseEvent) => {
       if (!(event.target instanceof HTMLElement)) return
@@ -180,15 +182,90 @@ export const FragmentCard = component$<FragmentCardProps>(
       { strategy: 'document-ready' }
     )
 
+    useVisibleTask$(
+      ({ track, cleanup }) => {
+        track(() => langSignal.value)
+        const card = cardRef.value
+        if (!card) return
+        let frame = requestAnimationFrame(() => {
+          frame = 0
+          if (expandedId.value === id) return
+          const height = card.getBoundingClientRect().height
+          if (height > 0) {
+            maxHeight.value = Math.max(maxHeight.value ?? 0, height)
+          }
+        })
+        cleanup(() => {
+          if (frame) cancelAnimationFrame(frame)
+        })
+      },
+      { strategy: 'document-ready' }
+    )
 
+    useVisibleTask$(
+      ({ cleanup }) => {
+        const card = cardRef.value
+        if (!card || typeof ResizeObserver === 'undefined') return
+        let resizeFrame: number | null = null
+        const observer = new ResizeObserver((entries) => {
+          if (expandedId.value === id) return
+          const entry = entries[0]
+          const width = entry?.contentRect.width ?? 0
+          const height = entry?.contentRect.height ?? 0
+          const previousWidth = lastWidth.value
+          const widthChanged = typeof previousWidth === 'number' && Math.abs(previousWidth - width) > 1
+
+          if (previousWidth === null) {
+            lastWidth.value = width
+            if (height > 0) {
+              maxHeight.value = Math.max(maxHeight.value ?? 0, height)
+            }
+            return
+          }
+
+          if (widthChanged) {
+            lastWidth.value = width
+            maxHeight.value = null
+            if (resizeFrame !== null) {
+              cancelAnimationFrame(resizeFrame)
+            }
+            resizeFrame = requestAnimationFrame(() => {
+              resizeFrame = null
+              if (expandedId.value === id) return
+              const nextHeight = card.getBoundingClientRect().height
+              if (nextHeight > 0) {
+                maxHeight.value = nextHeight
+              }
+            })
+            return
+          }
+
+          if (height > 0) {
+            maxHeight.value = Math.max(maxHeight.value ?? 0, height)
+          }
+        })
+        observer.observe(card)
+        cleanup(() => {
+          observer.disconnect()
+          if (resizeFrame !== null) {
+            cancelAnimationFrame(resizeFrame)
+          }
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    const lockedHeight = maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined
     const cardStyle = {
       gridColumn: column,
-      '--motion-delay': `${motionDelay}ms`
+      '--motion-delay': `${motionDelay}ms`,
+      minHeight: lockedHeight
     } as Record<string, string>
 
     const placeholderStyle = {
       gridColumn: column,
-      display: 'none'
+      display: 'none',
+      minHeight: lockedHeight
     } as Record<string, string>
 
     const isExpanded = expandedId.value === id
