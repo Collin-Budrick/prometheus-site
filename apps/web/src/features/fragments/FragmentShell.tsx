@@ -43,6 +43,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
   const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
   const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
   const expandedId = useSignal<string | null>(null)
+  const layoutTick = useSignal(0)
+  const gridRef = useSignal<HTMLDivElement>()
   const initialReady =
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
@@ -74,13 +76,57 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
     }
   })
 
+  useVisibleTask$(
+    ({ cleanup }) => {
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      if (!grid || !('ResizeObserver' in window)) return
+      let frame = 0
+      let pending = false
+      let lastWidth = 0
+      let lastHeight = 0
+      let ready = false
+
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0]
+        if (!entry) return
+        const { width, height } = entry.contentRect
+        if (!ready) {
+          ready = true
+          lastWidth = width
+          lastHeight = height
+          return
+        }
+        if (width === lastWidth && height === lastHeight) return
+        lastWidth = width
+        lastHeight = height
+        pending = true
+        if (frame) return
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          if (!pending) return
+          pending = false
+          layoutTick.value += 1
+        })
+      })
+
+      observer.observe(grid)
+
+      cleanup(() => {
+        observer.disconnect()
+        if (frame) cancelAnimationFrame(frame)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
   return (
     <section class="fragment-shell">
       <div class="fragment-status">
         <span class="dot" />
         <span>{status.value === 'streaming' ? 'Streaming fragments' : status.value === 'error' ? 'Stream stalled' : 'Idle'}</span>
       </div>
-      <div class="fragment-grid">
+      <div ref={gridRef} class="fragment-grid">
         {planValue.fragments.map((entry, index) => {
           const fragment = fragments.value[entry.id]
           return (
@@ -91,6 +137,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
               column={entry.layout.column}
               motionDelay={index * 120}
               expandedId={expandedId}
+              layoutTick={layoutTick}
             >
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />

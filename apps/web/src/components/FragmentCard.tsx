@@ -15,12 +15,15 @@ type FragmentCardProps = {
   column: string
   motionDelay: number
   expandedId: Signal<string | null>
+  layoutTick: Signal<number>
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
-  ({ id, fragmentId, column, motionDelay, expandedId }) => {
+  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick }) => {
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
+    const lastExpanded = useSignal(expandedId.value === id)
+    const lastLayoutTick = useSignal(layoutTick.value)
 
     const handleToggle = $((event: MouseEvent) => {
       if (!(event.target instanceof HTMLElement)) return
@@ -45,13 +48,17 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       ({ track, cleanup }) => {
-      track(() => expandedId.value === id)
+      const expanded = track(() => expandedId.value === id)
+      const tick = track(() => layoutTick.value)
+      const expandedChanged = expanded !== lastExpanded.value
+      const resizeChanged = tick !== lastLayoutTick.value
+      lastExpanded.value = expanded
+      lastLayoutTick.value = tick
 
       const card = cardRef.value
       if (!card) return
 
       const placeholder = placeholderRef.value
-      const expanded = expandedId.value === id
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       const computed = window.getComputedStyle(card)
       const pendingRect = pendingRects.get(card)
@@ -96,6 +103,12 @@ export const FragmentCard = component$<FragmentCardProps>(
 
         const run = () => {
           if (cancelled) return
+          const current = activeAnimations.get(card)
+          if (current) {
+            current.cancel()
+            activeAnimations.delete(card)
+          }
+
           const lastRect = card.getBoundingClientRect()
           const lastRadius = window.getComputedStyle(card).borderRadius
           previousRects.set(card, lastRect)
@@ -119,15 +132,12 @@ export const FragmentCard = component$<FragmentCardProps>(
             return
           }
 
-          const current = activeAnimations.get(card)
-          if (current) {
-            current.cancel()
-            activeAnimations.delete(card)
-          }
-
           card.style.transformOrigin = 'top left'
           card.style.willChange = 'transform, border-radius'
 
+          const isResizeFrame = resizeChanged && !expandedChanged
+          const duration = isResizeFrame ? 220 : 550
+          const easing = isResizeFrame ? 'linear' : 'cubic-bezier(0.22, 1, 0.36, 1)'
           const animation = card.animate(
             [
               {
@@ -137,22 +147,24 @@ export const FragmentCard = component$<FragmentCardProps>(
               { transform: 'none', borderRadius: lastRadius }
             ],
             {
-              duration: 550,
-              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              duration,
+              easing,
               fill: 'both'
             }
           )
 
           activeAnimations.set(card, animation)
-          animation.finished.finally(() => {
-            if (activeAnimations.get(card) === animation) {
-              activeAnimations.delete(card)
-            }
-            card.style.transformOrigin = ''
-            card.style.transform = ''
-            card.style.borderRadius = ''
-            card.style.willChange = ''
-          })
+          animation.finished
+            .catch(() => {})
+            .finally(() => {
+              if (activeAnimations.get(card) === animation) {
+                activeAnimations.delete(card)
+              }
+              card.style.transformOrigin = ''
+              card.style.transform = ''
+              card.style.borderRadius = ''
+              card.style.willChange = ''
+            })
         }
 
         if (typeof requestAnimationFrame === 'function') {
