@@ -3,8 +3,7 @@ import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPl
 import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
-import { useLangSignal } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import { FragmentRenderer } from './FragmentRenderer'
 import { FragmentStreamController } from './FragmentStreamController'
 import { resolveFragments, resolvePlan } from './utils'
@@ -40,8 +39,8 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 })
 
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
-  const langSignal = useLangSignal()
-  const copy = getUiCopy(langSignal.value)
+  const langSignal = useSharedLangSignal()
+  const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)
   const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
@@ -172,10 +171,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
         <span class="dot" />
         <span>
           {status.value === 'streaming'
-            ? copy.fragmentStatusStreaming
+            ? copy.value.fragmentStatusStreaming
             : status.value === 'error'
-              ? copy.fragmentStatusStalled
-              : copy.fragmentStatusIdle}
+              ? copy.value.fragmentStatusStalled
+              : copy.value.fragmentStatusIdle}
         </span>
       </div>
       <div ref={gridRef} class="fragment-grid">
@@ -196,7 +195,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
               ) : (
                 <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                   <div class="loader" aria-hidden="true" />
-                  <span class="sr-only">{copy.fragmentLoading.replace('{id}', entry.id)}</span>
+                  <span class="sr-only">{copy.value.fragmentLoading.replace('{id}', entry.id)}</span>
                 </div>
               )}
             </FragmentCard>
