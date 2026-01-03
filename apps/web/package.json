@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --mode ssr --port 4173",
     "build": "vite build",
-    "preview": "vite preview --port 4173"
+    "preview": "vite preview --port 4173",
+    "lint": "oxlint ."
   },
   "dependencies": {
     "@builder.io/qwik": "1.18.0",
@@ -21,9 +22,13 @@
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "25.0.3",
     "lightningcss": "^1.30.2",
+    "oxlint": "1.36.0",
     "tailwindcss": "^4.1.18",
     "typescript": "6.0.0-dev.20260103",
     "vite": "8.0.0-beta.5",
     "vite-plugin-compression2": "^2.4.0"
+  },
+  "optionalDependencies": {
+    "@oxlint/win32-arm64": "^1.36.0"
   }
 }

@@ -1,0 +1,9 @@
+{
+  "semi": false,
+  "singleQuote": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "trailingComma": "all",
+  "ignorePatterns": ["dist/**", "node_modules/**", "apps/web/server/**", "apps/web/test-results/**"]
+}

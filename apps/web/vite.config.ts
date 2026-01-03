@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
+import { defineConfig, type Plugin, type ProxyOptions, type ViteDevServer } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
@@ -288,6 +288,13 @@ export default defineConfig(
       Number.isFinite(hmrClientPort) ||
       Number.isFinite(hmrPort) ||
       !!hmrPath
+    const devApiProxyTarget = process.env.PROMETHEUS_DEV_API_PROXY?.trim() || 'http://127.0.0.1:4000'
+    const apiProxy: ProxyOptions = {
+      target: devApiProxyTarget,
+      changeOrigin: true,
+      secure: false,
+      rewrite: (pathValue) => pathValue.replace(/^\/api/, '')
+    }
     const binding = await loadQwikBinding()
 
     return {
@@ -336,7 +343,10 @@ export default defineConfig(
             port: Number.isFinite(hmrPort) ? hmrPort : undefined,
             path: hmrPath || undefined
           }
-          : undefined
+          : undefined,
+        proxy: {
+          '/api': apiProxy
+        }
       },
       preview: {
         port: 4173,

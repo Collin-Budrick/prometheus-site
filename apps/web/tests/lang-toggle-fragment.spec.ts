@@ -1,0 +1,59 @@
+import { expect, test } from '@playwright/test'
+import { decodeFragmentPayload } from '../src/fragment/binary'
+
+test('updates hero fragment copy when language toggles', async ({ page }) => {
+  await page.goto('/')
+
+  const heading = page.getByRole('heading', { level: 1 })
+  await expect(heading).toHaveText('Binary-first. Fragment-native. Zero hydration.')
+
+  const metaLine = page.locator('.fragment-card .meta-line').first()
+  await expect(metaLine).toContainText('fragment addressable')
+
+  const plannerTitle = page.locator('.planner-demo-title')
+  const plannerRun = page.locator('.planner-demo-action')
+  const plannerShuffle = page.locator('.planner-demo-secondary')
+  const plannerStatus = page.locator('.planner-demo-status')
+
+  await expect(plannerTitle).toHaveText('Planner simulation')
+  await expect(plannerRun).toHaveText('Run plan')
+  await expect(plannerShuffle).toHaveText('Shuffle cache')
+  await expect(plannerStatus).toHaveText('Waiting on planner execution.')
+
+  await page.waitForFunction(() => (window as any).__PROM_REFRESH_FRAGMENTS)
+
+  const fragmentRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return (
+      url.pathname.endsWith('/fragments') &&
+      url.searchParams.get('lang') === 'ko' &&
+      url.searchParams.get('id') === 'fragment://page/home/hero@v1'
+    )
+  })
+
+  await page.locator('.lang-toggle').click()
+
+  const request = await fragmentRequest
+  const response = await request.response()
+  expect(response?.ok()).toBeTruthy()
+  const body = await response?.body()
+  expect(body).toBeTruthy()
+  if (body) {
+    const payload = decodeFragmentPayload(new Uint8Array(body))
+    const texts: string[] = []
+    const walk = (node: typeof payload.tree) => {
+      if (node?.type === 'text' && node.text) texts.push(node.text)
+      if (node?.children) node.children.forEach(walk)
+    }
+    walk(payload.tree)
+    expect(texts).toContain('바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.')
+  }
+
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
+  await expect(heading).toHaveText('바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.')
+  await expect(metaLine).toContainText('프래그먼트 주소 지정')
+  await expect(plannerTitle).toHaveText('플래너 시뮬레이션')
+  await expect(plannerRun).toHaveText('플랜 실행')
+  await expect(plannerShuffle).toHaveText('캐시 섞기')
+  await expect(plannerStatus).toHaveText('플래너 실행을 기다리는 중입니다.')
+})

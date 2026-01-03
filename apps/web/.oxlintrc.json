@@ -1,0 +1,8 @@
+{
+  "ignorePatterns": ["dist/**", "node_modules/**", "server/**", "test-results/**"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  }
+}
