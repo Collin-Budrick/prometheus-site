@@ -13,6 +13,11 @@ export type UiCopy = {
   languageShortKo: string
   languageAriaToEn: string
   languageAriaToKo: string
+  fragmentStatusStreaming: string
+  fragmentStatusStalled: string
+  fragmentStatusIdle: string
+  fragmentLoading: string
+  fragmentClose: string
   storeMetaLine: string
   storeTitle: string
   storeDescription: string
@@ -41,6 +46,11 @@ export const uiCopy: Record<Lang, UiCopy> = {
     languageShortKo: 'KO',
     languageAriaToEn: 'Switch to English',
     languageAriaToKo: 'Switch to Korean',
+    fragmentStatusStreaming: 'Streaming fragments',
+    fragmentStatusStalled: 'Stream stalled',
+    fragmentStatusIdle: 'Idle',
+    fragmentLoading: 'Loading fragment {id}',
+    fragmentClose: 'Close',
     storeMetaLine: 'Store',
     storeTitle: 'Store',
     storeDescription: 'Browse curated modules, fragments, and templates designed for fast binary delivery.',
@@ -67,6 +77,11 @@ export const uiCopy: Record<Lang, UiCopy> = {
     languageShortKo: 'KO',
     languageAriaToEn: '\uC601\uC5B4\uB85C \uC804\uD658',
     languageAriaToKo: '\uD55C\uAD6D\uC5B4\uB85C \uC804\uD658',
+    fragmentStatusStreaming: '\uD504\uB798\uADF8\uBA3C\uD2B8 \uC2A4\uD2B8\uB9AC\uBC0D',
+    fragmentStatusStalled: '\uC2A4\uD2B8\uB9BC \uC911\uB2E8',
+    fragmentStatusIdle: '\uB300\uAE30',
+    fragmentLoading: '\uD504\uB798\uADF8\uBA3C\uD2B8 {id} \uB85C\uB529 \uC911',
+    fragmentClose: '\uB2EB\uAE30',
     storeMetaLine: '\uC2A4\uD1A0\uC5B4',
     storeTitle: '\uC2A4\uD1A0\uC5B4',
     storeDescription:

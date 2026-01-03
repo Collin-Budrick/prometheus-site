@@ -122,7 +122,7 @@ const plannerCopy = {
   }
 } as const
 
-const randomCache = (fragments: Array<{ id: string }>) =>
+const randomCache = (fragments: ReadonlyArray<{ id: string }>) =>
   Object.fromEntries(fragments.map((fragment) => [fragment.id, Math.random() > 0.45])) as Record<string, boolean>
 
 export const PlannerDemo = component$(() => {

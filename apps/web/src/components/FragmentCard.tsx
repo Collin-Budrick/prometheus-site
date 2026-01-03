@@ -1,4 +1,6 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
+import { useLangSignal } from '../shared/lang-bridge'
+import { getUiCopy } from '../shared/ui-copy'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
@@ -20,6 +22,8 @@ type FragmentCardProps = {
 
 export const FragmentCard = component$<FragmentCardProps>(
   ({ id, fragmentId, column, motionDelay, expandedId, layoutTick }) => {
+    const langSignal = useLangSignal()
+    const copy = getUiCopy(langSignal.value)
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
     const lastExpanded = useSignal(expandedId.value === id)
@@ -202,7 +206,13 @@ export const FragmentCard = component$<FragmentCardProps>(
         >
           <Slot />
           {isExpanded ? (
-            <button class="fragment-card-close" type="button" aria-label="Close" title="Close" onClick$={handleClose} />
+            <button
+              class="fragment-card-close"
+              type="button"
+              aria-label={copy.fragmentClose}
+              title={copy.fragmentClose}
+              onClick$={handleClose}
+            />
           ) : null}
         </article>
       </>

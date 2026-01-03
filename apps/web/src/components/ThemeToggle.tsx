@@ -43,13 +43,8 @@ export const ThemeToggle = component$(() => {
       applyTheme(event.matches ? 'dark' : 'light')
     }
 
-    if ('addEventListener' in media) {
-      media.addEventListener('change', handleChange)
-      cleanup(() => media.removeEventListener('change', handleChange))
-    } else {
-      media.addListener(handleChange)
-      cleanup(() => media.removeListener(handleChange))
-    }
+    media.addEventListener('change', handleChange)
+    cleanup(() => media.removeEventListener('change', handleChange))
   })
 
   const toggleTheme = $(() => {
