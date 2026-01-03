@@ -27,7 +27,7 @@
     --motion-fade-distance: calc(var(--motion-distance) * 0.75);
     --motion-fade-duration: 720ms;
     --motion-fade-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --view-transition-duration: 420ms;
+    --view-transition-duration: 620ms;
     --view-transition-duration-long: 520ms;
     --view-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
     --theme-transition-duration: 720ms;
