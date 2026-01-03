@@ -1,4 +1,14 @@
-import { createContextId, useComputed$, useContext, useContextProvider, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
+import {
+  createContextId,
+  Slot,
+  component$,
+  useComputed$,
+  useContext,
+  useContextProvider,
+  useSignal,
+  useVisibleTask$,
+  type Signal
+} from '@builder.io/qwik'
 import { initLang, lang, subscribeLang, type Lang } from './lang-store'
 import { getUiCopy } from './ui-copy'
 
@@ -21,12 +31,13 @@ export const useLangSignal = () => {
   return current
 }
 
-export const useLangProvider = () => {
+export const LangProvider = component$(() => {
   const langSignal = useLangSignal()
   useContextProvider(LangSignalContext, langSignal)
-  return langSignal
-}
+  return <Slot />
+})
 
-export const useSharedLangSignal = () => useContext(LangSignalContext, useLangSignal())
+export const useSharedLangSignal = () => useContext(LangSignalContext) ?? useLangSignal()
 
-export const useLangCopy = (langSignal: Signal<Lang> = useSharedLangSignal()) => useComputed$(() => getUiCopy(langSignal.value))
+export const useLangCopy = (langSignal: Signal<Lang> = useSharedLangSignal()) =>
+  useComputed$(() => getUiCopy(langSignal.value))

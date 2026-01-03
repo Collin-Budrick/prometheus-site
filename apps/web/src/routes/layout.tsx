@@ -4,7 +4,7 @@ import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
-import { useLangCopy, useLangProvider } from '../shared/lang-bridge'
+import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -53,7 +53,7 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const langSignal = useLangProvider()
+  const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
 
   return (

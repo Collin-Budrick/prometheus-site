@@ -4,6 +4,7 @@ import { scheduleIdleTask } from './components/motion-idle'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
+import { LangProvider } from './shared/lang-bridge'
 import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
 import './global.css'
 
@@ -185,7 +186,9 @@ export default component$(() => {
       </head>
       <body class="app-shell">
         {clientReady.value ? <ClientExtras /> : null}
-        <RouterOutlet />
+        <LangProvider>
+          <RouterOutlet />
+        </LangProvider>
       </body>
     </QwikCityProvider>
   )
