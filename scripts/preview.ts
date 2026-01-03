@@ -1,6 +1,4 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
 import {
@@ -14,8 +12,10 @@ import {
 } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+type BunRuntime = { execPath?: string }
+const bunGlobal = globalThis as typeof globalThis & { Bun?: BunRuntime }
 const bunBin =
-  (typeof Bun !== 'undefined' && typeof Bun.execPath === 'string' && Bun.execPath) ||
+  (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
   (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
   'bun'
 

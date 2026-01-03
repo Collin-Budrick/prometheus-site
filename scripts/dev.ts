@@ -103,8 +103,26 @@ if (configChanged && caddyWasRunning) {
 cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
 saveBuildCache(cache)
 
+type BunSpawnResult = {
+  exited: Promise<number | null>
+  kill: (signal?: NodeJS.Signals) => void
+}
+
+type BunRuntime = {
+  execPath?: string
+  spawn: (
+    args: string[],
+    options: {
+      stdin?: string
+      stdout?: string
+      stderr?: string
+      env?: NodeJS.ProcessEnv
+    }
+  ) => BunSpawnResult
+}
+const bunGlobal = globalThis as typeof globalThis & { Bun?: BunRuntime }
 const bunBin =
-  (typeof Bun !== 'undefined' && typeof Bun.execPath === 'string' && Bun.execPath) ||
+  (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
   (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
   'bun'
 
@@ -131,7 +149,7 @@ const devWebTransportBase = explicitWebTransportBase
     ? legacyWebTransportBase
     : ''
 
-const webEnv = {
+const webEnv: NodeJS.ProcessEnv = {
   ...process.env,
   VITE_DEV_HOST: devWebHost,
   VITE_DEV_HTTPS: '1',
@@ -156,7 +174,12 @@ if (enablePollingWatch) {
   webEnv.CHOKIDAR_INTERVAL = webEnv.CHOKIDAR_INTERVAL || '100'
 }
 
-const web = Bun.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {
+const bunRuntime = bunGlobal.Bun
+if (!bunRuntime) {
+  throw new Error('Bun runtime is required to run the dev server.')
+}
+
+const web = bunRuntime.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
