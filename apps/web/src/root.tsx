@@ -1,6 +1,5 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
-import { CardExpandMotion } from './components/CardExpandMotion'
 import { scheduleIdleTask } from './components/motion-idle'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
@@ -141,7 +140,6 @@ const ClientExtras = component$(() => (
   <>
     <ClientSignals />
     <PrefetchSignals />
-    <CardExpandMotion />
     <RouteMotion />
   </>
 ))

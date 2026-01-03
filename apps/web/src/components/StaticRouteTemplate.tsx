@@ -1,4 +1,5 @@
-import { component$ } from '@builder.io/qwik'
+import { $, component$, useOnDocument, useSignal } from '@builder.io/qwik'
+import { FragmentCard } from './FragmentCard'
 
 type StaticRouteTemplateProps = {
   actionLabel: string
@@ -8,20 +9,34 @@ type StaticRouteTemplateProps = {
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
-  ({ actionLabel, description, metaLine, title }) => (
-    <section class="fragment-shell">
-      <div class="fragment-grid">
-        <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
-          <div class="meta-line">{metaLine}</div>
-          <h1>{title}</h1>
-          <p>{description}</p>
-          <button class="action-button" type="button">
-            {actionLabel}
-          </button>
-        </article>
-      </div>
-    </section>
-  )
+  ({ actionLabel, description, metaLine, title }) => {
+    const expandedId = useSignal<string | null>(null)
+    const cardId = `static:${title}`
+
+    useOnDocument(
+      'keydown',
+      $((event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          expandedId.value = null
+        }
+      })
+    )
+
+    return (
+      <section class="fragment-shell">
+        <div class="fragment-grid">
+          <FragmentCard id={cardId} column="span 12" motionDelay={0} expandedId={expandedId}>
+            <div class="meta-line">{metaLine}</div>
+            <h1>{title}</h1>
+            <p>{description}</p>
+            <button class="action-button" type="button">
+              {actionLabel}
+            </button>
+          </FragmentCard>
+        </div>
+      </section>
+    )
+  }
 )
 
 export const StaticRouteSkeleton = component$(() => (

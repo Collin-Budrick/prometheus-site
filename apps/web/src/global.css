@@ -378,7 +378,7 @@
   }
 
   .fragment-card {
-    @apply relative overflow-hidden rounded-[var(--radius)] border border-amber-100/80 bg-white/80 p-6;
+    @apply relative overflow-hidden rounded-(--radius) border border-amber-100/80 bg-white/80 p-6;
     --motion-fade-duration: 900ms;
     --motion-fade-distance: 8px;
     box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);

@@ -1,5 +1,6 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
+import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
 import { FragmentRenderer } from './FragmentRenderer'
@@ -11,9 +12,6 @@ type FragmentShellProps = {
   initialFragments: FragmentPayloadValue
   path: string
 }
-
-const buildMotionStyle = (column: string, index: number) =>
-  ({ gridColumn: column, '--motion-delay': `${index * 120}ms` } as Record<string, string>)
 
 type FragmentClientEffectsProps = {
   planValue: FragmentPlan
@@ -44,6 +42,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
   const initialFragmentMap = resolveFragments(initialFragments)
   const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
   const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
+  const expandedId = useSignal<string | null>(null)
   const initialReady =
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
@@ -56,6 +55,25 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
     })
   )
 
+  useOnDocument(
+    'keydown',
+    $((event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        expandedId.value = null
+      }
+    })
+  )
+
+  useVisibleTask$(({ track }) => {
+    track(() => expandedId.value)
+    if (typeof document === 'undefined') return
+    if (expandedId.value) {
+      document.body.classList.add('card-expanded')
+    } else {
+      document.body.classList.remove('card-expanded')
+    }
+  })
+
   return (
     <section class="fragment-shell">
       <div class="fragment-status">
@@ -66,12 +84,13 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
         {planValue.fragments.map((entry, index) => {
           const fragment = fragments.value[entry.id]
           return (
-            <article
+            <FragmentCard
               key={entry.id}
-              class="fragment-card"
-              style={buildMotionStyle(entry.layout.column, index)}
-              data-motion
-              data-fragment-id={entry.id}
+              id={entry.id}
+              fragmentId={entry.id}
+              column={entry.layout.column}
+              motionDelay={index * 120}
+              expandedId={expandedId}
             >
               {fragment ? (
                 <FragmentRenderer node={fragment.tree} />
@@ -81,7 +100,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
                   <p>{entry.id}</p>
                 </div>
               )}
-            </article>
+            </FragmentCard>
           )
         })}
       </div>
