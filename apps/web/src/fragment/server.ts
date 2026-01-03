@@ -29,10 +29,15 @@ const decodeInitialFragments = (raw: FragmentPlanInitialPayloads) => {
 
 export const loadFragmentPlan = async (
   path: string,
-  env: Record<string, string | undefined>
+  env: Record<string, string | undefined>,
+  lang?: string
 ): Promise<FragmentPlanResult> => {
   const api = getApiBase(env)
-  const response = await fetch(`${api}/fragments/plan?path=${encodeURIComponent(path)}&includeInitial=1`)
+  const params = new URLSearchParams({ path, includeInitial: '1' })
+  if (lang) {
+    params.set('lang', lang)
+  }
+  const response = await fetch(`${api}/fragments/plan?${params.toString()}`)
   if (!response.ok) {
     throw new Error(`Plan fetch failed: ${response.status}`)
   }
@@ -45,12 +50,17 @@ export const loadFragmentPlan = async (
 
 export const loadFragments = async (
   ids: string[],
-  env: Record<string, string | undefined>
+  env: Record<string, string | undefined>,
+  lang?: string
 ): Promise<Record<string, FragmentPayload>> => {
   const api = getApiBase(env)
   const entries = await Promise.all(
     ids.map(async (id) => {
-      const response = await fetch(`${api}/fragments?id=${encodeURIComponent(id)}`)
+      const params = new URLSearchParams({ id })
+      if (lang) {
+        params.set('lang', lang)
+      }
+      const response = await fetch(`${api}/fragments?${params.toString()}`)
       if (!response.ok) {
         throw new Error(`Fragment fetch failed: ${response.status}`)
       }

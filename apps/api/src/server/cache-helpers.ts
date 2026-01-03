@@ -1,4 +1,5 @@
 import { isValkeyReady, valkey } from '../services/cache'
+import type { FragmentLang } from '../fragments/i18n'
 
 export const storeItemsCachePrefix = 'store:items:'
 const fragmentPlanCachePrefix = 'fragments:plan:'
@@ -9,7 +10,7 @@ const earlyLimitPrefix = 'early:limit:'
 export const buildStoreItemsCacheKey = (cursor: number, limit: number) =>
   `${storeItemsCachePrefix}${cursor}:${limit}`
 
-export const buildFragmentPlanCacheKey = (path: string) => `${fragmentPlanCachePrefix}${path}`
+export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
 
 export const buildCacheControlHeader = (ttl: number, staleTtl: number) =>
   `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${staleTtl}`
@@ -55,11 +56,16 @@ export const invalidateStoreItemsCache = async () => {
   }
 }
 
-export const invalidatePlanCache = async (path?: string) => {
+export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) => {
   if (!isValkeyReady()) return
   try {
+    if (path && lang) {
+      await valkey.del(buildFragmentPlanCacheKey(path, lang))
+      return
+    }
     if (path) {
-      await valkey.del(buildFragmentPlanCacheKey(path))
+      const keys = await valkey.keys(`${fragmentPlanCachePrefix}*:${path}`)
+      if (keys.length > 0) await valkey.del(keys)
       return
     }
     const keys = await valkey.keys(`${fragmentPlanCachePrefix}*`)

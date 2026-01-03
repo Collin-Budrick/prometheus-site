@@ -1,4 +1,4 @@
-import type { FragmentMeta, FragmentDefinition, RenderNode } from './types'
+import type { FragmentMeta, FragmentDefinition, FragmentRenderContext, RenderNode } from './types'
 
 const FRAGMENT_MAGIC = 0x46524147
 const TREE_MAGIC = 0x54524545
@@ -8,8 +8,8 @@ const UINT32_MAX = 0xffffffff
 
 const encoder = new TextEncoder()
 
-export const buildFragmentMeta = (definition: FragmentDefinition): FragmentMeta => ({
-  cacheKey: definition.id,
+export const buildFragmentMeta = (definition: FragmentDefinition, cacheKey: string = definition.id): FragmentMeta => ({
+  cacheKey,
   ttl: definition.ttl,
   staleTtl: definition.staleTtl,
   tags: definition.tags,
@@ -163,17 +163,21 @@ const encodeFragmentPayloadFromParts = (
 
 export const encodeFragmentPayloadFromTree = (
   definition: FragmentDefinition,
-  tree: RenderNode
+  tree: RenderNode,
+  cacheKey: string = definition.id
 ): Uint8Array => {
   const treeBytes = encodeTree(tree)
   const headBytes = definition.head.length ? encoder.encode(JSON.stringify(definition.head)) : new Uint8Array(0)
   const cssBytes = definition.css ? encoder.encode(definition.css) : new Uint8Array(0)
-  const metaBytes = encoder.encode(JSON.stringify(buildFragmentMeta(definition)))
+  const metaBytes = encoder.encode(JSON.stringify(buildFragmentMeta(definition, cacheKey)))
 
   return encodeFragmentPayloadFromParts(treeBytes, headBytes, cssBytes, metaBytes)
 }
 
-export const encodeFragmentPayload = async (definition: FragmentDefinition): Promise<Uint8Array> => {
-  const tree = await definition.render()
+export const encodeFragmentPayload = async (
+  definition: FragmentDefinition,
+  context: FragmentRenderContext
+): Promise<Uint8Array> => {
+  const tree = await definition.render(context)
   return encodeFragmentPayloadFromTree(definition, tree)
 }

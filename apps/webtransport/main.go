@@ -92,12 +92,15 @@ func isTruthyFlag(value string) bool {
   return normalized == "1" || normalized == "true" || normalized == "yes"
 }
 
-func buildStreamURL(apiBase, path string) string {
+func buildStreamURL(apiBase, path, lang string) string {
   if path == "" {
     path = "/"
   }
   values := url.Values{}
   values.Set("path", path)
+  if lang != "" {
+    values.Set("lang", lang)
+  }
   return fmt.Sprintf("%s/fragments/stream?%s", apiBase, values.Encode())
 }
 
@@ -233,6 +236,7 @@ func main() {
 
 func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
   path := r.URL.Query().Get("path")
+  lang := r.URL.Query().Get("lang")
   if path == "" {
     path = "/"
   }
@@ -259,7 +263,7 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
     _ = stream.Close()
   }()
 
-  req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildStreamURL(cfg.apiBase, path), nil)
+  req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildStreamURL(cfg.apiBase, path, lang), nil)
   if err != nil {
     log.Printf("webtransport build upstream request failed: %v", err)
     return

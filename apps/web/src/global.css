@@ -383,7 +383,8 @@
     color: rgb(var(--ink));
   }
 
-  .theme-toggle {
+  .theme-toggle,
+  .lang-toggle {
     @apply inline-flex items-center gap-2 px-4 py-2 border rounded-full;
     border-color: rgb(var(--stroke));
     background-color: rgb(var(--surface) / 0.72);
@@ -400,14 +401,16 @@
       background-color 160ms ease;
   }
 
-  .theme-toggle:hover {
+  .theme-toggle:hover,
+  .lang-toggle:hover {
     border-color: rgb(var(--accent) / 0.5);
     color: rgb(var(--ink));
     transform: translateY(-1px);
     box-shadow: 0 14px 26px rgb(var(--accent) / 0.18);
   }
 
-  .theme-toggle:focus-visible {
+  .theme-toggle:focus-visible,
+  .lang-toggle:focus-visible {
     outline: 2px solid rgb(var(--accent));
     outline-offset: 3px;
   }
@@ -423,6 +426,18 @@
   .theme-toggle[data-theme='dark'] .theme-toggle-indicator {
     background: radial-gradient(circle at 30% 30%, rgb(var(--surface-soft)), rgb(var(--signal)) 45%, rgb(var(--signal-strong)) 80%);
     box-shadow: 0 0 12px rgb(var(--signal) / 0.45);
+  }
+
+  .lang-toggle-indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, rgb(var(--accent)), rgb(var(--accent-strong)));
+    box-shadow: inset 0 0 0 1px rgb(var(--surface) / 0.5);
+  }
+
+  .lang-toggle[data-lang='ko'] .lang-toggle-indicator {
+    background: linear-gradient(135deg, rgb(var(--signal)), rgb(var(--signal-strong)));
   }
 
   .skeleton {

@@ -2,7 +2,10 @@ import { component$, HTMLFragment, Slot } from '@builder.io/qwik'
 import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
+import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { useLangSignal } from '../shared/lang-bridge'
+import { getUiCopy } from '../shared/ui-copy'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -50,36 +53,42 @@ export const RouterHead = component$(() => {
   )
 })
 
-export default component$(() => (
-  <div class="layout-shell">
-    <header class="topbar" data-view-transition="shell-header">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true" />
-        <div class="brand-title">
-          <strong>FRAGMENT PRIME</strong>
-          <span>Binary Rendering OS</span>
+export default component$(() => {
+  const langSignal = useLangSignal()
+  const copy = getUiCopy(langSignal.value)
+
+  return (
+    <div class="layout-shell">
+      <header class="topbar" data-view-transition="shell-header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true" />
+          <div class="brand-title">
+            <strong>FRAGMENT PRIME</strong>
+            <span>Binary Rendering OS</span>
+          </div>
         </div>
-      </div>
-      <div class="topbar-actions">
-        <nav class="nav-links" data-view-transition="shell-nav">
-          <a href="/" data-fragment-link>
-            Home
-          </a>
-          <a href="/store" data-fragment-link>
-            Store
-          </a>
-          <a href="/lab" data-fragment-link>
-            Lab
-          </a>
-          <a href="/login" data-fragment-link>
-            Login
-          </a>
-        </nav>
-        <ThemeToggle />
-      </div>
-    </header>
-    <main data-motion-root data-view-transition="shell-main">
-      <Slot />
-    </main>
-  </div>
-))
+        <div class="topbar-actions">
+          <nav class="nav-links" data-view-transition="shell-nav">
+            <a href="/" data-fragment-link>
+              {copy.navHome}
+            </a>
+            <a href="/store" data-fragment-link>
+              {copy.navStore}
+            </a>
+            <a href="/lab" data-fragment-link>
+              {copy.navLab}
+            </a>
+            <a href="/login" data-fragment-link>
+              {copy.navLogin}
+            </a>
+          </nav>
+          <LanguageToggle />
+          <ThemeToggle />
+        </div>
+      </header>
+      <main data-motion-root data-view-transition="shell-main">
+        <Slot />
+      </main>
+    </div>
+  )
+})

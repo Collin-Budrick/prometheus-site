@@ -1,8 +1,10 @@
 import { encodeFragmentPayloadFromTree } from './binary'
 import { getFragmentDefinition } from './definitions'
+import { createFragmentTranslator, defaultFragmentLang, type FragmentLang } from './i18n'
 import { planForPath } from './planner'
 import {
   acquireFragmentLock,
+  buildFragmentCacheKey,
   fragmentLockTtlMs,
   isFragmentLockHeld,
   readFragment,
@@ -10,8 +12,8 @@ import {
   type StoredFragment,
   writeFragment
 } from './store'
-import { h, renderToHtml, t } from './tree'
-import type { FragmentCacheStatus, FragmentPlan, FragmentPlanEntry } from './types'
+import { h, renderToHtml, t as textNode } from './tree'
+import type { FragmentCacheStatus, FragmentPlan, FragmentPlanEntry, FragmentDefinition, FragmentRenderContext } from './types'
 
 const inflight = new Map<string, Promise<StoredFragment>>()
 const lockWaitMs = fragmentLockTtlMs
@@ -19,34 +21,47 @@ const lockPollMs = 50
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const buildEntry = async (
-  id: string,
+const buildEntry = (
+  cacheKey: string,
+  definition: FragmentDefinition,
   payload: Uint8Array,
-  html: string | undefined,
-  ttlSeconds: number,
-  staleSeconds: number
-): Promise<StoredFragment> => {
+  html: string | undefined
+): StoredFragment => {
   const now = Date.now()
   return {
     payload,
     html,
     meta: {
-      cacheKey: id,
-      ttl: ttlSeconds,
-      staleTtl: staleSeconds,
-      tags: ['rendered'],
-      runtime: 'edge'
+      cacheKey,
+      ttl: definition.ttl,
+      staleTtl: definition.staleTtl,
+      tags: definition.tags,
+      runtime: definition.runtime
     },
     updatedAt: now,
-    staleAt: now + ttlSeconds * 1000,
-    expiresAt: now + (ttlSeconds + staleSeconds) * 1000
+    staleAt: now + definition.ttl * 1000,
+    expiresAt: now + (definition.ttl + definition.staleTtl) * 1000
   }
 }
 
-const renderDefinition = async (id: string): Promise<StoredFragment> => {
+const renderDefinitionFromContext = async (
+  definition: FragmentDefinition,
+  context: FragmentRenderContext
+): Promise<StoredFragment> => {
+  const cacheKey = buildFragmentCacheKey(definition.id, context.lang)
+  const tree = await definition.render(context)
+  const payload = encodeFragmentPayloadFromTree(definition, tree, cacheKey)
+  const html = renderToHtml(tree)
+  return buildEntry(cacheKey, definition, payload, html)
+}
+
+const renderDefinition = async (id: string, lang: FragmentLang): Promise<StoredFragment> => {
   const definition = getFragmentDefinition(id)
+  const translate = createFragmentTranslator(lang)
+  const context: FragmentRenderContext = { lang, t: translate }
+
   if (!definition) {
-    const fallback = {
+    const fallback: FragmentDefinition = {
       id,
       ttl: 10,
       staleTtl: 30,
@@ -54,60 +69,56 @@ const renderDefinition = async (id: string): Promise<StoredFragment> => {
       runtime: 'node' as const,
       head: [],
       css: '',
-      render: () =>
+      render: ({ t }) =>
         h('section', null, [
-          h('div', { class: 'meta-line' }, [t('fragment missing')]),
-          h('h2', null, t('Fragment missing')),
-          h('p', null, t(`No renderer registered for ${id}.`))
+          h('div', { class: 'meta-line' }, [textNode(t('fragment missing'))]),
+          h('h2', null, textNode(t('Fragment missing'))),
+          h('p', null, textNode(t('No renderer registered for {{id}}.', { id })))
         ])
     }
-    const tree = await fallback.render()
-    const payload = encodeFragmentPayloadFromTree(fallback, tree)
-    const html = renderToHtml(tree)
-    return buildEntry(id, payload, html, fallback.ttl, fallback.staleTtl)
+    return renderDefinitionFromContext(fallback, context)
   }
 
-  const tree = await definition.render()
-  const payload = encodeFragmentPayloadFromTree(definition, tree)
-  const html = renderToHtml(tree)
-  const entry = await buildEntry(definition.id, payload, html, definition.ttl, definition.staleTtl)
-  entry.meta.tags = definition.tags
-  entry.meta.runtime = definition.runtime
-  return entry
+  return renderDefinitionFromContext(definition, context)
 }
 
-const waitForCachedFragment = async (id: string, deadline: number): Promise<StoredFragment | null> => {
+const waitForCachedFragment = async (
+  id: string,
+  lang: FragmentLang,
+  deadline: number
+): Promise<StoredFragment | null> => {
   while (Date.now() < deadline) {
-    const cached = await readFragment(id)
+    const cached = await readFragment(id, lang)
     if (cached) return cached
-    const locked = await isFragmentLockHeld(id)
+    const locked = await isFragmentLockHeld(id, lang)
     if (!locked) return null
     await sleep(lockPollMs)
   }
   return null
 }
 
-export const refreshFragment = async (id: string): Promise<StoredFragment> => {
-  const existing = inflight.get(id)
+export const refreshFragment = async (id: string, lang: FragmentLang = defaultFragmentLang): Promise<StoredFragment> => {
+  const cacheKey = buildFragmentCacheKey(id, lang)
+  const existing = inflight.get(cacheKey)
   if (existing) return existing
 
   const task = (async () => {
     let lockToken: string | null = null
     try {
-      lockToken = await acquireFragmentLock(id)
+      lockToken = await acquireFragmentLock(id, lang)
       if (!lockToken) {
-        const cached = await waitForCachedFragment(id, Date.now() + lockWaitMs)
+        const cached = await waitForCachedFragment(id, lang, Date.now() + lockWaitMs)
         if (cached) return cached
-        lockToken = await acquireFragmentLock(id)
+        lockToken = await acquireFragmentLock(id, lang)
       }
-      const entry = await renderDefinition(id)
-      await writeFragment(id, entry)
+      const entry = await renderDefinition(id, lang)
+      await writeFragment(id, lang, entry)
       return entry
     } catch (error) {
-      const cached = await readFragment(id)
+      const cached = await readFragment(id, lang)
       if (cached) return cached
 
-      const fallback = {
+      const fallback: FragmentDefinition = {
         id,
         ttl: 5,
         staleTtl: 10,
@@ -115,37 +126,40 @@ export const refreshFragment = async (id: string): Promise<StoredFragment> => {
         runtime: 'node' as const,
         head: [],
         css: '',
-        render: () =>
+        render: ({ t }) =>
           h('section', null, [
-            h('div', { class: 'meta-line' }, [t('render error')]),
-            h('h2', null, t('Fragment failed to render')),
-            h('p', null, t(`Last error: ${error instanceof Error ? error.message : 'unknown'}`))
+            h('div', { class: 'meta-line' }, [textNode(t('render error'))]),
+            h('h2', null, textNode(t('Fragment failed to render'))),
+            h(
+              'p',
+              null,
+              textNode(t('Last error: {{error}}', { error: error instanceof Error ? error.message : 'unknown' }))
+            )
           ])
       }
-      const tree = await fallback.render()
-      const payload = encodeFragmentPayloadFromTree(fallback, tree)
-      const html = renderToHtml(tree)
-      return buildEntry(id, payload, html, fallback.ttl, fallback.staleTtl)
+      const translate = createFragmentTranslator(lang)
+      const context: FragmentRenderContext = { lang, t: translate }
+      return renderDefinitionFromContext(fallback, context)
     } finally {
       if (lockToken) {
-        void releaseFragmentLock(id, lockToken)
+        void releaseFragmentLock(id, lang, lockToken)
       }
-      inflight.delete(id)
+      inflight.delete(cacheKey)
     }
   })()
 
-  inflight.set(id, task)
+  inflight.set(cacheKey, task)
   return task
 }
 
-const scheduleRefresh = (id: string) => {
+const scheduleRefresh = (id: string, lang: FragmentLang) => {
   queueMicrotask(() => {
-    void refreshFragment(id)
+    void refreshFragment(id, lang)
   })
 }
 
-const getOrRender = async (id: string): Promise<StoredFragment> => {
-  const cached = await readFragment(id)
+const getOrRender = async (id: string, lang: FragmentLang): Promise<StoredFragment> => {
+  const cached = await readFragment(id, lang)
   const now = Date.now()
 
   if (cached) {
@@ -154,12 +168,12 @@ const getOrRender = async (id: string): Promise<StoredFragment> => {
     }
 
     if (now < cached.expiresAt) {
-      scheduleRefresh(id)
+      scheduleRefresh(id, lang)
       return cached
     }
   }
 
-  return refreshFragment(id)
+  return refreshFragment(id, lang)
 }
 
 export const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
@@ -184,13 +198,17 @@ export const buildCacheStatus = (cached: StoredFragment | null, now: number): Fr
   return { status: 'miss', ...base }
 }
 
-const annotatePlanEntry = async (entry: FragmentPlanEntry, now: number): Promise<FragmentPlanEntry> => {
+const annotatePlanEntry = async (
+  entry: FragmentPlanEntry,
+  now: number,
+  lang: FragmentLang
+): Promise<FragmentPlanEntry> => {
   const definition = getFragmentDefinition(entry.id)
-  const cached = await readFragment(entry.id)
+  const cached = await readFragment(entry.id, lang)
   const cache = buildCacheStatus(cached, now)
 
   if (cache.status !== 'hit') {
-    scheduleRefresh(entry.id)
+    scheduleRefresh(entry.id, lang)
   }
 
   return {
@@ -200,26 +218,33 @@ const annotatePlanEntry = async (entry: FragmentPlanEntry, now: number): Promise
   }
 }
 
-export const getFragmentPlan = async (path: string): Promise<FragmentPlan> => {
+export const getFragmentPlan = async (
+  path: string,
+  lang: FragmentLang = defaultFragmentLang
+): Promise<FragmentPlan> => {
   const plan = planForPath(path)
   const now = Date.now()
-  const fragments = await Promise.all(plan.fragments.map((entry) => annotatePlanEntry(entry, now)))
+  const fragments = await Promise.all(plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang)))
   return { ...plan, fragments }
 }
 
 type FragmentFetchOptions = {
   refresh?: boolean
+  lang?: FragmentLang
 }
 
-export const getFragmentEntry = async (id: string, options: FragmentFetchOptions = {}) =>
-  options.refresh ? refreshFragment(id) : getOrRender(id)
+export const getFragmentEntry = async (id: string, options: FragmentFetchOptions = {}) => {
+  const lang = options.lang ?? defaultFragmentLang
+  return options.refresh ? refreshFragment(id, lang) : getOrRender(id, lang)
+}
 
 export const getFragmentPayload = async (id: string, options?: FragmentFetchOptions) =>
   (await getFragmentEntry(id, options)).payload
-export const getFragmentHtml = async (id: string, options?: FragmentFetchOptions) => (await getFragmentEntry(id, options)).html
+export const getFragmentHtml = async (id: string, options?: FragmentFetchOptions) =>
+  (await getFragmentEntry(id, options)).html
 
-export const streamFragmentsForPath = async (path: string) => {
-  const plan = await getFragmentPlan(path)
+export const streamFragmentsForPath = async (path: string, lang: FragmentLang = defaultFragmentLang) => {
+  const plan = await getFragmentPlan(path, lang)
   const encoder = new TextEncoder()
   const fetchGroups =
     plan.fetchGroups && plan.fetchGroups.length ? plan.fetchGroups : [plan.fragments.map((entry) => entry.id)]
@@ -230,7 +255,7 @@ export const streamFragmentsForPath = async (path: string) => {
         if (!group.length) continue
         const pending = new Map<string, Promise<Uint8Array>>()
         group.forEach((id) => {
-          pending.set(id, getFragmentPayload(id))
+          pending.set(id, getFragmentPayload(id, { lang }))
         })
 
         const raceEntries = async () => {

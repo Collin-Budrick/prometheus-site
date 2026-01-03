@@ -1,4 +1,6 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { effect } from '@preact/signals-core'
+import { lang, type Lang } from '../shared/lang-store'
 
 type PreactIslandProps = {
   label?: string
@@ -20,7 +22,41 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
       const target = host.value
       if (!target || !active) return
 
+      const islandCopy: Record<Lang, Record<string, string>> = {
+        en: {
+          label: 'Isolated island',
+          countdown: 'Countdown',
+          ready: 'Ready',
+          readySub: 'Ready for replay',
+          activeSub: 'Edge-safe timer',
+          reset: 'Reset timer'
+        },
+        ko: {
+          label: '\uACA9\uB9AC\uB41C \uC544\uC77C\uB79C\uB4DC',
+          countdown: '\uCE74\uC6B4\uD2B8\uB2E4\uC6B4',
+          ready: '\uC900\uBE44',
+          readySub: '\uC7AC\uC0DD \uC900\uBE44',
+          activeSub: '\uC5E3\uC9C0 \uC548\uC804 \uD0C0\uC774\uBA38',
+          reset: '\uD0C0\uC774\uBA38 \uC7AC\uC124\uC815'
+        }
+      }
+
+      const useLangValue = () => {
+        const [value, setValue] = useState(lang.value)
+        useEffect(() => {
+          const dispose = effect(() => {
+            setValue(lang.value)
+          })
+          return () => {
+            dispose()
+          }
+        }, [])
+        return value
+      }
+
       const Island = () => {
+        const langValue = useLangValue()
+        const copy = islandCopy[langValue] ?? islandCopy.en
         const totalSeconds = 60
         const [remaining, setRemaining] = useState(totalSeconds)
         const [resetKey, setResetKey] = useState(0)
@@ -44,14 +80,15 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
         const circumference = Math.round(2 * Math.PI * radius)
         const offset = Math.round(circumference * (1 - progress))
         const rotation = Math.round((1 - progress) * -360)
+        const displayLabel = langValue === 'en' && label ? label : copy.label
 
         return h('div', { class: 'preact-island-ui', 'data-running': remaining > 0 ? 'true' : 'false' }, [
           h('div', { class: 'preact-island-top' }, [
-            h('div', { class: 'preact-island-label' }, label),
+            h('div', { class: 'preact-island-label' }, displayLabel),
             h(
               'div',
               { class: 'preact-island-timer', 'aria-live': 'polite' },
-              remaining === 0 ? 'Ready' : `${minutes}:${seconds}`
+              remaining === 0 ? copy.ready : `${minutes}:${seconds}`
             )
           ]),
           h(
@@ -96,7 +133,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
                 ]
               ),
               h('div', { class: 'preact-island-stage-center' }, [
-                h('div', { class: 'preact-island-stage-title' }, 'Countdown'),
+                h('div', { class: 'preact-island-stage-title' }, copy.countdown),
                 h(
                   'div',
                   { class: 'preact-island-stage-time', 'aria-live': 'polite' },
@@ -105,7 +142,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
                 h(
                   'div',
                   { class: 'preact-island-stage-sub' },
-                  remaining === 0 ? 'Ready for replay' : 'Edge-safe timer'
+                  remaining === 0 ? copy.readySub : copy.activeSub
                 )
               ])
             ]
@@ -116,7 +153,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
               class: 'preact-island-action',
               onClick: handleReset
             },
-            'Reset timer'
+            copy.reset
           )
         ])
       }

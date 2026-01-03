@@ -1,4 +1,5 @@
 import { Elysia, t } from 'elysia'
+import { normalizeFragmentLang } from '../../fragments/i18n'
 import { buildCacheStatus, getFragmentEntry, getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
@@ -86,13 +87,16 @@ const stripInitialFragments = (plan: FragmentPlanResponse) => {
   return rest
 }
 
-const buildInitialFragments = async (plan: FragmentPlanResponse): Promise<FragmentPlanInitialPayloads> => {
+const buildInitialFragments = async (
+  plan: FragmentPlanResponse,
+  lang: ReturnType<typeof normalizeFragmentLang>
+): Promise<FragmentPlanInitialPayloads> => {
   const group =
     plan.fetchGroups && plan.fetchGroups.length ? plan.fetchGroups[0] : plan.fragments.map((entry) => entry.id)
   const ids = Array.from(new Set(group))
   if (!ids.length) return {}
   const entries = await Promise.all(
-    ids.map(async (id) => [id, Buffer.from(await getFragmentPayload(id)).toString('base64')] as const)
+    ids.map(async (id) => [id, Buffer.from(await getFragmentPayload(id, { lang })).toString('base64')] as const)
   )
   return entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
     acc[id] = payload
@@ -105,29 +109,31 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     '/plan',
     async ({ query }) => {
       const path = typeof query.path === 'string' ? query.path : '/'
+      const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
-      const cacheKey = buildFragmentPlanCacheKey(path)
+      const cacheKey = buildFragmentPlanCacheKey(path, lang)
       const cached = refresh ? null : await readCache<FragmentPlanResponse>(cacheKey)
       let plan = cached
       if (!plan) {
         const start = performance.now()
-        plan = await getFragmentPlan(path)
+        plan = await getFragmentPlan(path, lang)
         const elapsed = performance.now() - start
         void recordLatencySample('fragment-plan', elapsed)
         await writeCache(cacheKey, plan, 30)
       }
       const basePlan = stripInitialFragments(plan as FragmentPlanResponse)
       if (!includeInitial) return basePlan
-      const initialFragments = await buildInitialFragments(basePlan)
+      const initialFragments = await buildInitialFragments(basePlan, lang)
       return { ...basePlan, initialFragments }
     },
     {
       query: t.Object({
         path: t.Optional(t.String()),
         includeInitial: t.Optional(t.String()),
-        refresh: t.Optional(t.String())
+        refresh: t.Optional(t.String()),
+        lang: t.Optional(t.String())
       })
     }
   )
@@ -135,8 +141,9 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     '/stream',
     async ({ query, request }) => {
       const path = typeof query.path === 'string' ? query.path : '/'
+      const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const encoding = resolveStreamEncoding(request)
-      const stream = await streamFragmentsForPath(path)
+      const stream = await streamFragmentsForPath(path, lang)
       const headers = new Headers({
         'content-type': 'application/octet-stream',
         'cache-control': buildCacheControlHeader(0, 0),
@@ -156,7 +163,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     },
     {
       query: t.Object({
-        path: t.Optional(t.String())
+        path: t.Optional(t.String()),
+        lang: t.Optional(t.String())
       })
     }
   )
@@ -177,8 +185,9 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       }
 
       const path = typeof query.path === 'string' ? query.path : '/'
+      const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const start = performance.now()
-      const stream = await streamFragmentsForPath(path)
+      const stream = await streamFragmentsForPath(path, lang)
       const elapsed = performance.now() - start
       void recordLatencySample('fragment-transport-init', elapsed)
 
@@ -192,7 +201,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     },
     {
       query: t.Object({
-        path: t.Optional(t.String())
+        path: t.Optional(t.String()),
+        lang: t.Optional(t.String())
       })
     }
   )
@@ -200,23 +210,26 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
     '/',
     async ({ query }) => {
       const id = typeof query.id === 'string' ? query.id : ''
+      const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       if (!id) {
         return new Response('Missing fragment id', { status: 400 })
       }
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
-      const entry = await getFragmentEntry(id, refresh ? { refresh: true } : undefined)
+      const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
       return fragmentResponse(entry)
     },
     {
       query: t.Object({
         id: t.String(),
-        refresh: t.Optional(t.String())
+        refresh: t.Optional(t.String()),
+        lang: t.Optional(t.String())
       })
     }
   )
-  .get('/:id', async ({ params }) => {
+  .get('/:id', async ({ params, query }) => {
     const id = params.id
-    const entry = await getFragmentEntry(id)
+    const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+    const entry = await getFragmentEntry(id, { lang })
     return fragmentResponse(entry)
   })

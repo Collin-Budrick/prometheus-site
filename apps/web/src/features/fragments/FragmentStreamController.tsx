@@ -1,4 +1,4 @@
-import { component$, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { Signal } from '@builder.io/qwik'
 import { applyFragmentEffects, fetchFragment, streamFragments, teardownFragmentEffects } from '../../fragment/client'
 import type {
@@ -7,6 +7,7 @@ import type {
   FragmentPayloadValue,
   FragmentPlanValue
 } from '../../fragment/types'
+import { useLangSignal } from '../../shared/lang-bridge'
 import { resolveFragments, resolvePlan } from './utils'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
@@ -24,8 +25,11 @@ type FragmentStreamControllerProps = {
 
 export const FragmentStreamController = component$(
   ({ plan, initialFragments, path, fragments, status }: FragmentStreamControllerProps) => {
+    const langSignal = useLangSignal()
+    const lastLang = useSignal<string | null>(null)
+
     useVisibleTask$(
-      ({ cleanup }) => {
+      ({ cleanup, track }) => {
         let active = true
         const controller = new AbortController()
         const inFlight = new Set<string>()
@@ -40,8 +44,17 @@ export const FragmentStreamController = component$(
         let streamDone = false
         let flushHandle: number | null = null
         const queued = new Set<string>()
+        const activeLang = track(() => langSignal.value)
+        const langChanged = lastLang.value !== null && lastLang.value !== activeLang
+        lastLang.value = activeLang
 
-        if (!fragments.value || !Object.keys(fragments.value).length) {
+        if (langChanged) {
+          teardownFragmentEffects(Object.keys(fragments.value))
+          fragments.value = {}
+          status.value = 'idle'
+        }
+
+        if (!langChanged && (!fragments.value || !Object.keys(fragments.value).length)) {
           fragments.value = resolveFragments(initialFragments) ?? {}
         }
 
@@ -125,7 +138,7 @@ export const FragmentStreamController = component$(
           ids.forEach((id) => {
             if (inFlight.has(id)) return
             inFlight.add(id)
-            fetchFragment(id, { refresh: true })
+            fetchFragment(id, { refresh: true, lang: activeLang })
               .then((payload) => {
                 if (!active) return
                 applyPayload(payload)
@@ -167,7 +180,7 @@ export const FragmentStreamController = component$(
             }
             inFlight.add(id)
             setStreaming()
-            fetchFragment(id)
+            fetchFragment(id, { lang: activeLang })
               .then((payload) => {
                 if (!active) return
                 applyPayload(payload)
@@ -204,7 +217,7 @@ export const FragmentStreamController = component$(
             }
           }
 
-          streamFragments(path, handleFragment, undefined, controller.signal)
+          streamFragments(path, handleFragment, undefined, controller.signal, activeLang)
             .then(() => {
               streamActive = false
               streamDone = true

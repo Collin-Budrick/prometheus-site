@@ -3,6 +3,7 @@ import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { FragmentShell } from '../features/fragments'
 import { getApiBase } from '../fragment/config'
 import { loadFragmentPlan, loadFragments } from '../fragment/server'
+import { defaultLang, normalizeLang, readLangFromCookie } from '../shared/lang-store'
 import type {
   FragmentPayload,
   FragmentPayloadMap,
@@ -73,13 +74,17 @@ type FragmentResource = {
   path: string
 }
 
-export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url }) => {
+export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const env = import.meta.env as Record<string, string | undefined>
   const path = url.pathname || '/'
+  const cookieLang = readLangFromCookie(request.headers.get('cookie'))
+  const acceptLang = request.headers.get('accept-language')
+  const lang =
+    cookieLang ?? (acceptLang ? normalizeLang(acceptLang.split(',')[0]) : defaultLang)
   const apiBase = getApiBase(env)
 
   try {
-    const { plan, initialFragments } = await loadFragmentPlan(path, env)
+    const { plan, initialFragments } = await loadFragmentPlan(path, env, lang)
     const primaryGroup =
       plan.fetchGroups && plan.fetchGroups.length
         ? plan.fetchGroups[0]
@@ -89,7 +94,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url }
 
     if (!initialFragments && initialIds.length) {
       try {
-        fragments = await loadFragments(initialIds, env)
+        fragments = await loadFragments(initialIds, env, lang)
       } catch (error) {
         console.error('Fragment load failed', error)
       }

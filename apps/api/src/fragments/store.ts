@@ -1,4 +1,5 @@
 import { isValkeyReady, valkey } from '../services/cache'
+import { defaultFragmentLang, type FragmentLang } from './i18n'
 import type { FragmentMeta } from './types'
 
 type StoredFragment = {
@@ -11,7 +12,7 @@ type StoredFragment = {
 }
 
 const memoryStore = new Map<string, StoredFragment>()
-const lockKey = (id: string) => `fragment:lock:${id}`
+const lockKey = (id: string, lang: FragmentLang) => `fragment:lock:${id}::${lang}`
 export const fragmentLockTtlMs = 8_000
 const releaseLockScript = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -57,10 +58,16 @@ const decodeEntry = (raw: string): StoredFragment | null => {
   }
 }
 
-export const readFragment = async (id: string): Promise<StoredFragment | null> => {
+export const buildFragmentCacheKey = (id: string, lang: FragmentLang) => `${id}::${lang}`
+
+export const readFragment = async (
+  id: string,
+  lang: FragmentLang = defaultFragmentLang
+): Promise<StoredFragment | null> => {
+  const cacheKey = buildFragmentCacheKey(id, lang)
   if (isValkeyReady()) {
     try {
-      const cached = await valkey.get(id)
+      const cached = await valkey.get(cacheKey)
       if (!cached) return null
       return decodeEntry(cached)
     } catch {
@@ -68,45 +75,61 @@ export const readFragment = async (id: string): Promise<StoredFragment | null> =
     }
   }
 
-  return memoryStore.get(id) ?? null
+  return memoryStore.get(cacheKey) ?? null
 }
 
-export const writeFragment = async (id: string, entry: StoredFragment) => {
-  memoryStore.set(id, entry)
+export const writeFragment = async (
+  id: string,
+  lang: FragmentLang = defaultFragmentLang,
+  entry: StoredFragment
+) => {
+  const cacheKey = buildFragmentCacheKey(id, lang)
+  memoryStore.set(cacheKey, entry)
   if (!isValkeyReady()) return
 
   const ttlSeconds = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000))
   try {
-    await valkey.set(id, encodeEntry(entry), { EX: ttlSeconds })
+    await valkey.set(cacheKey, encodeEntry(entry), { EX: ttlSeconds })
   } catch {
     // ignore cache write failures
   }
 }
 
-export const acquireFragmentLock = async (id: string, ttlMs: number = fragmentLockTtlMs): Promise<string | null> => {
+export const acquireFragmentLock = async (
+  id: string,
+  lang: FragmentLang = defaultFragmentLang,
+  ttlMs: number = fragmentLockTtlMs
+): Promise<string | null> => {
   if (!isValkeyReady()) return null
   const token = createLockToken()
   try {
-    const result = await valkey.set(lockKey(id), token, { NX: true, PX: ttlMs })
+    const result = await valkey.set(lockKey(id, lang), token, { NX: true, PX: ttlMs })
     return result ? token : null
   } catch {
     return null
   }
 }
 
-export const releaseFragmentLock = async (id: string, token: string) => {
+export const releaseFragmentLock = async (
+  id: string,
+  lang: FragmentLang = defaultFragmentLang,
+  token: string
+) => {
   if (!isValkeyReady()) return
   try {
-    await valkey.eval(releaseLockScript, { keys: [lockKey(id)], arguments: [token] })
+    await valkey.eval(releaseLockScript, { keys: [lockKey(id, lang)], arguments: [token] })
   } catch {
     // ignore lock release failures
   }
 }
 
-export const isFragmentLockHeld = async (id: string): Promise<boolean> => {
+export const isFragmentLockHeld = async (
+  id: string,
+  lang: FragmentLang = defaultFragmentLang
+): Promise<boolean> => {
   if (!isValkeyReady()) return false
   try {
-    const result = await valkey.exists(lockKey(id))
+    const result = await valkey.exists(lockKey(id, lang))
     return result === 1
   } catch {
     return false

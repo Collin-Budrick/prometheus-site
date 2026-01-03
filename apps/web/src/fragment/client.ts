@@ -148,9 +148,13 @@ export const teardownFragmentEffects = (fragmentIds: string[]) => {
   })
 }
 
-export const fetchFragmentPlan = async (path: string): Promise<FragmentPlan> => {
+export const fetchFragmentPlan = async (path: string, lang?: string): Promise<FragmentPlan> => {
   const api = getApiBase()
-  const response = await fetch(`${api}/fragments/plan?path=${encodeURIComponent(path)}`)
+  const params = new URLSearchParams({ path })
+  if (lang) {
+    params.set('lang', lang)
+  }
+  const response = await fetch(`${api}/fragments/plan?${params.toString()}`)
   if (!response.ok) {
     throw new Error(`Plan fetch failed: ${response.status}`)
   }
@@ -159,6 +163,7 @@ export const fetchFragmentPlan = async (path: string): Promise<FragmentPlan> => 
 
 type FetchFragmentOptions = {
   refresh?: boolean
+  lang?: string
 }
 
 export const fetchFragment = async (id: string, options: FetchFragmentOptions = {}): Promise<FragmentPayload> => {
@@ -166,6 +171,9 @@ export const fetchFragment = async (id: string, options: FetchFragmentOptions = 
   const params = new URLSearchParams({ id })
   if (options.refresh) {
     params.set('refresh', '1')
+  }
+  if (options.lang) {
+    params.set('lang', options.lang)
   }
   const response = await fetch(`${api}/fragments?${params.toString()}`, {
     cache: options.refresh ? 'no-store' : 'default'
@@ -351,7 +359,8 @@ const streamFragmentsWithFetch = async (
   path: string,
   onFragment: (payload: FragmentPayload) => void,
   onError?: (error: unknown) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lang?: string
 ) => {
   const api = getApiBase()
   const preferCompression = isFragmentCompressionPreferred()
@@ -360,8 +369,12 @@ const streamFragmentsWithFetch = async (
     ? { 'x-fragment-accept-encoding': acceptedEncodings.join(',') }
     : undefined
   const metrics: StreamMetrics = { startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(), frames: 0 }
+  const params = new URLSearchParams({ path })
+  if (lang) {
+    params.set('lang', lang)
+  }
 
-  const response = await fetch(`${api}/fragments/stream?path=${encodeURIComponent(path)}`, { signal, headers })
+  const response = await fetch(`${api}/fragments/stream?${params.toString()}`, { signal, headers })
   if (!response.ok || !response.body) {
     logStreamMetrics('fetch', metrics, 'error')
     throw new Error(`Fragment stream failed: ${response.status}`)
@@ -389,7 +402,8 @@ const streamFragmentsWithWebTransport = async (
   path: string,
   onFragment: (payload: FragmentPayload) => void,
   onError?: (error: unknown) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lang?: string
 ) => {
   const ctor = getWebTransportCtor()
   if (!ctor) return false
@@ -404,6 +418,9 @@ const streamFragmentsWithWebTransport = async (
   )
   const url = new URL(`${api}/fragments/transport`)
   url.searchParams.set('path', path)
+  if (lang) {
+    url.searchParams.set('lang', lang)
+  }
   if (preferDatagrams && supportsDatagrams) {
     url.searchParams.set('datagrams', '1')
   }
@@ -476,15 +493,16 @@ export const streamFragments = async (
   path: string,
   onFragment: (payload: FragmentPayload) => void,
   onError?: (error: unknown) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lang?: string
 ) => {
   if (signal?.aborted) return
 
   const preferWebTransport = isWebTransportPreferred()
   if (preferWebTransport) {
-    const success = await streamFragmentsWithWebTransport(path, onFragment, onError, signal)
+    const success = await streamFragmentsWithWebTransport(path, onFragment, onError, signal, lang)
     if (success) return
   }
 
-  await streamFragmentsWithFetch(path, onFragment, onError, signal)
+  await streamFragmentsWithFetch(path, onFragment, onError, signal, lang)
 }

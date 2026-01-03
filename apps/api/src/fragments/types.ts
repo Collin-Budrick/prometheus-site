@@ -1,3 +1,5 @@
+import type { FragmentLang } from './i18n'
+
 export type FragmentMeta = {
   cacheKey: string
   ttl: number
@@ -35,7 +37,12 @@ export type FragmentDefinition = {
   dependsOn?: string[]
   head: HeadOp[]
   css: string
-  render: () => RenderNode | Promise<RenderNode>
+  render: (ctx: FragmentRenderContext) => RenderNode | Promise<RenderNode>
+}
+
+export type FragmentRenderContext = {
+  lang: FragmentLang
+  t: (value: string, params?: Record<string, string | number>) => string
 }
 
 export type FragmentPlanEntry = {
