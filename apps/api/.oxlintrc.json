@@ -3,5 +3,35 @@
   "env": {
     "node": true,
     "es2022": true
+  },
+  "rules": {
+    "typescript/await-thenable": "warn",
+    "typescript/no-array-delete": "warn",
+    "typescript/no-base-to-string": "warn",
+    "typescript/no-deprecated": "warn",
+    "typescript/no-duplicate-type-constituents": "warn",
+    "typescript/no-floating-promises": "warn",
+    "typescript/no-for-in-array": "warn",
+    "typescript/no-implied-eval": "warn",
+    "typescript/no-misused-promises": "warn",
+    "typescript/no-misused-spread": "warn",
+    "typescript/no-redundant-type-constituents": "warn",
+    "typescript/no-unnecessary-template-expression": "warn",
+    "typescript/no-unnecessary-type-arguments": "warn",
+    "typescript/no-unnecessary-type-assertion": "warn",
+    "typescript/no-unsafe-argument": "warn",
+    "typescript/no-unsafe-assignment": "warn",
+    "typescript/no-unsafe-call": "warn",
+    "typescript/no-unsafe-enum-comparison": "warn",
+    "typescript/no-unsafe-member-access": "warn",
+    "typescript/no-unsafe-return": "warn",
+    "typescript/no-unsafe-type-assertion": "warn",
+    "typescript/no-unsafe-unary-minus": "warn",
+    "typescript/only-throw-error": "warn",
+    "typescript/require-array-sort-compare": "warn",
+    "typescript/strict-boolean-expressions": "warn",
+    "typescript/switch-exhaustiveness-check": "warn",
+    "typescript/unbound-method": "warn",
+    "typescript/use-unknown-in-catch-callback-variable": "warn"
   }
 }
