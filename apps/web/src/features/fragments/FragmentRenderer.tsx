@@ -4,6 +4,7 @@ import { sanitizeAttributes } from '../../fragment/sanitize'
 import { PreactIsland } from '../../components/PreactIsland'
 import { ReactBinaryDemo } from '../../components/ReactBinaryDemo'
 import { WasmRendererDemo } from '../../components/WasmRendererDemo'
+import { PlannerDemo } from '../../components/PlannerDemo'
 
 type NodeProps = {
   node: RenderNode
@@ -59,6 +60,10 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
 
   if (node.tag === 'wasm-renderer-demo') {
     return <WasmRendererDemo />
+  }
+
+  if (node.tag === 'planner-demo') {
+    return <PlannerDemo />
   }
 
   const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap

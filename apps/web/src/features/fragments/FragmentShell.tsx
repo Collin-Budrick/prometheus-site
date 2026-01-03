@@ -120,6 +120,48 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
     { strategy: 'document-ready' }
   )
 
+  useVisibleTask$(
+    ({ track, cleanup }) => {
+      track(() => layoutTick.value)
+      track(() => expandedId.value)
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      if (!grid) return
+
+      let frame = requestAnimationFrame(() => {
+        frame = 0
+        if (window.innerWidth < 1025) {
+          grid.classList.remove('is-stacked')
+          return
+        }
+
+        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
+          (element) => !element.classList.contains('is-expanded')
+        )
+        if (!cards.length) return
+        const heights = cards.map((card) => card.getBoundingClientRect().height).filter((height) => height > 0)
+        if (!heights.length) return
+
+        const maxHeight = Math.max(...heights)
+        const baseThreshold = Math.max(520, window.innerHeight * 0.65)
+        const isStacked = grid.classList.contains('is-stacked')
+        const threshold = isStacked ? baseThreshold * 0.85 : baseThreshold
+        const shouldStack = maxHeight >= threshold
+
+        if (shouldStack) {
+          grid.classList.add('is-stacked')
+        } else {
+          grid.classList.remove('is-stacked')
+        }
+      })
+
+      cleanup(() => {
+        if (frame) cancelAnimationFrame(frame)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
   return (
     <section class="fragment-shell">
       <div class="fragment-status">

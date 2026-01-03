@@ -57,6 +57,7 @@ const planner: FragmentDefinition = {
           'Dependency resolution, cache hit checks, and runtime selection happen up front. Rendering only occurs on cache miss; revalidation runs asynchronously.'
         )
       ),
+      h('planner-demo', null),
       h('div', { class: 'matrix' }, [
         h('div', { class: 'cell' }, [t('Dependencies'), h('strong', null, t('Resolved'))]),
         h('div', { class: 'cell' }, [t('Cache hits'), h('strong', null, t('Parallel'))]),

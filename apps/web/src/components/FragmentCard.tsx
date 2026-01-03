@@ -176,6 +176,7 @@ export const FragmentCard = component$<FragmentCardProps>(
       { strategy: 'document-ready' }
     )
 
+
     const cardStyle = {
       gridColumn: column,
       '--motion-delay': `${motionDelay}ms`
