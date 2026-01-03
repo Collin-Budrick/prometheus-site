@@ -1,6 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useLangSignal } from '../shared/lang-bridge'
-import { getUiCopy } from '../shared/ui-copy'
+import { useLangCopy, useLangSignal } from '../shared/lang-bridge'
 
 type Theme = 'light' | 'dark'
 
@@ -16,7 +15,7 @@ export const ThemeToggle = component$(() => {
   const theme = useSignal<Theme>('light')
   const hasStoredPreference = useSignal(false)
   const langSignal = useLangSignal()
-  const copy = getUiCopy(langSignal.value)
+  const copy = useLangCopy(langSignal)
 
   useVisibleTask$(({ cleanup }) => {
     const applyTheme = (next: Theme) => {
@@ -94,13 +93,13 @@ export const ThemeToggle = component$(() => {
       type="button"
       data-theme={theme.value}
       aria-pressed={theme.value === 'dark'}
-      aria-label={theme.value === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark}
+      aria-label={theme.value === 'dark' ? copy.value.themeAriaToLight : copy.value.themeAriaToDark}
       onClick$={() => {
         toggleTheme()
       }}
     >
       <span class="theme-toggle-indicator" aria-hidden="true" />
-      <span class="theme-toggle-label">{theme.value === 'dark' ? copy.themeDark : copy.themeLight}</span>
+      <span class="theme-toggle-label">{theme.value === 'dark' ? copy.value.themeDark : copy.value.themeLight}</span>
     </button>
   )
 })

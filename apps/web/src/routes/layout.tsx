@@ -4,8 +4,7 @@ import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
-import { useLangSignal } from '../shared/lang-bridge'
-import { getUiCopy } from '../shared/ui-copy'
+import { useLangCopy } from '../shared/lang-bridge'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -54,8 +53,7 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const langSignal = useLangSignal()
-  const copy = getUiCopy(langSignal.value)
+  const copy = useLangCopy()
 
   return (
     <div class="layout-shell">
@@ -70,16 +68,16 @@ export default component$(() => {
         <div class="topbar-actions">
           <nav class="nav-links" data-view-transition="shell-nav">
             <a href="/" data-fragment-link>
-              {copy.navHome}
+              {copy.value.navHome}
             </a>
             <a href="/store" data-fragment-link>
-              {copy.navStore}
+              {copy.value.navStore}
             </a>
             <a href="/lab" data-fragment-link>
-              {copy.navLab}
+              {copy.value.navLab}
             </a>
             <a href="/login" data-fragment-link>
-              {copy.navLogin}
+              {copy.value.navLogin}
             </a>
           </nav>
           <LanguageToggle />
