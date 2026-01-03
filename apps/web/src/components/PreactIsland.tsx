@@ -23,8 +23,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
       const Island = () => {
         const totalSeconds = 60
         const [remaining, setRemaining] = useState(totalSeconds)
-        const [spinKey, setSpinKey] = useState(0)
-        const [uid] = useState(() => `hg-${Math.random().toString(36).slice(2, 8)}`)
+        const [resetKey, setResetKey] = useState(0)
 
         useEffect(() => {
           const interval = window.setInterval(() => {
@@ -35,16 +34,18 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
 
         const handleReset = () => {
           setRemaining(totalSeconds)
-          setSpinKey((value: number) => value + 1)
+          setResetKey((value: number) => value + 1)
         }
 
         const minutes = Math.floor(remaining / 60)
         const seconds = String(remaining % 60).padStart(2, '0')
-        const maxSand = 80
-        const topHeight = Math.round((remaining / totalSeconds) * maxSand)
-        const bottomHeight = maxSand - topHeight
+        const progress = remaining / totalSeconds
+        const radius = 48
+        const circumference = Math.round(2 * Math.PI * radius)
+        const offset = Math.round(circumference * (1 - progress))
+        const rotation = Math.round((1 - progress) * -360)
 
-        return h('div', { class: 'preact-island-ui' }, [
+        return h('div', { class: 'preact-island-ui', 'data-running': remaining > 0 ? 'true' : 'false' }, [
           h('div', { class: 'preact-island-top' }, [
             h('div', { class: 'preact-island-label' }, label),
             h(
@@ -56,81 +57,57 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
           h(
             'div',
             {
-              key: spinKey,
-              class: 'preact-island-hourglass',
-              'data-running': remaining > 0 ? 'true' : 'false',
-              'aria-hidden': 'true'
+              key: resetKey,
+              class: 'preact-island-stage'
             },
             [
               h(
                 'svg',
                 {
-                  class: 'preact-island-hourglass-svg',
-                  viewBox: '0 0 120 180',
-                  role: 'img',
-                  'aria-label': 'Hourglass timer'
+                  class: 'preact-island-dial',
+                  viewBox: '0 0 120 120',
+                  'aria-hidden': 'true'
                 },
                 [
-                  h('defs', null, [
-                    h(
-                      'clipPath',
-                      { id: `${uid}-glass`, clipPathUnits: 'userSpaceOnUse' },
-                      h('path', { d: 'M20 10 L100 10 L70 90 L100 170 L20 170 L50 90 Z' })
-                    ),
-                    h(
-                      'clipPath',
-                      { id: `${uid}-top`, clipPathUnits: 'userSpaceOnUse' },
-                      h('polygon', { points: '20,10 100,10 70,90 50,90' })
-                    ),
-                    h(
-                      'clipPath',
-                      { id: `${uid}-bottom`, clipPathUnits: 'userSpaceOnUse' },
-                      h('polygon', { points: '50,90 70,90 100,170 20,170' })
-                    )
-                  ]),
-                  h(
-                    'g',
-                    { clipPath: `url(#${uid}-glass)` },
-                    [
-                      h('rect', {
-                        class: 'preact-island-sand preact-island-sand-top',
-                        x: 20,
-                        y: 90 - topHeight,
-                        width: 80,
-                        height: topHeight,
-                        clipPath: `url(#${uid}-top)`
-                      }),
-                      h('rect', {
-                        class: 'preact-island-sand preact-island-sand-bottom',
-                        x: 20,
-                        y: 90,
-                        width: 80,
-                        height: bottomHeight,
-                        clipPath: `url(#${uid}-bottom)`
-                      }),
-                      h('rect', {
-                        class: 'preact-island-sand-stream',
-                        x: 59,
-                        y: 78,
-                        width: 2,
-                        height: 30
-                      })
-                    ]
-                  ),
-                  h('path', {
-                    class: 'preact-island-glass-body',
-                    d: 'M20 10 L100 10 L70 90 L100 170 L20 170 L50 90 Z'
+                  h('circle', { class: 'preact-island-dial-track', cx: 60, cy: 60, r: radius }),
+                  h('circle', { class: 'preact-island-dial-ticks', cx: 60, cy: 60, r: radius }),
+                  h('circle', {
+                    class: 'preact-island-dial-progress',
+                    cx: 60,
+                    cy: 60,
+                    r: radius,
+                    style: {
+                      strokeDasharray: `${circumference}`,
+                      strokeDashoffset: `${offset}`
+                    }
                   }),
-                  h('path', {
-                    class: 'preact-island-glass-outline',
-                    d: 'M20 10 L100 10 L70 90 L100 170 L20 170 L50 90 Z'
+                  h('line', {
+                    class: 'preact-island-dial-hand',
+                    x1: 60,
+                    y1: 60,
+                    x2: 60,
+                    y2: 16,
+                    style: {
+                      transform: `rotate(${rotation}deg)`,
+                      transformOrigin: '60px 60px'
+                    }
                   }),
-                  h('path', {
-                    class: 'preact-island-glass-highlight',
-                    d: 'M32 22 L52 90 L32 158'
-                  })
+                  h('circle', { class: 'preact-island-dial-center-dot', cx: 60, cy: 60, r: 4 })
                 ]
-              )
+              ),
+              h('div', { class: 'preact-island-stage-center' }, [
+                h('div', { class: 'preact-island-stage-title' }, 'Countdown'),
+                h(
+                  'div',
+                  { class: 'preact-island-stage-time', 'aria-live': 'polite' },
+                  remaining === 0 ? '0:00' : `${minutes}:${seconds}`
+                ),
+                h(
+                  'div',
+                  { class: 'preact-island-stage-sub' },
+                  remaining === 0 ? 'Ready for replay' : 'Edge-safe timer'
+                )
+              ])
             ]
           ),
           h(

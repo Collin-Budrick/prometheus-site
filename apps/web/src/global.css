@@ -628,29 +628,6 @@
     overflow: hidden;
   }
 
-  @keyframes hourglass-spin {
-    0% {
-      transform: rotate(0deg);
-    }
-    100% {
-      transform: rotate(180deg);
-    }
-  }
-
-  @keyframes hourglass-stream {
-    0% {
-      opacity: 0.2;
-      transform: translateY(-8px);
-    }
-    50% {
-      opacity: 0.85;
-    }
-    100% {
-      opacity: 0.2;
-      transform: translateY(8px);
-    }
-  }
-
   .preact-island-ui {
     position: relative;
     z-index: 1;
@@ -674,52 +651,114 @@
     @apply font-mono text-[11px] uppercase tracking-[0.35em] text-teal-700;
   }
 
-  .preact-island-hourglass {
-    display: grid;
-    place-items: center;
-    padding: 6px;
-    animation: hourglass-spin 560ms cubic-bezier(0.34, 1.56, 0.64, 1);
-    transform-origin: center;
-    will-change: transform;
+  .preact-island-ui[data-running='false'] .preact-island-timer {
+    @apply border-slate-200/70 bg-slate-100 text-slate-600;
   }
 
-  .preact-island-hourglass-svg {
-    width: 140px;
-    height: 200px;
+  @keyframes timer-bloom {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .preact-island-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    border-radius: 20px;
+    border: 1px solid rgba(20, 184, 166, 0.25);
+    background:
+      radial-gradient(circle at 50% 25%, rgba(20, 184, 166, 0.12), rgba(255, 255, 255, 0.92) 60%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(236, 254, 255, 0.7));
+    animation: timer-bloom 420ms ease;
+    overflow: hidden;
+  }
+
+  .preact-island-stage::before {
+    content: '';
+    position: absolute;
+    inset: 14px;
+    border-radius: 999px;
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    pointer-events: none;
+  }
+
+  .preact-island-ui[data-running='true'] .preact-island-stage {
+    animation: timer-bloom 420ms ease;
+  }
+
+  .preact-island-dial {
+    width: 160px;
+    height: 160px;
     display: block;
   }
 
-  .preact-island-sand {
-    fill: rgba(249, 115, 22, 0.6);
-    transition: height 320ms ease, y 320ms ease;
-  }
-
-  .preact-island-sand-stream {
-    border-radius: 9999px;
-    fill: rgba(249, 115, 22, 0.7);
-    opacity: 0;
-  }
-
-  .preact-island-hourglass[data-running='true'] .preact-island-sand-stream {
-    opacity: 1;
-    animation: hourglass-stream 1.2s ease-in-out infinite;
-  }
-
-  .preact-island-glass-body {
-    fill: rgba(255, 255, 255, 0.85);
-  }
-
-  .preact-island-glass-outline {
+  .preact-island-dial-track {
     fill: none;
-    stroke: rgba(20, 184, 166, 0.5);
-    stroke-width: 1.4;
+    stroke: rgba(148, 163, 184, 0.35);
+    stroke-width: 10;
   }
 
-  .preact-island-glass-highlight {
+  .preact-island-dial-ticks {
     fill: none;
-    stroke: rgba(255, 255, 255, 0.75);
+    stroke: rgba(148, 163, 184, 0.35);
     stroke-width: 2;
+    stroke-dasharray: 2 6;
+    opacity: 0.6;
+  }
+
+  .preact-island-dial-progress {
+    fill: none;
+    stroke: rgba(20, 184, 166, 0.85);
+    stroke-width: 10;
     stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 60px 60px;
+    transition: stroke-dashoffset 600ms ease;
+  }
+
+  .preact-island-dial-hand {
+    stroke: rgba(249, 115, 22, 0.85);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .preact-island-dial-center-dot {
+    fill: white;
+    stroke: rgba(20, 184, 166, 0.7);
+    stroke-width: 2;
+  }
+
+  .preact-island-ui[data-running='true'] .preact-island-dial-center-dot {
+    fill: rgba(255, 255, 255, 0.9);
+  }
+
+  .preact-island-stage-center {
+    position: absolute;
+    text-align: center;
+    display: grid;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .preact-island-stage-title {
+    @apply font-mono text-[11px] uppercase tracking-[0.35em] text-slate-500;
+  }
+
+  .preact-island-stage-time {
+    @apply text-2xl font-semibold text-slate-900;
+    letter-spacing: 0.04em;
+  }
+
+  .preact-island-stage-sub {
+    @apply text-xs text-slate-500;
   }
 
   .preact-island-action {
@@ -736,9 +775,14 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .preact-island-hourglass,
-    .preact-island-hourglass[data-running='true'] .preact-island-sand-stream {
+    .preact-island-stage,
+    .preact-island-ui[data-running='true'] .preact-island-stage {
       animation: none;
+    }
+
+    .preact-island-dial-progress,
+    .preact-island-dial-hand {
+      transition: none;
     }
   }
 
