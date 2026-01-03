@@ -523,10 +523,15 @@
   .fragment-card h2,
   .fragment-card h3 {
     @apply mb-3 text-xl font-semibold text-slate-900;
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   .fragment-card p {
     @apply text-sm leading-6 text-slate-600;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
 
   .fragment-placeholder {

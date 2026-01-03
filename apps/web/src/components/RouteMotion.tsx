@@ -114,13 +114,16 @@ export const RouteMotion = component$(() => {
             animations.set(element, animation)
             activeAnimations.add(animation)
 
-            animation.finished.finally(() => {
+            const finalize = () => {
               activeAnimations.delete(animation)
               if (disposed || targets.get(element) !== next) return
               element.style.opacity = ''
               element.style.transform = ''
               element.style.willChange = ''
-            })
+            }
+
+            animation.addEventListener('finish', finalize, { once: true })
+            animation.addEventListener('cancel', finalize, { once: true })
           }
 
           const observer = new IntersectionObserver(

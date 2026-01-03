@@ -25,3 +25,4 @@ apps/web/server/entry.preview.js
 infra/traefik/certs/
 apps/web/public/models/*
 Trace-*
+infra/caddy/Caddyfile

@@ -154,17 +154,16 @@ export const FragmentCard = component$<FragmentCardProps>(
           )
 
           activeAnimations.set(card, animation)
-          animation.finished
-            .catch(() => {})
-            .finally(() => {
-              if (activeAnimations.get(card) === animation) {
-                activeAnimations.delete(card)
-              }
-              card.style.transformOrigin = ''
-              card.style.transform = ''
-              card.style.borderRadius = ''
-              card.style.willChange = ''
-            })
+          const finalize = () => {
+            if (activeAnimations.get(card) !== animation) return
+            activeAnimations.delete(card)
+            card.style.transformOrigin = ''
+            card.style.transform = ''
+            card.style.borderRadius = ''
+            card.style.willChange = ''
+          }
+          animation.addEventListener('finish', finalize, { once: true })
+          animation.addEventListener('cancel', finalize, { once: true })
         }
 
         if (typeof requestAnimationFrame === 'function') {
