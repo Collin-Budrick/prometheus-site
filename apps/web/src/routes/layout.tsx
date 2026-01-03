@@ -2,6 +2,7 @@ import { component$, HTMLFragment, Slot } from '@builder.io/qwik'
 import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
+import { ThemeToggle } from '../components/ThemeToggle'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -59,20 +60,23 @@ export default component$(() => (
           <span>Binary Rendering OS</span>
         </div>
       </div>
-      <nav class="nav-links" data-view-transition="shell-nav">
-        <a href="/" data-fragment-link>
-          Home
-        </a>
-        <a href="/store" data-fragment-link>
-          Store
-        </a>
-        <a href="/lab" data-fragment-link>
-          Lab
-        </a>
-        <a href="/login" data-fragment-link>
-          Login
-        </a>
-      </nav>
+      <div class="topbar-actions">
+        <nav class="nav-links" data-view-transition="shell-nav">
+          <a href="/" data-fragment-link>
+            Home
+          </a>
+          <a href="/store" data-fragment-link>
+            Store
+          </a>
+          <a href="/lab" data-fragment-link>
+            Lab
+          </a>
+          <a href="/login" data-fragment-link>
+            Login
+          </a>
+        </nav>
+        <ThemeToggle />
+      </div>
     </header>
     <main data-motion-root data-view-transition="shell-main">
       <Slot />
