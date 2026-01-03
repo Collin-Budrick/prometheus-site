@@ -54,33 +54,44 @@ const resolveLocalIp = () => {
   return candidates[0] ?? null
 }
 
-type CaddyConfigOptions = {
+type SiteCaddyConfigOptions = {
   servePrecompressed?: boolean
   staticRoot?: string
   encode?: string
   stripAcceptEncoding?: boolean
 }
 
+type CaddyConfigOptions = SiteCaddyConfigOptions & {
+  dev?: SiteCaddyConfigOptions
+  prod?: SiteCaddyConfigOptions
+}
+
 export const ensureCaddyConfig = (override?: string, prodOverride?: string, options: CaddyConfigOptions = {}) => {
   const localIp = resolveLocalIp()
   const devUpstream = override || (localIp ? `http://${localIp}:4173` : 'http://host.docker.internal:4173')
   const prodUpstream = prodOverride || devUpstream
-  const staticRoot = options.staticRoot ?? '/srv/web/dist'
-  const encodeValue = options.encode?.trim()
-  const encodeBlock = encodeValue ? `\tencode ${encodeValue}\n` : ''
-  const stripAcceptEncoding = options.stripAcceptEncoding ? '\t\t\theader_up -Accept-Encoding\n' : ''
-  const staticBlock = options.servePrecompressed
-    ? `\thandle /build/* {\n\t\theader Cache-Control \"public, max-age=31536000, immutable\"\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n\thandle /assets/* {\n\t\theader Cache-Control \"public, max-age=31536000, immutable\"\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n\t@static {\n\t\tpath /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*\n\t\tfile {\n\t\t\troot ${staticRoot}\n\t\t\ttry_files {path} {path}.br {path}.gz\n\t\t}\n\t}\n\thandle @static {\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n`
-    : ''
+  const { dev: devOverrides, prod: prodOverrides, ...baseOptions } = options
+  const devOptions = { ...baseOptions, ...devOverrides }
+  const prodOptions = { ...baseOptions, ...prodOverrides }
 
-  const buildSite = (host: string, upstream: string) =>
-    `${host} {\n\ttls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key\n\theader {\n\t\talt-svc \"h3=\\\":443\\\"; ma=2592000\"\n\t}\n\n${encodeBlock}${staticBlock}\thandle_path /api/* {\n\t\treverse_proxy http://api:4000 {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy \"same-origin\"\n\t\t\tCross-Origin-Embedder-Policy \"require-corp\"\n\t\t}\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link \"{http.reverse_proxy.header.X-Early-Hints}\"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link \"{http.reverse_proxy.header.X-Early-Hints}\"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n}\n`
+  const buildSite = (host: string, upstream: string, siteOptions: SiteCaddyConfigOptions) => {
+    const staticRoot = siteOptions.staticRoot ?? '/srv/web/dist'
+    const encodeValue = siteOptions.encode?.trim()
+    const encodeBlock = encodeValue ? `\tencode ${encodeValue}\n` : ''
+    const stripAcceptEncoding = siteOptions.stripAcceptEncoding ? '\t\t\theader_up -Accept-Encoding\n' : ''
+    const staticBlock = siteOptions.servePrecompressed
+      ? `\thandle /build/* {\n\t\theader Cache-Control \"public, max-age=31536000, immutable\"\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n\thandle /assets/* {\n\t\theader Cache-Control \"public, max-age=31536000, immutable\"\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n\t@static {\n\t\tpath /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*\n\t\tfile {\n\t\t\troot ${staticRoot}\n\t\t\ttry_files {path} {path}.br {path}.gz\n\t\t}\n\t}\n\thandle @static {\n\t\troot * ${staticRoot}\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n\n`
+      : ''
+
+    return `${host} {\n\ttls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key\n\theader {\n\t\talt-svc \"h3=\\\":443\\\"; ma=2592000\"\n\t}\n\n${encodeBlock}${staticBlock}\thandle_path /api/* {\n\t\treverse_proxy http://api:4000 {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy \"same-origin\"\n\t\t\tCross-Origin-Embedder-Policy \"require-corp\"\n\t\t}\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link \"{http.reverse_proxy.header.X-Early-Hints}\"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link \"{http.reverse_proxy.header.X-Early-Hints}\"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n}\n`
+  }
 
   const config =
     `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2 h3\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://prometheus.dev, http://prometheus.prod {\n\tredir https://{host}{uri}\n}\n\n${buildSite(
       'https://prometheus.dev',
-      devUpstream
-    )}\n${buildSite('https://prometheus.prod', prodUpstream)}`
+      devUpstream,
+      devOptions
+    )}\n${buildSite('https://prometheus.prod', prodUpstream, prodOptions)}`
 
   const caddyDir = path.join(root, 'infra', 'caddy')
   mkdirSync(caddyDir, { recursive: true })

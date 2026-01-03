@@ -23,6 +23,9 @@ const devEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '
 const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+const isWindowsMount = root.startsWith('/mnt/')
+const enablePollingWatch = isWsl && isWindowsMount
 
 const composeEnv = {
   ...process.env,
@@ -38,7 +41,13 @@ const composeEnv = {
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
 }
 
-const { devUpstream } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim())
+const { devUpstream } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+  prod: {
+    servePrecompressed: true,
+    encode: 'br gzip',
+    stripAcceptEncoding: true
+  }
+})
 let keepContainers = false
 
 const buildInputs = [
@@ -118,6 +127,11 @@ const webEnv = {
   VITE_ENABLE_ANALYTICS: devEnableAnalytics,
   VITE_REPORT_CLIENT_ERRORS: devEnableClientErrors,
   API_BASE: `http://127.0.0.1:${devApiPort}`
+}
+
+if (enablePollingWatch) {
+  webEnv.CHOKIDAR_USEPOLLING = webEnv.CHOKIDAR_USEPOLLING || '1'
+  webEnv.CHOKIDAR_INTERVAL = webEnv.CHOKIDAR_INTERVAL || '100'
 }
 
 const web = Bun.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {

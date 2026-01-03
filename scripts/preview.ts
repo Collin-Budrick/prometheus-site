@@ -20,7 +20,7 @@ const previewPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '543
 const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const previewWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
 const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
-const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
+const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.prod'
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
@@ -89,10 +89,12 @@ const webBuildEnv = {
   VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors
 }
 
-ensureCaddyConfig('http://web:4173', undefined, {
-  servePrecompressed: true,
-  encode: 'br gzip',
-  stripAcceptEncoding: true
+ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+  prod: {
+    servePrecompressed: true,
+    encode: 'br gzip',
+    stripAcceptEncoding: true
+  }
 })
 let keepContainers = false
 

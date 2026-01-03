@@ -17,8 +17,40 @@ https://prometheus.dev {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
+	encode br gzip
+	handle /build/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	@static {
+		path /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
+		file {
+			root /srv/web/dist
+			try_files {path} {path}.br {path}.gz
+		}
+	}
+	handle @static {
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 		}
@@ -30,7 +62,8 @@ https://prometheus.dev {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://172.27.130.51:4173 {
+		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -44,7 +77,8 @@ https://prometheus.dev {
 	}
 
 	handle {
-		reverse_proxy http://172.27.130.51:4173 {
+		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -64,8 +98,40 @@ https://prometheus.prod {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
+	encode br gzip
+	handle /build/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
+	@static {
+		path /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
+		file {
+			root /srv/web/dist
+			try_files {path} {path}.br {path}.gz
+		}
+	}
+	handle @static {
+		root * /srv/web/dist
+		file_server {
+			precompressed br gzip
+		}
+	}
+
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 		}
@@ -77,7 +143,8 @@ https://prometheus.prod {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://172.27.130.51:4173 {
+		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -91,7 +158,8 @@ https://prometheus.prod {
 	}
 
 	handle {
-		reverse_proxy http://172.27.130.51:4173 {
+		reverse_proxy http://web:4173 {
+			header_up -Accept-Encoding
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
