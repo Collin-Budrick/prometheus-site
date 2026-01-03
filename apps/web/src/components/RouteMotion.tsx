@@ -1,5 +1,4 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
-import type { AnimationControls } from '@motionone/types'
 import { useLocation } from '@builder.io/qwik-city'
 
 import { scheduleIdleTask } from './motion-idle'
@@ -39,8 +38,17 @@ export const RouteMotion = component$(() => {
           const observedElements = new WeakSet<HTMLElement>()
           const seenElements = new WeakSet<HTMLElement>()
           const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
-          const animations = new WeakMap<HTMLElement, AnimationControls>()
-          const activeAnimations = new Set<AnimationControls>()
+          const animations = new WeakMap<HTMLElement, Animation>()
+          const activeAnimations = new Set<Animation>()
+
+          const animateElement = (
+            element: HTMLElement,
+            keyframes: Keyframe[] | PropertyIndexedKeyframes,
+            options: KeyframeAnimationOptions
+          ) => {
+            if (!('animate' in element)) return null
+            return element.animate(keyframes, options)
+          }
 
           const seedInitialTargets = () => {
             const viewHeight = window.innerHeight || document.documentElement.clientHeight
@@ -66,7 +74,6 @@ export const RouteMotion = component$(() => {
             })
           }
 
-          const { animate } = await import('@motionone/dom')
           seedInitialTargets()
           document.documentElement.dataset.motionReady = 'true'
 
@@ -86,16 +93,24 @@ export const RouteMotion = component$(() => {
 
             element.style.willChange = 'transform, opacity'
 
-            const animation = animate(
+            const animation = animateElement(
               element,
               next === 'in'
                 ? { opacity: [0, 1], transform: ['translateY(12px)', 'translateY(0px)'] }
                 : { opacity: [1, 0], transform: ['translateY(0px)', 'translateY(12px)'] },
               {
-                duration: next === 'in' ? 0.55 : 0.35,
-                easing: [0.22, 1, 0.36, 1],
+                duration: next === 'in' ? 550 : 350,
+                easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
               }
             )
+
+            if (!animation) {
+              animations.delete(element)
+              element.style.opacity = ''
+              element.style.transform = ''
+              element.style.willChange = ''
+              return
+            }
             animations.set(element, animation)
             activeAnimations.add(animation)
 

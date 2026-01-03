@@ -1,5 +1,4 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
-import type { AnimationControls } from '@motionone/types'
 
 const CARD_SELECTOR = '.fragment-card'
 const INTERACTIVE_SELECTOR =
@@ -17,7 +16,7 @@ type ExpandedState = {
   card: HTMLElement
   placeholder: HTMLDivElement
   originalRadius: string
-  animation: AnimationControls | null
+  animation: Animation | null
   closeButton: HTMLButtonElement
   closeHandler: (event: MouseEvent) => void
 }
@@ -46,13 +45,13 @@ export const CardExpandMotion = component$(() => {
         motionQuery.addListener(handleMotionChange)
       }
 
-      let animateFn: typeof import('@motionone/dom').animate | null = null
-
-      const getAnimate = async () => {
-        if (animateFn) return animateFn
-        const module = await import('@motionone/dom')
-        animateFn = module.animate
-        return animateFn
+      const animateElement = (
+        element: HTMLElement,
+        keyframes: Keyframe[] | PropertyIndexedKeyframes,
+        options: KeyframeAnimationOptions
+      ) => {
+        if (!('animate' in element)) return null
+        return element.animate(keyframes, options)
       }
 
       const stopAnimation = () => {
@@ -118,20 +117,21 @@ export const CardExpandMotion = component$(() => {
         card.style.transform = shrinkTransform
 
         if (!prefersReducedMotion) {
-          const animate = await getAnimate()
-          if (disposed) return
-          state.animation = animate(
+          const animation = animateElement(
             card,
             {
               transform: [shrinkTransform, 'translate(0px, 0px) scale(1, 1)'],
               borderRadius: ['0px', originalRadius]
             },
-            { duration: 0.45, easing: [0.22, 1, 0.36, 1] }
+            { duration: 450, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
           )
-          try {
-            await state.animation.finished
-          } catch {
-            // Ignore cancelled animations during cleanup.
+          state.animation = animation
+          if (animation) {
+            try {
+              await animation.finished
+            } catch {
+              // Ignore cancelled animations during cleanup.
+            }
           }
         }
 
@@ -200,20 +200,21 @@ export const CardExpandMotion = component$(() => {
         card.style.transform = invertedTransform
 
         if (!prefersReducedMotion) {
-          const animate = await getAnimate()
-          if (disposed || !state) return
-          state.animation = animate(
+          const animation = animateElement(
             card,
             {
               transform: [invertedTransform, 'translate(0px, 0px) scale(1, 1)'],
               borderRadius: [computed.borderRadius, '0px']
             },
-            { duration: 0.55, easing: [0.22, 1, 0.36, 1] }
+            { duration: 550, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
           )
-          try {
-            await state.animation.finished
-          } catch {
-            // Ignore cancelled animations during cleanup.
+          state.animation = animation
+          if (animation) {
+            try {
+              await animation.finished
+            } catch {
+              // Ignore cancelled animations during cleanup.
+            }
           }
         }
 
