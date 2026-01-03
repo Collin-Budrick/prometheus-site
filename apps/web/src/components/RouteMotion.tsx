@@ -122,7 +122,7 @@ export const RouteMotion = component$(() => {
             animation.addEventListener('cancel', finalize, { once: true })
           }
 
-          const observerOptions = { threshold: 0, rootMargin: '-10% 0px -10% 0px' }
+          const observerOptions = { threshold: 0, rootMargin: '-12% 0px -12% 0px' }
           const observer = new IntersectionObserver(
             (entries) => {
               entries.forEach((entry) => {
