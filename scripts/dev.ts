@@ -1,6 +1,14 @@
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { computeFingerprint, ensureCaddyConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
+import {
+  computeFingerprint,
+  ensureCaddyConfig,
+  getRunningServices,
+  loadBuildCache,
+  resolveComposeCommand,
+  runSync,
+  saveBuildCache
+} from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -41,7 +49,7 @@ const composeEnv = {
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
 }
 
-const { devUpstream } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
   prod: {
     servePrecompressed: true,
     encode: 'br gzip',
@@ -70,13 +78,27 @@ if (needsBuild) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const up = runSync(
-  command,
-  [...prefix, 'up', '-d', '--remove-orphans', 'postgres', 'valkey', 'api', 'webtransport', 'caddy'],
-  composeEnv
-)
-if (up.status !== 0) process.exit(up.status ?? 1)
-runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
+const baseServices = ['postgres', 'valkey', 'api', 'webtransport']
+const running = getRunningServices(command, prefix, composeEnv)
+const baseRunning = baseServices.every((service) => running.has(service))
+const needsBaseUp = needsBuild || !baseRunning
+
+if (needsBaseUp) {
+  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...baseServices], composeEnv)
+  if (up.status !== 0) process.exit(up.status ?? 1)
+}
+
+const caddyWasRunning = running.has('caddy')
+const needsCaddyUp = needsBuild || !caddyWasRunning
+if (needsCaddyUp) {
+  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', 'caddy'], composeEnv)
+  if (up.status !== 0) process.exit(up.status ?? 1)
+}
+
+if (configChanged && caddyWasRunning) {
+  const restart = runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
+  if (restart.status !== 0) process.exit(restart.status ?? 1)
+}
 
 cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
 saveBuildCache(cache)

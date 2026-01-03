@@ -10,6 +10,9 @@ export const root = fileURLToPath(new URL('..', import.meta.url))
 export const runSync = (command: string, args: string[], env: NodeJS.ProcessEnv) =>
   spawnSync(command, args, { stdio: 'inherit', cwd: root, shell: false, env })
 
+export const runSyncCapture = (command: string, args: string[], env: NodeJS.ProcessEnv) =>
+  spawnSync(command, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: root, shell: false, env, encoding: 'utf8' })
+
 const hasCompose = (command: string, args: string[]) =>
   spawnSync(command, args, { stdio: 'ignore', cwd: root, shell: false }).status === 0
 
@@ -95,8 +98,29 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string, opti
 
   const caddyDir = path.join(root, 'infra', 'caddy')
   mkdirSync(caddyDir, { recursive: true })
-  writeFileSync(path.join(caddyDir, 'Caddyfile'), config, { encoding: 'ascii' })
-  return { devUpstream, prodUpstream }
+  const caddyFile = path.join(caddyDir, 'Caddyfile')
+  let configChanged = true
+  try {
+    const existing = readFileSync(caddyFile, 'utf8')
+    configChanged = existing !== config
+  } catch {
+    configChanged = true
+  }
+  if (configChanged) {
+    writeFileSync(caddyFile, config, { encoding: 'ascii' })
+  }
+  return { devUpstream, prodUpstream, configChanged }
+}
+
+export const getRunningServices = (command: string, args: string[], env: NodeJS.ProcessEnv) => {
+  const result = runSyncCapture(command, [...args, 'ps', '--services', '--status', 'running'], env)
+  if (result.status !== 0 || !result.stdout) return new Set<string>()
+  const output = typeof result.stdout === 'string' ? result.stdout : result.stdout.toString('utf8')
+  const entries = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return new Set(entries)
 }
 
 const ignoredDirs = new Set([

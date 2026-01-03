@@ -3,7 +3,15 @@ import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { computeFingerprint, ensureCaddyConfig, loadBuildCache, resolveComposeCommand, runSync, saveBuildCache } from './compose-utils'
+import {
+  computeFingerprint,
+  ensureCaddyConfig,
+  getRunningServices,
+  loadBuildCache,
+  resolveComposeCommand,
+  runSync,
+  saveBuildCache
+} from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const bunBin =
@@ -89,7 +97,7 @@ const webBuildEnv = {
   VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors
 }
 
-ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
   prod: {
     servePrecompressed: true,
     encode: 'br gzip',
@@ -138,12 +146,20 @@ if (needsBuild) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const up = runSync(
-  command,
-  [...prefix, 'up', '-d', '--remove-orphans', 'postgres', 'valkey', 'api', 'web', 'webtransport', 'caddy'],
-  composeEnv
-)
-if (up.status !== 0) process.exit(up.status ?? 1)
+const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'caddy']
+const running = getRunningServices(command, prefix, composeEnv)
+const allRunning = previewServices.every((service) => running.has(service))
+const needsUp = needsBuild || !allRunning
+
+if (needsUp) {
+  const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...previewServices], composeEnv)
+  if (up.status !== 0) process.exit(up.status ?? 1)
+}
+
+if (configChanged && running.has('caddy')) {
+  const restart = runSync(command, [...prefix, 'restart', 'caddy'], composeEnv)
+  if (restart.status !== 0) process.exit(restart.status ?? 1)
+}
 
 cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
 saveBuildCache(cache)
