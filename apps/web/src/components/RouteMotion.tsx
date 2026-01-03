@@ -40,6 +40,8 @@ export const RouteMotion = component$(() => {
           const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
           const animations = new WeakMap<HTMLElement, Animation>()
           const activeAnimations = new Set<Animation>()
+          const viewHeight = () => window.innerHeight || document.documentElement.clientHeight
+          const viewWidth = () => window.innerWidth || document.documentElement.clientWidth
 
           const animateElement = (
             element: HTMLElement,
@@ -50,25 +52,19 @@ export const RouteMotion = component$(() => {
             return element.animate(keyframes, options)
           }
 
-          const seedInitialTargets = () => {
-            const viewHeight = window.innerHeight || document.documentElement.clientHeight
-            const viewWidth = window.innerWidth || document.documentElement.clientWidth
-            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+          const isInView = (element: HTMLElement) => {
+            const height = viewHeight()
+            const width = viewWidth()
+            const margin = Math.min(140, height * 0.15)
+            const rect = element.getBoundingClientRect()
+            return rect.bottom > -margin && rect.right > 0 && rect.top < height + margin && rect.left < width
+          }
 
+          const seedInitialTargets = () => {
+            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
             elements.forEach((element) => {
               const current = element.dataset.motionState
-              if (current === 'in' || current === 'out') {
-                targets.set(element, current)
-                return
-              }
-
-              const rect = element.getBoundingClientRect()
-              const inView =
-                rect.bottom > 0 &&
-                rect.right > 0 &&
-                rect.top < viewHeight &&
-                rect.left < viewWidth
-              const next: 'in' | 'out' = inView ? 'in' : 'out'
+              const next = current === 'in' || current === 'out' ? current : 'out'
               element.dataset.motionState = next
               targets.set(element, next)
             })
@@ -126,6 +122,7 @@ export const RouteMotion = component$(() => {
             animation.addEventListener('cancel', finalize, { once: true })
           }
 
+          const observerOptions = { threshold: 0, rootMargin: '-10% 0px -10% 0px' }
           const observer = new IntersectionObserver(
             (entries) => {
               entries.forEach((entry) => {
@@ -142,7 +139,7 @@ export const RouteMotion = component$(() => {
                 }
               })
             },
-            { threshold: 0.35, rootMargin: '0px 0px -10%' }
+            observerOptions
           )
 
           const observeTargets = () => {
@@ -178,6 +175,12 @@ export const RouteMotion = component$(() => {
           }
 
           observeTargets()
+          requestAnimationFrame(() => {
+            const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+            elements.forEach((element) => {
+              if (isInView(element)) setTarget(element, 'in')
+            })
+          })
 
           const mutationObserver = new MutationObserver((records) => {
             records.forEach((record) => {
