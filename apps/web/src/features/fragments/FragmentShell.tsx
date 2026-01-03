@@ -3,7 +3,7 @@ import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPl
 import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
-import { useLangCopy, useLangSignal } from '../../shared/lang-bridge'
+import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import { FragmentRenderer } from './FragmentRenderer'
 import { FragmentStreamController } from './FragmentStreamController'
 import { resolveFragments, resolvePlan } from './utils'
@@ -39,7 +39,7 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 })
 
 export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
-  const langSignal = useLangSignal()
+  const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)

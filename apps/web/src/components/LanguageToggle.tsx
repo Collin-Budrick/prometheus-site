@@ -1,9 +1,9 @@
 import { $, component$ } from '@builder.io/qwik'
 import { applyLang } from '../shared/lang-store'
-import { useLangCopy, useLangSignal } from '../shared/lang-bridge'
+import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 export const LanguageToggle = component$(() => {
-  const langSignal = useLangSignal()
+  const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
 
   const toggleLang = $(() => {

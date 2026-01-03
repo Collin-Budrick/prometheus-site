@@ -1,5 +1,5 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
-import { useLangCopy, useLangSignal } from '../shared/lang-bridge'
+import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
@@ -21,7 +21,7 @@ type FragmentCardProps = {
 
 export const FragmentCard = component$<FragmentCardProps>(
   ({ id, fragmentId, column, motionDelay, expandedId, layoutTick }) => {
-    const langSignal = useLangSignal()
+    const langSignal = useSharedLangSignal()
     const copy = useLangCopy(langSignal)
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()

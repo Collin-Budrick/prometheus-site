@@ -1,5 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useLangCopy, useLangSignal } from '../shared/lang-bridge'
+import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 type Theme = 'light' | 'dark'
 
@@ -14,7 +14,7 @@ const DARK_THEME_COLOR = '#0f172a'
 export const ThemeToggle = component$(() => {
   const theme = useSignal<Theme>('light')
   const hasStoredPreference = useSignal(false)
-  const langSignal = useLangSignal()
+  const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
 
   useVisibleTask$(({ cleanup }) => {
