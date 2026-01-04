@@ -1,4 +1,4 @@
-import { $, component$, useComputed$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
@@ -44,9 +44,12 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 
 export const FragmentShell = component$(({ plan, initialFragments, path, initialLang }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
-  if (langSignal.value !== initialLang) {
-    langSignal.value = initialLang
-  }
+  useTask$(({ track }) => {
+    track(() => initialLang)
+    if (langSignal.value !== initialLang) {
+      langSignal.value = initialLang
+    }
+  })
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)

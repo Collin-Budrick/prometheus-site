@@ -7,7 +7,7 @@ import type {
   FragmentPayloadValue,
   FragmentPlanValue
 } from '../../fragment/types'
-import { useLangSignal } from '../../shared/lang-bridge'
+import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveFragments, resolvePlan } from './utils'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
@@ -25,7 +25,7 @@ type FragmentStreamControllerProps = {
 
 export const FragmentStreamController = component$(
   ({ plan, initialFragments, path, fragments, status }: FragmentStreamControllerProps) => {
-    const langSignal = useLangSignal()
+    const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(null)
 
     useVisibleTask$(
