@@ -5,6 +5,8 @@ const shellEarlyHints: EarlyHint[] = []
 
 const buildEarlyHints = () => shellEarlyHints.slice(0, 5)
 
+export const normalizePlanPath = (path: string) => (path === '/' || path === '' ? '/' : path)
+
 const attachDependencies = (entries: FragmentPlanEntry[]) => {
   const ids = new Set(entries.map((entry) => entry.id))
   return entries.map((entry) => {
@@ -76,7 +78,7 @@ const resolvePlanDependencies = (entries: FragmentPlanEntry[]) => {
 }
 
 export const planForPath = (path: string): FragmentPlan => {
-  const normalized = path === '/' || path === '' ? '/' : path
+  const normalized = normalizePlanPath(path)
 
   if (normalized === '/') {
     const baseFragments: FragmentPlanEntry[] = [
