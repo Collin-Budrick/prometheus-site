@@ -29,7 +29,8 @@ export default function (opts: RenderToStreamOptions) {
     containerTagName: opts.containerTagName ?? 'html',
     containerAttributes: {
       ...opts.containerAttributes,
-      lang
+      lang,
+      'data-initial-fade': 'true'
     }
   })
 }

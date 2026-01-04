@@ -18,7 +18,8 @@ export default createQwikCity({
       containerTagName: opts.containerTagName ?? 'html',
       containerAttributes: {
         ...opts.containerAttributes,
-        lang
+        lang,
+        'data-initial-fade': 'true'
       }
     })
   },

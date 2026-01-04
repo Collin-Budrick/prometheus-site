@@ -259,7 +259,9 @@ export const RouteMotion = component$(() => {
             teardown?.()
             return
           }
-          disposeMotion = teardown
+          if (teardown) {
+            disposeMotion = teardown
+          }
         })
       })
 

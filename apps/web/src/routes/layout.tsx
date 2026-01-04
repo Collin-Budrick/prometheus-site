@@ -12,6 +12,36 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
   return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr} onload="this.onload=null;this.rel='stylesheet'">`
 }
 
+const initialFadeStyle = `:root[data-initial-fade='true'] .layout-shell {
+  opacity: 0;
+  animation: page-fade-in 920ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes page-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-initial-fade='true'] .layout-shell {
+    opacity: 1;
+    animation: none;
+  }
+}`
+
+const initialFadeScript = `(function () {
+  var root = document.documentElement;
+  if (!root || !root.hasAttribute('data-initial-fade')) return;
+  var clear = function () { root.removeAttribute('data-initial-fade'); };
+  var schedule = function () { window.setTimeout(clear, 480); };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', schedule, { once: true });
+  } else {
+    schedule();
+  }
+})();`
+
+const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
+const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
+
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
@@ -44,6 +74,8 @@ export const RouterHead = component$(() => {
 
         return <link key={`${link.rel}-${link.href}`} {...link} />
       })}
+      <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
+      <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
       <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       <link rel="icon" href="/favicon.ico" sizes="any" />
       <link rel="manifest" href="/manifest.webmanifest" />
