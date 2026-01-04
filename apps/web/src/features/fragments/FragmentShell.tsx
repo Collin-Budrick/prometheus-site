@@ -178,8 +178,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver === 'undefined' || planValue.fragments.length < 2) return
 
-      const cardHeights = new WeakMap<HTMLElement, number>()
-      const observedCards = new WeakSet<HTMLElement>()
+      let cardHeights = new WeakMap<HTMLElement, number>()
+      let observedCards = new WeakSet<HTMLElement>()
       let frame = 0
       let enabled = false
 
@@ -264,7 +264,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         stackScheduler.value = null
         mutationObserver.disconnect()
         cardObserver.disconnect()
-        observedCards.clear()
+        observedCards = new WeakSet<HTMLElement>()
+        cardHeights = new WeakMap<HTMLElement, number>()
         grid.classList.remove('is-stacked')
         if (frame) {
           cancelAnimationFrame(frame)
