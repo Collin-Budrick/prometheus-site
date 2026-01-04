@@ -1,4 +1,5 @@
 import { isValkeyReady, valkey } from '../services/cache'
+import { normalizePlanPath } from '../fragments/planner'
 import type { FragmentLang } from '../fragments/i18n'
 
 export const storeItemsCachePrefix = 'store:items:'
@@ -14,6 +15,61 @@ export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `
 
 export const buildCacheControlHeader = (ttl: number, staleTtl: number) =>
   `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${staleTtl}`
+
+type PlanEtagVersion = {
+  global: number
+  entry: number
+}
+
+const planEtagVersions = new Map<string, number>()
+let globalPlanEtagVersion = 0
+
+const buildPlanEtagKey = (path: string, lang: FragmentLang) => `${lang}:${normalizePlanPath(path)}`
+
+const bumpPlanEtagKey = (key: string) => {
+  const next = (planEtagVersions.get(key) ?? 0) + 1
+  planEtagVersions.set(key, next)
+}
+
+export const getPlanEtagVersion = (path: string, lang: FragmentLang): PlanEtagVersion => {
+  const key = buildPlanEtagKey(path, lang)
+  if (!planEtagVersions.has(key)) {
+    planEtagVersions.set(key, 0)
+  }
+  return {
+    global: globalPlanEtagVersion,
+    entry: planEtagVersions.get(key) ?? 0
+  }
+}
+
+export const bumpPlanEtagVersion = (path?: string, lang?: FragmentLang) => {
+  if (path === undefined && lang === undefined) {
+    globalPlanEtagVersion += 1
+    planEtagVersions.clear()
+    return
+  }
+  if (path !== undefined && lang !== undefined) {
+    bumpPlanEtagKey(buildPlanEtagKey(path, lang))
+    return
+  }
+  if (path !== undefined) {
+    const normalizedPath = normalizePlanPath(path)
+    for (const key of planEtagVersions.keys()) {
+      if (key.endsWith(`:${normalizedPath}`)) {
+        bumpPlanEtagKey(key)
+      }
+    }
+    return
+  }
+  if (lang !== undefined) {
+    const prefix = `${lang}:`
+    for (const key of planEtagVersions.keys()) {
+      if (key.startsWith(prefix)) {
+        bumpPlanEtagKey(key)
+      }
+    }
+  }
+}
 
 const safeJsonParse = (raw: string | null): unknown => {
   if (raw === null) return null
@@ -57,6 +113,7 @@ export const invalidateStoreItemsCache = async () => {
 }
 
 export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) => {
+  bumpPlanEtagVersion(path, lang)
   if (!isValkeyReady()) return
   try {
     const hasPath = path !== undefined && path !== ''

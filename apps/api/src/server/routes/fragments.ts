@@ -10,13 +10,29 @@ import {
   memoizeFragmentPlan,
   streamFragmentsForPath
 } from '../../fragments/service'
-import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
+import {
+  buildFragmentPlanCacheKey,
+  buildCacheControlHeader,
+  bumpPlanEtagVersion,
+  getPlanEtagVersion,
+  readCache,
+  recordLatencySample,
+  writeCache
+} from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
 import { normalizePlanPath } from '../../fragments/planner'
-import type { EarlyHint, FragmentCacheStatus, FragmentPlanEntry, FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
+import type {
+  EarlyHint,
+  FragmentCacheStatus,
+  FragmentPlan,
+  FragmentPlanEntry,
+  FragmentPlanInitialPayloads,
+  FragmentPlanResponse
+} from '../../fragments/types'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
+import { createHash } from 'node:crypto'
 
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
@@ -147,6 +163,70 @@ const stripInitialFragments = (plan: FragmentPlanResponse) => {
   return rest
 }
 
+const normalizeCacheStatus = (cache?: FragmentCacheStatus | null) =>
+  cache
+    ? {
+        status: cache.status,
+        updatedAt: cache.updatedAt ?? null,
+        staleAt: cache.staleAt ?? null,
+        expiresAt: cache.expiresAt ?? null
+      }
+    : null
+
+const normalizePlanForEtag = (plan: FragmentPlan) => ({
+  path: plan.path,
+  createdAt: plan.createdAt,
+  fragments: plan.fragments.map((entry) => ({
+    id: entry.id,
+    critical: entry.critical,
+    layout: entry.layout,
+    dependsOn: entry.dependsOn ?? [],
+    runtime: entry.runtime ?? null,
+    cache: normalizeCacheStatus(entry.cache ?? null)
+  })),
+  fetchGroups: plan.fetchGroups ?? [],
+  earlyHints:
+    plan.earlyHints?.map((hint) => ({
+      href: hint.href,
+      as: hint.as ?? null,
+      rel: hint.rel ?? null,
+      type: hint.type ?? null,
+      crossorigin: hint.crossorigin ?? null
+    })) ?? []
+})
+
+const buildPlanEtag = (plan: FragmentPlan, versionToken: string) => {
+  const normalized = normalizePlanForEtag(plan)
+  const hash = createHash('sha256')
+  hash.update(versionToken)
+  hash.update(JSON.stringify(normalized))
+  return `"${hash.digest('hex')}"`
+}
+
+const buildPlanHeaders = (etag: string) =>
+  new Headers({
+    'content-type': 'application/json',
+    'cache-control': buildCacheControlHeader(0, 0),
+    etag
+  })
+
+const matchesIfNoneMatch = (etag: string, headerValue: string | null) => {
+  if (headerValue === null) return false
+  const normalized = headerValue.trim()
+  if (normalized === '') return false
+  const candidates = normalized
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '')
+  if (candidates.includes('*')) return true
+  return candidates.some((candidate) => {
+    if (candidate.startsWith('W/')) {
+      return candidate.slice(2) === etag
+    }
+    return candidate === etag
+  })
+}
+
 const buildInitialFragments = async (
   plan: FragmentPlanResponse,
   lang: ReturnType<typeof normalizeFragmentLang>,
@@ -206,7 +286,7 @@ const buildInitialFragments = async (
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/plan',
-    async ({ query }) => {
+    async ({ query, request }) => {
       const rawPath = typeof query.path === 'string' ? query.path : '/'
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
@@ -215,10 +295,12 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       if (refresh) {
         clearPlanMemo(path, lang)
+        bumpPlanEtagVersion(path, lang)
       }
       const cacheKey = buildFragmentPlanCacheKey(path, lang)
       const cachedValue = refresh ? null : await readCache(cacheKey)
-      const cached = cachedValue !== null && isFragmentPlanResponse(cachedValue) ? cachedValue : null
+      const cached =
+        cachedValue !== null && isFragmentPlanResponse(cachedValue) ? stripInitialFragments(cachedValue) : null
       let plan = cached
       const memoPlan = refresh ? null : getMemoizedPlan(path, lang)
       const fragmentsByCacheKey = new Map<string, StoredFragment>()
@@ -231,9 +313,25 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       }
       const basePlan = stripInitialFragments(plan)
       memoizeFragmentPlan(path, lang, basePlan)
-      if (!includeInitial) return basePlan
+
+      const version = getPlanEtagVersion(path, lang)
+      const etag = buildPlanEtag(basePlan, `${version.global}:${version.entry}`)
+      const ifNoneMatch = request.headers.get('if-none-match')
+      if (!refresh && matchesIfNoneMatch(etag, ifNoneMatch)) {
+        return new Response(null, { status: 304, headers: buildPlanHeaders(etag) })
+      }
+      if (!includeInitial) {
+        return new Response(JSON.stringify(basePlan), {
+          status: 200,
+          headers: buildPlanHeaders(etag)
+        })
+      }
       const initialFragments = await buildInitialFragments(basePlan, lang, fragmentsByCacheKey)
-      return { ...basePlan, initialFragments }
+      const payload: FragmentPlanResponse = { ...basePlan, initialFragments }
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: buildPlanHeaders(etag)
+      })
     },
     {
       query: t.Object({

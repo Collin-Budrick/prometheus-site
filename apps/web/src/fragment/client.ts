@@ -6,6 +6,7 @@ import {
   isWebTransportDatagramsPreferred,
   isWebTransportPreferred
 } from './config'
+import { getCachedPlan, setCachedPlan } from './plan-cache'
 
 const concat = (a: Uint8Array, b: Uint8Array) => {
   const next = new Uint8Array(a.length + b.length)
@@ -168,11 +169,25 @@ export const fetchFragmentPlan = async (path: string, lang?: string): Promise<Fr
   if (lang) {
     params.set('lang', lang)
   }
-  const response = await fetch(`${api}/fragments/plan?${params.toString()}`)
+  const cached = getCachedPlan(path, lang)
+  const response = await fetch(`${api}/fragments/plan?${params.toString()}`, {
+    headers: cached?.etag ? { 'If-None-Match': cached.etag } : undefined
+  })
+  if (response.status === 304) {
+    if (!cached) {
+      throw new Error('Plan fetch returned 304 without cached payload')
+    }
+    return cached.plan
+  }
   if (!response.ok) {
     throw new Error(`Plan fetch failed: ${response.status}`)
   }
-  return response.json() as Promise<FragmentPlan>
+  const plan = (await response.json()) as FragmentPlan
+  const etag = response.headers.get('etag')
+  if (etag) {
+    setCachedPlan(path, lang, { etag, plan })
+  }
+  return plan
 }
 
 type FetchFragmentOptions = {

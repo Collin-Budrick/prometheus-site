@@ -7,6 +7,7 @@ import type {
 } from './types'
 import { decodeFragmentPayload } from './binary'
 import { getApiBase } from './config'
+import { getCachedPlan, setCachedPlan } from './plan-cache'
 
 type FragmentPlanResult = {
   plan: FragmentPlan
@@ -37,7 +38,16 @@ export const loadFragmentPlan = async (
   if (lang) {
     params.set('lang', lang)
   }
-  const response = await fetch(`${api}/fragments/plan?${params.toString()}`)
+  const cached = getCachedPlan(path, lang)
+  const response = await fetch(`${api}/fragments/plan?${params.toString()}`, {
+    headers: cached?.etag ? { 'If-None-Match': cached.etag } : undefined
+  })
+  if (response.status === 304) {
+    if (!cached) {
+      throw new Error('Plan fetch returned 304 without cached payload')
+    }
+    return { plan: cached.plan, initialFragments: cached.initialFragments }
+  }
   if (!response.ok) {
     throw new Error(`Plan fetch failed: ${response.status}`)
   }
@@ -45,7 +55,12 @@ export const loadFragmentPlan = async (
   const hasInitialFragments = Object.prototype.hasOwnProperty.call(payload, 'initialFragments')
   const { initialFragments, ...plan } = payload
   const decoded = hasInitialFragments ? decodeInitialFragments(initialFragments ?? {}) : undefined
-  return { plan: plan as FragmentPlan, initialFragments: decoded }
+  const etag = response.headers.get('etag')
+  const result: FragmentPlanResult = { plan: plan as FragmentPlan, initialFragments: decoded }
+  if (etag) {
+    setCachedPlan(path, lang, { etag, plan: result.plan, initialFragments: decoded })
+  }
+  return result
 }
 
 export const loadFragments = async (
