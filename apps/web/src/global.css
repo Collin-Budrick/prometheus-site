@@ -1879,6 +1879,10 @@
 
   .wasm-demo-core-value {
     @apply font-semibold text-slate-900 text-lg;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     color: rgb(var(--ink));
   }
 
@@ -1889,6 +1893,10 @@
 
   .wasm-demo-bits {
     @apply bg-slate-50 px-3 py-2 rounded-xl text-center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.3em;
