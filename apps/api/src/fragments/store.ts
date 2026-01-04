@@ -12,6 +12,8 @@ type StoredFragment = {
 }
 
 const memoryStore = new Map<string, StoredFragment>()
+const memoryStoreLimit = 256
+const memoryStoreCleanupIntervalMs = 30_000
 const lockKey = (id: string, lang: FragmentLang) => `fragment:lock:${id}::${lang}`
 export const fragmentLockTtlMs = 8_000
 const releaseLockScript = `
@@ -20,6 +22,51 @@ const releaseLockScript = `
   end
   return 0
 `
+
+const isExpired = (entry: StoredFragment, now: number) => entry.expiresAt <= now
+
+const deleteOldestMemoryEntry = () => {
+  const oldestKey = memoryStore.keys().next().value
+  if (oldestKey !== undefined) {
+    memoryStore.delete(oldestKey)
+  }
+}
+
+const enforceMemoryStoreLimit = () => {
+  while (memoryStore.size > memoryStoreLimit) {
+    deleteOldestMemoryEntry()
+  }
+}
+
+const purgeExpiredMemoryEntries = (now: number = Date.now()) => {
+  for (const [key, entry] of memoryStore) {
+    if (isExpired(entry, now)) {
+      memoryStore.delete(key)
+    }
+  }
+}
+
+const cleanupMemoryStore = () => {
+  purgeExpiredMemoryEntries()
+  enforceMemoryStoreLimit()
+}
+
+const readMemoryEntry = (key: string): StoredFragment | null => {
+  const entry = memoryStore.get(key)
+  if (entry === undefined) return null
+
+  const now = Date.now()
+  if (isExpired(entry, now)) {
+    memoryStore.delete(key)
+    return null
+  }
+
+  memoryStore.delete(key)
+  memoryStore.set(key, entry)
+  return entry
+}
+
+setInterval(cleanupMemoryStore, memoryStoreCleanupIntervalMs)
 
 const createLockToken = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
@@ -93,7 +140,7 @@ export const readFragmentsByCacheKeys = async (
       const [rawValues = []] = await valkey.multi().mGet(uniqueKeys).execAsPipeline()
       uniqueKeys.forEach((key, index) => {
         const entry = decodeCacheValue(rawValues[index] ?? null)
-        result.set(key, entry)
+        result.set(key, entry !== null && isExpired(entry, Date.now()) ? null : entry)
       })
       return result
     } catch {
@@ -103,7 +150,7 @@ export const readFragmentsByCacheKeys = async (
   }
 
   uniqueKeys.forEach((key) => {
-    result.set(key, memoryStore.get(key) ?? null)
+    result.set(key, readMemoryEntry(key))
   })
   return result
 }
@@ -125,6 +172,7 @@ type FragmentWriteEntry = {
 export const writeFragments = async (entries: FragmentWriteEntry[]) => {
   entries.forEach(({ cacheKey, entry }) => {
     memoryStore.set(cacheKey, entry)
+    enforceMemoryStoreLimit()
   })
 
   if (!isValkeyReady() || entries.length === 0) return
