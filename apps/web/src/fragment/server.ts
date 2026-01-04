@@ -57,8 +57,14 @@ export const loadFragmentPlan = async (
   const payload = (await response.json()) as FragmentPlanResponse
   const hasInitialFragments = Object.prototype.hasOwnProperty.call(payload, 'initialFragments')
   const { initialFragments, ...plan } = payload
-  const decoded = hasInitialFragments ? decodeInitialFragments(initialFragments ?? {}) : cached?.initialFragments
   const etag = response.headers.get('etag')
+  const canReuseCachedInitial =
+    Boolean(cached?.initialFragments) && Boolean(etag) && cached?.etag === etag
+  const decoded = hasInitialFragments
+    ? decodeInitialFragments(initialFragments ?? {})
+    : canReuseCachedInitial
+      ? cached?.initialFragments
+      : undefined
   const result: FragmentPlanResult = { plan: plan as FragmentPlan, initialFragments: decoded }
   if (etag) {
     setCachedPlan(path, lang, { etag, plan: result.plan, initialFragments: decoded })
