@@ -395,11 +395,11 @@
       animation-name: slide-in-right;
     }
 
-    :root[data-nav-direction='back'] ::view-transition-old(shell-main) {
+    :root[data-nav-direction='back']::view-transition-old(shell-main) {
       animation-name: slide-out-right;
     }
 
-    :root[data-nav-direction='back'] ::view-transition-new(shell-main) {
+    :root[data-nav-direction='back']::view-transition-new(shell-main) {
       animation-name: slide-in-left;
     }
 

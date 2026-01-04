@@ -1,11 +1,12 @@
-import { $, component$, HTMLFragment, Slot } from '@builder.io/qwik'
-import { Link, useDocumentHead, useLocation, type RequestHandler } from '@builder.io/qwik-city'
+import { component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
+import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
+import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -132,7 +133,6 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const location = useLocation()
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
@@ -142,20 +142,43 @@ export default component$(() => {
       : fragmentStatus.value === 'error'
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
-  const orderedRoutes = ['/', '/store', '/lab', '/login']
 
-  const setNavDirection = $((targetPath: string) => {
-    if (typeof document === 'undefined') return
-    const currentPath = location.url.pathname.replace(/\/+$/, '') || '/'
-    const nextPath = targetPath.replace(/\/+$/, '') || '/'
-    const currentIndex = orderedRoutes.indexOf(currentPath)
-    const targetIndex = orderedRoutes.indexOf(nextPath)
-    const root = document.documentElement
-    if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
-      delete root.dataset.navDirection
-      return
+  useVisibleTask$(({ cleanup }) => {
+    const nav = document.querySelector('.nav-links')
+    if (!nav) return
+    const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
+    const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
+
+    const handleClick = (event: Event) => {
+      if (!(event.target instanceof Element)) return
+      const anchor = event.target.closest('a[data-fragment-link]')
+      if (!(anchor instanceof HTMLAnchorElement)) return
+      const href = anchor.getAttribute('href')
+      if (!href) return
+
+      let targetPath = href
+      try {
+        targetPath = new URL(href, window.location.href).pathname
+      } catch {
+        return
+      }
+
+      const currentPath = normalizePath(window.location.pathname)
+      const nextPath = normalizePath(targetPath)
+      const currentIndex = orderedRoutes.indexOf(currentPath)
+      const targetIndex = orderedRoutes.indexOf(nextPath)
+      const root = document.documentElement
+      if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
+        delete root.dataset.navDirection
+      } else {
+        root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
+      }
     }
-    root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
+
+    nav.addEventListener('click', handleClick, { capture: true })
+    cleanup(() => {
+      nav.removeEventListener('click', handleClick, { capture: true })
+    })
   })
 
   return (
@@ -170,18 +193,11 @@ export default component$(() => {
         </div>
         <div class="topbar-actions">
           <nav class="nav-links" data-view-transition="shell-nav">
-            <Link href="/" data-fragment-link onClick$={() => setNavDirection('/')}>
-              {copy.value.navHome}
-            </Link>
-            <Link href="/store" data-fragment-link onClick$={() => setNavDirection('/store')}>
-              {copy.value.navStore}
-            </Link>
-            <Link href="/lab" data-fragment-link onClick$={() => setNavDirection('/lab')}>
-              {copy.value.navLab}
-            </Link>
-            <Link href="/login" data-fragment-link onClick$={() => setNavDirection('/login')}>
-              {copy.value.navLogin}
-            </Link>
+            {TOPBAR_NAV_ITEMS.map((item) => (
+              <Link key={item.href} href={item.href} data-fragment-link>
+                {copy.value[item.labelKey]}
+              </Link>
+            ))}
           </nav>
           <div class="topbar-controls">
             <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
