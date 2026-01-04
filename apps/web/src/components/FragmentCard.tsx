@@ -86,6 +86,17 @@ export const FragmentCard = component$<FragmentCardProps>(
 
         if (!shouldMeasure) return
 
+        if (visibilityChanged && !expandedChanged && !pendingRect) {
+          previousRects.set(card, card.getBoundingClientRect())
+          previousRadii.set(card, window.getComputedStyle(card).borderRadius)
+          if (placeholder) {
+            placeholder.style.display = 'none'
+            placeholder.style.height = ''
+            placeholder.style.width = ''
+          }
+          return
+        }
+
         const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
         const firstRect = pendingRect ?? previousRects.get(card)
         const storedRadius = pendingRadii.get(card) ?? previousRadii.get(card)
