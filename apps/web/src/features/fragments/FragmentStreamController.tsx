@@ -117,7 +117,8 @@ export const FragmentStreamController = component$(
                 },
                 {
                   mutationRoot: document.querySelector('.fragment-grid') ?? document.body,
-                  timeoutMs: 320
+                  timeoutMs: 320,
+                  variant: 'fragments'
                 }
               ).finally(() => {
                 langTransitionInFlight = false

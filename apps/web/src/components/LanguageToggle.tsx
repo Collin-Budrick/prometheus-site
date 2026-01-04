@@ -1,6 +1,7 @@
 import { $, component$ } from '@builder.io/qwik'
 import { applyLang } from '../shared/lang-store'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
+import { runLangViewTransition } from '../shared/view-transitions'
 
 export const LanguageToggle = component$(() => {
   const langSignal = useSharedLangSignal()
@@ -8,7 +9,18 @@ export const LanguageToggle = component$(() => {
 
   const toggleLang = $(() => {
     const next = langSignal.value === 'en' ? 'ko' : 'en'
-    applyLang(next)
+    const root = document.querySelector('.layout-shell') ?? document.body
+    runLangViewTransition(
+      () => {
+        langSignal.value = next
+        applyLang(next)
+      },
+      {
+        mutationRoot: root,
+        timeoutMs: 420,
+        variant: 'ui'
+      }
+    )
   })
 
   const label = langSignal.value === 'en' ? copy.value.languageShortEn : copy.value.languageShortKo

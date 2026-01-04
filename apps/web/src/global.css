@@ -30,6 +30,7 @@
     --view-transition-duration: 620ms;
     --view-transition-duration-long: 520ms;
     --view-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --lang-transition-duration: 720ms;
     --theme-transition-duration: 720ms;
     --skeleton-base: 226 232 240;
     --skeleton-highlight: 248 250 252;
@@ -125,25 +126,24 @@
       animation: wipe-up var(--theme-transition-duration) var(--view-transition-ease);
       clip-path: inset(100% 0 0 0);
     }
-view transitions
-    :root[data-lang-transition]::view-transition-old(shell-header),
-    :root[data-lang-transition]::view-transition-old(shell-nav),
-    :root[data-lang-transition]::view-transition-old(shell-main) {
-      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
+    :root[data-lang-transition='ui']::view-transition-old(lang-ui) {
+      animation: lang-fade-out var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
     }
 
-    :root[data-lang-transition]::view-transition-new(shell-header),
-    :root[data-lang-transition]::view-transition-new(shell-nav),
-    :root[data-lang-transition]::view-transition-new(shell-main) {
-      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
+    :root[data-lang-transition='ui']::view-transition-new(lang-ui) {
+      animation: lang-fade-in var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
     }
 
-    :root[data-lang-transition]::view-transition-old(root) {
-      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
+    :root[data-lang-transition='fragments']::view-transition-old(lang-fragments) {
+      animation: lang-fade-out var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
     }
 
-    :root[data-lang-transition]::view-transition-new(root) {
-      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
+    :root[data-lang-transition='fragments']::view-transition-new(lang-fragments) {
+      animation: lang-fade-in var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
     }
   }
 
@@ -336,16 +336,17 @@ view transitions
       animation-timing-function: var(--view-transition-ease);
     }
 
-    .fragment-grid {
+    :root[data-lang-transition='ui'] .layout-shell {
+      view-transition-name: lang-ui;
+    }
+
+    :root[data-lang-transition='ui'] [data-view-transition],
+    :root[data-lang-transition='ui'] .fragment-grid {
+      view-transition-name: none !important;
+    }
+
+    :root[data-lang-transition='fragments'] .fragment-grid {
       view-transition-name: lang-fragments;
-    }
-
-    :root[data-lang-transition]::view-transition-old(lang-fragments) {
-      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
-    }
-
-    :root[data-lang-transition]::view-transition-new(lang-fragments) {
-      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
     }
   }
 

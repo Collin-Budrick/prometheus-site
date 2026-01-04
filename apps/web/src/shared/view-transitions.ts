@@ -62,27 +62,43 @@ const supportsViewTransitions = () => {
   return window.matchMedia('(prefers-reduced-motion: no-preference)').matches
 }
 
+type MutationMode = 'any' | 'all'
+type ViewTransitionVariant = 'ui' | 'fragments'
+
 type ViewTransitionOptions = {
   mutationRoot?: Element | null
+  mutationRoots?: Array<Element | null | undefined>
   timeoutMs?: number
+  mode?: MutationMode
+  variant?: ViewTransitionVariant
+}
+
+const waitForMutations = (roots: Element[], timeoutMs: number, mode: MutationMode) => {
+  if (!roots.length) return waitForPaint()
+  const waits = roots.map((root) => waitForMutation(root, timeoutMs))
+  return mode === 'all' ? Promise.all(waits).then(() => {}) : Promise.race(waits)
 }
 
 export const runLangViewTransition = (update: () => void | Promise<void>, options: ViewTransitionOptions = {}) => {
-  if (!supportsViewTransitions()) {
+  if (!supportsViewTransitions() || activeLangTransitions > 0) {
     return Promise.resolve(update())
   }
 
   const root = document.documentElement
+  const variant: ViewTransitionVariant = options.variant ?? 'ui'
   activeLangTransitions += 1
-  root.dataset.langTransition = 'swap'
+  root.dataset.langTransition = variant
 
   const doc = document as DocumentWithViewTransition
 
   try {
     const transition = doc.startViewTransition(async () => {
-      const mutationRoot = options.mutationRoot ?? document.body
       const timeoutMs = options.timeoutMs ?? DEFAULT_MUTATION_TIMEOUT
-      const mutation = waitForMutation(mutationRoot, timeoutMs)
+      const mode = options.mode ?? 'any'
+      const roots = (options.mutationRoots ?? [options.mutationRoot ?? document.body]).filter(
+        (root): root is Element => Boolean(root)
+      )
+      const mutation = waitForMutations(roots, timeoutMs, mode)
       await Promise.resolve(update())
       await mutation
     })
