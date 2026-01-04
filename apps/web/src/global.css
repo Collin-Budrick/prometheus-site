@@ -1811,7 +1811,9 @@
   .wasm-demo-input {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
+    justify-self: center;
   }
 
   .wasm-demo-label {
