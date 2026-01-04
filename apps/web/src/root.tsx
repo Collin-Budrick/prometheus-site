@@ -1,4 +1,4 @@
-import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
 import { scheduleIdleTask } from './components/motion-idle'
 import { RouteMotion } from './components/RouteMotion'
@@ -6,7 +6,7 @@ import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
 import { LangProvider } from './shared/lang-bridge'
 import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
-import './global.css'
+import globalStyles from './global.css?inline'
 
 type RequestIdleCallback = (
   callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
@@ -146,6 +146,7 @@ const ClientExtras = component$(() => (
 ))
 
 export default component$(() => {
+  useStyles$(globalStyles)
   const clientReady = useSignal(false)
 
   useVisibleTask$(
