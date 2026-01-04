@@ -31,7 +31,8 @@
     --view-transition-duration-long: 520ms;
     --view-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
     --lang-transition-duration: 1720ms;
-    --theme-transition-duration: 1720ms;
+    --theme-transition-duration: 2400ms;
+    --theme-transition-ease: cubic-bezier(0.42, 0, 0.58, 1);
     --skeleton-base: 226 232 240;
     --skeleton-highlight: 248 250 252;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -118,12 +119,12 @@
     }
 
     :root[data-theme-direction='dark']::view-transition-new(root) {
-      animation: wipe-down var(--theme-transition-duration) var(--view-transition-ease);
+      animation: wipe-down var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease));
       clip-path: inset(0 0 100% 0);
     }
 
     :root[data-theme-direction='light']::view-transition-new(root) {
-      animation: wipe-up var(--theme-transition-duration) var(--view-transition-ease);
+      animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease));
       clip-path: inset(100% 0 0 0);
     }
     :root[data-lang-transition='ui']::view-transition-old(lang-ui) {
