@@ -1,6 +1,12 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { Signal } from '@builder.io/qwik'
-import { applyFragmentEffects, fetchFragment, streamFragments, teardownFragmentEffects } from '../../fragment/client'
+import {
+  applyFragmentEffects,
+  fetchFragment,
+  fetchFragmentBatch,
+  streamFragments,
+  teardownFragmentEffects
+} from '../../fragment/client'
 import type {
   FragmentPayload,
   FragmentPayloadMap,
@@ -197,32 +203,60 @@ export const FragmentStreamController = component$(
         }
 
         const fetchMissing = (ids: string[]) => {
-          ids.forEach((id) => {
+          const fetchable = ids.filter((id) => {
             const needsRefresh = refreshIds.has(id)
-            if ((!needsRefresh && fragments.value[id]) || inFlight.has(id) || pending.has(id)) return
+            if ((!needsRefresh && fragments.value[id]) || inFlight.has(id) || pending.has(id)) return false
+            return true
+          })
+          if (!fetchable.length) return
+
+          fetchable.forEach((id) => {
             const timer = fallbackTimers.get(id)
             if (timer) {
               window.clearTimeout(timer)
               fallbackTimers.delete(id)
             }
             inFlight.add(id)
-            setStreaming()
-            fetchFragment(id, { lang: activeLang })
-              .then((payload) => {
-                if (!active) return
-                applyPayload(payload)
-              })
-              .catch((error) => {
-                if (!active) return
-                if ((error as Error)?.name === 'AbortError') return
-                console.error('Fragment fetch failed', error)
-                status.value = 'error'
-              })
-              .finally(() => {
-                inFlight.delete(id)
-                markIdle()
-              })
           })
+
+          const batchable = fetchable.map((id) => ({ id, refresh: refreshIds.has(id) }))
+          const useBatch = batchable.length > 1
+          setStreaming()
+
+          const handlePayload = (payload: FragmentPayload) => {
+            if (!active) return
+            applyPayload(payload)
+          }
+
+          const handleError = (error: unknown) => {
+            if (!active) return
+            if ((error as Error)?.name === 'AbortError') return
+            console.error('Fragment fetch failed', error)
+            status.value = 'error'
+          }
+
+          const handleFinally = (idsToClear: string[]) => {
+            idsToClear.forEach((id) => inFlight.delete(id))
+            markIdle()
+          }
+
+          if (useBatch) {
+            fetchFragmentBatch(batchable, { lang: activeLang })
+              .then((payloads) => {
+                Object.values(payloads).forEach(handlePayload)
+              })
+              .catch(handleError)
+              .finally(() => {
+                handleFinally(batchable.map((entry) => entry.id))
+              })
+            return
+          }
+
+          const entry = batchable[0]
+          fetchFragment(entry.id, { lang: activeLang, refresh: entry.refresh })
+            .then(handlePayload)
+            .catch(handleError)
+            .finally(() => handleFinally([entry.id]))
         }
 
         const fetchMissingNeeded = () => {
