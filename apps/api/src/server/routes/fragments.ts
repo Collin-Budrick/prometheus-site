@@ -284,6 +284,48 @@ const buildInitialFragments = async (
 }
 
 export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
+  .post(
+    '/batch',
+    async ({ body }) => {
+      const inflight = new Map<string, Promise<string>>()
+
+      const resolvePayload = async (id: string, lang: string, refresh: boolean) => {
+        const cacheKey = `${id}:${lang}:${refresh ? 'refresh' : 'cache'}`
+        const existing = inflight.get(cacheKey)
+        if (existing !== undefined) return existing
+
+        const task = (async () => {
+          const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
+          return Buffer.from(entry.payload).toString('base64')
+        })()
+
+        inflight.set(cacheKey, task)
+        return task
+      }
+
+      const entries = await Promise.all(
+        body.map(async (entry) => {
+          const lang = normalizeFragmentLang(entry.lang)
+          const payload = await resolvePayload(entry.id, lang, Boolean(entry.refresh))
+          return [entry.id, payload] as const
+        })
+      )
+
+      return entries.reduce<Record<string, string>>((acc, [id, payload]) => {
+        acc[id] = payload
+        return acc
+      }, {})
+    },
+    {
+      body: t.Array(
+        t.Object({
+          id: t.String(),
+          lang: t.Optional(t.String()),
+          refresh: t.Optional(t.Boolean())
+        })
+      )
+    }
+  )
   .get(
     '/plan',
     async ({ query, request }) => {

@@ -224,6 +224,68 @@ export const fetchFragment = async (id: string, options: FetchFragmentOptions = 
   return { ...payload, id, cacheUpdatedAt }
 }
 
+type FragmentBatchEntry = {
+  id: string
+  refresh?: boolean
+}
+
+type FragmentBatchResponse = Record<string, string>
+
+const decodeBase64 = (value: string) => {
+  if (typeof atob === 'function') {
+    const binary = atob(value)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(value, 'base64'))
+  }
+  throw new Error('Base64 decoding is unavailable in this environment')
+}
+
+export const fetchFragmentBatch = async (
+  entries: FragmentBatchEntry[],
+  options: FetchFragmentOptions = {}
+): Promise<Record<string, FragmentPayload>> => {
+  if (!entries.length) return {}
+  const api = getApiBase()
+  const response = await fetch(`${api}/fragments/batch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(
+      entries.map((entry) => ({
+        id: entry.id,
+        lang: options.lang,
+        refresh: entry.refresh === true ? true : undefined
+      }))
+    ),
+    cache: entries.some((entry) => entry.refresh) || options.refresh ? 'no-store' : 'default'
+  })
+
+  if (!response.ok) {
+    throw new Error(`Fragment batch fetch failed: ${response.status}`)
+  }
+
+  const payloads = (await response.json()) as FragmentBatchResponse
+  const decodeFragmentPayload = await loadDecoder()
+
+  const entriesWithPayload = await Promise.all(
+    Object.entries(payloads).map(async ([id, base64]) => {
+      const bytes = decodeBase64(base64)
+      const payload = decodeFragmentPayload(bytes)
+      return [id, { ...payload, id }] as const
+    })
+  )
+
+  return entriesWithPayload.reduce<Record<string, FragmentPayload>>((acc, [id, payload]) => {
+    acc[id] = payload
+    return acc
+  }, {})
+}
+
 const getWebTransportCtor = () =>
   (globalThis as typeof globalThis & { WebTransport?: WebTransportConstructor }).WebTransport ?? null
 
