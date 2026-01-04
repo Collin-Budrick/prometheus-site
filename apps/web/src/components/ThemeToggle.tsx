@@ -1,4 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { InHalfMoon, InSunLight } from '@qwikest/icons/iconoir'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import {
   applyTheme as applyStoredTheme,
@@ -86,10 +87,11 @@ export const ThemeToggle = component$(() => {
         toggleTheme()
       }}
     >
-      <span class="theme-toggle-indicator" aria-hidden="true" />
-      <span class="theme-toggle-label">
-        {themeSignal.value === 'dark' ? copy.value.themeDark : copy.value.themeLight}
-      </span>
+      {themeSignal.value === 'dark' ? (
+        <InSunLight class="theme-toggle-icon" aria-hidden="true" />
+      ) : (
+        <InHalfMoon class="theme-toggle-icon" aria-hidden="true" />
+      )}
     </button>
   )
 })

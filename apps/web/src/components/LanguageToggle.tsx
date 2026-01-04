@@ -1,4 +1,5 @@
 import { $, component$ } from '@builder.io/qwik'
+import { InTranslate } from '@qwikest/icons/iconoir'
 import { applyLang } from '../shared/lang-store'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import { runLangViewTransition } from '../shared/view-transitions'
@@ -23,7 +24,6 @@ export const LanguageToggle = component$(() => {
     )
   })
 
-  const label = langSignal.value === 'en' ? copy.value.languageShortEn : copy.value.languageShortKo
   const ariaLabel = langSignal.value === 'en' ? copy.value.languageAriaToKo : copy.value.languageAriaToEn
 
   return (
@@ -37,8 +37,7 @@ export const LanguageToggle = component$(() => {
         toggleLang()
       }}
     >
-      <span class="lang-toggle-indicator" aria-hidden="true" />
-      <span class="lang-toggle-label">{label}</span>
+      <InTranslate class="lang-toggle-icon" aria-hidden="true" />
     </button>
   )
 })

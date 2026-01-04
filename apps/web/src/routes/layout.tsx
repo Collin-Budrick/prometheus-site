@@ -117,6 +117,12 @@ export default component$(() => {
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
+  const statusLabel =
+    fragmentStatus.value === 'streaming'
+      ? copy.value.fragmentStatusStreaming
+      : fragmentStatus.value === 'error'
+        ? copy.value.fragmentStatusStalled
+        : copy.value.fragmentStatusIdle
 
   return (
     <div class="layout-shell">
@@ -144,15 +150,8 @@ export default component$(() => {
             </a>
           </nav>
           <div class="topbar-controls">
-            <div class="fragment-status">
-              <span class="dot" />
-              <span>
-                {fragmentStatus.value === 'streaming'
-                  ? copy.value.fragmentStatusStreaming
-                  : fragmentStatus.value === 'error'
-                    ? copy.value.fragmentStatusStalled
-                    : copy.value.fragmentStatusIdle}
-              </span>
+            <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
+              <span class="dot" aria-hidden="true" />
             </div>
             <LanguageToggle />
             <ThemeToggle />
