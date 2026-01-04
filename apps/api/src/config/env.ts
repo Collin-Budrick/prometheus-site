@@ -92,6 +92,18 @@ const requireString = (value: string | undefined, name: string) => {
   return resolved
 }
 
+const normalizeOptionalString = (value: string | undefined) => {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? undefined : trimmed
+}
+
+const firstDefined = (...values: Array<string | undefined>) => {
+  for (const value of values) {
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
 const resolveAuthString = (
   value: string | undefined,
   fallback: string,
@@ -126,32 +138,34 @@ const resolveWebProtocol = (env: Env) => {
 }
 
 const resolveDevRpId = (env: Env) => {
-  const inferred = env.HMR_HOST?.trim() || env.WEB_HOST?.trim()
-  if (inferred && inferred !== 'localhost') return normalizeRpId(inferred)
+  const inferred = firstDefined(normalizeOptionalString(env.HMR_HOST), normalizeOptionalString(env.WEB_HOST))
+  if (inferred !== undefined && inferred !== 'localhost') return normalizeRpId(inferred)
   return 'localhost'
 }
 
 const resolveRpId = (env: Env, allowDevDefaults: boolean) => {
-  const explicit = env.BETTER_AUTH_RP_ID?.trim()
-  const normalizedExplicit = explicit ? normalizeRpId(explicit) : undefined
+  const explicit = normalizeOptionalString(env.BETTER_AUTH_RP_ID)
+  const normalizedExplicit = explicit === undefined ? undefined : normalizeRpId(explicit)
   if (!allowDevDefaults) return requireString(normalizedExplicit, 'BETTER_AUTH_RP_ID')
-  if (normalizedExplicit && normalizedExplicit !== 'localhost') return normalizedExplicit
+  if (normalizedExplicit !== undefined && normalizedExplicit !== 'localhost') return normalizedExplicit
   const fallback = resolveDevRpId(env)
   if (normalizedExplicit === 'localhost' && fallback !== 'localhost') return fallback
-  return normalizedExplicit || fallback
+  return normalizedExplicit ?? fallback
 }
 
 const resolveRpOrigin = (env: Env, allowDevDefaults: boolean, rpId: string) => {
-  const explicit = (env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN)?.trim()
+  const explicit = normalizeOptionalString(
+    env.BETTER_AUTH_RP_ORIGIN ?? env.BETTER_AUTH_ORIGIN ?? env.PRERENDER_ORIGIN
+  )
   if (!allowDevDefaults) return requireString(explicit, 'BETTER_AUTH_RP_ORIGIN')
 
   const protocol = resolveWebProtocol(env)
-  const webPort = (env.WEB_PORT?.trim() || '4173').replace(/^:/, '')
+  const webPort = (normalizeOptionalString(env.WEB_PORT) ?? '4173').replace(/^:/, '')
   const localhostOrigin = `${protocol}://localhost:${webPort}`
 
-  if (explicit && explicit !== localhostOrigin) return explicit
+  if (explicit !== undefined && explicit !== localhostOrigin) return explicit
   if (rpId !== 'localhost') return `${protocol}://${rpId}`
-  return explicit || localhostOrigin
+  return explicit ?? localhostOrigin
 }
 
 const resolveRpConfigs = (env: Env, allowDevDefaults: boolean) => {
@@ -206,11 +220,13 @@ const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: st
   const providerKey = provider.toUpperCase()
   const clientIdKey = `BETTER_AUTH_${providerKey}_CLIENT_ID`
   const clientSecretKey = `BETTER_AUTH_${providerKey}_CLIENT_SECRET`
-  const clientId = env[clientIdKey]?.trim()
-  const clientSecret = env[clientSecretKey]?.trim()
+  const clientId = normalizeOptionalString(env[clientIdKey])
+  const clientSecret = normalizeOptionalString(env[clientSecretKey])
+  const hasClientId = clientId !== undefined
+  const hasClientSecret = clientSecret !== undefined
 
-  if (!clientId && !clientSecret) return null
-  if (!clientId || !clientSecret) {
+  if (!hasClientId && !hasClientSecret) return null
+  if (!hasClientId || !hasClientSecret) {
     throw new Error(`${providerLabel} OAuth requires both ${clientIdKey} and ${clientSecretKey}`)
   }
 
@@ -218,8 +234,10 @@ const parseOAuthProvider = (env: Env, provider: OAuthProvider, providerLabel: st
 }
 
 const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
-  const resolvedSecret = env.BETTER_AUTH_SECRET ?? env.BETTER_AUTH_COOKIE_SECRET
-  const secretName = env.BETTER_AUTH_SECRET ? 'BETTER_AUTH_SECRET' : 'BETTER_AUTH_COOKIE_SECRET'
+  const authSecret = normalizeOptionalString(env.BETTER_AUTH_SECRET)
+  const cookieSecretEnv = normalizeOptionalString(env.BETTER_AUTH_COOKIE_SECRET)
+  const resolvedSecret = authSecret ?? cookieSecretEnv
+  const secretName = authSecret !== undefined ? 'BETTER_AUTH_SECRET' : 'BETTER_AUTH_COOKIE_SECRET'
   const cookieSecret = resolveAuthString(
     resolvedSecret,
     'dev-cookie-secret-please-change-32',
@@ -252,9 +270,10 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
 }
 
 const buildConnectionString = (env: Env) => {
-  if (env.DATABASE_URL) {
+  const databaseUrl = normalizeOptionalString(env.DATABASE_URL)
+  if (databaseUrl !== undefined) {
     try {
-      const url = new URL(env.DATABASE_URL)
+      const url = new URL(databaseUrl)
       if (url.protocol !== 'postgresql:' && url.protocol !== 'postgres:') {
         throw new Error('Invalid protocol')
       }

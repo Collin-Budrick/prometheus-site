@@ -33,5 +33,17 @@
     "typescript/switch-exhaustiveness-check": "warn",
     "typescript/unbound-method": "warn",
     "typescript/use-unknown-in-catch-callback-variable": "warn"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["tests/**/*.ts"],
+      "rules": {
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    }
+  ]
 }

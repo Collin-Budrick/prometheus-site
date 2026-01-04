@@ -9,11 +9,24 @@ const wasmBytes = new Uint8Array([
 
 let wasmAdd: ((a: number, b: number) => number) | null = null
 
+const isWasmAddExport = (value: WebAssembly.ExportValue): value is (a: number, b: number) => unknown =>
+  typeof value === 'function'
+
 export const loadWasmAdd = async () => {
   if (wasmAdd) return wasmAdd
   const module = await WebAssembly.compile(wasmBytes)
   const instance = await WebAssembly.instantiate(module)
-  const add = instance.exports.add as (a: number, b: number) => number
+  const addExport = instance.exports.add
+  if (!isWasmAddExport(addExport)) {
+    throw new Error('WASM add export missing')
+  }
+  const add = (a: number, b: number) => {
+    const result = addExport(a, b)
+    if (typeof result !== 'number') {
+      throw new Error('WASM add export returned non-number')
+    }
+    return result
+  }
   wasmAdd = add
   return add
 }

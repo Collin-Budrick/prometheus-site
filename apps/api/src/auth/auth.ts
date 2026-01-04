@@ -38,20 +38,26 @@ const resolveHeaders = (context?: AuthRequestContext) => {
 
 type ConfiguredSocialProvider = Extract<keyof SocialProviders, keyof typeof config.auth.oauth>
 
-const socialProviders = Object.entries(config.auth.oauth).reduce<
-  Partial<Record<ConfiguredSocialProvider, SocialProviders[ConfiguredSocialProvider]>>
->((acc, [provider, credentials]) => {
-  if (!credentials) return acc
-  const key = provider as ConfiguredSocialProvider
-  acc[key] = {
+const isConfiguredSocialProvider = (value: string): value is ConfiguredSocialProvider =>
+  Object.prototype.hasOwnProperty.call(config.auth.oauth, value)
+
+const normalizeHeaderValue = (value: string | null | undefined) => {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? undefined : trimmed
+}
+
+const socialProviders: SocialProviders = {}
+
+for (const [provider, credentials] of Object.entries(config.auth.oauth)) {
+  if (credentials === undefined) continue
+  if (!isConfiguredSocialProvider(provider)) continue
+  socialProviders[provider] = {
     clientId: credentials.clientId,
     clientSecret: credentials.clientSecret
   }
-  return acc
-}, {})
+}
 
-const socialProvidersConfig =
-  Object.keys(socialProviders).length > 0 ? (socialProviders as SocialProviders) : undefined
+const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
 
 const baseAuthConfig = {
   appName: 'Prometheus',
@@ -87,7 +93,7 @@ const baseAuthConfig = {
 
 const normalizeHost = (value: string) => {
   const trimmed = value.trim()
-  if (!trimmed) return ''
+  if (trimmed === '') return ''
   const candidate = trimmed.includes('://') ? trimmed : `http://${trimmed}`
   try {
     return new URL(candidate).host.toLowerCase()
@@ -98,7 +104,7 @@ const normalizeHost = (value: string) => {
 
 const normalizeHostname = (value: string) => {
   const trimmed = value.trim()
-  if (!trimmed) return ''
+  if (trimmed === '') return ''
   const candidate = trimmed.includes('://') ? trimmed : `http://${trimmed}`
   try {
     return new URL(candidate).hostname.toLowerCase()
@@ -109,7 +115,7 @@ const normalizeHostname = (value: string) => {
 
 const normalizeOrigin = (value: string) => {
   const trimmed = value.trim()
-  if (!trimmed) return ''
+  if (trimmed === '') return ''
   const candidate = trimmed.includes('://') ? trimmed : `https://${trimmed}`
   try {
     const url = new URL(candidate)
@@ -151,10 +157,10 @@ const buildAuthByHost = () => {
     authInstances.push(authInstance)
 
     const originKey = normalizeOrigin(rp.rpOrigin)
-    if (originKey) authByOrigin.set(originKey, authInstance)
+    if (originKey !== '') authByOrigin.set(originKey, authInstance)
 
     const registerHost = (key: string) => {
-      if (!key) return
+      if (key === '') return
       authByHost.set(key, authInstance)
       rpByHost.set(key, rp)
     }
@@ -193,16 +199,16 @@ const resolveRequestProtocol = (request: Request) => {
 }
 
 const resolveRequestOrigin = (request: Request) => {
-  const originHeader = request.headers.get('origin')?.trim()
-  if (originHeader) {
+  const originHeader = normalizeHeaderValue(request.headers.get('origin'))
+  if (originHeader !== undefined) {
     const normalized = normalizeOrigin(originHeader)
-    if (normalized) return normalized
+    if (normalized !== '') return normalized
   }
 
-  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
-  const hostHeader = forwardedHost || request.headers.get('host')?.trim() || ''
+  const forwardedHost = normalizeHeaderValue(request.headers.get('x-forwarded-host')?.split(',')[0])
+  const hostHeader = forwardedHost ?? normalizeHeaderValue(request.headers.get('host')) ?? ''
   let host = normalizeHost(hostHeader)
-  if (!host) {
+  if (host === '') {
     try {
       host = new URL(request.url).host.toLowerCase()
     } catch {
@@ -210,27 +216,27 @@ const resolveRequestOrigin = (request: Request) => {
     }
   }
   const protocol = resolveRequestProtocol(request)
-  if (!host || !protocol) return ''
+  if (host === '' || protocol === '') return ''
   return `${protocol}://${host}`
 }
 
 const getAuthForRequest = (request?: Request) => {
   if (!request) return primaryAuth
-  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
-  const hostHeader = forwardedHost || request.headers.get('host')?.trim() || ''
+  const forwardedHost = normalizeHeaderValue(request.headers.get('x-forwarded-host')?.split(',')[0])
+  const hostHeader = forwardedHost ?? normalizeHeaderValue(request.headers.get('host')) ?? ''
   const host = normalizeHost(hostHeader)
   const hostname = normalizeHostname(hostHeader)
 
   const origin = resolveRequestOrigin(request)
-  if (origin) {
+  if (origin !== '') {
     const originMatch = authByOrigin.get(origin)
     if (originMatch) return originMatch
   }
 
-  if (host) {
+  if (host !== '') {
     const match = authByHost.get(host)
     if (match) {
-      if (allowDynamicOrigins && origin) {
+      if (allowDynamicOrigins && origin !== '') {
         const rp = rpByHost.get(host)
         if (rp && !authByOrigin.has(origin)) {
           const fallback = createAuthInstance(rp.rpId, origin)
@@ -241,10 +247,10 @@ const getAuthForRequest = (request?: Request) => {
       return match
     }
   }
-  if (hostname) {
+  if (hostname !== '') {
     const match = authByHost.get(hostname)
     if (match) {
-      if (allowDynamicOrigins && origin) {
+      if (allowDynamicOrigins && origin !== '') {
         const rp = rpByHost.get(hostname)
         if (rp && !authByOrigin.has(origin)) {
           const fallback = createAuthInstance(rp.rpId, origin)
@@ -256,12 +262,13 @@ const getAuthForRequest = (request?: Request) => {
     }
   }
 
-  if (allowDynamicOrigins && origin) {
+  if (allowDynamicOrigins && origin !== '') {
     const existing = authByOrigin.get(origin)
     if (existing) return existing
 
-    const derivedRpId = resolveRpIdFromOrigin(origin) || config.auth.rpId
-    const fallback = createAuthInstance(derivedRpId, origin)
+    const derivedRpId = resolveRpIdFromOrigin(origin)
+    const fallbackRpId = derivedRpId === '' ? config.auth.rpId : derivedRpId
+    const fallback = createAuthInstance(fallbackRpId, origin)
     authByOrigin.set(origin, fallback)
     return fallback
   }

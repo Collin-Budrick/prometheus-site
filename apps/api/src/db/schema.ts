@@ -26,9 +26,7 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
   },
-  (table) => ({
-    emailUnique: uniqueIndex('users_email_unique').on(table.email)
-  })
+  (table) => [uniqueIndex('users_email_unique').on(table.email)]
 )
 
 export const authSessions = pgTable(
@@ -46,10 +44,10 @@ export const authSessions = pgTable(
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     refreshExpiresAt: timestamp('refresh_expires_at', { mode: 'date', withTimezone: true })
   },
-  (table) => ({
-    userIdx: index('auth_sessions_user_id_idx').on(table.userId),
-    tokenUnique: uniqueIndex('auth_sessions_token_unique').on(table.token)
-  })
+  (table) => [
+    index('auth_sessions_user_id_idx').on(table.userId),
+    uniqueIndex('auth_sessions_token_unique').on(table.token)
+  ]
 )
 
 export const authKeys = pgTable(
@@ -72,11 +70,10 @@ export const authKeys = pgTable(
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
   },
-  (table) => ({
-    providerUserUnique: uniqueIndex('auth_keys_provider_user_unique')
-      .on(table.provider, table.providerUserId),
-    userIdx: index('auth_keys_user_id_idx').on(table.userId)
-  })
+  (table) => [
+    uniqueIndex('auth_keys_provider_user_unique').on(table.provider, table.providerUserId),
+    index('auth_keys_user_id_idx').on(table.userId)
+  ]
 )
 
 export const passkeys = pgTable(
@@ -99,10 +96,10 @@ export const passkeys = pgTable(
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
   },
-  (table) => ({
-    userIdx: index('passkeys_user_id_idx').on(table.userId),
-    credentialUnique: uniqueIndex('passkeys_credential_id_unique').on(table.credentialID)
-  })
+  (table) => [
+    index('passkeys_user_id_idx').on(table.userId),
+    uniqueIndex('passkeys_credential_id_unique').on(table.credentialID)
+  ]
 )
 
 export const verification = pgTable(
@@ -115,9 +112,7 @@ export const verification = pgTable(
     createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
   },
-  (table) => ({
-    identifierIdx: index('verification_identifier_idx').on(table.identifier)
-  })
+  (table) => [index('verification_identifier_idx').on(table.identifier)]
 )
 
 export const storeItems = pgTable('store_items', {

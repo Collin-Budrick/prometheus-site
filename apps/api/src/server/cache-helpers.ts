@@ -15,20 +15,20 @@ export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `
 export const buildCacheControlHeader = (ttl: number, staleTtl: number) =>
   `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${staleTtl}`
 
-const safeJsonParse = <T>(raw: string | null): T | null => {
-  if (!raw) return null
+const safeJsonParse = (raw: string | null): unknown => {
+  if (raw === null) return null
   try {
-    return JSON.parse(raw) as T
+    return JSON.parse(raw)
   } catch {
     return null
   }
 }
 
-export const readCache = async <T>(key: string): Promise<T | null> => {
+export const readCache = async (key: string): Promise<unknown> => {
   if (!isValkeyReady()) return null
   try {
     const cached = await valkey.get(key)
-    return safeJsonParse<T>(cached)
+    return safeJsonParse(cached)
   } catch {
     return null
   }
@@ -59,11 +59,13 @@ export const invalidateStoreItemsCache = async () => {
 export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) => {
   if (!isValkeyReady()) return
   try {
-    if (path && lang) {
+    const hasPath = path !== undefined && path !== ''
+    const hasLang = lang !== undefined
+    if (hasPath && hasLang) {
       await valkey.del(buildFragmentPlanCacheKey(path, lang))
       return
     }
-    if (path) {
+    if (hasPath) {
       const keys = await valkey.keys(`${fragmentPlanCachePrefix}*:${path}`)
       if (keys.length > 0) await valkey.del(keys)
       return
@@ -75,7 +77,10 @@ export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) =>
   }
 }
 
-export const readChatHistoryCache = async <T>(): Promise<T | null> => readCache<T>(chatHistoryCacheKey)
+export const readChatHistoryCache = async (): Promise<unknown[] | null> => {
+  const cached = await readCache(chatHistoryCacheKey)
+  return Array.isArray(cached) ? cached : null
+}
 export const writeChatHistoryCache = async (payload: unknown, ttlSeconds: number) =>
   writeCache(chatHistoryCacheKey, payload, ttlSeconds)
 export const invalidateChatHistoryCache = async () => {

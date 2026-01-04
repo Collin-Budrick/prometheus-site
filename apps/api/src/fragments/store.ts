@@ -24,6 +24,25 @@ const releaseLockScript = `
 const createLockToken = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const parseFragmentMeta = (value: unknown): FragmentMeta | null => {
+  if (!isRecord(value)) return null
+  const cacheKey = value.cacheKey
+  const ttl = value.ttl
+  const staleTtl = value.staleTtl
+  const tags = value.tags
+  const runtime = value.runtime
+
+  if (typeof cacheKey !== 'string') return null
+  if (typeof ttl !== 'number' || typeof staleTtl !== 'number') return null
+  if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === 'string')) return null
+  if (runtime !== 'edge' && runtime !== 'node') return null
+
+  return { cacheKey, ttl, staleTtl, tags, runtime }
+}
+
 const encodeEntry = (entry: StoredFragment) =>
   JSON.stringify({
     payload: Buffer.from(entry.payload).toString('base64'),
@@ -36,22 +55,18 @@ const encodeEntry = (entry: StoredFragment) =>
 
 const decodeEntry = (raw: string): StoredFragment | null => {
   try {
-    const parsed = JSON.parse(raw) as {
-      payload?: string
-      html?: string
-      meta?: FragmentMeta
-      updatedAt?: number
-      staleAt?: number
-      expiresAt?: number
-    }
-    if (!parsed.payload || !parsed.meta) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) return null
+    const payload = parsed.payload
+    const meta = parseFragmentMeta(parsed.meta)
+    if (typeof payload !== 'string' || meta === null) return null
     return {
-      payload: Uint8Array.from(Buffer.from(parsed.payload, 'base64')),
+      payload: Uint8Array.from(Buffer.from(payload, 'base64')),
       html: typeof parsed.html === 'string' ? parsed.html : undefined,
-      meta: parsed.meta,
-      updatedAt: parsed.updatedAt ?? Date.now(),
-      staleAt: parsed.staleAt ?? Date.now(),
-      expiresAt: parsed.expiresAt ?? Date.now()
+      meta,
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
+      staleAt: typeof parsed.staleAt === 'number' ? parsed.staleAt : Date.now(),
+      expiresAt: typeof parsed.expiresAt === 'number' ? parsed.expiresAt : Date.now()
     }
   } catch {
     return null
@@ -68,7 +83,7 @@ export const readFragment = async (
   if (isValkeyReady()) {
     try {
       const cached = await valkey.get(cacheKey)
-      if (!cached) return null
+      if (cached === null) return null
       return decodeEntry(cached)
     } catch {
       return null
@@ -104,7 +119,7 @@ export const acquireFragmentLock = async (
   const token = createLockToken()
   try {
     const result = await valkey.set(lockKey(id, lang), token, { NX: true, PX: ttlMs })
-    return result ? token : null
+    return result === null ? null : token
   } catch {
     return null
   }

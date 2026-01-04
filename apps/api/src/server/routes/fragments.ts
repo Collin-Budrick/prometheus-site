@@ -3,15 +3,69 @@ import { normalizeFragmentLang } from '../../fragments/i18n'
 import { buildCacheStatus, getFragmentEntry, getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
-import type { FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
+import type { EarlyHint, FragmentCacheStatus, FragmentPlanEntry, FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
-import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
 
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
 const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+
+const isFragmentCacheStatus = (value: unknown): value is FragmentCacheStatus => {
+  if (!isRecord(value)) return false
+  const status = value.status
+  if (status !== 'hit' && status !== 'stale' && status !== 'miss') return false
+  if (value.updatedAt !== undefined && typeof value.updatedAt !== 'number') return false
+  if (value.staleAt !== undefined && typeof value.staleAt !== 'number') return false
+  if (value.expiresAt !== undefined && typeof value.expiresAt !== 'number') return false
+  return true
+}
+
+const isEarlyHint = (value: unknown): value is EarlyHint => {
+  if (!isRecord(value)) return false
+  if (typeof value.href !== 'string') return false
+  if (value.as !== undefined && typeof value.as !== 'string') return false
+  if (value.rel !== undefined && value.rel !== 'preload' && value.rel !== 'modulepreload') return false
+  if (value.type !== undefined && typeof value.type !== 'string') return false
+  if (value.crossorigin !== undefined && typeof value.crossorigin !== 'boolean') return false
+  return true
+}
+
+const isFragmentPlanEntry = (value: unknown): value is FragmentPlanEntry => {
+  if (!isRecord(value)) return false
+  if (typeof value.id !== 'string') return false
+  if (typeof value.critical !== 'boolean') return false
+  if (!isRecord(value.layout) || typeof value.layout.column !== 'string') return false
+  if (value.dependsOn !== undefined && !isStringArray(value.dependsOn)) return false
+  if (value.runtime !== undefined && value.runtime !== 'edge' && value.runtime !== 'node') return false
+  if (value.cache !== undefined && !isFragmentCacheStatus(value.cache)) return false
+  return true
+}
+
+const isFragmentPlanResponse = (value: unknown): value is FragmentPlanResponse => {
+  if (!isRecord(value)) return false
+  if (typeof value.path !== 'string') return false
+  if (typeof value.createdAt !== 'number') return false
+  if (!Array.isArray(value.fragments) || !value.fragments.every(isFragmentPlanEntry)) return false
+  if (value.fetchGroups !== undefined) {
+    if (!Array.isArray(value.fetchGroups) || !value.fetchGroups.every(isStringArray)) return false
+  }
+  if (value.earlyHints !== undefined) {
+    if (!Array.isArray(value.earlyHints) || !value.earlyHints.every(isEarlyHint)) return false
+  }
+  if (value.initialFragments !== undefined) {
+    if (!isRecord(value.initialFragments)) return false
+    if (!Object.values(value.initialFragments).every((entry) => typeof entry === 'string')) return false
+  }
+  return true
+}
 
 const buildCacheHeaders = (entry: StoredFragment) => {
   const status = buildCacheStatus(entry, Date.now())
@@ -20,55 +74,49 @@ const buildCacheHeaders = (entry: StoredFragment) => {
     'cache-control': `public, max-age=0, s-maxage=${entry.meta.ttl}, stale-while-revalidate=${entry.meta.staleTtl}`,
     'x-fragment-cache': status.status
   })
-  if (status.updatedAt) headers.set('x-fragment-cache-updated', String(status.updatedAt))
-  if (status.staleAt) headers.set('x-fragment-cache-stale-at', String(status.staleAt))
-  if (status.expiresAt) headers.set('x-fragment-cache-expires-at', String(status.expiresAt))
+  if (status.updatedAt !== undefined) headers.set('x-fragment-cache-updated', String(status.updatedAt))
+  if (status.staleAt !== undefined) headers.set('x-fragment-cache-stale-at', String(status.staleAt))
+  if (status.expiresAt !== undefined) headers.set('x-fragment-cache-expires-at', String(status.expiresAt))
   return headers
 }
 
 const fragmentResponse = (entry: StoredFragment) => {
-  const body = entry.payload.slice().buffer as ArrayBuffer
+  const body = entry.payload.slice().buffer
   return new Response(body, {
     headers: buildCacheHeaders(entry)
   })
 }
 
 const selectEncoding = (raw: string | null) => {
-  if (!raw) return null
+  if (raw === null) return null
   const encodings = raw
     .split(',')
-    .map((value) => value.split(';')[0]?.trim().toLowerCase())
-    .filter(Boolean) as string[]
+    .map((value) => value.split(';')[0]?.trim().toLowerCase() ?? '')
+    .filter((value): value is string => value !== '')
   return supportedEncodings.find((encoding) => encodings.includes(encoding)) ?? null
 }
 
 const resolveStreamEncoding = (request: Request): CompressionEncoding | null =>
   selectEncoding(request.headers.get('x-fragment-accept-encoding'))
 
-const toWebReadableStream = (stream: ReadableStream<Uint8Array>): WebReadableStream<Uint8Array> =>
-  stream as unknown as WebReadableStream<Uint8Array>
-
 const getCompressionStreamCtor = () =>
-  (globalThis as typeof globalThis & {
-    CompressionStream?: new (format: CompressionEncoding) => CompressionStream
-  }).CompressionStream ?? null
+  typeof CompressionStream === 'function' ? CompressionStream : null
 
 const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: CompressionEncoding) => {
   const ctor = getCompressionStreamCtor()
-  if (ctor && encoding !== 'br') {
+  if (ctor !== null && encoding !== 'br') {
     try {
-      const input = stream as ReadableStream<BufferSource>
-      return { stream: input.pipeThrough(new ctor(encoding)), encoding }
+      return { stream: stream.pipeThrough(new ctor(encoding)), encoding }
     } catch {
       // fall through to zlib
     }
   }
 
   try {
-    const readable = Readable.fromWeb(toWebReadableStream(stream))
+    const readable = Readable.fromWeb(stream)
     const compressor =
       encoding === 'gzip' ? createGzip() : encoding === 'deflate' ? createDeflate() : createBrotliCompress(brotliOptions)
-    return { stream: Readable.toWeb(readable.pipe(compressor)) as unknown as ReadableStream<Uint8Array>, encoding }
+    return { stream: Readable.toWeb(readable.pipe(compressor)), encoding }
   } catch {
     return { stream, encoding: null }
   }
@@ -78,8 +126,10 @@ const truthyValues = new Set(['1', 'true', 'yes'])
 const allowDevRefresh = process.env.NODE_ENV !== 'production'
 
 const isTruthyParam = (value: string | undefined) => {
-  if (!value) return false
-  return truthyValues.has(value.trim().toLowerCase())
+  if (value === undefined) return false
+  const normalized = value.trim().toLowerCase()
+  if (normalized === '') return false
+  return truthyValues.has(normalized)
 }
 
 const stripInitialFragments = (plan: FragmentPlanResponse) => {
@@ -92,9 +142,11 @@ const buildInitialFragments = async (
   lang: ReturnType<typeof normalizeFragmentLang>
 ): Promise<FragmentPlanInitialPayloads> => {
   const group =
-    plan.fetchGroups && plan.fetchGroups.length ? plan.fetchGroups[0] : plan.fragments.map((entry) => entry.id)
+    plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
+      ? plan.fetchGroups[0]
+      : plan.fragments.map((entry) => entry.id)
   const ids = Array.from(new Set(group))
-  if (!ids.length) return {}
+  if (ids.length === 0) return {}
   const entries = await Promise.all(
     ids.map(async (id) => [id, Buffer.from(await getFragmentPayload(id, { lang })).toString('base64')] as const)
   )
@@ -114,16 +166,17 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       const cacheKey = buildFragmentPlanCacheKey(path, lang)
-      const cached = refresh ? null : await readCache<FragmentPlanResponse>(cacheKey)
+      const cachedValue = refresh ? null : await readCache(cacheKey)
+      const cached = cachedValue !== null && isFragmentPlanResponse(cachedValue) ? cachedValue : null
       let plan = cached
-      if (!plan) {
+      if (plan === null) {
         const start = performance.now()
         plan = await getFragmentPlan(path, lang)
         const elapsed = performance.now() - start
         void recordLatencySample('fragment-plan', elapsed)
         await writeCache(cacheKey, plan, 30)
       }
-      const basePlan = stripInitialFragments(plan as FragmentPlanResponse)
+      const basePlan = stripInitialFragments(plan)
       if (!includeInitial) return basePlan
       const initialFragments = await buildInitialFragments(basePlan, lang)
       return { ...basePlan, initialFragments }
@@ -151,12 +204,12 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       })
       let body = stream
       let responseEncoding: CompressionEncoding | null = null
-      if (encoding) {
+      if (encoding !== null) {
         const compressed = compressFragmentStream(stream, encoding)
         body = compressed.stream
         responseEncoding = compressed.encoding
       }
-      if (responseEncoding) {
+      if (responseEncoding !== null) {
         headers.set('x-fragment-content-encoding', responseEncoding)
       }
       return new Response(body, { headers })

@@ -60,7 +60,7 @@ const renderDefinition = async (id: string, lang: FragmentLang): Promise<StoredF
   const translate = createFragmentTranslator(lang)
   const context: FragmentRenderContext = { lang, t: translate }
 
-  if (!definition) {
+  if (definition === undefined) {
     const fallback: FragmentDefinition = {
       id,
       ttl: 10,
@@ -89,7 +89,7 @@ const waitForCachedFragment = async (
 ): Promise<StoredFragment | null> => {
   while (Date.now() < deadline) {
     const cached = await readFragment(id, lang)
-    if (cached) return cached
+    if (cached !== null) return cached
     const locked = await isFragmentLockHeld(id, lang)
     if (!locked) return null
     await sleep(lockPollMs)
@@ -100,15 +100,15 @@ const waitForCachedFragment = async (
 export const refreshFragment = async (id: string, lang: FragmentLang = defaultFragmentLang): Promise<StoredFragment> => {
   const cacheKey = buildFragmentCacheKey(id, lang)
   const existing = inflight.get(cacheKey)
-  if (existing) return existing
+  if (existing !== undefined) return existing
 
   const task = (async () => {
     let lockToken: string | null = null
     try {
       lockToken = await acquireFragmentLock(id, lang)
-      if (!lockToken) {
+      if (lockToken === null) {
         const cached = await waitForCachedFragment(id, lang, Date.now() + lockWaitMs)
-        if (cached) return cached
+        if (cached !== null) return cached
         lockToken = await acquireFragmentLock(id, lang)
       }
       const entry = await renderDefinition(id, lang)
@@ -116,7 +116,7 @@ export const refreshFragment = async (id: string, lang: FragmentLang = defaultFr
       return entry
     } catch (error) {
       const cached = await readFragment(id, lang)
-      if (cached) return cached
+      if (cached !== null) return cached
 
       const fallback: FragmentDefinition = {
         id,
@@ -141,7 +141,7 @@ export const refreshFragment = async (id: string, lang: FragmentLang = defaultFr
       const context: FragmentRenderContext = { lang, t: translate }
       return renderDefinitionFromContext(fallback, context)
     } finally {
-      if (lockToken) {
+      if (lockToken !== null) {
         void releaseFragmentLock(id, lang, lockToken)
       }
       inflight.delete(cacheKey)
@@ -162,7 +162,7 @@ const getOrRender = async (id: string, lang: FragmentLang): Promise<StoredFragme
   const cached = await readFragment(id, lang)
   const now = Date.now()
 
-  if (cached) {
+  if (cached !== null) {
     if (now < cached.staleAt) {
       return cached
     }
@@ -177,7 +177,7 @@ const getOrRender = async (id: string, lang: FragmentLang): Promise<StoredFragme
 }
 
 export const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
-  if (!cached) {
+  if (cached === null) {
     return { status: 'miss' }
   }
 
@@ -235,7 +235,7 @@ type FragmentFetchOptions = {
 
 export const getFragmentEntry = async (id: string, options: FragmentFetchOptions = {}) => {
   const lang = options.lang ?? defaultFragmentLang
-  return options.refresh ? refreshFragment(id, lang) : getOrRender(id, lang)
+  return options.refresh === true ? refreshFragment(id, lang) : getOrRender(id, lang)
 }
 
 export const getFragmentPayload = async (id: string, options?: FragmentFetchOptions) =>
@@ -247,12 +247,14 @@ export const streamFragmentsForPath = async (path: string, lang: FragmentLang = 
   const plan = await getFragmentPlan(path, lang)
   const encoder = new TextEncoder()
   const fetchGroups =
-    plan.fetchGroups && plan.fetchGroups.length ? plan.fetchGroups : [plan.fragments.map((entry) => entry.id)]
+    plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
+      ? plan.fetchGroups
+      : [plan.fragments.map((entry) => entry.id)]
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const group of fetchGroups) {
-        if (!group.length) continue
+        if (group.length === 0) continue
         const pending = new Map<string, Promise<Uint8Array>>()
         group.forEach((id) => {
           pending.set(id, getFragmentPayload(id, { lang }))
@@ -265,7 +267,7 @@ export const streamFragmentsForPath = async (path: string, lang: FragmentLang = 
           return Promise.race(entries)
         }
 
-        while (pending.size) {
+        while (pending.size > 0) {
           const { id, payload } = await raceEntries()
           pending.delete(id)
 

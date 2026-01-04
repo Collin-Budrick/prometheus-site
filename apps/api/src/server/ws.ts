@@ -40,30 +40,45 @@ type WsData = {
   lastSeen?: number
 }
 
-type WsContext = Context<any, any, any>
-type WsSocket = ElysiaWS<WsContext, any>
+type WsUpgradeContext = Context
+type WsContextData = WsData & { request?: Request; headers?: HeadersInit }
+type WsSocket = ElysiaWS<WsContextData>
 
-type ChatMessagePayload = { type: 'chat'; text: string }
 type ChatServerEvent = { type: 'chat'; from: string; text: string; authorId: string }
 type ChatErrorEvent = { type: 'error'; error: string }
 
 type StoreServerReady = { type: 'store:ready' }
 type StoreErrorEvent = { type: 'error'; error: string; retryAfter?: number }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
 const parseMessage = (raw: unknown): Record<string, unknown> | null => {
   if (typeof raw === 'string') {
     try {
-      return JSON.parse(raw) as Record<string, unknown>
+      const parsed: unknown = JSON.parse(raw)
+      return isRecord(parsed) ? parsed : null
     } catch {
       return null
     }
   }
-  if (typeof raw === 'object' && raw !== null) return raw as Record<string, unknown>
+  if (isRecord(raw)) return raw
   return null
 }
 
-const attachHeartbeat = (ws: any) => {
-  const data = ws.data as WsData
+const parseSessionPayload = async (response: Response): Promise<{ user?: WsUser } | null> => {
+  const payload: unknown = await response.json()
+  if (!isRecord(payload)) return null
+  const userValue = payload.user
+  if (!isRecord(userValue)) return {}
+  const id = userValue.id
+  if (typeof id !== 'string') return {}
+  const name = typeof userValue.name === 'string' ? userValue.name : undefined
+  return { user: { id, name } }
+}
+
+const attachHeartbeat = (ws: WsSocket) => {
+  const data = ws.data
   data.lastSeen = Date.now()
   const sendPing = () => {
     try {
@@ -72,7 +87,7 @@ const attachHeartbeat = (ws: any) => {
       ws.close(1011, 'Heartbeat failed')
       return
     }
-    if (data.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
+    if (data.heartbeatTimeout !== undefined) clearTimeout(data.heartbeatTimeout)
     data.heartbeatTimeout = setTimeout(() => {
       ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
       ws.close(1013, 'Heartbeat timeout')
@@ -81,7 +96,7 @@ const attachHeartbeat = (ws: any) => {
 
   data.heartbeatInterval = setInterval(() => {
     const now = Date.now()
-    const lastSeen = data.lastSeen || now
+    const lastSeen = data.lastSeen ?? now
     if (now - lastSeen > heartbeatIntervalMs + heartbeatTimeoutMs) {
       ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
       ws.close(1013, 'Heartbeat timeout')
@@ -93,17 +108,17 @@ const attachHeartbeat = (ws: any) => {
   sendPing()
 }
 
-const clearHeartbeat = (ws: any) => {
-  const data = ws.data as WsData
-  if (data.heartbeatInterval) clearInterval(data.heartbeatInterval)
-  if (data.heartbeatTimeout) clearTimeout(data.heartbeatTimeout)
+const clearHeartbeat = (ws: WsSocket) => {
+  const data = ws.data
+  if (data.heartbeatInterval !== undefined) clearInterval(data.heartbeatInterval)
+  if (data.heartbeatTimeout !== undefined) clearTimeout(data.heartbeatTimeout)
 }
 
 export const registerWsRoutes = <App extends AnyElysia>(app: App, options: RegisterWsOptions) => {
   const { valkey, isValkeyReady, validateSession, checkWsOpenQuota, checkWsQuota, db, maxChatLength } = options
 
   app.ws('/store/ws', {
-    upgrade(context: WsContext) {
+    upgrade(context: WsUpgradeContext) {
       return { headers: context.request.headers, request: context.request }
     },
     async open(ws: WsSocket) {
@@ -121,13 +136,14 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
       try {
         const sessionResponse = await validateSession({ headers, request })
         if (sessionResponse.ok) {
-          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
+          sessionPayload = await parseSessionPayload(sessionResponse)
         }
       } catch (error) {
         console.error('Failed to validate store session', error)
       }
 
-      if (!sessionPayload?.user?.id) {
+      const sessionUserId = sessionPayload?.user?.id
+      if (sessionUserId === undefined || sessionUserId === '') {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for store realtime' } satisfies StoreErrorEvent))
         ws.close(4401, 'Unauthorized')
         return
@@ -139,7 +155,7 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         return
       }
 
-      const data = ws.data as WsData
+      const data = ws.data
       data.clientIp = clientIp
       data.user = sessionPayload.user
       data.lastSeen = Date.now()
@@ -154,7 +170,7 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         data.subscriber = subscriber
       } catch (error) {
         console.error('WebSocket subscription failed', error)
-        if (subscriber) {
+        if (subscriber !== null) {
           try {
             await subscriber.quit()
           } catch (quitError) {
@@ -170,26 +186,26 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
       attachHeartbeat(ws)
     },
     message(ws: WsSocket, message: unknown) {
-      const data = ws.data as WsData
+      const data = ws.data
       data.lastSeen = Date.now()
-      if (data.heartbeatTimeout) {
+      if (data.heartbeatTimeout !== undefined) {
         clearTimeout(data.heartbeatTimeout)
         data.heartbeatTimeout = undefined
       }
       const parsed = parseMessage(message)
-      if (!parsed) return
+      if (parsed === null) return
       if (parsed.type === 'pong') return
       if (parsed.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }))
     },
     async close(ws: WsSocket) {
       clearHeartbeat(ws)
-      const data = ws.data as WsData
-      if (data.subscriber) await data.subscriber.quit()
+      const data = ws.data
+      if (data.subscriber !== undefined) await data.subscriber.quit()
     },
   })
 
   app.ws('/ws', {
-    upgrade(context: WsContext) {
+    upgrade(context: WsUpgradeContext) {
       return { headers: context.request.headers, request: context.request }
     },
     async open(ws: WsSocket) {
@@ -201,13 +217,14 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
       try {
         const sessionResponse = await validateSession({ headers, request })
         if (sessionResponse.ok) {
-          sessionPayload = (await sessionResponse.json()) as { user?: WsUser }
+          sessionPayload = await parseSessionPayload(sessionResponse)
         }
       } catch (error) {
         console.error('Failed to validate chat session', error)
       }
 
-      if (!sessionPayload?.user?.id) {
+      const sessionUserId = sessionPayload?.user?.id
+      if (sessionUserId === undefined || sessionUserId === '') {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' } satisfies ChatErrorEvent))
         ws.close(4401, 'Unauthorized')
         return
@@ -219,7 +236,7 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         return
       }
 
-      const data = ws.data as WsData
+      const data = ws.data
       data.clientIp = clientIp
       data.user = sessionPayload.user
 
@@ -235,7 +252,7 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         data.subscriber = subscriber
       } catch (error) {
         console.error('WebSocket subscription failed', error)
-        if (subscriber) {
+        if (subscriber !== null) {
           try {
             await subscriber.quit()
           } catch (quitError) {
@@ -248,12 +265,12 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
       }
     },
     async close(ws: WsSocket) {
-      const data = ws.data as WsData
-      if (data.subscriber) await data.subscriber.quit()
+      const data = ws.data
+      if (data.subscriber !== undefined) await data.subscriber.quit()
     },
     async message(ws: WsSocket, message: unknown) {
       if (!isValkeyReady()) return
-      const data = ws.data as WsData
+      const data = ws.data
       const clientIp = data.clientIp ?? resolveWsClientIp(ws)
       const { allowed, retryAfter } = await checkWsQuota(clientIp)
 
@@ -268,8 +285,8 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         return
       }
 
-      const payload = parseMessage(message) as ChatMessagePayload | null
-      if (!payload) {
+      const payload = parseMessage(message)
+      if (payload === null) {
         ws.send(JSON.stringify({ type: 'error', error: 'Invalid message format' } satisfies ChatErrorEvent))
         return
       }
@@ -281,7 +298,7 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
 
       const trimmedText = payload.text.trim()
 
-      if (!trimmedText) {
+      if (trimmedText === '') {
         ws.send(JSON.stringify({ type: 'error', error: 'Message cannot be empty' } satisfies ChatErrorEvent))
         return
       }
@@ -296,15 +313,16 @@ export const registerWsRoutes = <App extends AnyElysia>(app: App, options: Regis
         return
       }
 
-      if (!data.user) {
+      if (data.user === undefined) {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' } satisfies ChatErrorEvent))
         ws.close(4401, 'Unauthorized')
         return
       }
 
+      const from = data.user.name !== undefined && data.user.name !== '' ? data.user.name : data.user.id
       const entry: ChatServerEvent = {
         type: 'chat',
-        from: data.user.name || data.user.id,
+        from,
         text: trimmedText,
         authorId: data.user.id
       }

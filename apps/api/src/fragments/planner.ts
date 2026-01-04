@@ -10,13 +10,13 @@ const attachDependencies = (entries: FragmentPlanEntry[]) => {
   return entries.map((entry) => {
     const definition = getFragmentDefinition(entry.id)
     const dependsOn = definition?.dependsOn?.filter((id) => ids.has(id) && id !== entry.id)
-    if (!dependsOn?.length) return entry
+    if (dependsOn === undefined || dependsOn.length === 0) return entry
     return { ...entry, dependsOn }
   })
 }
 
 const resolvePlanDependencies = (entries: FragmentPlanEntry[]) => {
-  if (!entries.length) {
+  if (entries.length === 0) {
     return { fragments: entries, fetchGroups: [] as string[][] }
   }
 
@@ -50,7 +50,7 @@ const resolvePlanDependencies = (entries: FragmentPlanEntry[]) => {
   const groups: string[][] = []
   const processed = new Set<string>()
 
-  while (ready.length) {
+  while (ready.length > 0) {
     groups.push([...ready])
     const nextReady = new Set<string>()
     for (const id of ready) {
@@ -76,7 +76,7 @@ const resolvePlanDependencies = (entries: FragmentPlanEntry[]) => {
 }
 
 export const planForPath = (path: string): FragmentPlan => {
-  const normalized = path === '/' || !path ? '/' : path
+  const normalized = path === '/' || path === '' ? '/' : path
 
   if (normalized === '/') {
     const baseFragments: FragmentPlanEntry[] = [

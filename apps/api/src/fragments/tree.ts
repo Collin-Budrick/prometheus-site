@@ -5,7 +5,7 @@ type Child = RenderNode | string | null | undefined
 type Attrs = Record<string, string | number | boolean | null | undefined>
 
 const normalizeAttrs = (attrs?: Attrs | null) => {
-  if (!attrs) return undefined
+  if (attrs === null || attrs === undefined) return undefined
   const normalized: Record<string, string> = {}
   Object.entries(attrs).forEach(([key, value]) => {
     if (value === undefined || value === null || value === false) return
@@ -15,7 +15,7 @@ const normalizeAttrs = (attrs?: Attrs | null) => {
 }
 
 const normalizeChildren = (children?: Child[] | Child): RenderNode[] => {
-  if (!children) return []
+  if (children === null || children === undefined) return []
   const list = Array.isArray(children) ? children : [children]
   return list
     .filter((child): child is Exclude<Child, null | undefined> => child !== null && child !== undefined)
@@ -40,7 +40,7 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, '&#39;')
 
 const renderAttributes = (attrs?: Record<string, string>) => {
-  if (!attrs) return ''
+  if (attrs === undefined) return ''
   return Object.entries(attrs)
     .map(([key, value]) => (value === '' ? ` ${key}` : ` ${key}="${escapeHtml(value)}"`))
     .join('')

@@ -29,7 +29,7 @@ async function bootstrap() {
     console.log('RUN_MIGRATIONS not set; skipping migrations and seed step')
   }
   await connectValkey()
-  void startStoreRealtime(handleStoreRealtimeEvent).catch((error) => {
+  void startStoreRealtime(handleStoreRealtimeEvent).catch((error: unknown) => {
     console.error('Store realtime listener failed', error)
   })
 }
@@ -41,15 +41,17 @@ const telemetry = {
   cacheSetErrors: 0
 }
 
-const handleStoreRealtimeEvent = async (event: StoreRealtimeEvent) => {
+const handleStoreRealtimeEvent = (event: StoreRealtimeEvent) => {
   const payload = JSON.stringify(event)
   void invalidateStoreItemsCache()
   if (!isValkeyReady()) return
-  try {
-    await valkey.publish(storeChannel, payload)
-  } catch (error) {
-    console.warn('Failed to publish store realtime event', error)
-  }
+  void (async () => {
+    try {
+      await valkey.publish(storeChannel, payload)
+    } catch (error) {
+      console.warn('Failed to publish store realtime event', error)
+    }
+  })()
 }
 
 const jsonError = (status: number, error: string, meta: Record<string, unknown> = {}) =>
@@ -87,6 +89,17 @@ class PromptBodyError extends Error {
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+type StoreItemsPayload = { items: unknown[]; cursor: number | null }
+
+const isStoreItemsPayload = (value: unknown): value is StoreItemsPayload => {
+  if (!isRecord(value)) return false
+  if (!Array.isArray(value.items)) return false
+  return value.cursor === null || typeof value.cursor === 'number'
+}
+
 const concatUint8 = (chunks: Uint8Array[]) => {
   const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
   const result = new Uint8Array(totalLength)
@@ -100,7 +113,7 @@ const concatUint8 = (chunks: Uint8Array[]) => {
 
 const readPromptBody = async (request: Request) => {
   const contentLengthHeader = request.headers.get('content-length')
-  if (contentLengthHeader) {
+  if (contentLengthHeader !== null && contentLengthHeader !== '') {
     const contentLength = Number.parseInt(contentLengthHeader, 10)
     if (Number.isFinite(contentLength) && contentLength > maxPromptPayloadBytes) {
       throw new PromptBodyError(413, 'Request body too large', {
@@ -122,7 +135,7 @@ const readPromptBody = async (request: Request) => {
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    if (value) {
+    if (value !== undefined) {
       received += value.byteLength
       if (received > maxPromptPayloadBytes) {
         throw new PromptBodyError(413, 'Request body too large', {
@@ -135,7 +148,7 @@ const readPromptBody = async (request: Request) => {
   }
 
   const rawBody = decoder.decode(concatUint8(chunks))
-  if (!rawBody.trim()) {
+  if (rawBody.trim() === '') {
     throw new PromptBodyError(400, 'Prompt cannot be empty')
   }
 
@@ -146,10 +159,10 @@ const readPromptBody = async (request: Request) => {
     throw new PromptBodyError(400, 'Invalid JSON payload')
   }
 
-  const promptRaw = typeof (payload as { prompt?: unknown })?.prompt === 'string' ? (payload as { prompt: string }).prompt : ''
+  const promptRaw = isRecord(payload) && typeof payload.prompt === 'string' ? payload.prompt : ''
   const prompt = promptRaw.trim()
 
-  if (!prompt) {
+  if (prompt === '') {
     throw new PromptBodyError(400, 'Prompt cannot be empty')
   }
 
@@ -228,8 +241,10 @@ const app = new Elysia()
         return jsonError(429, 'Try again soon')
       }
 
-      const limitRaw = Number.parseInt((query.limit as string) || '10', 10)
-      const lastId = Number.parseInt((query.cursor as string) || '0', 10)
+      const limitValue = typeof query.limit === 'string' ? query.limit : '10'
+      const cursorValue = typeof query.cursor === 'string' ? query.cursor : '0'
+      const limitRaw = Number.parseInt(limitValue, 10)
+      const lastId = Number.parseInt(cursorValue, 10)
 
       if (Number.isNaN(lastId) || lastId < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
         return jsonError(400, 'Invalid cursor or limit')
@@ -241,9 +256,12 @@ const app = new Elysia()
       if (isValkeyReady()) {
         try {
           const cached = await valkey.get(cacheKey)
-          if (cached) {
-            telemetry.cacheHits += 1
-            return JSON.parse(cached)
+          if (cached !== null) {
+            const parsed: unknown = JSON.parse(cached)
+            if (isStoreItemsPayload(parsed)) {
+              telemetry.cacheHits += 1
+              return parsed
+            }
           }
           telemetry.cacheMisses += 1
         } catch (error) {
@@ -297,7 +315,9 @@ registerWsRoutes(app, {
   db,
   maxChatLength,
   invalidateChatHistoryCache,
-  recordLatencySample
+  recordLatencySample: (metric, durationMs) => {
+    void recordLatencySample(metric, durationMs)
+  }
 })
   .get('/chat/history', async ({ request }) => {
     const clientIp = getClientIp(request)
@@ -307,8 +327,8 @@ registerWsRoutes(app, {
       return jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
     }
 
-    const cached = await readChatHistoryCache<any>()
-    if (cached) return cached
+    const cached = await readChatHistoryCache()
+    if (cached !== null) return cached
 
     const start = performance.now()
     const rows = await db.select().from(chatMessages).orderBy(desc(chatMessages.createdAt)).limit(20)

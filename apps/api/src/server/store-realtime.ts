@@ -32,8 +32,14 @@ const storeItemSchema = createSelectSchema(storeItems).pick({
 })
 
 const parsePrice = (value: unknown) => {
-  const parsed = Number.parseFloat(String(value ?? ''))
-  return Number.isFinite(parsed) ? parsed : 0
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
 }
 
 const normalizeStoreItem = (row: StoreItemRowSnapshot): StoreItemPayload => ({
@@ -90,7 +96,7 @@ const handleDbEvent = async (payload: string, emit: (event: StoreRealtimeEvent) 
 
   const event = dbEventSchema.safeParse(parsedPayload)
   if (!event.success) {
-    console.warn('Store realtime payload failed validation', event.error.flatten())
+    console.warn('Store realtime payload failed validation', z.treeifyError(event.error))
     return
   }
 
@@ -102,10 +108,10 @@ const handleDbEvent = async (payload: string, emit: (event: StoreRealtimeEvent) 
 
   try {
     const [row] = await db.select().from(storeItems).where(eq(storeItems.id, id)).limit(1)
-    if (!row) return
+    if (row === undefined) return
     const parsedRow = storeItemSchema.safeParse(row)
     if (!parsedRow.success) {
-      console.warn('Store item failed validation for realtime event', parsedRow.error.flatten())
+      console.warn('Store item failed validation for realtime event', z.treeifyError(parsedRow.error))
       return
     }
     emit({ type: 'store:upsert', item: normalizeStoreItem(parsedRow.data) })
@@ -116,25 +122,29 @@ const handleDbEvent = async (payload: string, emit: (event: StoreRealtimeEvent) 
 }
 
 const attachListener = async () => {
-  if (listener || stopped || !emitCallback) return listener
+  if (listener !== null || stopped || emitCallback === null) return listener
 
   try {
-    listener = await pgClient.listen(
-      storeUpdatesChannel,
-      async (payload) => {
-        if (stopped) return
-        const emit = (event: StoreRealtimeEvent) => {
-          const currentEmit = emitCallback
-          if (!currentEmit || stopped) return
-          currentEmit(event)
-        }
+    const handlePayload = (payload: string) => {
+      if (stopped) return
+      const emit = (event: StoreRealtimeEvent) => {
+        const currentEmit = emitCallback
+        if (currentEmit === null || stopped) return
+        currentEmit(event)
+      }
+      void (async () => {
         try {
           await handleDbEvent(payload, emit)
         } catch (error) {
           await resetListener()
           scheduleRetry(error)
         }
-      },
+      })()
+    }
+
+    listener = await pgClient.listen(
+      storeUpdatesChannel,
+      handlePayload,
       () => {
         retryAttempts = 0
         console.log(`Store realtime listening on ${storeUpdatesChannel}`)

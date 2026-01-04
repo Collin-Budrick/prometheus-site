@@ -26,13 +26,11 @@ export const getCounter = async (key: string, windowMs: number, now = Date.now()
 
   if (isValkeyReady()) {
     try {
-      const results = (await valkey
-        .multi()
-        .incr(key)
-        .pTTL(key)
-        .exec()) as Array<[unknown, unknown]> | null
-      const countRaw = results?.[0]?.[1]
-      const ttlRaw = results?.[1]?.[1]
+      const results = await valkey.multi().incr(key).pTTL(key).exec()
+      const countRaw =
+        Array.isArray(results) && Array.isArray(results[0]) ? results[0][1] : undefined
+      const ttlRaw =
+        Array.isArray(results) && Array.isArray(results[1]) ? results[1][1] : undefined
 
       const count = Number(countRaw)
       let ttlMs = Number(ttlRaw)

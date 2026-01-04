@@ -20,7 +20,7 @@ async function seed() {
   await pgClient.end()
 }
 
-seed().catch((error) => {
+seed().catch((error: unknown) => {
   console.error('Seed failed', error)
   process.exit(1)
 })

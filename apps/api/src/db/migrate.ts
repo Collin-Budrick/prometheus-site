@@ -8,7 +8,7 @@ async function run() {
   await pgClient.end()
 }
 
-run().catch((error) => {
+run().catch((error: unknown) => {
   console.error('Migration failed', error)
   process.exit(1)
 })

@@ -38,15 +38,18 @@ export const cacheKeysWritten: string[] = []
 export const publishedMessages: string[] = []
 const subscribers: ((message: string) => void)[] = []
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
 const extractThreshold = (condition: unknown) => {
-  if (condition && typeof condition === 'object' && 'queryChunks' in condition) {
-    const sql = (condition as { queryChunks?: unknown[] }).queryChunks
-    if (Array.isArray(sql)) {
-      for (const chunk of sql) {
-        if (chunk && typeof chunk === 'object' && 'value' in chunk && typeof (chunk as { value: unknown }).value === 'number') {
-          return (chunk as { value: number }).value
-        }
-      }
+  if (!isRecord(condition)) return null
+  const sql = condition.queryChunks
+  if (!Array.isArray(sql)) return null
+  for (const chunk of sql) {
+    if (!isRecord(chunk)) continue
+    const value = chunk.value
+    if (typeof value === 'number') {
+      return value
     }
   }
   return null
@@ -142,7 +145,7 @@ const findUserByEmail = (email: string) => authUsersData.find((user) => user.ema
 
 const signInWithEmail = async (body: { email: string; password: string }, _context?: { request?: Request }) => {
   const user = findUserByEmail(body.email)
-  if (!user) {
+  if (user === undefined) {
     return authJson({ message: 'Invalid credentials' }, { status: 401 })
   }
 
@@ -160,7 +163,8 @@ const signUpWithEmail = async (
   body: { name: string; email: string; password: string },
   _context?: { request?: Request }
 ) => {
-  if (findUserByEmail(body.email)) {
+  const existingUser = findUserByEmail(body.email)
+  if (existingUser !== undefined) {
     return authJson({ message: 'User already exists' }, { status: 409 })
   }
 
@@ -180,13 +184,13 @@ const signUpWithEmail = async (
 
 const validateSession = async (context?: { request?: Request; headers?: HeadersInit }) => {
   const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
-  if (!sessionId) return authJson({ message: 'No active session' }, { status: 401 })
+  if (sessionId === null) return authJson({ message: 'No active session' }, { status: 401 })
 
   const session = authSessionsData.find((record) => record.id === sessionId)
-  if (!session) return authJson({ message: 'No active session' }, { status: 401 })
+  if (session === undefined) return authJson({ message: 'No active session' }, { status: 401 })
 
   const user = authUsersData.find((candidate) => candidate.id === session.userId)
-  if (!user) return authJson({ message: 'No active session' }, { status: 401 })
+  if (user === undefined) return authJson({ message: 'No active session' }, { status: 401 })
 
   return authJson(
     {
@@ -241,7 +245,7 @@ const handleAuthRequest = async (request: Request) => {
   }
 
   const oauthStart = pathname.match(/\/api\/auth\/oauth\/(.+?)\/start/)
-  if (oauthStart) {
+  if (oauthStart !== null) {
     const provider = oauthStart[1]
     const redirect = `/api/auth/oauth/${provider}/callback?code=mock-code&state=mock-state`
     oauthStarts.push({ provider, redirect })
@@ -252,7 +256,7 @@ const handleAuthRequest = async (request: Request) => {
   }
 
   const oauthCallback = pathname.match(/\/api\/auth\/oauth\/(.+?)\/callback/)
-  if (oauthCallback) {
+  if (oauthCallback !== null) {
     const provider = oauthCallback[1]
     oauthCallbacks.push({ provider, code: url.searchParams.get('code'), state: url.searchParams.get('state') })
     const session = createSession(authUsersData[0]?.id ?? 'user-1')
@@ -307,25 +311,26 @@ const valkey = {
   },
   multi() {
     const commands: Array<() => [null, number]> = []
-    return {
+    const api = {
       incr(key: string) {
         const now = Date.now()
         const record = valkeyCounters.get(key) ?? { count: 0, expiry: now + 60_000 }
         record.count += 1
         valkeyCounters.set(key, record)
         commands.push(() => [null, record.count])
-        return this
+        return api
       },
       pTTL(key: string) {
         const record = valkeyCounters.get(key)
         const ttl = record ? Math.max(0, record.expiry - Date.now()) : -1
         commands.push(() => [null, ttl])
-        return this
+        return api
       },
       async exec() {
         return commands.map((command) => command())
       }
     }
+    return api
   },
   async pExpire(key: string, windowMs: number) {
     const now = Date.now()
@@ -390,7 +395,7 @@ export const resetTestState = () => {
 }
 
 export const ensureApiReady = async () => {
-  if (!startPromise) {
+  if (startPromise === null) {
     process.env.API_PORT = String(apiPort)
     process.env.API_HOST = '127.0.0.1'
     process.env.RUN_MIGRATIONS = '0'

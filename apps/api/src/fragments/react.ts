@@ -8,19 +8,30 @@ type ElementProps = {
   [key: string]: unknown
 }
 
-const isFunctionComponent = (value: unknown): value is (props: ElementProps) => ReactNode =>
-  typeof value === 'function' && !(value as { prototype?: { isReactComponent?: boolean } }).prototype?.isReactComponent
+const isFunctionComponent = (value: unknown): value is (props: ElementProps) => ReactNode => {
+  if (typeof value !== 'function') return false
+  const prototype = (value as { prototype?: { isReactComponent?: boolean } }).prototype
+  return prototype?.isReactComponent !== true
+}
+
+const isReactNodeArray = (value: ReactNode): value is ReactNode[] => Array.isArray(value)
+
+const isStyleObject = (value: unknown): value is Record<string, string | number> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return Object.values(value).every((entry) => typeof entry === 'string' || typeof entry === 'number')
+}
 
 const normalizeStyle = (style: Record<string, string | number> | string | undefined) => {
-  if (!style) return undefined
-  if (typeof style === 'string') return style
-  return Object.entries(style)
+  if (style === undefined) return undefined
+  if (typeof style === 'string') return style === '' ? undefined : style
+  const normalized = Object.entries(style)
     .map(([key, value]) => `${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}:${value}`)
     .join(';')
+  return normalized === '' ? undefined : normalized
 }
 
 const normalizeProps = (props: Record<string, unknown> | null | undefined) => {
-  if (!props) return undefined
+  if (props === null || props === undefined) return undefined
   const attrs: Record<string, string> = {}
   Object.entries(props).forEach(([key, value]) => {
     if (key === 'children') return
@@ -29,8 +40,9 @@ const normalizeProps = (props: Record<string, unknown> | null | undefined) => {
       return
     }
     if (key === 'style') {
-      const normalized = normalizeStyle(value as Record<string, string | number> | string | undefined)
-      if (normalized) attrs.style = normalized
+      const normalized =
+        typeof value === 'string' || isStyleObject(value) ? normalizeStyle(value) : undefined
+      if (normalized !== undefined && normalized !== '') attrs.style = normalized
       return
     }
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -45,14 +57,14 @@ const toRenderNodes = (node: ReactNode): RenderNode[] => {
   if (typeof node === 'string' || typeof node === 'number') {
     return [t(String(node))]
   }
-  if (Array.isArray(node)) {
+  if (isReactNodeArray(node)) {
     return node.flatMap((child) => toRenderNodes(child))
   }
-  if (!isValidElement(node)) {
+  if (!isValidElement<ElementProps>(node)) {
     return []
   }
 
-  const element = node as ReactElement<ElementProps>
+  const element: ReactElement<ElementProps> = node
   const elementType = element.type
 
   if (elementType === Fragment) {

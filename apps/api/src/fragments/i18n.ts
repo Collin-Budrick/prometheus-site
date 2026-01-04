@@ -5,8 +5,8 @@ export type FragmentTranslator = (value: string, params?: Record<string, string 
 export const defaultFragmentLang: FragmentLang = 'en'
 
 export const normalizeFragmentLang = (value?: string | null): FragmentLang => {
-  if (!value) return defaultFragmentLang
-  const normalized = value.trim().toLowerCase()
+  const normalized = (value ?? '').trim().toLowerCase()
+  if (normalized === '') return defaultFragmentLang
   if (normalized.startsWith('ko')) return 'ko'
   if (normalized.startsWith('en')) return 'en'
   return defaultFragmentLang
