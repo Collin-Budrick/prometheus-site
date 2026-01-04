@@ -1,5 +1,5 @@
-import { component$, HTMLFragment, Slot } from '@builder.io/qwik'
-import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { $, component$, HTMLFragment, Slot } from '@builder.io/qwik'
+import { Link, useDocumentHead, useLocation, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { LanguageToggle } from '../components/LanguageToggle'
@@ -33,7 +33,25 @@ const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
 
 const initialFadeScript = `(function () {
   var root = document.documentElement;
-  if (!root || !root.hasAttribute('data-initial-fade')) return;
+  if (!root) return;
+  var storageKey = 'prom-initial-fade';
+  try {
+    if (window.sessionStorage && window.sessionStorage.getItem(storageKey) === '1') {
+      root.removeAttribute('data-initial-fade');
+      return;
+    }
+  } catch (err) {}
+  if (window.__PROM_INITIAL_FADE_DONE__) {
+    root.removeAttribute('data-initial-fade');
+    return;
+  }
+  if (!root.hasAttribute('data-initial-fade')) return;
+  window.__PROM_INITIAL_FADE_DONE__ = true;
+  try {
+    if (window.sessionStorage) {
+      window.sessionStorage.setItem(storageKey, '1');
+    }
+  } catch (err) {}
   var cleared = false;
   var shell = null;
   var clear = function () {
@@ -114,6 +132,7 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
+  const location = useLocation()
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
@@ -123,6 +142,21 @@ export default component$(() => {
       : fragmentStatus.value === 'error'
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
+  const orderedRoutes = ['/', '/store', '/lab', '/login']
+
+  const setNavDirection = $((targetPath: string) => {
+    if (typeof document === 'undefined') return
+    const currentPath = location.url.pathname.replace(/\/+$/, '') || '/'
+    const nextPath = targetPath.replace(/\/+$/, '') || '/'
+    const currentIndex = orderedRoutes.indexOf(currentPath)
+    const targetIndex = orderedRoutes.indexOf(nextPath)
+    const root = document.documentElement
+    if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
+      delete root.dataset.navDirection
+      return
+    }
+    root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
+  })
 
   return (
     <div class="layout-shell">
@@ -136,18 +170,18 @@ export default component$(() => {
         </div>
         <div class="topbar-actions">
           <nav class="nav-links" data-view-transition="shell-nav">
-            <a href="/" data-fragment-link>
+            <Link href="/" data-fragment-link onClick$={() => setNavDirection('/')}>
               {copy.value.navHome}
-            </a>
-            <a href="/store" data-fragment-link>
+            </Link>
+            <Link href="/store" data-fragment-link onClick$={() => setNavDirection('/store')}>
               {copy.value.navStore}
-            </a>
-            <a href="/lab" data-fragment-link>
+            </Link>
+            <Link href="/lab" data-fragment-link onClick$={() => setNavDirection('/lab')}>
               {copy.value.navLab}
-            </a>
-            <a href="/login" data-fragment-link>
+            </Link>
+            <Link href="/login" data-fragment-link onClick$={() => setNavDirection('/login')}>
               {copy.value.navLogin}
-            </a>
+            </Link>
           </nav>
           <div class="topbar-controls">
             <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>

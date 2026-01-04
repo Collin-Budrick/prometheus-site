@@ -127,6 +127,11 @@
       animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease));
       clip-path: inset(100% 0 0 0);
     }
+
+    :root[data-theme-direction] ::view-transition-old(shell-main),
+    :root[data-theme-direction] ::view-transition-new(shell-main) {
+      animation: none;
+    }
     :root[data-lang-transition='ui']::view-transition-old(lang-ui) {
       animation: lang-fade-out var(--lang-transition-duration, var(--view-transition-duration))
         var(--view-transition-ease) both;
@@ -235,6 +240,50 @@
     }
   }
 
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(36px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-out-left {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-36px);
+    }
+  }
+
+  @keyframes slide-in-left {
+    from {
+      opacity: 0;
+      transform: translateX(-36px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-out-right {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(36px);
+    }
+  }
+
   @keyframes pulse-dot {
     0% {
       transform: scale(1);
@@ -319,6 +368,10 @@
       view-transition-name: shell-main;
     }
 
+    :root[data-theme-direction] [data-view-transition='shell-main'] {
+      view-transition-name: none !important;
+    }
+
     ::view-transition-old(shell-header),
     ::view-transition-new(shell-header),
     ::view-transition-old(shell-nav),
@@ -331,6 +384,23 @@
     ::view-transition-new(shell-main) {
       animation-duration: var(--view-transition-duration-long);
       animation-timing-function: var(--view-transition-ease);
+      animation-fill-mode: both;
+    }
+
+    ::view-transition-old(shell-main) {
+      animation-name: slide-out-left;
+    }
+
+    ::view-transition-new(shell-main) {
+      animation-name: slide-in-right;
+    }
+
+    :root[data-nav-direction='back'] ::view-transition-old(shell-main) {
+      animation-name: slide-out-right;
+    }
+
+    :root[data-nav-direction='back'] ::view-transition-new(shell-main) {
+      animation-name: slide-in-left;
     }
 
     :root[data-lang-transition='ui'] .layout-shell {
