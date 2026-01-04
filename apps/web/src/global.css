@@ -445,10 +445,14 @@
 
   .topbar-actions {
     @apply flex flex-wrap items-center gap-4;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .topbar-controls {
     @apply flex flex-wrap items-center gap-4;
+    margin-left: auto;
+    justify-content: flex-end;
   }
 
   .brand {
