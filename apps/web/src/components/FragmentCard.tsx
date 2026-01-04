@@ -64,8 +64,13 @@ export const FragmentCard = component$<FragmentCardProps>(
       if (!card) return
 
       const placeholder = placeholderRef.value
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       const pendingRect = pendingRects.get(card)
+      const hasPreviousRect = previousRects.has(card)
+      const shouldMeasure = expandedChanged || Boolean(pendingRect) || !hasPreviousRect
+
+      if (!shouldMeasure) return
+
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       const firstRect = pendingRect ?? previousRects.get(card)
       const storedRadius = pendingRadii.get(card) ?? previousRadii.get(card)
       const firstRadius = storedRadius ?? window.getComputedStyle(card).borderRadius
