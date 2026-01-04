@@ -125,6 +125,26 @@
       animation: wipe-up var(--theme-transition-duration) var(--view-transition-ease);
       clip-path: inset(100% 0 0 0);
     }
+view transitions
+    :root[data-lang-transition]::view-transition-old(shell-header),
+    :root[data-lang-transition]::view-transition-old(shell-nav),
+    :root[data-lang-transition]::view-transition-old(shell-main) {
+      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition]::view-transition-new(shell-header),
+    :root[data-lang-transition]::view-transition-new(shell-nav),
+    :root[data-lang-transition]::view-transition-new(shell-main) {
+      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition]::view-transition-old(root) {
+      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition]::view-transition-new(root) {
+      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -193,6 +213,24 @@
   @keyframes wipe-up {
     to {
       clip-path: inset(0 0 0 0);
+    }
+  }
+
+  @keyframes lang-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes lang-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
     }
   }
 
@@ -296,6 +334,18 @@
     ::view-transition-new(shell-main) {
       animation-duration: var(--view-transition-duration-long);
       animation-timing-function: var(--view-transition-ease);
+    }
+
+    .fragment-grid {
+      view-transition-name: lang-fragments;
+    }
+
+    :root[data-lang-transition]::view-transition-old(lang-fragments) {
+      animation: lang-fade-out var(--view-transition-duration) var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition]::view-transition-new(lang-fragments) {
+      animation: lang-fade-in var(--view-transition-duration) var(--view-transition-ease) both;
     }
   }
 

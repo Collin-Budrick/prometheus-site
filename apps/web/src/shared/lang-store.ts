@@ -1,4 +1,5 @@
 import { effect, signal } from '@preact/signals-core'
+import { runLangViewTransition } from './view-transitions'
 
 export type Lang = 'en' | 'ko'
 
@@ -45,12 +46,21 @@ const persistLang = (value: Lang) => {
   }
 }
 
-export const applyLang = (value: Lang, options: { persist?: boolean } = {}) => {
-  lang.value = value
-  setDocumentLang(value)
-  if (options.persist !== false) {
-    persistLang(value)
+export const applyLang = (value: Lang, options: { persist?: boolean; transition?: boolean } = {}) => {
+  const apply = () => {
+    lang.value = value
+    setDocumentLang(value)
+    if (options.persist !== false) {
+      persistLang(value)
+    }
   }
+
+  if (options.transition) {
+    runLangViewTransition(apply)
+    return
+  }
+
+  apply()
 }
 
 export const initLang = (): Lang => {

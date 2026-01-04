@@ -8,6 +8,7 @@ import type {
   FragmentPlanValue
 } from '../../fragment/types'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
+import { runLangViewTransition } from '../../shared/view-transitions'
 import { resolveFragments, resolvePlan } from './utils'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
@@ -48,6 +49,8 @@ export const FragmentStreamController = component$(
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
         const refreshIds = new Set<string>()
+        const shouldAnimateLangSwap = langChanged
+        let langTransitionInFlight = false
 
         if (!fragments.value || !Object.keys(fragments.value).length) {
           fragments.value = resolveFragments(initialFragments) ?? {}
@@ -58,6 +61,7 @@ export const FragmentStreamController = component$(
 
         const planValue = resolvePlan(plan)
         const refreshAllIds = langChanged ? planValue.fragments.map((entry) => entry.id) : []
+        const refreshAllSet = new Set(refreshAllIds)
         if (refreshAllIds.length) {
           refreshAllIds.forEach((id) => refreshIds.add(id))
           status.value = 'streaming'
@@ -84,9 +88,13 @@ export const FragmentStreamController = component$(
           const current = fragments.value
           let next: FragmentPayloadMap | null = null
 
+          let hasLangRefresh = false
           queued.forEach((id) => {
             const payload = pending.get(id)
             if (!payload || current[id] === payload) return
+            if (refreshAllSet.has(id)) {
+              hasLangRefresh = true
+            }
             applyFragmentEffects(payload)
             next ??= structuredClone(current)
             next[id] = payload
@@ -101,7 +109,22 @@ export const FragmentStreamController = component$(
           queued.clear()
 
           if (next) {
-            fragments.value = next
+            if (shouldAnimateLangSwap && hasLangRefresh && !langTransitionInFlight) {
+              langTransitionInFlight = true
+              void runLangViewTransition(
+                () => {
+                  fragments.value = next
+                },
+                {
+                  mutationRoot: document.querySelector('.fragment-grid') ?? document.body,
+                  timeoutMs: 320
+                }
+              ).finally(() => {
+                langTransitionInFlight = false
+              })
+            } else {
+              fragments.value = next
+            }
           }
         }
 

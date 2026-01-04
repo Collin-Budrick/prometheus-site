@@ -11,6 +11,7 @@ import {
 } from '@builder.io/qwik'
 import { initLang, lang, subscribeLang, type Lang } from './lang-store'
 import { getUiCopy } from './ui-copy'
+import { runLangViewTransition } from './view-transitions'
 
 const LangSignalContext = createContextId<Signal<Lang>>('lang-signal')
 
@@ -20,8 +21,19 @@ export const useLangSignal = () => {
   useVisibleTask$(
     ({ cleanup }) => {
       current.value = initLang()
+      let ready = false
       const dispose = subscribeLang((value) => {
-        current.value = value
+        if (!ready) {
+          ready = true
+          current.value = value
+          return
+        }
+        runLangViewTransition(
+          () => {
+            current.value = value
+          },
+          { mutationRoot: document.body ?? document.documentElement }
+        )
       })
       cleanup(() => dispose())
     },
