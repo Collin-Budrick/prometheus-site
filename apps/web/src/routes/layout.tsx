@@ -12,9 +12,12 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
   return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr} onload="this.onload=null;this.rel='stylesheet'">`
 }
 
+const initialFadeDurationMs = 920
+const initialFadeClearDelayMs = initialFadeDurationMs + 120
+
 const initialFadeStyle = `:root[data-initial-fade='true'] .layout-shell {
   opacity: 0;
-  animation: page-fade-in 920ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: page-fade-in ${initialFadeDurationMs}ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 @keyframes page-fade-in {
   from { opacity: 0; }
@@ -31,7 +34,7 @@ const initialFadeScript = `(function () {
   var root = document.documentElement;
   if (!root || !root.hasAttribute('data-initial-fade')) return;
   var clear = function () { root.removeAttribute('data-initial-fade'); };
-  var schedule = function () { window.setTimeout(clear, 480); };
+  var schedule = function () { window.setTimeout(clear, ${initialFadeClearDelayMs}); };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', schedule, { once: true });
   } else {
