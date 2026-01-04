@@ -199,7 +199,11 @@ export const FragmentCard = component$<FragmentCardProps>(
               card.style.borderRadius = ''
               card.style.willChange = ''
             }
-            animation.addEventListener('finish', finalize, { once: true })
+            const handleFinish = () => {
+              finalize()
+              animation.cancel()
+            }
+            animation.addEventListener('finish', handleFinish, { once: true })
             animation.addEventListener('cancel', finalize, { once: true })
           }
 
