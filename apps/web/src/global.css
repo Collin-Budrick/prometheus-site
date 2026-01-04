@@ -1587,6 +1587,10 @@
 
   .react-binary-bits span {
     @apply bg-slate-100 px-2 py-1 rounded-lg text-center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     background-color: rgb(var(--surface-soft));
     border: 1px solid rgb(var(--stroke) / 0.7);
   }
@@ -1637,6 +1641,10 @@
 
   .react-binary-dom span {
     @apply bg-white px-2 py-1 border border-slate-200 rounded-full;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
   }
@@ -1777,6 +1785,8 @@
     @apply font-mono text-[10px] text-slate-600 uppercase tracking-[0.35em];
     width: 28px;
     height: 28px;
+    line-height: 1;
+    letter-spacing: 0;
     transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
@@ -1793,6 +1803,10 @@
   .wasm-demo-value {
     @apply bg-slate-50 px-3 py-1 border border-slate-200 rounded-full;
     @apply font-mono text-[11px] text-slate-700 uppercase tracking-[0.35em];
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     min-width: 64px;
     text-align: center;
     background-color: rgb(var(--surface-soft));
