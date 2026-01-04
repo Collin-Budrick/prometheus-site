@@ -13,9 +13,9 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
 }
 
 const initialFadeDurationMs = 920
-const initialFadeClearDelayMs = initialFadeDurationMs + 120
+const initialFadeClearDelayMs = initialFadeDurationMs + 200
 
-const initialFadeStyle = `:root[data-initial-fade='true'] .layout-shell {
+const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
   animation: page-fade-in ${initialFadeDurationMs}ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
@@ -24,7 +24,7 @@ const initialFadeStyle = `:root[data-initial-fade='true'] .layout-shell {
   to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root[data-initial-fade='true'] .layout-shell {
+  :root[data-initial-fade='ready'] .layout-shell {
     opacity: 1;
     animation: none;
   }
@@ -33,12 +33,37 @@ const initialFadeStyle = `:root[data-initial-fade='true'] .layout-shell {
 const initialFadeScript = `(function () {
   var root = document.documentElement;
   if (!root || !root.hasAttribute('data-initial-fade')) return;
-  var clear = function () { root.removeAttribute('data-initial-fade'); };
-  var schedule = function () { window.setTimeout(clear, ${initialFadeClearDelayMs}); };
+  var cleared = false;
+  var shell = null;
+  var clear = function () {
+    if (cleared) return;
+    cleared = true;
+    root.removeAttribute('data-initial-fade');
+    if (shell) {
+      shell.removeEventListener('animationend', handleEnd);
+    }
+  };
+  var handleEnd = function (event) {
+    if (event && event.target !== shell) return;
+    clear();
+  };
+  var attachEnd = function () {
+    if (shell) return;
+    shell = document.querySelector('.layout-shell');
+    if (shell) {
+      shell.addEventListener('animationend', handleEnd, { once: true });
+    }
+  };
+  var start = function () {
+    if (cleared) return;
+    root.setAttribute('data-initial-fade', 'ready');
+    attachEnd();
+    window.setTimeout(clear, ${initialFadeClearDelayMs});
+  };
+  var schedule = function () { window.requestAnimationFrame(start); };
+  schedule();
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', schedule, { once: true });
-  } else {
-    schedule();
+    document.addEventListener('DOMContentLoaded', attachEnd, { once: true });
   }
 })();`
 

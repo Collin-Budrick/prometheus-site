@@ -9,7 +9,14 @@ export default function (opts: RenderToStreamOptions) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
   const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
   const theme = requestEv ? readThemeFromCookie(requestEv.request.headers.get('cookie')) : null
-  const themeAttributes = theme ? { 'data-theme': theme } : {}
+  const containerAttributes: Record<string, string> = {
+    ...(opts.containerAttributes ?? {}),
+    lang,
+    'data-initial-fade': 'pending'
+  }
+  if (theme) {
+    containerAttributes['data-theme'] = theme
+  }
   const preloader = import.meta.env.PROD ? false : opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
   const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
 
@@ -30,11 +37,6 @@ export default function (opts: RenderToStreamOptions) {
     qwikLoader,
     preloader,
     containerTagName: opts.containerTagName ?? 'html',
-    containerAttributes: {
-      ...opts.containerAttributes,
-      lang,
-      'data-initial-fade': 'true',
-      ...themeAttributes
-    }
+    containerAttributes
   })
 }
