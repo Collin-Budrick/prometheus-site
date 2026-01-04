@@ -20,11 +20,15 @@ const fragmentPlanMemoLimit = 64
 const fragmentPlanMemoTtlMs = 10_000
 type FragmentPlanMemoEntry = { expiresAt: number; plan: FragmentPlan }
 const inflight = new Map<string, Promise<StoredFragment>>()
+const nextRefreshAt = new Map<string, number>()
 const fragmentPlanMemo = new Map<string, FragmentPlanMemoEntry>()
 const lockWaitMs = fragmentLockTtlMs
 const lockPollMs = 50
+const minRefreshDelayMs = 100
+const maxRefreshDelayMs = 400
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const randomRefreshDelay = () => Math.floor(Math.random() * (maxRefreshDelayMs - minRefreshDelayMs + 1)) + minRefreshDelayMs
 
 const buildPlanMemoKey = (path: string, lang: FragmentLang) => `${lang}|${normalizePlanPath(path)}`
 
@@ -218,9 +222,20 @@ export const refreshFragment = async (id: string, lang: FragmentLang = defaultFr
 }
 
 const scheduleRefresh = (id: string, lang: FragmentLang) => {
-  queueMicrotask(() => {
-    void refreshFragment(id, lang)
-  })
+  const cacheKey = buildFragmentCacheKey(id, lang)
+  if (inflight.has(cacheKey) || nextRefreshAt.has(cacheKey)) {
+    return
+  }
+
+  const delay = randomRefreshDelay()
+  nextRefreshAt.set(cacheKey, Date.now() + delay)
+
+  setTimeout(() => {
+    nextRefreshAt.set(cacheKey, Date.now())
+    void refreshFragment(id, lang).finally(() => {
+      nextRefreshAt.delete(cacheKey)
+    })
+  }, delay)
 }
 
 const getOrRender = async (id: string, lang: FragmentLang): Promise<StoredFragment> => {
