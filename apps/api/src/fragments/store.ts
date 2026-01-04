@@ -122,10 +122,11 @@ const decodeEntry = (raw: string): StoredFragment | null => {
 
 export const buildFragmentCacheKey = (id: string, lang: FragmentLang) => `${id}::${lang}`
 
-const decodeCacheValue = (value: string | Buffer | null): StoredFragment | null => {
-  if (value === null) return null
-  const normalized = typeof value === 'string' ? value : value.toString()
-  return decodeEntry(normalized)
+const decodeCacheValue = (value: unknown): StoredFragment | null => {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') return decodeEntry(value)
+  if (value instanceof Buffer) return decodeEntry(value.toString())
+  return null
 }
 
 export const readFragmentsByCacheKeys = async (

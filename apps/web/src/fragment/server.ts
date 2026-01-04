@@ -14,6 +14,25 @@ type FragmentPlanResult = {
   initialFragments?: FragmentPayloadMap
 }
 
+const parseCacheUpdatedAt = (headers: Headers) => {
+  const raw = headers.get('x-fragment-cache-updated')
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+const attachCacheUpdatedAt = (fragments: FragmentPayloadMap | undefined, plan: FragmentPlan) => {
+  if (!fragments) return fragments
+  const updatedAtById = new Map(plan.fragments.map((entry) => [entry.id, entry.cache?.updatedAt]))
+  Object.entries(fragments).forEach(([id, payload]) => {
+    const updatedAt = updatedAtById.get(id)
+    if (typeof updatedAt === 'number') {
+      payload.cacheUpdatedAt = updatedAt
+    }
+  })
+  return fragments
+}
+
 const decodeInitialFragments = (raw: FragmentPlanInitialPayloads) => {
   const decoded: FragmentPayloadMap = {}
   Object.entries(raw).forEach(([id, payload]) => {
@@ -65,7 +84,11 @@ export const loadFragmentPlan = async (
     : canReuseCachedInitial
       ? cached?.initialFragments
       : undefined
-  const result: FragmentPlanResult = { plan: plan as FragmentPlan, initialFragments: decoded }
+  const normalizedPlan = plan as FragmentPlan
+  const result: FragmentPlanResult = {
+    plan: normalizedPlan,
+    initialFragments: attachCacheUpdatedAt(decoded, normalizedPlan)
+  }
   if (etag) {
     setCachedPlan(path, lang, { etag, plan: result.plan, initialFragments: decoded })
   }
@@ -89,8 +112,9 @@ export const loadFragments = async (
         throw new Error(`Fragment fetch failed: ${response.status}`)
       }
       const bytes = new Uint8Array(await response.arrayBuffer())
+      const cacheUpdatedAt = parseCacheUpdatedAt(response.headers)
       const payload = decodeFragmentPayload(bytes)
-      return [id, { ...payload, id }] as const
+      return [id, { ...payload, id, cacheUpdatedAt }] as const
     })
   )
 

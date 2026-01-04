@@ -74,7 +74,7 @@ describe('fragment effects lifecycle', () => {
       ...base,
       ...overrides,
       head: overrides.head ?? base.head,
-      meta: { ...base.meta, ...(overrides.meta ?? {}) },
+      meta: { ...base.meta, ...overrides.meta },
       tree: overrides.tree ?? base.tree
     }
   }

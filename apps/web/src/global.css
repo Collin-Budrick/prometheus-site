@@ -273,16 +273,12 @@
   }
 
   html:not([data-motion-ready='true']) [data-motion] {
-    opacity: 0;
-    transform: translateY(var(--motion-fade-distance, var(--motion-distance)));
-    animation-name: motion-fade-in;
-    animation-duration: var(--motion-fade-duration, 720ms);
-    animation-timing-function: var(--motion-fade-ease, var(--view-transition-ease));
-    animation-delay: var(--motion-delay, 0ms);
-    animation-fill-mode: both;
+    opacity: 1;
+    transform: none;
+    animation: none;
   }
 
-  html[data-motion-ready='true'] [data-motion] {
+  html[data-motion-ready='true'] [data-motion][data-motion-state='out'] {
     opacity: 0;
     transform: translateY(var(--motion-distance));
     will-change: transform, opacity;
@@ -301,7 +297,7 @@
       animation: none;
     }
 
-    html[data-motion-ready='true'] [data-motion],
+    html[data-motion-ready='true'] [data-motion][data-motion-state='out'],
     html[data-motion-ready='true'] [data-motion][data-motion-state='in'] {
       opacity: 1;
       transform: none;
@@ -374,8 +370,6 @@
 
   .topbar {
     @apply flex sm:flex-row flex-col sm:justify-between sm:items-center gap-6;
-    animation: header-in 0.8s var(--view-transition-ease) both;
-    will-change: transform, opacity;
   }
 
   .topbar-actions {
@@ -945,7 +939,6 @@
     background:
       radial-gradient(circle at 50% 25%, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.92) 60%),
       linear-gradient(180deg, rgb(var(--surface) / 0.9), rgb(var(--surface-soft) / 0.7));
-    animation: timer-bloom 420ms ease;
     overflow: hidden;
   }
 
@@ -959,7 +952,6 @@
   }
 
   .preact-island-ui[data-running='true'] .preact-island-stage {
-    animation: timer-bloom 420ms ease;
   }
 
   .preact-island-dial {

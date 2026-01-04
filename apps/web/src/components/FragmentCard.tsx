@@ -324,6 +324,7 @@ export const FragmentCard = component$<FragmentCardProps>(
           class={{ 'fragment-card': true, 'is-expanded': isExpanded }}
           style={cardStyle}
           data-motion
+          data-motion-skip-visible
           data-fragment-id={fragmentId}
           onClick$={handleToggle}
         >

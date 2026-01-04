@@ -1,14 +1,20 @@
-import { component$, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 
 import { scheduleIdleTask } from './motion-idle'
 
 export const RouteMotion = component$(() => {
   const location = useLocation()
+  const skipInitial = useSignal(true)
 
   useVisibleTask$(
     ({ cleanup, track }) => {
       track(() => location.url.pathname + location.url.search)
+
+      if (skipInitial.value) {
+        skipInitial.value = false
+        return
+      }
 
       let disposeMotion: (() => void) | undefined
       let cancelled = false
@@ -153,16 +159,22 @@ export const RouteMotion = component$(() => {
               observerOptions
             )
 
-            const observeTargets = () => {
-              if (disposed) return
-              const elementsToObserve = getMotionElements()
-              elementsToObserve.forEach((element) => {
-                if (observedElements.has(element)) return
-                if (!element.dataset.motionState) element.dataset.motionState = 'out'
-                observer.observe(element)
-                observedElements.add(element)
-              })
-            }
+          const observeTargets = () => {
+            if (disposed) return
+            const elementsToObserve = getMotionElements()
+            elementsToObserve.forEach((element) => {
+              if (observedElements.has(element)) return
+              if (element.hasAttribute('data-motion-skip-visible') && isInView(element)) {
+                element.dataset.motionState = 'in'
+                targets.set(element, 'in')
+                seenElements.add(element)
+                return
+              }
+              if (!element.dataset.motionState) element.dataset.motionState = 'out'
+              observer.observe(element)
+              observedElements.add(element)
+            })
+          }
 
             const unobserveNode = (node: Node) => {
               if (!(node instanceof HTMLElement)) return
