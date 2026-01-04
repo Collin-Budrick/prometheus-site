@@ -1,17 +1,21 @@
-import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
+import type { Lang } from '../../shared/lang-store'
+import { getFragmentHeaderCopy } from '../../shared/fragment-copy'
 import { FragmentRenderer } from './FragmentRenderer'
 import { FragmentStreamController } from './FragmentStreamController'
+import { applyHeaderOverride } from './header-overrides'
 import { resolveFragments, resolvePlan } from './utils'
 
 type FragmentShellProps = {
   plan: FragmentPlanValue
   initialFragments: FragmentPayloadValue
   path: string
+  initialLang: Lang
 }
 
 type FragmentClientEffectsProps = {
@@ -38,8 +42,11 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
   return null
 })
 
-export const FragmentShell = component$(({ plan, initialFragments, path }: FragmentShellProps) => {
+export const FragmentShell = component$(({ plan, initialFragments, path, initialLang }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
+  if (langSignal.value !== initialLang) {
+    langSignal.value = initialLang
+  }
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)
@@ -48,6 +55,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
   const expandedId = useSignal<string | null>(null)
   const layoutTick = useSignal(0)
   const gridRef = useSignal<HTMLDivElement>()
+  const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const initialReady =
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
@@ -180,6 +188,9 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
       <div ref={gridRef} class="fragment-grid">
         {planValue.fragments.map((entry, index) => {
           const fragment = fragments.value[entry.id]
+          const headerCopy = fragmentHeaders.value[entry.id]
+          const renderNode =
+            fragment && headerCopy ? applyHeaderOverride(fragment.tree, headerCopy) : fragment?.tree
           return (
             <FragmentCard
               key={entry.id}
@@ -191,7 +202,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path }: Fragm
               layoutTick={layoutTick}
             >
               {fragment ? (
-                <FragmentRenderer node={fragment.tree} />
+                <FragmentRenderer node={renderNode ?? fragment.tree} />
               ) : (
                 <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                   <div class="loader" aria-hidden="true" />
