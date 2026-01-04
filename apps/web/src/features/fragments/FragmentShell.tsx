@@ -23,6 +23,8 @@ type FragmentClientEffectsProps = {
   initialFragmentMap: FragmentPayloadMap
 }
 
+const DESKTOP_MIN_WIDTH = 1025
+
 const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
   useVisibleTask$(
     ({ cleanup }) => {
@@ -30,7 +32,8 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 
       const teardownSpeculation = applySpeculationRules(
         buildSpeculationRulesForPlan(planValue, import.meta.env, {
-          knownFragments: initialFragmentMap
+          knownFragments: initialFragmentMap,
+          currentPath: typeof window !== 'undefined' ? window.location.pathname : undefined
         })
       )
 
@@ -95,41 +98,75 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     ({ cleanup }) => {
       if (typeof window === 'undefined') return
       const grid = gridRef.value
-      if (!grid || !('ResizeObserver' in window)) return
+      if (!grid || !('ResizeObserver' in window) || planValue.fragments.length < 2) return
       let frame = 0
       let pending = false
       let lastWidth = 0
       let lastHeight = 0
       let ready = false
+      let observer: ResizeObserver | null = null
 
-      const observer = new ResizeObserver((entries) => {
-        const entry = entries[0]
-        if (!entry) return
-        const { width, height } = entry.contentRect
-        if (!ready) {
-          ready = true
+      const resetState = () => {
+        pending = false
+        ready = false
+        lastWidth = 0
+        lastHeight = 0
+      }
+
+      const teardownObserver = () => {
+        observer?.disconnect()
+        observer = null
+        if (frame) {
+          cancelAnimationFrame(frame)
+          frame = 0
+        }
+      }
+
+      const setupObserver = () => {
+        if (observer || window.innerWidth < DESKTOP_MIN_WIDTH) return
+        resetState()
+        const instance = new ResizeObserver((entries) => {
+          const entry = entries[0]
+          if (!entry) return
+          const { width, height } = entry.contentRect
+          if (!ready) {
+            ready = true
+            lastWidth = width
+            lastHeight = height
+            return
+          }
+          if (width === lastWidth && height === lastHeight) return
           lastWidth = width
           lastHeight = height
+          pending = true
+          if (frame) return
+          frame = requestAnimationFrame(() => {
+            frame = 0
+            if (!pending) return
+            pending = false
+            layoutTick.value += 1
+          })
+        })
+        observer = instance
+        instance.observe(grid)
+      }
+
+      const handleResize = () => {
+        if (window.innerWidth < DESKTOP_MIN_WIDTH) {
+          teardownObserver()
           return
         }
-        if (width === lastWidth && height === lastHeight) return
-        lastWidth = width
-        lastHeight = height
-        pending = true
-        if (frame) return
-        frame = requestAnimationFrame(() => {
-          frame = 0
-          if (!pending) return
-          pending = false
-          layoutTick.value += 1
-        })
-      })
+        if (!observer) {
+          setupObserver()
+        }
+      }
 
-      observer.observe(grid)
+      setupObserver()
+      window.addEventListener('resize', handleResize)
 
       cleanup(() => {
-        observer.disconnect()
-        if (frame) cancelAnimationFrame(frame)
+        window.removeEventListener('resize', handleResize)
+        teardownObserver()
       })
     },
     { strategy: 'document-ready' }
@@ -139,21 +176,19 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     ({ cleanup }) => {
       if (typeof window === 'undefined') return
       const grid = gridRef.value
-      if (!grid || typeof ResizeObserver === 'undefined') return
+      if (!grid || typeof ResizeObserver === 'undefined' || planValue.fragments.length < 2) return
 
       const cardHeights = new WeakMap<HTMLElement, number>()
       const observedCards = new WeakSet<HTMLElement>()
       let frame = 0
+      let enabled = false
+
+      const meetsLayoutConditions = () => window.innerWidth >= DESKTOP_MIN_WIDTH && planValue.fragments.length > 1
 
       const schedule = () => {
-        if (frame) return
+        if (frame || !enabled) return
         frame = requestAnimationFrame(() => {
           frame = 0
-          if (window.innerWidth < 1025) {
-            grid.classList.remove('is-stacked')
-            return
-          }
-
           const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
             (element) => !element.classList.contains('is-expanded')
           )
@@ -174,8 +209,6 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           }
         })
       }
-
-      stackScheduler.value = schedule
 
       const cardObserver = new ResizeObserver((entries) => {
         let changed = false
@@ -212,10 +245,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         })
       }
 
-      observeCards(grid)
-      schedule()
-
       const mutationObserver = new MutationObserver((records) => {
+        if (!enabled) return
         records.forEach((record) => {
           record.addedNodes.forEach((node) => {
             if (node instanceof HTMLElement) observeCards(node)
@@ -227,16 +258,46 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         schedule()
       })
 
-      mutationObserver.observe(grid, { childList: true, subtree: true })
-
-      const handleResize = () => schedule()
-      window.addEventListener('resize', handleResize)
-
-      cleanup(() => {
+      const stop = () => {
+        if (!enabled) return
+        enabled = false
         stackScheduler.value = null
         mutationObserver.disconnect()
         cardObserver.disconnect()
-        if (frame) cancelAnimationFrame(frame)
+        observedCards.clear()
+        grid.classList.remove('is-stacked')
+        if (frame) {
+          cancelAnimationFrame(frame)
+          frame = 0
+        }
+      }
+
+      const start = () => {
+        if (enabled || !meetsLayoutConditions()) return
+        enabled = true
+        stackScheduler.value = schedule
+        observeCards(grid)
+        schedule()
+        mutationObserver.observe(grid, { childList: true, subtree: true })
+      }
+
+      const handleResize = () => {
+        if (!meetsLayoutConditions()) {
+          stop()
+          return
+        }
+        if (!enabled) {
+          start()
+          return
+        }
+        schedule()
+      }
+
+      start()
+      window.addEventListener('resize', handleResize)
+
+      cleanup(() => {
+        stop()
         window.removeEventListener('resize', handleResize)
       })
     },
@@ -257,11 +318,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       track(() => expandedId.value)
       if (typeof window === 'undefined') return
       const grid = gridRef.value
-      if (!grid || typeof ResizeObserver !== 'undefined') return
+      if (!grid || typeof ResizeObserver !== 'undefined' || planValue.fragments.length < 2) return
 
       let frame = requestAnimationFrame(() => {
         frame = 0
-        if (window.innerWidth < 1025) {
+        if (window.innerWidth < DESKTOP_MIN_WIDTH) {
           grid.classList.remove('is-stacked')
           return
         }

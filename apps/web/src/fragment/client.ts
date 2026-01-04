@@ -182,6 +182,7 @@ export const fetchFragmentPlan = async (path: string, lang?: string): Promise<Fr
 type FetchFragmentOptions = {
   refresh?: boolean
   lang?: string
+  signal?: AbortSignal
 }
 
 const parseCacheUpdatedAt = (headers: Headers) => {
@@ -201,7 +202,8 @@ export const fetchFragment = async (id: string, options: FetchFragmentOptions = 
     params.set('lang', options.lang)
   }
   const response = await fetch(`${api}/fragments?${params.toString()}`, {
-    cache: options.refresh ? 'no-store' : 'default'
+    cache: options.refresh ? 'no-store' : 'default',
+    signal: options.signal
   })
   if (!response.ok) {
     throw new Error(`Fragment fetch failed: ${response.status}`)
@@ -251,7 +253,8 @@ export const fetchFragmentBatch = async (
         refresh: entry.refresh === true ? true : undefined
       }))
     ),
-    cache: entries.some((entry) => entry.refresh) || options.refresh ? 'no-store' : 'default'
+    cache: entries.some((entry) => entry.refresh) || options.refresh ? 'no-store' : 'default',
+    signal: options.signal
   })
 
   if (!response.ok) {
