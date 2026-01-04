@@ -587,6 +587,12 @@
     }
   }
 
+  @media (min-width: 1025px) {
+    .fragment-grid {
+      align-items: start;
+    }
+  }
+
   .fragment-grid.is-stacked {
     display: flex;
     flex-direction: column;
