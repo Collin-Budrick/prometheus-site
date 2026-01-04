@@ -27,8 +27,11 @@ export const FragmentCard = component$<FragmentCardProps>(
     const placeholderRef = useSignal<HTMLDivElement>()
     const lastExpanded = useSignal(expandedId.value === id)
     const lastLayoutTick = useSignal(layoutTick.value)
+    const lastInView = useSignal(true)
     const maxHeight = useSignal<number | null>(null)
     const lastWidth = useSignal<number | null>(null)
+    const isInView = useSignal(typeof IntersectionObserver === 'undefined')
+    const visibilityTick = useSignal(0)
 
     const handleToggle = $((event: MouseEvent) => {
       if (!(event.target instanceof HTMLElement)) return
@@ -53,135 +56,148 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       ({ track, cleanup }) => {
-      const expanded = track(() => expandedId.value === id)
-      const tick = track(() => layoutTick.value)
-      const expandedChanged = expanded !== lastExpanded.value
-      const resizeChanged = tick !== lastLayoutTick.value
-      lastExpanded.value = expanded
-      lastLayoutTick.value = tick
+        const expanded = track(() => expandedId.value === id)
+        const tick = track(() => layoutTick.value)
+        const inView = track(() => isInView.value)
+        const visibilityChanged = inView !== lastInView.value
+        const expandedChanged = expanded !== lastExpanded.value
+        const resizeChanged = tick !== lastLayoutTick.value
+        lastExpanded.value = expanded
+        lastLayoutTick.value = tick
+        lastInView.value = inView
+        track(() => visibilityTick.value)
 
-      const card = cardRef.value
-      if (!card) return
+        const card = cardRef.value
+        if (!card) return
 
-      const placeholder = placeholderRef.value
-      const pendingRect = pendingRects.get(card)
-      const hasPreviousRect = previousRects.has(card)
-      const shouldMeasure = expandedChanged || Boolean(pendingRect) || !hasPreviousRect
-
-      if (!shouldMeasure) return
-
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const firstRect = pendingRect ?? previousRects.get(card)
-      const storedRadius = pendingRadii.get(card) ?? previousRadii.get(card)
-      const firstRadius = storedRadius ?? window.getComputedStyle(card).borderRadius
-      let cancelled = false
-
-      cleanup(() => {
-        cancelled = true
-      })
-
-      if (!firstRect) {
-        previousRects.set(card, card.getBoundingClientRect())
-        previousRadii.set(card, firstRadius)
-        if (placeholder) {
-          placeholder.style.display = 'none'
-          placeholder.style.height = ''
-          placeholder.style.width = ''
-        }
-        return
-      }
-
-      if (pendingRect) {
-        pendingRects.delete(card)
-        pendingRadii.delete(card)
-      }
-
-      if (placeholder) {
-        if (expanded) {
-          placeholder.style.display = ''
-          placeholder.style.height = `${firstRect.height}px`
-          placeholder.style.width = `${firstRect.width}px`
-        } else {
-          placeholder.style.display = 'none'
-          placeholder.style.height = ''
-          placeholder.style.width = ''
-        }
-      }
-
-      queueMicrotask(() => {
-        if (cancelled) return
-
-        const run = () => {
-          if (cancelled) return
+        if (!inView) {
           const current = activeAnimations.get(card)
           if (current) {
             current.cancel()
             activeAnimations.delete(card)
           }
+          return
+        }
 
-          const lastRect = card.getBoundingClientRect()
-          const lastRadius = window.getComputedStyle(card).borderRadius
-          previousRects.set(card, lastRect)
-          previousRadii.set(card, lastRadius)
+        const placeholder = placeholderRef.value
+        const pendingRect = pendingRects.get(card)
+        const hasPreviousRect = previousRects.has(card)
+        const shouldMeasure = expandedChanged || Boolean(pendingRect) || !hasPreviousRect || visibilityChanged
 
-          if (prefersReducedMotion) return
+        if (!shouldMeasure) return
 
-          const dx = firstRect.left - lastRect.left
-          const dy = firstRect.top - lastRect.top
-          const sx = firstRect.width / lastRect.width
-          const sy = firstRect.height / lastRect.height
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const firstRect = pendingRect ?? previousRects.get(card)
+        const storedRadius = pendingRadii.get(card) ?? previousRadii.get(card)
+        const firstRadius = storedRadius ?? window.getComputedStyle(card).borderRadius
+        let cancelled = false
 
-          if (!Number.isFinite(sx) || !Number.isFinite(sy)) return
-          if (
-            Math.abs(dx) < 0.5 &&
-            Math.abs(dy) < 0.5 &&
-            Math.abs(sx - 1) < 0.01 &&
-            Math.abs(sy - 1) < 0.01 &&
-            firstRadius === lastRadius
-          ) {
-            return
+        cleanup(() => {
+          cancelled = true
+        })
+
+        if (!firstRect) {
+          previousRects.set(card, card.getBoundingClientRect())
+          previousRadii.set(card, firstRadius)
+          if (placeholder) {
+            placeholder.style.display = 'none'
+            placeholder.style.height = ''
+            placeholder.style.width = ''
           }
+          return
+        }
 
-          card.style.transformOrigin = 'top left'
-          card.style.willChange = 'transform, border-radius'
+        if (pendingRect) {
+          pendingRects.delete(card)
+          pendingRadii.delete(card)
+        }
 
-          const isResizeFrame = resizeChanged && !expandedChanged
-          const duration = isResizeFrame ? 220 : 550
-          const easing = isResizeFrame ? 'linear' : 'cubic-bezier(0.22, 1, 0.36, 1)'
-          const animation = card.animate(
-            [
-              {
-                transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
-                borderRadius: firstRadius
-              },
-              { transform: 'none', borderRadius: lastRadius }
-            ],
-            {
-              duration,
-              easing,
-              fill: 'both'
+        if (placeholder) {
+          if (expanded) {
+            placeholder.style.display = ''
+            placeholder.style.height = `${firstRect.height}px`
+            placeholder.style.width = `${firstRect.width}px`
+          } else {
+            placeholder.style.display = 'none'
+            placeholder.style.height = ''
+            placeholder.style.width = ''
+          }
+        }
+
+        queueMicrotask(() => {
+          if (cancelled || !isInView.value) return
+
+          const run = () => {
+            if (cancelled || !isInView.value) return
+            const current = activeAnimations.get(card)
+            if (current) {
+              current.cancel()
+              activeAnimations.delete(card)
             }
-          )
 
-          activeAnimations.set(card, animation)
-          const finalize = () => {
-            if (activeAnimations.get(card) !== animation) return
-            activeAnimations.delete(card)
-            card.style.transformOrigin = ''
-            card.style.transform = ''
-            card.style.borderRadius = ''
-            card.style.willChange = ''
+            const lastRect = card.getBoundingClientRect()
+            const lastRadius = window.getComputedStyle(card).borderRadius
+            previousRects.set(card, lastRect)
+            previousRadii.set(card, lastRadius)
+
+            if (prefersReducedMotion) return
+
+            const dx = firstRect.left - lastRect.left
+            const dy = firstRect.top - lastRect.top
+            const sx = firstRect.width / lastRect.width
+            const sy = firstRect.height / lastRect.height
+
+            if (!Number.isFinite(sx) || !Number.isFinite(sy)) return
+            if (
+              Math.abs(dx) < 0.5 &&
+              Math.abs(dy) < 0.5 &&
+              Math.abs(sx - 1) < 0.01 &&
+              Math.abs(sy - 1) < 0.01 &&
+              firstRadius === lastRadius
+            ) {
+              return
+            }
+
+            card.style.transformOrigin = 'top left'
+            card.style.willChange = 'transform, border-radius'
+
+            const isResizeFrame = resizeChanged && !expandedChanged
+            const duration = isResizeFrame ? 220 : 550
+            const easing = isResizeFrame ? 'linear' : 'cubic-bezier(0.22, 1, 0.36, 1)'
+            const animation = card.animate(
+              [
+                {
+                  transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+                  borderRadius: firstRadius
+                },
+                { transform: 'none', borderRadius: lastRadius }
+              ],
+              {
+                duration,
+                easing,
+                fill: 'both'
+              }
+            )
+
+            activeAnimations.set(card, animation)
+            const finalize = () => {
+              if (activeAnimations.get(card) !== animation) return
+              activeAnimations.delete(card)
+              card.style.transformOrigin = ''
+              card.style.transform = ''
+              card.style.borderRadius = ''
+              card.style.willChange = ''
+            }
+            animation.addEventListener('finish', finalize, { once: true })
+            animation.addEventListener('cancel', finalize, { once: true })
           }
-          animation.addEventListener('finish', finalize, { once: true })
-          animation.addEventListener('cancel', finalize, { once: true })
-        }
 
-        if (typeof requestAnimationFrame === 'function') {
-          requestAnimationFrame(run)
-        } else {
-          setTimeout(run, 0)
-        }
-      })
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(run)
+          } else {
+            setTimeout(run, 0)
+          }
+        })
       },
       { strategy: 'document-ready' }
     )
@@ -189,7 +205,8 @@ export const FragmentCard = component$<FragmentCardProps>(
     useVisibleTask$(
       ({ track, cleanup }) => {
         track(() => langSignal.value)
-        if (typeof ResizeObserver !== 'undefined') return
+        const inView = track(() => isInView.value)
+        if (!inView || typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
         if (!card) return
         let frame = requestAnimationFrame(() => {
@@ -208,7 +225,9 @@ export const FragmentCard = component$<FragmentCardProps>(
     )
 
     useVisibleTask$(
-      ({ cleanup }) => {
+      ({ track, cleanup }) => {
+        const inView = track(() => isInView.value)
+        if (!inView) return
         const card = cardRef.value
         if (!card || typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver((entries) => {
@@ -237,6 +256,43 @@ export const FragmentCard = component$<FragmentCardProps>(
             maxHeight.value = Math.max(maxHeight.value ?? 0, height)
           }
         })
+        observer.observe(card)
+        cleanup(() => {
+          observer.disconnect()
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      ({ cleanup }) => {
+        const card = cardRef.value
+        if (!card) return
+        if (typeof IntersectionObserver === 'undefined') {
+          isInView.value = true
+          return
+        }
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            const entry = entries[0]
+            const intersecting = Boolean(entry?.isIntersecting)
+            isInView.value = intersecting
+
+            if (!intersecting) {
+              const current = activeAnimations.get(card)
+              if (current) {
+                current.cancel()
+                activeAnimations.delete(card)
+              }
+              return
+            }
+
+            visibilityTick.value++
+          },
+          { rootMargin: '20% 0px' }
+        )
+
         observer.observe(card)
         cleanup(() => {
           observer.disconnect()
