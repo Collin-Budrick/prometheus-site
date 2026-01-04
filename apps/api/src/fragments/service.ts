@@ -1,7 +1,7 @@
 import { encodeFragmentPayloadFromTree } from './binary'
 import { getFragmentDefinition } from './definitions'
 import { createFragmentTranslator, defaultFragmentLang, type FragmentLang } from './i18n'
-import { planForPath } from './planner'
+import { normalizePlanPath, planForPath } from './planner'
 import {
   acquireFragmentLock,
   buildFragmentCacheKey,
@@ -15,11 +15,75 @@ import {
 import { h, renderToHtml, t as textNode } from './tree'
 import type { FragmentCacheStatus, FragmentPlan, FragmentPlanEntry, FragmentDefinition, FragmentRenderContext } from './types'
 
+const fragmentPlanMemoLimit = 64
+const fragmentPlanMemoTtlMs = 10_000
+type FragmentPlanMemoEntry = { expiresAt: number; plan: FragmentPlan }
 const inflight = new Map<string, Promise<StoredFragment>>()
+const fragmentPlanMemo = new Map<string, FragmentPlanMemoEntry>()
 const lockWaitMs = fragmentLockTtlMs
 const lockPollMs = 50
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const buildPlanMemoKey = (path: string, lang: FragmentLang) => `${lang}|${normalizePlanPath(path)}`
+
+const pruneFragmentPlanMemo = () => {
+  while (fragmentPlanMemo.size > fragmentPlanMemoLimit) {
+    const oldest = fragmentPlanMemo.keys().next().value
+    if (oldest === undefined) return
+    fragmentPlanMemo.delete(oldest)
+  }
+}
+
+const memoizePlan = (path: string, lang: FragmentLang, plan: FragmentPlan) => {
+  const entry: FragmentPlanMemoEntry = { plan, expiresAt: Date.now() + fragmentPlanMemoTtlMs }
+  const key = buildPlanMemoKey(path, lang)
+  fragmentPlanMemo.set(key, entry)
+  pruneFragmentPlanMemo()
+}
+
+const getPlanFromMemo = (path: string, lang: FragmentLang): FragmentPlan | null => {
+  const key = buildPlanMemoKey(path, lang)
+  const entry = fragmentPlanMemo.get(key)
+  if (entry === undefined) return null
+  if (entry.expiresAt <= Date.now()) {
+    fragmentPlanMemo.delete(key)
+    return null
+  }
+  fragmentPlanMemo.delete(key)
+  fragmentPlanMemo.set(key, entry)
+  return entry.plan
+}
+
+export const clearPlanMemo = (path?: string, lang?: FragmentLang) => {
+  if (path === undefined && lang === undefined) {
+    fragmentPlanMemo.clear()
+    return
+  }
+  const normalizedPath = path !== undefined ? normalizePlanPath(path) : null
+  for (const key of Array.from(fragmentPlanMemo.keys())) {
+    const [entryLang, ...rest] = key.split('|')
+    const entryPath = rest.join('|')
+    const matchesLang = lang === undefined || entryLang === lang
+    const matchesPath = normalizedPath === null || entryPath === normalizedPath
+    if (matchesLang && matchesPath) {
+      fragmentPlanMemo.delete(key)
+    }
+  }
+}
+
+export const getMemoizedPlan = (path: string, lang: FragmentLang = defaultFragmentLang) =>
+  getPlanFromMemo(path, lang)
+
+export const memoizeFragmentPlan = (path: string, lang: FragmentLang, plan: FragmentPlan) =>
+  memoizePlan(path, lang, plan)
+
+const buildAndMemoizePlan = (path: string, lang: FragmentLang) => {
+  const normalized = normalizePlanPath(path)
+  const plan = planForPath(normalized)
+  memoizePlan(normalized, lang, plan)
+  return plan
+}
 
 const buildEntry = (
   cacheKey: string,
@@ -199,6 +263,7 @@ export const buildCacheStatus = (cached: StoredFragment | null, now: number): Fr
 }
 
 type FragmentPlanOptions = {
+  basePlan?: FragmentPlan
   fragmentsByCacheKey?: Map<string, StoredFragment>
 }
 
@@ -233,12 +298,17 @@ export const getFragmentPlan = async (
   lang: FragmentLang = defaultFragmentLang,
   options: FragmentPlanOptions = {}
 ): Promise<FragmentPlan> => {
-  const plan = planForPath(path)
+  const normalizedPath = normalizePlanPath(path)
+  const plan =
+    options.basePlan ?? getPlanFromMemo(normalizedPath, lang) ?? buildAndMemoizePlan(normalizedPath, lang)
+  if (options.basePlan !== undefined) {
+    memoizePlan(normalizedPath, lang, plan)
+  }
   const now = Date.now()
   const fragments = await Promise.all(
     plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang, options))
   )
-  return { ...plan, fragments }
+  return { ...plan, path: normalizedPath, fragments }
 }
 
 type FragmentFetchOptions = {

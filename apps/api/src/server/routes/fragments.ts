@@ -1,9 +1,18 @@
 import { Elysia, t } from 'elysia'
 import { normalizeFragmentLang } from '../../fragments/i18n'
 import { buildFragmentCacheKey } from '../../fragments/store'
-import { buildCacheStatus, getFragmentEntry, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
+import {
+  buildCacheStatus,
+  clearPlanMemo,
+  getFragmentEntry,
+  getFragmentPlan,
+  getMemoizedPlan,
+  memoizeFragmentPlan,
+  streamFragmentsForPath
+} from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
+import { normalizePlanPath } from '../../fragments/planner'
 import type { EarlyHint, FragmentCacheStatus, FragmentPlanEntry, FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
@@ -176,24 +185,30 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/plan',
     async ({ query }) => {
-      const path = typeof query.path === 'string' ? query.path : '/'
+      const rawPath = typeof query.path === 'string' ? query.path : '/'
+      const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
+      if (refresh) {
+        clearPlanMemo(path, lang)
+      }
       const cacheKey = buildFragmentPlanCacheKey(path, lang)
       const cachedValue = refresh ? null : await readCache(cacheKey)
       const cached = cachedValue !== null && isFragmentPlanResponse(cachedValue) ? cachedValue : null
       let plan = cached
+      const memoPlan = refresh ? null : getMemoizedPlan(path, lang)
       const fragmentsByCacheKey = new Map<string, StoredFragment>()
       if (plan === null) {
         const start = performance.now()
-        plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey })
+        plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey, basePlan: memoPlan ?? undefined })
         const elapsed = performance.now() - start
         void recordLatencySample('fragment-plan', elapsed)
         await writeCache(cacheKey, plan, 30)
       }
       const basePlan = stripInitialFragments(plan)
+      memoizeFragmentPlan(path, lang, basePlan)
       if (!includeInitial) return basePlan
       const initialFragments = await buildInitialFragments(basePlan, lang, fragmentsByCacheKey)
       return { ...basePlan, initialFragments }
@@ -210,7 +225,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/stream',
     async ({ query, request }) => {
-      const path = typeof query.path === 'string' ? query.path : '/'
+      const rawPath = typeof query.path === 'string' ? query.path : '/'
+      const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const encoding = resolveStreamEncoding(request)
       const stream = await streamFragmentsForPath(path, lang)
@@ -254,7 +270,8 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
         )
       }
 
-      const path = typeof query.path === 'string' ? query.path : '/'
+      const rawPath = typeof query.path === 'string' ? query.path : '/'
+      const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const start = performance.now()
       const stream = await streamFragmentsForPath(path, lang)
