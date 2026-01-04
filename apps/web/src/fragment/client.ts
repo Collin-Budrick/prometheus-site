@@ -1,4 +1,5 @@
 import type { FragmentPayload, FragmentPlan, HeadOp } from './types'
+import { decodeFragmentPayload } from './binary'
 import {
   getApiBase,
   getWebTransportBase,
@@ -17,19 +18,7 @@ const concat = (a: Uint8Array, b: Uint8Array) => {
 
 type DecodeFragmentPayload = (bytes: Uint8Array) => FragmentPayload
 
-let decoderPromise: Promise<DecodeFragmentPayload> | null = null
-
-const loadDecoder = async (): Promise<DecodeFragmentPayload> => {
-  if (!decoderPromise) {
-    decoderPromise = import('./binary')
-      .then((mod) => mod.decodeFragmentPayload)
-      .catch((error) => {
-        decoderPromise = null
-        throw error
-      })
-  }
-  return decoderPromise
-}
+const loadDecoder = async (): Promise<DecodeFragmentPayload> => decodeFragmentPayload
 
 type WebTransportConstructor = new (url: string, options?: Record<string, unknown>) => {
   ready: Promise<unknown>
