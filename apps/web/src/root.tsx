@@ -4,6 +4,7 @@ import { scheduleIdleTask } from './components/motion-idle'
 import { RouteMotion } from './components/RouteMotion'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
+import { FragmentStatusProvider } from './shared/fragment-status'
 import { LangProvider } from './shared/lang-bridge'
 import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
 import globalStyles from './global.css?inline'
@@ -192,7 +193,9 @@ export default component$(() => {
       <body class="app-shell">
         {clientReady.value ? <ClientExtras /> : null}
         <LangProvider>
-          <RouterOutlet />
+          <FragmentStatusProvider>
+            <RouterOutlet />
+          </FragmentStatusProvider>
         </LangProvider>
       </body>
     </QwikCityProvider>

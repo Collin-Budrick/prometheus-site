@@ -3,6 +3,7 @@ import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPl
 import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
+import { useSharedFragmentStatusSignal } from '../../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import type { Lang } from '../../shared/lang-store'
 import { getFragmentHeaderCopy } from '../../shared/fragment-copy'
@@ -57,7 +58,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const planValue = resolvePlan(plan)
   const initialFragmentMap = resolveFragments(initialFragments)
   const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
-  const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
+  const status = useSharedFragmentStatusSignal()
   const expandedId = useSignal<string | null>(null)
   const layoutTick = useSignal(0)
   const stackScheduler = useSignal<(() => void) | null>(null)
@@ -167,6 +168,15 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       cleanup(() => {
         window.removeEventListener('resize', handleResize)
         teardownObserver()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    ({ cleanup }) => {
+      cleanup(() => {
+        status.value = 'idle'
       })
     },
     { strategy: 'document-ready' }
@@ -357,16 +367,6 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
   return (
     <section class="fragment-shell">
-      <div class="fragment-status">
-        <span class="dot" />
-        <span>
-          {status.value === 'streaming'
-            ? copy.value.fragmentStatusStreaming
-            : status.value === 'error'
-              ? copy.value.fragmentStatusStalled
-              : copy.value.fragmentStatusIdle}
-        </span>
-      </div>
       <div ref={gridRef} class="fragment-grid">
         {planValue.fragments.map((entry, index) => {
           const fragment = fragments.value[entry.id]

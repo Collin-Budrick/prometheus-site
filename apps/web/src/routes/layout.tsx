@@ -4,6 +4,7 @@ import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
@@ -115,6 +116,7 @@ export const RouterHead = component$(() => {
 export default component$(() => {
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
+  const fragmentStatus = useSharedFragmentStatusSignal()
 
   return (
     <div class="layout-shell">
@@ -141,8 +143,20 @@ export default component$(() => {
               {copy.value.navLogin}
             </a>
           </nav>
-          <LanguageToggle />
-          <ThemeToggle />
+          <div class="topbar-controls">
+            <div class="fragment-status">
+              <span class="dot" />
+              <span>
+                {fragmentStatus.value === 'streaming'
+                  ? copy.value.fragmentStatusStreaming
+                  : fragmentStatus.value === 'error'
+                    ? copy.value.fragmentStatusStalled
+                    : copy.value.fragmentStatusIdle}
+              </span>
+            </div>
+            <LanguageToggle />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main data-motion-root data-view-transition="shell-main">
