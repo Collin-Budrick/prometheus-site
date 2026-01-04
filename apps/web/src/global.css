@@ -939,6 +939,7 @@
     background:
       radial-gradient(circle at 50% 25%, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.92) 60%),
       linear-gradient(180deg, rgb(var(--surface) / 0.9), rgb(var(--surface-soft) / 0.7));
+    animation: timer-bloom 420ms ease;
     overflow: hidden;
   }
 
@@ -952,6 +953,7 @@
   }
 
   .preact-island-ui[data-running='true'] .preact-island-stage {
+    animation: timer-bloom 420ms ease;
   }
 
   .preact-island-dial {
