@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { normalizeFragmentLang } from '../../fragments/i18n'
-import { buildFragmentCacheKey } from '../../fragments/store'
+import { buildFragmentCacheKey, readFragmentsByCacheKeys } from '../../fragments/store'
 import {
   buildCacheStatus,
   clearPlanMemo,
@@ -159,13 +159,35 @@ const buildInitialFragments = async (
   const ids = Array.from(new Set(group))
   if (ids.length === 0) return {}
   const base64ByCacheKey = new Map<string, string>()
+
+  const cacheKeyMap = new Map<string, StoredFragment>()
+  const cacheKeys = ids.map((id) => buildFragmentCacheKey(id, lang))
+  cacheKeys.forEach((cacheKey) => {
+    const existing = fragmentsByCacheKey?.get(cacheKey)
+    if (existing !== undefined) {
+      cacheKeyMap.set(cacheKey, existing)
+    }
+  })
+
+  const missingCacheKeys = cacheKeys.filter((cacheKey) => !cacheKeyMap.has(cacheKey))
+  if (missingCacheKeys.length > 0) {
+    const cachedFragments = await readFragmentsByCacheKeys(missingCacheKeys)
+    cachedFragments.forEach((entry, cacheKey) => {
+      if (entry !== null) {
+        cacheKeyMap.set(cacheKey, entry)
+        fragmentsByCacheKey?.set(cacheKey, entry)
+      }
+    })
+  }
+
   const entries = await Promise.all(
     ids.map(async (id) => {
       const cacheKey = buildFragmentCacheKey(id, lang)
-      const existing = fragmentsByCacheKey?.get(cacheKey)
-      const fragment = existing ?? (await getFragmentEntry(id, { lang }))
-      if (existing === undefined && fragmentsByCacheKey !== undefined) {
-        fragmentsByCacheKey.set(cacheKey, fragment)
+      let fragment = cacheKeyMap.get(cacheKey) ?? null
+      if (fragment === null) {
+        fragment = await getFragmentEntry(id, { lang })
+        cacheKeyMap.set(cacheKey, fragment)
+        fragmentsByCacheKey?.set(cacheKey, fragment)
       }
       let encoded = base64ByCacheKey.get(cacheKey)
       if (encoded === undefined) {

@@ -75,22 +75,70 @@ const decodeEntry = (raw: string): StoredFragment | null => {
 
 export const buildFragmentCacheKey = (id: string, lang: FragmentLang) => `${id}::${lang}`
 
+const decodeCacheValue = (value: string | Buffer | null): StoredFragment | null => {
+  if (value === null) return null
+  const normalized = typeof value === 'string' ? value : value.toString()
+  return decodeEntry(normalized)
+}
+
+export const readFragmentsByCacheKeys = async (
+  cacheKeys: string[]
+): Promise<Map<string, StoredFragment | null>> => {
+  const uniqueKeys = Array.from(new Set(cacheKeys))
+  const result = new Map<string, StoredFragment | null>()
+  if (uniqueKeys.length === 0) return result
+
+  if (isValkeyReady()) {
+    try {
+      const [rawValues = []] = await valkey.multi().mGet(uniqueKeys).execAsPipeline()
+      uniqueKeys.forEach((key, index) => {
+        const entry = decodeCacheValue(rawValues[index] ?? null)
+        result.set(key, entry)
+      })
+      return result
+    } catch {
+      uniqueKeys.forEach((key) => result.set(key, null))
+      return result
+    }
+  }
+
+  uniqueKeys.forEach((key) => {
+    result.set(key, memoryStore.get(key) ?? null)
+  })
+  return result
+}
+
 export const readFragment = async (
   id: string,
   lang: FragmentLang = defaultFragmentLang
 ): Promise<StoredFragment | null> => {
   const cacheKey = buildFragmentCacheKey(id, lang)
-  if (isValkeyReady()) {
-    try {
-      const cached = await valkey.get(cacheKey)
-      if (cached === null) return null
-      return decodeEntry(cached)
-    } catch {
-      return null
-    }
-  }
+  const cached = await readFragmentsByCacheKeys([cacheKey])
+  return cached.get(cacheKey) ?? null
+}
 
-  return memoryStore.get(cacheKey) ?? null
+type FragmentWriteEntry = {
+  cacheKey: string
+  entry: StoredFragment
+}
+
+export const writeFragments = async (entries: FragmentWriteEntry[]) => {
+  entries.forEach(({ cacheKey, entry }) => {
+    memoryStore.set(cacheKey, entry)
+  })
+
+  if (!isValkeyReady() || entries.length === 0) return
+
+  try {
+    const pipeline = valkey.multi()
+    entries.forEach(({ cacheKey, entry }) => {
+      const ttlSeconds = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000))
+      pipeline.set(cacheKey, encodeEntry(entry), { EX: ttlSeconds })
+    })
+    await pipeline.execAsPipeline()
+  } catch {
+    // ignore cache write failures
+  }
 }
 
 export const writeFragment = async (
@@ -99,15 +147,7 @@ export const writeFragment = async (
   entry: StoredFragment
 ) => {
   const cacheKey = buildFragmentCacheKey(id, lang)
-  memoryStore.set(cacheKey, entry)
-  if (!isValkeyReady()) return
-
-  const ttlSeconds = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000))
-  try {
-    await valkey.set(cacheKey, encodeEntry(entry), { EX: ttlSeconds })
-  } catch {
-    // ignore cache write failures
-  }
+  await writeFragments([{ cacheKey, entry }])
 }
 
 export const acquireFragmentLock = async (

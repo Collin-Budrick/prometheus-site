@@ -8,6 +8,7 @@ import {
   fragmentLockTtlMs,
   isFragmentLockHeld,
   readFragment,
+  readFragmentsByCacheKeys,
   releaseFragmentLock,
   type StoredFragment,
   writeFragment
@@ -271,13 +272,15 @@ const annotatePlanEntry = async (
   entry: FragmentPlanEntry,
   now: number,
   lang: FragmentLang,
+  cachedFragments: Map<string, StoredFragment | null>,
   options: FragmentPlanOptions
 ): Promise<FragmentPlanEntry> => {
   const definition = getFragmentDefinition(entry.id)
-  const cached = await readFragment(entry.id, lang)
+  const cacheKey = buildFragmentCacheKey(entry.id, lang)
+  const cached = cachedFragments.get(cacheKey) ?? null
 
   if (cached !== null && options.fragmentsByCacheKey !== undefined) {
-    options.fragmentsByCacheKey.set(cached.meta.cacheKey, cached)
+    options.fragmentsByCacheKey.set(cacheKey, cached)
   }
 
   const cache = buildCacheStatus(cached, now)
@@ -305,8 +308,10 @@ export const getFragmentPlan = async (
     memoizePlan(normalizedPath, lang, plan)
   }
   const now = Date.now()
+  const cacheKeys = plan.fragments.map((entry) => buildFragmentCacheKey(entry.id, lang))
+  const cachedFragments = await readFragmentsByCacheKeys(cacheKeys)
   const fragments = await Promise.all(
-    plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang, options))
+    plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang, cachedFragments, options))
   )
   return { ...plan, path: normalizedPath, fragments }
 }
