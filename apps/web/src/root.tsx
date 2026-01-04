@@ -107,11 +107,15 @@ const PrefetchSignals = component$(() => {
 
       if (!isPrefetchEnabled(import.meta.env)) return
 
+      const hasFragmentLinks = () =>
+        typeof document !== 'undefined' && document.querySelector('a[data-fragment-link]') !== null
+
       let stopPrefetch: (() => void) | undefined
       let cancelled = false
 
       const startPrefetch = () => {
         if (cancelled) return
+        if (!hasFragmentLinks()) return
         initQuicklinkPrefetch(import.meta.env, true)
           .then((stop) => {
             if (cancelled) {

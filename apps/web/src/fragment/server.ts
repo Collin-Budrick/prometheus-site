@@ -34,11 +34,14 @@ export const loadFragmentPlan = async (
   lang?: string
 ): Promise<FragmentPlanResult> => {
   const api = getApiBase(env)
-  const params = new URLSearchParams({ path, includeInitial: '1' })
+  const cached = getCachedPlan(path, lang)
+  const params = new URLSearchParams({ path })
+  if (!cached?.initialFragments) {
+    params.set('includeInitial', '1')
+  }
   if (lang) {
     params.set('lang', lang)
   }
-  const cached = getCachedPlan(path, lang)
   const response = await fetch(`${api}/fragments/plan?${params.toString()}`, {
     headers: cached?.etag ? { 'If-None-Match': cached.etag } : undefined
   })
@@ -54,7 +57,7 @@ export const loadFragmentPlan = async (
   const payload = (await response.json()) as FragmentPlanResponse
   const hasInitialFragments = Object.prototype.hasOwnProperty.call(payload, 'initialFragments')
   const { initialFragments, ...plan } = payload
-  const decoded = hasInitialFragments ? decodeInitialFragments(initialFragments ?? {}) : undefined
+  const decoded = hasInitialFragments ? decodeInitialFragments(initialFragments ?? {}) : cached?.initialFragments
   const etag = response.headers.get('etag')
   const result: FragmentPlanResult = { plan: plan as FragmentPlan, initialFragments: decoded }
   if (etag) {

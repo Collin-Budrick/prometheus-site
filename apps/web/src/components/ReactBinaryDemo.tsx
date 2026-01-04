@@ -109,12 +109,44 @@ export const ReactBinaryDemo = component$(() => {
     const active = track(() => copy.stages[stageIndex.value]?.id === 'binary')
     if (!active) return
 
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedMotion) return
+
     const update = () => {
       binaryChunks.value = binaryChunks.value.map((chunk) => randomBits(chunk.length))
     }
-    update()
-    const interval = window.setInterval(update, 700)
-    cleanup(() => window.clearInterval(interval))
+
+    let interval: number | null = null
+
+    const clear = () => {
+      if (interval !== null) {
+        window.clearInterval(interval)
+        interval = null
+      }
+    }
+
+    const start = () => {
+      if (interval !== null) return
+      if (document.visibilityState !== 'visible') return
+      update()
+      interval = window.setInterval(update, 700)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        start()
+      } else {
+        clear()
+      }
+    }
+
+    start()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    cleanup(() => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      clear()
+    })
   })
 
   return (

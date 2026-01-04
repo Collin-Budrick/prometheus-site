@@ -93,6 +93,7 @@ export const buildSpeculationRulesForPlan = (
     knownFragments?: FragmentPayloadMap | null
     origin?: string
     documentRef?: PrefetchDocument | null
+    currentPath?: string
   }
 ): SpeculationRulesProps | null => {
   const origin = toOrigin(options?.origin)
@@ -107,10 +108,19 @@ export const buildSpeculationRulesForPlan = (
   const urls = new Set<string>()
   const encodedPath = encodeURIComponent(plan.path || '/')
 
-  urls.add(joinApiPath(absoluteApiBase, `/fragments/plan?path=${encodedPath}`))
-  urls.add(joinApiPath(absoluteApiBase, `/fragments/stream?path=${encodedPath}`))
-
   const knownIds = new Set(Object.keys(options?.knownFragments ?? {}))
+  const currentPath =
+    options?.currentPath ??
+    (typeof window !== 'undefined' && window.location?.pathname ? window.location.pathname : null)
+  const shouldSkipCurrentRouteSpeculation = Boolean(
+    currentPath && plan.path === currentPath && (knownIds.size > 0 || options?.knownFragments)
+  )
+
+  if (!shouldSkipCurrentRouteSpeculation) {
+    urls.add(joinApiPath(absoluteApiBase, `/fragments/plan?path=${encodedPath}`))
+    urls.add(joinApiPath(absoluteApiBase, `/fragments/stream?path=${encodedPath}`))
+  }
+
   plan.fragments.forEach(({ id }) => {
     if (knownIds.has(id)) return
     urls.add(joinApiPath(absoluteApiBase, `/fragments?id=${encodeURIComponent(id)}`))

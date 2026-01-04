@@ -13,6 +13,9 @@ const normalizeApiHref = (apiBase: string) => {
   return `${window.location.origin}${apiBase}`
 }
 
+const hasFragmentLinkAnchors = () =>
+  typeof document !== 'undefined' && document.querySelector('a[data-fragment-link]') !== null
+
 const shouldIgnoreTarget = (apiBase: string) => {
   const normalizedApiHref = normalizeApiHref(apiBase)
 
@@ -39,6 +42,11 @@ const shouldIgnoreTarget = (apiBase: string) => {
 export const isPrefetchEnabled = (env: EnvConfig) => isTruthyFlag(env.VITE_ENABLE_PREFETCH)
 
 export const initQuicklinkPrefetch = async (env: EnvConfig, log = false) => {
+  if (!hasFragmentLinkAnchors()) {
+    if (log) console.info('[prefetch] Skipping Quicklink initialization (no fragment links)')
+    return () => {}
+  }
+
   const apiBase = resolveApiBase(env)
   const { listen } = await import('quicklink')
 

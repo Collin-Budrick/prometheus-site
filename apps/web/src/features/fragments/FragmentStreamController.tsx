@@ -21,6 +21,7 @@ const FRAGMENT_SELECTOR = '[data-fragment-id]'
 const FRAGMENT_ROOT_MARGIN = '60% 0px'
 const FRAGMENT_THRESHOLD = 0.01
 const STREAM_FALLBACK_DELAY = 450
+const STREAM_STALL_TIMEOUT = 900
 
 type FragmentStreamControllerProps = {
   plan: FragmentPlanValue
@@ -38,11 +39,15 @@ export const FragmentStreamController = component$(
     useVisibleTask$(
       ({ cleanup, track }) => {
         let active = true
-        const controller = new AbortController()
+        const streamController = new AbortController()
+        const fetchControllers = new Set<AbortController>()
         const inFlight = new Set<string>()
         const needed = new Set<string>()
         const pending = new Map<string, FragmentPayload>()
         const fallbackTimers = new Map<string, number>()
+        const fallbackCandidates = new Set<string>()
+        let fallbackArmed = false
+        let fallbackStallTimer: number | null = null
         let hmrTimer: number | null = null
         const observed = new WeakSet<Element>()
         const elementsById = new Map<string, HTMLElement>()
@@ -57,6 +62,18 @@ export const FragmentStreamController = component$(
         const refreshIds = new Set<string>()
         const shouldAnimateLangSwap = langChanged
         let langTransitionInFlight = false
+        let streamReceivedFrame = false
+        let stalledBeforeFirstFrame = false
+
+        const registerFetchController = () => {
+          const ctrl = new AbortController()
+          fetchControllers.add(ctrl)
+          return ctrl
+        }
+
+        const finalizeFetchController = (ctrl: AbortController) => {
+          fetchControllers.delete(ctrl)
+        }
 
         if (!fragments.value || !Object.keys(fragments.value).length) {
           fragments.value = resolveFragments(initialFragments) ?? {}
@@ -82,6 +99,7 @@ export const FragmentStreamController = component$(
             window.clearTimeout(timer)
             fallbackTimers.delete(payload.id)
           }
+          fallbackCandidates.delete(payload.id)
           refreshIds.delete(payload.id)
           pending.set(payload.id, payload)
           queued.add(payload.id)
@@ -170,7 +188,8 @@ export const FragmentStreamController = component$(
           ids.forEach((id) => {
             if (inFlight.has(id)) return
             inFlight.add(id)
-            fetchFragment(id, { refresh: true, lang: activeLang })
+            const refreshController = registerFetchController()
+            fetchFragment(id, { refresh: true, lang: activeLang, signal: refreshController.signal })
               .then((payload) => {
                 if (!active) return
                 applyPayload(payload)
@@ -182,6 +201,7 @@ export const FragmentStreamController = component$(
                 status.value = 'error'
               })
               .finally(() => {
+                finalizeFetchController(refreshController)
                 inFlight.delete(id)
                 markIdle()
               })
@@ -241,22 +261,72 @@ export const FragmentStreamController = component$(
           }
 
           if (useBatch) {
-            fetchFragmentBatch(batchable, { lang: activeLang })
+            const batchController = registerFetchController()
+            fetchFragmentBatch(batchable, { lang: activeLang, signal: batchController.signal })
               .then((payloads) => {
                 Object.values(payloads).forEach(handlePayload)
               })
               .catch(handleError)
               .finally(() => {
+                finalizeFetchController(batchController)
                 handleFinally(batchable.map((entry) => entry.id))
               })
             return
           }
 
           const entry = batchable[0]
-          fetchFragment(entry.id, { lang: activeLang, refresh: entry.refresh })
+          const fragmentController = registerFetchController()
+          fetchFragment(entry.id, { lang: activeLang, refresh: entry.refresh, signal: fragmentController.signal })
             .then(handlePayload)
             .catch(handleError)
-            .finally(() => handleFinally([entry.id]))
+            .finally(() => {
+              finalizeFetchController(fragmentController)
+              handleFinally([entry.id])
+            })
+        }
+
+        const scheduleFallbackForId = (id: string) => {
+          if (fallbackTimers.has(id)) return
+          const run = () => {
+            fallbackTimers.delete(id)
+            if (!active) return
+            if (streamActive && !streamDone && !stalledBeforeFirstFrame) {
+              const retry = window.setTimeout(run, STREAM_FALLBACK_DELAY)
+              fallbackTimers.set(id, retry)
+              return
+            }
+            const needsRefresh = refreshIds.has(id)
+            if ((!needsRefresh && fragments.value[id]) || pending.has(id) || inFlight.has(id)) return
+            fallbackCandidates.delete(id)
+            fetchMissing([id])
+          }
+          const timer = window.setTimeout(run, STREAM_FALLBACK_DELAY)
+          fallbackTimers.set(id, timer)
+        }
+
+        const schedulePendingFallbacks = () => {
+          fallbackCandidates.forEach((id) => {
+            if (refreshIds.has(id) || !fragments.value[id] || pending.has(id)) {
+              scheduleFallbackForId(id)
+            }
+            fallbackCandidates.delete(id)
+          })
+        }
+
+        const armFallbacks = () => {
+          if (fallbackArmed) return
+          fallbackArmed = true
+          schedulePendingFallbacks()
+        }
+
+        const startFallbackStallTimer = () => {
+          if (fallbackStallTimer || fallbackArmed) return
+          fallbackStallTimer = window.setTimeout(() => {
+            fallbackStallTimer = null
+            if (!active || streamReceivedFrame) return
+            stalledBeforeFirstFrame = true
+            armFallbacks()
+          }, STREAM_STALL_TIMEOUT)
         }
 
         const fetchMissingNeeded = () => {
@@ -264,16 +334,28 @@ export const FragmentStreamController = component$(
             (id) => (refreshIds.has(id) || !fragments.value[id]) && !pending.has(id)
           )
           if (!missing.length) return
+          missing.forEach((id) => fallbackCandidates.delete(id))
           fetchMissing(missing)
         }
 
         const startStream = () => {
           if (!active || streamActive || streamDone) return
           streamActive = true
+          streamReceivedFrame = false
+          stalledBeforeFirstFrame = false
           setStreaming()
+          startFallbackStallTimer()
 
           const handleFragment = (payload: FragmentPayload) => {
             if (!active) return
+            if (!streamReceivedFrame) {
+              streamReceivedFrame = true
+              if (fallbackStallTimer) {
+                window.clearTimeout(fallbackStallTimer)
+                fallbackStallTimer = null
+              }
+              armFallbacks()
+            }
             refreshIds.delete(payload.id)
             pending.set(payload.id, payload)
             if (needed.has(payload.id)) {
@@ -281,18 +363,26 @@ export const FragmentStreamController = component$(
             }
           }
 
-          streamFragments(path, handleFragment, undefined, controller.signal, activeLang)
+          streamFragments(path, handleFragment, undefined, streamController.signal, activeLang)
             .then(() => {
               streamActive = false
               streamDone = true
+              if (fallbackStallTimer) {
+                window.clearTimeout(fallbackStallTimer)
+                fallbackStallTimer = null
+              }
               markIdle()
               fetchMissingNeeded()
             })
             .catch((error) => {
               streamActive = false
               streamDone = true
+              if (fallbackStallTimer) {
+                window.clearTimeout(fallbackStallTimer)
+                fallbackStallTimer = null
+              }
               if (!active) return
-              if ((error as Error)?.name === 'AbortError' || controller.signal.aborted) {
+              if ((error as Error)?.name === 'AbortError' || streamController.signal.aborted) {
                 markIdle()
                 return
               }
@@ -336,15 +426,11 @@ export const FragmentStreamController = component$(
 
           startStream()
           missing.forEach((id) => {
-            if (fallbackTimers.has(id)) return
-            const timer = window.setTimeout(() => {
-              fallbackTimers.delete(id)
-              if (!active) return
-              const needsRefresh = refreshIds.has(id)
-              if ((!needsRefresh && fragments.value[id]) || pending.has(id) || inFlight.has(id)) return
-              fetchMissing([id])
-            }, STREAM_FALLBACK_DELAY)
-            fallbackTimers.set(id, timer)
+            if (fallbackArmed) {
+              scheduleFallbackForId(id)
+            } else {
+              fallbackCandidates.add(id)
+            }
           })
         }
 
@@ -395,13 +481,20 @@ export const FragmentStreamController = component$(
 
         cleanup(() => {
           active = false
-          controller.abort()
+          streamController.abort()
+          fetchControllers.forEach((ctrl) => ctrl.abort())
+          fetchControllers.clear()
           observer?.disconnect()
           inFlight.clear()
           needed.clear()
           pending.clear()
           fallbackTimers.forEach((timer) => window.clearTimeout(timer))
           fallbackTimers.clear()
+          fallbackCandidates.clear()
+          if (fallbackStallTimer) {
+            window.clearTimeout(fallbackStallTimer)
+            fallbackStallTimer = null
+          }
           queued.clear()
           if (flushHandle !== null) {
             window.cancelAnimationFrame(flushHandle)
