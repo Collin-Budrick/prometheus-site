@@ -30,8 +30,8 @@
     --view-transition-duration: 620ms;
     --view-transition-duration-long: 520ms;
     --view-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
-    --lang-transition-duration: 720ms;
-    --theme-transition-duration: 720ms;
+    --lang-transition-duration: 1720ms;
+    --theme-transition-duration: 1720ms;
     --skeleton-base: 226 232 240;
     --skeleton-highlight: 248 250 252;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
