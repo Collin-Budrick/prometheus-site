@@ -57,6 +57,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const status = useSignal<'idle' | 'streaming' | 'error'>('idle')
   const expandedId = useSignal<string | null>(null)
   const layoutTick = useSignal(0)
+  const stackScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const initialReady =
@@ -135,12 +136,128 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   )
 
   useVisibleTask$(
+    ({ cleanup }) => {
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      if (!grid || typeof ResizeObserver === 'undefined') return
+
+      const cardHeights = new WeakMap<HTMLElement, number>()
+      const observedCards = new WeakSet<HTMLElement>()
+      let frame = 0
+
+      const schedule = () => {
+        if (frame) return
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          if (window.innerWidth < 1025) {
+            grid.classList.remove('is-stacked')
+            return
+          }
+
+          const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
+            (element) => !element.classList.contains('is-expanded')
+          )
+          if (!cards.length) return
+          const heights = cards.map((card) => cardHeights.get(card) ?? 0).filter((height) => height > 0)
+          if (!heights.length) return
+
+          const maxHeight = Math.max(...heights)
+          const baseThreshold = Math.max(520, window.innerHeight * 0.65)
+          const isStacked = grid.classList.contains('is-stacked')
+          const threshold = isStacked ? baseThreshold * 0.85 : baseThreshold
+          const shouldStack = maxHeight >= threshold
+
+          if (shouldStack) {
+            grid.classList.add('is-stacked')
+          } else {
+            grid.classList.remove('is-stacked')
+          }
+        })
+      }
+
+      stackScheduler.value = schedule
+
+      const cardObserver = new ResizeObserver((entries) => {
+        let changed = false
+        entries.forEach((entry) => {
+          if (!(entry.target instanceof HTMLElement)) return
+          const height = entry.contentRect.height
+          if (height <= 0) return
+          const previous = cardHeights.get(entry.target)
+          if (previous === undefined || Math.abs(previous - height) > 0.5) {
+            cardHeights.set(entry.target, height)
+            changed = true
+          }
+        })
+        if (changed) schedule()
+      })
+
+      const collectCards = (root: ParentNode) =>
+        root instanceof HTMLElement && root.matches('.fragment-card')
+          ? [root, ...Array.from(root.querySelectorAll<HTMLElement>('.fragment-card'))]
+          : Array.from(root.querySelectorAll<HTMLElement>('.fragment-card'))
+
+      const observeCards = (root: ParentNode) => {
+        collectCards(root).forEach((card) => {
+          if (observedCards.has(card)) return
+          observedCards.add(card)
+          cardObserver.observe(card)
+        })
+      }
+
+      const unobserveCards = (root: ParentNode) => {
+        collectCards(root).forEach((card) => {
+          cardObserver.unobserve(card)
+          observedCards.delete(card)
+        })
+      }
+
+      observeCards(grid)
+      schedule()
+
+      const mutationObserver = new MutationObserver((records) => {
+        records.forEach((record) => {
+          record.addedNodes.forEach((node) => {
+            if (node instanceof HTMLElement) observeCards(node)
+          })
+          record.removedNodes.forEach((node) => {
+            if (node instanceof HTMLElement) unobserveCards(node)
+          })
+        })
+        schedule()
+      })
+
+      mutationObserver.observe(grid, { childList: true, subtree: true })
+
+      const handleResize = () => schedule()
+      window.addEventListener('resize', handleResize)
+
+      cleanup(() => {
+        stackScheduler.value = null
+        mutationObserver.disconnect()
+        cardObserver.disconnect()
+        if (frame) cancelAnimationFrame(frame)
+        window.removeEventListener('resize', handleResize)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    ({ track }) => {
+      track(() => expandedId.value)
+      stackScheduler.value?.()
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
     ({ track, cleanup }) => {
       track(() => layoutTick.value)
       track(() => expandedId.value)
       if (typeof window === 'undefined') return
       const grid = gridRef.value
-      if (!grid) return
+      if (!grid || typeof ResizeObserver !== 'undefined') return
 
       let frame = requestAnimationFrame(() => {
         frame = 0

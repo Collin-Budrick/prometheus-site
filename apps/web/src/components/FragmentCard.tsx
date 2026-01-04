@@ -65,10 +65,10 @@ export const FragmentCard = component$<FragmentCardProps>(
 
       const placeholder = placeholderRef.value
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const computed = window.getComputedStyle(card)
       const pendingRect = pendingRects.get(card)
       const firstRect = pendingRect ?? previousRects.get(card)
-      const firstRadius = pendingRadii.get(card) ?? previousRadii.get(card) ?? computed.borderRadius
+      const storedRadius = pendingRadii.get(card) ?? previousRadii.get(card)
+      const firstRadius = storedRadius ?? window.getComputedStyle(card).borderRadius
       let cancelled = false
 
       cleanup(() => {
@@ -184,6 +184,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     useVisibleTask$(
       ({ track, cleanup }) => {
         track(() => langSignal.value)
+        if (typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
         if (!card) return
         let frame = requestAnimationFrame(() => {
@@ -205,7 +206,6 @@ export const FragmentCard = component$<FragmentCardProps>(
       ({ cleanup }) => {
         const card = cardRef.value
         if (!card || typeof ResizeObserver === 'undefined') return
-        let resizeFrame: number | null = null
         const observer = new ResizeObserver((entries) => {
           if (expandedId.value === id) return
           const entry = entries[0]
@@ -224,18 +224,7 @@ export const FragmentCard = component$<FragmentCardProps>(
 
           if (widthChanged) {
             lastWidth.value = width
-            maxHeight.value = null
-            if (resizeFrame !== null) {
-              cancelAnimationFrame(resizeFrame)
-            }
-            resizeFrame = requestAnimationFrame(() => {
-              resizeFrame = null
-              if (expandedId.value === id) return
-              const nextHeight = card.getBoundingClientRect().height
-              if (nextHeight > 0) {
-                maxHeight.value = nextHeight
-              }
-            })
+            maxHeight.value = height > 0 ? height : null
             return
           }
 
@@ -246,9 +235,6 @@ export const FragmentCard = component$<FragmentCardProps>(
         observer.observe(card)
         cleanup(() => {
           observer.disconnect()
-          if (resizeFrame !== null) {
-            cancelAnimationFrame(resizeFrame)
-          }
         })
       },
       { strategy: 'document-ready' }
