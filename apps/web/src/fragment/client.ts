@@ -57,6 +57,7 @@ const appliedCss = new Map<string, HTMLStyleElement>()
 const appliedHeadCounts = new Map<string, number>()
 const appliedHeadElements = new Map<string, HTMLElement>()
 const fragmentHeadKeys = new Map<string, Set<string>>()
+const appliedFragmentVersions = new Map<string, string>()
 
 const getFragmentHeadKeys = (id: string) => {
   let keys = fragmentHeadKeys.get(id)
@@ -67,10 +68,22 @@ const getFragmentHeadKeys = (id: string) => {
   return keys
 }
 
+const buildFragmentVersion = (payload: FragmentPayload) => {
+  const { cacheKey } = payload.meta
+  if (payload.cacheUpdatedAt !== undefined) {
+    return `${cacheKey}:${payload.cacheUpdatedAt}`
+  }
+  return cacheKey
+}
+
 export const applyFragmentEffects = (payload: FragmentPayload) => {
   if (typeof document === 'undefined') return
 
+  const version = buildFragmentVersion(payload)
+  if (appliedFragmentVersions.get(payload.id) === version) return
+
   teardownFragmentEffects([payload.id])
+  appliedFragmentVersions.set(payload.id, version)
 
   if (payload.css && !appliedCss.has(payload.id)) {
     const style = document.createElement('style')
@@ -117,6 +130,7 @@ const applyHeadOp = (op: HeadOp) => {
 }
 
 export const teardownFragmentEffects = (fragmentIds: string[]) => {
+  fragmentIds.forEach((id) => appliedFragmentVersions.delete(id))
   if (typeof document === 'undefined') return
 
   fragmentIds.forEach((id) => {
@@ -166,6 +180,13 @@ type FetchFragmentOptions = {
   lang?: string
 }
 
+const parseCacheUpdatedAt = (headers: Headers) => {
+  const raw = headers.get('x-fragment-cache-updated')
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 export const fetchFragment = async (id: string, options: FetchFragmentOptions = {}): Promise<FragmentPayload> => {
   const api = getApiBase()
   const params = new URLSearchParams({ id })
@@ -182,9 +203,10 @@ export const fetchFragment = async (id: string, options: FetchFragmentOptions = 
     throw new Error(`Fragment fetch failed: ${response.status}`)
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
+  const cacheUpdatedAt = parseCacheUpdatedAt(response.headers)
   const decodeFragmentPayload = await loadDecoder()
   const payload = decodeFragmentPayload(bytes)
-  return { ...payload, id }
+  return { ...payload, id, cacheUpdatedAt }
 }
 
 const getWebTransportCtor = () =>
