@@ -3,7 +3,7 @@ import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { FragmentShell } from '../features/fragments'
 import { getApiBase } from '../fragment/config'
 import { loadFragmentPlan, loadFragments } from '../fragment/server'
-import { defaultLang, normalizeLang, readLangFromCookie } from '../shared/lang-store'
+import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import type {
   FragmentPayload,
   FragmentPayloadMap,
@@ -72,6 +72,7 @@ type FragmentResource = {
   plan: FragmentPlanValue
   fragments: FragmentPayloadValue
   path: string
+  lang: Lang
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
@@ -103,7 +104,8 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
     return {
       plan: plan as FragmentPlanValue,
       fragments: fragments as FragmentPayloadValue,
-      path: plan.path
+      path: plan.path,
+      lang
     }
   } catch (error) {
     console.error('Fragment plan fetch failed', error)
@@ -125,7 +127,8 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       fragments: {
         [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
       } as FragmentPayloadValue,
-      path
+      path,
+      lang
     }
   }
 })
@@ -134,15 +137,29 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const data = fragmentResource.value
 
-  return <FragmentShell plan={data.plan} initialFragments={data.fragments} path={data.path} />
+  return (
+    <FragmentShell
+      plan={data.plan}
+      initialFragments={data.fragments}
+      path={data.path}
+      initialLang={normalizeLang(data.lang)}
+    />
+  )
 })
 
-export const head: DocumentHead = {
-  title: 'Fragment Prime | Binary Rendering OS',
-  meta: [
-    {
-      name: 'description',
-      content: 'Binary-first rendering pipeline with fragment-addressable delivery and edge-ready caching.'
+export const head: DocumentHead<FragmentResource> = ({ resolveValue }) => {
+  const data = resolveValue(useFragmentResource)
+  const lang = data?.lang ?? defaultLang
+  return {
+    title: 'Fragment Prime | Binary Rendering OS',
+    meta: [
+      {
+        name: 'description',
+        content: 'Binary-first rendering pipeline with fragment-addressable delivery and edge-ready caching.'
+      }
+    ],
+    htmlAttributes: {
+      lang
     }
-  ]
+  }
 }
