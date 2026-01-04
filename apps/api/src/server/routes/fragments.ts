@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia'
 import { normalizeFragmentLang } from '../../fragments/i18n'
-import { buildCacheStatus, getFragmentEntry, getFragmentPayload, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
+import { buildFragmentCacheKey } from '../../fragments/store'
+import { buildCacheStatus, getFragmentEntry, getFragmentPlan, streamFragmentsForPath } from '../../fragments/service'
 import { buildFragmentPlanCacheKey, buildCacheControlHeader, readCache, recordLatencySample, writeCache } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
 import type { EarlyHint, FragmentCacheStatus, FragmentPlanEntry, FragmentPlanInitialPayloads, FragmentPlanResponse } from '../../fragments/types'
@@ -139,7 +140,8 @@ const stripInitialFragments = (plan: FragmentPlanResponse) => {
 
 const buildInitialFragments = async (
   plan: FragmentPlanResponse,
-  lang: ReturnType<typeof normalizeFragmentLang>
+  lang: ReturnType<typeof normalizeFragmentLang>,
+  fragmentsByCacheKey?: Map<string, StoredFragment>
 ): Promise<FragmentPlanInitialPayloads> => {
   const group =
     plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
@@ -147,8 +149,22 @@ const buildInitialFragments = async (
       : plan.fragments.map((entry) => entry.id)
   const ids = Array.from(new Set(group))
   if (ids.length === 0) return {}
+  const base64ByCacheKey = new Map<string, string>()
   const entries = await Promise.all(
-    ids.map(async (id) => [id, Buffer.from(await getFragmentPayload(id, { lang })).toString('base64')] as const)
+    ids.map(async (id) => {
+      const cacheKey = buildFragmentCacheKey(id, lang)
+      const existing = fragmentsByCacheKey?.get(cacheKey)
+      const fragment = existing ?? (await getFragmentEntry(id, { lang }))
+      if (existing === undefined && fragmentsByCacheKey !== undefined) {
+        fragmentsByCacheKey.set(cacheKey, fragment)
+      }
+      let encoded = base64ByCacheKey.get(cacheKey)
+      if (encoded === undefined) {
+        encoded = Buffer.from(fragment.payload).toString('base64')
+        base64ByCacheKey.set(cacheKey, encoded)
+      }
+      return [id, encoded] as const
+    })
   )
   return entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
     acc[id] = payload
@@ -169,16 +185,17 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       const cachedValue = refresh ? null : await readCache(cacheKey)
       const cached = cachedValue !== null && isFragmentPlanResponse(cachedValue) ? cachedValue : null
       let plan = cached
+      const fragmentsByCacheKey = new Map<string, StoredFragment>()
       if (plan === null) {
         const start = performance.now()
-        plan = await getFragmentPlan(path, lang)
+        plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey })
         const elapsed = performance.now() - start
         void recordLatencySample('fragment-plan', elapsed)
         await writeCache(cacheKey, plan, 30)
       }
       const basePlan = stripInitialFragments(plan)
       if (!includeInitial) return basePlan
-      const initialFragments = await buildInitialFragments(basePlan, lang)
+      const initialFragments = await buildInitialFragments(basePlan, lang, fragmentsByCacheKey)
       return { ...basePlan, initialFragments }
     },
     {

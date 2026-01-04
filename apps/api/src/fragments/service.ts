@@ -198,13 +198,23 @@ export const buildCacheStatus = (cached: StoredFragment | null, now: number): Fr
   return { status: 'miss', ...base }
 }
 
+type FragmentPlanOptions = {
+  fragmentsByCacheKey?: Map<string, StoredFragment>
+}
+
 const annotatePlanEntry = async (
   entry: FragmentPlanEntry,
   now: number,
-  lang: FragmentLang
+  lang: FragmentLang,
+  options: FragmentPlanOptions
 ): Promise<FragmentPlanEntry> => {
   const definition = getFragmentDefinition(entry.id)
   const cached = await readFragment(entry.id, lang)
+
+  if (cached !== null && options.fragmentsByCacheKey !== undefined) {
+    options.fragmentsByCacheKey.set(cached.meta.cacheKey, cached)
+  }
+
   const cache = buildCacheStatus(cached, now)
 
   if (cache.status !== 'hit') {
@@ -220,11 +230,14 @@ const annotatePlanEntry = async (
 
 export const getFragmentPlan = async (
   path: string,
-  lang: FragmentLang = defaultFragmentLang
+  lang: FragmentLang = defaultFragmentLang,
+  options: FragmentPlanOptions = {}
 ): Promise<FragmentPlan> => {
   const plan = planForPath(path)
   const now = Date.now()
-  const fragments = await Promise.all(plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang)))
+  const fragments = await Promise.all(
+    plan.fragments.map((entry) => annotatePlanEntry(entry, now, lang, options))
+  )
   return { ...plan, fragments }
 }
 
