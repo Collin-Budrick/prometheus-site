@@ -1,65 +1,53 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
-
-type Theme = 'light' | 'dark'
+import {
+  applyTheme as applyStoredTheme,
+  initTheme,
+  readStoredTheme,
+  subscribeTheme,
+  theme as themeStore,
+  type Theme
+} from '../shared/theme-store'
 
 type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => { finished: Promise<void> }
 }
 
-const STORAGE_KEY = 'prometheus-theme'
-const LIGHT_THEME_COLOR = '#f97316'
-const DARK_THEME_COLOR = '#0f172a'
-
 export const ThemeToggle = component$(() => {
-  const theme = useSignal<Theme>('light')
+  const themeSignal = useSignal<Theme>(themeStore.value)
   const hasStoredPreference = useSignal(false)
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
 
   useVisibleTask$(({ cleanup }) => {
-    const applyTheme = (next: Theme) => {
-      theme.value = next
-      document.documentElement.dataset.theme = next
-      document.documentElement.style.colorScheme = next
-      const meta = document.querySelector('meta[name="theme-color"]')
-      if (meta) {
-        meta.setAttribute('content', next === 'dark' ? DARK_THEME_COLOR : LIGHT_THEME_COLOR)
-      }
-    }
+    hasStoredPreference.value = readStoredTheme() !== null
+    themeSignal.value = initTheme()
 
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    if (stored === 'light' || stored === 'dark') {
-      hasStoredPreference.value = true
-      applyTheme(stored)
-    } else {
-      applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    }
+    const dispose = subscribeTheme((value) => {
+      if (themeSignal.value === value) return
+      themeSignal.value = value
+    })
 
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const handleChange = (event: MediaQueryListEvent) => {
       if (hasStoredPreference.value) return
-      applyTheme(event.matches ? 'dark' : 'light')
+      applyStoredTheme(event.matches ? 'dark' : 'light', { persist: false })
     }
 
     media.addEventListener('change', handleChange)
-    cleanup(() => media.removeEventListener('change', handleChange))
+    cleanup(() => {
+      media.removeEventListener('change', handleChange)
+      dispose()
+    })
   })
 
   const toggleTheme = $(() => {
     if (typeof document === 'undefined') return
-    const nextTheme: Theme = theme.value === 'dark' ? 'light' : 'dark'
+    const nextTheme: Theme = themeSignal.value === 'dark' ? 'light' : 'dark'
     document.documentElement.dataset.themeDirection = nextTheme
-    const applyTheme = () => {
-      theme.value = nextTheme
+    const applyNextTheme = () => {
       hasStoredPreference.value = true
-      document.documentElement.dataset.theme = nextTheme
-      document.documentElement.style.colorScheme = nextTheme
-      window.localStorage.setItem(STORAGE_KEY, nextTheme)
-      const meta = document.querySelector('meta[name="theme-color"]')
-      if (meta) {
-        meta.setAttribute('content', nextTheme === 'dark' ? DARK_THEME_COLOR : LIGHT_THEME_COLOR)
-      }
+      applyStoredTheme(nextTheme)
     }
 
     const doc = document as DocumentWithViewTransition
@@ -68,21 +56,21 @@ export const ThemeToggle = component$(() => {
       window.matchMedia('(prefers-reduced-motion: no-preference)').matches
 
     if (!supportsTransition) {
-      applyTheme()
+      applyNextTheme()
       delete document.documentElement.dataset.themeDirection
       return
     }
 
     try {
       const transition = doc.startViewTransition(() => {
-        applyTheme()
+        applyNextTheme()
       })
 
       transition.finished.finally(() => {
         delete document.documentElement.dataset.themeDirection
       })
     } catch {
-      applyTheme()
+      applyNextTheme()
       delete document.documentElement.dataset.themeDirection
     }
   })
@@ -91,15 +79,17 @@ export const ThemeToggle = component$(() => {
     <button
       class="theme-toggle"
       type="button"
-      data-theme={theme.value}
-      aria-pressed={theme.value === 'dark'}
-      aria-label={theme.value === 'dark' ? copy.value.themeAriaToLight : copy.value.themeAriaToDark}
+      data-theme={themeSignal.value}
+      aria-pressed={themeSignal.value === 'dark'}
+      aria-label={themeSignal.value === 'dark' ? copy.value.themeAriaToLight : copy.value.themeAriaToDark}
       onClick$={() => {
         toggleTheme()
       }}
     >
       <span class="theme-toggle-indicator" aria-hidden="true" />
-      <span class="theme-toggle-label">{theme.value === 'dark' ? copy.value.themeDark : copy.value.themeLight}</span>
+      <span class="theme-toggle-label">
+        {themeSignal.value === 'dark' ? copy.value.themeDark : copy.value.themeLight}
+      </span>
     </button>
   )
 })
