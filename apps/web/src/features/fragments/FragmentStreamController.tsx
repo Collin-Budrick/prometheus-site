@@ -96,7 +96,7 @@ export const FragmentStreamController = component$(
               hasLangRefresh = true
             }
             applyFragmentEffects(payload)
-            next ??= structuredClone(current)
+            next ??= { ...current }
             next[id] = payload
             const element = elementsById.get(id)
             if (element && observer) {
