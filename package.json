@@ -31,7 +31,7 @@
     "@oxlint-tsgolint/linux-arm64": "^0.10.1",
     "@oxlint-tsgolint/win32-arm64": "^0.10.1",
     "@oxlint/win32-arm64": "^1.36.0",
-    "@playwright/test": "^1.58.0-alpha-2026-01-03",
+    "@playwright/test": "^1.58.0-alpha-2026-01-04",
     "lefthook": "^2.0.13",
     "oxlint-tsgolint": "^0.10.1"
   }
