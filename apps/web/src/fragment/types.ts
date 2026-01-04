@@ -30,6 +30,7 @@ export type RenderNode = {
 
 export type FragmentPayload = {
   id: string
+  cacheUpdatedAt?: number
   tree: RenderNode
   head: HeadOp[]
   css: string
