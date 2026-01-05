@@ -13,7 +13,7 @@ export default createQwikCity({
     const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
     const theme = requestEv ? readThemeFromCookie(requestEv.request.headers.get('cookie')) : null
     const containerAttributes: Record<string, string> = {
-      ...(opts.containerAttributes ?? {}),
+      ...opts.containerAttributes,
       lang,
       'data-initial-fade': 'pending'
     }
