@@ -152,19 +152,6 @@
         var(--view-transition-ease) both;
     }
 
-    .dock-shell {
-      view-transition-name: dock;
-    }
-
-    ::view-transition-group(dock) {
-      animation: none;
-      z-index: 999;
-    }
-
-    ::view-transition-old(dock),
-    ::view-transition-new(dock) {
-      animation: none;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -595,7 +582,7 @@
     left: 50%;
     bottom: calc(18px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    z-index: 120;
+    z-index: 45;
     pointer-events: none;
     transition: opacity 200ms ease, transform 200ms ease;
   }
