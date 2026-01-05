@@ -96,9 +96,9 @@ export const Dock = component$<DockProps>(
         const stiffness = pointerX !== null ? ENTER_STIFFNESS : LEAVE_STIFFNESS
         const damping = pointerX !== null ? ENTER_DAMPING : LEAVE_DAMPING
 
-        const scaledHalfWidths = new Array<number>(icons.length)
-        const extras = new Array<number>(icons.length)
-        const weights = new Array<number>(icons.length)
+        const scaledHalfWidths = Array.from({ length: icons.length }, () => 0)
+        const extras = Array.from({ length: icons.length }, () => 0)
+        const weights = Array.from({ length: icons.length }, () => 0)
         let totalExtra = 0
         let weightSum = 0
         let weightedCenterSum = 0
@@ -155,7 +155,7 @@ export const Dock = component$<DockProps>(
           }
         }
 
-        const centers = new Array<number>(icons.length)
+        const centers = Array.from({ length: icons.length }, () => 0)
         let prefixExtra = 0
         let minEdge = Infinity
         let maxEdge = -Infinity
