@@ -63,6 +63,11 @@ const translations: Record<FragmentLang, Record<string, string>> = {
     'React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik.':
       'React \uD504\uB798\uADF8\uBA3C\uD2B8\uB294 \uD074\uB77C\uC774\uC5B8\uD2B8 \uD558\uC774\uB4DC\uB808\uC774\uC158 \uC5C6\uC774 \uBC14\uC774\uB108\uB9AC \uD2B8\uB9AC\uB85C \uCEF4\uD30C\uC77C\uB429\uB2C8\uB2E4. DOM\uC740 Qwik\uC774 \uC18C\uC720\uD569\uB2C8\uB2E4.',
     'RSC-ready': 'RSC \uC900\uBE44\uB428',
+    'react dock': 'React \uB3C4\uD06C',
+    'Server-only dock fragment.': '\uC11C\uBC84 \uC804\uC6A9 \uB3C4\uD06C \uD504\uB798\uADF8\uBA3C\uD2B8.',
+    'MagicUI dock authored in React, compiled to a static fragment.':
+      'React\uB85C \uC791\uC131\uD55C MagicUI \uB3C4\uD06C\uB97C \uC815\uC801 \uD504\uB798\uADF8\uBA3C\uD2B8\uB85C \uCEF4\uD30C\uC77C\uD569\uB2C8\uB2E4.',
+    'Dock shortcuts': '\uB3C4\uD06C \uBC14\uB85C\uAC00\uAE30',
     'fragment missing': '\uD504\uB798\uADF8\uBA3C\uD2B8 \uC5C6\uC74C',
     'Fragment missing': '\uD504\uB798\uADF8\uBA3C\uD2B8 \uC5C6\uC74C',
     'No renderer registered for {{id}}.': '{{id}}\uC5D0 \uB4F1\uB85D\uB41C \uB80C\uB354\uB7EC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.',

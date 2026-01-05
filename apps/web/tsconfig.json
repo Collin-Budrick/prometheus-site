@@ -9,6 +9,10 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "types": ["bun-types", "node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "resolveJsonModule": true,
     "skipLibCheck": true
   },

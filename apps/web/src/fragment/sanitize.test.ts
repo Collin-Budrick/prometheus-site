@@ -28,4 +28,38 @@ describe('sanitizeAttributes', () => {
       class: 'link'
     })
   })
+
+  it('preserves svg attributes for icon rendering', () => {
+    const attrs = sanitizeAttributes({
+      viewBox: '0 0 100 100',
+      fill: 'currentColor',
+      fillRule: 'evenodd',
+      clipRule: 'evenodd',
+      d: 'M0 0h10v10H0z',
+      strokeWidth: '2',
+      gradientUnits: 'userSpaceOnUse',
+      stopColor: '#fff',
+      offset: '0.5',
+      stdDeviation: '3.5',
+      colorInterpolationFilters: 'sRGB',
+      filter: 'url(#blur)',
+      xmlns: 'http://www.w3.org/2000/svg'
+    })
+
+    expect(attrs).toEqual({
+      viewBox: '0 0 100 100',
+      fill: 'currentColor',
+      fillRule: 'evenodd',
+      clipRule: 'evenodd',
+      d: 'M0 0h10v10H0z',
+      strokeWidth: '2',
+      gradientUnits: 'userSpaceOnUse',
+      stopColor: '#fff',
+      offset: '0.5',
+      stdDeviation: '3.5',
+      colorInterpolationFilters: 'sRGB',
+      filter: 'url(#blur)',
+      xmlns: 'http://www.w3.org/2000/svg'
+    })
+  })
 })

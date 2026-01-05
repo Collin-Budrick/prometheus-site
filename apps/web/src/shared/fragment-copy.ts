@@ -45,6 +45,12 @@ const fragmentCopy: Record<Lang, FragmentCopyMap> = {
       title: 'React stays server-only.',
       description:
         'React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik.'
+    },
+    'fragment://page/home/dock@v1': {
+      heading: 'h2',
+      metaLine: 'react dock',
+      title: 'Server-only dock fragment.',
+      description: 'MagicUI dock authored in React, compiled to a static fragment.'
     }
   },
   ko: {
@@ -82,6 +88,12 @@ const fragmentCopy: Record<Lang, FragmentCopyMap> = {
       title: 'React는 서버 전용입니다.',
       description:
         'React 프래그먼트는 클라이언트 하이드레이션 없이 바이너리 트리로 컴파일됩니다. DOM은 Qwik이 소유합니다.'
+    },
+    'fragment://page/home/dock@v1': {
+      heading: 'h2',
+      metaLine: 'React 도크',
+      title: '서버 전용 도크 프래그먼트.',
+      description: 'React로 작성한 MagicUI 도크를 정적 프래그먼트로 컴파일합니다.'
     }
   }
 }

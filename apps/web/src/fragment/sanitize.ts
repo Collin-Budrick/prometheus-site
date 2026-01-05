@@ -1,5 +1,42 @@
 type AttrMap = Record<string, string>
 
+const svgAttributes = [
+  'viewbox',
+  'xmlns',
+  'fill',
+  'fillrule',
+  'cliprule',
+  'stroke',
+  'strokewidth',
+  'strokelinecap',
+  'strokelinejoin',
+  'strokemiterlimit',
+  'd',
+  'x',
+  'y',
+  'x1',
+  'x2',
+  'y1',
+  'y2',
+  'cx',
+  'cy',
+  'r',
+  'rx',
+  'ry',
+  'points',
+  'transform',
+  'opacity',
+  'offset',
+  'stopcolor',
+  'stopopacity',
+  'gradientunits',
+  'colorinterpolationfilters',
+  'filter',
+  'filterunits',
+  'stddeviation',
+  'preserveaspectratio'
+]
+
 const allowedAttributes = new Set([
   'class',
   'classname',
@@ -32,7 +69,8 @@ const allowedAttributes = new Set([
   'dir',
   'content',
   'colspan',
-  'rowspan'
+  'rowspan',
+  ...svgAttributes
 ])
 
 const urlAttributes = new Set(['href', 'src', 'action', 'formaction'])

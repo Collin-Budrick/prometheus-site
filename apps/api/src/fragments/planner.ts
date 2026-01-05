@@ -106,6 +106,11 @@ export const planForPath = (path: string): FragmentPlan => {
         id: 'fragment://page/home/react@v1',
         critical: false,
         layout: { column: 'span 12' }
+      },
+      {
+        id: 'fragment://page/home/dock@v1',
+        critical: false,
+        layout: { column: 'span 12' }
       }
     ]
     const fragmentsWithDeps = attachDependencies(baseFragments)

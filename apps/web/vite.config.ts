@@ -321,6 +321,11 @@ export default defineConfig(
         })
       ],
       oxc: false,
+      resolve: {
+        alias: {
+          '@': path.resolve(__dirname, 'src')
+        }
+      },
       css: {
         transformer: 'lightningcss'
       },

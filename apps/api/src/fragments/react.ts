@@ -8,6 +8,37 @@ type ElementProps = {
   [key: string]: unknown
 }
 
+const REACT_FORWARD_REF_TYPE = Symbol.for('react.forward_ref')
+const REACT_MEMO_TYPE = Symbol.for('react.memo')
+
+type ForwardRefType = {
+  $$typeof: symbol
+  render: (props: ElementProps, ref: unknown) => ReactNode
+}
+
+type MemoType = {
+  $$typeof: symbol
+  type: unknown
+}
+
+const isForwardRefType = (value: unknown): value is ForwardRefType => {
+  if (typeof value !== 'object' || value === null) return false
+  return (value as { $$typeof?: symbol }).$$typeof === REACT_FORWARD_REF_TYPE
+}
+
+const isMemoType = (value: unknown): value is MemoType => {
+  if (typeof value !== 'object' || value === null) return false
+  return (value as { $$typeof?: symbol }).$$typeof === REACT_MEMO_TYPE
+}
+
+const unwrapMemoType = (value: unknown) => {
+  let current = value
+  while (isMemoType(current)) {
+    current = current.type
+  }
+  return current
+}
+
 const isFunctionComponent = (value: unknown): value is (props: ElementProps) => ReactNode => {
   if (typeof value !== 'function') return false
   const prototype = (value as { prototype?: { isReactComponent?: boolean } }).prototype
@@ -35,6 +66,12 @@ const normalizeProps = (props: Record<string, unknown> | null | undefined) => {
   const attrs: Record<string, string> = {}
   Object.entries(props).forEach(([key, value]) => {
     if (key === 'children') return
+    if (key === 'htmlFor') {
+      if (typeof value === 'string' || typeof value === 'number') {
+        attrs['for'] = String(value)
+      }
+      return
+    }
     if (key === 'className') {
       attrs.class = String(value)
       return
@@ -65,10 +102,15 @@ const toRenderNodes = (node: ReactNode): RenderNode[] => {
   }
 
   const element: ReactElement<ElementProps> = node
-  const elementType = element.type
+  const elementType = unwrapMemoType(element.type)
 
   if (elementType === Fragment) {
     return toRenderNodes(element.props.children)
+  }
+
+  if (isForwardRefType(elementType)) {
+    const rendered = elementType.render(element.props, null)
+    return toRenderNodes(rendered)
   }
 
   if (isFunctionComponent(elementType)) {
