@@ -19,7 +19,6 @@ import {
   recordLatencySample,
   writeCache
 } from '../cache-helpers'
-import { isWebTransportEnabled } from '../runtime-flags'
 import { normalizePlanPath } from '@core/fragments'
 import type {
   EarlyHint,
@@ -33,6 +32,11 @@ import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
 import { createHash } from 'node:crypto'
+
+export type FragmentRouteOptions = {
+  enableWebTransportFragments: boolean
+  environment: string
+}
 
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
@@ -149,7 +153,6 @@ const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: Co
 }
 
 const truthyValues = new Set(['1', 'true', 'yes'])
-const allowDevRefresh = process.env.NODE_ENV !== 'production'
 
 const isTruthyParam = (value: string | undefined) => {
   if (value === undefined) return false
@@ -283,7 +286,8 @@ const buildInitialFragments = async (
   }, {})
 }
 
-export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
+export const createFragmentRoutes = (options: FragmentRouteOptions) =>
+  new Elysia({ prefix: '/fragments' })
   .post(
     '/batch',
     async ({ body }) => {
@@ -333,6 +337,7 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
+      const allowDevRefresh = options.environment !== 'production'
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       if (refresh) {
@@ -419,7 +424,7 @@ export const fragmentRoutes = new Elysia({ prefix: '/fragments' })
   .get(
     '/transport',
     async ({ query }) => {
-      if (!isWebTransportEnabled(process.env.ENABLE_WEBTRANSPORT_FRAGMENTS)) {
+      if (!options.enableWebTransportFragments) {
         return new Response(
           JSON.stringify({
             error: 'WebTransport fragment streaming is disabled',

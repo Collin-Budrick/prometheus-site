@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { loadConfig } from '../src/config/env'
+import { loadPlatformConfig as loadConfig } from '@platform/config'
 
 describe('configuration validation', () => {
   it('builds defaults when env vars are absent', () => {

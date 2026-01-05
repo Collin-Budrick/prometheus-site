@@ -1,40 +1,39 @@
 import { describe, expect, it } from 'bun:test'
+import { createRateLimiter } from '@platform/rate-limit'
+import { resolveRuntimeFlags } from '@platform/runtime'
 import { invalidateStoreItemsCache } from '../src/server/cache-helpers'
 import { resolveWsClientIp } from '../src/server/network'
-import { checkQuota, clearInMemoryCounters, getInMemoryCounterSize, setCleanupInterval } from '../src/server/rate-limit'
-import { shouldRunMigrations } from '../src/server/runtime-flags'
-import { resetTestState, setValkeyReady, testValkey } from './setup'
+import { resetTestState, testValkey } from './setup'
 
 describe('runtime flags', () => {
   it('treats common truthy values as enabled', () => {
-    expect(shouldRunMigrations('1')).toBe(true)
-    expect(shouldRunMigrations('true')).toBe(true)
-    expect(shouldRunMigrations('TRUE')).toBe(true)
-    expect(shouldRunMigrations(' yes ')).toBe(true)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: '1' }).runMigrations).toBe(true)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'true' }).runMigrations).toBe(true)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'TRUE' }).runMigrations).toBe(true)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: ' yes ' }).runMigrations).toBe(true)
   })
 
   it('treats falsy or missing values as disabled', () => {
-    expect(shouldRunMigrations('0')).toBe(false)
-    expect(shouldRunMigrations('false')).toBe(false)
-    expect(shouldRunMigrations(undefined)).toBe(false)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: '0' }).runMigrations).toBe(false)
+    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'false' }).runMigrations).toBe(false)
+    expect(resolveRuntimeFlags({}).runMigrations).toBe(false)
   })
 })
 
 describe('rate limiter fallback', () => {
   it('evicts expired counters to bound memory usage', async () => {
-    setValkeyReady(false)
-    clearInMemoryCounters()
-    setCleanupInterval(1)
+    const limiter = createRateLimiter()
+    limiter.clearInMemoryCounters()
+    limiter.setCleanupInterval(1)
 
-    await checkQuota('route:client-a', 5, 1_000, 0)
-    expect(getInMemoryCounterSize()).toBe(1)
+    await limiter.checkQuota('route:client-a', 5, 1_000, 0)
+    expect(limiter.getInMemoryCounterSize()).toBe(1)
 
-    await checkQuota('route:client-b', 5, 1_000, 2_000)
-    expect(getInMemoryCounterSize()).toBe(1)
+    await limiter.checkQuota('route:client-b', 5, 1_000, 2_000)
+    expect(limiter.getInMemoryCounterSize()).toBe(1)
 
-    setCleanupInterval(60_000)
-    clearInMemoryCounters()
-    setValkeyReady(true)
+    limiter.setCleanupInterval(60_000)
+    limiter.clearInMemoryCounters()
   })
 })
 
