@@ -3,7 +3,7 @@ import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/ser
 import { manifest } from '@qwik-client-manifest'
 import { PUBLIC_CACHE_CONTROL } from './cache-control'
 import Root from './root'
-import { readThemeFromCookie } from './shared/theme-store'
+import { readThemeFromCookie } from '@prometheus/ui'
 
 export default function (opts: RenderToStreamOptions) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'

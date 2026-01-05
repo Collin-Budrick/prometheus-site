@@ -3,7 +3,7 @@ import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 type DockProps = {
   iconMagnification?: number
   iconDistance?: number
-  ariaLabel?: string
+  ariaLabel: string
   class?: string
 }
 
@@ -27,7 +27,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
 
 export const Dock = component$<DockProps>(
-  ({ iconMagnification = DEFAULT_MAGNIFICATION, iconDistance = DEFAULT_DISTANCE, ariaLabel = 'Dock shortcuts', class: className }) => {
+  ({ iconMagnification = DEFAULT_MAGNIFICATION, iconDistance = DEFAULT_DISTANCE, ariaLabel, class: className }) => {
     const dockRef = useSignal<HTMLElement>()
 
     useVisibleTask$(({ cleanup }) => {

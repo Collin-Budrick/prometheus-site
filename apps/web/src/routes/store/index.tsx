@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import type { RequestHandler, DocumentHead } from '@builder.io/qwik-city'
-import { StaticRouteTemplate, StaticRouteSkeleton } from '../../components/StaticRouteTemplate'
+import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
 
@@ -15,6 +15,7 @@ export default component$(() => {
       title={copy.value.storeTitle}
       description={copy.value.storeDescription}
       actionLabel={copy.value.storeAction}
+      closeLabel={copy.value.fragmentClose}
     />
   )
 })

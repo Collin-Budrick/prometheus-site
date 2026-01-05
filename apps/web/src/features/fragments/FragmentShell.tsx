@@ -1,6 +1,6 @@
 import { $, component$, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
+import { FragmentCard } from '@prometheus/ui'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
-import { FragmentCard } from '../../components/FragmentCard'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
 import { isPrefetchEnabled } from '../../shared/prefetch'
 import { useSharedFragmentStatusSignal } from '../../shared/fragment-status'
@@ -382,6 +382,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
               motionDelay={index * 120}
               expandedId={expandedId}
               layoutTick={layoutTick}
+              closeLabel={copy.value.fragmentClose}
             >
               {fragment ? (
                 <FragmentRenderer node={renderNode ?? fragment.tree} />

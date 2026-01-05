@@ -5,6 +5,7 @@ export type UiCopy = {
   navStore: string
   navLab: string
   navLogin: string
+  dockAriaLabel: string
   themeLight: string
   themeDark: string
   themeAriaToLight: string
@@ -38,6 +39,7 @@ export const uiCopy: Record<Lang, UiCopy> = {
     navStore: 'Store',
     navLab: 'Lab',
     navLogin: 'Login',
+    dockAriaLabel: 'Dock shortcuts',
     themeLight: 'Light',
     themeDark: 'Dark',
     themeAriaToLight: 'Switch to light mode',
@@ -69,6 +71,7 @@ export const uiCopy: Record<Lang, UiCopy> = {
     navStore: '\uC2A4\uD1A0\uC5B4',
     navLab: '\uB7A9',
     navLogin: '\uB85C\uADF8\uC778',
+    dockAriaLabel: 'Dock \uBC14\uB85C\uAC00\uAE30',
     themeLight: '\uB77C\uC774\uD2B8',
     themeDark: '\uB2E4\uD06C',
     themeAriaToLight: '\uB77C\uC774\uD2B8 \uBAA8\uB4DC\uB85C \uC804\uD658',

@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { Link } from '@builder.io/qwik-city'
 import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
-import { Dock, DockIcon } from './Dock'
+import { Dock, DockIcon } from '@prometheus/ui'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import { TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 
@@ -17,7 +17,7 @@ export const DockBar = component$(() => {
 
   return (
     <div class="dock-shell">
-      <Dock iconMagnification={1.6} iconDistance={140}>
+      <Dock iconMagnification={1.6} iconDistance={140} ariaLabel={copy.value.dockAriaLabel}>
         {TOPBAR_NAV_ITEMS.map((item) => {
           const label = copy.value[item.labelKey]
           const Icon = DOCK_ICONS[item.labelKey]

@@ -1,13 +1,14 @@
-import { component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
 import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { LanguageToggle, ThemeToggle } from '@prometheus/ui'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { DockBar } from '../components/DockBar'
-import { LanguageToggle } from '../components/LanguageToggle'
-import { ThemeToggle } from '../components/ThemeToggle'
 import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import { TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
+import { applyLang, type Lang } from '../shared/lang-store'
+import { runLangViewTransition } from '../shared/view-transitions'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -143,6 +144,21 @@ export default component$(() => {
       : fragmentStatus.value === 'error'
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
+  const toggleLang = $((current: string) => {
+    const next = (current === 'en' ? 'ko' : 'en') as Lang
+    const root = document.querySelector('.layout-shell') ?? document.body
+    runLangViewTransition(
+      () => {
+        langSignal.value = next
+        applyLang(next)
+      },
+      {
+        mutationRoot: root,
+        timeoutMs: 420,
+        variant: 'ui'
+      }
+    )
+  })
 
   useVisibleTask$(({ cleanup }) => {
     const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
@@ -195,8 +211,13 @@ export default component$(() => {
             <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
               <span class="dot" aria-hidden="true" />
             </div>
-            <LanguageToggle />
-            <ThemeToggle />
+            <LanguageToggle
+              lang={langSignal}
+              ariaLabels={{ en: copy.value.languageAriaToKo, ko: copy.value.languageAriaToEn }}
+              pressed={langSignal.value === 'ko'}
+              onToggle$={toggleLang}
+            />
+            <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
           </div>
         </div>
       </header>

@@ -1,5 +1,4 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
-import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
@@ -17,12 +16,11 @@ type FragmentCardProps = {
   motionDelay: number
   expandedId: Signal<string | null>
   layoutTick: Signal<number>
+  closeLabel: string
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
-  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick }) => {
-    const langSignal = useSharedLangSignal()
-    const copy = useLangCopy(langSignal)
+  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel }) => {
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
     const lastExpanded = useSignal(expandedId.value === id)
@@ -219,7 +217,6 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       ({ track, cleanup }) => {
-        track(() => langSignal.value)
         const inView = track(() => isInView.value)
         if (!inView || typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
@@ -348,8 +345,8 @@ export const FragmentCard = component$<FragmentCardProps>(
             <button
               class="fragment-card-close"
               type="button"
-              aria-label={copy.value.fragmentClose}
-              title={copy.value.fragmentClose}
+              aria-label={closeLabel}
+              title={closeLabel}
               onClick$={handleClose}
             />
           ) : null}

@@ -1,24 +1,25 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$, type PropFunction } from '@builder.io/qwik'
 import { InHalfMoon, InSunLight } from '@qwikest/icons/iconoir'
-import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
-import {
-  applyTheme as applyStoredTheme,
-  initTheme,
-  readStoredTheme,
-  subscribeTheme,
-  theme as themeStore,
-  type Theme
-} from '../shared/theme-store'
+import { applyTheme, initTheme, readStoredTheme, subscribeTheme, theme as themeStore, type Theme } from '../theme-store'
+
+type ThemeToggleLabels = {
+  ariaToDark: string
+  ariaToLight: string
+}
+
+type ThemeToggleProps = {
+  class?: string
+  labels: ThemeToggleLabels
+  onToggle$?: PropFunction<(nextTheme: Theme) => void | Promise<void>>
+}
 
 type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => { finished: Promise<void> }
 }
 
-export const ThemeToggle = component$(() => {
+export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, labels, onToggle$ }) => {
   const themeSignal = useSignal<Theme>(themeStore.value)
   const hasStoredPreference = useSignal(false)
-  const langSignal = useSharedLangSignal()
-  const copy = useLangCopy(langSignal)
 
   useVisibleTask$(({ cleanup }) => {
     hasStoredPreference.value = readStoredTheme() !== null
@@ -32,7 +33,7 @@ export const ThemeToggle = component$(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const handleChange = (event: MediaQueryListEvent) => {
       if (hasStoredPreference.value) return
-      applyStoredTheme(event.matches ? 'dark' : 'light', { persist: false })
+      applyTheme(event.matches ? 'dark' : 'light', { persist: false })
     }
 
     media.addEventListener('change', handleChange)
@@ -48,7 +49,8 @@ export const ThemeToggle = component$(() => {
     document.documentElement.dataset.themeDirection = nextTheme
     const applyNextTheme = () => {
       hasStoredPreference.value = true
-      applyStoredTheme(nextTheme)
+      applyTheme(nextTheme)
+      onToggle$?.(nextTheme)
     }
 
     const doc = document as DocumentWithViewTransition
@@ -78,11 +80,11 @@ export const ThemeToggle = component$(() => {
 
   return (
     <button
-      class="theme-toggle"
+      class={['theme-toggle', className].filter(Boolean).join(' ')}
       type="button"
       data-theme={themeSignal.value}
       aria-pressed={themeSignal.value === 'dark'}
-      aria-label={themeSignal.value === 'dark' ? copy.value.themeAriaToLight : copy.value.themeAriaToDark}
+      aria-label={themeSignal.value === 'dark' ? labels.ariaToLight : labels.ariaToDark}
       onClick$={() => {
         toggleTheme()
       }}
