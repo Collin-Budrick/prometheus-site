@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@core": ["./packages/core/src/index.ts"],
+      "@core/*": ["./packages/core/src/*"],
+      "@platform": ["./packages/platform/src/index.ts"],
+      "@platform/*": ["./packages/platform/src/*"],
+      "@ui": ["./packages/ui/src/index.ts"],
+      "@ui/*": ["./packages/ui/src/*"],
+      "@features/auth": ["./packages/features/auth/src/index.ts"],
+      "@features/auth/*": ["./packages/features/auth/src/*"],
+      "@features/store": ["./packages/features/store/src/index.ts"],
+      "@features/store/*": ["./packages/features/store/src/*"],
+      "@features/messaging": ["./packages/features/messaging/src/index.ts"],
+      "@features/messaging/*": ["./packages/features/messaging/src/*"],
+      "@features/lab": ["./packages/features/lab/src/index.ts"],
+      "@features/lab/*": ["./packages/features/lab/src/*"]
+    },
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  }
+}

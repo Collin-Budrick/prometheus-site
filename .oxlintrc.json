@@ -1,0 +1,64 @@
+{
+  "ignorePatterns": ["dist/**", "node_modules/**"],
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "overrides": [
+    {
+      "files": ["packages/core/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@platform",
+                  "@platform/*",
+                  "@ui",
+                  "@ui/*",
+                  "@features/*",
+                  "@features/*/*",
+                  "packages/platform/**",
+                  "packages/ui/**",
+                  "packages/features/**",
+                  "../platform/**",
+                  "../ui/**",
+                  "../features/**",
+                  "../../platform/**",
+                  "../../ui/**",
+                  "../../features/**"
+                ],
+                "message": "Core must stay independent from platform, UI, and feature layers."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/site/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "./features/**",
+                  "../features/**",
+                  "../../features/**",
+                  "packages/features/**",
+                  "../packages/features/**",
+                  "../../packages/features/**"
+                ],
+                "message": "Feature modules belong under packages/features and should be consumed via @features/* aliases."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

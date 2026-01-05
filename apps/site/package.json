@@ -1,0 +1,11 @@
+{
+  "name": "site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"apps/site dev server is not configured yet\"",
+    "build": "echo \"apps/site build pipeline is not configured yet\"",
+    "lint": "bunx --bun oxlint . --config ../../.oxlintrc.json"
+  }
+}

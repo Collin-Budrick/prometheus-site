@@ -1,4 +1,16 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["bun-types", "node"],
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
   "include": ["src", "tests", "drizzle.config.ts"]
 }
