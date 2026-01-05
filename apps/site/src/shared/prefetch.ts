@@ -1,11 +1,5 @@
 import { resolveApiBase } from '../routes/layout-helpers'
-import type { EnvConfig } from '../../web/src/fragment/config'
-
-const isTruthyFlag = (value: unknown) => {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true'
-  return false
-}
+import type { AppConfig } from '../../web/src/fragment/config'
 
 const normalizeApiHref = (apiBase: string) => {
   if (!apiBase) return ''
@@ -39,15 +33,13 @@ const shouldIgnoreTarget = (apiBase: string) => {
   }
 }
 
-export const isPrefetchEnabled = (env: EnvConfig) => isTruthyFlag(env.VITE_ENABLE_PREFETCH)
-
-export const initQuicklinkPrefetch = async (env: EnvConfig, log = false) => {
+export const initQuicklinkPrefetch = async (config: Pick<AppConfig, 'apiBase'>, log = false) => {
   if (!hasFragmentLinkAnchors()) {
     if (log) console.info('[prefetch] Skipping Quicklink initialization (no fragment links)')
     return () => {}
   }
 
-  const apiBase = resolveApiBase(env)
+  const apiBase = resolveApiBase(config)
   const { listen } = await import('quicklink')
 
   const seen = new Set<string>()
@@ -86,4 +78,3 @@ export const initQuicklinkPrefetch = async (env: EnvConfig, log = false) => {
 
   return stopListening
 }
-

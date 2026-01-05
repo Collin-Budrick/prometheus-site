@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 import type { FragmentPlan } from '../fragment/types'
 import { buildSpeculationRulesForPlan } from './speculation'
+import type { AppConfig } from '../fragment/config'
 
 const basePlan: FragmentPlan = {
   path: '/',
@@ -12,13 +13,19 @@ const basePlan: FragmentPlan = {
   createdAt: Date.now()
 }
 
+const apiConfig = (apiBase: string): Pick<AppConfig, 'apiBase'> => ({ apiBase })
+
 describe('buildSpeculationRulesForPlan', () => {
   it('returns null when the API base is missing', () => {
-    expect(buildSpeculationRulesForPlan(basePlan, {})).toBeNull()
+    expect(buildSpeculationRulesForPlan(basePlan, apiConfig(''))).toBeNull()
   })
 
   it('omits cross-origin bases', () => {
-    const rules = buildSpeculationRulesForPlan(basePlan, { VITE_API_BASE: 'https://api.example.com' }, { origin: 'https://prometheus.dev' })
+    const rules = buildSpeculationRulesForPlan(
+      basePlan,
+      apiConfig('https://api.example.com'),
+      { origin: 'https://prometheus.dev' }
+    )
 
     expect(rules).toBeNull()
   })
@@ -26,7 +33,7 @@ describe('buildSpeculationRulesForPlan', () => {
   it('builds list-based prefetch rules for the plan and fragments', () => {
     const rules = buildSpeculationRulesForPlan(
       basePlan,
-      { VITE_API_BASE: '/api' },
+      apiConfig('/api'),
       {
         origin: 'https://prometheus.dev',
         knownFragments: {
@@ -45,7 +52,7 @@ describe('buildSpeculationRulesForPlan', () => {
   it('omits plan + stream URLs when the current path is already cached', () => {
     const rules = buildSpeculationRulesForPlan(
       basePlan,
-      { VITE_API_BASE: '/api' },
+      apiConfig('/api'),
       {
         origin: 'https://prometheus.dev',
         currentPath: '/',
@@ -63,7 +70,7 @@ describe('buildSpeculationRulesForPlan', () => {
   it('filters out URLs already queued via link prefetch', () => {
     const rules = buildSpeculationRulesForPlan(
       basePlan,
-      { VITE_API_BASE: '/api' },
+      apiConfig('/api'),
       {
         origin: 'https://prometheus.dev',
         documentRef: {

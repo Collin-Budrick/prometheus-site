@@ -1,4 +1,3 @@
-import { getApiBase } from '../fragment/config'
-import type { EnvConfig } from '../fragment/config'
+import type { AppConfig } from '../fragment/config'
 
-export const resolveApiBase = (env?: EnvConfig) => getApiBase(env)
+export const resolveApiBase = (config: Pick<AppConfig, 'apiBase'>) => config.apiBase

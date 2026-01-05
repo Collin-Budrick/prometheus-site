@@ -1,20 +1,16 @@
 import { createFragmentClient } from '@core/fragments'
-import {
-  getApiBase,
-  getWebTransportBase,
-  isFragmentCompressionPreferred,
-  isWebTransportDatagramsPreferred,
-  isWebTransportPreferred
-} from './config'
+import { getAppConfig } from './config'
 import { fragmentPlanCache } from './plan-cache'
+
+const appConfig = getAppConfig()
 
 const client = createFragmentClient(
   {
-    getApiBase,
-    getWebTransportBase,
-    isFragmentCompressionPreferred,
-    isWebTransportDatagramsPreferred,
-    isWebTransportPreferred
+    getApiBase: () => appConfig.apiBase,
+    getWebTransportBase: () => appConfig.webTransportBase,
+    isFragmentCompressionPreferred: () => appConfig.preferFragmentCompression,
+    isWebTransportDatagramsPreferred: () => appConfig.preferWebTransportDatagrams,
+    isWebTransportPreferred: () => appConfig.preferWebTransport
   },
   fragmentPlanCache
 )

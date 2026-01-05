@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 
-import { getApiBase, normalizeApiBase } from './config'
+import { getApiBase, getAppConfig, normalizeApiBase } from './config'
 
 const originalApiBase = process.env.API_BASE
 const clearProcessApiBase = () => {
@@ -42,5 +42,36 @@ describe('getApiBase', () => {
   it('rejects unsupported protocols', () => {
     clearProcessApiBase()
     expect(getApiBase({ VITE_API_BASE: 'ftp://api.example.com' })).toBe('')
+  })
+})
+
+describe('getAppConfig', () => {
+  it('composes platform flags and URLs from the environment', () => {
+    const config = getAppConfig({
+      VITE_API_BASE: '/api',
+      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'true',
+      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'false',
+      VITE_ENABLE_FRAGMENT_COMPRESSION: 'true',
+      VITE_ENABLE_PREFETCH: '1',
+      VITE_ENABLE_ANALYTICS: '1',
+      VITE_ANALYTICS_BEACON_URL: 'https://example.com/analytics',
+      VITE_REPORT_CLIENT_ERRORS: '1',
+      VITE_ERROR_BEACON_URL: 'https://example.com/errors'
+    })
+
+    expect(config.apiBase).toBe('/api')
+    expect(config.webTransportBase).toBe('/api')
+    expect(config.preferWebTransport).toBe(true)
+    expect(config.preferWebTransportDatagrams).toBe(false)
+    expect(config.preferFragmentCompression).toBe(true)
+    expect(config.enablePrefetch).toBe(true)
+    expect(config.analytics).toEqual({
+      enabled: true,
+      beaconUrl: 'https://example.com/analytics'
+    })
+    expect(config.clientErrors).toEqual({
+      enabled: true,
+      beaconUrl: 'https://example.com/errors'
+    })
   })
 })

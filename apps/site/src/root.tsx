@@ -2,11 +2,12 @@ import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
 import { RouteMotion, scheduleIdleTask } from '@prometheus/ui'
 import globalStyles from '@prometheus/ui/global.css?inline'
+import { createClientErrorReporter } from '@platform/logging'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from './shared/fragment-status'
 import { LangProvider } from './shared/lang-bridge'
-import { reportClientError } from './shared/error-reporting'
-import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
+import { initQuicklinkPrefetch } from './shared/prefetch'
+import { appConfig } from './app-config'
 
 type RequestIdleCallback = (
   callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
@@ -16,10 +17,10 @@ type RequestIdleCallback = (
 const ClientSignals = component$(() => {
   useVisibleTask$(
     () => {
-      const { VITE_ENABLE_ANALYTICS, VITE_ANALYTICS_BEACON_URL, VITE_REPORT_CLIENT_ERRORS, VITE_ERROR_BEACON_URL } =
-        import.meta.env
-      const analyticsEnabled = VITE_ENABLE_ANALYTICS === '1' || VITE_ENABLE_ANALYTICS === 'true'
-      const errorReportingEnabled = VITE_REPORT_CLIENT_ERRORS === '1' || VITE_REPORT_CLIENT_ERRORS === 'true'
+      const { analytics, clientErrors } = appConfig
+      const analyticsEnabled = analytics.enabled && Boolean(analytics.beaconUrl)
+      const errorReportingEnabled = clientErrors.enabled && Boolean(clientErrors.beaconUrl)
+      const reportClientError = createClientErrorReporter(clientErrors)
 
       if (!analyticsEnabled && !errorReportingEnabled) return
 
@@ -40,7 +41,7 @@ const ClientSignals = component$(() => {
         setTimeout(task, 0)
       }
 
-      if (analyticsEnabled && typeof VITE_ANALYTICS_BEACON_URL === 'string' && VITE_ANALYTICS_BEACON_URL.length) {
+      if (analyticsEnabled) {
         deferTask(() => {
           const payload = JSON.stringify({
             path: window.location.pathname,
@@ -49,10 +50,10 @@ const ClientSignals = component$(() => {
             timestamp: Date.now()
           })
           const body = new Blob([payload], { type: 'application/json' })
-          const sent = navigator.sendBeacon?.(VITE_ANALYTICS_BEACON_URL, body)
+          const sent = navigator.sendBeacon?.(analytics.beaconUrl, body)
 
           if (!sent) {
-            fetch(VITE_ANALYTICS_BEACON_URL, {
+            fetch(analytics.beaconUrl, {
               method: 'POST',
               body,
               keepalive: true,
@@ -62,10 +63,10 @@ const ClientSignals = component$(() => {
         })
       }
 
-      if (errorReportingEnabled && typeof VITE_ERROR_BEACON_URL === 'string' && VITE_ERROR_BEACON_URL.length) {
+      if (errorReportingEnabled) {
         const handleError = (event: ErrorEvent) => {
           deferTask(() =>
-            reportClientError(VITE_ERROR_BEACON_URL, event.error ?? event.message, {
+            reportClientError(event.error ?? event.message, {
               source: 'window.error',
               path: window.location.pathname
             })
@@ -74,7 +75,7 @@ const ClientSignals = component$(() => {
 
         const handleRejection = (event: PromiseRejectionEvent) => {
           deferTask(() =>
-            reportClientError(VITE_ERROR_BEACON_URL, event.reason, {
+            reportClientError(event.reason, {
               source: 'unhandledrejection',
               path: window.location.pathname
             })
@@ -103,7 +104,7 @@ const PrefetchSignals = component$(() => {
     ({ cleanup, track }) => {
       track(() => location.url.pathname + location.url.search)
 
-      if (!isPrefetchEnabled(import.meta.env)) return
+      if (!appConfig.enablePrefetch) return
 
       const hasFragmentLinks = () =>
         typeof document !== 'undefined' && document.querySelector('a[data-fragment-link]') !== null
@@ -114,7 +115,7 @@ const PrefetchSignals = component$(() => {
       const startPrefetch = () => {
         if (cancelled) return
         if (!hasFragmentLinks()) return
-        initQuicklinkPrefetch(import.meta.env, true)
+        initQuicklinkPrefetch(appConfig, true)
           .then((stop) => {
             if (cancelled) {
               stop?.()
@@ -198,4 +199,3 @@ export default component$(() => {
     </QwikCityProvider>
   )
 })
-
