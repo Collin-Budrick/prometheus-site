@@ -105,6 +105,10 @@
 
   @supports (view-transition-name: root) {
     :root {
+      view-transition-name: none;
+    }
+
+    :root[data-theme-direction] {
       view-transition-name: root;
     }
 
