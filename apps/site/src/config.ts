@@ -4,6 +4,12 @@ import type { UiCopy } from './shared/ui-copy'
 export type SiteFeature = 'store' | 'lab' | 'login'
 export type Lang = 'en' | 'ko'
 export type NavItem = { href: string; labelKey: keyof UiCopy; feature?: SiteFeature }
+export type LabPageCopy = {
+  metaLine: string
+  title: string
+  description: string
+  actionLabel: string
+}
 
 export const siteBrand = {
   name: 'Prometheus',
@@ -63,10 +69,6 @@ export const uiCopy: Record<Lang, UiCopy> = {
     storeTitle: 'Store',
     storeDescription: 'Browse curated modules, fragments, and templates designed for fast binary delivery.',
     storeAction: 'Browse catalog',
-    labMetaLine: 'Lab',
-    labTitle: 'Lab',
-    labDescription: 'Prototype new fragment systems, run experiments, and validate edge behaviors.',
-    labAction: 'Launch experiment',
     loginMetaLine: 'Login',
     loginTitle: 'Login',
     loginDescription: 'Access your workspace, release controls, and deployment history.',
@@ -100,11 +102,6 @@ export const uiCopy: Record<Lang, UiCopy> = {
     storeDescription:
       '빠른 바이너리 전달을 위해 큐레이션된 모듈, 프래그먼트, 템플릿을 살펴보세요.',
     storeAction: '카탈로그 보기',
-    labMetaLine: '랩',
-    labTitle: '랩',
-    labDescription:
-      '새로운 프래그먼트 시스템을 프로토타이핑하고 실험을 실행해 엣지 동작을 검증하세요.',
-    labAction: '실험 시작',
     loginMetaLine: '로그인',
     loginTitle: '로그인',
     loginDescription: '워크스페이스, 릴리스 제어, 배포 기록에 접근하세요.',
@@ -202,5 +199,21 @@ export const fragmentHeaderCopy: Record<Lang, Record<string, FragmentHeaderCopy>
       title: '서버 전용 도크 프래그먼트.',
       description: 'React로 작성한 MagicUI 도크를 정적 프래그먼트로 컴파일합니다.'
     }
+  }
+}
+
+export const labCopy: Record<Lang, LabPageCopy> = {
+  en: {
+    metaLine: 'Lab',
+    title: 'Lab',
+    description: 'Prototype new fragment systems, run experiments, and validate edge behaviors.',
+    actionLabel: 'Launch experiment'
+  },
+  ko: {
+    metaLine: '랩',
+    title: '랩',
+    description:
+      '새로운 프래그먼트 시스템을 프로토타이핑하고 실험을 실행해 엣지 동작을 검증하세요.',
+    actionLabel: '실험 시작'
   }
 }
