@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createRateLimiter } from '@platform/rate-limit'
 import { resolveRuntimeFlags } from '@platform/runtime'
-import { invalidateStoreItemsCache } from '../src/server/cache-helpers'
+import { invalidateStoreItemsCache } from '@features/store'
 import { resolveWsClientIp } from '../src/server/network'
 import { resetTestState, testValkey } from './setup'
 
@@ -44,7 +44,7 @@ describe('store cache invalidation', () => {
     await testValkey.set('store:items:10:10', 'second')
     await testValkey.set('other:key', 'persist')
 
-    await invalidateStoreItemsCache()
+    await invalidateStoreItemsCache(testValkey, () => true)
 
     expect(await testValkey.get('store:items:0:10')).toBeNull()
     expect(await testValkey.get('store:items:10:10')).toBeNull()

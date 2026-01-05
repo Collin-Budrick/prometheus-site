@@ -3,11 +3,12 @@ import { betterAuth } from 'better-auth'
 import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { randomUUID } from 'node:crypto'
+import { Elysia, t } from 'elysia'
 import { platformConfig as config, type RelyingPartyConfig } from '@platform/config'
-import { db } from '../db/client'
-import { authKeys, authSessions, passkeys, users, verification } from '../db/schema'
+import { db } from 'apps/api/src/db/client'
+import { authKeys, authSessions, passkeys, users, verification } from 'apps/api/src/db/schema'
 
-type AuthRequestContext = {
+export type AuthRequestContext = {
   headers?: HeadersInit
   request?: Request
 }
@@ -321,3 +322,45 @@ export const validateSession = (context?: AuthRequestContext) =>
     request: context?.request,
     asResponse: true
   })
+
+export const authRoutes = new Elysia({ prefix: '/api/auth' })
+  .post(
+    '/sign-in/email',
+    async ({ body, request }) => signInWithEmail(body, { request }),
+    {
+      body: t.Object({
+        email: t.String({ format: 'email' }),
+        password: t.String(),
+        callbackURL: t.Optional(t.String()),
+        rememberMe: t.Optional(t.Boolean())
+      })
+    }
+  )
+  .post(
+    '/sign-up/email',
+    async ({ body, request }) => signUpWithEmail(body, { request }),
+    {
+      body: t.Object({
+        name: t.String(),
+        email: t.String({ format: 'email' }),
+        password: t.String(),
+        callbackURL: t.Optional(t.String()),
+        rememberMe: t.Optional(t.Boolean())
+      })
+    }
+  )
+  .post(
+    '/sign-up/passkey',
+    async ({ body, request }) => signUpWithPasskey(body, { request }),
+    {
+      body: t.Object({
+        name: t.String(),
+        email: t.String({ format: 'email' }),
+        callbackURL: t.Optional(t.String()),
+        rememberMe: t.Optional(t.Boolean())
+      })
+    }
+  )
+  .get('/session', async ({ request }) => validateSession({ request }))
+  // Delegate all remaining auth, passkey, and OAuth routes to Better Auth's handler
+  .all('/*', async ({ request }) => handleAuthRequest(request))

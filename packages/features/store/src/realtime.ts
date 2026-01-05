@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm'
 import { createSelectSchema } from 'drizzle-zod'
 import { z } from 'zod'
-import { db, pgClient } from '../db/client'
-import { storeItems } from '../db/schema'
+import { db, pgClient } from 'apps/api/src/db/client'
+import { storeItems } from 'apps/api/src/db/schema'
 
 type StoreItemRow = typeof storeItems.$inferSelect
 type StoreItemRowSnapshot = Pick<StoreItemRow, 'id' | 'name' | 'price'>

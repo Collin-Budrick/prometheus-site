@@ -1,4 +1,1 @@
-/**
- * Lab feature module placeholder.
- */
-export const labFeaturePlaceholder = Symbol('lab-feature-placeholder')
+export * from './lab-route'

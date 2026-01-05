@@ -1,4 +1,2 @@
-/**
- * Auth feature module placeholder.
- */
-export const authFeaturePlaceholder = Symbol('auth-feature-placeholder')
+export * from './server'
+export * from './login-route'
