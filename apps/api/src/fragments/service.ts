@@ -1,4 +1,4 @@
-import { createFragmentService } from '@core/fragments'
+import { buildCacheStatus, createFragmentService } from '@core/fragments'
 import { fragmentStore } from './store'
 import { createFragmentTranslator, defaultFragmentLang, type FragmentLang } from './i18n'
 import '@site/fragments/home'
@@ -18,6 +18,8 @@ export const {
   memoizeFragmentPlan,
   streamFragmentsForPath
 } = fragmentService
+
+export { buildCacheStatus }
 
 export { defaultFragmentLang }
 export type { FragmentLang }

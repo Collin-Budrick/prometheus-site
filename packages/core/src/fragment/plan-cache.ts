@@ -48,3 +48,5 @@ export const createFragmentPlanCache = (limit: number = 20): FragmentPlanCache =
     }
   }
 }
+
+export const fragmentPlanCache = createFragmentPlanCache()

@@ -2,7 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
-import { FragmentShell } from '../../web/src/features/fragments'
+import { FragmentShell } from '../../../web/src/features/fragments'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'
 import type {
@@ -12,7 +12,7 @@ import type {
   FragmentPlan,
   FragmentPlanValue,
   RenderNode
-} from '../../web/src/fragment/types'
+} from '../../../web/src/fragment/types'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 

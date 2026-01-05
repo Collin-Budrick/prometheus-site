@@ -110,11 +110,14 @@ const buildInputs = [
   'package.json',
   'bun.lock',
   'bunfig.toml',
+  'tsconfig.base.json',
   'docker-compose.yml',
   'infra/caddy/Dockerfile',
   'apps/api',
+  'apps/site',
   'apps/web',
-  'apps/webtransport'
+  'apps/webtransport',
+  'packages'
 ]
 const cacheKey = 'preview'
 const cache = loadBuildCache()

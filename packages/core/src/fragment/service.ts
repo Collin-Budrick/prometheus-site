@@ -23,6 +23,28 @@ const randomRefreshDelay = () => Math.floor(Math.random() * (maxRefreshDelayMs -
 
 type FragmentPlanMemoEntry = { expiresAt: number; plan: FragmentPlan }
 
+export const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
+  if (cached === null) {
+    return { status: 'miss' }
+  }
+
+  const base = {
+    updatedAt: cached.updatedAt,
+    staleAt: cached.staleAt,
+    expiresAt: cached.expiresAt
+  }
+
+  if (now < cached.staleAt) {
+    return { status: 'hit', ...base }
+  }
+
+  if (now < cached.expiresAt) {
+    return { status: 'stale', ...base }
+  }
+
+  return { status: 'miss', ...base }
+}
+
 export type FragmentServiceOptions = {
   store: FragmentStore
   createTranslator?: (lang: FragmentLang) => FragmentTranslator
@@ -286,28 +308,6 @@ export const createFragmentService = ({
     }
 
     return refreshFragment(id, lang)
-  }
-
-  const buildCacheStatus = (cached: StoredFragment | null, now: number): FragmentCacheStatus => {
-    if (cached === null) {
-      return { status: 'miss' }
-    }
-
-    const base = {
-      updatedAt: cached.updatedAt,
-      staleAt: cached.staleAt,
-      expiresAt: cached.expiresAt
-    }
-
-    if (now < cached.staleAt) {
-      return { status: 'hit', ...base }
-    }
-
-    if (now < cached.expiresAt) {
-      return { status: 'stale', ...base }
-    }
-
-    return { status: 'miss', ...base }
   }
 
   const annotatePlanEntry = async (

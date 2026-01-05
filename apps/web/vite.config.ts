@@ -19,6 +19,15 @@ const nativeBindingMap: Record<string, string> = {
   'win32-x64': 'qwik.win32-x64-msvc.node'
 }
 const bindingsDir = path.resolve(path.dirname(require.resolve('@builder.io/qwik/optimizer')), '..', 'bindings')
+const workspaceRoot = path.resolve(__dirname, '../..')
+const coreRoot = path.resolve(workspaceRoot, 'packages/core/src')
+const platformRoot = path.resolve(workspaceRoot, 'packages/platform/src')
+const uiRoot = path.resolve(workspaceRoot, 'packages/ui/src')
+const siteRoot = path.resolve(workspaceRoot, 'apps/site/src')
+const featureAuthRoot = path.resolve(workspaceRoot, 'packages/features/auth/src')
+const featureStoreRoot = path.resolve(workspaceRoot, 'packages/features/store/src')
+const featureMessagingRoot = path.resolve(workspaceRoot, 'packages/features/messaging/src')
+const featureLabRoot = path.resolve(workspaceRoot, 'packages/features/lab/src')
 
 const loadQwikBinding = async () => {
   const key = `${process.platform}-${process.arch}`
@@ -322,9 +331,25 @@ export default defineConfig(
       ],
       oxc: false,
       resolve: {
-        alias: {
-          '@': path.resolve(__dirname, 'src')
-        }
+        alias: [
+          { find: '@', replacement: path.resolve(__dirname, 'src') },
+          { find: /^@core$/, replacement: path.join(coreRoot, 'index.ts') },
+          { find: /^@core\/(.*)$/, replacement: path.join(coreRoot, '$1') },
+          { find: /^@platform$/, replacement: path.join(platformRoot, 'index.ts') },
+          { find: /^@platform\/(.*)$/, replacement: path.join(platformRoot, '$1') },
+          { find: /^@ui$/, replacement: path.join(uiRoot, 'index.ts') },
+          { find: /^@ui\/(.*)$/, replacement: path.join(uiRoot, '$1') },
+          { find: /^@site$/, replacement: path.join(siteRoot, 'index.ts') },
+          { find: /^@site\/(.*)$/, replacement: path.join(siteRoot, '$1') },
+          { find: /^@features\/auth$/, replacement: path.join(featureAuthRoot, 'index.ts') },
+          { find: /^@features\/auth\/(.*)$/, replacement: path.join(featureAuthRoot, '$1') },
+          { find: /^@features\/store$/, replacement: path.join(featureStoreRoot, 'index.ts') },
+          { find: /^@features\/store\/(.*)$/, replacement: path.join(featureStoreRoot, '$1') },
+          { find: /^@features\/messaging$/, replacement: path.join(featureMessagingRoot, 'index.ts') },
+          { find: /^@features\/messaging\/(.*)$/, replacement: path.join(featureMessagingRoot, '$1') },
+          { find: /^@features\/lab$/, replacement: path.join(featureLabRoot, 'index.ts') },
+          { find: /^@features\/lab\/(.*)$/, replacement: path.join(featureLabRoot, '$1') }
+        ]
       },
       css: {
         transformer: 'lightningcss'

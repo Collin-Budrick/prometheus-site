@@ -39,10 +39,17 @@ const getRuntimeEnv = (): AppEnv => {
   return {}
 }
 
-export const resolveRuntimeEnv = (env?: AppEnv): AppEnv => ({
-  ...getRuntimeEnv(),
-  ...(env ?? {})
-})
+export const resolveRuntimeEnv = (env?: AppEnv): AppEnv => {
+  const runtimeEnv = getRuntimeEnv()
+  const processEnv =
+    typeof process !== 'undefined' && typeof process.env === 'object' ? (process.env as AppEnv) : {}
+
+  return {
+    ...runtimeEnv,
+    ...processEnv,
+    ...(env ?? {})
+  }
+}
 
 const toStringValue = (value: unknown) => {
   if (typeof value === 'string') return value
@@ -188,13 +195,17 @@ export const resolveClientErrorReporting = (
   }
 }
 
-export const resolveAppConfig = (env: AppEnv = resolveRuntimeEnv()): AppConfig => ({
-  apiBase: resolveApiBase(env),
-  webTransportBase: resolveWebTransportBase(env),
-  preferWebTransport: isWebTransportPreferred(env),
-  preferWebTransportDatagrams: isWebTransportDatagramsPreferred(env),
-  preferFragmentCompression: isFragmentCompressionPreferred(env),
-  enablePrefetch: isPrefetchEnabled(env),
-  analytics: resolveAnalyticsConfig(env),
-  clientErrors: resolveClientErrorReporting(env)
-})
+export const resolveAppConfig = (env?: AppEnv): AppConfig => {
+  const resolvedEnv = resolveRuntimeEnv(env)
+
+  return {
+    apiBase: resolveApiBase(resolvedEnv),
+    webTransportBase: resolveWebTransportBase(resolvedEnv),
+    preferWebTransport: isWebTransportPreferred(resolvedEnv),
+    preferWebTransportDatagrams: isWebTransportDatagramsPreferred(resolvedEnv),
+    preferFragmentCompression: isFragmentCompressionPreferred(resolvedEnv),
+    enablePrefetch: isPrefetchEnabled(resolvedEnv),
+    analytics: resolveAnalyticsConfig(resolvedEnv),
+    clientErrors: resolveClientErrorReporting(resolvedEnv)
+  }
+}

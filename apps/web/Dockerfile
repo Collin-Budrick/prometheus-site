@@ -4,6 +4,14 @@ WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/api/package.json apps/api/package.json
+COPY apps/site/package.json apps/site/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/platform/package.json packages/platform/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/features/auth/package.json packages/features/auth/package.json
+COPY packages/features/lab/package.json packages/features/lab/package.json
+COPY packages/features/messaging/package.json packages/features/messaging/package.json
+COPY packages/features/store/package.json packages/features/store/package.json
 RUN bun install --ignore-scripts --frozen-lockfile
 
 FROM oven/bun:1.3.5 AS builder
@@ -13,8 +21,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/apps/web/package.json ./apps/web/package.json
 COPY --from=deps /app/apps/api/package.json ./apps/api/package.json
+COPY --from=deps /app/apps/site/package.json ./apps/site/package.json
 
+COPY tsconfig.base.json ./tsconfig.base.json
 COPY apps/web ./apps/web
+COPY apps/site ./apps/site
+COPY packages ./packages
 ARG VITE_API_BASE=/api
 ARG VITE_ENABLE_PREFETCH
 ARG VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
