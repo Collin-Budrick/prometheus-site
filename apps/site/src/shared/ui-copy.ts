@@ -21,10 +21,6 @@ export type UiCopy = {
   storeTitle: string
   storeDescription: string
   storeAction: string
-  labMetaLine: string
-  labTitle: string
-  labDescription: string
-  labAction: string
   loginMetaLine: string
   loginTitle: string
   loginDescription: string
