@@ -4,13 +4,28 @@ import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { randomUUID } from 'node:crypto'
 import { Elysia, t } from 'elysia'
-import { platformConfig as config, type RelyingPartyConfig } from '@platform/config'
-import { db } from 'apps/api/src/db/client'
-import { authKeys, authSessions, passkeys, users, verification } from 'apps/api/src/db/schema'
+import type { AuthConfig, RelyingPartyConfig } from '@platform/config'
+import type { DatabaseClient } from '@platform/db'
+import type { AnyPgTable } from 'drizzle-orm/pg-core'
 
 export type AuthRequestContext = {
   headers?: HeadersInit
   request?: Request
+}
+
+export type AuthTables = {
+  users: AnyPgTable
+  authSessions: AnyPgTable
+  authKeys: AnyPgTable
+  verification: AnyPgTable
+  passkeys: AnyPgTable
+}
+
+export type AuthFeatureOptions = {
+  db: DatabaseClient['db']
+  tables: AuthTables
+  authConfig: AuthConfig
+  allowDynamicOrigins?: boolean
 }
 
 type SignInBody = {
@@ -37,59 +52,16 @@ const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
 }
 
-type ConfiguredSocialProvider = Extract<keyof SocialProviders, keyof typeof config.auth.oauth>
+type ConfiguredSocialProvider = keyof AuthConfig['oauth']
 
-const isConfiguredSocialProvider = (value: string): value is ConfiguredSocialProvider =>
-  Object.prototype.hasOwnProperty.call(config.auth.oauth, value)
+const isConfiguredSocialProvider = (
+  value: string,
+  providers: AuthConfig['oauth']
+): value is ConfiguredSocialProvider => Object.prototype.hasOwnProperty.call(providers, value)
 
 const normalizeHeaderValue = (value: string | null | undefined) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? undefined : trimmed
-}
-
-const socialProviders: SocialProviders = {}
-
-for (const [provider, credentials] of Object.entries(config.auth.oauth)) {
-  if (credentials === undefined) continue
-  if (!isConfiguredSocialProvider(provider)) continue
-  socialProviders[provider] = {
-    clientId: credentials.clientId,
-    clientSecret: credentials.clientSecret
-  }
-}
-
-const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
-
-const baseAuthConfig = {
-  appName: 'Prometheus',
-  basePath: '/api/auth',
-  secret: config.auth.cookieSecret,
-  socialProviders: socialProvidersConfig,
-  database: drizzleAdapter(db, {
-    provider: 'pg',
-    schema: {
-      user: users,
-      session: authSessions,
-      account: authKeys,
-      verification,
-      passkey: passkeys
-    }
-  }),
-  advanced: {
-    database: {
-      generateId: () => randomUUID()
-    }
-  },
-  account: {
-    fields: {
-      accountId: 'providerUserId',
-      providerId: 'provider',
-      password: 'hashedPassword'
-    }
-  },
-  emailAndPassword: {
-    enabled: true
-  }
 }
 
 const normalizeHost = (value: string) => {
@@ -134,23 +106,14 @@ const resolveRpIdFromOrigin = (origin: string) => {
   }
 }
 
-const createAuthInstance = (rpId: string, rpOrigin: string) =>
-  betterAuth({
-    ...baseAuthConfig,
-    baseURL: rpOrigin,
-    plugins: [
-      passkey({
-        rpID: rpId,
-        origin: rpOrigin
-      })
-    ]
-  })
-
-const buildAuthByHost = () => {
+const buildAuthByHost = (
+  createAuthInstance: (rpId: string, rpOrigin: string) => ReturnType<typeof betterAuth>,
+  relyingParties: RelyingPartyConfig[],
+  allowDynamicOrigins: boolean
+) => {
   const authByHost = new Map<string, ReturnType<typeof createAuthInstance>>()
   const authByOrigin = new Map<string, ReturnType<typeof createAuthInstance>>()
   const rpByHost = new Map<string, RelyingPartyConfig>()
-  const relyingParties = config.auth.relyingParties
   const authInstances: Array<ReturnType<typeof createAuthInstance>> = []
 
   for (const rp of relyingParties) {
@@ -181,13 +144,10 @@ const buildAuthByHost = () => {
     authByHost,
     authByOrigin,
     rpByHost,
-    primary: authInstances[0]
+    primary: authInstances[0],
+    allowDynamicOrigins
   }
 }
-
-const { authByHost, authByOrigin, rpByHost, primary: primaryAuth } = buildAuthByHost()
-
-const allowDynamicOrigins = process.env.NODE_ENV !== 'production'
 
 const resolveRequestProtocol = (request: Request) => {
   const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
@@ -221,7 +181,16 @@ const resolveRequestOrigin = (request: Request) => {
   return `${protocol}://${host}`
 }
 
-const getAuthForRequest = (request?: Request) => {
+const getAuthForRequest = (
+  request: Request | undefined,
+  authByHost: Map<string, ReturnType<typeof betterAuth>>,
+  authByOrigin: Map<string, ReturnType<typeof betterAuth>>,
+  rpByHost: Map<string, RelyingPartyConfig>,
+  primaryAuth: ReturnType<typeof betterAuth>,
+  allowDynamicOrigins: boolean,
+  createAuthInstance: (rpId: string, rpOrigin: string) => ReturnType<typeof betterAuth>,
+  config: { rpId: string }
+) => {
   if (!request) return primaryAuth
   const forwardedHost = normalizeHeaderValue(request.headers.get('x-forwarded-host')?.split(',')[0])
   const hostHeader = forwardedHost ?? normalizeHeaderValue(request.headers.get('host')) ?? ''
@@ -268,7 +237,7 @@ const getAuthForRequest = (request?: Request) => {
     if (existing) return existing
 
     const derivedRpId = resolveRpIdFromOrigin(origin)
-    const fallbackRpId = derivedRpId === '' ? config.auth.rpId : derivedRpId
+    const fallbackRpId = derivedRpId === '' ? config.rpId : derivedRpId
     const fallback = createAuthInstance(fallbackRpId, origin)
     authByOrigin.set(origin, fallback)
     return fallback
@@ -279,88 +248,189 @@ const getAuthForRequest = (request?: Request) => {
   return authByHost.get(urlHost) ?? authByHost.get(urlHostname) ?? primaryAuth
 }
 
-export const auth = primaryAuth
+export type AuthFeature = {
+  auth: ReturnType<typeof betterAuth>
+  authRoutes: Elysia
+  handleAuthRequest: (request: Request) => Promise<Response> | Response
+  signInWithEmail: (body: SignInBody, context?: AuthRequestContext) => Promise<Response>
+  signUpWithEmail: (body: SignUpBody, context?: AuthRequestContext) => Promise<Response>
+  signUpWithPasskey: (body: PasskeySignUpBody, context?: AuthRequestContext) => Promise<Response>
+  validateSession: (context?: AuthRequestContext) => Promise<Response>
+}
 
-export const handleAuthRequest = (request: Request) => getAuthForRequest(request).handler(request)
-
-export const signInWithEmail = (body: SignInBody, context?: AuthRequestContext) =>
-  getAuthForRequest(context?.request).api.signInEmail({
-    body,
-    headers: resolveHeaders(context),
-    request: context?.request,
-    asResponse: true
-  })
-
-export const signUpWithEmail = (body: SignUpBody, context?: AuthRequestContext) =>
-  getAuthForRequest(context?.request).api.signUpEmail({
-    body,
-    headers: resolveHeaders(context),
-    request: context?.request,
-    asResponse: true
-  })
+export type ValidateSessionHandler = AuthFeature['validateSession']
 
 const generatePasskeyPassword = () => `${randomUUID()}${randomUUID()}`
 
-export const signUpWithPasskey = (body: PasskeySignUpBody, context?: AuthRequestContext) => {
-  const authInstance = getAuthForRequest(context?.request)
-  const passkeyBody: SignUpBody = {
-    ...body,
-    password: generatePasskeyPassword()
+export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
+  const allowDynamicOrigins = options.allowDynamicOrigins ?? process.env.NODE_ENV !== 'production'
+
+  const socialProviders: SocialProviders = {}
+
+  for (const [provider, credentials] of Object.entries(options.authConfig.oauth)) {
+    if (credentials === undefined) continue
+    if (!isConfiguredSocialProvider(provider, options.authConfig.oauth)) continue
+    socialProviders[provider] = {
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret
+    }
   }
 
-  return authInstance.api.signUpEmail({
-    body: passkeyBody,
-    headers: resolveHeaders(context),
-    request: context?.request,
-    asResponse: true
-  })
+  const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
+
+  const baseAuthConfig = {
+    appName: 'Prometheus',
+    basePath: '/api/auth',
+    secret: options.authConfig.cookieSecret,
+    socialProviders: socialProvidersConfig,
+    database: drizzleAdapter(options.db, {
+      provider: 'pg',
+      schema: {
+        user: options.tables.users,
+        session: options.tables.authSessions,
+        account: options.tables.authKeys,
+        verification: options.tables.verification,
+        passkey: options.tables.passkeys
+      }
+    }),
+    advanced: {
+      database: {
+        generateId: () => randomUUID()
+      }
+    },
+    account: {
+      fields: {
+        accountId: 'providerUserId',
+        providerId: 'provider',
+        password: 'hashedPassword'
+      }
+    },
+    emailAndPassword: {
+      enabled: true
+    }
+  }
+
+  const createAuthInstance = (rpId: string, rpOrigin: string) =>
+    betterAuth({
+      ...baseAuthConfig,
+      baseURL: rpOrigin,
+      plugins: [
+        passkey({
+          rpID: rpId,
+          origin: rpOrigin
+        })
+      ]
+    })
+
+  const { authByHost, authByOrigin, rpByHost, primary: primaryAuth } = buildAuthByHost(
+    createAuthInstance,
+    options.authConfig.relyingParties,
+    allowDynamicOrigins
+  )
+
+  const resolveAuthForRequest = (request?: Request) =>
+    getAuthForRequest(
+      request,
+      authByHost,
+      authByOrigin,
+      rpByHost,
+      primaryAuth,
+      allowDynamicOrigins,
+      createAuthInstance,
+      {
+        rpId: options.authConfig.rpId
+      }
+    )
+
+  const handleAuthRequest = (request: Request) => resolveAuthForRequest(request).handler(request)
+
+  const signInWithEmail = (body: SignInBody, context?: AuthRequestContext) =>
+    resolveAuthForRequest(context?.request).api.signInEmail({
+      body,
+      headers: resolveHeaders(context),
+      request: context?.request,
+      asResponse: true
+    })
+
+  const signUpWithEmail = (body: SignUpBody, context?: AuthRequestContext) =>
+    resolveAuthForRequest(context?.request).api.signUpEmail({
+      body,
+      headers: resolveHeaders(context),
+      request: context?.request,
+      asResponse: true
+    })
+
+  const signUpWithPasskey = (body: PasskeySignUpBody, context?: AuthRequestContext) => {
+    const authInstance = resolveAuthForRequest(context?.request)
+    const passkeyBody: SignUpBody = {
+      ...body,
+      password: generatePasskeyPassword()
+    }
+
+    return authInstance.api.signUpEmail({
+      body: passkeyBody,
+      headers: resolveHeaders(context),
+      request: context?.request,
+      asResponse: true
+    })
+  }
+
+  const validateSession = (context?: AuthRequestContext) =>
+    resolveAuthForRequest(context?.request).api.getSession({
+      headers: resolveHeaders(context),
+      request: context?.request,
+      asResponse: true
+    })
+
+  const authRoutes = new Elysia({ prefix: '/api/auth' })
+    .post(
+      '/sign-in/email',
+      async ({ body, request }) => signInWithEmail(body, { request }),
+      {
+        body: t.Object({
+          email: t.String({ format: 'email' }),
+          password: t.String(),
+          callbackURL: t.Optional(t.String()),
+          rememberMe: t.Optional(t.Boolean())
+        })
+      }
+    )
+    .post(
+      '/sign-up/email',
+      async ({ body, request }) => signUpWithEmail(body, { request }),
+      {
+        body: t.Object({
+          name: t.String(),
+          email: t.String({ format: 'email' }),
+          password: t.String(),
+          callbackURL: t.Optional(t.String()),
+          rememberMe: t.Optional(t.Boolean())
+        })
+      }
+    )
+    .post(
+      '/sign-up/passkey',
+      async ({ body, request }) => signUpWithPasskey(body, { request }),
+      {
+        body: t.Object({
+          name: t.String(),
+          email: t.String({ format: 'email' }),
+          callbackURL: t.Optional(t.String()),
+          rememberMe: t.Optional(t.Boolean())
+        })
+      }
+    )
+    .get('/session', async ({ request }) => validateSession({ request }))
+    // Delegate all remaining auth, passkey, and OAuth routes to Better Auth's handler
+    .all('/*', async ({ request }) => handleAuthRequest(request))
+
+  return {
+    auth: primaryAuth,
+    authRoutes,
+    handleAuthRequest,
+    signInWithEmail,
+    signUpWithEmail,
+    signUpWithPasskey,
+    validateSession
+  }
 }
-
-export const validateSession = (context?: AuthRequestContext) =>
-  getAuthForRequest(context?.request).api.getSession({
-    headers: resolveHeaders(context),
-    request: context?.request,
-    asResponse: true
-  })
-
-export const authRoutes = new Elysia({ prefix: '/api/auth' })
-  .post(
-    '/sign-in/email',
-    async ({ body, request }) => signInWithEmail(body, { request }),
-    {
-      body: t.Object({
-        email: t.String({ format: 'email' }),
-        password: t.String(),
-        callbackURL: t.Optional(t.String()),
-        rememberMe: t.Optional(t.Boolean())
-      })
-    }
-  )
-  .post(
-    '/sign-up/email',
-    async ({ body, request }) => signUpWithEmail(body, { request }),
-    {
-      body: t.Object({
-        name: t.String(),
-        email: t.String({ format: 'email' }),
-        password: t.String(),
-        callbackURL: t.Optional(t.String()),
-        rememberMe: t.Optional(t.Boolean())
-      })
-    }
-  )
-  .post(
-    '/sign-up/passkey',
-    async ({ body, request }) => signUpWithPasskey(body, { request }),
-    {
-      body: t.Object({
-        name: t.String(),
-        email: t.String({ format: 'email' }),
-        callbackURL: t.Optional(t.String()),
-        rememberMe: t.Optional(t.Boolean())
-      })
-    }
-  )
-  .get('/session', async ({ request }) => validateSession({ request }))
-  // Delegate all remaining auth, passkey, and OAuth routes to Better Auth's handler
-  .all('/*', async ({ request }) => handleAuthRequest(request))

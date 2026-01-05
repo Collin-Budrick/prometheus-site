@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import type { DocumentHead, RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store'
+import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store/store-route'
 import { siteBrand, siteFeatures } from '../config'
 import { useLangCopy } from '../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from './cache-headers'
@@ -25,6 +25,21 @@ const DisabledStoreRoute = component$(() => {
   )
 })
 
+const EnabledStoreRoute = component$(() => {
+  const copy = useLangCopy()
+  return (
+    <FeatureStoreRoute
+      copy={{
+        metaLine: copy.value.storeMetaLine,
+        title: copy.value.storeTitle,
+        description: copy.value.storeDescription,
+        actionLabel: copy.value.storeAction,
+        closeLabel: copy.value.fragmentClose
+      }}
+    />
+  )
+})
+
 export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
 
 export const StoreSkeleton = storeEnabled ? FeatureStoreSkeleton : StaticRouteSkeleton
@@ -39,6 +54,6 @@ export const head: DocumentHead = {
   ]
 }
 
-const RouteComponent = storeEnabled ? FeatureStoreRoute : DisabledStoreRoute
+const RouteComponent = storeEnabled ? EnabledStoreRoute : DisabledStoreRoute
 
 export default RouteComponent

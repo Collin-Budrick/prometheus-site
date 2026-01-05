@@ -1,15 +1,16 @@
 import type { AnyElysia, Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'
-import type { validateSession } from '@features/auth'
-import { chatMessages } from 'apps/api/src/db/schema'
-import { resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from 'apps/api/src/server/network'
-import type { isValkeyReady, valkey as valkeyClient } from 'apps/api/src/services/cache'
+import type { ValidateSessionHandler } from '@features/auth/server'
+import type { DatabaseClient } from '@platform/db'
+import type { ValkeyClientType } from '@valkey/client'
+import type { ChatMessagesTable } from './api'
 
-type DbClient = typeof import('apps/api/src/db/client').db
-
-type ValkeyClient = typeof valkeyClient
-type IsValkeyReadyFn = typeof isValkeyReady
-type ValidateSessionFn = typeof validateSession
+type ValkeyClient = ValkeyClientType
+type IsValkeyReadyFn = () => boolean
+type ValidateSessionFn = ValidateSessionHandler
+type ResolveWsClientIp = (ws: unknown) => string
+type ResolveWsHeaders = (ws: unknown) => Headers
+type ResolveWsRequest = (ws: unknown) => Request | undefined
 
 type WsUser = { id: string; name?: string }
 
@@ -61,7 +62,11 @@ export type ChatWsOptions = {
   isValkeyReady: IsValkeyReadyFn
   validateSession: ValidateSessionFn
   checkWsQuota: (clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
-  db: DbClient
+  db: DatabaseClient['db']
+  chatMessagesTable: ChatMessagesTable
+  resolveWsClientIp: ResolveWsClientIp
+  resolveWsHeaders: ResolveWsHeaders
+  resolveWsRequest: ResolveWsRequest
   invalidateChatHistoryCache?: () => Promise<void> | void
   recordLatencySample?: (metric: string, durationMs: number) => void | Promise<void>
 }
@@ -72,9 +77,9 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
       return { headers: context.request.headers, request: context.request }
     },
     async open(ws: WsSocket) {
-      const clientIp = resolveWsClientIp(ws)
-      const headers = resolveWsHeaders(ws)
-      const request = resolveWsRequest(ws)
+      const clientIp = options.resolveWsClientIp(ws)
+      const headers = options.resolveWsHeaders(ws)
+      const request = options.resolveWsRequest(ws)
 
       let sessionPayload: { user?: WsUser } | null = null
       try {
@@ -86,7 +91,8 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
         console.error('Failed to validate chat session', error)
       }
 
-      const sessionUserId = sessionPayload?.user?.id
+      const sessionUser = sessionPayload?.user
+      const sessionUserId = sessionUser?.id
       if (sessionUserId === undefined || sessionUserId === '') {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for chat' } satisfies ChatErrorEvent))
         ws.close(4401, 'Unauthorized')
@@ -101,7 +107,7 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
 
       const data = ws.data
       data.clientIp = clientIp
-      data.user = sessionPayload.user
+      data.user = sessionUser
 
       ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
 
@@ -109,7 +115,7 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
       try {
         subscriber = options.valkey.duplicate()
         await subscriber.connect()
-        await subscriber.subscribe(chatChannel, (chatMessage) => {
+        await subscriber.subscribe(chatChannel, (chatMessage: string) => {
           ws.send(chatMessage)
         })
         data.subscriber = subscriber
@@ -134,7 +140,7 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
     async message(ws: WsSocket, message: unknown) {
       if (!options.isValkeyReady()) return
       const data = ws.data
-      const clientIp = data.clientIp ?? resolveWsClientIp(ws)
+      const clientIp = data.clientIp ?? options.resolveWsClientIp(ws)
       const { allowed, retryAfter } = await options.checkWsQuota(clientIp)
 
       if (!allowed) {
@@ -192,7 +198,7 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
 
       try {
         const start = performance.now()
-        await options.db.insert(chatMessages).values({ author: entry.from, body: entry.text })
+        await options.db.insert(options.chatMessagesTable).values({ author: entry.from, body: entry.text })
         await options.valkey.publish(chatChannel, JSON.stringify(entry))
         if (options.invalidateChatHistoryCache) {
           await options.invalidateChatHistoryCache()

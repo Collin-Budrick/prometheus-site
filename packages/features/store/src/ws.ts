@@ -1,14 +1,16 @@
 import type { AnyElysia, Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'
-import type { validateSession } from '@features/auth'
-import { resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from 'apps/api/src/server/network'
-import type { isValkeyReady, valkey as valkeyClient } from 'apps/api/src/services/cache'
+import type { ValidateSessionHandler } from '@features/auth/server'
+import type { ValkeyClientType } from '@valkey/client'
 
 export const storeChannel = 'store:stream'
 
-type ValkeyClient = typeof valkeyClient
-type IsValkeyReadyFn = typeof isValkeyReady
-type ValidateSessionFn = typeof validateSession
+type ValkeyClient = ValkeyClientType
+type IsValkeyReadyFn = () => boolean
+type ValidateSessionFn = ValidateSessionHandler
+type ResolveWsClientIp = (ws: unknown) => string
+type ResolveWsHeaders = (ws: unknown) => Headers
+type ResolveWsRequest = (ws: unknown) => Request | undefined
 
 type WsUser = { id: string; name?: string }
 
@@ -33,6 +35,9 @@ export type StoreWsOptions = {
   isValkeyReady: IsValkeyReadyFn
   validateSession: ValidateSessionFn
   checkWsOpenQuota: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
+  resolveWsClientIp: ResolveWsClientIp
+  resolveWsHeaders: ResolveWsHeaders
+  resolveWsRequest: ResolveWsRequest
 }
 
 const attachHeartbeat = (ws: WsSocket) => {
@@ -78,9 +83,9 @@ export const registerStoreWs = <App extends AnyElysia>(app: App, options: StoreW
       return { headers: context.request.headers, request: context.request }
     },
     async open(ws: WsSocket) {
-      const clientIp = resolveWsClientIp(ws)
-      const headers = resolveWsHeaders(ws)
-      const request = resolveWsRequest(ws)
+      const clientIp = options.resolveWsClientIp(ws)
+      const headers = options.resolveWsHeaders(ws)
+      const request = options.resolveWsRequest(ws)
       const { allowed, retryAfter } = await options.checkWsOpenQuota('/store/ws', clientIp)
       if (!allowed) {
         ws.send(JSON.stringify({ type: 'error', error: 'Too many realtime attempts', retryAfter } satisfies StoreErrorEvent))
@@ -113,7 +118,8 @@ export const registerStoreWs = <App extends AnyElysia>(app: App, options: StoreW
         console.error('Failed to validate store session', error)
       }
 
-      const sessionUserId = sessionPayload?.user?.id
+      const sessionUser = sessionPayload?.user
+      const sessionUserId = sessionUser?.id
       if (sessionUserId === undefined || sessionUserId === '') {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for store realtime' } satisfies StoreErrorEvent))
         ws.close(4401, 'Unauthorized')
@@ -128,14 +134,14 @@ export const registerStoreWs = <App extends AnyElysia>(app: App, options: StoreW
 
       const data = ws.data
       data.clientIp = clientIp
-      data.user = sessionPayload.user
+      data.user = sessionUser
       data.lastSeen = Date.now()
 
       let subscriber: Awaited<ReturnType<ValkeyClient['duplicate']>> | null = null
       try {
         subscriber = options.valkey.duplicate()
         await subscriber.connect()
-        await subscriber.subscribe(storeChannel, (message) => {
+        await subscriber.subscribe(storeChannel, (message: string) => {
           ws.send(message)
         })
         data.subscriber = subscriber

@@ -1,10 +1,9 @@
 import { Elysia, t } from 'elysia'
 import { gt } from 'drizzle-orm'
-import type { RedisClientType } from '@valkey/client'
-import { storeItems } from 'apps/api/src/db/schema'
+import type { ValkeyClientType } from '@valkey/client'
+import type { DatabaseClient } from '@platform/db'
 import { buildStoreItemsCacheKey } from './cache'
-
-type DbClient = typeof import('apps/api/src/db/client').db
+import type { StoreItemsTable } from './realtime'
 
 export type StoreTelemetry = {
   cacheHits: number
@@ -13,10 +12,11 @@ export type StoreTelemetry = {
   cacheSetErrors: number
 }
 
-export type StoreRouteOptions = {
-  db: DbClient
-  valkey: RedisClientType
+export type StoreRouteOptions<StoreItem extends { id: number } = { id: number }> = {
+  db: DatabaseClient['db']
+  valkey: ValkeyClientType
   isValkeyReady: () => boolean
+  storeItemsTable: StoreItemsTable
   getClientIp: (request: Request) => string
   checkRateLimit: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
   checkEarlyLimit: (key: string, max: number, windowMs: number) => Promise<{ allowed: boolean; remaining: number }>
@@ -25,18 +25,20 @@ export type StoreRouteOptions = {
   telemetry?: StoreTelemetry
 }
 
-type StoreItemsPayload = { items: typeof storeItems.$inferSelect[]; cursor: number | null }
+type StoreItemsPayload<StoreItem> = { items: StoreItem[]; cursor: number | null }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
-const isStoreItemsPayload = (value: unknown): value is StoreItemsPayload => {
+const isStoreItemsPayload = <StoreItem>(value: unknown): value is StoreItemsPayload<StoreItem> => {
   if (!isRecord(value)) return false
   if (!Array.isArray(value.items)) return false
   return value.cursor === null || typeof value.cursor === 'number'
 }
 
-export const createStoreRoutes = (options: StoreRouteOptions) => {
+export const createStoreRoutes = <StoreItem extends { id: number } = { id: number }>(
+  options: StoreRouteOptions<StoreItem>
+) => {
   const telemetry = options.telemetry ?? {
     cacheHits: 0,
     cacheMisses: 0,
@@ -76,7 +78,7 @@ export const createStoreRoutes = (options: StoreRouteOptions) => {
           const cached = await options.valkey.get(cacheKey)
           if (cached !== null) {
             const parsed: unknown = JSON.parse(cached)
-            if (isStoreItemsPayload(parsed)) {
+            if (isStoreItemsPayload<StoreItem>(parsed)) {
               telemetry.cacheHits += 1
               return parsed
             }
@@ -88,13 +90,14 @@ export const createStoreRoutes = (options: StoreRouteOptions) => {
         }
       }
 
-      const itemsQuery = options.db.select().from(storeItems)
-      const paginatedQuery = lastId > 0 ? itemsQuery.where(gt(storeItems.id, lastId)) : itemsQuery
+      const itemsQuery = options.db.select().from(options.storeItemsTable)
+      const paginatedQuery =
+        lastId > 0 ? itemsQuery.where(gt(options.storeItemsTable.id, lastId)) : itemsQuery
 
       const start = performance.now()
       let items
       try {
-        items = await paginatedQuery.orderBy(storeItems.id).limit(limit)
+        items = await paginatedQuery.orderBy(options.storeItemsTable.id).limit(limit)
       } catch (error) {
         console.error('Failed to query store items', error)
         return options.jsonError(500, 'Unable to load items')

@@ -1,4 +1,4 @@
-import type { RedisClientType } from '@valkey/client'
+import type { ValkeyClientType } from '@valkey/client'
 
 const chatHistoryCacheKey = 'chat:history:latest'
 
@@ -12,7 +12,7 @@ const safeJsonParse = (raw: string | null): unknown => {
 }
 
 export const readChatHistoryCache = async (
-  client: RedisClientType,
+  client: ValkeyClientType,
   isReady: () => boolean
 ): Promise<unknown[] | null> => {
   if (!isReady()) return null
@@ -26,7 +26,7 @@ export const readChatHistoryCache = async (
 }
 
 export const writeChatHistoryCache = async (
-  client: RedisClientType,
+  client: ValkeyClientType,
   payload: unknown,
   ttlSeconds: number
 ) => {
@@ -37,7 +37,7 @@ export const writeChatHistoryCache = async (
   }
 }
 
-export const invalidateChatHistoryCache = async (client: RedisClientType, isReady: () => boolean) => {
+export const invalidateChatHistoryCache = async (client: ValkeyClientType, isReady: () => boolean) => {
   if (!isReady()) return
   try {
     await client.del(chatHistoryCacheKey)

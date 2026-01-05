@@ -1,32 +1,35 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand } from '@site/config'
-import { useLangCopy } from '@site/shared/lang-bridge'
 
-export const LabRoute = component$(() => {
-  const copy = useLangCopy()
+export type LabCopy = {
+  metaLine: string
+  title: string
+  description: string
+  actionLabel: string
+  closeLabel: string
+}
+
+const defaultLabCopy: LabCopy = {
+  metaLine: 'Labs',
+  title: 'Lab',
+  description: 'Prototype new fragment systems and validate edge behaviors.',
+  actionLabel: 'Open lab',
+  closeLabel: 'Close'
+}
+
+export const LabRoute = component$<{ copy?: Partial<LabCopy> }>(({ copy }) => {
+  const resolvedCopy = { ...defaultLabCopy, ...(copy ?? {}) }
 
   return (
     <StaticRouteTemplate
-      metaLine={copy.value.labMetaLine}
-      title={copy.value.labTitle}
-      description={copy.value.labDescription}
-      actionLabel={copy.value.labAction}
-      closeLabel={copy.value.fragmentClose}
+      metaLine={resolvedCopy.metaLine}
+      title={resolvedCopy.title}
+      description={resolvedCopy.description}
+      actionLabel={resolvedCopy.actionLabel}
+      closeLabel={resolvedCopy.closeLabel}
     />
   )
 })
-
-export const labHead: DocumentHead = {
-  title: `Lab | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: 'Prototype new fragment systems and validate edge behaviors.'
-    }
-  ]
-}
 
 export const LabSkeleton = () => <StaticRouteSkeleton />
 

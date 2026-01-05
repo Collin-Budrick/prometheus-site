@@ -1,4 +1,4 @@
-import { createClient, type RedisClientType } from '@valkey/client'
+import { createClient, type ValkeyClientType } from '@valkey/client'
 import { createLogger, type PlatformLogger } from './logger'
 import type { ValkeyConfig } from './config'
 
@@ -8,7 +8,7 @@ type CacheOptions = {
 }
 
 export type CacheClient = {
-  client: RedisClientType
+  client: ValkeyClientType
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   isReady: () => boolean
