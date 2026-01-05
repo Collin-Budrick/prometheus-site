@@ -1,8 +1,7 @@
 import { createFragmentService } from '@core/fragments'
 import { fragmentStore } from './store'
 import { createFragmentTranslator, defaultFragmentLang, type FragmentLang } from './i18n'
-import './definitions'
-import './planner'
+import '@site/fragments/home'
 
 const fragmentService = createFragmentService({
   store: fragmentStore,
