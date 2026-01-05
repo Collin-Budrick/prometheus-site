@@ -1,8 +1,8 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
+import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import { FragmentShell } from '../../web/src/features/fragments'
-import { loadFragmentPlan, loadFragments } from '../../web/src/fragment/server'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'
 import type {
@@ -32,7 +32,7 @@ const buildFallbackFragment = (id: string, apiBase: string, path: string, error?
     head: [
       {
         op: 'title',
-        value: `${siteBrand.name} | API offline`
+        value: `${siteBrand.name} | Service unavailable`
       }
     ],
     meta: {
@@ -43,11 +43,9 @@ const buildFallbackFragment = (id: string, apiBase: string, path: string, error?
       runtime: 'node'
     },
     tree: elementNode('section', undefined, [
-      elementNode('div', { class: 'meta-line' }, [textNode('fragment gateway offline')]),
-      elementNode('h1', undefined, [textNode('Fragment API unreachable')]),
-      elementNode('p', undefined, [
-        textNode('The frontend cannot reach the fragment service. Start the API or set VITE_API_BASE.')
-      ]),
+      elementNode('div', { class: 'meta-line' }, [textNode('fragment service offline')]),
+      elementNode('h1', undefined, [textNode('Fragment service unreachable')]),
+      elementNode('p', undefined, [textNode('The frontend cannot reach the fragment service right now.')]),
       elementNode('div', { class: 'matrix' }, [
         elementNode('div', { class: 'cell' }, [textNode('API base'), elementNode('strong', undefined, [textNode(apiBase)])]),
         elementNode('div', { class: 'cell' }, [textNode('Path'), elementNode('strong', undefined, [textNode(path || '/')])]),
@@ -61,9 +59,9 @@ const buildFallbackFragment = (id: string, apiBase: string, path: string, error?
         ])
       ]),
       elementNode('ul', { class: 'inline-list' }, [
-        elementNode('li', undefined, [elementNode('span'), textNode('Run `bun run dev:api`')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Set VITE_API_BASE for remote API')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Refresh after the API is live')])
+        elementNode('li', undefined, [elementNode('span'), textNode('Verify the fragment API host and credentials')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Confirm the service is running and reachable')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Retry once connectivity is restored')])
       ])
     ])
   }
