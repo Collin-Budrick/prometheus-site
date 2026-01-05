@@ -1,8 +1,16 @@
 import { createElement } from 'react'
-import { h, registerFragmentDefinitions, t as textNode } from '@core/fragments'
-import type { FragmentDefinition } from '@core/fragments'
-import { loadWasmAdd } from './wasm'
+import {
+  buildFragmentPlan,
+  h,
+  registerFragmentDefinitions,
+  setFragmentPlanBuilder,
+  t as textNode,
+  type FragmentDefinition,
+  type FragmentPlanEntry
+} from '@core/fragments'
+import { siteBrand } from '../config'
 import { reactToRenderNode } from './react'
+import { loadWasmAdd } from './wasm'
 
 const baseMeta = {
   ttl: 30,
@@ -47,7 +55,7 @@ const DockIcons = {
       createElement('path', {
         fillRule: 'evenodd',
         clipRule: 'evenodd',
-        d: 'M61.35 0.227l-55.333 4.087C1.553 4.7 0 7.617 0 11.113v60.66c0 2.723 0.967 5.053 3.3 8.167l13.007 16.913c2.137 2.723 4.08 3.307 8.16 3.113l64.257 -3.89c5.433 -0.387 6.99 -2.917 6.99 -7.193V20.64c0 -2.21 -0.873 -2.847 -3.443 -4.733L74.167 3.143c-4.273 -3.107 -6.02 -3.5 -12.817 -2.917zM25.92 19.523c-5.247 0.353 -6.437 0.433 -9.417 -1.99L8.927 11.507c-0.77 -0.78 -0.383 -1.753 1.557 -1.947l53.193 -3.887c4.467 -0.39 6.793 1.167 8.54 2.527l9.123 6.61c0.39 0.197 1.36 1.36 0.193 1.36l-54.933 3.307 -0.68 0.047zM19.803 88.3V30.367c0 -2.53 0.777 -3.697 3.103 -3.893L86 22.78c2.14 -0.193 3.107 1.167 3.107 3.693v57.547c0 2.53 -0.39 4.67 -3.883 4.863l-60.377 3.5c-3.493 0.193 -5.043 -0.97 -5.043 -4.083zm59.6 -54.827c0.387 1.75 0 3.5 -1.75 3.7l-2.91 0.577v42.773c-2.527 1.36 -4.853 2.137 -6.797 2.137 -3.107 0 -3.883 -0.973 -6.21 -3.887l-19.03 -29.94v28.967l6.02 1.363s0 3.5 -4.857 3.5l-13.39 0.777c-0.39 -0.78 0 -2.723 1.357 -3.11l3.497 -0.97v-38.3L30.48 40.667c-0.39 -1.75 0.58 -4.277 3.3 -4.473l14.367 -0.967 19.8 30.327v-26.83l-5.047 -0.58c-0.39 -2.143 1.163 -3.7 3.103 -3.89l13.4 -0.78z',
+        d: 'M61.35 0.227l-55.333 4.087C1.553 4.7 0 7.617 0 11.113v60.66c0 2.723 0.967 5.053 3.3 8.167l13.007 16.913c2.137 2.723 4.08 3.307 8.16 3.113l64.257 -3.89c5.433 -0.387 6.99 -2.917 6.99 -7.193V20.64c0 -2.21 -0.873 -2.847 -3.443 -4.733L74.167 3.143c-4.273 -3.107 -6.02 -3.5 -12.817 -2.917zM25.92 19.523c-5.247 0.353 -6.437 0.433 -9.417 -1.99L8.927 11.507c-0.77 -0.78 -0.383 -1.753 1.557 -1.947l53.193 -3.887c4.467 -0.39 6.793 1.167 8.54 2.527l9.123 6.61c0.39 0.197 1.36 1.36 0.193 1.36l-54.933 3.307 -0.68 0.047zM19.803 88.3V30.367c0 -2.53 0.777 -3.697 3.103 -3.893L86 22.78c2.14 -0.193 3.107 1.167 3.107 3.693v57.547c0 2.53 -0.39 4.67 -3.883 4.863l-60.377 3.5c-3.493 0.193 -5.043 -0.97 -5.043 -4.083zm59.6 -54.827c0.387 1.75 0 3.5 -1.75 3.7l-2.91 0.577v42.773c-2.527 1.36 -4.853 2.137 -6.797 2.137-3.107 0-3.883 -0.973-6.21-3.887l-19.03-29.94v28.967l6.02 1.363s0 3.5 -4.857 3.5l-13.39 0.777c-0.39 -0.78 0 -2.723 1.357 -3.11l3.497 -0.97v-38.3L30.48 40.667c-0.39 -1.75 0.58 -4.277 3.3 -4.473l14.367 -0.967 19.8 30.327v-26.83l-5.047 -0.58c-0.39 -2.143 1.163 -3.7 3.103 -3.89l13.4 -0.78z',
         fill: '#000'
       })
     ),
@@ -121,14 +129,17 @@ const DockIcons = {
           createElement('feGaussianBlur', { stdDeviation: '3.531' })
         )
       ),
+      createElement(
+        'path',
+        {
+          fill: '#b3b3b3',
+          d: 'M13.549 165.527l10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z',
+          filter: 'url(#a)'
+        }
+      ),
       createElement('path', {
-        fill: '#b3b3b3',
-        d: 'm54.532 138.45 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.523h.023c33.707 0 61.139-27.426 61.153-61.135.006-16.335-6.349-31.696-17.895-43.251A60.75 60.75 0 0 0 87.94 25.983c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.558zm-40.811 23.544L24.16 123.88c-6.438-11.154-9.825-23.808-9.821-36.772.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954zm0 0',
-        filter: 'url(#a)'
-      }),
-      createElement('path', {
-        fill: '#fff',
-        d: 'm12.966 161.238 10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z'
+        fill: '#57ad57',
+        d: 'M12.966 161.238l10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z'
       }),
       createElement('path', {
         fill: 'url(#linearGradient1780)',
@@ -162,7 +173,7 @@ const renderDockIcon = (label: string, icon: ReturnType<(typeof DockIcons)[keyof
 const hero: FragmentDefinition = {
   id: 'fragment://page/home/hero@v1',
   tags: ['home', 'hero'],
-  head: [{ op: 'title', value: 'Fragment Prime | Binary Rendering OS' }],
+  head: [{ op: 'title', value: `${siteBrand.name} | ${siteBrand.product}` }],
   css: '',
   ...baseMeta,
   render: ({ t }) => {
@@ -269,9 +280,7 @@ const island: FragmentDefinition = {
       h(
         'p',
         null,
-        text(
-          'Preact loads only inside the island boundary. No shared state, no routing ownership, no global hydration.'
-        )
+        text('Preact loads only inside the island boundary. No shared state, no routing ownership, no global hydration.')
       ),
       h('preact-island', { label: t('Isolated island') })
     ])
@@ -340,4 +349,44 @@ const dockFragment: FragmentDefinition = {
     )
 }
 
+export const homeFragments: FragmentPlanEntry[] = [
+  {
+    id: 'fragment://page/home/hero@v1',
+    critical: true,
+    layout: { column: 'span 7' }
+  },
+  {
+    id: 'fragment://page/home/planner@v1',
+    critical: true,
+    layout: { column: 'span 5' }
+  },
+  {
+    id: 'fragment://page/home/ledger@v1',
+    critical: false,
+    layout: { column: 'span 7' }
+  },
+  {
+    id: 'fragment://page/home/island@v1',
+    critical: false,
+    layout: { column: 'span 5' }
+  },
+  {
+    id: 'fragment://page/home/react@v1',
+    critical: false,
+    layout: { column: 'span 12' }
+  },
+  {
+    id: 'fragment://page/home/dock@v1',
+    critical: false,
+    layout: { column: 'span 12' }
+  }
+] satisfies FragmentPlanEntry[]
+
 registerFragmentDefinitions([hero, planner, ledger, island, reactFragment, dockFragment])
+
+setFragmentPlanBuilder((path, normalizedPath) => {
+  if (normalizedPath === '/') {
+    return buildFragmentPlan('/', homeFragments, [])
+  }
+  return buildFragmentPlan(normalizedPath, [], [])
+})

@@ -30,3 +30,4 @@ export const loadWasmAdd = async () => {
   wasmAdd = add
   return add
 }
+

@@ -1,7 +1,7 @@
 {
-  "name": "Fragment Prime",
-  "short_name": "FragmentPrime",
-  "description": "Binary Rendering OS experience for Fragment Prime.",
+  "name": "Prometheus",
+  "short_name": "Prometheus",
+  "description": "Binary fragment experience for Prometheus.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

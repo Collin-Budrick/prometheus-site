@@ -17,7 +17,9 @@
       "@features/messaging": ["./packages/features/messaging/src/index.ts"],
       "@features/messaging/*": ["./packages/features/messaging/src/*"],
       "@features/lab": ["./packages/features/lab/src/index.ts"],
-      "@features/lab/*": ["./packages/features/lab/src/*"]
+      "@features/lab/*": ["./packages/features/lab/src/*"],
+      "@site": ["./apps/site/src/index.ts"],
+      "@site/*": ["./apps/site/src/*"]
     },
     "skipLibCheck": true,
     "verbatimModuleSyntax": true

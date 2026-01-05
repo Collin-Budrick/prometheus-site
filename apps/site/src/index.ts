@@ -1,4 +1,13 @@
-/**
- * Placeholder entry for the site app. Feature modules should live in packages/features.
- */
-export const sitePlaceholder = Symbol('site-placeholder')
+export * from './config'
+export * from './routes/home'
+export * from './routes/layout'
+export * from './routes/login'
+export * from './routes/store'
+export * from './routes/lab'
+export * from './shared/lang-store'
+export * from './shared/lang-bridge'
+export * from './shared/ui-copy'
+export * from './shared/fragment-copy'
+export * from './shared/nav-order'
+export * from './shared/fragment-status'
+export * from './fragments/home'

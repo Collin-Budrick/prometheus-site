@@ -130,3 +130,4 @@ export const reactToRenderNode = (node: ReactNode): RenderNode => {
   if (nodes.length === 1) return nodes[0]
   return h('div', null, nodes)
 }
+
