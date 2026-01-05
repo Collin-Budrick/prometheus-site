@@ -2,7 +2,6 @@ import { $, component$, useComputed$, useOnDocument, useSignal, useTask$, useVis
 import { FragmentCard } from '@prometheus/ui'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '../../shared/speculation'
-import { isPrefetchEnabled } from '../../shared/prefetch'
 import { useSharedFragmentStatusSignal } from '../../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import type { Lang } from '../../shared/lang-store'
@@ -11,6 +10,7 @@ import { FragmentRenderer } from './FragmentRenderer'
 import { FragmentStreamController } from './FragmentStreamController'
 import { applyHeaderOverride } from './header-overrides'
 import { resolveFragments, resolvePlan } from './utils'
+import { appConfig } from '../../app-config'
 
 type FragmentShellProps = {
   plan: FragmentPlanValue
@@ -29,10 +29,10 @@ const DESKTOP_MIN_WIDTH = 1025
 const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
   useVisibleTask$(
     ({ cleanup }) => {
-      if (!isPrefetchEnabled(import.meta.env)) return
+      if (!appConfig.enablePrefetch) return
 
       const teardownSpeculation = applySpeculationRules(
-        buildSpeculationRulesForPlan(planValue, import.meta.env, {
+        buildSpeculationRulesForPlan(planValue, appConfig, {
           knownFragments: initialFragmentMap,
           currentPath: typeof window !== 'undefined' ? window.location.pathname : undefined
         })
