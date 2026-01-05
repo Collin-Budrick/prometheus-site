@@ -7,7 +7,7 @@ import type {
 } from './types'
 import { decodeFragmentPayload } from './binary'
 import { getApiBase } from './config'
-import { getCachedPlan, setCachedPlan } from './plan-cache'
+import { fragmentPlanCache } from './plan-cache'
 
 type FragmentPlanResult = {
   plan: FragmentPlan
@@ -53,7 +53,7 @@ export const loadFragmentPlan = async (
   lang?: string
 ): Promise<FragmentPlanResult> => {
   const api = getApiBase(env)
-  const cached = getCachedPlan(path, lang)
+  const cached = fragmentPlanCache.get(path, lang)
   const params = new URLSearchParams({ path })
   if (!cached?.initialFragments) {
     params.set('includeInitial', '1')
@@ -90,7 +90,7 @@ export const loadFragmentPlan = async (
     initialFragments: attachCacheUpdatedAt(decoded, normalizedPlan)
   }
   if (etag) {
-    setCachedPlan(path, lang, { etag, plan: result.plan, initialFragments: decoded })
+    fragmentPlanCache.set(path, lang, { etag, plan: result.plan, initialFragments: decoded })
   }
   return result
 }
