@@ -1,5 +1,8 @@
 import { mock } from 'bun:test'
-import { chatMessages, storeItems } from '../src/db/schema'
+
+const storeItems = { name: 'store_items' }
+const chatMessages = { name: 'chat_messages' }
+mock.module('../src/db/schema', () => ({ chatMessages, storeItems }))
 
 type AuthSession = { id: string; userId: string }
 type PasskeyEvent = { type: 'registration' | 'authentication'; payload: unknown }
@@ -113,7 +116,12 @@ const pgClient = {
   }
 }
 
-mock.module('../src/db/client', () => ({ db: fakeDb, pgClient }))
+mock.module('../src/db/client', () => ({
+  db: fakeDb,
+  pgClient,
+  connectDatabase: async () => {},
+  disconnectDatabase: async () => {}
+}))
 mock.module('../src/db/prepare', () => ({ prepareDatabase: async () => {} }))
 
 const authJson = (body: unknown, init?: ResponseInit) => {
@@ -354,12 +362,23 @@ const valkey = {
   async quit() {}
 }
 
+const cacheClient = {
+  client: valkey,
+  isReady: () => valkeyReady,
+  connect: async () => {
+    valkeyReady = true
+  },
+  disconnect: async () => {
+    valkeyReady = false
+  }
+}
+
 mock.module('../src/services/cache', () => ({
   valkey,
+  cacheClient,
   isValkeyReady: () => valkeyReady,
-  async connectValkey() {
-    valkeyReady = true
-  }
+  connectValkey: cacheClient.connect,
+  disconnectValkey: cacheClient.disconnect
 }))
 
 export const setValkeyReady = (ready: boolean) => {

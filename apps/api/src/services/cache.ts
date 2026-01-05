@@ -1,48 +1,12 @@
-import { createClient } from '@valkey/client'
-import { config } from '../config/env'
+import { createCacheClient } from '@platform/cache'
+import { platformConfig } from '@platform/config'
+import { createLogger } from '@platform/logger'
 
-const valkeyOptions = {
-  socket: {
-    host: config.valkey.host,
-    port: config.valkey.port
-  }
-}
+const logger = createLogger('api:valkey')
+const cache = createCacheClient(platformConfig.valkey, logger)
 
-const MAX_CONNECT_ATTEMPTS = 5
-const BASE_BACKOFF_MS = 200
-
-export const valkey = createClient(valkeyOptions)
-let cacheReady = false
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
-export const isValkeyReady = () => cacheReady && valkey.isOpen
-
-export async function connectValkey() {
-  if (valkey.isOpen) {
-    cacheReady = true
-    return
-  }
-
-  let lastError: unknown
-  for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
-    try {
-      await valkey.connect()
-      cacheReady = valkey.isOpen
-      console.log('Valkey connected')
-      return
-    } catch (error) {
-      lastError = error
-      cacheReady = false
-      console.error(`Valkey connection attempt ${attempt} failed`, error)
-      if (attempt === MAX_CONNECT_ATTEMPTS) {
-        throw new Error(`Valkey connection failed after ${MAX_CONNECT_ATTEMPTS} attempts`, {
-          cause: lastError
-        })
-      }
-
-      const backoff = BASE_BACKOFF_MS * attempt
-      await wait(backoff)
-    }
-  }
-}
+export const valkey = cache.client
+export const connectValkey = cache.connect
+export const isValkeyReady = cache.isReady
+export const disconnectValkey = cache.disconnect
+export const cacheClient = cache

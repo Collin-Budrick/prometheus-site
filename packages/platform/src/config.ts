@@ -1,18 +1,20 @@
-type PostgresConfig = {
+import { resolveBooleanFlag, resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
+
+export type PostgresConfig = {
   connectionString: string
   ssl: false | 'require'
   connectRetries: number
   backoffMs: number
 }
 
-type ValkeyConfig = {
+export type ValkeyConfig = {
   host: string
   port: number
 }
 
 type OAuthProvider = 'google' | 'github' | 'apple' | 'discord' | 'microsoft'
 
-type OAuthClient = {
+export type OAuthClient = {
   clientId: string
   clientSecret: string
 }
@@ -22,7 +24,7 @@ export type RelyingPartyConfig = {
   rpOrigin: string
 }
 
-type AuthConfig = {
+export type AuthConfig = {
   cookieSecret: string
   rpId: string
   rpOrigin: string
@@ -30,13 +32,19 @@ type AuthConfig = {
   oauth: Partial<Record<OAuthProvider, OAuthClient>>
 }
 
-type AppConfig = {
+export type ServerConfig = {
+  port: number
+  host: string
+}
+
+export type PlatformConfig = {
+  environment: string
+  runtime: RuntimeFlags
+  server: ServerConfig
   postgres: PostgresConfig
   valkey: ValkeyConfig
   auth: AuthConfig
 }
-
-type Env = Record<string, string | undefined>
 
 const parsePort = (value: string | undefined, defaultValue: number, name: string) => {
   const raw = (value ?? String(defaultValue)).trim()
@@ -293,9 +301,14 @@ const buildConnectionString = (env: Env) => {
   return `postgresql://${user}:${password}@${host}:${port}/${db}`
 }
 
-export const loadConfig = (env: Env = process.env): AppConfig => {
-  const nodeEnv = env.NODE_ENV?.trim()
-  const allowDevDefaults = nodeEnv !== 'production'
+const resolveServerConfig = (env: Env): ServerConfig => ({
+  port: parsePort(env.API_PORT, 4000, 'API_PORT'),
+  host: ensureString(env.API_HOST, '0.0.0.0', 'API_HOST')
+})
+
+export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
+  const environment = resolveEnvironment(env.NODE_ENV)
+  const allowDevDefaults = environment !== 'production'
   const connectionString = buildConnectionString(env)
   const ssl = parseBooleanFlag(env.POSTGRES_SSL, false, 'POSTGRES_SSL') ? 'require' : false
   const connectRetries = parseNonNegativeInt(env.DB_CONNECT_RETRIES, 5, 'DB_CONNECT_RETRIES')
@@ -304,8 +317,13 @@ export const loadConfig = (env: Env = process.env): AppConfig => {
   const valkeyHost = ensureString(env.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
   const valkeyPort = parsePort(env.VALKEY_PORT, 6379, 'VALKEY_PORT')
   const auth = parseAuthConfig(env, allowDevDefaults)
+  const runtime = resolveRuntimeFlags(env)
+  const server = resolveServerConfig(env)
 
   return {
+    environment,
+    runtime,
+    server,
     postgres: {
       connectionString,
       ssl,
@@ -320,4 +338,4 @@ export const loadConfig = (env: Env = process.env): AppConfig => {
   }
 }
 
-export const config = loadConfig()
+export const platformConfig = loadPlatformConfig()

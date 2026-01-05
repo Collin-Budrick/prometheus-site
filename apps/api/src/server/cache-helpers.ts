@@ -105,7 +105,7 @@ export const invalidateStoreItemsCache = async () => {
   try {
     const keys = await valkey.keys(`${storeItemsCachePrefix}*`)
     if (keys.length > 0) {
-      await valkey.del(keys)
+      await valkey.del(...keys)
     }
   } catch (error) {
     console.warn('Failed to invalidate store cache keys', error)
@@ -124,11 +124,11 @@ export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) =>
     }
     if (hasPath) {
       const keys = await valkey.keys(`${fragmentPlanCachePrefix}*:${path}`)
-      if (keys.length > 0) await valkey.del(keys)
+      if (keys.length > 0) await valkey.del(...keys)
       return
     }
     const keys = await valkey.keys(`${fragmentPlanCachePrefix}*`)
-    if (keys.length > 0) await valkey.del(keys)
+    if (keys.length > 0) await valkey.del(...keys)
   } catch (error) {
     console.warn('Failed to invalidate fragment plan cache', error)
   }

@@ -1,9 +1,11 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import { config } from '../config/env'
+import { createDatabase } from '@platform/db'
+import { platformConfig } from '@platform/config'
+import { createLogger } from '@platform/logger'
 
-const connectionString = config.postgres.connectionString
-const ssl = config.postgres.ssl
+const logger = createLogger('api:db')
+const database = createDatabase(platformConfig.postgres, logger)
 
-export const pgClient = postgres(connectionString, { max: 5, ssl })
-export const db = drizzle({ client: pgClient })
+export const pgClient = database.pgClient
+export const db = database.db
+export const connectDatabase = database.connect
+export const disconnectDatabase = database.disconnect

@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth'
 import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { randomUUID } from 'node:crypto'
-import { config, type RelyingPartyConfig } from '../config/env'
+import { platformConfig as config, type RelyingPartyConfig } from '@platform/config'
 import { db } from '../db/client'
 import { authKeys, authSessions, passkeys, users, verification } from '../db/schema'
 
