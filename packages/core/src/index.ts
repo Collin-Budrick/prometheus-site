@@ -1,1 +1,1 @@
-export * from './fragments/index'
+export * from './fragment/index'
