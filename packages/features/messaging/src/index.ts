@@ -1,4 +1,3 @@
-/**
- * Messaging feature module placeholder.
- */
-export const messagingFeaturePlaceholder = Symbol('messaging-feature-placeholder')
+export * from './api'
+export * from './cache'
+export * from './ws'

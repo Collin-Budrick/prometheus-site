@@ -1,15 +1,10 @@
-import { isValkeyReady, valkey } from '../services/cache'
 import { normalizePlanPath } from '@core/fragments'
 import type { FragmentLang } from '../fragments/i18n'
+import { isValkeyReady, valkey } from '../services/cache'
 
-export const storeItemsCachePrefix = 'store:items:'
 const fragmentPlanCachePrefix = 'fragments:plan:'
-const chatHistoryCacheKey = 'chat:history:latest'
 const latencyHashKey = 'latency:stats'
 const earlyLimitPrefix = 'early:limit:'
-
-export const buildStoreItemsCacheKey = (cursor: number, limit: number) =>
-  `${storeItemsCachePrefix}${cursor}:${limit}`
 
 export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
 
@@ -99,19 +94,6 @@ export const writeCache = async (key: string, value: unknown, ttlSeconds: number
   }
 }
 
-export const invalidateStoreItemsCache = async () => {
-  if (!isValkeyReady()) return
-
-  try {
-    const keys = await valkey.keys(`${storeItemsCachePrefix}*`)
-    if (keys.length > 0) {
-      await valkey.del(...keys)
-    }
-  } catch (error) {
-    console.warn('Failed to invalidate store cache keys', error)
-  }
-}
-
 export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) => {
   bumpPlanEtagVersion(path, lang)
   if (!isValkeyReady()) return
@@ -131,21 +113,6 @@ export const invalidatePlanCache = async (path?: string, lang?: FragmentLang) =>
     if (keys.length > 0) await valkey.del(...keys)
   } catch (error) {
     console.warn('Failed to invalidate fragment plan cache', error)
-  }
-}
-
-export const readChatHistoryCache = async (): Promise<unknown[] | null> => {
-  const cached = await readCache(chatHistoryCacheKey)
-  return Array.isArray(cached) ? cached : null
-}
-export const writeChatHistoryCache = async (payload: unknown, ttlSeconds: number) =>
-  writeCache(chatHistoryCacheKey, payload, ttlSeconds)
-export const invalidateChatHistoryCache = async () => {
-  if (!isValkeyReady()) return
-  try {
-    await valkey.del(chatHistoryCacheKey)
-  } catch (error) {
-    console.warn('Failed to invalidate chat history cache', error)
   }
 }
 

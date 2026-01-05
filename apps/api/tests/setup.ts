@@ -277,7 +277,7 @@ const handleAuthRequest = async (request: Request) => {
   return authJson({ message: 'Unhandled auth route' }, { status: 404 })
 }
 
-mock.module('../src/auth/auth', () => ({
+mock.module('@features/auth', () => ({
   auth: {},
   handleAuthRequest,
   signInWithEmail,
