@@ -1,13 +1,12 @@
 import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet, useLocation } from '@builder.io/qwik-city'
-import { scheduleIdleTask } from './components/motion-idle'
-import { RouteMotion } from './components/RouteMotion'
+import { RouteMotion, scheduleIdleTask } from '@prometheus/ui'
 import { RouterHead } from './routes/layout'
 import { reportClientError } from './shared/error-reporting'
 import { FragmentStatusProvider } from './shared/fragment-status'
 import { LangProvider } from './shared/lang-bridge'
 import { initQuicklinkPrefetch, isPrefetchEnabled } from './shared/prefetch'
-import globalStyles from './global.css?inline'
+import globalStyles from '@prometheus/ui/global.css?inline'
 
 type RequestIdleCallback = (
   callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,

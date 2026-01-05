@@ -3,13 +3,14 @@ import { FragmentCard } from './FragmentCard'
 
 type StaticRouteTemplateProps = {
   actionLabel: string
+  closeLabel: string
   description: string
   metaLine: string
   title: string
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
-  ({ actionLabel, description, metaLine, title }) => {
+  ({ actionLabel, closeLabel, description, metaLine, title }) => {
     const expandedId = useSignal<string | null>(null)
     const layoutTick = useSignal(0)
     const gridRef = useSignal<HTMLDivElement>()
@@ -71,7 +72,14 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
     return (
       <section class="fragment-shell">
         <div ref={gridRef} class="fragment-grid">
-          <FragmentCard id={cardId} column="span 12" motionDelay={0} expandedId={expandedId} layoutTick={layoutTick}>
+          <FragmentCard
+            id={cardId}
+            column="span 12"
+            motionDelay={0}
+            expandedId={expandedId}
+            layoutTick={layoutTick}
+            closeLabel={closeLabel}
+          >
             <div class="meta-line">{metaLine}</div>
             <h1>{title}</h1>
             <p>{description}</p>

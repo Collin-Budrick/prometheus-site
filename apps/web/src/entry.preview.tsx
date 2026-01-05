@@ -5,7 +5,7 @@ import { createQwikCity } from '@builder.io/qwik-city/middleware/node'
 import { manifest } from '@qwik-client-manifest'
 import qwikCityPlan from '@qwik-city-plan'
 import Root from './root'
-import { readThemeFromCookie } from './shared/theme-store'
+import { readThemeFromCookie } from '@prometheus/ui'
 
 export default createQwikCity({
   render: (opts: RenderToStreamOptions) => {
