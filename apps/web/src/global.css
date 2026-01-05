@@ -587,12 +587,14 @@
   }
 
   .dock {
-    --dock-expand: 0px;
+    --dock-expand-left: 0px;
+    --dock-expand-right: 0px;
     display: inline-flex;
     align-items: flex-end;
     gap: 10px;
     padding: 10px;
-    padding-inline: calc(12px + var(--dock-expand));
+    padding-left: calc(12px + var(--dock-expand-left));
+    padding-right: calc(12px + var(--dock-expand-right));
     border-radius: 22px;
     border: 1px solid rgb(var(--stroke) / 0.6);
     background-color: rgb(var(--surface) / 0.9);
