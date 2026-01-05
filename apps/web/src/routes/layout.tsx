@@ -2,6 +2,7 @@ import { component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwi
 import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
+import { DockBar } from '../components/DockBar'
 import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
@@ -211,6 +212,7 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
+      <DockBar />
     </div>
   )
 })

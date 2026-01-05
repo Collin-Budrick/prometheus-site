@@ -576,6 +576,94 @@
     font-size: 16px;
   }
 
+  .dock-shell {
+    position: fixed;
+    left: 50%;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 45;
+    pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+
+  .dock {
+    --dock-expand: 0px;
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 10px;
+    padding-inline: calc(12px + var(--dock-expand));
+    border-radius: 22px;
+    border: 1px solid rgb(var(--stroke) / 0.6);
+    background-color: rgb(var(--surface) / 0.9);
+    box-shadow: 0 20px 36px rgba(15, 23, 42, 0.16);
+    pointer-events: auto;
+    --dock-icon-size: 48px;
+    transition: padding-inline 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+
+  .dock-icon {
+    --dock-scale: 1;
+    --dock-shift: 0px;
+    width: var(--dock-icon-size);
+    height: var(--dock-icon-size);
+    padding: 8px;
+    display: grid;
+    place-items: center;
+    border-radius: 9999px;
+    box-sizing: border-box;
+    background-color: rgb(var(--surface) / 0.76);
+    border: 1px solid rgb(var(--stroke) / 0.65);
+    color: rgb(var(--ink));
+    transform: translateX(var(--dock-shift)) scale(var(--dock-scale));
+    transform-origin: 50% 100%;
+    transition: transform 120ms ease;
+    will-change: transform;
+    box-shadow: inset 0 0 0 1px rgb(var(--surface-strong) / 0.5);
+  }
+
+  .dock-icon-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  body.card-expanded .dock-shell {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(14px);
+  }
+
+  @media (max-width: 640px) {
+    .dock {
+      gap: 8px;
+      padding: 8px 10px;
+      --dock-icon-size: 40px;
+    }
+
+    .dock-icon {
+      padding: 6px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dock {
+      transition: none;
+    }
+
+    .dock-icon {
+      transition: none;
+    }
+  }
+
+  @supports (backdrop-filter: blur(10px)) {
+    .dock {
+      backdrop-filter: blur(12px);
+      background-color: rgb(var(--surface) / 0.78);
+      box-shadow: var(--shadow);
+    }
+  }
+
   .skeleton {
     @apply relative overflow-hidden;
     background-color: rgb(var(--skeleton-base) / 0.6);
