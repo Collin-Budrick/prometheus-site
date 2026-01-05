@@ -14,7 +14,7 @@ async function seed() {
   ])
 
   await db.insert(chatMessages).values([
-    { author: 'system', body: 'Welcome to the Prometheus chat.' }
+    { author: 'system', body: 'Welcome to the fragment chat.' }
   ])
 
   await pgClient.end()

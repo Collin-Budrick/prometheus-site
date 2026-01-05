@@ -279,7 +279,7 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
   const socialProvidersConfig = Object.keys(socialProviders).length > 0 ? socialProviders : undefined
 
   const baseAuthConfig = {
-    appName: 'Prometheus',
+    appName: 'Fragment App',
     basePath: '/api/auth',
     secret: options.authConfig.cookieSecret,
     socialProviders: socialProvidersConfig,

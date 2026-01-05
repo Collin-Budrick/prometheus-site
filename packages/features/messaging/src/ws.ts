@@ -109,7 +109,7 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
       data.clientIp = clientIp
       data.user = sessionUser
 
-      ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to Prometheus chat' }))
+      ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to chat' }))
 
       let subscriber: Awaited<ReturnType<ValkeyClient['duplicate']>> | null = null
       try {

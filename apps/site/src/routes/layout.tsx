@@ -1,12 +1,12 @@
 import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
 import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
-import { LanguageToggle, ThemeToggle } from '@prometheus/ui'
+import { LanguageToggle, ThemeToggle, DockBar } from '@prometheus/ui'
+import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
 import { siteBrand } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
-import { DockBar } from '../../web/src/components/DockBar'
 import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
-import { TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
+import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 
@@ -92,6 +92,13 @@ const initialFadeScript = `(function () {
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
 
+const DOCK_ICONS = {
+  navHome: InHomeSimple,
+  navStore: InShop,
+  navLab: InFlask,
+  navLogin: InUser
+} as const
+
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
@@ -138,6 +145,10 @@ export default component$(() => {
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
+  const dockItems = TOPBAR_NAV_ITEMS.map((item) => {
+    const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
+    return { href: item.href, label: copy.value[item.labelKey], icon: Icon }
+  })
   const statusLabel =
     fragmentStatus.value === 'streaming'
       ? copy.value.fragmentStatusStreaming
@@ -224,8 +235,7 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
-      <DockBar />
+      <DockBar items={dockItems} ariaLabel={copy.value.dockAriaLabel} />
     </div>
   )
 })
-
