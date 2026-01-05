@@ -1,5 +1,5 @@
 import { isValkeyReady, valkey } from '../services/cache'
-import { normalizePlanPath } from '../fragments/planner'
+import { normalizePlanPath } from '@core/fragments'
 import type { FragmentLang } from '../fragments/i18n'
 
 export const storeItemsCachePrefix = 'store:items:'

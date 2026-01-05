@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { normalizeFragmentLang } from '../../fragments/i18n'
-import { buildFragmentCacheKey, readFragmentsByCacheKeys } from '../../fragments/store'
+import { buildFragmentCacheKey, fragmentStore } from '../../fragments/store'
 import {
   buildCacheStatus,
   clearPlanMemo,
@@ -20,7 +20,7 @@ import {
   writeCache
 } from '../cache-helpers'
 import { isWebTransportEnabled } from '../runtime-flags'
-import { normalizePlanPath } from '../../fragments/planner'
+import { normalizePlanPath } from '@core/fragments'
 import type {
   EarlyHint,
   FragmentCacheStatus,
@@ -28,7 +28,7 @@ import type {
   FragmentPlanEntry,
   FragmentPlanInitialPayloads,
   FragmentPlanResponse
-} from '../../fragments/types'
+} from '@core/fragments'
 import type { StoredFragment } from '../../fragments/store'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
@@ -251,7 +251,7 @@ const buildInitialFragments = async (
 
   const missingCacheKeys = cacheKeys.filter((cacheKey) => !cacheKeyMap.has(cacheKey))
   if (missingCacheKeys.length > 0) {
-    const cachedFragments = await readFragmentsByCacheKeys(missingCacheKeys)
+    const cachedFragments = await fragmentStore.readMany(missingCacheKeys)
     cachedFragments.forEach((entry, cacheKey) => {
       if (entry !== null) {
         cacheKeyMap.set(cacheKey, entry)

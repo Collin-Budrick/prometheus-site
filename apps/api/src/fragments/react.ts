@@ -1,7 +1,6 @@
 import { Fragment, isValidElement } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import type { RenderNode } from './types'
-import { h, t } from './tree'
+import { h, t, type RenderNode } from '@core/fragments'
 
 type ElementProps = {
   children?: ReactNode

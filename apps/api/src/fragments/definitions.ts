@@ -1,6 +1,6 @@
 import { createElement } from 'react'
-import { h, t as textNode } from './tree'
-import type { FragmentDefinition } from './types'
+import { h, registerFragmentDefinitions, t as textNode } from '@core/fragments'
+import type { FragmentDefinition } from '@core/fragments'
 import { loadWasmAdd } from './wasm'
 import { reactToRenderNode } from './react'
 
@@ -340,15 +340,4 @@ const dockFragment: FragmentDefinition = {
     )
 }
 
-const registry = new Map<string, FragmentDefinition>([
-  [hero.id, hero],
-  [planner.id, planner],
-  [ledger.id, ledger],
-  [island.id, island],
-  [reactFragment.id, reactFragment],
-  [dockFragment.id, dockFragment]
-])
-
-export const getFragmentDefinition = (id: string) => registry.get(id)
-
-export const allFragments = Array.from(registry.values())
+registerFragmentDefinitions([hero, planner, ledger, island, reactFragment, dockFragment])
