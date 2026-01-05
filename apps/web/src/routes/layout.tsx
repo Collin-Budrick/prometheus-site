@@ -1,5 +1,5 @@
 import { component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { DockBar } from '../components/DockBar'
@@ -7,7 +7,7 @@ import { LanguageToggle } from '../components/LanguageToggle'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
-import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
+import { TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -145,8 +145,6 @@ export default component$(() => {
         : copy.value.fragmentStatusIdle
 
   useVisibleTask$(({ cleanup }) => {
-    const nav = document.querySelector('.nav-links')
-    if (!nav) return
     const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
     const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
 
@@ -176,9 +174,9 @@ export default component$(() => {
       }
     }
 
-    nav.addEventListener('click', handleClick, { capture: true })
+    document.addEventListener('click', handleClick, { capture: true })
     cleanup(() => {
-      nav.removeEventListener('click', handleClick, { capture: true })
+      document.removeEventListener('click', handleClick, { capture: true })
     })
   })
 
@@ -193,13 +191,6 @@ export default component$(() => {
           </div>
         </div>
         <div class="topbar-actions">
-          <nav class="nav-links" data-view-transition="shell-nav">
-            {TOPBAR_NAV_ITEMS.map((item) => (
-              <Link key={item.href} href={item.href} data-fragment-link>
-                {copy.value[item.labelKey]}
-              </Link>
-            ))}
-          </nav>
           <div class="topbar-controls">
             <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
               <span class="dot" aria-hidden="true" />
