@@ -1,32 +1,35 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand } from '@site/config'
-import { useLangCopy } from '@site/shared/lang-bridge'
 
-export const StoreRoute = component$(() => {
-  const copy = useLangCopy()
+export type StoreCopy = {
+  metaLine: string
+  title: string
+  description: string
+  actionLabel: string
+  closeLabel: string
+}
+
+const defaultStoreCopy: StoreCopy = {
+  metaLine: 'Fragments Marketplace',
+  title: 'Store',
+  description: 'Browse curated modules, fragments, and templates.',
+  actionLabel: 'Start exploring',
+  closeLabel: 'Close'
+}
+
+export const StoreRoute = component$<{ copy?: Partial<StoreCopy> }>(({ copy }) => {
+  const resolvedCopy = { ...defaultStoreCopy, ...(copy ?? {}) }
 
   return (
     <StaticRouteTemplate
-      metaLine={copy.value.storeMetaLine}
-      title={copy.value.storeTitle}
-      description={copy.value.storeDescription}
-      actionLabel={copy.value.storeAction}
-      closeLabel={copy.value.fragmentClose}
+      metaLine={resolvedCopy.metaLine}
+      title={resolvedCopy.title}
+      description={resolvedCopy.description}
+      actionLabel={resolvedCopy.actionLabel}
+      closeLabel={resolvedCopy.closeLabel}
     />
   )
 })
-
-export const storeHead: DocumentHead = {
-  title: `Store | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: 'Browse curated modules, fragments, and templates.'
-    }
-  ]
-}
 
 export const StoreSkeleton = () => <StaticRouteSkeleton />
 

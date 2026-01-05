@@ -5,6 +5,7 @@ import type { DatabaseClient } from '@platform/db'
 import { createLogger } from '@platform/logger'
 import { createPlatformServer, type PlatformServerContext } from '@platform/server/bun'
 import { createRateLimiter } from '@platform/rate-limit'
+import { resolveBooleanFlag } from '@platform/runtime'
 import { db, pgClient, connectDatabase, disconnectDatabase } from '../db/client'
 import { prepareDatabase } from '../db/prepare'
 import { cacheClient, isValkeyReady, valkey } from '../services/cache'
@@ -12,20 +13,16 @@ import {
   checkEarlyLimit,
   recordLatencySample
 } from './cache-helpers'
-import { getClientIp } from './network'
+import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from './network'
 import { createFragmentRoutes } from './routes/fragments'
-import { authRoutes, validateSession } from '@features/auth'
-import {
-  createStoreRoutes,
-  invalidateStoreItemsCache,
-  registerStoreWs,
-  startStoreRealtime,
-  stopStoreRealtime,
-  storeChannel,
-  type StoreRealtimeEvent,
-  type StoreTelemetry
-} from '@features/store'
+import { createAuthFeature } from '@features/auth/server'
+import { createStoreRoutes } from '@features/store/api'
+import { invalidateStoreItemsCache } from '@features/store/cache'
+import { createStoreRealtime, type StoreRealtimeEvent } from '@features/store/realtime'
+import type { StoreTelemetry } from '@features/store/api'
+import { registerStoreWs, storeChannel } from '@features/store/ws'
 import { createMessagingRoutes, invalidateChatHistoryCache, registerChatWs } from '@features/messaging'
+import { authKeys, authSessions, chatMessages, passkeys, storeItems, users, verification } from '../db/schema'
 
 const logger = createLogger('api')
 const runtime = platformConfig.runtime
@@ -49,6 +46,26 @@ const telemetry: StoreTelemetry = {
   cacheGetErrors: 0,
   cacheSetErrors: 0
 }
+
+const enableAuthFeature = resolveBooleanFlag(process.env.FEATURE_AUTH_ENABLED, true)
+const enableStoreFeature = resolveBooleanFlag(process.env.FEATURE_STORE_ENABLED, true)
+const enableMessagingFeature = resolveBooleanFlag(process.env.FEATURE_MESSAGING_ENABLED, true)
+
+const authFeature = enableAuthFeature
+  ? createAuthFeature({
+      db,
+      tables: { users, authSessions, authKeys, verification, passkeys },
+      authConfig: platformConfig.auth
+    })
+  : null
+
+const storeRealtime = enableStoreFeature
+  ? createStoreRealtime({
+      db,
+      pgClient,
+      storeItemsTable: storeItems
+    })
+  : null
 
 const handleStoreRealtimeEvent = (event: StoreRealtimeEvent) => {
   const payload = JSON.stringify(event)
@@ -90,14 +107,19 @@ const createApp = (_context: PlatformServerContext) => {
     environment: platformConfig.environment
   })
 
-  const app = new Elysia()
-    .use(authRoutes)
-    .use(fragmentRoutes)
-    .use(
+  const app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
+
+  if (authFeature) {
+    app.use(authFeature.authRoutes)
+  }
+
+  if (enableStoreFeature) {
+    app.use(
       createStoreRoutes({
         db,
         valkey,
         isValkeyReady,
+        storeItemsTable: storeItems,
         getClientIp,
         checkRateLimit,
         checkEarlyLimit,
@@ -108,9 +130,13 @@ const createApp = (_context: PlatformServerContext) => {
         telemetry
       })
     )
-    .use(
+  }
+
+  if (enableMessagingFeature) {
+    app.use(
       createMessagingRoutes({
         db,
+        chatMessagesTable: chatMessages,
         valkey,
         isValkeyReady,
         getClientIp,
@@ -122,72 +148,84 @@ const createApp = (_context: PlatformServerContext) => {
         jsonError
       })
     )
-    .decorate('valkey', valkey)
-    .get('/health', async () => {
-      const dependencies: {
-        postgres: { status: 'ok' | 'error'; error?: string }
-        valkey: { status: 'ok' | 'error'; error?: string }
-      } = {
-        postgres: { status: 'ok' },
-        valkey: { status: 'ok' }
-      }
+  }
 
-      let healthy = true
-
-      try {
-        await pgClient`select 1`
-      } catch (error) {
-        healthy = false
-        dependencies.postgres = {
-          status: 'error',
-          error: error instanceof Error ? error.message : String(error)
-        }
-      }
-
-      try {
-        if (!isValkeyReady()) {
-          throw new Error('Valkey connection not established')
-        }
-        await valkey.ping()
-      } catch (error) {
-        healthy = false
-        dependencies.valkey = {
-          status: 'error',
-          error: error instanceof Error ? error.message : String(error)
-        }
-      }
-
-      const payload = {
-        status: healthy ? 'ok' : 'degraded',
-        uptime: process.uptime(),
-        telemetry,
-        dependencies
-      }
-
-      return new Response(JSON.stringify(payload), {
-        status: healthy ? 200 : 503,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    })
-
-  registerStoreWs(app, {
-    valkey,
-    isValkeyReady,
-    validateSession,
-    checkWsOpenQuota
-  })
-
-  registerChatWs(app, {
-    valkey,
-    isValkeyReady,
-    validateSession,
-    checkWsQuota,
-    db,
-    invalidateChatHistoryCache: () => invalidateChatHistoryCache(valkey, isValkeyReady),
-    recordLatencySample: (metric, durationMs) => {
-      void recordLatencySample(metric, durationMs)
+  app.get('/health', async () => {
+    const dependencies: {
+      postgres: { status: 'ok' | 'error'; error?: string }
+      valkey: { status: 'ok' | 'error'; error?: string }
+    } = {
+      postgres: { status: 'ok' },
+      valkey: { status: 'ok' }
     }
+
+    let healthy = true
+
+    try {
+      await pgClient`select 1`
+    } catch (error) {
+      healthy = false
+      dependencies.postgres = {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    try {
+      if (!isValkeyReady()) {
+        throw new Error('Valkey connection not established')
+      }
+      await valkey.ping()
+    } catch (error) {
+      healthy = false
+      dependencies.valkey = {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    const payload = {
+      status: healthy ? 'ok' : 'degraded',
+      uptime: process.uptime(),
+      telemetry,
+      dependencies
+    }
+
+    return new Response(JSON.stringify(payload), {
+      status: healthy ? 200 : 503,
+      headers: { 'Content-Type': 'application/json' }
+    })
   })
+
+  if (enableStoreFeature && authFeature) {
+    registerStoreWs(app, {
+      valkey,
+      isValkeyReady,
+      validateSession: authFeature.validateSession,
+      checkWsOpenQuota,
+      resolveWsClientIp,
+      resolveWsHeaders,
+      resolveWsRequest
+    })
+  }
+
+  if (enableMessagingFeature && authFeature) {
+    registerChatWs(app, {
+      valkey,
+      isValkeyReady,
+      validateSession: authFeature.validateSession,
+      checkWsQuota,
+      db,
+      chatMessagesTable: chatMessages,
+      resolveWsClientIp,
+      resolveWsHeaders,
+      resolveWsRequest,
+      invalidateChatHistoryCache: () => invalidateChatHistoryCache(valkey, isValkeyReady),
+      recordLatencySample: (metric, durationMs) => {
+        void recordLatencySample(metric, durationMs)
+      }
+    })
+  }
 
   return app
 }
@@ -213,14 +251,18 @@ const server = createPlatformServer({
       logger.info('RUN_MIGRATIONS not set; skipping migrations and seed step')
     }
 
-    try {
-      await startStoreRealtime(handleStoreRealtimeEvent)
-    } catch (error) {
-      logger.error('Store realtime listener failed', error)
+    if (enableStoreFeature && storeRealtime) {
+      try {
+        await storeRealtime.start(handleStoreRealtimeEvent)
+      } catch (error) {
+        logger.error('Store realtime listener failed', error)
+      }
     }
   },
   onShutdown: async () => {
-    await stopStoreRealtime()
+    if (storeRealtime) {
+      await storeRealtime.stop()
+    }
   }
 })
 

@@ -1,11 +1,11 @@
-import type { RedisClientType } from '@valkey/client'
+import type { ValkeyClientType } from '@valkey/client'
 
 export const storeItemsCachePrefix = 'store:items:'
 
 export const buildStoreItemsCacheKey = (cursor: number, limit: number) =>
   `${storeItemsCachePrefix}${cursor}:${limit}`
 
-export const invalidateStoreItemsCache = async (client: RedisClientType, isReady: () => boolean) => {
+export const invalidateStoreItemsCache = async (client: ValkeyClientType, isReady: () => boolean) => {
   if (!isReady()) return
 
   try {

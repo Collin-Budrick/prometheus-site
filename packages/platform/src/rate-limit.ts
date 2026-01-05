@@ -1,4 +1,4 @@
-import type { RedisClientType } from '@valkey/client'
+import type { ValkeyClientType } from '@valkey/client'
 import { createLogger, type PlatformLogger } from './logger'
 
 type Counter = { count: number; resetAt: number }
@@ -14,7 +14,7 @@ export type RateLimiter = {
 }
 
 type RateLimiterOptions = {
-  cache?: RedisClientType
+  cache?: ValkeyClientType
   logger?: PlatformLogger
   cleanupIntervalMs?: number
 }

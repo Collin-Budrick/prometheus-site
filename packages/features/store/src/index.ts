@@ -1,5 +1,4 @@
 export * from './api'
 export * from './cache'
 export * from './realtime'
-export * from './store-route'
 export * from './ws'

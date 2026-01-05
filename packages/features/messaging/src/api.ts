@@ -1,10 +1,9 @@
 import { desc } from 'drizzle-orm'
 import { Elysia } from 'elysia'
-import type { RedisClientType } from '@valkey/client'
-import { chatMessages } from 'apps/api/src/db/schema'
+import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
+import type { ValkeyClientType } from '@valkey/client'
+import type { DatabaseClient } from '@platform/db'
 import { readChatHistoryCache, writeChatHistoryCache } from './cache'
-
-type DbClient = typeof import('apps/api/src/db/client').db
 
 export const maxPromptLength = 2000
 export const maxPromptPayloadBytes = 32 * 1024
@@ -100,8 +99,9 @@ export const readPromptBody = async (request: Request) => {
 }
 
 export type MessagingRouteOptions = {
-  db: DbClient
-  valkey: RedisClientType
+  db: DatabaseClient['db']
+  chatMessagesTable: ChatMessagesTable
+  valkey: ValkeyClientType
   isValkeyReady: () => boolean
   getClientIp: (request: Request) => string
   checkRateLimit: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
@@ -109,6 +109,12 @@ export type MessagingRouteOptions = {
   recordLatencySample: (metric: string, durationMs: number) => void | Promise<void>
   jsonError: (status: number, error: string, meta?: Record<string, unknown>) => Response
   maxChatHistory?: number
+}
+
+export type ChatMessagesTable = AnyPgTable & {
+  createdAt: AnyPgColumn
+  author?: AnyPgColumn
+  body?: AnyPgColumn
 }
 
 export const createMessagingRoutes = (options: MessagingRouteOptions) => {
@@ -127,7 +133,11 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       if (cached !== null) return cached
 
       const start = performance.now()
-      const rows = await options.db.select().from(chatMessages).orderBy(desc(chatMessages.createdAt)).limit(historyLimit)
+      const rows = await options.db
+        .select()
+        .from(options.chatMessagesTable)
+        .orderBy(desc(options.chatMessagesTable.createdAt))
+        .limit(historyLimit)
       const result = rows.reverse()
       void writeChatHistoryCache(options.valkey, result, 15)
       void options.recordLatencySample('chat:history', performance.now() - start)

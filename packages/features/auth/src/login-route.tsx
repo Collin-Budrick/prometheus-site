@@ -1,32 +1,37 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand } from '@site/config'
-import { useLangCopy } from '@site/shared/lang-bridge'
 
-export const LoginRoute = component$(() => {
-  const copy = useLangCopy()
+export type AuthCopy = {
+  metaLine: string
+  title: string
+  description: string
+  actionLabel: string
+  closeLabel: string
+}
+
+const defaultAuthCopy: AuthCopy = {
+  metaLine: 'Secure Access',
+  title: 'Login',
+  description: 'Access your workspace and deployment history.',
+  actionLabel: 'Sign in',
+  closeLabel: 'Close'
+}
+
+export const LoginRoute = component$<{
+  copy?: Partial<AuthCopy>
+}>(({ copy }) => {
+  const resolvedCopy = { ...defaultAuthCopy, ...(copy ?? {}) }
 
   return (
     <StaticRouteTemplate
-      metaLine={copy.value.loginMetaLine}
-      title={copy.value.loginTitle}
-      description={copy.value.loginDescription}
-      actionLabel={copy.value.loginAction}
-      closeLabel={copy.value.fragmentClose}
+      metaLine={resolvedCopy.metaLine}
+      title={resolvedCopy.title}
+      description={resolvedCopy.description}
+      actionLabel={resolvedCopy.actionLabel}
+      closeLabel={resolvedCopy.closeLabel}
     />
   )
 })
-
-export const loginHead: DocumentHead = {
-  title: `Login | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: 'Access your workspace and deployment history.'
-    }
-  ]
-}
 
 export const LoginSkeleton = () => <StaticRouteSkeleton />
 

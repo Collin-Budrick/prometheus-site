@@ -4,7 +4,7 @@ import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../config'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from './cache-headers'
 import { useLangCopy } from '../shared/lang-bridge'
-import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth'
+import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/login-route'
 
 const loginEnabled = siteFeatures.login !== false
 const loginTitle = loginEnabled ? 'Login' : 'Feature disabled'
@@ -25,6 +25,21 @@ const DisabledLoginRoute = component$(() => {
   )
 })
 
+const EnabledLoginRoute = component$(() => {
+  const copy = useLangCopy()
+  return (
+    <FeatureLoginRoute
+      copy={{
+        metaLine: copy.value.loginMetaLine,
+        title: copy.value.loginTitle,
+        description: copy.value.loginDescription,
+        actionLabel: copy.value.loginAction,
+        closeLabel: copy.value.fragmentClose
+      }}
+    />
+  )
+})
+
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 
 export const LoginSkeleton = loginEnabled ? FeatureLoginSkeleton : StaticRouteSkeleton
@@ -39,6 +54,6 @@ export const head: DocumentHead = {
   ]
 }
 
-const RouteComponent = loginEnabled ? FeatureLoginRoute : DisabledLoginRoute
+const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute
 
 export default RouteComponent
