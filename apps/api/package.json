@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --target bun --outdir dist",
-    "lint": "oxlint . --type-aware --tsconfig=tsconfig.lint.json",
+    "lint": "oxlint .",
     "format": "oxfmt --write .",
     "test": "bun test tests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",

@@ -4,16 +4,12 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@builder.io/qwik",
     "strict": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "types": ["bun-types", "node", "vite/client"],
-    "paths": {
-      "@/*": ["apps/web/src/*"]
-    },
     "resolveJsonModule": true,
+    "types": ["bun-types", "node"],
+    "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
   "include": ["src"]
