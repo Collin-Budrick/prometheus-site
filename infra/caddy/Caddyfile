@@ -65,36 +65,6 @@ https://prometheus.prod {
 	}
 
 	encode br gzip
-	handle /build/* {
-		header Cache-Control "public, max-age=31536000, immutable"
-		root * /srv/web/dist
-		file_server {
-			precompressed br gzip
-		}
-	}
-
-	handle /assets/* {
-		header Cache-Control "public, max-age=31536000, immutable"
-		root * /srv/web/dist
-		file_server {
-			precompressed br gzip
-		}
-	}
-
-	@static {
-		path /favicon.ico /favicon.svg /manifest.webmanifest /service-worker.js /q-manifest.json /robots.txt /sitemap.xml /icons/*
-		file {
-			root /srv/web/dist
-			try_files {path} {path}.br {path}.gz
-		}
-	}
-	handle @static {
-		root * /srv/web/dist
-		file_server {
-			precompressed br gzip
-		}
-	}
-
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
 			header_up -Accept-Encoding

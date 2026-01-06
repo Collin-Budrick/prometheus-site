@@ -17,7 +17,6 @@ services:
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./infra/caddy/certs:/etc/caddy/certs:ro
-      - ./apps/web/dist:/srv/web/dist:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
@@ -128,11 +127,9 @@ services:
         VITE_ENABLE_ANALYTICS: ${VITE_ENABLE_ANALYTICS:-1}
         VITE_REPORT_CLIENT_ERRORS: ${VITE_REPORT_CLIENT_ERRORS:-1}
         VITE_WEBTRANSPORT_BASE: ${PROMETHEUS_VITE_WEBTRANSPORT_BASE:-}
+        VITE_DISABLE_SW: ${VITE_DISABLE_SW:-}
     environment:
       API_BASE: http://api:4000
-    volumes:
-      - ./apps/web/dist:/app/apps/web/dist:ro
-      - ./apps/web/server:/app/apps/web/server:ro
     depends_on:
       api:
         condition: service_started

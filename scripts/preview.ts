@@ -12,12 +12,6 @@ import {
 } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-type BunRuntime = { execPath?: string }
-const bunGlobal = globalThis as typeof globalThis & { Bun?: BunRuntime }
-const bunBin =
-  (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
-  (typeof process !== 'undefined' && typeof process.execPath === 'string' && process.execPath) ||
-  'bun'
 
 const { command, prefix } = resolveComposeCommand()
 
@@ -35,6 +29,7 @@ const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
 const previewEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
+const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
@@ -79,27 +74,14 @@ const composeEnv = {
   VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
   VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
   VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors,
+  VITE_DISABLE_SW: previewDisableSw,
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
 
-const webBuildEnv = {
-  ...process.env,
-  VITE_API_BASE: '/api',
-  VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
-  VITE_DISABLE_SW: '1',
-  VITE_ENABLE_PREFETCH: previewEnablePrefetch,
-  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
-  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
-  VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
-  VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
-  VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors
-}
-
 const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
   prod: {
-    servePrecompressed: true,
     encode: 'br gzip',
     stripAcceptEncoding: true
   }
@@ -149,7 +131,8 @@ const buildTargets: BuildTarget[] = [
       VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
       VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
       VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
-      VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS
+      VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS,
+      VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW
     }
   },
   {
@@ -169,16 +152,6 @@ const buildResults = buildTargets.map((target) => {
   const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
 })
-
-const webBuild = runSync(bunBin, ['run', '--cwd', 'apps/web', 'build'], webBuildEnv)
-if (webBuild.status !== 0) process.exit(webBuild.status ?? 1)
-
-const webSsrBuild = runSync(
-  bunBin,
-  ['run', '--cwd', 'apps/web', 'build', '--', '--ssr', 'src/entry.preview.tsx'],
-  webBuildEnv
-)
-if (webSsrBuild.status !== 0) process.exit(webSsrBuild.status ?? 1)
 
 const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
 if (buildServices.length) {
