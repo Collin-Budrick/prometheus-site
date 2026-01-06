@@ -40,9 +40,11 @@ services:
 
   valkey:
     image: valkey/valkey-bundle:9.0.0-alpine
+    command: ["valkey-server", "/etc/valkey/valkey.conf"]
     ports:
       - "${PROMETHEUS_VALKEY_PORT:-6379}:6379"
     volumes:
+      - ./infra/valkey/valkey.conf:/etc/valkey/valkey.conf:ro
       - valkey_data:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
