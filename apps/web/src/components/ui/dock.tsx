@@ -1,5 +1,6 @@
-import React, { PropsWithChildren, useRef } from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+import React, { useRef } from "react"
+import type { PropsWithChildren } from "react"
+import type { PropsWithChildren } from "react"
 import {
   motion,
   MotionValue,
@@ -11,7 +12,7 @@ import type { MotionProps } from "motion/react"
 
 import { cn } from "@/lib/utils"
 
-export interface DockProps extends VariantProps<typeof dockVariants> {
+export interface DockProps {
   className?: string
   iconSize?: number
   iconMagnification?: number
@@ -26,9 +27,8 @@ const DEFAULT_MAGNIFICATION = 60
 const DEFAULT_DISTANCE = 140
 const DEFAULT_DISABLEMAGNIFICATION = false
 
-const dockVariants = cva(
+const dockClassName =
   "supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 mx-auto mt-8 flex h-[58px] w-max items-center justify-center gap-2 rounded-2xl border p-2 backdrop-blur-md"
-)
 
 const Dock = React.forwardRef<HTMLDivElement, DockProps>(
   (
@@ -71,7 +71,7 @@ const Dock = React.forwardRef<HTMLDivElement, DockProps>(
         onMouseMove={(e) => mouseX.set(e.pageX)}
         onMouseLeave={() => mouseX.set(Infinity)}
         {...props}
-        className={cn(dockVariants({ className }), {
+        className={cn(dockClassName, className, {
           "items-start": direction === "top",
           "items-center": direction === "middle",
           "items-end": direction === "bottom",
@@ -150,4 +150,4 @@ const DockIcon = ({
 
 DockIcon.displayName = "DockIcon"
 
-export { Dock, DockIcon, dockVariants }
+export { Dock, DockIcon }
