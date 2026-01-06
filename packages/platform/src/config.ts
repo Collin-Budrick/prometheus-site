@@ -1,4 +1,4 @@
-import { resolveBooleanFlag, resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
+import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
 export type PostgresConfig = {
   connectionString: string

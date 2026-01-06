@@ -6,13 +6,13 @@ import {
   fetchFragmentBatch,
   streamFragments,
   teardownFragmentEffects
-} from '../../fragment/client'
+} from '../client'
 import type {
   FragmentPayload,
   FragmentPayloadMap,
   FragmentPayloadValue,
   FragmentPlanValue
-} from '../../fragment/types'
+} from '../types'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
 import { resolveFragments, resolvePlan } from './utils'

@@ -3,7 +3,7 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry } from '@core/fragment/types'
-import { siteBrand } from '../config'
+import { siteBrand } from '../../config'
 import { reactToRenderNode } from './react'
 import { loadWasmAdd } from './wasm'
 

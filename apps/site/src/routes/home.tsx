@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { FragmentShell } from '../features/fragments'
+import { FragmentShell } from '../fragment/ui'
 import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'

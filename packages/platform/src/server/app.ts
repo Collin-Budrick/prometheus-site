@@ -61,7 +61,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
   const featureFlags: FeatureFlags = {
     ...defaults,
-    ...(options.features ?? {})
+    ...options.features
   }
 
   const telemetry: StoreTelemetry = {

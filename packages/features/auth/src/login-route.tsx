@@ -20,7 +20,7 @@ const defaultAuthCopy: AuthCopy = {
 export const LoginRoute = component$<{
   copy?: Partial<AuthCopy>
 }>(({ copy }) => {
-  const resolvedCopy = { ...defaultAuthCopy, ...(copy ?? {}) }
+  const resolvedCopy = { ...defaultAuthCopy, ...copy }
 
   return (
     <StaticRouteTemplate

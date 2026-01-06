@@ -5,7 +5,7 @@ import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton 
 import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
-import { FragmentShell } from '../../features/fragments'
+import { FragmentShell } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'

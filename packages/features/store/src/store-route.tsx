@@ -18,7 +18,7 @@ const defaultStoreCopy: StoreCopy = {
 }
 
 export const StoreRoute = component$<{ copy?: Partial<StoreCopy> }>(({ copy }) => {
-  const resolvedCopy = { ...defaultStoreCopy, ...(copy ?? {}) }
+  const resolvedCopy = { ...defaultStoreCopy, ...copy }
 
   return (
     <StaticRouteTemplate

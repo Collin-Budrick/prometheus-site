@@ -1,4 +1,4 @@
-import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
+import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../types'
 
 export const resolvePlan = (plan: FragmentPlanValue): FragmentPlan => plan as FragmentPlan
 

@@ -18,7 +18,7 @@ const defaultLabCopy: LabCopy = {
 }
 
 export const LabRoute = component$<{ copy?: Partial<LabCopy> }>(({ copy }) => {
-  const resolvedCopy = { ...defaultLabCopy, ...(copy ?? {}) }
+  const resolvedCopy = { ...defaultLabCopy, ...copy }
 
   return (
     <StaticRouteTemplate

@@ -1,6 +1,6 @@
 import { $, component$, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from '@prometheus/ui'
-import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../../fragment/types'
+import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../types'
 import { applySpeculationRules, buildSpeculationRulesForPlan, useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import type { Lang } from '../../shared/lang-store'

@@ -1,4 +1,4 @@
-import type { RenderNode } from '../../fragment/types'
+import type { RenderNode } from '../types'
 import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 
 const hasMetaLineClass = (node: RenderNode) => {

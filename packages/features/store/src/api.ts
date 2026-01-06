@@ -12,7 +12,7 @@ export type StoreTelemetry = {
   cacheSetErrors: number
 }
 
-export type StoreRouteOptions<StoreItem extends { id: number } = { id: number }> = {
+export type StoreRouteOptions = {
   db: DatabaseClient['db']
   valkey: ValkeyClientType
   isValkeyReady: () => boolean
@@ -37,7 +37,7 @@ const isStoreItemsPayload = <StoreItem>(value: unknown): value is StoreItemsPayl
 }
 
 export const createStoreRoutes = <StoreItem extends { id: number } = { id: number }>(
-  options: StoreRouteOptions<StoreItem>
+  options: StoreRouteOptions
 ) => {
   const telemetry = options.telemetry ?? {
     cacheHits: 0,

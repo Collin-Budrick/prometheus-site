@@ -47,7 +47,7 @@ export const resolveRuntimeEnv = (env?: AppEnv): AppEnv => {
   return {
     ...runtimeEnv,
     ...processEnv,
-    ...(env ?? {})
+    ...env
   }
 }
 

@@ -1,5 +1,5 @@
-import '@site/fragments/home'
-import { createFragmentTranslator } from '@site/fragments/i18n'
+import '@site/fragment/definitions/home'
+import { createFragmentTranslator } from '@site/fragment/definitions/i18n'
 import { startApiServer, type ApiServerOptions } from '../server/app'
 
 const testOverrides =
