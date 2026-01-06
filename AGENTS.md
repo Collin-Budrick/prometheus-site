@@ -41,7 +41,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Early hints:** Fragment plans may include `earlyHints` for shell assets only (CSS, fonts, critical JS); never include fragment payloads or WebTransport URLs.
 - **Caching:** Valkey cache keys for store items come from `buildStoreItemsCacheKey`; invalidation is coupled to realtime events. Preserve this coupling when modifying store logic.
 - **Rate limits and payload limits:** Respect API constraints in `apps/api/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
-- **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/traefik/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
+- **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/caddy/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
 
 ## Repo conventions and checks

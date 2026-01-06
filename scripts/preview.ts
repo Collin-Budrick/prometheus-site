@@ -109,7 +109,6 @@ let keepContainers = false
 const buildInputs = [
   'package.json',
   'bun.lock',
-  'bunfig.toml',
   'tsconfig.base.json',
   'docker-compose.yml',
   'infra/caddy/Dockerfile',

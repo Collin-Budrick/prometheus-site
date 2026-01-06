@@ -13,7 +13,7 @@ if (-not $mkcert) {
 }
 
 $repoRoot = Resolve-Path "$PSScriptRoot\.."
-$certDir = Join-Path $repoRoot 'infra\traefik\certs'
+$certDir = Join-Path $repoRoot 'infra\caddy\certs'
 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
 
 Write-Host "Installing mkcert root CA into Windows trust store..."

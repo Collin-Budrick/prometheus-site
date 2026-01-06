@@ -12,7 +12,7 @@ services:
       - "${PROMETHEUS_HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./infra/traefik/certs:/etc/caddy/certs:ro
+      - ./infra/caddy/certs:/etc/caddy/certs:ro
       - ./apps/web/dist:/srv/web/dist:ro
       - caddy_data:/data
       - caddy_config:/config
@@ -90,7 +90,7 @@ services:
       WEBTRANSPORT_ENABLE_DATAGRAMS: ${WEBTRANSPORT_ENABLE_DATAGRAMS:-1}
       WEBTRANSPORT_MAX_DATAGRAM_SIZE: ${WEBTRANSPORT_MAX_DATAGRAM_SIZE:-1200}
     volumes:
-      - ./infra/traefik/certs:/etc/caddy/certs:ro
+      - ./infra/caddy/certs:/etc/caddy/certs:ro
     ports:
       - "${PROMETHEUS_WEBTRANSPORT_PORT:-4444}:4444/udp"
     expose:

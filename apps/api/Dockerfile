@@ -2,7 +2,6 @@ FROM oven/bun:1.3.5 AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
-COPY bunfig.toml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/site/package.json apps/site/package.json
@@ -13,7 +12,7 @@ COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
-RUN bun install --ignore-scripts --frozen-lockfile
+RUN bun install --ignore-scripts --frozen-lockfile --omit=optional --omit=dev --filter api
 
 FROM oven/bun:1.3.5 AS builder
 WORKDIR /app

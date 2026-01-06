@@ -351,7 +351,7 @@
 
     "@oxlint/linux-x64-musl": ["@oxlint/linux-x64-musl@1.36.0", "", { "os": "linux", "cpu": "x64" }, "sha512-AhuEU2Qdl66lSfTGu/Htirq8r/8q2YnZoG3yEXLMQWnPMn7efy8spD/N1NA7kH0Hll+cdfwgQkQqC2G4MS2lPQ=="],
 
-    "@oxlint/win32-arm64": ["@oxlint/win32-arm64@1.36.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-GlWCBjUJY2QgvBFuNRkiRJu7K/djLmM0UQKfZV8IN+UXbP/JbjZHWKRdd4LXlQmzoz7M5Hd6p+ElCej8/90FCg=="],
+    "@oxlint/win32-arm64": ["@oxlint/win32-arm64@1.37.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-2oHxNc4jcocfNWGWVVWQdEG+reZ5ncBZsmDoICJQ1rbCDx4Yimx8VUf1Ub9cCoJRcPiSLBxMqaeMaDClKixJIQ=="],
 
     "@oxlint/win32-x64": ["@oxlint/win32-x64@1.36.0", "", { "os": "win32", "cpu": "x64" }, "sha512-J+Vc00Utcf8p77lZPruQgb0QnQXuKnFogN88kCnOqs2a83I+vTBB8ILr0+L9sTwVRvIDMSC0pLdeQH4svWGFZg=="],
 
@@ -379,7 +379,7 @@
 
     "@peculiar/x509": ["@peculiar/x509@1.14.2", "", { "dependencies": { "@peculiar/asn1-cms": "^2.6.0", "@peculiar/asn1-csr": "^2.6.0", "@peculiar/asn1-ecc": "^2.6.0", "@peculiar/asn1-pkcs9": "^2.6.0", "@peculiar/asn1-rsa": "^2.6.0", "@peculiar/asn1-schema": "^2.6.0", "@peculiar/asn1-x509": "^2.6.0", "pvtsutils": "^1.3.6", "reflect-metadata": "^0.2.2", "tslib": "^2.8.1", "tsyringe": "^4.10.0" } }, "sha512-r2w1Hg6pODDs0zfAKHkSS5HLkOLSeburtcgwvlLLWWCixw+MmW3U6kD5ddyvc2Y2YdbGuVwCF2S2ASoU1cFAag=="],
 
-    "@playwright/test": ["@playwright/test@1.58.0-alpha-2026-01-04", "", { "dependencies": { "playwright": "1.58.0-alpha-2026-01-04" }, "bin": { "playwright": "cli.js" } }, "sha512-4JcCJKhldBVI1JkVJIAUqa8yEs5IXlCdX9O07EkCQlrM/oJvtiU3q0onr24JQaUyW0Vzf5BTckTWYpHNZrnqhQ=="],
+    "@playwright/test": ["@playwright/test@1.58.0-alpha-2026-01-05", "", { "dependencies": { "playwright": "1.58.0-alpha-2026-01-05" }, "bin": { "playwright": "cli.js" } }, "sha512-owuGc5jFeeHy321Vim5domWPprGJ4xP7wuEf70ASnUaeiRMfN4L7uRXE4PvzS3doCqR6SrCyWEJ49PVsIeCZ8Q=="],
 
     "@preact/signals-core": ["@preact/signals-core@1.12.1", "", {}, "sha512-BwbTXpj+9QutoZLQvbttRg5x3l5468qaV2kufh+51yha1c53ep5dY4kTuZR35+3pAZxpfQerGJiQqg34ZNZ6uA=="],
 
@@ -941,9 +941,9 @@
 
     "picomatch": ["picomatch@4.0.3", "", {}, "sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q=="],
 
-    "playwright": ["playwright@1.58.0-alpha-2026-01-04", "", { "dependencies": { "playwright-core": "1.58.0-alpha-2026-01-04" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-BXn1fdZsqMhV3wq9nzd5/j02+2PjwYo7rf7XttKLx4rk/blzxlGBnlMOUg3hv+i/3d0156eNGwh2EWjeEoq83w=="],
+    "playwright": ["playwright@1.58.0-alpha-2026-01-05", "", { "dependencies": { "playwright-core": "1.58.0-alpha-2026-01-05" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-WJKR2ubTfH/NNt2zYo3/5Hg22M5evUO4GFNNgw/UNQgXB7ByG64JqqmyZ5pHpeqQuohx3xi5rcgYHqqBQAOTRg=="],
 
-    "playwright-core": ["playwright-core@1.58.0-alpha-2026-01-04", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-3lpIz80I5x41qa7wn8nHxwVT9SKDSWVgo9kC2OsJGQ93AL6kIezqsrzHEJfWlTBK0AZU1o6ZKnGwBaAWj+DJ/A=="],
+    "playwright-core": ["playwright-core@1.58.0-alpha-2026-01-05", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-b1ciO5kDINBD7I0/9Hh84AJz6u+cO9sFWuTqxByVlMOzOl0btWWsZMG9unkl74UknZZIk19fNNB/al4sRnwU9g=="],
 
     "postcss": ["postcss@8.5.6", "", { "dependencies": { "nanoid": "^3.3.11", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg=="],
 
@@ -1158,6 +1158,8 @@
     "drizzle-zod/zod": ["zod@4.3.4", "", {}, "sha512-Zw/uYiiyF6pUT1qmKbZziChgNPRu+ZRneAsMUDU6IwmXdWt5JwcUfy2bvLOCUtz5UniaN/Zx5aFttZYbYc7O/A=="],
 
     "mssql/commander": ["commander@11.1.0", "", {}, "sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ=="],
+
+    "oxlint/@oxlint/win32-arm64": ["@oxlint/win32-arm64@1.36.0", "", { "os": "win32", "cpu": "arm64" }, "sha512-GlWCBjUJY2QgvBFuNRkiRJu7K/djLmM0UQKfZV8IN+UXbP/JbjZHWKRdd4LXlQmzoz7M5Hd6p+ElCej8/90FCg=="],
 
     "parse-entities/@types/unist": ["@types/unist@2.0.11", "", {}, "sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA=="],
 
