@@ -39,8 +39,7 @@ services:
       retries: 10
 
   valkey:
-    image: valkey/valkey:8
-    command: ["valkey-server", "--save", "60", "1"]
+    image: valkey/valkey-bundle:9.0.0-alpine
     ports:
       - "${PROMETHEUS_VALKEY_PORT:-6379}:6379"
     volumes:
