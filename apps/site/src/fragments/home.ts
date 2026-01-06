@@ -164,8 +164,9 @@ const renderDockIcon = (label: string, icon: ReturnType<(typeof DockIcons)[keyof
       className:
         'flex aspect-square items-center justify-center rounded-full supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10',
       style: dockIconSizeStyle,
-      role: 'img',
-      'aria-label': label
+      role: 'listitem',
+      'aria-label': label,
+      title: label
     },
     icon
   )
