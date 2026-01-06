@@ -30,7 +30,7 @@ export const Dock = component$<DockProps>(
   ({ iconMagnification = DEFAULT_MAGNIFICATION, iconDistance = DEFAULT_DISTANCE, ariaLabel, class: className }) => {
     const dockRef = useSignal<HTMLElement>()
 
-    useVisibleTask$(({ cleanup }) => {
+    useVisibleTask$((ctx) => {
       const dock = dockRef.value
       if (!dock) return
 
@@ -231,7 +231,7 @@ export const Dock = component$<DockProps>(
       dock.addEventListener('pointerleave', handleLeave)
       reduceMotion.addEventListener('change', handleMotionPreference)
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         dock.removeEventListener('pointermove', handleMove)
         dock.removeEventListener('pointerleave', handleLeave)
         reduceMotion.removeEventListener('change', handleMotionPreference)

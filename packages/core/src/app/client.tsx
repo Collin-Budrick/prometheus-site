@@ -66,6 +66,7 @@ const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) =>
   useVisibleTask$(
     () => {
       const analytics = config.analytics
+      const beaconUrl = analytics?.beaconUrl
       const analyticsEnabled = Boolean(analytics?.enabled && analytics?.beaconUrl)
       const reportClientError = config.reportClientError
       const errorReportingEnabled = typeof reportClientError === 'function'
@@ -89,7 +90,7 @@ const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) =>
         setTimeout(task, 0)
       }
 
-      if (analyticsEnabled && analytics?.beaconUrl) {
+      if (analyticsEnabled && beaconUrl) {
         deferTask(() => {
           const payload = JSON.stringify({
             path: window.location.pathname,
@@ -98,10 +99,10 @@ const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) =>
             timestamp: Date.now()
           })
           const body = new Blob([payload], { type: 'application/json' })
-          const sent = navigator.sendBeacon?.(analytics.beaconUrl, body)
+          const sent = navigator.sendBeacon?.(beaconUrl, body)
 
           if (!sent) {
-            fetch(analytics.beaconUrl, {
+            fetch(beaconUrl, {
               method: 'POST',
               body,
               keepalive: true,
@@ -149,8 +150,8 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
   const location = useLocation()
 
   useVisibleTask$(
-    ({ cleanup, track }) => {
-      track(() => location.url.pathname + location.url.search)
+    (ctx) => {
+      ctx.track(() => location.url.pathname + location.url.search)
 
       if (!config.enablePrefetch) return
 
@@ -176,7 +177,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
 
       const stopIdle = scheduleIdleTask(startPrefetch, 800)
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         cancelled = true
         stopIdle()
         stopPrefetch?.()
@@ -199,7 +200,7 @@ export const useClientReady = () => {
   const clientReady = useSignal(false)
 
   useVisibleTask$(
-    ({ cleanup }) => {
+    (ctx) => {
       let resolved = false
 
       const enable = () => {
@@ -218,7 +219,7 @@ export const useClientReady = () => {
       window.addEventListener('pointerdown', handleInput, { once: true })
       window.addEventListener('keydown', handleInput, { once: true })
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         stopIdle()
         window.removeEventListener('pointerdown', handleInput)
         window.removeEventListener('keydown', handleInput)

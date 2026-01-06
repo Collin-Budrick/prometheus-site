@@ -11,10 +11,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "types": ["bun-types", "node", "vite/client"],
-    "baseUrl": "../..",
-    "paths": {
-      "@/*": ["apps/site/src/*"]
-    },
     "skipLibCheck": true
   },
   "include": ["src"]

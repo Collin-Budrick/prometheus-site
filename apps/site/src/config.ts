@@ -3,7 +3,8 @@ import type { UiCopy } from './shared/ui-copy'
 
 export type SiteFeature = 'store' | 'lab' | 'login'
 export type Lang = 'en' | 'ko'
-export type NavItem = { href: string; labelKey: keyof UiCopy; feature?: SiteFeature }
+export type NavLabelKey = 'navHome' | 'navStore' | 'navLab' | 'navLogin'
+export type NavItem = { href: string; labelKey: NavLabelKey; feature?: SiteFeature }
 export type LabPageCopy = {
   metaLine: string
   title: string

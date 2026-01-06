@@ -27,7 +27,7 @@ const DESKTOP_MIN_WIDTH = 1025
 
 const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
   useVisibleTask$(
-    ({ cleanup }) => {
+    (ctx) => {
       if (!appConfig.enablePrefetch) return
 
       const teardownSpeculation = applySpeculationRules(
@@ -37,7 +37,7 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
         })
       )
 
-      cleanup(() => teardownSpeculation())
+      ctx.cleanup(() => teardownSpeculation())
     },
     { strategy: 'document-idle' }
   )
@@ -47,8 +47,8 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 
 export const FragmentShell = component$(({ plan, initialFragments, path, initialLang }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
-  useTask$(({ track }) => {
-    track(() => initialLang)
+  useTask$((ctx) => {
+    ctx.track(() => initialLang)
     if (langSignal.value !== initialLang) {
       langSignal.value = initialLang
     }
@@ -84,8 +84,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     })
   )
 
-  useVisibleTask$(({ track }) => {
-    track(() => expandedId.value)
+  useVisibleTask$((ctx) => {
+    ctx.track(() => expandedId.value)
     if (typeof document === 'undefined') return
     if (expandedId.value) {
       document.body.classList.add('card-expanded')
@@ -95,7 +95,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   })
 
   useVisibleTask$(
-    ({ cleanup }) => {
+    (ctx) => {
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       if (!grid || !('ResizeObserver' in window) || planValue.fragments.length < 2) return
@@ -164,7 +164,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       setupObserver()
       window.addEventListener('resize', handleResize)
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         window.removeEventListener('resize', handleResize)
         teardownObserver()
       })
@@ -173,8 +173,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   )
 
   useVisibleTask$(
-    ({ cleanup }) => {
-      cleanup(() => {
+    (ctx) => {
+      ctx.cleanup(() => {
         status.value = 'idle'
       })
     },
@@ -182,7 +182,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   )
 
   useVisibleTask$(
-    ({ cleanup }) => {
+    (ctx) => {
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver === 'undefined' || planValue.fragments.length < 2) return
@@ -306,7 +306,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       start()
       window.addEventListener('resize', handleResize)
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         stop()
         window.removeEventListener('resize', handleResize)
       })
@@ -315,17 +315,17 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   )
 
   useVisibleTask$(
-    ({ track }) => {
-      track(() => expandedId.value)
+    (ctx) => {
+      ctx.track(() => expandedId.value)
       stackScheduler.value?.()
     },
     { strategy: 'document-ready' }
   )
 
   useVisibleTask$(
-    ({ track, cleanup }) => {
-      track(() => layoutTick.value)
-      track(() => expandedId.value)
+    (ctx) => {
+      ctx.track(() => layoutTick.value)
+      ctx.track(() => expandedId.value)
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver !== 'undefined' || planValue.fragments.length < 2) return
@@ -357,7 +357,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         }
       })
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         if (frame) cancelAnimationFrame(frame)
       })
     },

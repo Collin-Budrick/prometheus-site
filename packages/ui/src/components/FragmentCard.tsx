@@ -53,17 +53,17 @@ export const FragmentCard = component$<FragmentCardProps>(
     })
 
     useVisibleTask$(
-      ({ track, cleanup }) => {
-        const expanded = track(() => expandedId.value === id)
-        const tick = track(() => layoutTick.value)
-        const inView = track(() => isInView.value)
+      (ctx) => {
+        const expanded = ctx.track(() => expandedId.value === id)
+        const tick = ctx.track(() => layoutTick.value)
+        const inView = ctx.track(() => isInView.value)
         const visibilityChanged = inView !== lastInView.value
         const expandedChanged = expanded !== lastExpanded.value
         const resizeChanged = tick !== lastLayoutTick.value
         lastExpanded.value = expanded
         lastLayoutTick.value = tick
         lastInView.value = inView
-        track(() => visibilityTick.value)
+        ctx.track(() => visibilityTick.value)
 
         const card = cardRef.value
         if (!card) return
@@ -101,7 +101,7 @@ export const FragmentCard = component$<FragmentCardProps>(
         const firstRadius = storedRadius ?? window.getComputedStyle(card).borderRadius
         let cancelled = false
 
-        cleanup(() => {
+        ctx.cleanup(() => {
           cancelled = true
         })
 
@@ -216,8 +216,8 @@ export const FragmentCard = component$<FragmentCardProps>(
     )
 
     useVisibleTask$(
-      ({ track, cleanup }) => {
-        const inView = track(() => isInView.value)
+      (ctx) => {
+        const inView = ctx.track(() => isInView.value)
         if (!inView || typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
         if (!card) return
@@ -229,7 +229,7 @@ export const FragmentCard = component$<FragmentCardProps>(
             maxHeight.value = Math.max(maxHeight.value ?? 0, height)
           }
         })
-        cleanup(() => {
+        ctx.cleanup(() => {
           if (frame) cancelAnimationFrame(frame)
         })
       },
@@ -237,8 +237,8 @@ export const FragmentCard = component$<FragmentCardProps>(
     )
 
     useVisibleTask$(
-      ({ track, cleanup }) => {
-        const inView = track(() => isInView.value)
+      (ctx) => {
+        const inView = ctx.track(() => isInView.value)
         if (!inView) return
         const card = cardRef.value
         if (!card || typeof ResizeObserver === 'undefined') return
@@ -269,7 +269,7 @@ export const FragmentCard = component$<FragmentCardProps>(
           }
         })
         observer.observe(card)
-        cleanup(() => {
+        ctx.cleanup(() => {
           observer.disconnect()
         })
       },
@@ -277,7 +277,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     )
 
     useVisibleTask$(
-      ({ cleanup }) => {
+      (ctx) => {
         const card = cardRef.value
         if (!card) return
         if (typeof IntersectionObserver === 'undefined') {
@@ -306,7 +306,7 @@ export const FragmentCard = component$<FragmentCardProps>(
         )
 
         observer.observe(card)
-        cleanup(() => {
+        ctx.cleanup(() => {
           observer.disconnect()
         })
       },

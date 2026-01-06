@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
+import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
 import { FragmentShell } from '../fragment/ui'
 import { loadHybridFragmentResource } from './fragment-resource'
@@ -129,7 +129,7 @@ export default component$(() => {
   )
 })
 
-export const head: DocumentHead<FragmentResource> = ({ resolveValue }) => {
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
   return {

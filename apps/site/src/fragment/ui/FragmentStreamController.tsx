@@ -37,7 +37,7 @@ export const FragmentStreamController = component$(
     const lastLang = useSignal<string | null>(null)
 
     useVisibleTask$(
-      ({ cleanup, track }) => {
+      (ctx) => {
         let active = true
         const streamController = new AbortController()
         const fetchControllers = new Set<AbortController>()
@@ -56,7 +56,7 @@ export const FragmentStreamController = component$(
         let streamDone = false
         let flushHandle: number | null = null
         const queued = new Set<string>()
-        const activeLang = track(() => langSignal.value)
+        const activeLang = ctx.track(() => langSignal.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
         const refreshIds = new Set<string>()
@@ -437,7 +437,7 @@ export const FragmentStreamController = component$(
         const fallbackIds = planValue.fragments.map((entry) => entry.id)
         if (!('IntersectionObserver' in window)) {
           requestFragments(refreshAllIds.length ? refreshAllIds : fallbackIds)
-          cleanup(() => {
+          ctx.cleanup(() => {
             active = false
             teardownFragmentEffects(Object.keys(fragments.value))
           })
@@ -479,7 +479,7 @@ export const FragmentStreamController = component$(
           requestFragments(refreshAllIds)
         }
 
-        cleanup(() => {
+        ctx.cleanup(() => {
           active = false
           streamController.abort()
           fetchControllers.forEach((ctrl) => ctrl.abort())

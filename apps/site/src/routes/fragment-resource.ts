@@ -9,7 +9,8 @@ export type HybridFragmentResource = {
   path: string
 }
 
-export const selectInitialFragmentIds = (plan: FragmentPlanValue) => {
+export const selectInitialFragmentIds = (plan: FragmentPlanValue | undefined) => {
+  if (!plan) return []
   const critical = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
   if (critical.length) return Array.from(new Set(critical))
   const primaryGroup =
@@ -36,8 +37,7 @@ export const loadHybridFragmentResource = async (
   lang?: string
 ): Promise<HybridFragmentResource> => {
   const { plan, initialFragments } = await loadFragmentPlan(path, config, lang, { includeInitial: false })
-  const planValue = plan as FragmentPlanValue
-  const initialIds = selectInitialFragmentIds(planValue)
+  const initialIds = selectInitialFragmentIds(plan)
   let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
   const missingIds = initialIds.filter((id) => !fragments[id])
 
@@ -50,7 +50,7 @@ export const loadHybridFragmentResource = async (
     }
   }
 
-  return { plan: planValue, fragments, path: planValue.path }
+  return { plan, fragments, path: plan.path }
 }
 
 export const resolveRequestLang = (request: Request): Lang => {

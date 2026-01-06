@@ -2,7 +2,7 @@ import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/
 import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
 import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
-import { siteBrand } from '../config'
+import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
@@ -92,12 +92,12 @@ const initialFadeScript = `(function () {
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
 
-const DOCK_ICONS = {
+const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navHome: InHomeSimple,
   navStore: InShop,
   navLab: InFlask,
   navLogin: InUser
-} as const
+}
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
@@ -158,7 +158,7 @@ export default component$(() => {
   const toggleLang = $((current: string) => {
     const next = (current === 'en' ? 'ko' : 'en') as Lang
     const root = document.querySelector('.layout-shell') ?? document.body
-    runLangViewTransition(
+    void runLangViewTransition(
       () => {
         langSignal.value = next
         applyLang(next)
@@ -171,7 +171,7 @@ export default component$(() => {
     )
   })
 
-  useVisibleTask$(({ cleanup }) => {
+  useVisibleTask$((ctx) => {
     const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
     const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
 
@@ -202,7 +202,7 @@ export default component$(() => {
     }
 
     document.addEventListener('click', handleClick, { capture: true })
-    cleanup(() => {
+    ctx.cleanup(() => {
       document.removeEventListener('click', handleClick, { capture: true })
     })
   })

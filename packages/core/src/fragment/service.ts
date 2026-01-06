@@ -10,9 +10,8 @@ import type {
   FragmentDefinition,
   FragmentRenderContext
 } from './types'
-import { buildFragmentCacheKey, type FragmentStore, type StoredFragment } from './store'
+import { buildFragmentCacheKey, fragmentLockTtlMs, type FragmentStore, type StoredFragment } from './store'
 
-export const fragmentLockTtlMs = 8_000
 const lockWaitMs = fragmentLockTtlMs
 const lockPollMs = 50
 const minRefreshDelayMs = 100

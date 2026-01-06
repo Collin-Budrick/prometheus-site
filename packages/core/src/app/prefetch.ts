@@ -61,7 +61,7 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }, log = f
       }
       return href
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       if (log) console.warn('[prefetch] Quicklink prefetch error', error)
     },
     priority: false,

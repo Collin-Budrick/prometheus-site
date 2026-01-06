@@ -26,7 +26,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
     )
 
     useVisibleTask$(
-      ({ cleanup }) => {
+      (ctx) => {
         if (typeof window === 'undefined') return
         const grid = gridRef.value
         if (!grid || !('ResizeObserver' in window)) return
@@ -61,7 +61,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
 
         observer.observe(grid)
 
-        cleanup(() => {
+        ctx.cleanup(() => {
           observer.disconnect()
           if (frame) cancelAnimationFrame(frame)
         })

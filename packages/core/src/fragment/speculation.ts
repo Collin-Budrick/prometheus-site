@@ -1,5 +1,14 @@
-import type { SpeculationRulesProps } from 'speculation-rules'
 import type { FragmentPayloadMap, FragmentPlan } from './types'
+
+type SpeculationRule = {
+  source?: string
+  urls?: string[]
+}
+
+type SpeculationRulesProps = {
+  prerenderRules?: SpeculationRule[]
+  prefetchRules?: SpeculationRule[]
+}
 
 type PrefetchNode = { href?: string; parentNode?: Node | null }
 

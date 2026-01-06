@@ -18,7 +18,7 @@ export const useLangSignal = () => {
   const current = useSignal(lang.value)
 
   useVisibleTask$(
-    ({ cleanup }) => {
+    (ctx) => {
       current.value = initLang()
       let ready = false
       const dispose = subscribeLang((value) => {
@@ -30,7 +30,7 @@ export const useLangSignal = () => {
         if (current.value === value) return
         current.value = value
       })
-      cleanup(() => dispose())
+      ctx.cleanup(() => dispose())
     },
     { strategy: 'document-ready' }
   )
@@ -48,4 +48,3 @@ export const useSharedLangSignal = () => useContext(LangSignalContext) ?? useLan
 
 export const useLangCopy = (langSignal: Signal<Lang> = useSharedLangSignal()) =>
   useComputed$(() => getUiCopy(langSignal.value))
-

@@ -8,8 +8,8 @@ export const RouteMotion = component$(() => {
   const skipInitial = useSignal(true)
 
   useVisibleTask$(
-    ({ cleanup, track }) => {
-      track(() => location.url.pathname + location.url.search)
+    (ctx) => {
+      ctx.track(() => location.url.pathname + location.url.search)
 
       if (skipInitial.value) {
         skipInitial.value = false
@@ -265,7 +265,7 @@ export const RouteMotion = component$(() => {
         })
       })
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         cancelled = true
         stopIdle()
         disposeMotion?.()

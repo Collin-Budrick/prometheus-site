@@ -9,7 +9,7 @@ type PreactIslandProps = {
 export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIslandProps) => {
   const host = useSignal<HTMLElement>()
 
-  useVisibleTask$(({ cleanup }) => {
+  useVisibleTask$((ctx) => {
     let active = true
     let dispose: (() => void) | null = null
 
@@ -164,7 +164,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
 
     void mount()
 
-    cleanup(() => {
+    ctx.cleanup(() => {
       active = false
       dispose?.()
     })

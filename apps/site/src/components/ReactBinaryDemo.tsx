@@ -105,8 +105,8 @@ export const ReactBinaryDemo = component$(() => {
     stageIndex.value = (stageIndex.value + 1) % copy.stages.length
   })
 
-  useVisibleTask$(({ track, cleanup }) => {
-    const active = track(() => copy.stages[stageIndex.value]?.id === 'binary')
+  useVisibleTask$((ctx) => {
+    const active = ctx.track(() => copy.stages[stageIndex.value]?.id === 'binary')
     if (!active) return
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -143,7 +143,7 @@ export const ReactBinaryDemo = component$(() => {
     start()
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    cleanup(() => {
+    ctx.cleanup(() => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       clear()
     })

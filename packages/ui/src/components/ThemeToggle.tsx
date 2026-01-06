@@ -21,7 +21,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
   const themeSignal = useSignal<Theme>(themeStore.value)
   const hasStoredPreference = useSignal(false)
 
-  useVisibleTask$(({ cleanup }) => {
+  useVisibleTask$((ctx) => {
     hasStoredPreference.value = readStoredTheme() !== null
     themeSignal.value = initTheme()
 
@@ -37,7 +37,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
     }
 
     media.addEventListener('change', handleChange)
-    cleanup(() => {
+    ctx.cleanup(() => {
       media.removeEventListener('change', handleChange)
       dispose()
     })
