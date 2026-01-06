@@ -45,7 +45,12 @@ test('updates hero fragment copy when language toggles', async ({ page }) => {
     )
   })
 
-  await page.locator('.lang-toggle').click()
+  const toggle = page.locator('.lang-toggle')
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await toggle.click()
+    const lang = await page.locator('html').getAttribute('lang')
+    if (lang === 'ko') break
+  }
 
   const request = await fragmentRequest
   const response = await request.response()

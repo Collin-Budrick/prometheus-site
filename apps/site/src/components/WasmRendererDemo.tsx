@@ -1,68 +1,6 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
+import { getLanguagePack } from '../lang'
 import { useLangSignal } from '../shared/lang-bridge'
-
-const wasmCopy = {
-  en: {
-    title: 'WASM transform demo',
-    run: 'Run WASM',
-    subtitle: 'Deterministic WebAssembly outputs drive fragment composition without touching HTML.',
-    panels: {
-      inputs: 'Inputs',
-      wasm: 'WASM transform',
-      fragment: 'Fragment composition'
-    },
-    aria: {
-      decreaseA: 'Decrease A',
-      increaseA: 'Increase A',
-      decreaseB: 'Decrease B',
-      increaseB: 'Increase B'
-    },
-    notes: {
-      inputs: 'Edge-safe numeric inputs.',
-      wasm: 'Deterministic output for same inputs.',
-      fragment: 'Outputs feed layout metrics, not HTML.'
-    },
-    metrics: {
-      burst: 'Burst',
-      hotPath: 'Hot-path'
-    },
-    footer: {
-      edgeSafe: 'Edge-safe',
-      deterministic: 'Deterministic',
-      htmlUntouched: 'HTML: untouched'
-    }
-  },
-  ko: {
-    title: 'WASM \ubcc0\ud658 \ub370\ubaa8',
-    run: 'WASM \uc2e4\ud589',
-    subtitle: '\uacb0\uc815\uc801\uc778 WebAssembly \ucd9c\ub825\uc774 HTML\uc744 \uac74\ub4dc\ub9ac\uc9c0 \uc54a\uace0 \ud504\ub798\uadf8\uba3c\ud2b8 \uad6c\uc131\uc744 \uc774\ub055\ub2c8\ub2e4.',
-    panels: {
-      inputs: '\uc785\ub825',
-      wasm: 'WASM \ubcc0\ud658',
-      fragment: '\ud504\ub798\uadf8\uba3c\ud2b8 \uad6c\uc131'
-    },
-    aria: {
-      decreaseA: 'A \uac10\uc18c',
-      increaseA: 'A \uc99d\uac00',
-      decreaseB: 'B \uac10\uc18c',
-      increaseB: 'B \uc99d\uac00'
-    },
-    notes: {
-      inputs: '\uc5e3\uc9c0 \uc548\uc804 \uc22b\uc790 \uc785\ub825.',
-      wasm: '\ub3d9\uc77c \uc785\ub825\uc5d0 \ub300\ud55c \uacb0\uc815\uc801 \ucd9c\ub825.',
-      fragment: '\ucd9c\ub825\uc740 HTML\uc774 \uc544\ub2cc \ub808\uc774\uc544\uc6c3 \uba54\ud2b8\ub9ad\uc5d0 \ubc18\uc601\ub429\ub2c8\ub2e4.'
-    },
-    metrics: {
-      burst: '\ubc84\uc2a4\ud2b8',
-      hotPath: '\ud56b\ud328\uc2a4'
-    },
-    footer: {
-      edgeSafe: '\uc5e3\uc9c0 \uc548\uc804',
-      deterministic: '\uacb0\uc815\uc801',
-      htmlUntouched: 'HTML: \ubbf8\ubcc0\uacbd'
-    }
-  }
-} as const
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -76,7 +14,7 @@ const computeMetrics = (a: number, b: number) => {
 
 export const WasmRendererDemo = component$(() => {
   const langSignal = useLangSignal()
-  const copy = wasmCopy[langSignal.value] ?? wasmCopy.en
+  const copy = getLanguagePack(langSignal.value).demos.wasmRenderer
   const inputA = useSignal(128)
   const inputB = useSignal(256)
   const initial = computeMetrics(inputA.value, inputB.value)

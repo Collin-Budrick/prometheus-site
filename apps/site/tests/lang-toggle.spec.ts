@@ -16,7 +16,12 @@ test('updates static route copy when language toggles', async ({ page }) => {
   expect(initialDescription).not.toBe('')
   expect(initialAction).not.toBe('')
 
-  await page.locator('.lang-toggle').click()
+  const toggle = page.locator('.lang-toggle')
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await toggle.click()
+    const lang = await page.locator('html').getAttribute('lang')
+    if (lang === 'ko') break
+  }
 
   await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
   await expect(title).not.toHaveText(initialTitle)

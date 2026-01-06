@@ -1,10 +1,5 @@
-export type FragmentHeaderCopy = {
-  heading: 'h1' | 'h2'
-  metaLine?: string | string[]
-  title: string
-  description?: string
-}
+import { getLanguagePack, type FragmentHeaderCopy, type Lang } from '../lang'
 
-import { defaultLanguage, fragmentHeaderCopy, type Lang } from '../config'
+export type { FragmentHeaderCopy }
 
-export const getFragmentHeaderCopy = (lang: Lang) => fragmentHeaderCopy[lang] ?? fragmentHeaderCopy[defaultLanguage]
+export const getFragmentHeaderCopy = (lang: Lang): Record<string, FragmentHeaderCopy> => getLanguagePack(lang).fragmentHeaders

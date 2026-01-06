@@ -1,5 +1,5 @@
 import { effect, signal } from '@preact/signals-core'
-import { defaultLanguage, supportedLanguages, type Lang } from '../config'
+import { defaultLanguage, supportedLanguages, type Lang } from '../lang'
 import { runLangViewTransition } from './view-transitions'
 
 const STORAGE_KEY = 'prometheus-lang'
@@ -8,8 +8,15 @@ const COOKIE_KEY = 'prometheus-lang'
 const parseLang = (value?: string | null): Lang | null => {
   if (!value) return null
   const normalized = value.trim().toLowerCase()
-  if (normalized.startsWith('ko') && supportedLanguages.includes('ko')) return 'ko'
-  if (normalized.startsWith('en') && supportedLanguages.includes('en')) return 'en'
+  const token = normalized.split(';')[0]?.trim() ?? ''
+  if (!token) return null
+  const exact = supportedLanguages.find((lang) => lang === token)
+  if (exact) return exact
+  const prefix = supportedLanguages.find((lang) => lang.startsWith(`${token}-`) || lang.startsWith(`${token}_`))
+  if (prefix) return prefix
+  for (const lang of supportedLanguages) {
+    if (token.startsWith(`${lang}-`) || token.startsWith(`${lang}_`)) return lang
+  }
   return null
 }
 
@@ -43,11 +50,12 @@ const persistLang = (value: Lang) => {
 }
 
 export const applyLang = (value: Lang, options: { persist?: boolean; transition?: boolean } = {}) => {
+  const resolved = normalizeLang(value)
   const apply = () => {
-    lang.value = value
-    setDocumentLang(value)
+    lang.value = resolved
+    setDocumentLang(resolved)
     if (options.persist !== false) {
-      persistLang(value)
+      persistLang(resolved)
     }
   }
 
@@ -85,4 +93,3 @@ export const subscribeLang = (listener: (value: Lang) => void) => {
 
 export { defaultLanguage as defaultLang, supportedLanguages as supportedLangs }
 export type { Lang }
-

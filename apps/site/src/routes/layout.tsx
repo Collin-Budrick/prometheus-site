@@ -7,7 +7,7 @@ import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
-import { applyLang, type Lang } from '../shared/lang-store'
+import { applyLang, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
@@ -155,8 +155,12 @@ export default component$(() => {
       : fragmentStatus.value === 'error'
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
+  const hasMultipleLangs = supportedLangs.length > 1
   const toggleLang = $((current: string) => {
-    const next = (current === 'en' ? 'ko' : 'en') as Lang
+    if (supportedLangs.length < 2) return
+    const currentIndex = supportedLangs.indexOf(current)
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % supportedLangs.length : 0
+    const next = supportedLangs[nextIndex] as Lang
     const root = document.querySelector('.layout-shell') ?? document.body
     void runLangViewTransition(
       () => {
@@ -222,12 +226,9 @@ export default component$(() => {
             <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
               <span class="dot" aria-hidden="true" />
             </div>
-            <LanguageToggle
-              lang={langSignal}
-              ariaLabels={{ en: copy.value.languageAriaToKo, ko: copy.value.languageAriaToEn }}
-              pressed={langSignal.value === 'ko'}
-              onToggle$={toggleLang}
-            />
+            {hasMultipleLangs ? (
+              <LanguageToggle lang={langSignal} ariaLabel={copy.value.languageToggleLabel} onToggle$={toggleLang} />
+            ) : null}
             <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
           </div>
         </div>

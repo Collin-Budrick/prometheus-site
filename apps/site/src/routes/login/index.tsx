@@ -1,22 +1,18 @@
 import { component$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
+import { getUiCopy } from '../../shared/ui-copy'
 import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/pages/Login'
 import { FragmentShell } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
-import type { Lang } from '../../shared/lang-store'
+import { defaultLang, type Lang } from '../../shared/lang-store'
 
 const loginEnabled = siteFeatures.login !== false
-const loginTitle = loginEnabled ? 'Login' : 'Feature disabled'
-const loginDescription = loginEnabled
-  ? 'Authenticate to manage fragments, releases, and workspace settings.'
-  : 'This route is disabled in this site configuration.'
-
 type FragmentResource = {
   plan: FragmentPlanValue
   fragments: FragmentPayloadValue
@@ -74,14 +70,27 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 
 export const LoginSkeleton = loginEnabled ? FeatureLoginSkeleton : StaticRouteSkeleton
 
-export const head: DocumentHead = {
-  title: `${loginTitle} | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: loginDescription
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
+  const data = resolveValue(useFragmentResource)
+  const lang = data?.lang ?? defaultLang
+  const copy = getUiCopy(lang)
+  const title = loginEnabled ? copy.loginTitle : 'Feature disabled'
+  const description = loginEnabled
+    ? copy.loginDescription
+    : 'This route is disabled in this site configuration.'
+
+  return {
+    title: `${title} | ${siteBrand.name}`,
+    meta: [
+      {
+        name: 'description',
+        content: description
+      }
+    ],
+    htmlAttributes: {
+      lang
     }
-  ]
+  }
 }
 
 const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute

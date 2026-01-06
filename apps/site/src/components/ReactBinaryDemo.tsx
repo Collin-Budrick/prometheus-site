@@ -1,84 +1,6 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { getLanguagePack } from '../lang'
 import { useLangSignal } from '../shared/lang-bridge'
-
-const reactBinaryCopy = {
-  en: {
-    title: 'Binary compile demo',
-    actions: {
-      react: 'Compile to binary',
-      binary: 'Apply to DOM',
-      qwik: 'Replay compile'
-    },
-    stages: [
-      {
-        id: 'react',
-        label: 'React fragment',
-        hint: 'React fragment renders on the server only.'
-      },
-      {
-        id: 'binary',
-        label: 'Binary tree',
-        hint: 'Compiled into a binary stream without hydration.'
-      },
-      {
-        id: 'qwik',
-        label: 'Qwik DOM',
-        hint: 'Qwik owns the DOM and applies the tree.'
-      }
-    ],
-    ariaStages: 'Compilation stages',
-    panels: {
-      reactTitle: 'React fragment',
-      binaryTitle: 'Binary tree',
-      qwikTitle: 'Qwik DOM',
-      reactCaption: 'Server-only JSX tree.',
-      binaryCaption: 'Streamed render nodes.',
-      qwikCaption: 'DOM owned by Qwik.'
-    },
-    footer: {
-      hydrationSkipped: 'Hydration: skipped',
-      binaryStream: 'Binary tree stream'
-    }
-  },
-  ko: {
-    title: '\ubc14\uc774\ub108\ub9ac \ucef4\ud30c\uc77c \ub370\ubaa8',
-    actions: {
-      react: '\ubc14\uc774\ub108\ub9ac\ub85c \ucef4\ud30c\uc77c',
-      binary: 'DOM\uc5d0 \uc801\uc6a9',
-      qwik: '\ucef4\ud30c\uc77c \uc7ac\uc2e4\ud589'
-    },
-    stages: [
-      {
-        id: 'react',
-        label: 'React \ud504\ub798\uadf8\uba3c\ud2b8',
-        hint: 'React \ud504\ub798\uadf8\uba3c\ud2b8\ub294 \uc11c\ubc84\uc5d0\uc11c\ub9cc \ub80c\ub354\ub9c1\ub429\ub2c8\ub2e4.'
-      },
-      {
-        id: 'binary',
-        label: '\ubc14\uc774\ub108\ub9ac \ud2b8\ub9ac',
-        hint: '\ud558\uc774\ub4dc\ub808\uc774\uc158 \uc5c6\uc774 \ubc14\uc774\ub108\ub9ac \uc2a4\ud2b8\ub9bc\uc73c\ub85c \ucef4\ud30c\uc77c\ub429\ub2c8\ub2e4.'
-      },
-      {
-        id: 'qwik',
-        label: 'Qwik DOM',
-        hint: 'Qwik\uc774 DOM\uc744 \uc18c\uc720\ud558\uace0 \ud2b8\ub9ac\ub97c \uc801\uc6a9\ud569\ub2c8\ub2e4.'
-      }
-    ],
-    ariaStages: '\ucef4\ud30c\uc77c \ub2e8\uacc4',
-    panels: {
-      reactTitle: 'React \ud504\ub798\uadf8\uba3c\ud2b8',
-      binaryTitle: '\ubc14\uc774\ub108\ub9ac \ud2b8\ub9ac',
-      qwikTitle: 'Qwik DOM',
-      reactCaption: '\uc11c\ubc84 \uc804\uc6a9 JSX \ud2b8\ub9ac.',
-      binaryCaption: '\uc2a4\ud2b8\ub9ac\ubc0d\ub41c \ub80c\ub354 \ub178\ub4dc.',
-      qwikCaption: 'Qwik\uc774 \uc18c\uc720\ud55c DOM.'
-    },
-    footer: {
-      hydrationSkipped: '\ud558\uc774\ub4dc\ub808\uc774\uc158: \uac74\ub108\ub700',
-      binaryStream: '\ubc14\uc774\ub108\ub9ac \ud2b8\ub9ac \uc2a4\ud2b8\ub9bc'
-    }
-  }
-} as const
 
 const randomBits = (length = 4) => {
   let bits = ''
@@ -94,7 +16,7 @@ const domNodes = ['section', 'h2', 'p', 'div.badge']
 
 export const ReactBinaryDemo = component$(() => {
   const langSignal = useLangSignal()
-  const copy = reactBinaryCopy[langSignal.value] ?? reactBinaryCopy.en
+  const copy = getLanguagePack(langSignal.value).demos.reactBinary
   const stageIndex = useSignal(0)
   const stage = copy.stages[stageIndex.value]
   const binaryChunks = useSignal(initialChunks)

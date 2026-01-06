@@ -1,0 +1,213 @@
+{
+  "ui": {
+    "navHome": "Home",
+    "navStore": "Store",
+    "navLab": "Lab",
+    "navLogin": "Login",
+    "dockAriaLabel": "Dock shortcuts",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeAriaToLight": "Switch to light mode",
+    "themeAriaToDark": "Switch to dark mode",
+    "languageToggleLabel": "Switch language",
+    "fragmentStatusStreaming": "Streaming fragments",
+    "fragmentStatusStalled": "Stream stalled",
+    "fragmentStatusIdle": "Idle",
+    "fragmentLoading": "Loading fragment {id}",
+    "fragmentClose": "Close",
+    "storeMetaLine": "Store",
+    "storeTitle": "Store",
+    "storeDescription": "Browse curated modules, fragments, and templates designed for fast binary delivery.",
+    "storeAction": "Browse catalog",
+    "loginMetaLine": "Login",
+    "loginTitle": "Login",
+    "loginDescription": "Access your workspace, release controls, and deployment history.",
+    "loginAction": "Request access",
+    "featureUnavailableMeta": "Unavailable",
+    "featureUnavailableTitle": "This feature is disabled",
+    "featureUnavailableDescription": "Enable the feature in site config to expose this route.",
+    "featureUnavailableAction": "Return home"
+  },
+  "fragmentHeaders": {
+    "fragment://page/home/hero@v1": {
+      "heading": "h1",
+      "metaLine": ["fragment addressable", "edge-primary"],
+      "title": "Binary-first. Fragment-native. Zero hydration.",
+      "description": "The render tree is the artifact. HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching."
+    },
+    "fragment://page/home/planner@v1": {
+      "heading": "h2",
+      "metaLine": "fragment planner",
+      "title": "Planner executes before rendering.",
+      "description": "Dependency resolution, cache hit checks, and runtime selection happen up front. Rendering only occurs on cache miss; revalidation runs asynchronously."
+    },
+    "fragment://page/home/ledger@v1": {
+      "heading": "h2",
+      "metaLine": "wasm renderer",
+      "title": "Hot-path fragments rendered by WASM.",
+      "description": "Critical transforms run inside WebAssembly for deterministic, edge-safe execution. Numeric outputs feed fragment composition without touching HTML."
+    },
+    "fragment://page/home/island@v1": {
+      "heading": "h2",
+      "metaLine": "preact island",
+      "title": "Isolated client islands stay sandboxed.",
+      "description": "Preact loads only inside the island boundary. No shared state, no routing ownership, no global hydration."
+    },
+    "fragment://page/home/react@v1": {
+      "heading": "h2",
+      "metaLine": "react authoring",
+      "title": "React stays server-only.",
+      "description": "React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik."
+    },
+    "fragment://page/home/dock@v1": {
+      "heading": "h2",
+      "metaLine": "react dock",
+      "title": "Server-only dock fragment.",
+      "description": "MagicUI dock authored in React, compiled to a static fragment."
+    }
+  },
+  "lab": {
+    "metaLine": "Lab",
+    "title": "Lab",
+    "description": "Prototype new fragment systems, run experiments, and validate edge behaviors.",
+    "actionLabel": "Launch experiment"
+  },
+  "demos": {
+    "planner": {
+      "title": "Planner simulation",
+      "run": "Run plan",
+      "running": "Running...",
+      "shuffle": "Shuffle cache",
+      "waiting": "Waiting on planner execution.",
+      "steps": [
+        {
+          "id": "deps",
+          "label": "Resolve deps",
+          "hint": "Dependency graph resolved up front."
+        },
+        {
+          "id": "cache",
+          "label": "Cache check",
+          "hint": "Cache hit map built before rendering."
+        },
+        {
+          "id": "runtime",
+          "label": "Select runtime",
+          "hint": "Edge/Node targets locked in."
+        },
+        {
+          "id": "render",
+          "label": "Render misses",
+          "hint": "Only cache misses render."
+        },
+        {
+          "id": "revalidate",
+          "label": "Async revalidate",
+          "hint": "Revalidation queued in the background."
+        }
+      ],
+      "fragments": [
+        { "id": "hero", "label": "Hero shell", "deps": [], "runtime": "edge" },
+        { "id": "planner", "label": "Planner core", "deps": ["hero"], "runtime": "edge" },
+        { "id": "ledger", "label": "Ledger stream", "deps": ["planner"], "runtime": "node" },
+        { "id": "react", "label": "React authoring", "deps": ["planner"], "runtime": "node" }
+      ],
+      "labels": {
+        "dependencies": "Dependencies",
+        "cache": "Cache",
+        "runtime": "Runtime"
+      },
+      "root": "root",
+      "resolved": "Resolved",
+      "pending": "Pending",
+      "hit": "Hit",
+      "miss": "Miss",
+      "checked": "Checked",
+      "waitingCache": "Waiting",
+      "selecting": "Selecting",
+      "renderNow": "Render now",
+      "skipRender": "Skip render",
+      "awaitRender": "Await render",
+      "revalidateQueued": "Revalidate queued",
+      "freshRender": "Fresh render",
+      "awaitRevalidate": "Await revalidate"
+    },
+    "wasmRenderer": {
+      "title": "WASM transform demo",
+      "run": "Run WASM",
+      "subtitle": "Deterministic WebAssembly outputs drive fragment composition without touching HTML.",
+      "panels": {
+        "inputs": "Inputs",
+        "wasm": "WASM transform",
+        "fragment": "Fragment composition"
+      },
+      "aria": {
+        "decreaseA": "Decrease A",
+        "increaseA": "Increase A",
+        "decreaseB": "Decrease B",
+        "increaseB": "Increase B"
+      },
+      "notes": {
+        "inputs": "Edge-safe numeric inputs.",
+        "wasm": "Deterministic output for same inputs.",
+        "fragment": "Outputs feed layout metrics, not HTML."
+      },
+      "metrics": {
+        "burst": "Burst",
+        "hotPath": "Hot-path"
+      },
+      "footer": {
+        "edgeSafe": "Edge-safe",
+        "deterministic": "Deterministic",
+        "htmlUntouched": "HTML: untouched"
+      }
+    },
+    "reactBinary": {
+      "title": "Binary compile demo",
+      "actions": {
+        "react": "Compile to binary",
+        "binary": "Apply to DOM",
+        "qwik": "Replay compile"
+      },
+      "stages": [
+        {
+          "id": "react",
+          "label": "React fragment",
+          "hint": "React fragment renders on the server only."
+        },
+        {
+          "id": "binary",
+          "label": "Binary tree",
+          "hint": "Compiled into a binary stream without hydration."
+        },
+        {
+          "id": "qwik",
+          "label": "Qwik DOM",
+          "hint": "Qwik owns the DOM and applies the tree."
+        }
+      ],
+      "ariaStages": "Compilation stages",
+      "panels": {
+        "reactTitle": "React fragment",
+        "binaryTitle": "Binary tree",
+        "qwikTitle": "Qwik DOM",
+        "reactCaption": "Server-only JSX tree.",
+        "binaryCaption": "Streamed render nodes.",
+        "qwikCaption": "DOM owned by Qwik."
+      },
+      "footer": {
+        "hydrationSkipped": "Hydration: skipped",
+        "binaryStream": "Binary tree stream"
+      }
+    },
+    "preactIsland": {
+      "label": "Isolated island",
+      "countdown": "Countdown",
+      "ready": "Ready",
+      "readySub": "Ready for replay",
+      "activeSub": "Edge-safe timer",
+      "reset": "Reset timer"
+    }
+  },
+  "fragments": {}
+}

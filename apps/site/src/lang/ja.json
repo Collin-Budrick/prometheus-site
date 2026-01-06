@@ -1,0 +1,260 @@
+{
+  "ui": {
+    "navHome": "ホーム",
+    "navStore": "ストア",
+    "navLab": "ラボ",
+    "navLogin": "ログイン",
+    "dockAriaLabel": "ドックショートカット",
+    "themeLight": "ライト",
+    "themeDark": "ダーク",
+    "themeAriaToLight": "ライトモードに切り替え",
+    "themeAriaToDark": "ダークモードに切り替え",
+    "languageToggleLabel": "言語を切り替え",
+    "fragmentStatusStreaming": "フラグメントをストリーミング中",
+    "fragmentStatusStalled": "ストリームが停止",
+    "fragmentStatusIdle": "待機中",
+    "fragmentLoading": "フラグメント {id} を読み込み中",
+    "fragmentClose": "閉じる",
+    "storeMetaLine": "ストア",
+    "storeTitle": "ストア",
+    "storeDescription": "高速なバイナリ配信のために厳選されたモジュール、フラグメント、テンプレートを閲覧できます。",
+    "storeAction": "カタログを見る",
+    "loginMetaLine": "ログイン",
+    "loginTitle": "ログイン",
+    "loginDescription": "ワークスペース、リリース制御、デプロイ履歴にアクセスします。",
+    "loginAction": "アクセスをリクエスト",
+    "featureUnavailableMeta": "利用不可",
+    "featureUnavailableTitle": "この機能は無効です",
+    "featureUnavailableDescription": "このルートを公開するにはサイト設定で機能を有効にしてください。",
+    "featureUnavailableAction": "ホームに戻る"
+  },
+  "fragmentHeaders": {
+    "fragment://page/home/hero@v1": {
+      "heading": "h1",
+      "metaLine": ["フラグメントアドレス指定", "エッジ優先"],
+      "title": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",
+      "description": "レンダーツリーが成果物です。HTMLはフォールバックです。すべての表面は再生、キャッシュ、即時パッチのために決定的なバイナリフラグメントにコンパイルされます。"
+    },
+    "fragment://page/home/planner@v1": {
+      "heading": "h2",
+      "metaLine": "フラグメントプランナー",
+      "title": "レンダリングの前にプランナーが実行されます。",
+      "description": "依存関係の解決、キャッシュヒットの確認、ランタイムの選択が先に行われます。レンダリングはキャッシュミス時のみ行われ、再検証は非同期で実行されます。"
+    },
+    "fragment://page/home/ledger@v1": {
+      "heading": "h2",
+      "metaLine": "WASMレンダラー",
+      "title": "WASMでレンダリングされるホットパスフラグメント。",
+      "description": "重要な変換は決定的でエッジ安全な実行のためにWebAssembly内で行われます。数値出力がHTMLに触れずにフラグメント合成を駆動します。"
+    },
+    "fragment://page/home/island@v1": {
+      "heading": "h2",
+      "metaLine": "Preactアイランド",
+      "title": "分離されたクライアントアイランドはサンドボックスのままです。",
+      "description": "Preactはアイランド境界内でのみ読み込まれます。共有状態も、ルーティングの所有権も、グローバルハイドレーションもありません。"
+    },
+    "fragment://page/home/react@v1": {
+      "heading": "h2",
+      "metaLine": "Reactオーサリング",
+      "title": "Reactはサーバー専用です。",
+      "description": "Reactフラグメントはクライアントハイドレーションなしでバイナリツリーにコンパイルされます。DOMはQwikが所有します。"
+    },
+    "fragment://page/home/dock@v1": {
+      "heading": "h2",
+      "metaLine": "Reactドック",
+      "title": "サーバー専用ドックフラグメント。",
+      "description": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。"
+    }
+  },
+  "lab": {
+    "metaLine": "ラボ",
+    "title": "ラボ",
+    "description": "新しいフラグメントシステムを試作し、実験を実行してエッジ動作を検証します。",
+    "actionLabel": "実験を開始"
+  },
+  "demos": {
+    "planner": {
+      "title": "プランナーシミュレーション",
+      "run": "プランを実行",
+      "running": "実行中...",
+      "shuffle": "キャッシュをシャッフル",
+      "waiting": "プランナーの実行を待機中です。",
+      "steps": [
+        {
+          "id": "deps",
+          "label": "依存関係を解決",
+          "hint": "依存グラフを先に解決します。"
+        },
+        {
+          "id": "cache",
+          "label": "キャッシュ確認",
+          "hint": "レンダリング前にキャッシュヒットマップを作成します。"
+        },
+        {
+          "id": "runtime",
+          "label": "ランタイムを選択",
+          "hint": "エッジ/ノードのターゲットを確定します。"
+        },
+        {
+          "id": "render",
+          "label": "ミスをレンダリング",
+          "hint": "キャッシュミスのみレンダリングします。"
+        },
+        {
+          "id": "revalidate",
+          "label": "非同期再検証",
+          "hint": "再検証はバックグラウンドでキューに入れます。"
+        }
+      ],
+      "fragments": [
+        { "id": "hero", "label": "ヒーローシェル", "deps": [], "runtime": "edge" },
+        { "id": "planner", "label": "プランナーコア", "deps": ["hero"], "runtime": "edge" },
+        { "id": "ledger", "label": "レジャーストリーム", "deps": ["planner"], "runtime": "node" },
+        { "id": "react", "label": "Reactオーサリング", "deps": ["planner"], "runtime": "node" }
+      ],
+      "labels": {
+        "dependencies": "依存関係",
+        "cache": "キャッシュ",
+        "runtime": "ランタイム"
+      },
+      "root": "ルート",
+      "resolved": "解決済み",
+      "pending": "保留",
+      "hit": "ヒット",
+      "miss": "ミス",
+      "checked": "確認済み",
+      "waitingCache": "待機中",
+      "selecting": "選択中",
+      "renderNow": "今すぐレンダリング",
+      "skipRender": "レンダリングをスキップ",
+      "awaitRender": "レンダリング待機",
+      "revalidateQueued": "再検証をキュー",
+      "freshRender": "新規レンダリング",
+      "awaitRevalidate": "再検証待機"
+    },
+    "wasmRenderer": {
+      "title": "WASM変換デモ",
+      "run": "WASM実行",
+      "subtitle": "決定的なWebAssembly出力がHTMLに触れずにフラグメント合成を駆動します。",
+      "panels": {
+        "inputs": "入力",
+        "wasm": "WASM変換",
+        "fragment": "フラグメント合成"
+      },
+      "aria": {
+        "decreaseA": "A を減らす",
+        "increaseA": "A を増やす",
+        "decreaseB": "B を減らす",
+        "increaseB": "B を増やす"
+      },
+      "notes": {
+        "inputs": "エッジ安全な数値入力。",
+        "wasm": "同一入力に対する決定的な出力。",
+        "fragment": "出力はHTMLではなくレイアウトメトリクスに反映されます。"
+      },
+      "metrics": {
+        "burst": "バースト",
+        "hotPath": "ホットパス"
+      },
+      "footer": {
+        "edgeSafe": "エッジ安全",
+        "deterministic": "決定的",
+        "htmlUntouched": "HTML: 未変更"
+      }
+    },
+    "reactBinary": {
+      "title": "バイナリコンパイルデモ",
+      "actions": {
+        "react": "バイナリにコンパイル",
+        "binary": "DOMに適用",
+        "qwik": "コンパイルを再実行"
+      },
+      "stages": [
+        {
+          "id": "react",
+          "label": "Reactフラグメント",
+          "hint": "Reactフラグメントはサーバーのみでレンダリングされます。"
+        },
+        {
+          "id": "binary",
+          "label": "バイナリツリー",
+          "hint": "ハイドレーションなしでバイナリストリームにコンパイルされます。"
+        },
+        {
+          "id": "qwik",
+          "label": "Qwik DOM",
+          "hint": "QwikがDOMを所有し、ツリーを適用します。"
+        }
+      ],
+      "ariaStages": "コンパイル段階",
+      "panels": {
+        "reactTitle": "Reactフラグメント",
+        "binaryTitle": "バイナリツリー",
+        "qwikTitle": "Qwik DOM",
+        "reactCaption": "サーバー専用JSXツリー。",
+        "binaryCaption": "ストリーミングされたレンダーノード。",
+        "qwikCaption": "Qwikが所有するDOM。"
+      },
+      "footer": {
+        "hydrationSkipped": "ハイドレーション: スキップ",
+        "binaryStream": "バイナリツリーストリーム"
+      }
+    },
+    "preactIsland": {
+      "label": "分離されたアイランド",
+      "countdown": "カウントダウン",
+      "ready": "準備完了",
+      "readySub": "リプレイ準備完了",
+      "activeSub": "エッジ安全タイマー",
+      "reset": "タイマーをリセット"
+    }
+  },
+  "fragments": {
+    "fragment addressable": "フラグメントアドレス指定",
+    "edge-primary": "エッジ優先",
+    "Binary-first. Fragment-native. Zero hydration.": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",
+    "The render tree is the artifact. HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.": "レンダーツリーが成果物です。HTMLはフォールバックです。すべての表面は再生、キャッシュ、即時パッチのために決定的なバイナリフラグメントにコンパイルされます。",
+    "TTFB < 10ms target": "TTFB < 10ms 目標",
+    "KV as source of truth": "KVを信頼できる唯一のソースに",
+    "Qwik-owned DOM": "Qwikが所有するDOM",
+    "Resumable by default: no hydration dependency.": "デフォルトでレジューム可能: ハイドレーション依存なし。",
+    "Fragment-level caching + async revalidation.": "フラグメント単位のキャッシュ + 非同期再検証。",
+    "Deterministic replay with binary DOM trees.": "バイナリDOMツリーによる決定的リプレイ。",
+    "fragment planner": "フラグメントプランナー",
+    "Planner executes before rendering.": "レンダリングの前にプランナーが実行されます。",
+    "Dependency resolution, cache hit checks, and runtime selection happen up front. Rendering only occurs on cache miss; revalidation runs asynchronously.": "依存関係の解決、キャッシュヒットの確認、ランタイムの選択が先に行われます。レンダリングはキャッシュミス時のみ行われ、再検証は非同期で実行されます。",
+    "Dependencies": "依存関係",
+    "Resolved": "解決済み",
+    "Cache hits": "キャッシュヒット",
+    "Parallel": "並列",
+    "Runtime": "ランタイム",
+    "Edge/Node": "エッジ/ノード",
+    "Revalidation": "再検証",
+    "Async": "非同期",
+    "wasm renderer": "WASMレンダラー",
+    "Hot-path fragments rendered by WASM.": "WASMでレンダリングされるホットパスフラグメント。",
+    "Critical transforms run inside WebAssembly for deterministic, edge-safe execution. Numeric outputs feed fragment composition without touching HTML.": "重要な変換は決定的でエッジ安全な実行のためにWebAssembly内で行われます。数値出力がHTMLに触れずにフラグメント合成を駆動します。",
+    "Burst throughput": "バーストスループット",
+    "Hot-path score": "ホットパススコア",
+    "Cache TTL": "キャッシュTTL",
+    "Stale TTL": "ステイルTTL",
+    "preact island": "Preactアイランド",
+    "Isolated client islands stay sandboxed.": "分離されたクライアントアイランドはサンドボックスのままです。",
+    "Preact loads only inside the island boundary. No shared state, no routing ownership, no global hydration.": "Preactはアイランド境界内でのみ読み込まれます。共有状態も、ルーティングの所有権も、グローバルハイドレーションもありません。",
+    "Isolated island": "分離されたアイランド",
+    "react authoring": "Reactオーサリング",
+    "React stays server-only.": "Reactはサーバー専用です。",
+    "React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik.": "Reactフラグメントはクライアントハイドレーションなしでバイナリツリーにコンパイルされます。DOMはQwikが所有します。",
+    "RSC-ready": "RSC対応",
+    "react dock": "Reactドック",
+    "Server-only dock fragment.": "サーバー専用ドックフラグメント。",
+    "MagicUI dock authored in React, compiled to a static fragment.": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。",
+    "Dock shortcuts": "ドックショートカット",
+    "fragment missing": "フラグメントが見つかりません",
+    "Fragment missing": "フラグメントが見つかりません",
+    "No renderer registered for {{id}}.": "{{id}} 用のレンダラーが登録されていません。",
+    "render error": "レンダーエラー",
+    "Fragment failed to render": "フラグメントのレンダリングに失敗しました",
+    "Last error: {{error}}": "最後のエラー: {{error}}"
+  }
+}

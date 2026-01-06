@@ -1,22 +1,18 @@
 import { component$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store/pages/Store'
 import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
+import { getUiCopy } from '../../shared/ui-copy'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { FragmentShell } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
-import type { Lang } from '../../shared/lang-store'
+import { defaultLang, type Lang } from '../../shared/lang-store'
 
 const storeEnabled = siteFeatures.store !== false
-const storeTitle = storeEnabled ? 'Store' : 'Feature disabled'
-const storeDescription = storeEnabled
-  ? 'Browse curated modules, fragments, and templates.'
-  : 'This route is disabled in this site configuration.'
-
 type FragmentResource = {
   plan: FragmentPlanValue
   fragments: FragmentPayloadValue
@@ -74,14 +70,25 @@ export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
 
 export const StoreSkeleton = storeEnabled ? FeatureStoreSkeleton : StaticRouteSkeleton
 
-export const head: DocumentHead = {
-  title: `${storeTitle} | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: storeDescription
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
+  const data = resolveValue(useFragmentResource)
+  const lang = data?.lang ?? defaultLang
+  const copy = getUiCopy(lang)
+  const title = storeEnabled ? copy.storeTitle : 'Feature disabled'
+  const description = storeEnabled ? copy.storeDescription : 'This route is disabled in this site configuration.'
+
+  return {
+    title: `${title} | ${siteBrand.name}`,
+    meta: [
+      {
+        name: 'description',
+        content: description
+      }
+    ],
+    htmlAttributes: {
+      lang
     }
-  ]
+  }
 }
 
 const RouteComponent = storeEnabled ? EnabledStoreRoute : DisabledStoreRoute

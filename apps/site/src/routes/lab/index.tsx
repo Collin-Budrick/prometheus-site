@@ -1,12 +1,12 @@
 import { component$, useComputed$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import LabRoute, { LabSkeleton as FeatureLabSkeleton, type LabCopy } from '@features/lab/pages/Lab'
 import { FragmentShell } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
-import type { Lang } from '../../shared/lang-store'
+import { defaultLang, type Lang } from '../../shared/lang-store'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
 import { getLabCopy } from '../../shared/lab-copy'
@@ -20,12 +20,6 @@ type FragmentResource = {
 }
 
 const labEnabled = siteFeatures.lab !== false
-const labHeadCopy = getLabCopy()
-const labTitle = labEnabled ? labHeadCopy.title : 'Feature disabled'
-const labDescription = labEnabled
-  ? labHeadCopy.description
-  : 'This route is disabled in this site configuration.'
-
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
   const path = url.pathname || '/lab'
   const lang = resolveRequestLang(request)
@@ -72,14 +66,25 @@ export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
 
 export const LabSkeleton = labEnabled ? FeatureLabSkeleton : StaticRouteSkeleton
 
-export const head: DocumentHead = {
-  title: `${labTitle} | ${siteBrand.name}`,
-  meta: [
-    {
-      name: 'description',
-      content: labDescription
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
+  const data = resolveValue(useFragmentResource)
+  const lang = data?.lang ?? defaultLang
+  const labCopy = getLabCopy(lang)
+  const title = labEnabled ? labCopy.title : 'Feature disabled'
+  const description = labEnabled ? labCopy.description : 'This route is disabled in this site configuration.'
+
+  return {
+    title: `${title} | ${siteBrand.name}`,
+    meta: [
+      {
+        name: 'description',
+        content: description
+      }
+    ],
+    htmlAttributes: {
+      lang
     }
-  ]
+  }
 }
 
 const RouteComponent = labEnabled ? EnabledLabRoute : DisabledLabRoute

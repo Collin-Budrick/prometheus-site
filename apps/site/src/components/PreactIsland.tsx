@@ -1,12 +1,13 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { effect } from '@preact/signals-core'
-import { lang, type Lang } from '../shared/lang-store'
+import { getLanguagePack } from '../lang'
+import { lang } from '../shared/lang-store'
 
 type PreactIslandProps = {
   label?: string
 }
 
-export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIslandProps) => {
+export const PreactIsland = component$(({ label }: PreactIslandProps) => {
   const host = useSignal<HTMLElement>()
 
   useVisibleTask$((ctx) => {
@@ -22,24 +23,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
       const target = host.value
       if (!target || !active) return
 
-      const islandCopy: Record<Lang, Record<string, string>> = {
-        en: {
-          label: 'Isolated island',
-          countdown: 'Countdown',
-          ready: 'Ready',
-          readySub: 'Ready for replay',
-          activeSub: 'Edge-safe timer',
-          reset: 'Reset timer'
-        },
-        ko: {
-          label: '\uACA9\uB9AC\uB41C \uC544\uC77C\uB79C\uB4DC',
-          countdown: '\uCE74\uC6B4\uD2B8\uB2E4\uC6B4',
-          ready: '\uC900\uBE44',
-          readySub: '\uC7AC\uC0DD \uC900\uBE44',
-          activeSub: '\uC5E3\uC9C0 \uC548\uC804 \uD0C0\uC774\uBA38',
-          reset: '\uD0C0\uC774\uBA38 \uC7AC\uC124\uC815'
-        }
-      }
+      const getCopy = (value: string) => getLanguagePack(value).demos.preactIsland
 
       const useLangValue = () => {
         const [value, setValue] = useState(lang.value)
@@ -56,7 +40,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
 
       const Island = () => {
         const langValue = useLangValue()
-        const copy = islandCopy[langValue] ?? islandCopy.en
+        const copy = getCopy(langValue)
         const totalSeconds = 60
         const [remaining, setRemaining] = useState(totalSeconds)
         const [resetKey, setResetKey] = useState(0)
@@ -80,7 +64,7 @@ export const PreactIsland = component$(({ label = 'Isolated Island' }: PreactIsl
         const circumference = Math.round(2 * Math.PI * radius)
         const offset = Math.round(circumference * (1 - progress))
         const rotation = Math.round((1 - progress) * -360)
-        const displayLabel = langValue === 'en' && label ? label : copy.label
+        const displayLabel = label ?? copy.label
 
         return h('div', { class: 'preact-island-ui', 'data-running': remaining > 0 ? 'true' : 'false' }, [
           h('div', { class: 'preact-island-top' }, [

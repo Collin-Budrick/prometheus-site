@@ -1,4 +1,3 @@
-import { defaultLanguage, labCopy, type LabPageCopy, type Lang } from '../config'
+import { getLanguagePack, type LabPageCopy, type Lang } from '../lang'
 
-export const getLabCopy = (lang: Lang = defaultLanguage): LabPageCopy =>
-  labCopy[lang] ?? labCopy[defaultLanguage]
+export const getLabCopy = (lang: Lang): LabPageCopy => getLanguagePack(lang).lab
