@@ -16,7 +16,6 @@
     "@preact/signals-core": "^1.12.1",
     "@qwikest/icons": "^0.0.13",
     "clsx": "^2.1.1",
-    "motion": "^13.0.0-alpha.0",
     "preact": "11.0.0-experimental.1",
     "quicklink": "^3.0.1",
     "speculation-rules": "^1.0.4",
