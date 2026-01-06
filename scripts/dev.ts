@@ -58,32 +58,58 @@ const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPS
 })
 let keepContainers = false
 
-const buildInputs = [
-  'package.json',
-  'bun.lock',
-  'tsconfig.base.json',
-  'docker-compose.yml',
-  'infra/caddy/Dockerfile',
-  'apps/api',
-  'apps/site',
-  'apps/webtransport',
-  'apps/web/package.json',
-  'packages'
-]
-const cacheKey = 'dev'
-const cache = loadBuildCache()
-const fingerprint = computeFingerprint(buildInputs)
-const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
+type BuildTarget = {
+  service: string
+  cacheKey: string
+  inputs: string[]
+  extra?: Record<string, string | undefined>
+}
 
-if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api', 'webtransport', 'caddy'], composeEnv)
+const cacheKeyPrefix = 'dev'
+const cache = loadBuildCache()
+const buildTargets: BuildTarget[] = [
+  {
+    service: 'api',
+    cacheKey: `${cacheKeyPrefix}:api`,
+    inputs: [
+      'package.json',
+      'bun.lock',
+      'tsconfig.base.json',
+      'apps/api/Dockerfile',
+      'apps/api',
+      'apps/site',
+      'packages'
+    ]
+  },
+  {
+    service: 'webtransport',
+    cacheKey: `${cacheKeyPrefix}:webtransport`,
+    inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
+  },
+  {
+    service: 'caddy',
+    cacheKey: `${cacheKeyPrefix}:caddy`,
+    inputs: ['infra/caddy/Dockerfile']
+  }
+]
+
+const buildResults = buildTargets.map((target) => {
+  const fingerprint = computeFingerprint(target.inputs, target.extra)
+  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
+  return { ...target, fingerprint, needsBuild }
+})
+
+const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
+if (buildServices.length) {
+  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
 const baseServices = ['postgres', 'valkey', 'api', 'webtransport']
 const running = getRunningServices(command, prefix, composeEnv)
 const baseRunning = baseServices.every((service) => running.has(service))
-const needsBaseUp = needsBuild || !baseRunning
+const baseNeedsBuild = buildServices.some((service) => service === 'api' || service === 'webtransport')
+const needsBaseUp = baseNeedsBuild || !baseRunning
 
 if (needsBaseUp) {
   const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...baseServices], composeEnv)
@@ -91,7 +117,7 @@ if (needsBaseUp) {
 }
 
 const caddyWasRunning = running.has('caddy')
-const needsCaddyUp = needsBuild || !caddyWasRunning
+const needsCaddyUp = buildServices.includes('caddy') || !caddyWasRunning
 if (needsCaddyUp) {
   const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', 'caddy'], composeEnv)
   if (up.status !== 0) process.exit(up.status ?? 1)
@@ -102,7 +128,9 @@ if (configChanged && caddyWasRunning) {
   if (restart.status !== 0) process.exit(restart.status ?? 1)
 }
 
-cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
+for (const target of buildResults) {
+  cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
+}
 saveBuildCache(cache)
 
 type BunSpawnResult = {

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.5
 FROM oven/bun:1.3.5 AS deps
 WORKDIR /app
 
@@ -12,7 +13,8 @@ COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
-RUN bun install --ignore-scripts --frozen-lockfile --filter web
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --ignore-scripts --frozen-lockfile --filter web
 
 FROM oven/bun:1.3.5 AS builder
 WORKDIR /app
@@ -43,8 +45,12 @@ ENV VITE_ENABLE_FRAGMENT_COMPRESSION=$VITE_ENABLE_FRAGMENT_COMPRESSION
 ENV VITE_ENABLE_ANALYTICS=$VITE_ENABLE_ANALYTICS
 ENV VITE_REPORT_CLIENT_ERRORS=$VITE_REPORT_CLIENT_ERRORS
 ENV VITE_WEBTRANSPORT_BASE=$VITE_WEBTRANSPORT_BASE
-RUN bun run --cwd apps/web build
-RUN bun run --cwd apps/web build -- --ssr src/entry.preview.tsx
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    --mount=type=cache,target=/root/.cache \
+    bun run --cwd apps/web build
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    --mount=type=cache,target=/root/.cache \
+    bun run --cwd apps/web build -- --ssr src/entry.preview.tsx
 
 FROM oven/bun:1.3.5 AS runner
 WORKDIR /app/apps/web

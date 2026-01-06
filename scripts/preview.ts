@@ -106,32 +106,69 @@ const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim()
 })
 let keepContainers = false
 
-const buildInputs = [
-  'package.json',
-  'bun.lock',
-  'tsconfig.base.json',
-  'docker-compose.yml',
-  'infra/caddy/Dockerfile',
-  'apps/api',
-  'apps/site',
-  'apps/web',
-  'apps/webtransport',
-  'packages'
-]
-const cacheKey = 'preview'
+type BuildTarget = {
+  service: string
+  cacheKey: string
+  inputs: string[]
+  extra?: Record<string, string | undefined>
+}
+
+const cacheKeyPrefix = 'preview'
 const cache = loadBuildCache()
-const fingerprint = computeFingerprint(buildInputs, {
-  PROMETHEUS_WEB_HOST: composeEnv.PROMETHEUS_WEB_HOST,
-  PROMETHEUS_VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
-  PROMETHEUS_VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
-  VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
-  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
-  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
-  VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
-  VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
-  VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS
+const buildTargets: BuildTarget[] = [
+  {
+    service: 'api',
+    cacheKey: `${cacheKeyPrefix}:api`,
+    inputs: [
+      'package.json',
+      'bun.lock',
+      'tsconfig.base.json',
+      'apps/api/Dockerfile',
+      'apps/api',
+      'apps/site',
+      'packages'
+    ]
+  },
+  {
+    service: 'web',
+    cacheKey: `${cacheKeyPrefix}:web`,
+    inputs: [
+      'package.json',
+      'bun.lock',
+      'tsconfig.base.json',
+      'apps/web/Dockerfile',
+      'apps/web',
+      'apps/site',
+      'packages'
+    ],
+    extra: {
+      VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
+      VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
+      VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
+      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
+      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
+      VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
+      VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
+      VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS
+    }
+  },
+  {
+    service: 'webtransport',
+    cacheKey: `${cacheKeyPrefix}:webtransport`,
+    inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
+  },
+  {
+    service: 'caddy',
+    cacheKey: `${cacheKeyPrefix}:caddy`,
+    inputs: ['infra/caddy/Dockerfile']
+  }
+]
+
+const buildResults = buildTargets.map((target) => {
+  const fingerprint = computeFingerprint(target.inputs, target.extra)
+  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
+  return { ...target, fingerprint, needsBuild }
 })
-const needsBuild = cache[cacheKey]?.fingerprint !== fingerprint
 
 const webBuild = runSync(bunBin, ['run', '--cwd', 'apps/web', 'build'], webBuildEnv)
 if (webBuild.status !== 0) process.exit(webBuild.status ?? 1)
@@ -143,18 +180,26 @@ const webSsrBuild = runSync(
 )
 if (webSsrBuild.status !== 0) process.exit(webSsrBuild.status ?? 1)
 
-if (needsBuild) {
-  const build = runSync(command, [...prefix, 'build', 'api', 'web', 'webtransport', 'caddy'], composeEnv)
+const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
+if (buildServices.length) {
+  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
 const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))
-const needsUp = needsBuild || !allRunning
+const needsFullUp = !allRunning
 
-if (needsUp) {
+if (needsFullUp) {
   const up = runSync(command, [...prefix, 'up', '-d', '--remove-orphans', ...previewServices], composeEnv)
+  if (up.status !== 0) process.exit(up.status ?? 1)
+} else if (buildServices.length) {
+  const up = runSync(
+    command,
+    [...prefix, 'up', '-d', '--remove-orphans', '--no-deps', ...buildServices],
+    composeEnv
+  )
   if (up.status !== 0) process.exit(up.status ?? 1)
 }
 
@@ -163,7 +208,9 @@ if (configChanged && running.has('caddy')) {
   if (restart.status !== 0) process.exit(restart.status ?? 1)
 }
 
-cache[cacheKey] = { fingerprint, updatedAt: new Date().toISOString() }
+for (const target of buildResults) {
+  cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
+}
 saveBuildCache(cache)
 
 try {

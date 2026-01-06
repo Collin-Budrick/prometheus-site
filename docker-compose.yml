@@ -3,6 +3,10 @@ services:
     build:
       context: ./infra/caddy
       dockerfile: Dockerfile
+      cache_from:
+        - type=local,src=.cache/buildx/caddy
+      cache_to:
+        - type=local,dest=.cache/buildx/caddy,mode=max
     depends_on:
       web:
         condition: service_healthy
@@ -31,9 +35,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prometheus -d prometheus"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 3s
+      retries: 10
 
   valkey:
     image: valkey/valkey:8
@@ -44,14 +48,18 @@ services:
       - valkey_data:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 3s
+      retries: 10
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      cache_from:
+        - type=local,src=.cache/buildx/api
+      cache_to:
+        - type=local,dest=.cache/buildx/api,mode=max
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +89,10 @@ services:
     build:
       context: .
       dockerfile: apps/webtransport/Dockerfile
+      cache_from:
+        - type=local,src=.cache/buildx/webtransport
+      cache_to:
+        - type=local,dest=.cache/buildx/webtransport,mode=max
     environment:
       WEBTRANSPORT_API_BASE: http://api:4000
       WEBTRANSPORT_LISTEN_ADDR: :4444
@@ -103,6 +115,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      cache_from:
+        - type=local,src=.cache/buildx/web
+      cache_to:
+        - type=local,dest=.cache/buildx/web,mode=max
       args:
         VITE_API_BASE: ${PROMETHEUS_VITE_API_BASE:-/api}
         VITE_ENABLE_PREFETCH: ${VITE_ENABLE_PREFETCH:-1}

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.5
 FROM oven/bun:1.3.5 AS deps
 WORKDIR /app
 
@@ -12,7 +13,8 @@ COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
-RUN bun install --ignore-scripts --frozen-lockfile --omit=optional --omit=dev --filter api
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --ignore-scripts --frozen-lockfile --omit=optional --omit=dev --filter api
 
 FROM oven/bun:1.3.5 AS builder
 WORKDIR /app
@@ -27,7 +29,9 @@ COPY tsconfig.base.json ./tsconfig.base.json
 COPY apps/api ./apps/api
 COPY apps/site ./apps/site
 COPY packages ./packages
-RUN bun run --cwd apps/api build
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    --mount=type=cache,target=/root/.cache \
+    bun run --cwd apps/api build
 
 FROM oven/bun:1.3.5 AS runner
 WORKDIR /app/apps/api
