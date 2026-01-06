@@ -1,20 +1,20 @@
 import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand, siteFeatures } from '../config'
-import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from './cache-headers'
-import { useLangCopy } from '../shared/lang-bridge'
-import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/pages/Login'
-import { FragmentShell } from '../features/fragments'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
-import { appConfig } from '../app-config'
-import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
-import type { Lang } from '../shared/lang-store'
+import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store/pages/Store'
+import { siteBrand, siteFeatures } from '../../config'
+import { useLangCopy } from '../../shared/lang-bridge'
+import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
+import { FragmentShell } from '../../features/fragments'
+import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import { appConfig } from '../../app-config'
+import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
+import type { Lang } from '../../shared/lang-store'
 
-const loginEnabled = siteFeatures.login !== false
-const loginTitle = loginEnabled ? 'Login' : 'Feature disabled'
-const loginDescription = loginEnabled
-  ? 'Authenticate to manage fragments, releases, and workspace settings.'
+const storeEnabled = siteFeatures.store !== false
+const storeTitle = storeEnabled ? 'Store' : 'Feature disabled'
+const storeDescription = storeEnabled
+  ? 'Browse curated modules, fragments, and templates.'
   : 'This route is disabled in this site configuration.'
 
 type FragmentResource = {
@@ -25,7 +25,7 @@ type FragmentResource = {
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
-  const path = url.pathname || '/login'
+  const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
 
   try {
@@ -37,12 +37,12 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       lang
     }
   } catch (error) {
-    console.error('Fragment plan fetch failed for login', error)
+    console.error('Fragment plan fetch failed for store', error)
     return null
   }
 })
 
-const DisabledLoginRoute = component$(() => {
+const DisabledStoreRoute = component$(() => {
   const copy = useLangCopy()
   return (
     <StaticRouteTemplate
@@ -55,36 +55,36 @@ const DisabledLoginRoute = component$(() => {
   )
 })
 
-const EnabledLoginRoute = component$(() => {
+const EnabledStoreRoute = component$(() => {
   const copy = useLangCopy()
   return (
-    <FeatureLoginRoute
+    <FeatureStoreRoute
       copy={{
-        metaLine: copy.value.loginMetaLine,
-        title: copy.value.loginTitle,
-        description: copy.value.loginDescription,
-        actionLabel: copy.value.loginAction,
+        metaLine: copy.value.storeMetaLine,
+        title: copy.value.storeTitle,
+        description: copy.value.storeDescription,
+        actionLabel: copy.value.storeAction,
         closeLabel: copy.value.fragmentClose
       }}
     />
   )
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
+export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
 
-export const LoginSkeleton = loginEnabled ? FeatureLoginSkeleton : StaticRouteSkeleton
+export const StoreSkeleton = storeEnabled ? FeatureStoreSkeleton : StaticRouteSkeleton
 
 export const head: DocumentHead = {
-  title: `${loginTitle} | ${siteBrand.name}`,
+  title: `${storeTitle} | ${siteBrand.name}`,
   meta: [
     {
       name: 'description',
-      content: loginDescription
+      content: storeDescription
     }
   ]
 }
 
-const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute
+const RouteComponent = storeEnabled ? EnabledStoreRoute : DisabledStoreRoute
 
 export default component$(() => {
   const fragmentResource = useFragmentResource()

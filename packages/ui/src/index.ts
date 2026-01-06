@@ -1,5 +1,5 @@
 export { Dock, DockIcon } from './components/Dock'
-export { DockBar, type DockBarItem, type DockBarProps } from './components/DockBar'
+export { DockBar, type DockBarProps } from './components/DockBar'
 export { FragmentCard } from './components/FragmentCard'
 export { LanguageToggle } from './components/LanguageToggle'
 export { RouteMotion } from './components/RouteMotion'

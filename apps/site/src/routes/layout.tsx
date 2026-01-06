@@ -1,6 +1,6 @@
 import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
-import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
-import { DockBar, LanguageToggle, ThemeToggle } from '@prometheus/ui'
+import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
 import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
 import { siteBrand } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -235,7 +235,15 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
-      <DockBar items={dockItems} ariaLabel={copy.value.dockAriaLabel} />
+      <DockBar ariaLabel={copy.value.dockAriaLabel}>
+        {dockItems.map(({ href, label, icon: Icon }) => (
+          <DockIcon key={href} label={label}>
+            <Link class="dock-link" href={href} data-fragment-link aria-label={label} title={label}>
+              <Icon class="dock-icon-svg" aria-hidden="true" />
+            </Link>
+          </DockIcon>
+        ))}
+      </DockBar>
     </div>
   )
 })
