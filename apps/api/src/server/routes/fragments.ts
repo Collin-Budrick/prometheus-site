@@ -286,8 +286,10 @@ const buildInitialFragments = async (
   }, {})
 }
 
-export const createFragmentRoutes = (options: FragmentRouteOptions) =>
-  new Elysia({ prefix: '/fragments' })
+export const createFragmentRoutes = (options: FragmentRouteOptions) => {
+  const allowDevRefresh = options.environment !== 'production'
+
+  return new Elysia({ prefix: '/fragments' })
   .post(
     '/batch',
     async ({ body }) => {
@@ -337,7 +339,6 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) =>
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
-      const allowDevRefresh = options.environment !== 'production'
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       if (refresh) {
@@ -487,3 +488,4 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) =>
     const entry = await getFragmentEntry(id, { lang })
     return fragmentResponse(entry)
   })
+}
