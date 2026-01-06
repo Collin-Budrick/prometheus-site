@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { FragmentShell } from '../../../web/src/features/fragments'
+import { FragmentShell } from '../features/fragments'
 import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'
@@ -11,7 +11,7 @@ import type {
   FragmentPlan,
   FragmentPlanValue,
   RenderNode
-} from '../../../web/src/fragment/types'
+} from '../fragment/types'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 

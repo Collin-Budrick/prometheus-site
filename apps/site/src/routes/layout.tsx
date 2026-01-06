@@ -1,10 +1,10 @@
 import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
-import { Dock, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
+import { useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { DockBar, LanguageToggle, ThemeToggle } from '@prometheus/ui'
 import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
 import { siteBrand } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
-import { useSharedFragmentStatusSignal } from '../shared/fragment-status'
+import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, type Lang } from '../shared/lang-store'
@@ -235,17 +235,7 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
-      <div class="dock-shell">
-        <Dock iconMagnification={1.6} iconDistance={140} ariaLabel={copy.value.dockAriaLabel}>
-          {dockItems.map(({ href, label, icon: Icon }) => (
-            <DockIcon key={href} label={label}>
-              <Link class="dock-link" href={href} data-fragment-link aria-label={label} title={label}>
-                <Icon class="dock-icon-svg" aria-hidden="true" />
-              </Link>
-            </DockIcon>
-          ))}
-        </Dock>
-      </div>
+      <DockBar items={dockItems} ariaLabel={copy.value.dockAriaLabel} />
     </div>
   )
 })

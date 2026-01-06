@@ -5,5 +5,5 @@
   "tabWidth": 2,
   "useTabs": false,
   "trailingComma": "all",
-  "ignorePatterns": ["dist/**", "node_modules/**", "apps/web/server/**", "apps/web/test-results/**"]
+  "ignorePatterns": ["dist/**", "node_modules/**", "apps/site/server/**", "apps/site/test-results/**"]
 }

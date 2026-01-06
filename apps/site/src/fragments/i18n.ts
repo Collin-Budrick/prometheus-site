@@ -1,10 +1,10 @@
 import {
+  createFragmentTranslator as createCoreFragmentTranslator,
   defaultFragmentLang,
   normalizeFragmentLang,
   type FragmentLang,
   type FragmentTranslator
-} from '@core/fragments'
-import { createFragmentTranslator as createCoreFragmentTranslator } from '@core/fragments'
+} from '@core/fragment/i18n'
 
 export const fragmentTranslations: Record<FragmentLang, Record<string, string>> = {
   en: {},
@@ -70,4 +70,3 @@ export const createFragmentTranslator = (lang: string): FragmentTranslator =>
 
 export { defaultFragmentLang, normalizeFragmentLang }
 export type { FragmentLang }
-

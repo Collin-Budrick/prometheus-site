@@ -1,15 +1,23 @@
 import { component$, useStyles$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
-import { ClientExtras, useClientReady } from '@core'
+import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
+import { createClientErrorReporter } from '@platform/logging'
+import { RouteMotion } from '@prometheus/ui'
 import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
-import { FragmentStatusProvider } from './shared/fragment-status'
+import { FragmentStatusProvider } from '@core/fragments'
 import { LangProvider } from './shared/lang-bridge'
 import { appConfig } from './app-config'
 
 export default component$(() => {
   useStyles$(globalStyles)
   const clientReady = useClientReady()
+  const clientExtrasConfig: ClientExtrasConfig = {
+    apiBase: appConfig.apiBase,
+    enablePrefetch: appConfig.enablePrefetch,
+    analytics: appConfig.analytics,
+    reportClientError: createClientErrorReporter(appConfig.clientErrors)
+  }
 
   return (
     <QwikCityProvider viewTransition>
@@ -19,7 +27,12 @@ export default component$(() => {
         <RouterHead />
       </head>
       <body class="app-shell">
-        {clientReady.value ? <ClientExtras config={appConfig} /> : null}
+        {clientReady.value ? (
+          <>
+            <ClientExtras config={clientExtrasConfig} />
+            <RouteMotion />
+          </>
+        ) : null}
         <LangProvider>
           <FragmentStatusProvider>
             <RouterOutlet />

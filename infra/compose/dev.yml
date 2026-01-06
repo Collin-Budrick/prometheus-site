@@ -1,8 +1,9 @@
 services:
   api:
-    command: ["bun", "run", "--watch", "src/index.ts"]
+    command: ["bun", "run", "--watch", "src/entrypoints/api.ts"]
     volumes:
-      - ./apps/api:/app/apps/api
+      - ./packages/platform:/app/packages/platform
+      - ./apps/site:/app/apps/site
     ports:
       - '4000:4000'
     environment:

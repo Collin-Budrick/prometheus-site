@@ -54,7 +54,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: packages/platform/Dockerfile
       cache_from:
         - type=local,src=.cache/buildx/api
       cache_to:
@@ -113,7 +113,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      dockerfile: apps/site/Dockerfile
       cache_from:
         - type=local,src=.cache/buildx/web
       cache_to:

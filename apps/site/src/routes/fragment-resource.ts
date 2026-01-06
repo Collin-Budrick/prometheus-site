@@ -1,6 +1,6 @@
 import type { AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
-import type { FragmentPayloadMap, FragmentPlanValue } from '../../../web/src/fragment/types'
+import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 
 export type HybridFragmentResource = {

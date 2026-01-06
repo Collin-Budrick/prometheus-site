@@ -1,5 +1,3 @@
-import type { AppConfig } from '@platform/env'
-
 const normalizeApiHref = (apiBase: string) => {
   if (!apiBase) return ''
   if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
@@ -32,7 +30,7 @@ const shouldIgnoreTarget = (apiBase: string) => {
   }
 }
 
-export const initQuicklinkPrefetch = async (config: Pick<AppConfig, 'apiBase'>, log = false) => {
+export const initQuicklinkPrefetch = async (config: { apiBase: string }, log = false) => {
   if (!hasFragmentLinkAnchors()) {
     if (log) console.info('[prefetch] Skipping Quicklink initialization (no fragment links)')
     return () => {}

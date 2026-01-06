@@ -1,11 +1,16 @@
-import { component$ } from '@builder.io/qwik'
-import { routeLoader$ } from '@builder.io/qwik-city'
-import { FragmentShell } from '../../../web/src/features/fragments'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../../../web/src/fragment/types'
-import LabRoute, { LabSkeleton, head, onGet } from '@features/lab/pages/Lab'
+import { component$, useComputed$ } from '@builder.io/qwik'
+import { routeLoader$, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
+import LabRoute, { LabSkeleton as FeatureLabSkeleton, type LabCopy } from '@features/lab/pages/Lab'
+import { FragmentShell } from '../features/fragments'
+import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import { appConfig } from '../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
 import type { Lang } from '../shared/lang-store'
+import { createCacheHandler, PUBLIC_SWR_CACHE } from './cache-headers'
+import { siteBrand, siteFeatures } from '../config'
+import { getLabCopy } from '../shared/lab-copy'
+import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
 
 type FragmentResource = {
   plan: FragmentPlanValue
@@ -13,6 +18,13 @@ type FragmentResource = {
   path: string
   lang: Lang
 }
+
+const labEnabled = siteFeatures.lab !== false
+const labHeadCopy = getLabCopy()
+const labTitle = labEnabled ? labHeadCopy.title : 'Feature disabled'
+const labDescription = labEnabled
+  ? labHeadCopy.description
+  : 'This route is disabled in this site configuration.'
 
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
   const path = url.pathname || '/lab'
@@ -32,7 +44,46 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
   }
 })
 
-export { LabSkeleton, head, onGet }
+const DisabledLabRoute = component$(() => {
+  const copy = useLangCopy()
+  return (
+    <StaticRouteTemplate
+      metaLine={copy.value.featureUnavailableMeta}
+      title={copy.value.featureUnavailableTitle}
+      description={copy.value.featureUnavailableDescription}
+      actionLabel={copy.value.featureUnavailableAction}
+      closeLabel={copy.value.fragmentClose}
+    />
+  )
+})
+
+const EnabledLabRoute = component$(() => {
+  const langSignal = useSharedLangSignal()
+  const uiCopy = useLangCopy()
+  const resolvedCopy = useComputed$<LabCopy>(() => ({
+    ...getLabCopy(langSignal.value),
+    closeLabel: uiCopy.value.fragmentClose
+  }))
+
+  return <LabRoute copy={resolvedCopy.value} />
+})
+
+export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
+
+export const LabSkeleton = labEnabled ? FeatureLabSkeleton : StaticRouteSkeleton
+
+export const head: DocumentHead = {
+  title: `${labTitle} | ${siteBrand.name}`,
+  meta: [
+    {
+      name: 'description',
+      content: labDescription
+    }
+  ]
+}
+
+const RouteComponent = labEnabled ? EnabledLabRoute : DisabledLabRoute
+
 export { LabSkeleton as skeleton }
 
 export default component$(() => {
@@ -48,5 +99,5 @@ export default component$(() => {
       />
     )
   }
-  return <LabRoute />
+  return <RouteComponent />
 })

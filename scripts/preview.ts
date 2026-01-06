@@ -105,8 +105,8 @@ const buildTargets: BuildTarget[] = [
       'package.json',
       'bun.lock',
       'tsconfig.base.json',
-      'apps/api/Dockerfile',
-      'apps/api',
+      'packages/platform/Dockerfile',
+      'packages/platform',
       'apps/site',
       'packages'
     ]
@@ -118,8 +118,7 @@ const buildTargets: BuildTarget[] = [
       'package.json',
       'bun.lock',
       'tsconfig.base.json',
-      'apps/web/Dockerfile',
-      'apps/web',
+      'apps/site/Dockerfile',
       'apps/site',
       'packages'
     ],

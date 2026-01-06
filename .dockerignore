@@ -2,7 +2,7 @@
 node_modules
 apps/*/node_modules
 apps/*/dist
-apps/web/server
-apps/web/qwikcity-import.cpuprofile
+apps/site/server
+apps/site/qwikcity-import.cpuprofile
 *.log
 infra/nginx/tls

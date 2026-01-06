@@ -1,6 +1,7 @@
 import { Fragment, isValidElement } from 'react'
 import type { ReactElement, ReactNode } from 'react'
-import { h, t, type RenderNode } from '@core/fragments'
+import { h, t } from '@core/fragment/tree'
+import type { RenderNode } from '@core/fragment/types'
 
 type ElementProps = {
   children?: ReactNode
@@ -130,4 +131,3 @@ export const reactToRenderNode = (node: ReactNode): RenderNode => {
   if (nodes.length === 1) return nodes[0]
   return h('div', null, nodes)
 }
-

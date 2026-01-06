@@ -29,11 +29,11 @@ scripts/       # Tooling scripts
 
 ### packages/core
 
-- **Fragment types/codec:** Merge fragment types and binary encode/decode into `src/fragment/types.ts` and `src/fragment/binary.ts` (from `apps/web/src/fragment/types.ts`, `apps/api/src/fragments/types.ts`, and binary helpers).
-- **Planner:** Move `apps/api/src/fragments/planner.ts` to `src/fragment/planner.ts`; remove hard-coded homepage fragments and let external plan maps supply entries. Core only handles dependency resolution/sorting.
+- **Fragment types/codec:** Merge fragment types and binary encode/decode into `packages/core/src/fragment/types.ts` and `packages/core/src/fragment/binary.ts` (from `apps/site/src/fragment/types.ts`, legacy API fragment types, and binary helpers).
+- **Planner:** Move the legacy API fragment planner to `packages/core/src/fragment/planner.ts`; remove hard-coded homepage fragments and let external plan maps supply entries. Core only handles dependency resolution/sorting.
 - **Definitions:** Strip app-specific fragment definitions; provide stubs or registration hooks so the site (or a feature) injects actual fragment renderers.
 - **Service/store:** Move generic fragment read/plan fetch/cache logic (`service.ts`, `store.ts`) and make cache access pluggable (no direct Valkey/DB calls). Keep in-memory memoization/locking.
-- **Client orchestration:** Move client fragment orchestration (`apps/web/src/fragment/client.ts`, `plan-cache.ts`) under `src/client/`, parameterizing API/WebTransport bases and feature flags instead of reading env directly.
+- **Client orchestration:** Move client fragment orchestration (`apps/site/src/fragment/client.ts`, `plan-cache.ts`) under `packages/core/src/fragment/`, parameterizing API/WebTransport bases and feature flags instead of reading env directly.
 - **Server handlers:** Provide framework-agnostic handlers (e.g., `getFragmentPlanResponse`, `getFragmentPayloadResponse`) under `src/server/` and optional router factory sugar.
 - **i18n:** Keep only language normalization + translator helpers in `src/i18n/`; move actual copy/phrases out of core.
 - **Utilities:** Host speculation/prefetch utilities in `src/util/`, keeping them flag-driven but env-agnostic.
@@ -48,7 +48,7 @@ scripts/       # Tooling scripts
 
 ### packages/ui
 
-- **Styles:** Move global CSS (Tailwind + Lightning CSS) to `src/global.css`; site imports via `useStyles$`.
+- **Styles:** Move global CSS (Tailwind + Lightning CSS) to `packages/ui/src/global.css`; site imports via `useStyles$`.
 - **Components:** Move presentational components: Dock (+ DockIcon), FragmentCard, StaticRouteTemplate, LanguageToggle, ThemeToggle, RouteMotion, and theme store utilities. Keep them data-agnostic; accept props for labels/nav items instead of hard-coding.
 - **Copy:** No baked-in site copy; components read labels from provided context/props to stay themeable.
 

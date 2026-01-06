@@ -51,7 +51,6 @@ const composeEnv = {
 
 const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
   prod: {
-    servePrecompressed: true,
     encode: 'br gzip',
     stripAcceptEncoding: true
   }
@@ -75,8 +74,8 @@ const buildTargets: BuildTarget[] = [
       'package.json',
       'bun.lock',
       'tsconfig.base.json',
-      'apps/api/Dockerfile',
-      'apps/api',
+      'packages/platform/Dockerfile',
+      'packages/platform',
       'apps/site',
       'packages'
     ]
@@ -209,7 +208,7 @@ if (!bunRuntime) {
   throw new Error('Bun runtime is required to run the dev server.')
 }
 
-const web = bunRuntime.spawn([bunBin, 'run', '--cwd', 'apps/web', 'dev'], {
+const web = bunRuntime.spawn([bunBin, 'run', '--cwd', 'apps/site', 'dev'], {
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',

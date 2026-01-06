@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const apiRoot = path.join(root, 'apps', 'api')
+const apiRoot = path.join(root, 'packages', 'platform')
 
 const isWindowsArm64 = process.platform === 'win32' && process.arch === 'arm64'
 const bindingFile = path.join(apiRoot, 'node_modules', 'oxlint', 'dist', 'oxlint.win32-arm64-msvc.node')
@@ -13,7 +13,7 @@ if (isWindowsArm64 && !existsSync(bindingFile) && !existsSync(bindingPackage)) {
   process.exit(0)
 }
 
-const result = Bun.spawnSync(['bun', 'run', '--cwd', 'apps/api', 'lint'], {
+const result = Bun.spawnSync(['bun', 'run', '--cwd', 'packages/platform', 'lint'], {
   stdio: ['inherit', 'inherit', 'inherit']
 })
 

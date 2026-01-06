@@ -6,7 +6,6 @@ import type {
   FragmentPlanResponse
 } from './types'
 import { decodeFragmentPayload } from './binary'
-import type { AppConfig } from '@platform/env'
 import { fragmentPlanCache } from './plan-cache'
 
 type FragmentPlanOptions = {
@@ -53,7 +52,7 @@ const decodeInitialFragments = (raw: FragmentPlanInitialPayloads) => {
 
 export const loadFragmentPlan = async (
   path: string,
-  config: Pick<AppConfig, 'apiBase'>,
+  config: { apiBase: string },
   lang?: string,
   options?: FragmentPlanOptions
 ): Promise<FragmentPlanResult> => {
@@ -108,7 +107,7 @@ export const loadFragmentPlan = async (
 
 export const loadFragments = async (
   ids: string[],
-  config: Pick<AppConfig, 'apiBase'>,
+  config: { apiBase: string },
   lang?: string
 ): Promise<Record<string, FragmentPayload>> => {
   const api = config.apiBase

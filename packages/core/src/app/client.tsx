@@ -1,22 +1,74 @@
 import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
-import { RouteMotion, scheduleIdleTask } from '@prometheus/ui'
-import { createClientErrorReporter } from '@platform/logging'
-import type { AppConfig } from '@platform/env'
 import { initQuicklinkPrefetch } from './prefetch'
+
+type IdleHandles = {
+  idle: number | null
+  timeout: number | null
+}
+
+type ClientErrorReporter = (error: unknown, metadata?: Record<string, unknown>) => void
+
+export type ClientExtrasConfig = {
+  apiBase: string
+  enablePrefetch: boolean
+  analytics?: {
+    enabled: boolean
+    beaconUrl?: string
+  }
+  reportClientError?: ClientErrorReporter
+}
+
+const scheduleIdleTask = (callback: () => void, timeout = 120) => {
+  const handles: IdleHandles = { idle: null, timeout: null }
+  let cancelled = false
+  let fired = false
+
+  const run = () => {
+    if (cancelled || fired) return
+    fired = true
+    if (handles.timeout !== null) {
+      clearTimeout(handles.timeout)
+    }
+    if (handles.idle !== null && 'cancelIdleCallback' in window) {
+      window.cancelIdleCallback(handles.idle)
+    }
+    handles.idle = null
+    handles.timeout = null
+    callback()
+  }
+
+  if ('requestIdleCallback' in window) {
+    handles.idle = window.requestIdleCallback(run)
+  }
+
+  handles.timeout = window.setTimeout(() => {
+    run()
+  }, timeout)
+
+  return () => {
+    cancelled = true
+    if (handles.idle !== null && 'cancelIdleCallback' in window) {
+      window.cancelIdleCallback(handles.idle)
+    }
+    if (handles.timeout !== null) {
+      clearTimeout(handles.timeout)
+    }
+  }
+}
 
 type RequestIdleCallback = (
   callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
   opts?: { timeout?: number }
 ) => number
 
-const ClientSignals = component$(({ config }: { config: AppConfig }) => {
+const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) => {
   useVisibleTask$(
     () => {
-      const { analytics, clientErrors } = config
-      const analyticsEnabled = analytics.enabled && Boolean(analytics.beaconUrl)
-      const errorReportingEnabled = clientErrors.enabled && Boolean(clientErrors.beaconUrl)
-      const reportClientError = createClientErrorReporter(clientErrors)
+      const analytics = config.analytics
+      const analyticsEnabled = Boolean(analytics?.enabled && analytics?.beaconUrl)
+      const reportClientError = config.reportClientError
+      const errorReportingEnabled = typeof reportClientError === 'function'
 
       if (!analyticsEnabled && !errorReportingEnabled) return
 
@@ -37,7 +89,7 @@ const ClientSignals = component$(({ config }: { config: AppConfig }) => {
         setTimeout(task, 0)
       }
 
-      if (analyticsEnabled) {
+      if (analyticsEnabled && analytics?.beaconUrl) {
         deferTask(() => {
           const payload = JSON.stringify({
             path: window.location.pathname,
@@ -93,7 +145,7 @@ const ClientSignals = component$(({ config }: { config: AppConfig }) => {
   return null
 })
 
-const PrefetchSignals = component$(({ config }: { config: AppConfig }) => {
+const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) => {
   const location = useLocation()
 
   useVisibleTask$(
@@ -111,7 +163,7 @@ const PrefetchSignals = component$(({ config }: { config: AppConfig }) => {
       const startPrefetch = () => {
         if (cancelled) return
         if (!hasFragmentLinks()) return
-        initQuicklinkPrefetch(config, true)
+        initQuicklinkPrefetch({ apiBase: config.apiBase }, true)
           .then((stop) => {
             if (cancelled) {
               stop?.()
@@ -136,11 +188,10 @@ const PrefetchSignals = component$(({ config }: { config: AppConfig }) => {
   return null
 })
 
-export const ClientExtras = component$(({ config }: { config: AppConfig }) => (
+export const ClientExtras = component$(({ config }: { config: ClientExtrasConfig }) => (
   <>
     <ClientSignals config={config} />
     <PrefetchSignals config={config} />
-    <RouteMotion />
   </>
 ))
 
