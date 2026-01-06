@@ -1,2 +1,1 @@
-export { default, StoreSkeleton as skeleton, head, onGet } from '@site/routes/store'
-
+export { default, StoreSkeleton as skeleton, head, onGet, useFragmentResource } from '@site/routes/store'

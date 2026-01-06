@@ -1,2 +1,1 @@
-export { default, LoginSkeleton as skeleton, head, onGet } from '@site/routes/login'
-
+export { default, LoginSkeleton as skeleton, head, onGet, useFragmentResource } from '@site/routes/login'

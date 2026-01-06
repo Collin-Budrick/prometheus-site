@@ -1,13 +1,12 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import { FragmentShell } from '../../../web/src/features/fragments'
+import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'
 import type {
   FragmentPayload,
-  FragmentPayloadMap,
   FragmentPayloadValue,
   FragmentPlan,
   FragmentPlanValue,
@@ -82,26 +81,12 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const apiBase = appConfig.apiBase
 
   try {
-    const { plan, initialFragments } = await loadFragmentPlan(path, appConfig, lang)
-    const primaryGroup =
-      plan.fetchGroups && plan.fetchGroups.length
-        ? plan.fetchGroups[0]
-        : plan.fragments.map((fragment) => fragment.id)
-    const initialIds = Array.from(new Set(primaryGroup))
-    let fragments: FragmentPayloadMap = initialFragments ?? {}
-
-    if (!initialFragments && initialIds.length) {
-      try {
-        fragments = await loadFragments(initialIds, appConfig, lang)
-      } catch (error) {
-        console.error('Fragment load failed', error)
-      }
-    }
+    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang)
 
     return {
-      plan: plan as FragmentPlanValue,
+      plan,
       fragments: fragments as FragmentPayloadValue,
-      path: plan.path,
+      path: planPath,
       lang
     }
   } catch (error) {

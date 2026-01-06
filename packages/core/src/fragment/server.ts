@@ -9,6 +9,10 @@ import { decodeFragmentPayload } from './binary'
 import type { AppConfig } from '@platform/env'
 import { fragmentPlanCache } from './plan-cache'
 
+type FragmentPlanOptions = {
+  includeInitial?: boolean
+}
+
 type FragmentPlanResult = {
   plan: FragmentPlan
   initialFragments?: FragmentPayloadMap
@@ -50,12 +54,14 @@ const decodeInitialFragments = (raw: FragmentPlanInitialPayloads) => {
 export const loadFragmentPlan = async (
   path: string,
   config: Pick<AppConfig, 'apiBase'>,
-  lang?: string
+  lang?: string,
+  options?: FragmentPlanOptions
 ): Promise<FragmentPlanResult> => {
   const api = config.apiBase
+  const includeInitial = options?.includeInitial !== false
   const cached = fragmentPlanCache.get(path, lang)
   const params = new URLSearchParams({ path })
-  if (!cached?.initialFragments) {
+  if (includeInitial && !cached?.initialFragments) {
     params.set('includeInitial', '1')
   }
   if (lang) {
@@ -68,7 +74,7 @@ export const loadFragmentPlan = async (
     if (!cached) {
       throw new Error('Plan fetch returned 304 without cached payload')
     }
-    return { plan: cached.plan, initialFragments: cached.initialFragments }
+    return { plan: cached.plan, initialFragments: includeInitial ? cached.initialFragments : undefined }
   }
   if (!response.ok) {
     throw new Error(`Plan fetch failed: ${response.status}`)
@@ -79,18 +85,23 @@ export const loadFragmentPlan = async (
   const etag = response.headers.get('etag')
   const canReuseCachedInitial =
     Boolean(cached?.initialFragments) && Boolean(etag) && cached?.etag === etag
-  const decoded = hasInitialFragments
-    ? decodeInitialFragments(initialFragments ?? {})
-    : canReuseCachedInitial
-      ? cached?.initialFragments
-      : undefined
+  const decoded =
+    includeInitial && hasInitialFragments
+      ? decodeInitialFragments(initialFragments ?? {})
+      : includeInitial && canReuseCachedInitial
+        ? cached?.initialFragments
+        : undefined
   const normalizedPlan = plan as FragmentPlan
   const result: FragmentPlanResult = {
     plan: normalizedPlan,
     initialFragments: attachCacheUpdatedAt(decoded, normalizedPlan)
   }
   if (etag) {
-    fragmentPlanCache.set(path, lang, { etag, plan: result.plan, initialFragments: decoded })
+    fragmentPlanCache.set(path, lang, {
+      etag,
+      plan: result.plan,
+      initialFragments: includeInitial ? decoded : undefined
+    })
   }
   return result
 }
