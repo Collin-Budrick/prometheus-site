@@ -7,6 +7,7 @@ import { WasmRendererDemo } from '../../components/WasmRendererDemo'
 import { PlannerDemo } from '../../components/PlannerDemo'
 import { StoreStream } from '../../components/StoreStream'
 import { StoreCreateForm } from '../../components/StoreCreateForm'
+import { StoreCart } from '../../components/StoreCart'
 
 type NodeProps = {
   node: RenderNode
@@ -88,6 +89,20 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         helper={node.attrs?.['data-helper']}
         namePlaceholder={node.attrs?.['data-name-placeholder']}
         pricePlaceholder={node.attrs?.['data-price-placeholder']}
+      />
+    )
+  }
+
+  if (node.tag === 'store-cart') {
+    return (
+      <StoreCart
+        class={node.attrs?.class}
+        title={node.attrs?.['data-title']}
+        helper={node.attrs?.['data-helper']}
+        empty={node.attrs?.['data-empty']}
+        totalLabel={node.attrs?.['data-total']}
+        dropLabel={node.attrs?.['data-drop']}
+        removeLabel={node.attrs?.['data-remove']}
       />
     )
   }

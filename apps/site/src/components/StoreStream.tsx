@@ -3,6 +3,7 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import { storeCartAddEvent } from '../shared/store-cart'
 
 type StoreStreamProps = {
   limit?: string
@@ -78,6 +79,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const items = useSignal<StoreItem[]>([])
   const removingIds = useSignal<number[]>([])
   const deletingIds = useSignal<number[]>([])
+  const draggingId = useSignal<number | null>(null)
   const streamState = useSignal<StreamState>('idle')
   const streamError = useSignal<string | null>(null)
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
@@ -101,6 +103,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const scoreLabel = copy?.['Score'] ?? 'Score'
   const idLabel = copy?.['ID'] ?? 'ID'
   const deleteLabel = copy?.['Delete item'] ?? 'Delete item'
+  const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -145,6 +148,33 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
   const handleRefresh = $(() => {
     refreshTick.value += 1
+  })
+
+  const handleAddClick = $((item: StoreItem) => {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent(storeCartAddEvent, {
+        detail: { id: item.id, name: item.name, price: item.price }
+      })
+    )
+  })
+
+  const handleDragStart = $((event: DragEvent, item: StoreItem) => {
+    const target = event.target as HTMLElement | null
+    if (target && target.closest('button')) {
+      event.preventDefault()
+      return
+    }
+    if (!event.dataTransfer) return
+    const payload = JSON.stringify({ id: item.id, name: item.name, price: item.price })
+    event.dataTransfer.setData('application/json', payload)
+    event.dataTransfer.setData('text/plain', payload)
+    event.dataTransfer.effectAllowed = 'copy'
+    draggingId.value = item.id
+  })
+
+  const handleDragEnd = $(() => {
+    draggingId.value = null
   })
 
   const scheduleRemoval = $((id: number) => {
@@ -449,9 +479,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               key={item.id}
               class={`store-stream-row${removingIds.value.includes(item.id) ? ' is-removing' : ''}${
                 deletingIds.value.includes(item.id) ? ' is-deleting' : ''
-              }`}
+              }${draggingId.value === item.id ? ' is-dragging' : ''}`}
               role="listitem"
               data-item-id={item.id}
+              draggable={!removingIds.value.includes(item.id) && !deletingIds.value.includes(item.id)}
+              onDragStart$={(event) => handleDragStart(event, item)}
+              onDragEnd$={handleDragEnd}
               style={{ '--stagger-index': String(index) }}
             >
               <button
@@ -476,6 +509,15 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
                     {scoreLabel} {item.score.toFixed(2)}
                   </span>
                 ) : null}
+                <button
+                  class="store-stream-add"
+                  type="button"
+                  aria-label={addLabel}
+                  title={addLabel}
+                  onClick$={() => handleAddClick(item)}
+                >
+                  {addLabel}
+                </button>
                 <span class="store-stream-row-price">{formatPrice(item.price)}</span>
               </div>
             </div>
