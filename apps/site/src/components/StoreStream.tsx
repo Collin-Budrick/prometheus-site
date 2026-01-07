@@ -76,6 +76,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const langSignal = useSharedLangSignal()
   const query = useSignal('')
   const items = useSignal<StoreItem[]>([])
+  const removingIds = useSignal<number[]>([])
+  const deletingIds = useSignal<number[]>([])
   const streamState = useSignal<StreamState>('idle')
   const streamError = useSignal<string | null>(null)
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
@@ -83,6 +85,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const searchMeta = useSignal<{ total: number; query: string } | null>(null)
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
+  const panelRef = useSignal<HTMLElement>()
+  const layoutPositions = useSignal<NoSerialize<Map<number, DOMRect>> | undefined>(undefined)
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
   const copy = fragmentCopy.value
@@ -96,6 +100,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const itemsLabel = copy?.['items'] ?? 'items'
   const scoreLabel = copy?.['Score'] ?? 'Score'
   const idLabel = copy?.['ID'] ?? 'ID'
+  const deleteLabel = copy?.['Delete item'] ?? 'Delete item'
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -142,6 +147,52 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     refreshTick.value += 1
   })
 
+  const scheduleRemoval = $((id: number) => {
+    if (!Number.isFinite(id)) return
+    if (removingIds.value.includes(id)) return
+    const exists = items.value.some((entry) => entry.id === id)
+    if (!exists) return
+    removingIds.value = [...removingIds.value, id]
+    const delayMs = 260
+    const finalize = () => {
+      items.value = items.value.filter((entry) => entry.id !== id)
+      removingIds.value = removingIds.value.filter((entry) => entry !== id)
+      if (searchMeta.value) {
+        searchMeta.value = {
+          ...searchMeta.value,
+          total: Math.max(0, searchMeta.value.total - 1)
+        }
+      }
+    }
+    if (typeof window === 'undefined') {
+      finalize()
+      return
+    }
+    window.setTimeout(finalize, delayMs)
+  })
+
+  const handleDeleteClick = $((id: number) => {
+    if (deletingIds.value.includes(id)) return
+    deletingIds.value = [...deletingIds.value, id]
+    const run = async () => {
+      try {
+        const response = await fetch(buildApiUrl(`/store/items/${id}`, window.location.origin), {
+          method: 'DELETE',
+          credentials: 'include'
+        })
+        if (!response.ok) {
+          throw new Error(`Request failed: ${response.status}`)
+        }
+        await scheduleRemoval(id)
+      } catch (error) {
+        console.warn('Failed to delete store item', error)
+      } finally {
+        deletingIds.value = deletingIds.value.filter((entry) => entry !== id)
+      }
+    }
+    void run()
+  })
+
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
@@ -160,6 +211,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       const handleUpsert = (item: StoreItem) => {
         const searchActive = query.value.trim() !== ''
+        if (removingIds.value.includes(item.id)) {
+          removingIds.value = removingIds.value.filter((entry) => entry !== item.id)
+        }
         const existingIndex = items.value.findIndex((entry) => entry.id === item.id)
         if (existingIndex >= 0) {
           const next = [...items.value]
@@ -180,11 +234,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       const handleDelete = (id: number) => {
         if (!Number.isFinite(id)) return
-        const next = items.value.filter((entry) => entry.id !== id)
-        items.value = next
-        if (query.value.trim()) {
-          refreshTick.value += 1
-        }
+        void scheduleRemoval(id)
+        if (query.value.trim()) refreshTick.value += 1
       }
 
       const connect = () => {
@@ -318,6 +369,45 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     { strategy: 'document-ready' }
   )
 
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      ctx.track(() => items.value.map((item) => item.id).join(','))
+      const panel = panelRef.value
+      if (!panel) return
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const elements = Array.from(panel.querySelectorAll<HTMLElement>('.store-stream-row'))
+      const nextPositions = new Map<number, DOMRect>()
+
+      elements.forEach((element) => {
+        const id = Number(element.dataset.itemId)
+        if (!Number.isFinite(id)) return
+        nextPositions.set(id, element.getBoundingClientRect())
+      })
+
+      const previousPositions = layoutPositions.value
+      if (previousPositions && previousPositions.size && !prefersReducedMotion) {
+        elements.forEach((element) => {
+          const id = Number(element.dataset.itemId)
+          const first = previousPositions.get(id)
+          const last = nextPositions.get(id)
+          if (!first || !last) return
+          const dx = first.left - last.left
+          const dy = first.top - last.top
+          if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+          element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], {
+            duration: 360,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            fill: 'both'
+          })
+        })
+      }
+
+      layoutPositions.value = noSerialize(nextPositions)
+    },
+    { strategy: 'document-ready' }
+  )
+
   return (
     <div class={rootClass.value} data-state={streamState.value} data-mode={query.value.trim() ? 'search' : 'browse'}>
       <div class="store-stream-controls">
@@ -350,12 +440,30 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             : `${items.value.length} ${itemsLabel}`}
         </span>
       </div>
-      <div class="store-stream-panel" role="list" aria-live="polite">
+      <div class="store-stream-panel" role="list" aria-live="polite" ref={panelRef}>
         {panelMessage.value ? (
           <div class="store-stream-empty">{panelMessage.value}</div>
         ) : (
-          items.value.map((item) => (
-            <div key={item.id} class="store-stream-row" role="listitem">
+          items.value.map((item, index) => (
+            <div
+              key={item.id}
+              class={`store-stream-row${removingIds.value.includes(item.id) ? ' is-removing' : ''}${
+                deletingIds.value.includes(item.id) ? ' is-deleting' : ''
+              }`}
+              role="listitem"
+              data-item-id={item.id}
+              style={{ '--stagger-index': String(index) }}
+            >
+              <button
+                class="store-stream-delete"
+                type="button"
+                aria-label={deleteLabel}
+                title={deleteLabel}
+                disabled={removingIds.value.includes(item.id) || deletingIds.value.includes(item.id)}
+                onClick$={() => handleDeleteClick(item.id)}
+              >
+                X
+              </button>
               <div>
                 <div class="store-stream-row-title">{item.name}</div>
                 <div class="store-stream-row-meta">

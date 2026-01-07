@@ -146,43 +146,91 @@ const storeFragmentCss = `
     rgb(var(--surface));
   padding: 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-content: start;
-  grid-auto-flow: dense;
   max-height: 420px;
   overflow: auto;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
 }
 
 .store-stream-row {
-  --stagger: 0px;
+  --stagger-index: 0;
+  position: relative;
   display: grid;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 14px 44px 14px 16px;
   border-radius: 16px;
   background:
     linear-gradient(160deg, rgb(var(--surface-soft) / 0.9), rgb(var(--surface) / 0.9)),
     rgb(var(--surface-soft));
   border: 1px solid rgb(var(--stroke));
   box-shadow: 0 16px 26px rgba(15, 23, 42, 0.16);
-  transform: translateY(var(--stagger));
-  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: store-stream-card-in 520ms var(--view-transition-ease, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+  animation-delay: calc(var(--stagger-index) * 70ms);
+  transition: box-shadow 220ms ease, border-color 220ms ease;
   min-width: 0;
 }
 
-.store-stream-row:nth-child(odd) {
-  --stagger: 8px;
+.store-stream-row.is-removing {
+  animation: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 240ms ease, transform 240ms ease;
+  pointer-events: none;
 }
 
-.store-stream-row:nth-child(3n) {
-  --stagger: 14px;
+.store-stream-row.is-deleting {
+  opacity: 0.8;
 }
 
 .store-stream-row:hover {
-  transform: translateY(calc(var(--stagger) - 4px));
   border-color: rgb(var(--stroke-strong));
   box-shadow: 0 22px 34px rgba(15, 23, 42, 0.22);
+}
+
+.store-stream-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--stroke));
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.store-stream-delete:hover {
+  color: rgb(var(--ink));
+  border-color: rgb(var(--stroke-strong));
+  box-shadow: 0 12px 18px rgba(15, 23, 42, 0.18);
+  transform: translateY(-1px);
+}
+
+.store-stream-delete:disabled {
+  cursor: default;
+  opacity: 0.5;
+  box-shadow: none;
+  transform: none;
+}
+
+@keyframes store-stream-card-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .store-stream-row-title {
@@ -314,6 +362,12 @@ const storeFragmentCss = `
   color: rgb(var(--accent));
 }
 
+@media (max-width: 1100px) {
+  .store-stream-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .store-stream-controls {
     align-items: stretch;
@@ -324,11 +378,25 @@ const storeFragmentCss = `
   }
 
   .store-stream-panel {
+    grid-template-columns: 1fr;
     padding: 16px;
   }
 
   .store-stream-row {
-    --stagger: 0px;
+    animation-delay: 0ms;
+  }
+
+  .store-stream-delete {
+    top: 8px;
+    right: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .store-stream-row {
+    opacity: 1;
+    transform: none;
+    animation: none;
   }
 }
 
@@ -344,7 +412,7 @@ const storeFragmentCss = `
 `
 
 const storeStream: FragmentDefinition = {
-  id: 'fragment://page/store/stream@v2',
+  id: 'fragment://page/store/stream@v4',
   tags: ['store', 'search', 'stream'],
   head: [],
   css: storeFragmentCss,

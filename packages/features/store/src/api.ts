@@ -1,12 +1,17 @@
 import { Elysia, t } from 'elysia'
-import { gt, inArray } from 'drizzle-orm'
+import { eq, gt, inArray } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
 import { createInsertSchema } from 'drizzle-zod'
 import { z } from 'zod'
 import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache'
 import type { StoreItemsTable } from './realtime'
-import { ensureStoreSearchIndex, searchStoreIndex, upsertStoreSearchDocument } from './search'
+import {
+  ensureStoreSearchIndex,
+  removeStoreSearchDocument,
+  searchStoreIndex,
+  upsertStoreSearchDocument
+} from './search'
 
 export type StoreTelemetry = {
   cacheHits: number
@@ -220,6 +225,66 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
       },
       {
         body: t.Any()
+      }
+    )
+    .delete(
+      '/store/items/:id',
+      async ({ params, request }) => {
+        const idRaw = Number.parseInt(params.id, 10)
+        if (!Number.isFinite(idRaw) || idRaw <= 0) {
+          return options.jsonError(400, 'Invalid item id')
+        }
+
+        const clientIp = options.getClientIp(request)
+        const { allowed, retryAfter } = await options.checkRateLimit('/store/items:delete', clientIp)
+
+        if (!allowed) {
+          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/items:delete:${clientIp}`, 6, 10000)
+        if (!earlyLimit.allowed) {
+          return options.jsonError(429, 'Try again soon')
+        }
+
+        let deleted
+        try {
+          const [row] = await options.db
+            .delete(options.storeItemsTable)
+            .where(eq(options.storeItemsTable.id, idRaw))
+            .returning()
+          deleted = row
+        } catch (error) {
+          console.error('Failed to delete store item', error)
+          return options.jsonError(500, 'Unable to delete item')
+        }
+
+        if (!deleted) {
+          return options.jsonError(404, 'Item not found')
+        }
+
+        if (options.isValkeyReady()) {
+          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+          void (async () => {
+            try {
+              const ready = await ensureStoreSearchIndex(options.valkey)
+              if (!ready) return
+              await removeStoreSearchDocument(options.valkey, deleted.id)
+            } catch (error) {
+              console.warn('Store search update failed after delete', error)
+            }
+          })()
+        }
+
+        return {
+          deleted: true,
+          id: deleted.id
+        }
+      },
+      {
+        params: t.Object({
+          id: t.String()
+        })
       }
     )
     .get(
