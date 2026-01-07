@@ -45,6 +45,11 @@ const isUnsupportedCommand = (error: unknown) => {
   return message.includes('unknown command') || message.includes('unsupported')
 }
 
+const isDialectParseError = (error: unknown) => {
+  const message = toErrorMessage(error).toLowerCase()
+  return message.includes('missing `=>`') || message.includes('missing =>') || message.includes('invalid filter format')
+}
+
 const isMissingTableError = (error: unknown) => {
   const candidates: Array<{ code?: string; message?: string }> = []
   let current: unknown = error
@@ -77,7 +82,13 @@ const tokenize = (value: string) => {
 const serializeTags = (value: string) => {
   const tokens = tokenize(value)
   if (!tokens.length) return ''
-  return Array.from(new Set(tokens)).join(',')
+  const expanded = new Set<string>()
+  tokens.forEach((token) => {
+    for (let i = 1; i <= token.length; i += 1) {
+      expanded.add(token.slice(0, i))
+    }
+  })
+  return Array.from(expanded).join(',')
 }
 
 const buildFilterExpression = (value: string) => {
@@ -89,7 +100,7 @@ const buildFilterExpression = (value: string) => {
   if (terms.length === 1) {
     return `@name:{${escapeTagValue(terms[0])}}`
   }
-  return `@name:{${terms.map((term) => escapeTagValue(term)).join(' | ')}}`
+  return `@name:{${terms.map((term) => escapeTagValue(term)).join('|')}}`
 }
 
 const hashToken = (value: string) => {
@@ -285,57 +296,113 @@ export const searchStoreIndex = async (
     return { total: 0, hits: [] }
   }
   const filter = buildFilterExpression(query)
+
+  const runSearch = async (args: Array<string | Buffer>) => {
+    const reply = await client.sendCommand(args)
+    if (!Array.isArray(reply) || reply.length === 0) {
+      return { total: 0, hits: [] as StoreSearchHit[] }
+    }
+
+    const total = Number(reply[0]) || 0
+    const hits: StoreSearchHit[] = []
+    const entries = reply.slice(1)
+
+    const isScoreValue = (value: unknown) =>
+      typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value)))
+    const looksLikePairs = entries.length % 2 === 0 && isScoreValue(entries[1])
+
+    if (looksLikePairs) {
+      for (let i = 0; i < entries.length; i += 2) {
+        const key = entries[i]
+        const scoreRaw = entries[i + 1]
+        if (typeof key !== 'string') continue
+        const idValue = key.startsWith(storeSearchKeyPrefix) ? key.slice(storeSearchKeyPrefix.length) : key
+        const id = Number(idValue)
+        if (!Number.isFinite(id)) continue
+        const score = Number(scoreRaw)
+        hits.push({ id, score: Number.isFinite(score) ? score : undefined })
+      }
+    } else {
+      entries.forEach((entry) => {
+        if (typeof entry !== 'string') return
+        const idValue = entry.startsWith(storeSearchKeyPrefix) ? entry.slice(storeSearchKeyPrefix.length) : entry
+        const id = Number(idValue)
+        if (!Number.isFinite(id)) return
+        hits.push({ id })
+      })
+    }
+
+    return { total, hits }
+  }
+
+  const runSearchWithDialects = async (
+    args: Array<string | Buffer>,
+    dialects: Array<string | null>
+  ): Promise<StoreSearchResult> => {
+    let lastError: unknown
+    for (const dialect of dialects) {
+      const withDialect = dialect ? [...args, 'DIALECT', dialect] : args
+      try {
+        return await runSearch(withDialect)
+      } catch (error) {
+        lastError = error
+        if (!isDialectParseError(error)) {
+          throw error
+        }
+      }
+    }
+
+    if (lastError && isDialectParseError(lastError)) {
+      console.warn('Store search query rejected by Valkey dialects', lastError)
+      return { total: 0, hits: [] }
+    }
+    throw lastError
+  }
+
+  const tagResult = await runSearchWithDialects(
+    [
+      'FT.SEARCH',
+      storeSearchIndex,
+      filter,
+      'NOCONTENT',
+      'LIMIT',
+      String(options.offset),
+      String(options.limit)
+    ],
+    [null, '1', '2']
+  )
+
+  if (tagResult.hits.length > 0 || filter === '*' || filter.includes('__no_match__')) {
+    return tagResult
+  }
+
+  const normalized = query.trim()
+  if (normalized.length < 3) {
+    return tagResult
+  }
+
   const k = Math.max(1, options.limit + options.offset)
   const queryVector = buildEmbedding(query)
   const q = `${filter}=>[KNN ${k} @${storeSearchVectorField} $query_vector]`
-  const reply = await client.sendCommand([
-    'FT.SEARCH',
-    storeSearchIndex,
-    q,
-    'PARAMS',
-    '2',
-    'query_vector',
-    queryVector,
-    'NOCONTENT',
-    'LIMIT',
-    String(options.offset),
-    String(options.limit),
-    'DIALECT',
-    '2'
-  ])
 
-  if (!Array.isArray(reply) || reply.length === 0) {
-    return { total: 0, hits: [] }
+  try {
+    return await runSearch([
+      'FT.SEARCH',
+      storeSearchIndex,
+      q,
+      'PARAMS',
+      '2',
+      'query_vector',
+      queryVector,
+      'NOCONTENT',
+      'LIMIT',
+      String(options.offset),
+      String(options.limit),
+      'DIALECT',
+      '2'
+    ])
+  } catch (error) {
+    console.warn('Store search vector query failed', error)
+    return tagResult
   }
-
-  const total = Number(reply[0]) || 0
-  const hits: StoreSearchHit[] = []
-  const entries = reply.slice(1)
-
-  const isScoreValue = (value: unknown) =>
-    typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value)))
-  const looksLikePairs = entries.length % 2 === 0 && isScoreValue(entries[1])
-
-  if (looksLikePairs) {
-    for (let i = 0; i < entries.length; i += 2) {
-      const key = entries[i]
-      const scoreRaw = entries[i + 1]
-      if (typeof key !== 'string') continue
-      const idValue = key.startsWith(storeSearchKeyPrefix) ? key.slice(storeSearchKeyPrefix.length) : key
-      const id = Number(idValue)
-      if (!Number.isFinite(id)) continue
-      const score = Number(scoreRaw)
-      hits.push({ id, score: Number.isFinite(score) ? score : undefined })
-    }
-  } else {
-    entries.forEach((entry) => {
-      if (typeof entry !== 'string') return
-      const idValue = entry.startsWith(storeSearchKeyPrefix) ? entry.slice(storeSearchKeyPrefix.length) : entry
-      const id = Number(idValue)
-      if (!Number.isFinite(id)) return
-      hits.push({ id })
-    })
-  }
-
-  return { total, hits }
 }

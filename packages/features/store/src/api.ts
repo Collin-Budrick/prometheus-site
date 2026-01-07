@@ -6,7 +6,7 @@ import { createInsertSchema } from 'drizzle-zod'
 import { z } from 'zod'
 import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache'
 import type { StoreItemsTable } from './realtime'
-import { ensureStoreSearchIndex, searchStoreIndex } from './search'
+import { ensureStoreSearchIndex, searchStoreIndex, upsertStoreSearchDocument } from './search'
 
 export type StoreTelemetry = {
   cacheHits: number
@@ -185,6 +185,19 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         if (options.isValkeyReady()) {
           void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+          void (async () => {
+            try {
+              const ready = await ensureStoreSearchIndex(options.valkey)
+              if (!ready) return
+              await upsertStoreSearchDocument(options.valkey, {
+                id: created.id,
+                name: created.name,
+                price: parsePrice(created.price)
+              })
+            } catch (error) {
+              console.warn('Store search update failed after create', error)
+            }
+          })()
         }
 
         if (!created) {
