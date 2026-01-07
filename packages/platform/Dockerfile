@@ -39,6 +39,7 @@ COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/packages/platform/dist ./dist
 COPY --from=builder /app/packages/platform/drizzle ./drizzle
 COPY --from=builder /app/packages/platform/package.json ./package.json
+COPY --from=builder /app/apps/site/src/lang /app/apps/site/src/lang
 
 EXPOSE 4000
 CMD ["bun", "run", "dist/index.js"]

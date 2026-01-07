@@ -1,6 +1,8 @@
 import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
+import { getLanguagePack } from '../lang'
+import { useSharedLangSignal } from '../shared/lang-bridge'
 
 type StoreStreamProps = {
   limit?: string
@@ -71,6 +73,7 @@ const buildWsUrl = (path: string, origin: string) => {
 
 export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, class: className }) => {
   const maxItems = clampLimit(limit)
+  const langSignal = useSharedLangSignal()
   const query = useSignal('')
   const items = useSignal<StoreItem[]>([])
   const streamState = useSignal<StreamState>('idle')
@@ -81,28 +84,31 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
 
+  const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
+  const t = (value: string) => fragmentCopy.value?.[value] ?? value
+
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
     return className.includes('store-stream') ? className : `store-stream ${className}`.trim()
   })
 
   const statusLabel = useComputed$(() => {
-    if (streamState.value === 'live') return 'Live stream'
-    if (streamState.value === 'connecting') return 'Connecting'
-    if (streamState.value === 'offline') return 'Offline'
-    if (streamState.value === 'error') return streamError.value ?? 'Stream error'
-    return 'Idle'
+    if (streamState.value === 'live') return t('Live stream')
+    if (streamState.value === 'connecting') return t('Connecting')
+    if (streamState.value === 'offline') return t('Offline')
+    if (streamState.value === 'error') return t(streamError.value ?? 'Stream error')
+    return t('Idle')
   })
 
   const panelMessage = useComputed$(() => {
     if (searchState.value === 'loading' && items.value.length === 0) {
-      return query.value.trim() ? 'Searching the index...' : 'Loading items...'
+      return query.value.trim() ? t('Searching the index...') : t('Loading items...')
     }
     if (searchState.value === 'error' && items.value.length === 0) {
-      return searchError.value ?? 'Search unavailable'
+      return searchError.value ?? t('Search unavailable')
     }
     if (items.value.length === 0) {
-      return query.value.trim() ? 'No matches yet.' : 'No items yet.'
+      return query.value.trim() ? t('No matches yet.') : t('No items yet.')
     }
     return null
   })
@@ -195,7 +201,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             return
           }
           if (type === 'error') {
-            const errorMessage = typeof record.error === 'string' ? record.error : 'Stream error'
+            const errorMessage = typeof record.error === 'string' ? record.error : t('Stream error')
             streamState.value = 'error'
             streamError.value = errorMessage
             const retryAfter = Number(record.retryAfter)
@@ -227,7 +233,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
         ws.addEventListener('error', () => {
           streamState.value = 'error'
-          streamError.value = streamError.value ?? 'Stream error'
+          streamError.value = streamError.value ?? t('Stream error')
         })
       }
 
@@ -284,7 +290,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         } catch (error) {
           if ((error as Error)?.name === 'AbortError') return
           searchState.value = 'error'
-          searchError.value = error instanceof Error ? error.message : 'Search unavailable'
+          searchError.value = error instanceof Error ? error.message : t('Search unavailable')
         }
       }, delay)
 
@@ -303,13 +309,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           <div class="store-stream-field">
             <input
               type="search"
-              placeholder={placeholder ?? 'Search the store...'}
+              placeholder={t(placeholder ?? 'Search the store...')}
               value={query.value}
               onInput$={handleInput}
-              aria-label="Search store items"
+              aria-label={t('Search store items')}
             />
             <button type="submit" disabled={searchState.value === 'loading'}>
-              Search
+              {t('Search')}
             </button>
           </div>
           {query.value.trim() ? (
@@ -324,11 +330,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         </div>
       </div>
       <div class="store-stream-meta">
-        <span>{query.value.trim() ? 'Valkey search' : 'Postgres stream'}</span>
+        <span>{query.value.trim() ? t('Valkey search') : t('Postgres stream')}</span>
         <span>
           {query.value.trim()
-            ? `${searchMeta.value?.total ?? items.value.length} results`
-            : `${items.value.length} items`}
+            ? `${searchMeta.value?.total ?? items.value.length} ${t('results')}`
+            : `${items.value.length} ${t('items')}`}
         </span>
       </div>
       <div class="store-stream-panel" role="list" aria-live="polite">
@@ -339,11 +345,15 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             <div key={item.id} class="store-stream-row" role="listitem">
               <div>
                 <div class="store-stream-row-title">{item.name}</div>
-                <div class="store-stream-row-meta">ID {item.id}</div>
+                <div class="store-stream-row-meta">
+                  {t('ID')} {item.id}
+                </div>
               </div>
               <div class="store-stream-row-meta">
                 {typeof item.score === 'number' ? (
-                  <span class="store-stream-score">Score {item.score.toFixed(2)}</span>
+                  <span class="store-stream-score">
+                    {t('Score')} {item.score.toFixed(2)}
+                  </span>
                 ) : null}
                 <span>{formatPrice(item.price)}</span>
               </div>

@@ -1,5 +1,7 @@
 import { $, component$, useComputed$, useSignal } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
+import { getLanguagePack } from '../lang'
+import { useSharedLangSignal } from '../shared/lang-bridge'
 
 type StoreCreateFormProps = {
   class?: string
@@ -25,22 +27,22 @@ const normalizeLabel = (value: string | undefined, fallback: string) => {
   return trimmed === '' ? fallback : trimmed
 }
 
-const parseError = async (response: Response) => {
-  try {
-    const payload = (await response.json()) as { error?: string }
-    if (payload?.error) return payload.error
-  } catch {
-    // ignore parsing failures
-  }
-  return `Request failed: ${response.status}`
+const interpolate = (value: string, params?: Record<string, string | number>) => {
+  if (!params) return value
+  return value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
 }
 
 export const StoreCreateForm = component$<StoreCreateFormProps>(
   ({ class: className, nameLabel, priceLabel, submitLabel, helper, namePlaceholder, pricePlaceholder }) => {
+    const langSignal = useSharedLangSignal()
     const name = useSignal('')
     const price = useSignal('')
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
+
+    const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
+    const t = (value: string, params?: Record<string, string | number>) =>
+      interpolate(fragmentCopy.value?.[value] ?? value, params)
 
     const rootClass = useComputed$(() => {
       if (!className) return 'store-create'
@@ -61,13 +63,13 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
 
       if (trimmedName.length < 2) {
         state.value = 'error'
-        statusMessage.value = 'Name must be at least 2 characters.'
+        statusMessage.value = t('Name must be at least 2 characters.')
         return
       }
 
       if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
         state.value = 'error'
-        statusMessage.value = 'Price must be a non-negative number.'
+        statusMessage.value = t('Price must be a non-negative number.')
         return
       }
 
@@ -83,7 +85,15 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         })
 
         if (!response.ok) {
-          const errorMessage = await parseError(response)
+          let errorMessage = t('Request failed: {{status}}', { status: response.status })
+          try {
+            const payload = (await response.json()) as { error?: string }
+            if (payload?.error) {
+              errorMessage = payload.error
+            }
+          } catch {
+            // ignore parsing failures
+          }
           state.value = 'error'
           statusMessage.value = errorMessage
           return
@@ -92,18 +102,24 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         const payload = (await response.json()) as { item?: { id?: number; name?: string } }
         const createdId = payload?.item?.id
         state.value = 'success'
-        statusMessage.value = createdId ? `Added item #${createdId}.` : 'Item created.'
+        statusMessage.value = createdId ? t('Added item #{{id}}', { id: createdId }) : t('Item created.')
         name.value = ''
         price.value = ''
       } catch (error) {
         state.value = 'error'
-        statusMessage.value = error instanceof Error ? error.message : 'Unable to create item.'
+        statusMessage.value = error instanceof Error ? error.message : t('Unable to create item.')
       }
     })
 
-    const resolvedNameLabel = normalizeLabel(nameLabel, 'Item name')
-    const resolvedPriceLabel = normalizeLabel(priceLabel, 'Price')
-    const resolvedSubmitLabel = normalizeLabel(submitLabel, 'Add item')
+    const resolvedNameLabel = normalizeLabel(nameLabel ? t(nameLabel) : undefined, t('Item name'))
+    const resolvedPriceLabel = normalizeLabel(priceLabel ? t(priceLabel) : undefined, t('Price'))
+    const resolvedSubmitLabel = normalizeLabel(submitLabel ? t(submitLabel) : undefined, t('Add item'))
+    const resolvedNamePlaceholder = normalizeLabel(
+      namePlaceholder ? t(namePlaceholder) : undefined,
+      t('Neural render pack')
+    )
+    const resolvedPricePlaceholder = normalizeLabel(pricePlaceholder ? t(pricePlaceholder) : undefined, t('19.00'))
+    const resolvedHelper = helper ? t(helper) : null
 
     return (
       <div class={rootClass.value} data-state={state.value}>
@@ -111,38 +127,38 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
           <div class="store-create-grid">
             <label class="store-create-input">
               <span>{resolvedNameLabel}</span>
-              <input
-                type="text"
-                name="name"
-                autocomplete="off"
-                placeholder={normalizeLabel(namePlaceholder, 'Neural render pack')}
-                value={name.value}
-                onInput$={(event) => {
-                  name.value = (event.target as HTMLInputElement).value
-                }}
-              />
+                <input
+                  type="text"
+                  name="name"
+                  autocomplete="off"
+                  placeholder={resolvedNamePlaceholder}
+                  value={name.value}
+                  onInput$={(event) => {
+                    name.value = (event.target as HTMLInputElement).value
+                  }}
+                />
             </label>
             <label class="store-create-input">
               <span>{resolvedPriceLabel}</span>
-              <input
-                type="number"
-                name="price"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                placeholder={normalizeLabel(pricePlaceholder, '19.00')}
-                value={price.value}
-                onInput$={(event) => {
-                  price.value = (event.target as HTMLInputElement).value
-                }}
-              />
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder={resolvedPricePlaceholder}
+                  value={price.value}
+                  onInput$={(event) => {
+                    price.value = (event.target as HTMLInputElement).value
+                  }}
+                />
             </label>
             <button class="store-create-submit" type="submit" disabled={!canSubmit.value}>
-              {state.value === 'saving' ? 'Saving...' : resolvedSubmitLabel}
+              {state.value === 'saving' ? t('Saving...') : resolvedSubmitLabel}
             </button>
           </div>
         </form>
-        {helper ? <p class="store-create-helper">{helper}</p> : null}
+        {resolvedHelper ? <p class="store-create-helper">{resolvedHelper}</p> : null}
         {statusMessage.value ? (
           <div class="store-create-status" aria-live="polite">
             {statusMessage.value}
