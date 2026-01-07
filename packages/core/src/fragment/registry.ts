@@ -1,6 +1,11 @@
 import type { FragmentDefinition, FragmentPlan, FragmentPlanEntry } from './types'
 
-const normalizePlanPath = (path: string) => (path === '/' || path === '' ? '/' : path)
+const normalizePlanPath = (path: string) => {
+  const trimmed = path.trim()
+  if (trimmed === '' || trimmed === '/') return '/'
+  const stripped = trimmed.replace(/\/+$/, '')
+  return stripped === '' ? '/' : stripped
+}
 
 type PlanBuilder = (path: string, normalizedPath: string) => FragmentPlan
 type PlanOverride = (plan: FragmentPlan) => FragmentPlan

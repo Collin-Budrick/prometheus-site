@@ -1,7 +1,12 @@
 import type { EarlyHint, FragmentPlan, FragmentPlanEntry } from './types'
 import { attachDefinitionDependencies, buildPlanFromBuilder } from './registry'
 
-export const normalizePlanPath = (path: string) => (path === '/' || path === '' ? '/' : path)
+export const normalizePlanPath = (path: string) => {
+  const trimmed = path.trim()
+  if (trimmed === '' || trimmed === '/') return '/'
+  const stripped = trimmed.replace(/\/+$/, '')
+  return stripped === '' ? '/' : stripped
+}
 
 const resolvePlanDependencies = (entries: FragmentPlanEntry[]) => {
   if (entries.length === 0) {
