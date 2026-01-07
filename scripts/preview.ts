@@ -33,6 +33,7 @@ const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const previewRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
 
 const normalizeBasePort = (value: string) => {
   try {
@@ -75,6 +76,7 @@ const composeEnv = {
   VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
   VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors,
   VITE_DISABLE_SW: previewDisableSw,
+  RUN_MIGRATIONS: previewRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize

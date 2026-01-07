@@ -64,6 +64,12 @@
       "metaLine": "Reactドック",
       "title": "サーバー専用ドックフラグメント。",
       "description": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。"
+    },
+    "fragment://page/store/stream@v1": {
+      "heading": "h2",
+      "metaLine": "ストアストリーム",
+      "title": "リアルタイムのストアフィード。",
+      "description": "Postgresは正の情報源のまま、Valkey Searchが結果をランク付けし、アイテムの更新がリアルタイムで流れ込みます。"
     }
   },
   "lab": {

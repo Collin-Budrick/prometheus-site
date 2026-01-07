@@ -31,6 +31,7 @@ const devEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '
 const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const devRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const isWindowsMount = root.startsWith('/mnt/')
 const enablePollingWatch = isWsl && isWindowsMount
@@ -44,6 +45,7 @@ const composeEnv = {
   PROMETHEUS_POSTGRES_PORT: devPostgresPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
+  RUN_MIGRATIONS: devRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize

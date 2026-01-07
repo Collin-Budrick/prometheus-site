@@ -64,6 +64,12 @@
       "metaLine": "React 도크",
       "title": "서버 전용 도크 프래그먼트.",
       "description": "React로 작성한 MagicUI 도크를 정적 프래그먼트로 컴파일합니다."
+    },
+    "fragment://page/store/stream@v1": {
+      "heading": "h2",
+      "metaLine": "스토어 스트림",
+      "title": "실시간 스토어 피드.",
+      "description": "Postgres가 사실의 원본을 유지하고 Valkey Search가 결과를 랭킹하며 아이템 업데이트가 실시간으로 스트리밍됩니다."
     }
   },
   "lab": {

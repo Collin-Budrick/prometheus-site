@@ -34,6 +34,7 @@ export type StoreWsOptions = {
   valkey: ValkeyClient
   isValkeyReady: IsValkeyReadyFn
   validateSession: ValidateSessionFn
+  allowAnonymous?: boolean
   checkWsOpenQuota: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
   resolveWsClientIp: ResolveWsClientIp
   resolveWsHeaders: ResolveWsHeaders
@@ -120,7 +121,7 @@ export const registerStoreWs = <App extends AnyElysia>(app: App, options: StoreW
 
       const sessionUser = sessionPayload?.user
       const sessionUserId = sessionUser?.id
-      if (sessionUserId === undefined || sessionUserId === '') {
+      if ((sessionUserId === undefined || sessionUserId === '') && !options.allowAnonymous) {
         ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for store realtime' } satisfies StoreErrorEvent))
         ws.close(4401, 'Unauthorized')
         return
@@ -134,7 +135,9 @@ export const registerStoreWs = <App extends AnyElysia>(app: App, options: StoreW
 
       const data = ws.data
       data.clientIp = clientIp
-      data.user = sessionUser
+      if (sessionUserId) {
+        data.user = sessionUser
+      }
       data.lastSeen = Date.now()
 
       let subscriber: Awaited<ReturnType<ValkeyClient['duplicate']>> | null = null

@@ -5,6 +5,7 @@ import { PreactIsland } from '../../components/PreactIsland'
 import { ReactBinaryDemo } from '../../components/ReactBinaryDemo'
 import { WasmRendererDemo } from '../../components/WasmRendererDemo'
 import { PlannerDemo } from '../../components/PlannerDemo'
+import { StoreStream } from '../../components/StoreStream'
 
 type NodeProps = {
   node: RenderNode
@@ -64,6 +65,16 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
 
   if (node.tag === 'planner-demo') {
     return <PlannerDemo />
+  }
+
+  if (node.tag === 'store-stream') {
+    return (
+      <StoreStream
+        class={node.attrs?.class}
+        limit={node.attrs?.['data-limit']}
+        placeholder={node.attrs?.['data-placeholder']}
+      />
+    )
   }
 
   const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap

@@ -6,6 +6,7 @@ import { createMessagingRoutes, invalidateChatHistoryCache, registerChatWs } fro
 import { createStoreRoutes, type StoreTelemetry } from '@features/store/api'
 import { invalidateStoreItemsCache } from '@features/store/cache'
 import { createStoreRealtime, type StoreRealtimeEvent } from '@features/store/realtime'
+import { rebuildStoreSearchIndex, removeStoreSearchDocument, upsertStoreSearchDocument } from '@features/store/search'
 import { registerStoreWs, storeChannel } from '@features/store/ws'
 import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
@@ -130,6 +131,12 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         if (!isValkeyReady()) return
         void (async () => {
           try {
+            if (event.type === 'store:upsert') {
+              await upsertStoreSearchDocument(valkey, event.item)
+            }
+            if (event.type === 'store:delete') {
+              await removeStoreSearchDocument(valkey, event.id)
+            }
             await valkey.publish(storeChannel, payload)
           } catch (error) {
             logger.warn('Failed to publish store realtime event', error)
@@ -225,6 +232,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         valkey,
         isValkeyReady,
         validateSession: authFeature.validateSession,
+        allowAnonymous: true,
         checkWsOpenQuota,
         resolveWsClientIp,
         resolveWsHeaders,
@@ -260,7 +268,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     database: options.server?.database,
     rateLimiter: options.server?.rateLimiter,
     buildApp,
-    onStart: async () => {
+    onStart: async (context) => {
       if (runtime.runMigrations) {
         logger.info('RUN_MIGRATIONS=1: running database migrations and seed data')
         try {
@@ -272,6 +280,19 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         }
       } else {
         logger.info('RUN_MIGRATIONS not set; skipping migrations and seed step')
+      }
+
+      if (featureFlags.store) {
+        try {
+          await rebuildStoreSearchIndex({
+            db: context.database.db,
+            storeItemsTable: storeItems,
+            valkey: context.cache.client,
+            isValkeyReady: context.cache.isReady
+          })
+        } catch (error) {
+          logger.warn('Store search index rebuild failed', error)
+        }
       }
 
       if (featureFlags.store && storeRealtime && storeRealtimeHandler) {

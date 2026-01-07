@@ -30,7 +30,7 @@ https://prometheus.dev {
 			Cross-Origin-Opener-Policy "same-origin"
 			Cross-Origin-Embedder-Policy "require-corp"
 		}
-		reverse_proxy http://192.168.0.38:4173 {
+		reverse_proxy http://172.25.146.6:4173 {
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints
@@ -44,7 +44,7 @@ https://prometheus.dev {
 	}
 
 	handle {
-		reverse_proxy http://192.168.0.38:4173 {
+		reverse_proxy http://172.25.146.6:4173 {
 			lb_try_duration 5s
 			lb_try_interval 100ms
 			header_down -X-Early-Hints

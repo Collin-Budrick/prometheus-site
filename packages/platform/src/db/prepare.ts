@@ -1,10 +1,29 @@
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db } from './client'
 import { storeItems } from './schema'
 
-const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
+const resolveMigrationsFolder = () => {
+  const fromFile = resolve(dirname(fileURLToPath(import.meta.url)), '../../drizzle')
+  const candidates = [
+    resolve(process.cwd(), 'drizzle'),
+    resolve(process.cwd(), 'packages/platform/drizzle'),
+    resolve(process.cwd(), '../drizzle'),
+    resolve(process.cwd(), '../../drizzle'),
+    fromFile
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+
+  return fromFile
+}
+
+const migrationsFolder = resolveMigrationsFolder()
 
 export async function runMigrations() {
   await migrate(db, { migrationsFolder })

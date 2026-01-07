@@ -64,6 +64,12 @@
       "metaLine": "react dock",
       "title": "Server-only dock fragment.",
       "description": "MagicUI dock authored in React, compiled to a static fragment."
+    },
+    "fragment://page/store/stream@v1": {
+      "heading": "h2",
+      "metaLine": "store stream",
+      "title": "Realtime store feed.",
+      "description": "Postgres stays the source of truth while Valkey Search ranks results; updates stream in as items change."
     }
   },
   "lab": {
