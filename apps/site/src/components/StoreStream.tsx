@@ -86,7 +86,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
   const copy = fragmentCopy.value
-  const searchLabel = copy?.['Search'] ?? 'Search'
   const searchAriaLabel = copy?.['Search store items'] ?? 'Search store items'
   const searchPlaceholder = placeholder
     ? copy?.[placeholder] ?? placeholder
@@ -331,9 +330,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               onInput$={handleInput}
               aria-label={searchAriaLabel}
             />
-            <button type="submit" disabled={searchState.value === 'loading'}>
-              {searchLabel}
-            </button>
           </div>
           {query.value.trim() ? (
             <button class="store-stream-clear" type="button" onClick$={handleClear}>
@@ -366,13 +362,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
                   {idLabel} {item.id}
                 </div>
               </div>
-              <div class="store-stream-row-meta">
+              <div class="store-stream-row-meta store-stream-row-meta-secondary">
                 {typeof item.score === 'number' ? (
                   <span class="store-stream-score">
                     {scoreLabel} {item.score.toFixed(2)}
                   </span>
                 ) : null}
-                <span>{formatPrice(item.price)}</span>
+                <span class="store-stream-row-price">{formatPrice(item.price)}</span>
               </div>
             </div>
           ))

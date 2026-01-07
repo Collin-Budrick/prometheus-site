@@ -29,7 +29,7 @@ const storeFragmentCss = `
 .store-stream-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
   justify-content: space-between;
 }
@@ -37,23 +37,27 @@ const storeFragmentCss = `
 .store-stream-search {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   flex: 1;
   min-width: 240px;
   align-items: center;
 }
 
 .store-stream-field {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(135deg, rgb(var(--surface) / 0.9), rgb(var(--surface-soft) / 0.95)),
+    rgb(var(--surface));
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
   flex: 1;
   min-width: 220px;
+  transition: border-color 240ms ease, box-shadow 240ms ease, background 240ms ease;
 }
 
 .store-stream-field input {
@@ -61,43 +65,37 @@ const storeFragmentCss = `
   border: none;
   background: transparent;
   outline: none;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   color: rgb(var(--ink));
 }
 
 .store-stream-field input::placeholder {
   color: rgb(var(--muted-faint));
 }
-
-.store-stream-field button {
-  border: none;
-  background: rgb(var(--accent));
-  color: rgb(var(--accent-ink));
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
-  cursor: pointer;
-}
-
-.store-stream-field button:disabled {
-  opacity: 0.6;
-  cursor: default;
+.store-stream-field:focus-within {
+  border-color: rgb(var(--accent));
+  box-shadow:
+    0 20px 34px rgba(15, 23, 42, 0.2),
+    0 0 0 1px rgb(var(--accent) / 0.45);
 }
 
 .store-stream-clear {
   border: 1px solid rgb(var(--stroke));
   background: rgb(var(--surface));
   color: rgb(var(--muted));
-  padding: 8px 14px;
+  padding: 8px 16px;
   border-radius: 999px;
   font-size: 11px;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.3em;
   cursor: pointer;
+  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+}
+
+.store-stream-clear:hover {
+  border-color: rgb(var(--stroke-strong));
+  color: rgb(var(--ink));
 }
 
 .store-stream-status {
@@ -142,28 +140,53 @@ const storeFragmentCss = `
 .store-stream-panel {
   border-radius: 18px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
-  padding: 14px;
+  background:
+    radial-gradient(circle at 20% 0%, rgb(var(--accent) / 0.12), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgb(var(--signal) / 0.12), transparent 50%),
+    rgb(var(--surface));
+  padding: 20px;
   display: grid;
-  gap: 10px;
-  max-height: 360px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  align-content: start;
+  grid-auto-flow: dense;
+  max-height: 420px;
   overflow: auto;
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
 }
 
 .store-stream-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgb(var(--surface-soft));
+  --stagger: 0px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background:
+    linear-gradient(160deg, rgb(var(--surface-soft) / 0.9), rgb(var(--surface) / 0.9)),
+    rgb(var(--surface-soft));
   border: 1px solid rgb(var(--stroke));
+  box-shadow: 0 16px 26px rgba(15, 23, 42, 0.16);
+  transform: translateY(var(--stagger));
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  min-width: 0;
+}
+
+.store-stream-row:nth-child(odd) {
+  --stagger: 8px;
+}
+
+.store-stream-row:nth-child(3n) {
+  --stagger: 14px;
+}
+
+.store-stream-row:hover {
+  transform: translateY(calc(var(--stagger) - 4px));
+  border-color: rgb(var(--stroke-strong));
+  box-shadow: 0 22px 34px rgba(15, 23, 42, 0.22);
 }
 
 .store-stream-row-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: rgb(var(--ink));
 }
@@ -171,12 +194,23 @@ const storeFragmentCss = `
 .store-stream-row-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 11px;
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.25em;
+  letter-spacing: 0.22em;
   color: rgb(var(--muted));
+}
+
+.store-stream-row-meta-secondary {
+  justify-content: space-between;
+  color: rgb(var(--muted-soft));
+}
+
+.store-stream-row-price {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: rgb(var(--ink));
 }
 
 .store-stream-score {
@@ -288,6 +322,14 @@ const storeFragmentCss = `
   .store-stream-search {
     width: 100%;
   }
+
+  .store-stream-panel {
+    padding: 16px;
+  }
+
+  .store-stream-row {
+    --stagger: 0px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -302,7 +344,7 @@ const storeFragmentCss = `
 `
 
 const storeStream: FragmentDefinition = {
-  id: 'fragment://page/store/stream@v1',
+  id: 'fragment://page/store/stream@v2',
   tags: ['store', 'search', 'stream'],
   head: [],
   css: storeFragmentCss,
