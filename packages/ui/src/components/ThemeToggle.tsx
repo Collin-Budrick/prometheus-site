@@ -13,8 +13,13 @@ type ThemeToggleProps = {
   onToggle$?: PropFunction<(nextTheme: Theme) => void | Promise<void>>
 }
 
+type ViewTransitionHandle = {
+  ready?: Promise<void>
+  finished: Promise<void>
+}
+
 type DocumentWithViewTransition = Document & {
-  startViewTransition?: (callback: () => void) => { finished: Promise<void> }
+  startViewTransition?: (callback: () => void) => ViewTransitionHandle
 }
 
 export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, labels, onToggle$ }) => {
@@ -46,7 +51,6 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
   const toggleTheme = $(() => {
     if (typeof document === 'undefined') return
     const nextTheme: Theme = themeSignal.value === 'dark' ? 'light' : 'dark'
-    document.documentElement.dataset.themeDirection = nextTheme
     const applyNextTheme = () => {
       hasStoredPreference.value = true
       applyTheme(nextTheme)
@@ -54,27 +58,71 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
     }
 
     const doc = document as DocumentWithViewTransition
+    const root = document.documentElement
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
     const supportsTransition =
       typeof doc.startViewTransition === 'function' &&
       window.matchMedia('(prefers-reduced-motion: no-preference)').matches
 
+    const previousViewTransitionName = root.style.getPropertyValue('view-transition-name')
+    root.style.setProperty('view-transition-name', 'root')
+    const computedViewTransitionName =
+      typeof getComputedStyle === 'function' ? getComputedStyle(root).viewTransitionName : 'unknown'
+
+    console.info('[theme]', {
+      from: themeSignal.value,
+      to: nextTheme,
+      supportsViewTransition: typeof doc.startViewTransition === 'function',
+      supportsTransition,
+      prefersReducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      viewTransitionName: computedViewTransitionName
+    })
+
     if (!supportsTransition) {
       applyNextTheme()
-      delete document.documentElement.dataset.themeDirection
+      if (previousViewTransitionName) {
+        root.style.setProperty('view-transition-name', previousViewTransitionName)
+      } else {
+        root.style.removeProperty('view-transition-name')
+      }
       return
     }
+
+    root.dataset.themeDirection = nextTheme
+    root.getBoundingClientRect()
 
     try {
       const transition = doc.startViewTransition(() => {
         applyNextTheme()
       })
 
-      transition.finished.finally(() => {
-        delete document.documentElement.dataset.themeDirection
+      transition.ready?.then(() => {
+        const now = typeof performance !== 'undefined' ? performance.now() : 0
+        console.info('[theme] view transition ready', { ms: Math.round(now - startedAt) })
       })
-    } catch {
+
+      transition.finished.then(() => {
+        const now = typeof performance !== 'undefined' ? performance.now() : 0
+        console.info('[theme] view transition finished', { ms: Math.round(now - startedAt) })
+      })
+
+      transition.finished.finally(() => {
+        delete root.dataset.themeDirection
+        if (previousViewTransitionName) {
+          root.style.setProperty('view-transition-name', previousViewTransitionName)
+        } else {
+          root.style.removeProperty('view-transition-name')
+        }
+      })
+    } catch (error) {
+      console.warn('[theme] view transition failed', error)
       applyNextTheme()
-      delete document.documentElement.dataset.themeDirection
+      delete root.dataset.themeDirection
+      if (previousViewTransitionName) {
+        root.style.setProperty('view-transition-name', previousViewTransitionName)
+      } else {
+        root.style.removeProperty('view-transition-name')
+      }
     }
   })
 
