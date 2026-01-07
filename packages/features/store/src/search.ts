@@ -45,10 +45,6 @@ const isUnsupportedCommand = (error: unknown) => {
   return message.includes('unknown command') || message.includes('unsupported')
 }
 
-const isDialectParseError = (error: unknown) => {
-  const message = toErrorMessage(error).toLowerCase()
-  return message.includes('missing `=>`') || message.includes('missing =>') || message.includes('invalid filter format')
-}
 
 const isMissingTableError = (error: unknown) => {
   const candidates: Array<{ code?: string; message?: string }> = []
@@ -335,52 +331,6 @@ export const searchStoreIndex = async (
     return { total, hits }
   }
 
-  const runSearchWithDialects = async (
-    args: Array<string | Buffer>,
-    dialects: Array<string | null>
-  ): Promise<StoreSearchResult> => {
-    let lastError: unknown
-    for (const dialect of dialects) {
-      const withDialect = dialect ? [...args, 'DIALECT', dialect] : args
-      try {
-        return await runSearch(withDialect)
-      } catch (error) {
-        lastError = error
-        if (!isDialectParseError(error)) {
-          throw error
-        }
-      }
-    }
-
-    if (lastError && isDialectParseError(lastError)) {
-      console.warn('Store search query rejected by Valkey dialects', lastError)
-      return { total: 0, hits: [] }
-    }
-    throw lastError
-  }
-
-  const tagResult = await runSearchWithDialects(
-    [
-      'FT.SEARCH',
-      storeSearchIndex,
-      filter,
-      'NOCONTENT',
-      'LIMIT',
-      String(options.offset),
-      String(options.limit)
-    ],
-    [null, '1', '2']
-  )
-
-  if (tagResult.hits.length > 0 || filter === '*' || filter.includes('__no_match__')) {
-    return tagResult
-  }
-
-  const normalized = query.trim()
-  if (normalized.length < 3) {
-    return tagResult
-  }
-
   const k = Math.max(1, options.limit + options.offset)
   const queryVector = buildEmbedding(query)
   const q = `${filter}=>[KNN ${k} @${storeSearchVectorField} $query_vector]`
@@ -390,19 +340,23 @@ export const searchStoreIndex = async (
       'FT.SEARCH',
       storeSearchIndex,
       q,
-      'PARAMS',
-      '2',
-      'query_vector',
-      queryVector,
       'NOCONTENT',
       'LIMIT',
       String(options.offset),
       String(options.limit),
       'DIALECT',
-      '2'
+      '2',
+      'PARAMS',
+      '2',
+      'query_vector',
+      queryVector
     ])
   } catch (error) {
-    console.warn('Store search vector query failed', error)
-    return tagResult
+    const message = toErrorMessage(error).toLowerCase()
+    if (message.includes('missing `=>`') || message.includes('missing =>') || message.includes('invalid filter format')) {
+      console.warn('Store search query rejected by Valkey parser', error)
+      return { total: 0, hits: [] }
+    }
+    throw error
   }
 }
