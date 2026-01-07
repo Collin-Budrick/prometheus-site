@@ -42,17 +42,23 @@ export const createRateLimiter = (options: RateLimiterOptions = {}): RateLimiter
     nextCounterCleanupAt = now + cleanupIntervalMs
   }
 
+  const readMultiReply = (value: unknown) => (Array.isArray(value) ? value[1] : value)
+
   const getCounter = async (key: string, windowMs: number, now = Date.now()) => {
     cleanupExpiredCounters(now)
 
     if (cache?.isOpen) {
       try {
         const results = await cache.multi().incr(key).pTTL(key).exec()
-        const countRaw = Array.isArray(results) && Array.isArray(results[0]) ? results[0][1] : undefined
-        const ttlRaw = Array.isArray(results) && Array.isArray(results[1]) ? results[1][1] : undefined
+        const countRaw = readMultiReply(results?.[0])
+        const ttlRaw = readMultiReply(results?.[1])
 
         const count = Number(countRaw)
         let ttlMs = Number(ttlRaw)
+
+        if (!Number.isFinite(count)) {
+          throw new Error('Rate limiter returned invalid count')
+        }
 
         if (Number.isNaN(ttlMs) || ttlMs < 0) {
           ttlMs = windowMs

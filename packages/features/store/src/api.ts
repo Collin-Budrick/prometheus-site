@@ -62,18 +62,6 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     .get(
       '/store/items',
       async ({ query, request }) => {
-        const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/items', clientIp)
-
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
-        }
-
-        const earlyLimit = await options.checkEarlyLimit('/store/items', 10, 5000)
-        if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
-        }
-
         const limitValue = typeof query.limit === 'string' ? query.limit : '10'
         const cursorValue = typeof query.cursor === 'string' ? query.cursor : '0'
         const limitRaw = Number.parseInt(limitValue, 10)
@@ -101,6 +89,18 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             telemetry.cacheGetErrors += 1
             console.warn('Cache read failed; serving fresh data', { cacheKey, error })
           }
+        }
+
+        const clientIp = options.getClientIp(request)
+        const { allowed, retryAfter } = await options.checkRateLimit('/store/items', clientIp)
+
+        if (!allowed) {
+          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/items:${clientIp}`, 10, 5000)
+        if (!earlyLimit.allowed) {
+          return options.jsonError(429, 'Try again soon')
         }
 
         const itemsQuery = options.db.select().from(options.storeItemsTable)
@@ -142,18 +142,6 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     .get(
       '/store/search',
       async ({ query, request }) => {
-        const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/search', clientIp)
-
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
-        }
-
-        const earlyLimit = await options.checkEarlyLimit('/store/search', 10, 5000)
-        if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
-        }
-
         const queryValue = typeof query.q === 'string' ? query.q.trim() : ''
         const limitValue = typeof query.limit === 'string' ? query.limit : '10'
         const offsetValue = typeof query.offset === 'string' ? query.offset : '0'
@@ -171,6 +159,18 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             limit,
             offset
           }
+        }
+
+        const clientIp = options.getClientIp(request)
+        const { allowed, retryAfter } = await options.checkRateLimit('/store/search', clientIp)
+
+        if (!allowed) {
+          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/search:${clientIp}`, 10, 5000)
+        if (!earlyLimit.allowed) {
+          return options.jsonError(429, 'Try again soon')
         }
 
         if (!options.isValkeyReady()) {
