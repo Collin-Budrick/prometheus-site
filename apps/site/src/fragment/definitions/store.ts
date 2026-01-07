@@ -199,12 +199,103 @@ const storeFragmentCss = `
   font-size: 13px;
 }
 
+.store-create {
+  display: grid;
+  gap: 16px;
+}
+
+.store-create-form {
+  display: grid;
+  gap: 12px;
+}
+
+.store-create-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.store-create-input {
+  display: grid;
+  gap: 6px;
+}
+
+.store-create-input span {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgb(var(--muted));
+}
+
+.store-create-input input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--stroke));
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  font-size: 0.95rem;
+}
+
+.store-create-input input::placeholder {
+  color: rgb(var(--muted-faint));
+}
+
+.store-create-submit {
+  border: none;
+  background: rgb(var(--accent));
+  color: rgb(var(--accent-ink));
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  cursor: pointer;
+  min-height: 42px;
+}
+
+.store-create-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.store-create-helper {
+  margin: 0;
+  font-size: 12px;
+  color: rgb(var(--muted));
+}
+
+.store-create-status {
+  font-size: 12px;
+  color: rgb(var(--muted));
+}
+
+.store-create[data-state='success'] .store-create-status {
+  color: rgb(var(--signal));
+}
+
+.store-create[data-state='error'] .store-create-status {
+  color: rgb(var(--accent));
+}
+
 @media (max-width: 640px) {
   .store-stream-controls {
     align-items: stretch;
   }
 
   .store-stream-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .store-create-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .store-create-submit {
     width: 100%;
   }
 }
@@ -231,15 +322,37 @@ const storeStream: FragmentDefinition = {
     ])
 }
 
+const storeCreate: FragmentDefinition = {
+  id: 'fragment://page/store/create@v1',
+  tags: ['store', 'create'],
+  head: [],
+  css: storeFragmentCss,
+  ...baseMeta,
+  render: ({ t }) =>
+    h('store-create', {
+      'data-name-label': t('Item name'),
+      'data-price-label': t('Price'),
+      'data-submit-label': t('Add item'),
+      'data-name-placeholder': t('Neural render pack'),
+      'data-price-placeholder': t('19.00'),
+      'data-helper': t('Validated by drizzle-zod and streamed over realtime updates.')
+    })
+}
+
 export const storeFragments: FragmentPlanEntry[] = [
   {
     id: storeStream.id,
     critical: true,
     layout: { column: 'span 12' }
+  },
+  {
+    id: storeCreate.id,
+    critical: true,
+    layout: { column: 'span 12' }
   }
 ]
 
-registerFragmentDefinitions([storeStream])
+registerFragmentDefinitions([storeStream, storeCreate])
 
 registerFragmentPlanOverride((plan) => {
   if (plan.path !== '/store') return plan

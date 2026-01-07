@@ -70,6 +70,12 @@
       "metaLine": "store stream",
       "title": "Realtime store feed.",
       "description": "Postgres stays the source of truth while Valkey Search ranks results; updates stream in as items change."
+    },
+    "fragment://page/store/create@v1": {
+      "heading": "h2",
+      "metaLine": "store writer",
+      "title": "Create a new store item.",
+      "description": "Write to Postgres, validate with drizzle-zod, and stream updates into the feed."
     }
   },
   "lab": {
@@ -215,5 +221,16 @@
       "reset": "Reset timer"
     }
   },
-  "fragments": {}
+  "fragments": {
+    "Postgres truth": "Postgres truth",
+    "Valkey search": "Valkey search",
+    "Realtime stream": "Realtime stream",
+    "Search the store...": "Search the store...",
+    "Item name": "Item name",
+    "Price": "Price",
+    "Add item": "Add item",
+    "Neural render pack": "Neural render pack",
+    "19.00": "19.00",
+    "Validated by drizzle-zod and streamed over realtime updates.": "Validated by drizzle-zod and streamed over realtime updates."
+  }
 }

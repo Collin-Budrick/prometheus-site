@@ -70,6 +70,12 @@
       "metaLine": "스토어 스트림",
       "title": "실시간 스토어 피드.",
       "description": "Postgres가 사실의 원본을 유지하고 Valkey Search가 결과를 랭킹하며 아이템 업데이트가 실시간으로 스트리밍됩니다."
+    },
+    "fragment://page/store/create@v1": {
+      "heading": "h2",
+      "metaLine": "스토어 추가",
+      "title": "새 스토어 아이템 추가.",
+      "description": "Postgres에 기록하고 drizzle-zod로 검증한 뒤 업데이트를 실시간으로 스트리밍합니다."
     }
   },
   "lab": {
@@ -255,6 +261,16 @@
     "react dock": "React 도크",
     "Server-only dock fragment.": "서버 전용 도크 프래그먼트.",
     "MagicUI dock authored in React, compiled to a static fragment.": "React로 작성된 MagicUI 도크를 정적 프래그먼트로 컴파일합니다.",
+    "Postgres truth": "Postgres 진실",
+    "Valkey search": "Valkey 검색",
+    "Realtime stream": "실시간 스트림",
+    "Search the store...": "스토어 검색...",
+    "Item name": "아이템 이름",
+    "Price": "가격",
+    "Add item": "아이템 추가",
+    "Neural render pack": "뉴럴 렌더 팩",
+    "19.00": "19.00",
+    "Validated by drizzle-zod and streamed over realtime updates.": "drizzle-zod로 검증하고 업데이트를 실시간으로 스트리밍합니다.",
     "Dock shortcuts": "도크 바로가기",
     "fragment missing": "프래그먼트 없음",
     "Fragment missing": "프래그먼트 없음",

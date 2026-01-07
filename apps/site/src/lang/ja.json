@@ -70,6 +70,12 @@
       "metaLine": "ストアストリーム",
       "title": "リアルタイムのストアフィード。",
       "description": "Postgresは正の情報源のまま、Valkey Searchが結果をランク付けし、アイテムの更新がリアルタイムで流れ込みます。"
+    },
+    "fragment://page/store/create@v1": {
+      "heading": "h2",
+      "metaLine": "ストア追加",
+      "title": "新しいストアアイテムを追加。",
+      "description": "Postgresへ書き込み、drizzle-zodで検証し、更新をリアルタイムにストリームします。"
     }
   },
   "lab": {
@@ -255,6 +261,16 @@
     "react dock": "Reactドック",
     "Server-only dock fragment.": "サーバー専用ドックフラグメント。",
     "MagicUI dock authored in React, compiled to a static fragment.": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。",
+    "Postgres truth": "Postgresの真実",
+    "Valkey search": "Valkey検索",
+    "Realtime stream": "リアルタイムストリーム",
+    "Search the store...": "ストアを検索...",
+    "Item name": "アイテム名",
+    "Price": "価格",
+    "Add item": "アイテム追加",
+    "Neural render pack": "ニューラルレンダーパック",
+    "19.00": "19.00",
+    "Validated by drizzle-zod and streamed over realtime updates.": "drizzle-zodで検証し、更新をリアルタイムにストリームします。",
     "Dock shortcuts": "ドックショートカット",
     "fragment missing": "フラグメントが見つかりません",
     "Fragment missing": "フラグメントが見つかりません",

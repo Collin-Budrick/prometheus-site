@@ -6,6 +6,7 @@ import { ReactBinaryDemo } from '../../components/ReactBinaryDemo'
 import { WasmRendererDemo } from '../../components/WasmRendererDemo'
 import { PlannerDemo } from '../../components/PlannerDemo'
 import { StoreStream } from '../../components/StoreStream'
+import { StoreCreateForm } from '../../components/StoreCreateForm'
 
 type NodeProps = {
   node: RenderNode
@@ -73,6 +74,20 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         class={node.attrs?.class}
         limit={node.attrs?.['data-limit']}
         placeholder={node.attrs?.['data-placeholder']}
+      />
+    )
+  }
+
+  if (node.tag === 'store-create') {
+    return (
+      <StoreCreateForm
+        class={node.attrs?.class}
+        nameLabel={node.attrs?.['data-name-label']}
+        priceLabel={node.attrs?.['data-price-label']}
+        submitLabel={node.attrs?.['data-submit-label']}
+        helper={node.attrs?.['data-helper']}
+        namePlaceholder={node.attrs?.['data-name-placeholder']}
+        pricePlaceholder={node.attrs?.['data-price-placeholder']}
       />
     )
   }

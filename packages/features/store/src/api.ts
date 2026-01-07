@@ -2,7 +2,9 @@ import { Elysia, t } from 'elysia'
 import { gt, inArray } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
-import { buildStoreItemsCacheKey } from './cache'
+import { createInsertSchema } from 'drizzle-zod'
+import { z } from 'zod'
+import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache'
 import type { StoreItemsTable } from './realtime'
 import { ensureStoreSearchIndex, searchStoreIndex } from './search'
 
@@ -57,6 +59,11 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     cacheGetErrors: 0,
     cacheSetErrors: 0
   }
+
+  const storeItemInsertSchema = createInsertSchema(options.storeItemsTable, {
+    name: (schema) => schema.trim().min(2).max(120),
+    price: () => z.coerce.number().min(0).max(100000)
+  }).pick({ name: true, price: true })
 
   return new Elysia()
     .get(
@@ -137,6 +144,69 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           limit: t.Optional(t.String()),
           cursor: t.Optional(t.String())
         })
+      }
+    )
+    .post(
+      '/store/items',
+      async ({ body, request }) => {
+        const clientIp = options.getClientIp(request)
+        const { allowed, retryAfter } = await options.checkRateLimit('/store/items:write', clientIp)
+
+        if (!allowed) {
+          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/items:write:${clientIp}`, 6, 10000)
+        if (!earlyLimit.allowed) {
+          return options.jsonError(429, 'Try again soon')
+        }
+
+        const parsed = storeItemInsertSchema.safeParse(body)
+        if (!parsed.success) {
+          return options.jsonError(400, 'Invalid store item payload', {
+            issues: parsed.error.issues
+          })
+        }
+
+        const normalizedName = parsed.data.name.trim()
+        const normalizedPrice = parsed.data.price.toFixed(2)
+
+        let created
+        try {
+          const [row] = await options.db
+            .insert(options.storeItemsTable)
+            .values({ name: normalizedName, price: normalizedPrice })
+            .returning()
+          created = row
+        } catch (error) {
+          console.error('Failed to create store item', error)
+          return options.jsonError(500, 'Unable to create item')
+        }
+
+        if (options.isValkeyReady()) {
+          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+        }
+
+        if (!created) {
+          return options.jsonError(500, 'Unable to create item')
+        }
+
+        return new Response(
+          JSON.stringify({
+            item: {
+              id: created.id,
+              name: created.name,
+              price: parsePrice(created.price)
+            }
+          }),
+          {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        )
+      },
+      {
+        body: t.Any()
       }
     )
     .get(
