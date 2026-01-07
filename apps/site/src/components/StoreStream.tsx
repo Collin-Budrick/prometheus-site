@@ -85,7 +85,18 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
-  const t = (value: string) => fragmentCopy.value?.[value] ?? value
+  const copy = fragmentCopy.value
+  const searchLabel = copy?.['Search'] ?? 'Search'
+  const searchAriaLabel = copy?.['Search store items'] ?? 'Search store items'
+  const searchPlaceholder = placeholder
+    ? copy?.[placeholder] ?? placeholder
+    : copy?.['Search the store...'] ?? 'Search the store...'
+  const valkeyLabel = copy?.['Valkey search'] ?? 'Valkey search'
+  const postgresLabel = copy?.['Postgres stream'] ?? 'Postgres stream'
+  const resultsLabel = copy?.['results'] ?? 'results'
+  const itemsLabel = copy?.['items'] ?? 'items'
+  const scoreLabel = copy?.['Score'] ?? 'Score'
+  const idLabel = copy?.['ID'] ?? 'ID'
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -93,22 +104,26 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   })
 
   const statusLabel = useComputed$(() => {
-    if (streamState.value === 'live') return t('Live stream')
-    if (streamState.value === 'connecting') return t('Connecting')
-    if (streamState.value === 'offline') return t('Offline')
-    if (streamState.value === 'error') return t(streamError.value ?? 'Stream error')
-    return t('Idle')
+    const copy = fragmentCopy.value
+    const resolve = (value: string) => copy?.[value] ?? value
+    if (streamState.value === 'live') return resolve('Live stream')
+    if (streamState.value === 'connecting') return resolve('Connecting')
+    if (streamState.value === 'offline') return resolve('Offline')
+    if (streamState.value === 'error') return resolve(streamError.value ?? 'Stream error')
+    return resolve('Idle')
   })
 
   const panelMessage = useComputed$(() => {
+    const copy = fragmentCopy.value
+    const resolve = (value: string) => copy?.[value] ?? value
     if (searchState.value === 'loading' && items.value.length === 0) {
-      return query.value.trim() ? t('Searching the index...') : t('Loading items...')
+      return query.value.trim() ? resolve('Searching the index...') : resolve('Loading items...')
     }
     if (searchState.value === 'error' && items.value.length === 0) {
-      return searchError.value ?? t('Search unavailable')
+      return searchError.value ?? resolve('Search unavailable')
     }
     if (items.value.length === 0) {
-      return query.value.trim() ? t('No matches yet.') : t('No items yet.')
+      return query.value.trim() ? resolve('No matches yet.') : resolve('No items yet.')
     }
     return null
   })
@@ -131,6 +146,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       let active = true
       let reconnectTimer: number | null = null
 
@@ -201,7 +217,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             return
           }
           if (type === 'error') {
-            const errorMessage = typeof record.error === 'string' ? record.error : t('Stream error')
+            const errorMessage = typeof record.error === 'string' ? record.error : resolve('Stream error')
             streamState.value = 'error'
             streamError.value = errorMessage
             const retryAfter = Number(record.retryAfter)
@@ -233,7 +249,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
         ws.addEventListener('error', () => {
           streamState.value = 'error'
-          streamError.value = streamError.value ?? t('Stream error')
+          streamError.value = streamError.value ?? resolve('Stream error')
         })
       }
 
@@ -253,6 +269,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       const activeQuery = ctx.track(() => query.value).trim()
       ctx.track(() => refreshTick.value)
       const controller = new AbortController()
@@ -290,7 +307,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         } catch (error) {
           if ((error as Error)?.name === 'AbortError') return
           searchState.value = 'error'
-          searchError.value = error instanceof Error ? error.message : t('Search unavailable')
+          searchError.value = error instanceof Error ? error.message : resolve('Search unavailable')
         }
       }, delay)
 
@@ -309,13 +326,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           <div class="store-stream-field">
             <input
               type="search"
-              placeholder={t(placeholder ?? 'Search the store...')}
+              placeholder={searchPlaceholder}
               value={query.value}
               onInput$={handleInput}
-              aria-label={t('Search store items')}
+              aria-label={searchAriaLabel}
             />
             <button type="submit" disabled={searchState.value === 'loading'}>
-              {t('Search')}
+              {searchLabel}
             </button>
           </div>
           {query.value.trim() ? (
@@ -330,11 +347,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         </div>
       </div>
       <div class="store-stream-meta">
-        <span>{query.value.trim() ? t('Valkey search') : t('Postgres stream')}</span>
+        <span>{query.value.trim() ? valkeyLabel : postgresLabel}</span>
         <span>
           {query.value.trim()
-            ? `${searchMeta.value?.total ?? items.value.length} ${t('results')}`
-            : `${items.value.length} ${t('items')}`}
+            ? `${searchMeta.value?.total ?? items.value.length} ${resultsLabel}`
+            : `${items.value.length} ${itemsLabel}`}
         </span>
       </div>
       <div class="store-stream-panel" role="list" aria-live="polite">
@@ -346,13 +363,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               <div>
                 <div class="store-stream-row-title">{item.name}</div>
                 <div class="store-stream-row-meta">
-                  {t('ID')} {item.id}
+                  {idLabel} {item.id}
                 </div>
               </div>
               <div class="store-stream-row-meta">
                 {typeof item.score === 'number' ? (
                   <span class="store-stream-score">
-                    {t('Score')} {item.score.toFixed(2)}
+                    {scoreLabel} {item.score.toFixed(2)}
                   </span>
                 ) : null}
                 <span>{formatPrice(item.price)}</span>
