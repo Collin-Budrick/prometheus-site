@@ -29,16 +29,16 @@
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "optionalDependencies": {
-    "@oxfmt/win32-arm64": "^0.22.0",
+    "@oxfmt/win32-arm64": "^0.23.0",
     "lefthook-windows-arm64": "2.0.13"
   },
   "devDependencies": {
     "@oxlint-tsgolint/linux-arm64": "^0.10.1",
     "@oxlint-tsgolint/win32-arm64": "^0.10.1",
-    "@oxlint/win32-arm64": "^1.37.0",
+    "@oxlint/win32-arm64": "^1.38.0",
     "@playwright/test": "^1.58.0-alpha-2026-01-06",
     "lefthook": "^2.0.13",
-    "oxlint": "1.37.0",
+    "oxlint": "1.38.0",
     "oxlint-tsgolint": "^0.10.1"
   }
 }

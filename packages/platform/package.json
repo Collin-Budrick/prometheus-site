@@ -23,26 +23,26 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "^1.5.0-beta.2",
-    "@better-auth/passkey": "^1.5.0-beta.2",
+    "@prometheus/core": "workspace:*",
+    "@prometheus/features-auth": "workspace:*",
+    "@prometheus/features-messaging": "workspace:*",
+    "@prometheus/features-store": "workspace:*",
     "@valkey/client": "1.0.0",
-    "better-auth": "^1.5.0-beta.2",
-    "drizzle-orm": "1.0.0-beta.8-dbc3565",
-    "drizzle-zod": "1.0.0-beta.8-dbc3565",
+    "drizzle-orm": "1.0.0-beta.9-e89174b",
+    "drizzle-zod": "1.0.0-beta.9-e89174b",
     "elysia": "1.4.21",
-    "postgres": "3.4.7",
+    "postgres": "3.4.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
-    "undici": "7.16.0",
     "zod": "4.4.0-canary.20251231T230035"
   },
   "devDependencies": {
     "@types/node": "25.0.3",
     "@types/react": "^19.2.7",
-    "bun-types": "1.3.6-canary.20260104T140537",
-    "drizzle-kit": "1.0.0-beta.8-dbc3565",
-    "oxfmt": "0.21.0",
-    "oxlint": "1.36.0",
-    "typescript": "6.0.0-dev.20260104"
+    "bun-types": "1.3.6-canary.20260106T140718",
+    "drizzle-kit": "1.0.0-beta.9-e89174b",
+    "oxfmt": "0.23.0",
+    "oxlint": "1.38.0",
+    "typescript": "6.0.0-dev.20260106"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "^1.36.0"
