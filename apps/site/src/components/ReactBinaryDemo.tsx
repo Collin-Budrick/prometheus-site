@@ -38,31 +38,35 @@ export const ReactBinaryDemo = component$(() => {
       binaryChunks.value = binaryChunks.value.map((chunk) => randomBits(chunk.length))
     }
 
-    let interval: number | null = null
+    let timeout: number | null = null
 
     const clear = () => {
-      if (interval !== null) {
-        window.clearInterval(interval)
-        interval = null
+      if (timeout !== null) {
+        window.clearTimeout(timeout)
+        timeout = null
       }
     }
 
-    const start = () => {
-      if (interval !== null) return
+    const schedule = () => {
+      if (timeout !== null) return
       if (document.visibilityState !== 'visible') return
-      update()
-      interval = window.setInterval(update, 700)
+      timeout = window.setTimeout(() => {
+        timeout = null
+        update()
+        schedule()
+      }, 700)
     }
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        start()
+        schedule()
       } else {
         clear()
       }
     }
 
-    start()
+    update()
+    schedule()
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     ctx.cleanup(() => {

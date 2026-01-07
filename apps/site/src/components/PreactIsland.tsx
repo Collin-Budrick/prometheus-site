@@ -15,7 +15,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
     let dispose: (() => void) | null = null
 
     const mount = async () => {
-      const [{ h, render }, { useState, useEffect }] = await Promise.all([
+      const [{ h, render }, { useState, useEffect, useRef }] = await Promise.all([
         import('preact'),
         import('preact/hooks')
       ])
@@ -44,12 +44,48 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
         const totalSeconds = 60
         const [remaining, setRemaining] = useState(totalSeconds)
         const [resetKey, setResetKey] = useState(0)
+        const timeoutRef = useRef<number | null>(null)
+        const remainingRef = useRef(remaining)
 
-        useEffect(() => {
-          const interval = window.setInterval(() => {
+        const clearTick = () => {
+          if (timeoutRef.current !== null) {
+            window.clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
+          }
+        }
+
+        const scheduleTick = () => {
+          if (timeoutRef.current !== null) return
+          if (document.visibilityState !== 'visible') return
+          if (remainingRef.current <= 0) return
+          timeoutRef.current = window.setTimeout(() => {
+            timeoutRef.current = null
             setRemaining((value: number) => (value > 0 ? value - 1 : 0))
           }, 1000)
-          return () => window.clearInterval(interval)
+        }
+
+        useEffect(() => {
+          remainingRef.current = remaining
+          if (remaining <= 0) {
+            clearTick()
+            return
+          }
+          scheduleTick()
+        }, [remaining])
+
+        useEffect(() => {
+          const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+              scheduleTick()
+            } else {
+              clearTick()
+            }
+          }
+          document.addEventListener('visibilitychange', handleVisibilityChange)
+          return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+            clearTick()
+          }
         }, [])
 
         const handleReset = () => {
