@@ -132,7 +132,9 @@
     }
 
     :root[data-theme-direction='dark']::view-transition-new(root) {
-      animation: wipe-down var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease));
+      animation: wipe-down var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease)) both;
+      -webkit-mask-position: 0 100%;
+      mask-position: 0 100%;
       -webkit-mask-image: linear-gradient(
         to bottom,
         rgba(0, 0, 0, 0) 0%,
@@ -152,7 +154,9 @@
     }
 
     :root[data-theme-direction='light']::view-transition-new(root) {
-      animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease));
+      animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease)) both;
+      -webkit-mask-position: 0 0%;
+      mask-position: 0 0%;
       -webkit-mask-image: linear-gradient(
         to top,
         rgba(0, 0, 0, 0) 0%,

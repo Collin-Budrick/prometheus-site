@@ -23,55 +23,31 @@ const shouldIgnoreTarget = (apiBase: string) => {
       if (path === window.location.pathname && target.search === window.location.search) return true
 
       return false
-    } catch (error) {
-      console.warn('[prefetch] Ignoring invalid navigation target', { href, error })
+    } catch {
       return true
     }
   }
 }
 
-export const initQuicklinkPrefetch = async (config: { apiBase: string }, log = false) => {
+export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
   if (!hasFragmentLinkAnchors()) {
-    if (log) console.info('[prefetch] Skipping Quicklink initialization (no fragment links)')
     return () => {}
   }
 
   const apiBase = config.apiBase
   const { listen } = await import('quicklink')
 
-  const seen = new Set<string>()
-
   const stopListening = listen({
     el: document.body,
     origins: [window.location.hostname],
     ignores: [shouldIgnoreTarget(apiBase)],
     hrefFn: (anchor: HTMLAnchorElement) => {
-      const href = anchor.href
-      if (log && !seen.has(href)) {
-        seen.add(href)
-        const path = (() => {
-          try {
-            return new URL(href).pathname
-          } catch {
-            return href
-          }
-        })()
-
-        console.info('[prefetch] Queued fragment link', { href, path })
-      }
-      return href
+      return anchor.href
     },
-    onError: (error: unknown) => {
-      if (log) console.warn('[prefetch] Quicklink prefetch error', error)
-    },
+    onError: () => {},
     priority: false,
     timeout: 2000
   })
-
-  if (log) {
-    const hasSpeculationRules = Boolean(document.querySelector('script[type="speculationrules"]'))
-    console.info('[prefetch] Quicklink initialized', { apiBase: apiBase || 'unset', hasSpeculationRules })
-  }
 
   return stopListening
 }

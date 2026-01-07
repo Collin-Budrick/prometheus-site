@@ -59,24 +59,12 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
 
     const doc = document as DocumentWithViewTransition
     const root = document.documentElement
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
     const supportsTransition =
       typeof doc.startViewTransition === 'function' &&
       window.matchMedia('(prefers-reduced-motion: no-preference)').matches
 
     const previousViewTransitionName = root.style.getPropertyValue('view-transition-name')
     root.style.setProperty('view-transition-name', 'root')
-    const computedViewTransitionName =
-      typeof getComputedStyle === 'function' ? getComputedStyle(root).viewTransitionName : 'unknown'
-
-    console.info('[theme]', {
-      from: themeSignal.value,
-      to: nextTheme,
-      supportsViewTransition: typeof doc.startViewTransition === 'function',
-      supportsTransition,
-      prefersReducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-      viewTransitionName: computedViewTransitionName
-    })
 
     if (!supportsTransition) {
       applyNextTheme()
@@ -96,16 +84,6 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
         applyNextTheme()
       })
 
-      transition.ready?.then(() => {
-        const now = typeof performance !== 'undefined' ? performance.now() : 0
-        console.info('[theme] view transition ready', { ms: Math.round(now - startedAt) })
-      })
-
-      transition.finished.then(() => {
-        const now = typeof performance !== 'undefined' ? performance.now() : 0
-        console.info('[theme] view transition finished', { ms: Math.round(now - startedAt) })
-      })
-
       transition.finished.finally(() => {
         delete root.dataset.themeDirection
         if (previousViewTransitionName) {
@@ -114,8 +92,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
           root.style.removeProperty('view-transition-name')
         }
       })
-    } catch (error) {
-      console.warn('[theme] view transition failed', error)
+    } catch {
       applyNextTheme()
       delete root.dataset.themeDirection
       if (previousViewTransitionName) {

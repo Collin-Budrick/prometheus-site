@@ -377,17 +377,9 @@ export const createFragmentClient = (
     metrics: StreamMetrics,
     status: 'ok' | 'aborted' | 'error'
   ) => {
-    if (typeof performance === 'undefined' || typeof console === 'undefined') return
-    const total = Math.round(performance.now() - metrics.startedAt)
-    const ttfb = metrics.firstFrameAt ? Math.round(metrics.firstFrameAt - metrics.startedAt) : null
-    const summary: Record<string, number | string> = {
-      mode,
-      frames: metrics.frames,
-      totalMs: total,
-      status
-    }
-    if (ttfb !== null) summary.ttfbMs = ttfb
-    console.info('[fragment-stream][metrics]', summary)
+    void mode
+    void metrics
+    void status
   }
 
   const readFragmentStream = async (

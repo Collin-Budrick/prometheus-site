@@ -164,7 +164,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
       const startPrefetch = () => {
         if (cancelled) return
         if (!hasFragmentLinks()) return
-        initQuicklinkPrefetch({ apiBase: config.apiBase }, true)
+        initQuicklinkPrefetch({ apiBase: config.apiBase })
           .then((stop) => {
             if (cancelled) {
               stop?.()
@@ -172,7 +172,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
             }
             stopPrefetch = stop
           })
-          .catch((error) => console.warn('[prefetch] Quicklink initialization failed', error))
+          .catch(() => {})
       }
 
       const stopIdle = scheduleIdleTask(startPrefetch, 800)
