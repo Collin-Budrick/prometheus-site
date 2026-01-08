@@ -55,6 +55,17 @@ const parsePrice = (value: unknown) => {
   return 0
 }
 
+const parseQuantity = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+  }
+  return 0
+}
+
 export const createStoreRoutes = <StoreItem extends { id: number } = { id: number }>(
   options: StoreRouteOptions
 ) => {
@@ -67,8 +78,9 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
   const storeItemInsertSchema = createInsertSchema(options.storeItemsTable, {
     name: (schema) => schema.trim().min(2).max(120),
-    price: () => z.coerce.number().min(0).max(100000)
-  }).pick({ name: true, price: true })
+    price: () => z.coerce.number().min(0).max(100000),
+    quantity: () => z.coerce.number().int().min(0).max(100000)
+  }).pick({ name: true, price: true, quantity: true })
 
   return new Elysia()
     .get(
@@ -175,12 +187,13 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         const normalizedName = parsed.data.name.trim()
         const normalizedPrice = parsed.data.price.toFixed(2)
+        const normalizedQuantity = parsed.data.quantity
 
         let created
         try {
           const [row] = await options.db
             .insert(options.storeItemsTable)
-            .values({ name: normalizedName, price: normalizedPrice })
+            .values({ name: normalizedName, price: normalizedPrice, quantity: normalizedQuantity })
             .returning()
           created = row
         } catch (error) {
@@ -197,7 +210,8 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
               await upsertStoreSearchDocument(options.valkey, {
                 id: created.id,
                 name: created.name,
-                price: parsePrice(created.price)
+                price: parsePrice(created.price),
+                quantity: parseQuantity(created.quantity)
               })
             } catch (error) {
               console.warn('Store search update failed after create', error)
@@ -214,7 +228,8 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             item: {
               id: created.id,
               name: created.name,
-              price: parsePrice(created.price)
+              price: parsePrice(created.price),
+              quantity: parseQuantity(created.quantity)
             }
           }),
           {
@@ -370,10 +385,14 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
               id: row.id,
               name: row.name,
               price: parsePrice(row.price),
+              quantity: parseQuantity(row.quantity),
               score: hit.score
             }
           })
-          .filter((item): item is { id: number; name: string; price: number; score: number } => item !== null)
+          .filter(
+            (item): item is { id: number; name: string; price: number; quantity: number; score?: number } =>
+              item !== null
+          )
 
         const elapsed = performance.now() - start
         void options.recordLatencySample('store:search', elapsed)

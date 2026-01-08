@@ -6,11 +6,11 @@ async function seed() {
   await db.delete(storeItems)
 
   await db.insert(storeItems).values([
-    { name: 'Photon Drive', price: '19.99' },
-    { name: 'Nebula Hoodie', price: '59.00' },
-    { name: 'Latency Patch', price: '9.00' },
-    { name: 'Edge Worker Cap', price: '29.50' },
-    { name: 'Valkey Sticker Pack', price: '6.50' }
+    { name: 'Photon Drive', price: '19.99', quantity: 18 },
+    { name: 'Nebula Hoodie', price: '59.00', quantity: 6 },
+    { name: 'Latency Patch', price: '9.00', quantity: 42 },
+    { name: 'Edge Worker Cap', price: '29.50', quantity: 12 },
+    { name: 'Valkey Sticker Pack', price: '6.50', quantity: 55 }
   ])
 
   await db.insert(chatMessages).values([

@@ -4,12 +4,13 @@ import { createSelectSchema } from 'drizzle-zod'
 import type { DatabaseClient } from '@platform/db'
 import { z } from 'zod'
 
-type StoreItemRowSnapshot = { id: number; name: string; price: unknown }
+type StoreItemRowSnapshot = { id: number; name: string; price: unknown; quantity: unknown }
 
 export type StoreItemsTable = AnyPgTable & {
   id: AnyPgColumn
   name: AnyPgColumn
   price: AnyPgColumn
+  quantity: AnyPgColumn
   $inferSelect: StoreItemRowSnapshot
 }
 
@@ -17,6 +18,7 @@ export type StoreItemPayload = {
   id: StoreItemRowSnapshot['id']
   name: StoreItemRowSnapshot['name']
   price: number
+  quantity: number
 }
 
 export type StoreRealtimeEvent =
@@ -42,10 +44,22 @@ const parsePrice = (value: unknown) => {
   return 0
 }
 
+const parseQuantity = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+  }
+  return 0
+}
+
 const normalizeStoreItem = (row: StoreItemRowSnapshot): StoreItemPayload => ({
   id: row.id,
   name: row.name,
-  price: parsePrice(row.price)
+  price: parsePrice(row.price),
+  quantity: parseQuantity(row.quantity)
 })
 
 export const createStoreRealtime = (options: StoreRealtimeOptions) => {
@@ -60,7 +74,8 @@ export const createStoreRealtime = (options: StoreRealtimeOptions) => {
   const storeItemSchema = createSelectSchema(options.storeItemsTable).pick({
     id: true,
     name: true,
-    price: true
+    price: true,
+    quantity: true
   })
 
   let listener: Awaited<ReturnType<typeof options.pgClient.listen>> | null = null

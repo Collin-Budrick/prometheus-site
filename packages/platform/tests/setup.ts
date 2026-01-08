@@ -10,6 +10,7 @@ const defaultStoreItems = Array.from({ length: 15 }, (_, index) => ({
   id: index + 1,
   name: `Item ${index + 1}`,
   price: Number(((index + 1) * 3).toFixed(2)),
+  quantity: index + 1,
   createdAt: new Date(2024, 0, index + 1)
 }))
 

@@ -17,6 +17,7 @@ type StoreItem = {
   id: number
   name: string
   price: number
+  quantity: number
   score?: number
 }
 
@@ -38,6 +39,17 @@ const parseScore = (value: unknown) => {
   return undefined
 }
 
+const parseQuantity = (value: unknown) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+  }
+  return 0
+}
+
 const normalizeItem = (value: unknown): StoreItem | null => {
   if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
@@ -46,7 +58,8 @@ const normalizeItem = (value: unknown): StoreItem | null => {
   const name = typeof record.name === 'string' && record.name.trim() !== '' ? record.name : `Item ${id}`
   const price = parsePrice(record.price)
   const score = parseScore(record.score)
-  return { id, name, price, score }
+  const quantity = parseQuantity(record.quantity)
+  return { id, name, price, quantity, score }
 }
 
 const clampLimit = (value: string | undefined) => {
@@ -102,6 +115,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const itemsLabel = copy?.['items'] ?? 'items'
   const scoreLabel = copy?.['Score'] ?? 'Score'
   const idLabel = copy?.['ID'] ?? 'ID'
+  const qtyLabel = copy?.['Qty'] ?? 'Qty'
   const deleteLabel = copy?.['Delete item'] ?? 'Delete item'
   const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
 
@@ -500,7 +514,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               <div>
                 <div class="store-stream-row-title">{item.name}</div>
                 <div class="store-stream-row-meta">
-                  {idLabel} {item.id}
+                  <span>
+                    {idLabel} {item.id}
+                  </span>
+                  <span>
+                    {qtyLabel} {item.quantity}
+                  </span>
                 </div>
               </div>
               <div class="store-stream-row-meta store-stream-row-meta-secondary">

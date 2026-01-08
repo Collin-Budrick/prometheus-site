@@ -7,10 +7,12 @@ type StoreCreateFormProps = {
   class?: string
   nameLabel?: string
   priceLabel?: string
+  quantityLabel?: string
   submitLabel?: string
   helper?: string
   namePlaceholder?: string
   pricePlaceholder?: string
+  quantityPlaceholder?: string
 }
 
 type CreateState = 'idle' | 'saving' | 'success' | 'error'
@@ -28,10 +30,21 @@ const normalizeLabel = (value: string | undefined, fallback: string) => {
 }
 
 export const StoreCreateForm = component$<StoreCreateFormProps>(
-  ({ class: className, nameLabel, priceLabel, submitLabel, helper, namePlaceholder, pricePlaceholder }) => {
+  ({
+    class: className,
+    nameLabel,
+    priceLabel,
+    quantityLabel,
+    submitLabel,
+    helper,
+    namePlaceholder,
+    pricePlaceholder,
+    quantityPlaceholder
+  }) => {
     const langSignal = useSharedLangSignal()
     const name = useSignal('')
     const price = useSignal('')
+    const quantity = useSignal('1')
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
 
@@ -49,7 +62,9 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       const trimmedName = name.value.trim()
       if (trimmedName.length < 2) return false
       const parsedPrice = Number.parseFloat(price.value)
-      return Number.isFinite(parsedPrice) && parsedPrice >= 0
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) return false
+      const parsedQuantity = Number.parseFloat(quantity.value)
+      return Number.isFinite(parsedQuantity) && parsedQuantity >= 0 && Number.isInteger(parsedQuantity)
     })
 
     const handleSubmit = $(async () => {
@@ -62,6 +77,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
 
       const trimmedName = name.value.trim()
       const parsedPrice = Number.parseFloat(price.value)
+      const parsedQuantity = Number.parseFloat(quantity.value)
 
       if (trimmedName.length < 2) {
         state.value = 'error'
@@ -75,6 +91,12 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         return
       }
 
+      if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0 || !Number.isInteger(parsedQuantity)) {
+        state.value = 'error'
+        statusMessage.value = resolveLocal('Quantity must be a non-negative integer.')
+        return
+      }
+
       state.value = 'saving'
       statusMessage.value = null
 
@@ -83,7 +105,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ name: trimmedName, price: parsedPrice })
+          body: JSON.stringify({ name: trimmedName, price: parsedPrice, quantity: parsedQuantity })
         })
 
         if (!response.ok) {
@@ -109,6 +131,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
           : resolveLocal('Item created.')
         name.value = ''
         price.value = ''
+        quantity.value = '1'
       } catch (error) {
         state.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Unable to create item.')
@@ -117,12 +140,17 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
 
     const resolvedNameLabel = normalizeLabel(nameLabel ? resolve(nameLabel) : undefined, resolve('Item name'))
     const resolvedPriceLabel = normalizeLabel(priceLabel ? resolve(priceLabel) : undefined, resolve('Price'))
+    const resolvedQuantityLabel = normalizeLabel(quantityLabel ? resolve(quantityLabel) : undefined, resolve('Quantity'))
     const resolvedSubmitLabel = normalizeLabel(submitLabel ? resolve(submitLabel) : undefined, resolve('Add item'))
     const resolvedNamePlaceholder = normalizeLabel(
       namePlaceholder ? resolve(namePlaceholder) : undefined,
       resolve('Neural render pack')
     )
     const resolvedPricePlaceholder = normalizeLabel(pricePlaceholder ? resolve(pricePlaceholder) : undefined, resolve('19.00'))
+    const resolvedQuantityPlaceholder = normalizeLabel(
+      quantityPlaceholder ? resolve(quantityPlaceholder) : undefined,
+      resolve('1')
+    )
     const resolvedHelper = helper ? resolve(helper) : null
 
     return (
@@ -154,6 +182,21 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   value={price.value}
                   onInput$={(event) => {
                     price.value = (event.target as HTMLInputElement).value
+                  }}
+                />
+            </label>
+            <label class="store-create-input">
+              <span>{resolvedQuantityLabel}</span>
+                <input
+                  type="number"
+                  name="quantity"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  placeholder={resolvedQuantityPlaceholder}
+                  value={quantity.value}
+                  onInput$={(event) => {
+                    quantity.value = (event.target as HTMLInputElement).value
                   }}
                 />
             </label>

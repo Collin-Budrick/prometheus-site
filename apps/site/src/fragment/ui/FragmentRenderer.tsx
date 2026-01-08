@@ -85,10 +85,12 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         class={node.attrs?.class}
         nameLabel={node.attrs?.['data-name-label']}
         priceLabel={node.attrs?.['data-price-label']}
+        quantityLabel={node.attrs?.['data-quantity-label']}
         submitLabel={node.attrs?.['data-submit-label']}
         helper={node.attrs?.['data-helper']}
         namePlaceholder={node.attrs?.['data-name-placeholder']}
         pricePlaceholder={node.attrs?.['data-price-placeholder']}
+        quantityPlaceholder={node.attrs?.['data-quantity-placeholder']}
       />
     )
   }

@@ -2,6 +2,7 @@ import {
   bigint,
   boolean,
   index,
+  integer,
   numeric,
   pgTable,
   serial,
@@ -119,6 +120,7 @@ export const storeItems = pgTable('store_items', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  quantity: integer('quantity').notNull().default(1),
   createdAt: timestamp('created_at', { mode: 'date', withTimezone: false }).defaultNow()
 })
 

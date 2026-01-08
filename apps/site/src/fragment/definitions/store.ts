@@ -334,7 +334,7 @@ const storeFragmentCss = `
 
 .store-create-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) auto;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 0.6fr) auto;
   gap: 12px;
   align-items: end;
 }
@@ -697,9 +697,11 @@ const storeCreate: FragmentDefinition = {
     h('store-create', {
       'data-name-label': t('Item name'),
       'data-price-label': t('Price'),
+      'data-quantity-label': t('Quantity'),
       'data-submit-label': t('Add item'),
       'data-name-placeholder': t('Neural render pack'),
       'data-price-placeholder': t('19.00'),
+      'data-quantity-placeholder': t('1'),
       'data-helper': t('Validated by drizzle-zod and streamed over realtime updates.')
     })
 }
