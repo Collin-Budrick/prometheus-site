@@ -27,7 +27,7 @@ export const createDatabase = (
         return
       } catch (error) {
         lastError = error
-        logger.error(`Database connection attempt ${attempt + 1} failed`, error)
+        logger.error(`Database connection attempt ${attempt + 1} failed`, { error })
         if (attempt === config.connectRetries) {
           throw error
         }

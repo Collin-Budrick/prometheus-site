@@ -33,12 +33,12 @@ export type PlatformServer = {
 
 export const createPlatformServer = (options: PlatformServerOptions): PlatformServer => {
   const logger = options.logger ?? createLogger('server')
-  const cache = options.cache ?? createCacheClient(options.config.valkey, logger.child('cache'))
-  const database = options.database ?? createDatabase(options.config.postgres, logger.child('db'))
+  const cache = options.cache ?? createCacheClient(options.config.valkey, logger.getChild('cache'))
+  const database = options.database ?? createDatabase(options.config.postgres, logger.getChild('db'))
   const rateLimiter =
     options.rateLimiter ??
     createRateLimiter({
-      logger: logger.child('rate-limit'),
+      logger: logger.getChild('rate-limit'),
       unkey: options.config.rateLimit.unkey
     })
 
@@ -69,7 +69,7 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
       await cache.disconnect()
       await database.disconnect()
     } catch (error) {
-      logger.error('Graceful shutdown failed', error)
+      logger.error('Graceful shutdown failed', { error })
       process.exitCode = 1
     } finally {
       shuttingDown = false
@@ -101,7 +101,7 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
       logger.info(`API ready at http://${options.config.server.host}:${options.config.server.port}`)
       bindSignals()
     } catch (error) {
-      logger.error('Startup failed', error)
+      logger.error('Startup failed', { error })
       process.exit(1)
     } finally {
       starting = false

@@ -49,7 +49,7 @@ export const createCacheClient = (
       } catch (error) {
         lastError = error
         cacheReady = false
-        logger.error(`Valkey connection attempt ${attempt} failed`, error)
+        logger.error(`Valkey connection attempt ${attempt} failed`, { error })
         if (attempt === maxConnectAttempts) {
           throw new Error(`Valkey connection failed after ${maxConnectAttempts} attempts`, {
             cause: lastError

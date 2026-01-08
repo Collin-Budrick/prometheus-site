@@ -139,7 +139,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
             }
             await valkey.publish(storeChannel, payload)
           } catch (error) {
-            logger.warn('Failed to publish store realtime event', error)
+            logger.warn('Failed to publish store realtime event', { error })
           }
         })()
       }
@@ -275,7 +275,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
           await prepareDatabase()
           logger.info('Database migrations and seed completed successfully')
         } catch (error) {
-          logger.error('Database migrations failed', error)
+          logger.error('Database migrations failed', { error })
           throw error
         }
       } else {
@@ -291,7 +291,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
             isValkeyReady: context.cache.isReady
           })
         } catch (error) {
-          logger.warn('Store search index rebuild failed', error)
+          logger.warn('Store search index rebuild failed', { error })
         }
       }
 
@@ -299,7 +299,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         try {
           await storeRealtime.start(storeRealtimeHandler)
         } catch (error) {
-          logger.error('Store realtime listener failed', error)
+          logger.error('Store realtime listener failed', { error })
         }
       }
     },
