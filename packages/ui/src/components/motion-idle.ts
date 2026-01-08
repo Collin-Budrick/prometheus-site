@@ -1,4 +1,4 @@
-import { TaskController, scheduler as polyfillScheduler } from 'scheduler-polyfill'
+import 'scheduler-polyfill'
 
 type IdleHandles = {
   timeout: number | null
@@ -6,18 +6,16 @@ type IdleHandles = {
 
 type TaskPriority = 'background' | 'user-visible' | 'user-blocking'
 
+type TaskControllerConstructor = new (options?: { priority?: TaskPriority }) => AbortController
+
 type SchedulerLike = {
   postTask?: (callback: () => void, options?: { priority?: TaskPriority; signal?: AbortSignal }) => Promise<void>
   yield?: (options?: { priority?: TaskPriority }) => Promise<void>
 }
 
-const scheduler = (() => {
-  const globalScheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
-  if (globalScheduler?.postTask) {
-    return globalScheduler
-  }
-  return polyfillScheduler as SchedulerLike
-})()
+const scheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
+const TaskControllerImpl =
+  (globalThis as typeof globalThis & { TaskController?: TaskControllerConstructor }).TaskController ?? AbortController
 
 const postTask = scheduler?.postTask?.bind(scheduler)
 const yieldTask = scheduler?.yield?.bind(scheduler)
@@ -32,7 +30,7 @@ export const scheduleIdleTask = (
   priority: TaskPriority = 'background'
 ) => {
   const handles: IdleHandles = { timeout: null }
-  const controller = new TaskController()
+  const controller = new TaskControllerImpl()
   let cancelled = false
   let fired = false
 

@@ -1,6 +1,6 @@
 import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
-import { TaskController, scheduler as polyfillScheduler } from 'scheduler-polyfill'
+import 'scheduler-polyfill'
 import { initQuicklinkPrefetch } from './prefetch'
 
 type IdleHandles = {
@@ -10,6 +10,8 @@ type IdleHandles = {
 type ClientErrorReporter = (error: unknown, metadata?: Record<string, unknown>) => void
 
 type TaskPriority = 'background' | 'user-visible' | 'user-blocking'
+
+type TaskControllerConstructor = new (options?: { priority?: TaskPriority }) => AbortController
 
 type SchedulerLike = {
   postTask?: (callback: () => void, options?: { priority?: TaskPriority; signal?: AbortSignal }) => Promise<void>
@@ -26,13 +28,9 @@ export type ClientExtrasConfig = {
   reportClientError?: ClientErrorReporter
 }
 
-const scheduler = (() => {
-  const globalScheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
-  if (globalScheduler?.postTask) {
-    return globalScheduler
-  }
-  return polyfillScheduler as SchedulerLike
-})()
+const scheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
+const TaskControllerImpl =
+  (globalThis as typeof globalThis & { TaskController?: TaskControllerConstructor }).TaskController ?? AbortController
 
 const postTask = scheduler?.postTask?.bind(scheduler)
 const yieldTask = scheduler?.yield?.bind(scheduler)
@@ -43,7 +41,7 @@ const scheduleIdleTask = (
   priority: TaskPriority = 'background'
 ) => {
   const handles: IdleHandles = { timeout: null }
-  const controller = new TaskController()
+  const controller = new TaskControllerImpl()
   let cancelled = false
   let fired = false
 
