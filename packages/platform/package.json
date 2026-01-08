@@ -23,7 +23,7 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
-    "@logtape/logtape": "^1.3.6",
+    "@logtape/logtape": "^1.4.0-dev.466",
     "@prometheus/core": "workspace:*",
     "@prometheus/features-auth": "workspace:*",
     "@prometheus/features-messaging": "workspace:*",
@@ -43,11 +43,11 @@
   "devDependencies": {
     "@types/node": "25.0.3",
     "@types/react": "^19.2.7",
-    "bun-types": "1.3.6-canary.20260107T140751",
+    "bun-types": "1.3.6-canary.20260108T140918",
     "drizzle-kit": "1.0.0-beta.9-e89174b",
     "oxfmt": "0.23.0",
     "oxlint": "1.38.0",
-    "typescript": "6.0.0-dev.20260107"
+    "typescript": "6.0.0-dev.20260108"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "^1.36.0"
