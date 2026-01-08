@@ -25,7 +25,7 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
   const lang = resolveRequestLang(request)
 
   try {
-    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang)
+    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
     return {
       plan,
       fragments: fragments as FragmentPayloadValue,

@@ -1,4 +1,4 @@
-import type { AppConfig } from '@platform/env'
+import { normalizeApiBase, resolveApiBase, type AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
@@ -34,16 +34,23 @@ const pickFragments = (fragments: FragmentPayloadMap | undefined, ids: string[])
 export const loadHybridFragmentResource = async (
   path: string,
   config: Pick<AppConfig, 'apiBase'>,
-  lang?: string
+  lang?: string,
+  request?: Request
 ): Promise<HybridFragmentResource> => {
-  const { plan, initialFragments } = await loadFragmentPlan(path, config, lang, { includeInitial: false })
+  const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
+  const { plan, initialFragments } = await loadFragmentPlan(
+    path,
+    { apiBase: resolvedApiBase },
+    lang,
+    { includeInitial: false }
+  )
   const initialIds = selectInitialFragmentIds(plan)
   let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
   const missingIds = initialIds.filter((id) => !fragments[id])
 
   if (missingIds.length) {
     try {
-      const fetched = await loadFragments(missingIds, config, lang)
+      const fetched = await loadFragments(missingIds, { apiBase: resolvedApiBase }, lang)
       fragments = { ...fragments, ...fetched }
     } catch (error) {
       console.error('Fragment load failed', error)
@@ -51,6 +58,32 @@ export const loadHybridFragmentResource = async (
   }
 
   return { plan, fragments, path: plan.path }
+}
+
+const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
+
+const resolveOrigin = (request?: Request) => {
+  if (!request) return ''
+  try {
+    return new URL(request.url).origin
+  } catch {
+    return ''
+  }
+}
+
+const resolveServerApiBase = (apiBase: string, request?: Request) => {
+  const normalized = normalizeApiBase(apiBase)
+  const runtimeApiBase = resolveApiBase()
+  if (runtimeApiBase && isAbsoluteUrl(runtimeApiBase)) return runtimeApiBase
+  if (normalized && isAbsoluteUrl(normalized)) return normalized
+
+  const origin = resolveOrigin(request)
+  const relative = normalized || (runtimeApiBase && !isAbsoluteUrl(runtimeApiBase) ? runtimeApiBase : '')
+  if (origin && relative) {
+    return `${origin}${relative.startsWith('/') ? relative : `/${relative}`}`
+  }
+
+  return normalized || runtimeApiBase
 }
 
 export const resolveRequestLang = (request: Request): Lang => {

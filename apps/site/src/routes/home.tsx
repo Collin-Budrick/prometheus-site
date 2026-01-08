@@ -81,7 +81,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const apiBase = appConfig.apiBase
 
   try {
-    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang)
+    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
 
     return {
       plan,
