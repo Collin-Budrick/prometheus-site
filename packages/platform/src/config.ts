@@ -1,4 +1,5 @@
 import arkenv, { type as arkenvType } from 'arkenv'
+import type { LogLevel } from '@logtape/logtape'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
 export type PostgresConfig = {
@@ -50,10 +51,18 @@ export type PlatformConfig = {
   environment: string
   runtime: RuntimeFlags
   server: ServerConfig
+  log: LogConfig
   postgres: PostgresConfig
   valkey: ValkeyConfig
   rateLimit: RateLimitConfig
   auth: AuthConfig
+}
+
+type LogFormat = 'json' | 'pretty'
+
+export type LogConfig = {
+  level: LogLevel
+  format: LogFormat
 }
 
 const platformEnvSchema = arkenvType({
@@ -98,7 +107,9 @@ const platformEnvSchema = arkenvType({
   BETTER_AUTH_MICROSOFT_CLIENT_SECRET: 'string?',
   UNKEY_ROOT_KEY: 'string?',
   UNKEY_RATELIMIT_NAMESPACE: 'string?',
-  UNKEY_RATELIMIT_BASE_URL: 'string?'
+  UNKEY_RATELIMIT_BASE_URL: 'string?',
+  LOG_LEVEL: 'string?',
+  LOG_FORMAT: 'string?'
 })
 
 const parsePlatformEnv = (env: Env) =>
@@ -161,6 +172,33 @@ const requireString = (value: string | undefined, name: string) => {
 const normalizeOptionalString = (value: string | undefined) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? undefined : trimmed
+}
+
+const resolveLogLevel = (value: string | undefined): LogLevel => {
+  const normalized = value?.trim().toLowerCase()
+  switch (normalized) {
+    case 'trace':
+      return 'trace'
+    case 'debug':
+      return 'debug'
+    case 'info':
+      return 'info'
+    case 'warn':
+    case 'warning':
+      return 'warning'
+    case 'error':
+      return 'error'
+    case 'fatal':
+      return 'fatal'
+    default:
+      return 'info'
+  }
+}
+
+const resolveLogFormat = (value: string | undefined): LogFormat => {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'json' || normalized === 'pretty') return normalized
+  return 'json'
 }
 
 const firstDefined = (...values: Array<string | undefined>) => {
@@ -398,6 +436,10 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
   const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
   const runtime = resolveRuntimeFlags(parsedEnv)
   const server = resolveServerConfig(parsedEnv)
+  const log: LogConfig = {
+    level: resolveLogLevel(parsedEnv.LOG_LEVEL),
+    format: resolveLogFormat(parsedEnv.LOG_FORMAT)
+  }
   const rateLimit: RateLimitConfig = {
     unkey: resolveUnkeyConfig(parsedEnv, allowDevDefaults)
   }
@@ -406,6 +448,7 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
     environment,
     runtime,
     server,
+    log,
     postgres: {
       connectionString,
       ssl,
