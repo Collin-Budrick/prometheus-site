@@ -3,7 +3,7 @@ import { createFragmentTranslator, defaultFragmentLang, type FragmentLang, type 
 import { normalizePlanPath, planForPath } from './planner'
 import { getFragmentDefinition } from './registry'
 import { h, renderToHtml, t as textNode } from './tree'
-import { sanitizeHtml } from './sanitize'
+import { sanitizeHtml } from './sanitize.server'
 import type {
   FragmentCacheStatus,
   FragmentPlan,

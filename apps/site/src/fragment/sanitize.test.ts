@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
-import { sanitizeAttributes, sanitizeHtml } from '@core/fragments'
+import { sanitizeAttributes } from '@core/fragments'
+import { sanitizeHtml } from '@core/fragment/sanitize.server'
 
 describe('sanitizeAttributes', () => {
   it('removes event handlers from attributes', () => {
