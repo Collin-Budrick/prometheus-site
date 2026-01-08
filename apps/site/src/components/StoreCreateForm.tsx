@@ -29,6 +29,8 @@ const normalizeLabel = (value: string | undefined, fallback: string) => {
   return trimmed === '' ? fallback : trimmed
 }
 
+const infinitySymbol = '\u221e'
+
 export const StoreCreateForm = component$<StoreCreateFormProps>(
   ({
     class: className,
@@ -45,6 +47,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     const name = useSignal('')
     const price = useSignal('')
     const quantity = useSignal('1')
+    const lastQuantity = useSignal('1')
+    const digitalProduct = useSignal(false)
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
 
@@ -63,8 +67,9 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       if (trimmedName.length < 2) return false
       const parsedPrice = Number.parseFloat(price.value)
       if (!Number.isFinite(parsedPrice) || parsedPrice < 0) return false
+      if (digitalProduct.value) return true
       const parsedQuantity = Number.parseFloat(quantity.value)
-      return Number.isFinite(parsedQuantity) && parsedQuantity >= 0 && Number.isInteger(parsedQuantity)
+      return Number.isFinite(parsedQuantity) && parsedQuantity > 0 && Number.isInteger(parsedQuantity)
     })
 
     const handleSubmit = $(async () => {
@@ -77,7 +82,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
 
       const trimmedName = name.value.trim()
       const parsedPrice = Number.parseFloat(price.value)
-      const parsedQuantity = Number.parseFloat(quantity.value)
+      const parsedQuantity = digitalProduct.value ? 0 : Number.parseFloat(quantity.value)
 
       if (trimmedName.length < 2) {
         state.value = 'error'
@@ -91,7 +96,10 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         return
       }
 
-      if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0 || !Number.isInteger(parsedQuantity)) {
+      if (
+        !digitalProduct.value &&
+        (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0 || !Number.isInteger(parsedQuantity))
+      ) {
         state.value = 'error'
         statusMessage.value = resolveLocal('Quantity must be a non-negative integer.')
         return
@@ -132,16 +140,46 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         name.value = ''
         price.value = ''
         quantity.value = '1'
+        lastQuantity.value = '1'
+        digitalProduct.value = false
       } catch (error) {
         state.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Unable to create item.')
       }
     })
 
+    const handleQuantityInput = $((event: Event) => {
+      const value = (event.target as HTMLInputElement).value
+      quantity.value = value
+      const parsed = Number.parseFloat(value)
+      if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+        lastQuantity.value = String(Math.trunc(parsed))
+      }
+      if (Number.isFinite(parsed) && parsed <= 0) {
+        digitalProduct.value = true
+        quantity.value = '0'
+      }
+    })
+
+    const handleDigitalToggle = $((event: Event) => {
+      const next = (event.target as HTMLInputElement).checked
+      if (next) {
+        const parsed = Number.parseFloat(quantity.value)
+        if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+          lastQuantity.value = String(Math.trunc(parsed))
+        }
+        quantity.value = '0'
+      } else {
+        quantity.value = lastQuantity.value || '1'
+      }
+      digitalProduct.value = next
+    })
+
     const resolvedNameLabel = normalizeLabel(nameLabel ? resolve(nameLabel) : undefined, resolve('Item name'))
     const resolvedPriceLabel = normalizeLabel(priceLabel ? resolve(priceLabel) : undefined, resolve('Price'))
     const resolvedQuantityLabel = normalizeLabel(quantityLabel ? resolve(quantityLabel) : undefined, resolve('Quantity'))
     const resolvedSubmitLabel = normalizeLabel(submitLabel ? resolve(submitLabel) : undefined, resolve('Add item'))
+    const resolvedDigitalLabel = resolve('Digital product')
     const resolvedNamePlaceholder = normalizeLabel(
       namePlaceholder ? resolve(namePlaceholder) : undefined,
       resolve('Neural render pack')
@@ -152,6 +190,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       resolve('1')
     )
     const resolvedHelper = helper ? resolve(helper) : null
+    const quantityDisplay = useComputed$(() => (digitalProduct.value ? infinitySymbol : quantity.value))
 
     return (
       <div class={rootClass.value} data-state={state.value}>
@@ -185,21 +224,35 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   }}
                 />
             </label>
-            <label class="store-create-input">
-              <span>{resolvedQuantityLabel}</span>
+            <div class="store-create-input store-create-input-quantity" data-digital={digitalProduct.value ? 'true' : 'false'}>
+              <label class="store-create-label" for="store-create-quantity">
+                {resolvedQuantityLabel}
+              </label>
+              <div class="store-create-field">
                 <input
-                  type="number"
+                  id="store-create-quantity"
+                  class="store-create-quantity-input"
+                  type={digitalProduct.value ? 'text' : 'number'}
                   name="quantity"
-                  min="0"
-                  step="1"
-                  inputMode="numeric"
+                  min={digitalProduct.value ? undefined : '0'}
+                  step={digitalProduct.value ? undefined : '1'}
+                  inputMode={digitalProduct.value ? 'text' : 'numeric'}
                   placeholder={resolvedQuantityPlaceholder}
-                  value={quantity.value}
-                  onInput$={(event) => {
-                    quantity.value = (event.target as HTMLInputElement).value
-                  }}
+                  value={quantityDisplay.value}
+                  readOnly={digitalProduct.value}
+                  onInput$={handleQuantityInput}
                 />
-            </label>
+                <div class="store-create-digital">
+                  <input
+                    id="store-create-digital"
+                    type="checkbox"
+                    checked={digitalProduct.value}
+                    onChange$={handleDigitalToggle}
+                  />
+                  <label for="store-create-digital">{resolvedDigitalLabel}</label>
+                </div>
+              </div>
+            </div>
             <button class="store-create-submit" type="submit" disabled={!canSubmit.value}>
               {state.value === 'saving' ? resolve('Saving...') : resolvedSubmitLabel}
             </button>

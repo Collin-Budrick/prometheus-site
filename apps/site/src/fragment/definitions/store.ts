@@ -344,12 +344,18 @@ const storeFragmentCss = `
   gap: 6px;
 }
 
-.store-create-input span {
+.store-create-input span,
+.store-create-label {
   font-size: 10px;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.3em;
   color: rgb(var(--muted));
+}
+
+.store-create-field {
+  position: relative;
+  display: grid;
 }
 
 .store-create-input input {
@@ -361,8 +367,48 @@ const storeFragmentCss = `
   font-size: 0.95rem;
 }
 
+.store-create-input-quantity input {
+  padding-right: 118px;
+}
+
+.store-create-input-quantity[data-digital='true'] input {
+  color: rgb(var(--accent-strong));
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
 .store-create-input input::placeholder {
   color: rgb(var(--muted-faint));
+}
+
+.store-create-digital {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--stroke));
+  background: rgb(var(--surface-soft));
+  font-size: 8px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgb(var(--muted));
+  white-space: nowrap;
+}
+
+.store-create-digital input {
+  margin: 0;
+  accent-color: rgb(var(--accent));
+}
+
+.store-create-digital label {
+  cursor: pointer;
 }
 
 .store-create-submit {

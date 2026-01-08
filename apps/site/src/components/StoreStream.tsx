@@ -69,6 +69,8 @@ const clampLimit = (value: string | undefined) => {
 }
 
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
+const infinitySymbol = '\u221e'
+const formatQuantity = (value: number) => (value <= 0 ? infinitySymbol : String(value))
 
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
@@ -523,7 +525,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
                     {idLabel} {item.id}
                   </span>
                   <span>
-                    {qtyLabel} {item.quantity}
+                    {qtyLabel} {formatQuantity(item.quantity)}
                   </span>
                 </div>
               </div>
