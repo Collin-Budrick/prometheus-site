@@ -1,7 +1,7 @@
-import { component$, useStyles$ } from '@builder.io/qwik'
+import { component$, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
-import { createClientErrorReporter } from '@platform/logging'
+import { createClientErrorReporter, initHighlight } from '@platform/logging'
 import { RouteMotion } from '@prometheus/ui'
 import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
@@ -12,11 +12,17 @@ import { appConfig } from './app-config'
 export default component$(() => {
   useStyles$(globalStyles)
   const clientReady = useClientReady()
+  useVisibleTask$(
+    () => {
+      initHighlight(appConfig.highlight, { apiBase: appConfig.apiBase })
+    },
+    { strategy: 'document-idle' }
+  )
   const clientExtrasConfig: ClientExtrasConfig = {
     apiBase: appConfig.apiBase,
     enablePrefetch: appConfig.enablePrefetch,
     analytics: appConfig.analytics,
-    reportClientError: createClientErrorReporter(appConfig.clientErrors)
+    reportClientError: createClientErrorReporter(appConfig.highlight)
   }
 
   return (

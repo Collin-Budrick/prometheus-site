@@ -27,7 +27,11 @@ const devEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.tr
 const devEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
 const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
-const devEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
+const devEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '1'
+const devHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
+const devHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
+const devHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
+const devHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
@@ -196,7 +200,11 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: devEnableWebTransportDatagrams,
   VITE_ENABLE_FRAGMENT_COMPRESSION: devEnableCompression,
   VITE_ENABLE_ANALYTICS: devEnableAnalytics,
-  VITE_REPORT_CLIENT_ERRORS: devEnableClientErrors,
+  VITE_ENABLE_HIGHLIGHT: devEnableHighlight,
+  VITE_HIGHLIGHT_PROJECT_ID: devHighlightProjectId,
+  VITE_HIGHLIGHT_PRIVACY: devHighlightPrivacy,
+  VITE_HIGHLIGHT_SESSION_RECORDING: devHighlightSessionRecording,
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: devHighlightCanvasSampling,
   API_BASE: `http://127.0.0.1:${devApiPort}`
 }
 

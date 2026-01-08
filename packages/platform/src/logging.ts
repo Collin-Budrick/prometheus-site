@@ -1,59 +1,70 @@
-import type { ClientErrorReportingConfig } from './env'
+import { H, type HighlightOptions } from 'highlight.run'
+import type { HighlightConfig } from './env'
 
 type ErrorMetadata = Record<string, unknown>
+let highlightInitialized = false
 
 const normalizeError = (error: unknown) => {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    }
-  }
+  if (error instanceof Error) return error
+  if (typeof error === 'string') return new Error(error)
+  return new Error('Unknown client error')
+}
 
+const normalizeMetadata = (metadata: ErrorMetadata) => {
+  const { source, ...payload } = metadata
+  const normalizedSource = typeof source === 'string' ? source : undefined
   return {
-    name: 'UnknownError',
-    message: typeof error === 'string' ? error : 'Unknown client error',
-    stack: undefined
+    source: normalizedSource,
+    payload: Object.keys(payload).length ? payload : undefined
   }
 }
 
-const sendBeacon = (endpoint: string, payload: string) => {
-  if (typeof navigator === 'undefined') return false
+const buildHighlightOptions = (config: HighlightConfig, apiBase?: string): HighlightOptions => {
+  const tracingOrigins = apiBase ? [apiBase] : true
+  const options: HighlightOptions = {
+    serviceName: config.serviceName,
+    environment: config.environment,
+    privacySetting: config.privacySetting,
+    disableSessionRecording: !config.enableSessionRecording,
+    enableCanvasRecording: config.enableCanvasRecording,
+    reportConsoleErrors: true,
+    networkRecording: config.enableSessionRecording
+      ? {
+          enabled: true,
+          recordHeadersAndBody: false
+        }
+      : false,
+    tracingOrigins
+  }
 
-  const body = new Blob([payload], { type: 'application/json' })
-  return navigator.sendBeacon?.(endpoint, body) ?? false
+  if (config.canvasSampling) {
+    options.samplingStrategy = { canvas: config.canvasSampling }
+  }
+
+  return options
 }
 
-const postWithFetch = (endpoint: string, payload: string) => {
-  if (typeof fetch === 'undefined') return
+export const initHighlight = (config: HighlightConfig, options?: { apiBase?: string }) => {
+  if (!config.enabled) return
+  if (typeof window === 'undefined') return
+  if (highlightInitialized) return
 
-  const body = new Blob([payload], { type: 'application/json' })
-  void fetch(endpoint, {
-    method: 'POST',
-    body,
-    keepalive: true,
-    headers: { 'content-type': 'application/json' }
-  })
+  const highlightOptions = buildHighlightOptions(config, options?.apiBase)
+  H.init(config.projectId, highlightOptions)
+  highlightInitialized = true
 }
 
-export const createClientErrorReporter = (config: ClientErrorReportingConfig) => {
-  const endpoint = config.beaconUrl?.trim() ?? ''
-  const enabled = config.enabled && endpoint.length > 0
-
+export const createClientErrorReporter = (config: HighlightConfig) => {
   return (error: unknown, metadata: ErrorMetadata = {}) => {
-    if (!enabled) return
+    if (!config.enabled) return
 
-    const payload = JSON.stringify({
-      ...normalizeError(error),
-      metadata,
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
-      timestamp: Date.now()
+    const normalizedError = normalizeError(error)
+    const normalizedMetadata = normalizeMetadata(metadata)
+
+    H.consume(normalizedError, {
+      message: normalizedError.message,
+      payload: normalizedMetadata.payload,
+      source: normalizedMetadata.source
     })
-
-    const sent = sendBeacon(endpoint, payload)
-    if (!sent) {
-      postWithFetch(endpoint, payload)
-    }
   }
 }
