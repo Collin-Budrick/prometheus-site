@@ -3,6 +3,7 @@ import { createFragmentTranslator, defaultFragmentLang, type FragmentLang, type 
 import { normalizePlanPath, planForPath } from './planner'
 import { getFragmentDefinition } from './registry'
 import { h, renderToHtml, t as textNode } from './tree'
+import { sanitizeHtml } from './sanitize'
 import type {
   FragmentCacheStatus,
   FragmentPlan,
@@ -173,7 +174,7 @@ export const createFragmentService = ({
     const cacheKey = buildFragmentCacheKey(definition.id, context.lang)
     const tree = await definition.render(context)
     const payload = encodeFragmentPayloadFromTree(definition, tree, cacheKey)
-    const html = renderToHtml(tree)
+    const html = sanitizeHtml(renderToHtml(tree))
     return buildEntry(cacheKey, definition, payload, html)
   }
 
