@@ -2,7 +2,12 @@ import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } 
 import type { NoSerialize } from '@builder.io/qwik'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { normalizeStoreCartItem, storeCartAddEvent, type StoreCartItem } from '../shared/store-cart'
+import {
+  consumeStoreCartDragItem,
+  normalizeStoreCartItem,
+  storeCartAddEvent,
+  type StoreCartItem
+} from '../shared/store-cart'
 
 type StoreCartProps = {
   class?: string
@@ -97,6 +102,7 @@ export const StoreCart = component$<StoreCartProps>(
 
     const handleDragEnter = $((event: DragEvent) => {
       if (event.currentTarget === event.target) {
+        event.preventDefault()
         dragActive.value = true
       }
     })
@@ -110,16 +116,18 @@ export const StoreCart = component$<StoreCartProps>(
     const handleDrop = $((event: DragEvent) => {
       event.preventDefault()
       dragActive.value = false
-      const raw =
-        event.dataTransfer?.getData('application/json') ?? event.dataTransfer?.getData('text/plain') ?? ''
-      if (!raw) return
+      const jsonPayload = event.dataTransfer?.getData('application/json') ?? ''
+      const textPayload = event.dataTransfer?.getData('text/plain') ?? event.dataTransfer?.getData('text') ?? ''
+      const raw = jsonPayload || textPayload
       let parsed: unknown = raw
-      try {
-        parsed = JSON.parse(raw)
-      } catch {
-        // ignore parse failures
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw)
+        } catch {
+          // ignore parse failures
+        }
       }
-      const item = normalizeStoreCartItem(parsed)
+      const item = normalizeStoreCartItem(parsed) ?? consumeStoreCartDragItem()
       if (item) {
         void addItem(item)
       }

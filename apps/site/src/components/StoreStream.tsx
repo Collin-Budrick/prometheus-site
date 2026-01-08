@@ -3,7 +3,7 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { storeCartAddEvent } from '../shared/store-cart'
+import { setStoreCartDragItem, storeCartAddEvent } from '../shared/store-cart'
 
 type StoreStreamProps = {
   limit?: string
@@ -179,15 +179,20 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       event.preventDefault()
       return
     }
-    if (!event.dataTransfer) return
-    const payload = JSON.stringify({ id: item.id, name: item.name, price: item.price })
-    event.dataTransfer.setData('application/json', payload)
-    event.dataTransfer.setData('text/plain', payload)
-    event.dataTransfer.effectAllowed = 'copy'
+    const payload = { id: item.id, name: item.name, price: item.price }
+    setStoreCartDragItem(payload)
+    if (event.dataTransfer) {
+      const serialized = JSON.stringify(payload)
+      event.dataTransfer.setData('text/plain', serialized)
+      event.dataTransfer.setData('text', serialized)
+      event.dataTransfer.setData('application/json', serialized)
+      event.dataTransfer.effectAllowed = 'copy'
+    }
     draggingId.value = item.id
   })
 
   const handleDragEnd = $(() => {
+    setStoreCartDragItem(null)
     draggingId.value = null
   })
 

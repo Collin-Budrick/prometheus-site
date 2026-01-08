@@ -6,6 +6,18 @@ export type StoreCartItem = {
 
 export const storeCartAddEvent = 'store:cart:add'
 
+let lastDraggedItem: StoreCartItem | null = null
+
+export const setStoreCartDragItem = (item: StoreCartItem | null) => {
+  lastDraggedItem = item
+}
+
+export const consumeStoreCartDragItem = () => {
+  const item = lastDraggedItem
+  lastDraggedItem = null
+  return item
+}
+
 const parsePrice = (value: unknown) => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : 0
