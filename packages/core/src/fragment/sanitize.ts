@@ -1,3 +1,8 @@
+import { unified } from 'unified'
+import rehypeParse from 'rehype-parse'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import rehypeStringify from 'rehype-stringify'
+
 type AttrMap = Record<string, string>
 
 const svgAttributes = [
@@ -37,7 +42,7 @@ const svgAttributes = [
   'preserveaspectratio'
 ]
 
-const allowedAttributes = new Set([
+const allowedAttributes = [
   'class',
   'classname',
   'style',
@@ -71,13 +76,33 @@ const allowedAttributes = new Set([
   'colspan',
   'rowspan',
   ...svgAttributes
-])
+]
+
+const svgAttributeAliases = [
+  'viewBox',
+  'fillRule',
+  'clipRule',
+  'strokeWidth',
+  'strokeLinecap',
+  'strokeLinejoin',
+  'strokeMiterlimit',
+  'stopColor',
+  'stopOpacity',
+  'gradientUnits',
+  'colorInterpolationFilters',
+  'stdDeviation',
+  'preserveAspectRatio'
+]
+
+const htmlAttributeAliases = ['className', 'tabIndex', 'htmlFor', 'srcSet']
+
+const allowedAttributeSet = new Set(allowedAttributes)
 
 const urlAttributes = new Set(['href', 'src', 'action', 'formaction'])
 const allowedSchemes = new Set(['http:', 'https:', 'mailto:', 'tel:'])
 
 const isAllowedAttribute = (key: string) =>
-  allowedAttributes.has(key) || key.startsWith('data-') || key.startsWith('aria-')
+  allowedAttributeSet.has(key) || key.startsWith('data-') || key.startsWith('aria-')
 
 const isUnsafeUrl = (value: string) => {
   const trimmed = value.trim()
@@ -117,4 +142,107 @@ export const sanitizeAttributes = (attrs?: AttrMap): AttrMap => {
   })
 
   return sanitized
+}
+
+const customElementTags = [
+  'preact-island',
+  'react-binary-demo',
+  'wasm-renderer-demo',
+  'planner-demo',
+  'store-stream',
+  'store-create',
+  'store-cart'
+]
+
+const svgTags = [
+  'svg',
+  'g',
+  'path',
+  'circle',
+  'line',
+  'rect',
+  'ellipse',
+  'polygon',
+  'polyline',
+  'defs',
+  'linearGradient',
+  'radialGradient',
+  'stop',
+  'filter',
+  'feGaussianBlur',
+  'clipPath',
+  'mask',
+  'pattern',
+  'symbol',
+  'use',
+  'text',
+  'tspan'
+]
+
+const mathTags = [
+  'math',
+  'mi',
+  'mn',
+  'mo',
+  'ms',
+  'mrow',
+  'msup',
+  'msub',
+  'mfrac',
+  'msqrt',
+  'mroot',
+  'mtable',
+  'mtr',
+  'mtd',
+  'mtext',
+  'mfenced',
+  'mover',
+  'munder',
+  'munderover'
+]
+
+const dataAttributePattern = /^data-[\w-]+$/i
+const ariaAttributePattern = /^aria-[\w-]+$/i
+
+const mergeAttributes = (
+  base: Array<string | RegExp> | undefined,
+  extra: Array<string | RegExp>
+): Array<string | RegExp> => {
+  const merged = new Set<string | RegExp>(base ?? [])
+  extra.forEach((entry) => merged.add(entry))
+  return Array.from(merged)
+}
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: Array.from(
+    new Set([...(defaultSchema.tagNames ?? []), ...customElementTags, ...svgTags, ...mathTags])
+  ),
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': mergeAttributes(defaultSchema.attributes?.['*'], [
+      ...allowedAttributes,
+      ...svgAttributeAliases,
+      ...htmlAttributeAliases,
+      dataAttributePattern,
+      ariaAttributePattern
+    ])
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    href: ['http', 'https', 'mailto', 'tel'],
+    src: ['http', 'https'],
+    action: ['http', 'https'],
+    formaction: ['http', 'https']
+  }
+}
+
+export const sanitizeHtml = (html: string): string => {
+  if (!html) return ''
+  const file = unified()
+    .use(rehypeParse, { fragment: true })
+    .use(rehypeSanitize, sanitizeSchema)
+    .use(rehypeStringify)
+    .processSync(html)
+  return String(file)
 }
