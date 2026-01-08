@@ -2,6 +2,7 @@ import { defineConfig, type Plugin, type ProxyOptions, type ViteDevServer } from
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
+import { serwist } from '@serwist/vite'
 import { compression, defineAlgorithm } from 'vite-plugin-compression2'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
@@ -64,6 +65,14 @@ type QwikManifest = {
 
 const earlyHintLimit = 5
 const placeholderShellAssets = new Set(['/assets/app.css', '/assets/app.js'])
+const pwaPrecacheEntries = [
+  { url: '/', revision: null },
+  { url: '/manifest.webmanifest', revision: null },
+  { url: '/favicon.ico', revision: null },
+  { url: '/favicon.svg', revision: null },
+  { url: '/icons/icon-192.png', revision: null },
+  { url: '/icons/icon-512.png', revision: null }
+]
 
 const resolveApiBase = () => {
   const candidate = process.env.API_BASE?.trim() || process.env.VITE_API_BASE?.trim() || ''
@@ -327,6 +336,14 @@ export default defineConfig(
               }
             }),
           ]
+        }),
+        serwist({
+          swSrc: 'src/service-worker.ts',
+          swDest: 'service-worker.js',
+          globDirectory: 'dist',
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff2,ttf,otf,json,txt}'],
+          additionalPrecacheEntries: pwaPrecacheEntries,
+          swUrl: '/service-worker.js'
         })
       ],
       oxc: false,
