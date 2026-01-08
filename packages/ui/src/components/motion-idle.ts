@@ -1,14 +1,38 @@
+import { TaskController, scheduler as polyfillScheduler } from 'scheduler-polyfill'
+
 type IdleHandles = {
-  idle: number | null
   timeout: number | null
 }
 
+type TaskPriority = 'background' | 'user-visible' | 'user-blocking'
+
+type SchedulerLike = {
+  postTask?: (callback: () => void, options?: { priority?: TaskPriority; signal?: AbortSignal }) => Promise<void>
+  yield?: (options?: { priority?: TaskPriority }) => Promise<void>
+}
+
+const scheduler = (() => {
+  const globalScheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
+  if (globalScheduler?.postTask) {
+    return globalScheduler
+  }
+  return polyfillScheduler as SchedulerLike
+})()
+
+const postTask = scheduler?.postTask?.bind(scheduler)
+const yieldTask = scheduler?.yield?.bind(scheduler)
+
 /**
- * Schedule work when the browser is idle with a timeout-based fallback for environments
- * where `requestIdleCallback` is unavailable.
+ * Schedule work when the browser is idle with scheduler-backed prioritization and
+ * a timeout-based fallback for environments without task scheduling support.
  */
-export const scheduleIdleTask = (callback: () => void, timeout = 120) => {
-  const handles: IdleHandles = { idle: null, timeout: null }
+export const scheduleIdleTask = (
+  callback: () => void,
+  timeout = 120,
+  priority: TaskPriority = 'background'
+) => {
+  const handles: IdleHandles = { timeout: null }
+  const controller = new TaskController()
   let cancelled = false
   let fired = false
 
@@ -18,16 +42,16 @@ export const scheduleIdleTask = (callback: () => void, timeout = 120) => {
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }
-    if (handles.idle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(handles.idle)
-    }
-    handles.idle = null
     handles.timeout = null
     callback()
   }
 
-  if ('requestIdleCallback' in window) {
-    handles.idle = window.requestIdleCallback(run)
+  if (postTask) {
+    postTask(run, { priority, signal: controller.signal }).catch(() => {})
+  } else if (yieldTask) {
+    yieldTask({ priority })
+      .then(run)
+      .catch(() => {})
   }
 
   handles.timeout = window.setTimeout(() => {
@@ -36,9 +60,7 @@ export const scheduleIdleTask = (callback: () => void, timeout = 120) => {
 
   return () => {
     cancelled = true
-    if (handles.idle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(handles.idle)
-    }
+    controller.abort()
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }

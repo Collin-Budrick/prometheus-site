@@ -19,7 +19,8 @@ export const RouteMotion = component$(() => {
       let disposeMotion: (() => void) | undefined
       let cancelled = false
 
-      const stopIdle = scheduleIdleTask(() => {
+      const stopIdle = scheduleIdleTask(
+        () => {
         if (cancelled) return
 
         const setup = async (): Promise<(() => void) | void> => {
@@ -263,7 +264,10 @@ export const RouteMotion = component$(() => {
             disposeMotion = teardown
           }
         })
-      })
+      },
+      120,
+      'user-visible'
+      )
 
       ctx.cleanup(() => {
         cancelled = true

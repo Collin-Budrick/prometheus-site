@@ -1,13 +1,20 @@
 import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
+import { TaskController, scheduler as polyfillScheduler } from 'scheduler-polyfill'
 import { initQuicklinkPrefetch } from './prefetch'
 
 type IdleHandles = {
-  idle: number | null
   timeout: number | null
 }
 
 type ClientErrorReporter = (error: unknown, metadata?: Record<string, unknown>) => void
+
+type TaskPriority = 'background' | 'user-visible' | 'user-blocking'
+
+type SchedulerLike = {
+  postTask?: (callback: () => void, options?: { priority?: TaskPriority; signal?: AbortSignal }) => Promise<void>
+  yield?: (options?: { priority?: TaskPriority }) => Promise<void>
+}
 
 export type ClientExtrasConfig = {
   apiBase: string
@@ -19,8 +26,24 @@ export type ClientExtrasConfig = {
   reportClientError?: ClientErrorReporter
 }
 
-const scheduleIdleTask = (callback: () => void, timeout = 120) => {
-  const handles: IdleHandles = { idle: null, timeout: null }
+const scheduler = (() => {
+  const globalScheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
+  if (globalScheduler?.postTask) {
+    return globalScheduler
+  }
+  return polyfillScheduler as SchedulerLike
+})()
+
+const postTask = scheduler?.postTask?.bind(scheduler)
+const yieldTask = scheduler?.yield?.bind(scheduler)
+
+const scheduleIdleTask = (
+  callback: () => void,
+  timeout = 120,
+  priority: TaskPriority = 'background'
+) => {
+  const handles: IdleHandles = { timeout: null }
+  const controller = new TaskController()
   let cancelled = false
   let fired = false
 
@@ -30,16 +53,16 @@ const scheduleIdleTask = (callback: () => void, timeout = 120) => {
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }
-    if (handles.idle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(handles.idle)
-    }
-    handles.idle = null
     handles.timeout = null
     callback()
   }
 
-  if ('requestIdleCallback' in window) {
-    handles.idle = window.requestIdleCallback(run)
+  if (postTask) {
+    postTask(run, { priority, signal: controller.signal }).catch(() => {})
+  } else if (yieldTask) {
+    yieldTask({ priority })
+      .then(run)
+      .catch(() => {})
   }
 
   handles.timeout = window.setTimeout(() => {
@@ -48,19 +71,42 @@ const scheduleIdleTask = (callback: () => void, timeout = 120) => {
 
   return () => {
     cancelled = true
-    if (handles.idle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(handles.idle)
-    }
+    controller.abort()
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }
   }
 }
 
-type RequestIdleCallback = (
-  callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
-  opts?: { timeout?: number }
-) => number
+const schedulePriorityTask = (
+  task: () => void,
+  { priority = 'background', timeout = 300 }: { priority?: TaskPriority; timeout?: number } = {}
+) => {
+  let fired = false
+
+  const run = () => {
+    if (fired) return
+    fired = true
+    clearTimeout(timeoutHandle)
+    task()
+  }
+
+  const timeoutHandle = window.setTimeout(run, timeout)
+
+  if (postTask) {
+    postTask(run, { priority }).catch(() => {})
+    return
+  }
+
+  if (yieldTask) {
+    yieldTask({ priority })
+      .then(run)
+      .catch(() => {})
+    return
+  }
+
+  setTimeout(run, 0)
+}
 
 const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) => {
   useVisibleTask$(
@@ -74,20 +120,7 @@ const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) =>
       if (!analyticsEnabled && !errorReportingEnabled) return
 
       const deferTask = (task: () => void) => {
-        const idle =
-          (window as typeof window & { requestIdleCallback?: RequestIdleCallback }).requestIdleCallback
-
-        if (idle) {
-          idle(
-            () => {
-              task()
-            },
-            { timeout: 300 }
-          )
-          return
-        }
-
-        setTimeout(task, 0)
+        schedulePriorityTask(task, { priority: 'background', timeout: 300 })
       }
 
       if (analyticsEnabled && beaconUrl) {
@@ -175,7 +208,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
           .catch(() => {})
       }
 
-      const stopIdle = scheduleIdleTask(startPrefetch, 800)
+      const stopIdle = scheduleIdleTask(startPrefetch, 800, 'background')
 
       ctx.cleanup(() => {
         cancelled = true
@@ -213,7 +246,7 @@ export const useClientReady = () => {
         }
       }
 
-      const stopIdle = scheduleIdleTask(enable, 1400)
+      const stopIdle = scheduleIdleTask(enable, 1400, 'user-visible')
       const handleInput = () => enable()
 
       window.addEventListener('pointerdown', handleInput, { once: true })
