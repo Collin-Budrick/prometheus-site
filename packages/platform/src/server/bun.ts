@@ -38,8 +38,8 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
   const rateLimiter =
     options.rateLimiter ??
     createRateLimiter({
-      cache: cache.client,
-      logger: logger.child('rate-limit')
+      logger: logger.child('rate-limit'),
+      unkey: options.config.rateLimit.unkey
     })
 
   const context: PlatformServerContext = {

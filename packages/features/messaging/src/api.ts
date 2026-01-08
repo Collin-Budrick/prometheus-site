@@ -3,6 +3,7 @@ import { Elysia } from 'elysia'
 import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
+import type { RateLimitResult } from '@platform/rate-limit'
 import { readChatHistoryCache, writeChatHistoryCache } from './cache'
 
 export const maxPromptLength = 2000
@@ -104,7 +105,7 @@ export type MessagingRouteOptions = {
   valkey: ValkeyClientType
   isValkeyReady: () => boolean
   getClientIp: (request: Request) => string
-  checkRateLimit: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
+  checkRateLimit: (route: string, clientIp: string) => Promise<RateLimitResult>
   checkEarlyLimit: (key: string, max: number, windowMs: number) => Promise<{ allowed: boolean; remaining: number }>
   recordLatencySample: (metric: string, durationMs: number) => void | Promise<void>
   jsonError: (status: number, error: string, meta?: Record<string, unknown>) => Response
@@ -117,16 +118,35 @@ export type ChatMessagesTable = AnyPgTable & {
   body?: AnyPgColumn
 }
 
+const applyRateLimitHeaders = (set: { headers?: HeadersInit }, headers: Headers) => {
+  const resolved = new Headers(set.headers ?? undefined)
+  headers.forEach((value, key) => {
+    resolved.set(key, value)
+  })
+  set.headers = resolved
+}
+
+const attachRateLimitHeaders = (response: Response, headers: Headers) => {
+  headers.forEach((value, key) => {
+    response.headers.set(key, value)
+  })
+  return response
+}
+
 export const createMessagingRoutes = (options: MessagingRouteOptions) => {
   const historyLimit = options.maxChatHistory ?? 20
 
   return new Elysia()
-    .get('/chat/history', async ({ request }) => {
+    .get('/chat/history', async ({ request, set }) => {
       const clientIp = options.getClientIp(request)
-      const { allowed, retryAfter } = await options.checkRateLimit('/chat/history', clientIp)
+      const rateLimit = await options.checkRateLimit('/chat/history', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
 
-      if (!allowed) {
-        return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+          rateLimit.headers
+        )
       }
 
       const cached = await readChatHistoryCache(options.valkey, options.isValkeyReady)
@@ -143,17 +163,23 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       void options.recordLatencySample('chat:history', performance.now() - start)
       return result
     })
-    .post('/ai/echo', async ({ request }) => {
+    .post('/ai/echo', async ({ request, set }) => {
       const clientIp = options.getClientIp(request)
-      const { allowed, retryAfter } = await options.checkRateLimit('/ai/echo', clientIp)
+      const rateLimit = await options.checkRateLimit('/ai/echo', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
 
-      if (!allowed) {
-        return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`, { retryAfter })
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`, {
+            retryAfter: rateLimit.retryAfter
+          }),
+          rateLimit.headers
+        )
       }
 
       const earlyLimit = await options.checkEarlyLimit('/ai/echo', 5, 5000)
       if (!earlyLimit.allowed) {
-        return options.jsonError(429, 'Slow down')
+        return attachRateLimitHeaders(options.jsonError(429, 'Slow down'), rateLimit.headers)
       }
 
       let prompt: string
@@ -161,10 +187,10 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         prompt = await readPromptBody(request)
       } catch (error) {
         if (error instanceof PromptBodyError) {
-          return options.jsonError(error.status, error.message, error.meta)
+          return attachRateLimitHeaders(options.jsonError(error.status, error.message, error.meta), rateLimit.headers)
         }
         console.error('Unexpected prompt parse failure', error)
-        return options.jsonError(400, 'Invalid request body')
+        return attachRateLimitHeaders(options.jsonError(400, 'Invalid request body'), rateLimit.headers)
       }
 
       const start = performance.now()
