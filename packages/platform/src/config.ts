@@ -1,3 +1,4 @@
+import arkenv, { type as arkenvType } from 'arkenv'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
 export type PostgresConfig = {
@@ -45,6 +46,51 @@ export type PlatformConfig = {
   valkey: ValkeyConfig
   auth: AuthConfig
 }
+
+const platformEnvSchema = arkenvType({
+  NODE_ENV: 'string?',
+  API_PORT: 'string?',
+  API_HOST: 'string?',
+  POSTGRES_USER: 'string?',
+  POSTGRES_PASSWORD: 'string?',
+  POSTGRES_HOST: 'string?',
+  POSTGRES_PORT: 'string?',
+  POSTGRES_DB: 'string?',
+  POSTGRES_SSL: 'string?',
+  DB_CONNECT_RETRIES: 'string?',
+  DB_CONNECT_BACKOFF_MS: 'string?',
+  VALKEY_HOST: 'string?',
+  VALKEY_PORT: 'string?',
+  DATABASE_URL: 'string?',
+  RUN_MIGRATIONS: 'string?',
+  ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  HMR_PROTOCOL: 'string?',
+  WEB_PROTOCOL: 'string?',
+  HMR_HOST: 'string?',
+  WEB_HOST: 'string?',
+  WEB_PORT: 'string?',
+  BETTER_AUTH_SECRET: 'string?',
+  BETTER_AUTH_COOKIE_SECRET: 'string?',
+  BETTER_AUTH_RP_ID: 'string?',
+  BETTER_AUTH_RP_ORIGIN: 'string?',
+  BETTER_AUTH_ORIGIN: 'string?',
+  PRERENDER_ORIGIN: 'string?',
+  BETTER_AUTH_RP_IDS: 'string?',
+  BETTER_AUTH_RP_ORIGINS: 'string?',
+  BETTER_AUTH_GOOGLE_CLIENT_ID: 'string?',
+  BETTER_AUTH_GOOGLE_CLIENT_SECRET: 'string?',
+  BETTER_AUTH_GITHUB_CLIENT_ID: 'string?',
+  BETTER_AUTH_GITHUB_CLIENT_SECRET: 'string?',
+  BETTER_AUTH_APPLE_CLIENT_ID: 'string?',
+  BETTER_AUTH_APPLE_CLIENT_SECRET: 'string?',
+  BETTER_AUTH_DISCORD_CLIENT_ID: 'string?',
+  BETTER_AUTH_DISCORD_CLIENT_SECRET: 'string?',
+  BETTER_AUTH_MICROSOFT_CLIENT_ID: 'string?',
+  BETTER_AUTH_MICROSOFT_CLIENT_SECRET: 'string?'
+})
+
+const parsePlatformEnv = (env: Env) =>
+  arkenv(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
 
 const parsePort = (value: string | undefined, defaultValue: number, name: string) => {
   const raw = (value ?? String(defaultValue)).trim()
@@ -307,18 +353,19 @@ const resolveServerConfig = (env: Env): ServerConfig => ({
 })
 
 export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
-  const environment = resolveEnvironment(env.NODE_ENV)
+  const parsedEnv = parsePlatformEnv(env)
+  const environment = resolveEnvironment(parsedEnv.NODE_ENV)
   const allowDevDefaults = environment !== 'production'
-  const connectionString = buildConnectionString(env)
-  const ssl = parseBooleanFlag(env.POSTGRES_SSL, false, 'POSTGRES_SSL') ? 'require' : false
-  const connectRetries = parseNonNegativeInt(env.DB_CONNECT_RETRIES, 5, 'DB_CONNECT_RETRIES')
-  const backoffMs = parseNonNegativeInt(env.DB_CONNECT_BACKOFF_MS, 200, 'DB_CONNECT_BACKOFF_MS')
+  const connectionString = buildConnectionString(parsedEnv)
+  const ssl = parseBooleanFlag(parsedEnv.POSTGRES_SSL, false, 'POSTGRES_SSL') ? 'require' : false
+  const connectRetries = parseNonNegativeInt(parsedEnv.DB_CONNECT_RETRIES, 5, 'DB_CONNECT_RETRIES')
+  const backoffMs = parseNonNegativeInt(parsedEnv.DB_CONNECT_BACKOFF_MS, 200, 'DB_CONNECT_BACKOFF_MS')
 
-  const valkeyHost = ensureString(env.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
-  const valkeyPort = parsePort(env.VALKEY_PORT, 6379, 'VALKEY_PORT')
-  const auth = parseAuthConfig(env, allowDevDefaults)
-  const runtime = resolveRuntimeFlags(env)
-  const server = resolveServerConfig(env)
+  const valkeyHost = ensureString(parsedEnv.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
+  const valkeyPort = parsePort(parsedEnv.VALKEY_PORT, 6379, 'VALKEY_PORT')
+  const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
+  const runtime = resolveRuntimeFlags(parsedEnv)
+  const server = resolveServerConfig(parsedEnv)
 
   return {
     environment,

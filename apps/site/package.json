@@ -10,12 +10,14 @@
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@prometheus/core": "workspace:*",
-    "@prometheus/ui": "workspace:*",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
     "@preact/signals-core": "^1.12.1",
+    "@prometheus/core": "workspace:*",
+    "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "^0.0.13",
+    "arkenv": "0.8.3",
+    "arktype": "2.1.29",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121"
   },
