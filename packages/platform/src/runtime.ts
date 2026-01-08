@@ -1,4 +1,15 @@
+import arkenv, { type as arkenvType } from 'arkenv'
+
 export type Env = Record<string, string | undefined>
+
+const runtimeEnvSchema = arkenvType({
+  RUN_MIGRATIONS: 'string?',
+  ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  NODE_ENV: 'string?'
+})
+
+const parseRuntimeEnv = (env: Env) =>
+  arkenv(runtimeEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
 
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
 const falsyValues = new Set(['0', 'false', 'no', 'off'])
@@ -25,10 +36,11 @@ export const resolveRuntimeFlags = (
   env: Env,
   defaults?: Partial<RuntimeFlags>
 ): RuntimeFlags => {
-  const runMigrations = resolveBooleanFlag(env.RUN_MIGRATIONS, defaults?.runMigrations ?? false)
+  const runtimeEnv = parseRuntimeEnv(env)
+  const runMigrations = resolveBooleanFlag(runtimeEnv.RUN_MIGRATIONS, defaults?.runMigrations ?? false)
   const enableWebTransportFragments = resolveBooleanFlag(
-    env.ENABLE_WEBTRANSPORT_FRAGMENTS,
-    defaults?.enableWebTransportFragments ?? env.NODE_ENV !== 'production'
+    runtimeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS,
+    defaults?.enableWebTransportFragments ?? runtimeEnv.NODE_ENV !== 'production'
   )
 
   return {

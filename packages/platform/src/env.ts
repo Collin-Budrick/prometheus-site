@@ -1,3 +1,5 @@
+import arkenv, { type as arkenvType } from 'arkenv'
+
 export type AppEnv = Record<string, string | boolean | undefined>
 
 export type AnalyticsConfig = {
@@ -26,6 +28,47 @@ export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
 const falsyValues = new Set(['0', 'false', 'no', 'off'])
 
+const runtimeEnvSchema = arkenvType({
+  API_BASE: 'string?',
+  VITE_API_BASE: 'string?',
+  WEBTRANSPORT_BASE: 'string?',
+  VITE_WEBTRANSPORT_BASE: 'string?',
+  ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  VITE_USE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  ENABLE_WEBTRANSPORT_DATAGRAMS: 'string?',
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'string?',
+  ENABLE_FRAGMENT_COMPRESSION: 'string?',
+  VITE_ENABLE_FRAGMENT_COMPRESSION: 'string?',
+  VITE_ENABLE_PREFETCH: 'string?',
+  VITE_ENABLE_ANALYTICS: 'string?',
+  ANALYTICS_BEACON_URL: 'string?',
+  VITE_ANALYTICS_BEACON_URL: 'string?',
+  VITE_REPORT_CLIENT_ERRORS: 'string?',
+  ERROR_BEACON_URL: 'string?',
+  VITE_ERROR_BEACON_URL: 'string?',
+  DEV: 'string?',
+  MODE: 'string?',
+  NODE_ENV: 'string?'
+})
+
+const publicEnvSchema = arkenvType({
+  VITE_API_BASE: 'string?',
+  VITE_WEBTRANSPORT_BASE: 'string?',
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  VITE_USE_WEBTRANSPORT_FRAGMENTS: 'string?',
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'string?',
+  VITE_ENABLE_FRAGMENT_COMPRESSION: 'string?',
+  VITE_ENABLE_PREFETCH: 'string?',
+  VITE_ENABLE_ANALYTICS: 'string?',
+  VITE_ANALYTICS_BEACON_URL: 'string?',
+  VITE_REPORT_CLIENT_ERRORS: 'string?',
+  VITE_ERROR_BEACON_URL: 'string?',
+  DEV: 'string?',
+  MODE: 'string?',
+  NODE_ENV: 'string?'
+})
+
 const getRuntimeEnv = (): AppEnv => {
   if (typeof import.meta !== 'undefined') {
     const metaEnv = (import.meta as ImportMeta & { env?: AppEnv }).env
@@ -39,7 +82,21 @@ const getRuntimeEnv = (): AppEnv => {
   return {}
 }
 
-export const resolveRuntimeEnv = (env?: AppEnv): AppEnv => {
+const toStringValue = (value: unknown) => {
+  if (typeof value === 'string') return value
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return undefined
+}
+
+const normalizeEnvInput = (env: AppEnv) =>
+  Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [key, toStringValue(value)])
+  ) as Record<string, string | undefined>
+
+const parseEnv = (schema: typeof runtimeEnvSchema | typeof publicEnvSchema, env: AppEnv) =>
+  arkenv(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' })
+
+const buildMergedEnv = (env?: AppEnv): AppEnv => {
   const runtimeEnv = getRuntimeEnv()
   const processEnv =
     typeof process !== 'undefined' && typeof process.env === 'object' ? (process.env as AppEnv) : {}
@@ -51,11 +108,11 @@ export const resolveRuntimeEnv = (env?: AppEnv): AppEnv => {
   }
 }
 
-const toStringValue = (value: unknown) => {
-  if (typeof value === 'string') return value
-  if (typeof value === 'boolean') return value ? 'true' : 'false'
-  return undefined
-}
+export const resolveRuntimeEnv = (env?: AppEnv): AppEnv =>
+  parseEnv(runtimeEnvSchema, buildMergedEnv(env))
+
+const resolvePublicEnv = (env?: AppEnv): AppEnv =>
+  parseEnv(publicEnvSchema, buildMergedEnv(env))
 
 const firstDefined = (...values: Array<string | boolean | undefined>) => {
   for (const value of values) {
@@ -196,7 +253,7 @@ export const resolveClientErrorReporting = (
 }
 
 export const resolveAppConfig = (env?: AppEnv): AppConfig => {
-  const resolvedEnv = resolveRuntimeEnv(env)
+  const resolvedEnv = resolvePublicEnv(env)
 
   return {
     apiBase: resolveApiBase(resolvedEnv),

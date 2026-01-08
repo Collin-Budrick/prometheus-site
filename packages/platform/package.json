@@ -28,6 +28,8 @@
     "@prometheus/features-messaging": "workspace:*",
     "@prometheus/features-store": "workspace:*",
     "@valkey/client": "1.0.0",
+    "arkenv": "0.8.3",
+    "arktype": "2.1.29",
     "drizzle-orm": "1.0.0-beta.9-e89174b",
     "drizzle-zod": "1.0.0-beta.9-e89174b",
     "elysia": "1.4.21",
