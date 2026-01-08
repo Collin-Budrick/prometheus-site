@@ -4,6 +4,7 @@ import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import {
   consumeStoreCartDragItem,
+  consumeStoreItem,
   normalizeStoreCartItem,
   storeCartAddEvent,
   type StoreCartItem
@@ -115,7 +116,7 @@ export const StoreCart = component$<StoreCartProps>(
       }
     })
 
-    const handleDrop = $((event: DragEvent) => {
+    const handleDrop = $(async (event: DragEvent) => {
       event.preventDefault()
       dragActive.value = false
       const jsonPayload = event.dataTransfer?.getData('application/json') ?? ''
@@ -131,6 +132,8 @@ export const StoreCart = component$<StoreCartProps>(
       }
       const item = normalizeStoreCartItem(parsed) ?? consumeStoreCartDragItem()
       if (item) {
+        const result = await consumeStoreItem(item.id, window.location.origin)
+        if (!result.ok) return
         void addItem(item)
       }
     })

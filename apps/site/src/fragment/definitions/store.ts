@@ -302,6 +302,18 @@ const storeFragmentCss = `
   box-shadow: none;
 }
 
+.store-stream-add.is-out {
+  border-color: rgb(var(--accent) / 0.5);
+  color: rgb(var(--accent-strong));
+  background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.95));
+}
+
+.store-stream-add.is-out:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .store-stream-score {
   display: inline-flex;
   align-items: center;

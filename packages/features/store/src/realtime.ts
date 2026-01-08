@@ -46,11 +46,11 @@ const parsePrice = (value: unknown) => {
 
 const parseQuantity = (value: unknown) => {
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+    return Number.isFinite(value) ? Math.max(-1, Math.floor(value)) : 0
   }
   if (typeof value === 'string') {
     const parsed = Number.parseInt(value, 10)
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+    return Number.isFinite(parsed) ? Math.max(-1, parsed) : 0
   }
   return 0
 }

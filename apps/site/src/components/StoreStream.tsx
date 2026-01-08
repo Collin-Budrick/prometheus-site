@@ -3,7 +3,7 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { setStoreCartDragItem, storeCartAddEvent } from '../shared/store-cart'
+import { consumeStoreItem, setStoreCartDragItem, storeCartAddEvent } from '../shared/store-cart'
 
 type StoreStreamProps = {
   limit?: string
@@ -41,11 +41,11 @@ const parseScore = (value: unknown) => {
 
 const parseQuantity = (value: unknown) => {
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+    return Number.isFinite(value) ? Math.max(-1, Math.floor(value)) : 0
   }
   if (typeof value === 'string') {
     const parsed = Number.parseInt(value, 10)
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+    return Number.isFinite(parsed) ? Math.max(-1, parsed) : 0
   }
   return 0
 }
@@ -70,7 +70,7 @@ const clampLimit = (value: string | undefined) => {
 
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
 const infinitySymbol = '\u221e'
-const formatQuantity = (value: number) => (value <= 0 ? infinitySymbol : String(value))
+const formatQuantity = (value: number) => (value < 0 ? infinitySymbol : String(value))
 
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
@@ -120,6 +120,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const qtyLabel = copy?.['Qty'] ?? 'Qty'
   const deleteLabel = copy?.['Delete item'] ?? 'Delete item'
   const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
+  const outOfStockLabel = copy?.['Out of stock'] ?? 'Out of stock'
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -166,8 +167,30 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     refreshTick.value += 1
   })
 
-  const handleAddClick = $((item: StoreItem) => {
+  const updateItemQuantity = (id: number, quantity: number) => {
+    const existingIndex = items.value.findIndex((entry) => entry.id === id)
+    if (existingIndex < 0) return
+    const next = [...items.value]
+    next[existingIndex] = { ...next[existingIndex], quantity }
+    items.value = next
+  }
+
+  const handleAddClick = $(async (item: StoreItem) => {
     if (typeof window === 'undefined') return
+    if (item.quantity === 0) return
+
+    const result = await consumeStoreItem(item.id, window.location.origin)
+    if (!result.ok) {
+      if (result.status === 409) {
+        updateItemQuantity(item.id, 0)
+      }
+      return
+    }
+
+    if (result.item) {
+      updateItemQuantity(result.item.id, result.item.quantity)
+    }
+
     window.dispatchEvent(
       new CustomEvent(storeCartAddEvent, {
         detail: { id: item.id, name: item.name, price: item.price }
@@ -176,6 +199,10 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   })
 
   const handleDragStart = $((event: DragEvent, item: StoreItem) => {
+    if (item.quantity === 0) {
+      event.preventDefault()
+      return
+    }
     const target = event.target as HTMLElement | null
     if (target && target.closest('button')) {
       event.preventDefault()
@@ -495,59 +522,65 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         {panelMessage.value ? (
           <div class="store-stream-empty">{panelMessage.value}</div>
         ) : (
-          items.value.map((item, index) => (
-            <div
-              key={item.id}
-              class={`store-stream-row${removingIds.value.includes(item.id) ? ' is-removing' : ''}${
-                deletingIds.value.includes(item.id) ? ' is-deleting' : ''
-              }${draggingId.value === item.id ? ' is-dragging' : ''}`}
-              role="listitem"
-              data-item-id={item.id}
-              draggable={!removingIds.value.includes(item.id) && !deletingIds.value.includes(item.id)}
-              onDragStart$={(event) => handleDragStart(event, item)}
-              onDragEnd$={handleDragEnd}
-              style={{ '--stagger-index': String(index) }}
-            >
-              <button
-                class="store-stream-delete"
-                type="button"
-                aria-label={deleteLabel}
-                title={deleteLabel}
-                disabled={removingIds.value.includes(item.id) || deletingIds.value.includes(item.id)}
-                onClick$={() => handleDeleteClick(item.id)}
+          items.value.map((item, index) => {
+            const isOutOfStock = item.quantity === 0
+            const addButtonLabel = isOutOfStock ? outOfStockLabel : addLabel
+
+            return (
+              <div
+                key={item.id}
+                class={`store-stream-row${removingIds.value.includes(item.id) ? ' is-removing' : ''}${
+                  deletingIds.value.includes(item.id) ? ' is-deleting' : ''
+                }${draggingId.value === item.id ? ' is-dragging' : ''}`}
+                role="listitem"
+                data-item-id={item.id}
+                draggable={!removingIds.value.includes(item.id) && !deletingIds.value.includes(item.id) && !isOutOfStock}
+                onDragStart$={(event) => handleDragStart(event, item)}
+                onDragEnd$={handleDragEnd}
+                style={{ '--stagger-index': String(index) }}
               >
-                X
-              </button>
-              <div>
-                <div class="store-stream-row-title">{item.name}</div>
-                <div class="store-stream-row-meta">
-                  <span>
-                    {idLabel} {item.id}
-                  </span>
-                  <span>
-                    {qtyLabel} {formatQuantity(item.quantity)}
-                  </span>
+                <button
+                  class="store-stream-delete"
+                  type="button"
+                  aria-label={deleteLabel}
+                  title={deleteLabel}
+                  disabled={removingIds.value.includes(item.id) || deletingIds.value.includes(item.id)}
+                  onClick$={() => handleDeleteClick(item.id)}
+                >
+                  X
+                </button>
+                <div>
+                  <div class="store-stream-row-title">{item.name}</div>
+                  <div class="store-stream-row-meta">
+                    <span>
+                      {idLabel} {item.id}
+                    </span>
+                    <span>
+                      {qtyLabel} {formatQuantity(item.quantity)}
+                    </span>
+                  </div>
+                </div>
+                <div class="store-stream-row-meta store-stream-row-meta-secondary">
+                  {typeof item.score === 'number' ? (
+                    <span class="store-stream-score">
+                      {scoreLabel} {item.score.toFixed(2)}
+                    </span>
+                  ) : null}
+                  <button
+                    class={`store-stream-add${isOutOfStock ? ' is-out' : ''}`}
+                    type="button"
+                    aria-label={addButtonLabel}
+                    title={addButtonLabel}
+                    disabled={isOutOfStock}
+                    onClick$={() => handleAddClick(item)}
+                  >
+                    {addButtonLabel}
+                  </button>
+                  <span class="store-stream-row-price">{formatPrice(item.price)}</span>
                 </div>
               </div>
-              <div class="store-stream-row-meta store-stream-row-meta-secondary">
-                {typeof item.score === 'number' ? (
-                  <span class="store-stream-score">
-                    {scoreLabel} {item.score.toFixed(2)}
-                  </span>
-                ) : null}
-                <button
-                  class="store-stream-add"
-                  type="button"
-                  aria-label={addLabel}
-                  title={addLabel}
-                  onClick$={() => handleAddClick(item)}
-                >
-                  {addLabel}
-                </button>
-                <span class="store-stream-row-price">{formatPrice(item.price)}</span>
-              </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>

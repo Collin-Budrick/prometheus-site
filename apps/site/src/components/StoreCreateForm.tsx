@@ -82,7 +82,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
 
       const trimmedName = name.value.trim()
       const parsedPrice = Number.parseFloat(price.value)
-      const parsedQuantity = digitalProduct.value ? 0 : Number.parseFloat(quantity.value)
+      const parsedQuantity = digitalProduct.value ? -1 : Number.parseFloat(quantity.value)
 
       if (trimmedName.length < 2) {
         state.value = 'error'
@@ -157,7 +157,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       }
       if (Number.isFinite(parsed) && parsed <= 0) {
         digitalProduct.value = true
-        quantity.value = '0'
+        quantity.value = '-1'
       }
     })
 
@@ -168,7 +168,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
           lastQuantity.value = String(Math.trunc(parsed))
         }
-        quantity.value = '0'
+        quantity.value = '-1'
       } else {
         quantity.value = lastQuantity.value || '1'
       }

@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { eq, gt, inArray } from 'drizzle-orm'
+import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
@@ -58,11 +58,11 @@ const parsePrice = (value: unknown) => {
 
 const parseQuantity = (value: unknown) => {
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+    return Number.isFinite(value) ? Math.max(-1, Math.floor(value)) : 0
   }
   if (typeof value === 'string') {
     const parsed = Number.parseInt(value, 10)
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+    return Number.isFinite(parsed) ? Math.max(-1, parsed) : 0
   }
   return 0
 }
@@ -95,7 +95,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
   const storeItemInsertSchema = createInsertSchema(options.storeItemsTable, {
     name: (schema) => schema.trim().min(2).max(120),
     price: () => z.coerce.number().min(0).max(100000),
-    quantity: () => z.coerce.number().int().min(0).max(100000)
+    quantity: () => z.coerce.number().int().min(-1).max(100000)
   }).pick({ name: true, price: true, quantity: true })
 
   return new Elysia()
@@ -214,7 +214,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         const normalizedName = parsed.data.name.trim()
         const normalizedPrice = parsed.data.price.toFixed(2)
-        const normalizedQuantity = parsed.data.quantity
+        const normalizedQuantity = parsed.data.quantity < 0 ? -1 : parsed.data.quantity
 
         let created
         try {
@@ -270,6 +270,119 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
       },
       {
         body: t.Any()
+      }
+    )
+    .post(
+      '/store/items/:id/consume',
+      async ({ params, request, set }) => {
+        const idRaw = Number.parseInt(params.id, 10)
+        if (!Number.isFinite(idRaw) || idRaw <= 0) {
+          return options.jsonError(400, 'Invalid item id')
+        }
+
+        const clientIp = options.getClientIp(request)
+        const rateLimit = await options.checkRateLimit('/store/items:consume', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
+
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/items:consume:${clientIp}`, 12, 5000)
+        if (!earlyLimit.allowed) {
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
+        }
+
+        let updated
+        try {
+          const [row] = await options.db
+            .update(options.storeItemsTable)
+            .set({ quantity: sql`${options.storeItemsTable.quantity} - 1` })
+            .where(and(eq(options.storeItemsTable.id, idRaw), gt(options.storeItemsTable.quantity, 0)))
+            .returning()
+          updated = row
+        } catch (error) {
+          console.error('Failed to decrement store item quantity', error)
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to update item'), rateLimit.headers)
+        }
+
+        if (!updated) {
+          let current
+          try {
+            const [row] = await options.db
+              .select()
+              .from(options.storeItemsTable)
+              .where(eq(options.storeItemsTable.id, idRaw))
+              .limit(1)
+            current = row
+          } catch (error) {
+            console.error('Failed to load store item', error)
+            return attachRateLimitHeaders(options.jsonError(500, 'Unable to load item'), rateLimit.headers)
+          }
+
+          if (!current) {
+            return attachRateLimitHeaders(options.jsonError(404, 'Item not found'), rateLimit.headers)
+          }
+
+          const currentQuantity = parseQuantity(current.quantity)
+          if (currentQuantity < 0) {
+            return attachRateLimitHeaders(
+              new Response(
+                JSON.stringify({
+                  item: {
+                    id: current.id,
+                    name: current.name,
+                    price: parsePrice(current.price),
+                    quantity: currentQuantity
+                  }
+                }),
+                {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' }
+                }
+              ),
+              rateLimit.headers
+            )
+          }
+
+          return attachRateLimitHeaders(options.jsonError(409, 'Out of stock'), rateLimit.headers)
+        }
+
+        const responseItem = {
+          id: updated.id,
+          name: updated.name,
+          price: parsePrice(updated.price),
+          quantity: parseQuantity(updated.quantity)
+        }
+
+        if (options.isValkeyReady()) {
+          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+          void (async () => {
+            try {
+              const ready = await ensureStoreSearchIndex(options.valkey)
+              if (!ready) return
+              await upsertStoreSearchDocument(options.valkey, responseItem)
+            } catch (error) {
+              console.warn('Store search update failed after consume', error)
+            }
+          })()
+        }
+
+        return attachRateLimitHeaders(
+          new Response(JSON.stringify({ item: responseItem }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          }),
+          rateLimit.headers
+        )
+      },
+      {
+        params: t.Object({
+          id: t.String()
+        })
       }
     )
     .delete(
