@@ -439,7 +439,7 @@ const databaseClient = {
   disconnect: async () => {}
 }
 
-const rateLimiter = createRateLimiter({ cache: valkey as any })
+const rateLimiter = createRateLimiter()
 
 export const setValkeyReady = (ready: boolean) => {
   valkeyReady = ready

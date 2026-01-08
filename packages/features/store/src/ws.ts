@@ -2,6 +2,7 @@ import type { AnyElysia, Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'
 import type { ValidateSessionHandler } from '@features/auth/server'
 import type { ValkeyClientType } from '@valkey/client'
+import type { RateLimitResult } from '@platform/rate-limit'
 
 export const storeChannel = 'store:stream'
 
@@ -35,7 +36,7 @@ export type StoreWsOptions = {
   isValkeyReady: IsValkeyReadyFn
   validateSession: ValidateSessionFn
   allowAnonymous?: boolean
-  checkWsOpenQuota: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
+  checkWsOpenQuota: (route: string, clientIp: string) => Promise<RateLimitResult>
   resolveWsClientIp: ResolveWsClientIp
   resolveWsHeaders: ResolveWsHeaders
   resolveWsRequest: ResolveWsRequest

@@ -14,6 +14,10 @@ describe('configuration validation', () => {
 
     expect(cfg.valkey.host).toBe('localhost')
     expect(cfg.valkey.port).toBe(6379)
+
+    expect(cfg.rateLimit.unkey.rootKey).toBeUndefined()
+    expect(cfg.rateLimit.unkey.namespace).toBe('prometheus-api')
+    expect(cfg.rateLimit.unkey.baseUrl).toBe('https://api.unkey.com')
   })
 
   it('uses custom values when provided', () => {
@@ -27,7 +31,10 @@ describe('configuration validation', () => {
       DB_CONNECT_RETRIES: '2',
       DB_CONNECT_BACKOFF_MS: '400',
       VALKEY_HOST: 'cache.internal',
-      VALKEY_PORT: '6380'
+      VALKEY_PORT: '6380',
+      UNKEY_ROOT_KEY: 'unkey_root_123',
+      UNKEY_RATELIMIT_NAMESPACE: 'api',
+      UNKEY_RATELIMIT_BASE_URL: 'https://unkey.example.com'
     })
 
     expect(cfg.postgres.connectionString).toBe(
@@ -39,6 +46,10 @@ describe('configuration validation', () => {
 
     expect(cfg.valkey.host).toBe('cache.internal')
     expect(cfg.valkey.port).toBe(6380)
+
+    expect(cfg.rateLimit.unkey.rootKey).toBe('unkey_root_123')
+    expect(cfg.rateLimit.unkey.namespace).toBe('api')
+    expect(cfg.rateLimit.unkey.baseUrl).toBe('https://unkey.example.com')
   })
 
   it('rejects invalid numeric values', () => {

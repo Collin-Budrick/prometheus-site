@@ -27,6 +27,7 @@
     "@prometheus/features-auth": "workspace:*",
     "@prometheus/features-messaging": "workspace:*",
     "@prometheus/features-store": "workspace:*",
+    "@unkey/ratelimit": "2.1.4",
     "@valkey/client": "1.0.0",
     "arkenv": "0.8.3",
     "arktype": "2.1.29",

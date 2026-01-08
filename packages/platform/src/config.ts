@@ -13,6 +13,14 @@ export type ValkeyConfig = {
   port: number
 }
 
+export type RateLimitConfig = {
+  unkey: {
+    rootKey?: string
+    namespace: string
+    baseUrl: string
+  }
+}
+
 type OAuthProvider = 'google' | 'github' | 'apple' | 'discord' | 'microsoft'
 
 export type OAuthClient = {
@@ -44,6 +52,7 @@ export type PlatformConfig = {
   server: ServerConfig
   postgres: PostgresConfig
   valkey: ValkeyConfig
+  rateLimit: RateLimitConfig
   auth: AuthConfig
 }
 
@@ -86,7 +95,10 @@ const platformEnvSchema = arkenvType({
   BETTER_AUTH_DISCORD_CLIENT_ID: 'string?',
   BETTER_AUTH_DISCORD_CLIENT_SECRET: 'string?',
   BETTER_AUTH_MICROSOFT_CLIENT_ID: 'string?',
-  BETTER_AUTH_MICROSOFT_CLIENT_SECRET: 'string?'
+  BETTER_AUTH_MICROSOFT_CLIENT_SECRET: 'string?',
+  UNKEY_ROOT_KEY: 'string?',
+  UNKEY_RATELIMIT_NAMESPACE: 'string?',
+  UNKEY_RATELIMIT_BASE_URL: 'string?'
 })
 
 const parsePlatformEnv = (env: Env) =>
@@ -323,6 +335,26 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
   }
 }
 
+const resolveUnkeyConfig = (env: Env, allowDevDefaults: boolean): RateLimitConfig['unkey'] => {
+  const rootKey = normalizeOptionalString(env.UNKEY_ROOT_KEY)
+  const namespace = normalizeOptionalString(env.UNKEY_RATELIMIT_NAMESPACE) ?? 'prometheus-api'
+  const baseUrl = normalizeOptionalString(env.UNKEY_RATELIMIT_BASE_URL) ?? 'https://api.unkey.com'
+
+  if (!allowDevDefaults) {
+    return {
+      rootKey: requireString(rootKey, 'UNKEY_ROOT_KEY'),
+      namespace,
+      baseUrl
+    }
+  }
+
+  return {
+    rootKey,
+    namespace,
+    baseUrl
+  }
+}
+
 const buildConnectionString = (env: Env) => {
   const databaseUrl = normalizeOptionalString(env.DATABASE_URL)
   if (databaseUrl !== undefined) {
@@ -366,6 +398,9 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
   const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
   const runtime = resolveRuntimeFlags(parsedEnv)
   const server = resolveServerConfig(parsedEnv)
+  const rateLimit: RateLimitConfig = {
+    unkey: resolveUnkeyConfig(parsedEnv, allowDevDefaults)
+  }
 
   return {
     environment,
@@ -381,6 +416,7 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
       host: valkeyHost,
       port: valkeyPort
     },
+    rateLimit,
     auth
   }
 }

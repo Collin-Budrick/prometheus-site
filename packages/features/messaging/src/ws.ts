@@ -3,6 +3,7 @@ import type { ElysiaWS } from 'elysia/ws'
 import type { ValidateSessionHandler } from '@features/auth/server'
 import type { DatabaseClient } from '@platform/db'
 import type { ValkeyClientType } from '@valkey/client'
+import type { RateLimitResult } from '@platform/rate-limit'
 import type { ChatMessagesTable } from './api'
 
 type ValkeyClient = ValkeyClientType
@@ -61,7 +62,7 @@ export type ChatWsOptions = {
   valkey: ValkeyClient
   isValkeyReady: IsValkeyReadyFn
   validateSession: ValidateSessionFn
-  checkWsQuota: (clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
+  checkWsQuota: (clientIp: string) => Promise<RateLimitResult>
   db: DatabaseClient['db']
   chatMessagesTable: ChatMessagesTable
   resolveWsClientIp: ResolveWsClientIp

@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia'
 import { eq, gt, inArray } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
+import type { RateLimitResult } from '@platform/rate-limit'
 import { createInsertSchema } from 'drizzle-zod'
 import { z } from 'zod'
 import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache'
@@ -26,7 +27,7 @@ export type StoreRouteOptions = {
   isValkeyReady: () => boolean
   storeItemsTable: StoreItemsTable
   getClientIp: (request: Request) => string
-  checkRateLimit: (route: string, clientIp: string) => Promise<{ allowed: boolean; retryAfter: number }>
+  checkRateLimit: (route: string, clientIp: string) => Promise<RateLimitResult>
   checkEarlyLimit: (key: string, max: number, windowMs: number) => Promise<{ allowed: boolean; remaining: number }>
   recordLatencySample: (metric: string, durationMs: number) => void | Promise<void>
   jsonError: (status: number, error: string, meta?: Record<string, unknown>) => Response
@@ -66,6 +67,21 @@ const parseQuantity = (value: unknown) => {
   return 0
 }
 
+const applyRateLimitHeaders = (set: { headers?: HeadersInit }, headers: Headers) => {
+  const resolved = new Headers(set.headers ?? undefined)
+  headers.forEach((value, key) => {
+    resolved.set(key, value)
+  })
+  set.headers = resolved
+}
+
+const attachRateLimitHeaders = (response: Response, headers: Headers) => {
+  headers.forEach((value, key) => {
+    response.headers.set(key, value)
+  })
+  return response
+}
+
 export const createStoreRoutes = <StoreItem extends { id: number } = { id: number }>(
   options: StoreRouteOptions
 ) => {
@@ -85,7 +101,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
   return new Elysia()
     .get(
       '/store/items',
-      async ({ query, request }) => {
+      async ({ query, request, set }) => {
         const limitValue = typeof query.limit === 'string' ? query.limit : '10'
         const cursorValue = typeof query.cursor === 'string' ? query.cursor : '0'
         const limitRaw = Number.parseInt(limitValue, 10)
@@ -116,15 +132,19 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/items', clientIp)
+        const rateLimit = await options.checkRateLimit('/store/items', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
 
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
         }
 
         const earlyLimit = await options.checkEarlyLimit(`/store/items:${clientIp}`, 10, 5000)
         if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
 
         const itemsQuery = options.db.select().from(options.storeItemsTable)
@@ -137,7 +157,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           items = await paginatedQuery.orderBy(options.storeItemsTable.id).limit(limit)
         } catch (error) {
           console.error('Failed to query store items', error)
-          return options.jsonError(500, 'Unable to load items')
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to load items'), rateLimit.headers)
         }
 
         const elapsed = performance.now() - start
@@ -165,24 +185,31 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     )
     .post(
       '/store/items',
-      async ({ body, request }) => {
+      async ({ body, request, set }) => {
         const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/items:write', clientIp)
+        const rateLimit = await options.checkRateLimit('/store/items:write', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
 
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
         }
 
         const earlyLimit = await options.checkEarlyLimit(`/store/items:write:${clientIp}`, 6, 10000)
         if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
 
         const parsed = storeItemInsertSchema.safeParse(body)
         if (!parsed.success) {
-          return options.jsonError(400, 'Invalid store item payload', {
-            issues: parsed.error.issues
-          })
+          return attachRateLimitHeaders(
+            options.jsonError(400, 'Invalid store item payload', {
+              issues: parsed.error.issues
+            }),
+            rateLimit.headers
+          )
         }
 
         const normalizedName = parsed.data.name.trim()
@@ -198,7 +225,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           created = row
         } catch (error) {
           console.error('Failed to create store item', error)
-          return options.jsonError(500, 'Unable to create item')
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to create item'), rateLimit.headers)
         }
 
         if (options.isValkeyReady()) {
@@ -220,22 +247,25 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         if (!created) {
-          return options.jsonError(500, 'Unable to create item')
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to create item'), rateLimit.headers)
         }
 
-        return new Response(
-          JSON.stringify({
-            item: {
-              id: created.id,
-              name: created.name,
-              price: parsePrice(created.price),
-              quantity: parseQuantity(created.quantity)
+        return attachRateLimitHeaders(
+          new Response(
+            JSON.stringify({
+              item: {
+                id: created.id,
+                name: created.name,
+                price: parsePrice(created.price),
+                quantity: parseQuantity(created.quantity)
+              }
+            }),
+            {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' }
             }
-          }),
-          {
-            status: 201,
-            headers: { 'Content-Type': 'application/json' }
-          }
+          ),
+          rateLimit.headers
         )
       },
       {
@@ -244,22 +274,26 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     )
     .delete(
       '/store/items/:id',
-      async ({ params, request }) => {
+      async ({ params, request, set }) => {
         const idRaw = Number.parseInt(params.id, 10)
         if (!Number.isFinite(idRaw) || idRaw <= 0) {
           return options.jsonError(400, 'Invalid item id')
         }
 
         const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/items:delete', clientIp)
+        const rateLimit = await options.checkRateLimit('/store/items:delete', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
 
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
         }
 
         const earlyLimit = await options.checkEarlyLimit(`/store/items:delete:${clientIp}`, 6, 10000)
         if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
 
         let deleted
@@ -271,11 +305,11 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           deleted = row
         } catch (error) {
           console.error('Failed to delete store item', error)
-          return options.jsonError(500, 'Unable to delete item')
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to delete item'), rateLimit.headers)
         }
 
         if (!deleted) {
-          return options.jsonError(404, 'Item not found')
+          return attachRateLimitHeaders(options.jsonError(404, 'Item not found'), rateLimit.headers)
         }
 
         if (options.isValkeyReady()) {
@@ -304,7 +338,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     )
     .get(
       '/store/search',
-      async ({ query, request }) => {
+      async ({ query, request, set }) => {
         const queryValue = typeof query.q === 'string' ? query.q.trim() : ''
         const limitValue = typeof query.limit === 'string' ? query.limit : '10'
         const offsetValue = typeof query.offset === 'string' ? query.offset : '0'
@@ -325,24 +359,28 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         const clientIp = options.getClientIp(request)
-        const { allowed, retryAfter } = await options.checkRateLimit('/store/search', clientIp)
+        const rateLimit = await options.checkRateLimit('/store/search', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
 
-        if (!allowed) {
-          return options.jsonError(429, `Rate limit exceeded. Try again in ${retryAfter}s`)
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
         }
 
         const earlyLimit = await options.checkEarlyLimit(`/store/search:${clientIp}`, 10, 5000)
         if (!earlyLimit.allowed) {
-          return options.jsonError(429, 'Try again soon')
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
 
         if (!options.isValkeyReady()) {
-          return options.jsonError(503, 'Search unavailable')
+          return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
 
         const searchReady = await ensureStoreSearchIndex(options.valkey)
         if (!searchReady) {
-          return options.jsonError(503, 'Search unavailable')
+          return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
 
         const start = performance.now()
@@ -351,7 +389,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           searchResult = await searchStoreIndex(options.valkey, queryValue, { limit, offset })
         } catch (error) {
           console.error('Store search failed', error)
-          return options.jsonError(500, 'Search failed')
+          return attachRateLimitHeaders(options.jsonError(500, 'Search failed'), rateLimit.headers)
         }
 
         const ids = searchResult.hits.map((hit) => hit.id)
@@ -373,7 +411,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             .where(inArray(options.storeItemsTable.id, ids))
         } catch (error) {
           console.error('Failed to hydrate store search results', error)
-          return options.jsonError(500, 'Unable to load items')
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to load items'), rateLimit.headers)
         }
 
         const rowById = new Map(rows.map((row) => [row.id, row]))
