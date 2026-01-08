@@ -55,8 +55,12 @@ describe('resolveAppConfig', () => {
       VITE_ENABLE_PREFETCH: '1',
       VITE_ENABLE_ANALYTICS: '1',
       VITE_ANALYTICS_BEACON_URL: 'https://example.com/analytics',
-      VITE_REPORT_CLIENT_ERRORS: '1',
-      VITE_ERROR_BEACON_URL: 'https://example.com/errors'
+      VITE_ENABLE_HIGHLIGHT: '1',
+      VITE_HIGHLIGHT_PROJECT_ID: 'highlight-project-id',
+      VITE_HIGHLIGHT_PRIVACY: 'strict',
+      VITE_HIGHLIGHT_SESSION_RECORDING: '1',
+      VITE_HIGHLIGHT_CANVAS_SAMPLING: '2',
+      MODE: 'production'
     })
 
     expect(config.apiBase).toBe('/api')
@@ -69,9 +73,15 @@ describe('resolveAppConfig', () => {
       enabled: true,
       beaconUrl: 'https://example.com/analytics'
     })
-    expect(config.clientErrors).toEqual({
+    expect(config.highlight).toEqual({
       enabled: true,
-      beaconUrl: 'https://example.com/errors'
+      projectId: 'highlight-project-id',
+      privacySetting: 'strict',
+      enableSessionRecording: true,
+      enableCanvasRecording: true,
+      canvasSampling: 2,
+      environment: 'production',
+      serviceName: 'site'
     })
   })
 })

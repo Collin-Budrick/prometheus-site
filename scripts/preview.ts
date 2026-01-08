@@ -28,7 +28,11 @@ const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
 const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
-const previewEnableClientErrors = process.env.VITE_REPORT_CLIENT_ERRORS?.trim() || '1'
+const previewEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '1'
+const previewHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
+const previewHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
+const previewHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
+const previewHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
@@ -74,7 +78,11 @@ const composeEnv = {
   VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
   VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
   VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
-  VITE_REPORT_CLIENT_ERRORS: previewEnableClientErrors,
+  VITE_ENABLE_HIGHLIGHT: previewEnableHighlight,
+  VITE_HIGHLIGHT_PROJECT_ID: previewHighlightProjectId,
+  VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
+  VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
   VITE_DISABLE_SW: previewDisableSw,
   RUN_MIGRATIONS: previewRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
@@ -132,7 +140,11 @@ const buildTargets: BuildTarget[] = [
       VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
       VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
       VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
-      VITE_REPORT_CLIENT_ERRORS: composeEnv.VITE_REPORT_CLIENT_ERRORS,
+      VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT,
+      VITE_HIGHLIGHT_PROJECT_ID: composeEnv.VITE_HIGHLIGHT_PROJECT_ID,
+      VITE_HIGHLIGHT_PRIVACY: composeEnv.VITE_HIGHLIGHT_PRIVACY,
+      VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
+      VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
       VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW
     }
   },

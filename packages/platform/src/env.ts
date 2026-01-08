@@ -7,9 +7,17 @@ export type AnalyticsConfig = {
   beaconUrl: string
 }
 
-export type ClientErrorReportingConfig = {
+export type HighlightPrivacySetting = 'default' | 'none' | 'strict'
+
+export type HighlightConfig = {
   enabled: boolean
-  beaconUrl: string
+  projectId: string
+  privacySetting: HighlightPrivacySetting
+  enableSessionRecording: boolean
+  enableCanvasRecording: boolean
+  canvasSampling?: number | 'all'
+  environment: string
+  serviceName: string
 }
 
 export type AppConfig = {
@@ -20,7 +28,7 @@ export type AppConfig = {
   preferFragmentCompression: boolean
   enablePrefetch: boolean
   analytics: AnalyticsConfig
-  clientErrors: ClientErrorReportingConfig
+  highlight: HighlightConfig
 }
 
 export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
@@ -44,9 +52,11 @@ const runtimeEnvSchema = arkenvType({
   VITE_ENABLE_ANALYTICS: 'string?',
   ANALYTICS_BEACON_URL: 'string?',
   VITE_ANALYTICS_BEACON_URL: 'string?',
-  VITE_REPORT_CLIENT_ERRORS: 'string?',
-  ERROR_BEACON_URL: 'string?',
-  VITE_ERROR_BEACON_URL: 'string?',
+  VITE_ENABLE_HIGHLIGHT: 'string?',
+  VITE_HIGHLIGHT_PROJECT_ID: 'string?',
+  VITE_HIGHLIGHT_PRIVACY: 'string?',
+  VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -62,8 +72,11 @@ const publicEnvSchema = arkenvType({
   VITE_ENABLE_PREFETCH: 'string?',
   VITE_ENABLE_ANALYTICS: 'string?',
   VITE_ANALYTICS_BEACON_URL: 'string?',
-  VITE_REPORT_CLIENT_ERRORS: 'string?',
-  VITE_ERROR_BEACON_URL: 'string?',
+  VITE_ENABLE_HIGHLIGHT: 'string?',
+  VITE_HIGHLIGHT_PROJECT_ID: 'string?',
+  VITE_HIGHLIGHT_PRIVACY: 'string?',
+  VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -237,18 +250,51 @@ export const resolveAnalyticsConfig = (env: AppEnv = resolveRuntimeEnv()): Analy
   }
 }
 
-const resolveErrorBeaconUrl = (env: AppEnv) =>
-  toStringValue(firstDefined(env.ERROR_BEACON_URL, env.VITE_ERROR_BEACON_URL))?.trim() ?? ''
+const resolveHighlightProjectId = (env: AppEnv) =>
+  toStringValue(env.VITE_HIGHLIGHT_PROJECT_ID)?.trim() ?? ''
 
-export const resolveClientErrorReporting = (
-  env: AppEnv = resolveRuntimeEnv()
-): ClientErrorReportingConfig => {
-  const beaconUrl = resolveErrorBeaconUrl(env)
-  const enabled = isTruthyFlag(env.VITE_REPORT_CLIENT_ERRORS) && Boolean(beaconUrl)
+const resolveHighlightPrivacySetting = (env: AppEnv): HighlightPrivacySetting => {
+  const value = toStringValue(env.VITE_HIGHLIGHT_PRIVACY)?.trim().toLowerCase()
+  if (value === 'default' || value === 'none' || value === 'strict') {
+    return value
+  }
+  return 'strict'
+}
+
+const resolveHighlightSessionRecording = (env: AppEnv) =>
+  isTruthyFlag(env.VITE_HIGHLIGHT_SESSION_RECORDING, true)
+
+const resolveHighlightCanvasSampling = (env: AppEnv): number | 'all' | undefined => {
+  const raw = toStringValue(env.VITE_HIGHLIGHT_CANVAS_SAMPLING)?.trim().toLowerCase()
+  if (!raw) return undefined
+  if (raw === 'all') return 'all'
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined
+  return parsed
+}
+
+const resolveHighlightEnvironment = (env: AppEnv) => {
+  const mode = toStringValue(env.MODE)?.trim()
+  if (mode) return mode
+  const nodeEnv = toStringValue(env.NODE_ENV)?.trim()
+  if (nodeEnv) return nodeEnv
+  return isDevEnv(env) ? 'development' : 'production'
+}
+
+export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): HighlightConfig => {
+  const projectId = resolveHighlightProjectId(env)
+  const enabled = isTruthyFlag(env.VITE_ENABLE_HIGHLIGHT) && Boolean(projectId)
+  const canvasSampling = resolveHighlightCanvasSampling(env)
 
   return {
     enabled,
-    beaconUrl
+    projectId,
+    privacySetting: resolveHighlightPrivacySetting(env),
+    enableSessionRecording: resolveHighlightSessionRecording(env),
+    enableCanvasRecording: Boolean(canvasSampling),
+    canvasSampling,
+    environment: resolveHighlightEnvironment(env),
+    serviceName: 'site'
   }
 }
 
@@ -263,6 +309,6 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     preferFragmentCompression: isFragmentCompressionPreferred(resolvedEnv),
     enablePrefetch: isPrefetchEnabled(resolvedEnv),
     analytics: resolveAnalyticsConfig(resolvedEnv),
-    clientErrors: resolveClientErrorReporting(resolvedEnv)
+    highlight: resolveHighlightConfig(resolvedEnv)
   }
 }
