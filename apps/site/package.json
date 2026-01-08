@@ -26,11 +26,11 @@
     "lightningcss": "^1.30.2",
     "oxlint": "1.38.0",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260106",
-    "vite": "8.0.0-beta.5",
+    "typescript": "6.0.0-dev.20260107",
+    "vite": "8.0.0-beta.7",
     "vite-plugin-compression2": "^2.4.0"
   },
   "optionalDependencies": {
-    "@oxlint/win32-arm64": "^1.36.0"
+    "@oxlint/win32-arm64": "^1.38.0"
   }
 }
