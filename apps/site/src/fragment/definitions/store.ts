@@ -448,6 +448,18 @@ const storeFragmentCss = `
   font-size: 13px;
   letter-spacing: 0.12em;
   color: rgb(var(--ink));
+  transition: color 200ms ease;
+  will-change: transform;
+}
+
+.store-cart-total strong[data-change='up'] {
+  color: rgb(var(--accent-strong));
+  animation: store-cart-total-up 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.store-cart-total strong[data-change='down'] {
+  color: rgb(var(--muted));
+  animation: store-cart-total-down 460ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .store-cart-dropzone {
@@ -604,6 +616,36 @@ const storeFragmentCss = `
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes store-cart-total-up {
+  0% {
+    opacity: 0.7;
+    transform: translateY(6px) scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes store-cart-total-down {
+  0% {
+    opacity: 0.7;
+    transform: translateY(-6px) scale(1.03);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(2px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

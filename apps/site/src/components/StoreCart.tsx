@@ -35,7 +35,9 @@ export const StoreCart = component$<StoreCartProps>(
     const removingIds = useSignal<number[]>([])
     const dragActive = useSignal(false)
     const listRef = useSignal<HTMLElement>()
+    const totalRef = useSignal<HTMLElement>()
     const listPositions = useSignal<NoSerialize<Map<number, DOMRect>> | undefined>(undefined)
+    const lastTotal = useSignal<number | null>(null)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const copy = fragmentCopy.value
@@ -188,6 +190,49 @@ export const StoreCart = component$<StoreCartProps>(
       { strategy: 'document-ready' }
     )
 
+    useVisibleTask$(
+      (ctx) => {
+        if (typeof window === 'undefined') return
+        ctx.track(() => total.value)
+        const nextTotal = total.value
+
+        if (lastTotal.value === null) {
+          lastTotal.value = nextTotal
+          return
+        }
+
+        if (nextTotal === lastTotal.value) return
+
+        const element = totalRef.value
+        if (!element) {
+          lastTotal.value = nextTotal
+          return
+        }
+
+        const direction = nextTotal > lastTotal.value ? 'up' : 'down'
+        lastTotal.value = nextTotal
+
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          element.removeAttribute('data-change')
+          return
+        }
+
+        element.removeAttribute('data-change')
+        requestAnimationFrame(() => {
+          element.dataset.change = direction
+        })
+
+        const timeout = window.setTimeout(() => {
+          if (element.dataset.change === direction) {
+            element.removeAttribute('data-change')
+          }
+        }, 520)
+
+        ctx.cleanup(() => window.clearTimeout(timeout))
+      },
+      { strategy: 'document-ready' }
+    )
+
     return (
       <div class={rootClass.value} data-state={cartItems.value.length > 0 ? 'filled' : 'empty'}>
         <div class="store-cart-header">
@@ -197,7 +242,7 @@ export const StoreCart = component$<StoreCartProps>(
           </div>
           <div class="store-cart-total">
             <span>{resolvedTotal}</span>
-            <strong>{formatPrice(total.value)}</strong>
+            <strong ref={totalRef}>{formatPrice(total.value)}</strong>
           </div>
         </div>
         <div
