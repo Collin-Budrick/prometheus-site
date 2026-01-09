@@ -1,6 +1,5 @@
 import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
-import 'scheduler-polyfill'
 import { initQuicklinkPrefetch } from './prefetch'
 
 type IdleHandles = {
@@ -28,18 +27,32 @@ export type ClientExtrasConfig = {
   reportClientError?: ClientErrorReporter
 }
 
-const scheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
-const TaskControllerImpl =
-  (globalThis as typeof globalThis & { TaskController?: TaskControllerConstructor }).TaskController ?? AbortController
+type SchedulerGlobals = typeof globalThis & {
+  scheduler?: SchedulerLike
+  TaskController?: TaskControllerConstructor
+}
 
-const postTask = scheduler?.postTask?.bind(scheduler)
-const yieldTask = scheduler?.yield?.bind(scheduler)
+let schedulerImport: Promise<void> | null = null
+
+const ensureSchedulerPolyfill = () => {
+  if (typeof window === 'undefined') return
+  if (schedulerImport) return
+  schedulerImport = import('scheduler-polyfill').then(() => {}).catch(() => {})
+}
+
+const getSchedulerGlobals = () => globalThis as SchedulerGlobals
 
 const scheduleIdleTask = (
   callback: () => void,
   timeout = 120,
   priority: TaskPriority = 'background'
 ) => {
+  ensureSchedulerPolyfill()
+  const globals = getSchedulerGlobals()
+  const scheduler = globals.scheduler
+  const TaskControllerImpl = globals.TaskController ?? AbortController
+  const postTask = scheduler?.postTask?.bind(scheduler)
+  const yieldTask = scheduler?.yield?.bind(scheduler)
   const handles: IdleHandles = { timeout: null }
   const controller = new TaskControllerImpl()
   let cancelled = false
@@ -63,6 +76,14 @@ const scheduleIdleTask = (
       .catch(() => {})
   }
 
+  if (typeof window === 'undefined') {
+    run()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }
+
   handles.timeout = window.setTimeout(() => {
     run()
   }, timeout)
@@ -80,16 +101,29 @@ const schedulePriorityTask = (
   task: () => void,
   { priority = 'background', timeout = 300 }: { priority?: TaskPriority; timeout?: number } = {}
 ) => {
+  ensureSchedulerPolyfill()
+  const globals = getSchedulerGlobals()
+  const scheduler = globals.scheduler
+  const postTask = scheduler?.postTask?.bind(scheduler)
+  const yieldTask = scheduler?.yield?.bind(scheduler)
   let fired = false
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
   const run = () => {
     if (fired) return
     fired = true
-    clearTimeout(timeoutHandle)
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle)
+    }
     task()
   }
 
-  const timeoutHandle = window.setTimeout(run, timeout)
+  if (typeof window === 'undefined') {
+    run()
+    return
+  }
+
+  timeoutHandle = window.setTimeout(run, timeout)
 
   if (postTask) {
     postTask(run, { priority }).catch(() => {})

@@ -1,5 +1,3 @@
-import 'scheduler-polyfill'
-
 type IdleHandles = {
   timeout: number | null
 }
@@ -13,12 +11,20 @@ type SchedulerLike = {
   yield?: (options?: { priority?: TaskPriority }) => Promise<void>
 }
 
-const scheduler = (globalThis as typeof globalThis & { scheduler?: SchedulerLike }).scheduler
-const TaskControllerImpl =
-  (globalThis as typeof globalThis & { TaskController?: TaskControllerConstructor }).TaskController ?? AbortController
+type SchedulerGlobals = typeof globalThis & {
+  scheduler?: SchedulerLike
+  TaskController?: TaskControllerConstructor
+}
 
-const postTask = scheduler?.postTask?.bind(scheduler)
-const yieldTask = scheduler?.yield?.bind(scheduler)
+let schedulerImport: Promise<void> | null = null
+
+const ensureSchedulerPolyfill = () => {
+  if (typeof window === 'undefined') return
+  if (schedulerImport) return
+  schedulerImport = import('scheduler-polyfill').then(() => {}).catch(() => {})
+}
+
+const getSchedulerGlobals = () => globalThis as SchedulerGlobals
 
 /**
  * Schedule work when the browser is idle with scheduler-backed prioritization and
@@ -29,6 +35,12 @@ export const scheduleIdleTask = (
   timeout = 120,
   priority: TaskPriority = 'background'
 ) => {
+  ensureSchedulerPolyfill()
+  const globals = getSchedulerGlobals()
+  const scheduler = globals.scheduler
+  const TaskControllerImpl = globals.TaskController ?? AbortController
+  const postTask = scheduler?.postTask?.bind(scheduler)
+  const yieldTask = scheduler?.yield?.bind(scheduler)
   const handles: IdleHandles = { timeout: null }
   const controller = new TaskControllerImpl()
   let cancelled = false
@@ -50,6 +62,14 @@ export const scheduleIdleTask = (
     yieldTask({ priority })
       .then(run)
       .catch(() => {})
+  }
+
+  if (typeof window === 'undefined') {
+    run()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }
 
   handles.timeout = window.setTimeout(() => {
