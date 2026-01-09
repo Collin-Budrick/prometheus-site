@@ -167,13 +167,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     refreshTick.value += 1
   })
 
-  const updateItemQuantity = (id: number, quantity: number) => {
+  const updateItemQuantity = $((id: number, quantity: number) => {
     const existingIndex = items.value.findIndex((entry) => entry.id === id)
     if (existingIndex < 0) return
     const next = [...items.value]
     next[existingIndex] = { ...next[existingIndex], quantity }
     items.value = next
-  }
+  })
 
   const handleAddClick = $(async (item: StoreItem) => {
     if (typeof window === 'undefined') return
@@ -182,13 +182,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     const result = await consumeStoreItem(item.id, window.location.origin)
     if (!result.ok) {
       if (result.status === 409) {
-        updateItemQuantity(item.id, 0)
+        await updateItemQuantity(item.id, 0)
       }
       return
     }
 
     if (result.item) {
-      updateItemQuantity(result.item.id, result.item.quantity)
+      await updateItemQuantity(result.item.id, result.item.quantity)
     }
 
     window.dispatchEvent(
