@@ -149,7 +149,8 @@ const storeFragmentCss = `
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-content: start;
-  max-height: 420px;
+  height: clamp(320px, 55vh, 520px);
+  scrollbar-gutter: stable;
   overflow: auto;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
 }
@@ -725,6 +726,7 @@ const storeFragmentCss = `
   .store-stream-panel {
     grid-template-columns: 1fr;
     padding: 16px;
+    height: clamp(260px, 50vh, 420px);
   }
 
   .store-stream-row {
