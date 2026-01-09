@@ -6,6 +6,7 @@ import {
   consumeStoreCartDragItem,
   consumeStoreItem,
   normalizeStoreCartItem,
+  restoreStoreItem,
   storeCartAddEvent,
   type StoreCartItem
 } from '../shared/store-cart'
@@ -73,12 +74,16 @@ export const StoreCart = component$<StoreCartProps>(
       cartItems.value = [...cartItems.value, { ...item, qty: 1 }]
     })
 
-    const scheduleRemoval = $((id: number) => {
+    const scheduleRemoval = $(async (item: CartLine) => {
+      const id = item.id
       if (!Number.isFinite(id)) return
       if (removingIds.value.includes(id)) return
       const exists = cartItems.value.some((entry) => entry.id === id)
       if (!exists) return
       removingIds.value = [...removingIds.value, id]
+      if (typeof window !== 'undefined' && item.qty > 0) {
+        void restoreStoreItem(id, item.qty, window.location.origin)
+      }
       const delayMs = 240
       const finalize = () => {
         cartItems.value = cartItems.value.filter((entry) => entry.id !== id)
@@ -91,8 +96,8 @@ export const StoreCart = component$<StoreCartProps>(
       window.setTimeout(finalize, delayMs)
     })
 
-    const handleRemoveClick = $((id: number) => {
-      void scheduleRemoval(id)
+    const handleRemoveClick = $((item: CartLine) => {
+      void scheduleRemoval(item)
     })
 
     const handleDragOver = $((event: DragEvent) => {
@@ -275,7 +280,7 @@ export const StoreCart = component$<StoreCartProps>(
                     type="button"
                     aria-label={resolvedRemove}
                     title={resolvedRemove}
-                    onClick$={() => handleRemoveClick(item.id)}
+                    onClick$={() => handleRemoveClick(item)}
                   >
                     X
                   </button>

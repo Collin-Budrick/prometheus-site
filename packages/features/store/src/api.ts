@@ -1,5 +1,5 @@
 import { Elysia, t } from 'elysia'
-import { and, eq, gt, inArray, sql } from 'drizzle-orm'
+import { and, eq, gt, gte, inArray, sql } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
@@ -383,6 +383,128 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         params: t.Object({
           id: t.String()
         })
+      }
+    )
+    .post(
+      '/store/items/:id/restore',
+      async ({ params, body, request, set }) => {
+        const idRaw = Number.parseInt(params.id, 10)
+        if (!Number.isFinite(idRaw) || idRaw <= 0) {
+          return options.jsonError(400, 'Invalid item id')
+        }
+
+        const amountRaw =
+          body && typeof body === 'object' && body !== null ? (body as Record<string, unknown>).amount : undefined
+        const amountParsed = z.coerce.number().int().min(1).max(100000).safeParse(amountRaw ?? 1)
+        if (!amountParsed.success) {
+          return options.jsonError(400, 'Invalid restore amount', { issues: amountParsed.error.issues })
+        }
+        const amount = amountParsed.data
+
+        const clientIp = options.getClientIp(request)
+        const rateLimit = await options.checkRateLimit('/store/items:restore', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
+
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
+        }
+
+        const earlyLimit = await options.checkEarlyLimit(`/store/items:restore:${clientIp}`, 12, 5000)
+        if (!earlyLimit.allowed) {
+          return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
+        }
+
+        let updated
+        try {
+          const [row] = await options.db
+            .update(options.storeItemsTable)
+            .set({ quantity: sql`${options.storeItemsTable.quantity} + ${amount}` })
+            .where(and(eq(options.storeItemsTable.id, idRaw), gte(options.storeItemsTable.quantity, 0)))
+            .returning()
+          updated = row
+        } catch (error) {
+          console.error('Failed to restore store item quantity', error)
+          return attachRateLimitHeaders(options.jsonError(500, 'Unable to update item'), rateLimit.headers)
+        }
+
+        if (!updated) {
+          let current
+          try {
+            const [row] = await options.db
+              .select()
+              .from(options.storeItemsTable)
+              .where(eq(options.storeItemsTable.id, idRaw))
+              .limit(1)
+            current = row
+          } catch (error) {
+            console.error('Failed to load store item', error)
+            return attachRateLimitHeaders(options.jsonError(500, 'Unable to load item'), rateLimit.headers)
+          }
+
+          if (!current) {
+            return attachRateLimitHeaders(options.jsonError(404, 'Item not found'), rateLimit.headers)
+          }
+
+          const currentQuantity = parseQuantity(current.quantity)
+          if (currentQuantity < 0) {
+            return attachRateLimitHeaders(
+              new Response(
+                JSON.stringify({
+                  item: {
+                    id: current.id,
+                    name: current.name,
+                    price: parsePrice(current.price),
+                    quantity: currentQuantity
+                  }
+                }),
+                {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' }
+                }
+              ),
+              rateLimit.headers
+            )
+          }
+
+          return attachRateLimitHeaders(options.jsonError(409, 'Unable to restore quantity'), rateLimit.headers)
+        }
+
+        const responseItem = {
+          id: updated.id,
+          name: updated.name,
+          price: parsePrice(updated.price),
+          quantity: parseQuantity(updated.quantity)
+        }
+
+        if (options.isValkeyReady()) {
+          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+          void (async () => {
+            try {
+              const ready = await ensureStoreSearchIndex(options.valkey)
+              if (!ready) return
+              await upsertStoreSearchDocument(options.valkey, responseItem)
+            } catch (error) {
+              console.warn('Store search update failed after restore', error)
+            }
+          })()
+        }
+
+        return attachRateLimitHeaders(
+          new Response(JSON.stringify({ item: responseItem }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          }),
+          rateLimit.headers
+        )
+      },
+      {
+        params: t.Object({
+          id: t.String()
+        }),
+        body: t.Any()
       }
     )
     .delete(

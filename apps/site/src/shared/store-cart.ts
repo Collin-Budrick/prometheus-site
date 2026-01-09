@@ -108,3 +108,39 @@ export const consumeStoreItem = async (id: number, origin: string): Promise<Stor
     return { ok: false, status: 0 }
   }
 }
+
+export const restoreStoreItem = async (
+  id: number,
+  amount: number,
+  origin: string
+): Promise<StoreConsumeResult> => {
+  if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: 400 }
+  }
+
+  try {
+    const response = await fetch(buildApiUrl(`/store/items/${id}/restore`, origin), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ amount })
+    })
+
+    if (!response.ok) {
+      return { ok: false, status: response.status }
+    }
+
+    let payload: unknown = null
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    }
+
+    const item = normalizeStoreConsumeItem((payload as Record<string, unknown> | null)?.item)
+    return { ok: true, status: response.status, item: item ?? undefined }
+  } catch (error) {
+    console.warn('Failed to restore store item', error)
+    return { ok: false, status: 0 }
+  }
+}
