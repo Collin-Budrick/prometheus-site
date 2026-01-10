@@ -10,6 +10,7 @@
   "dependencies": {
     "@better-auth/oauth-provider": "^1.5.0-beta.2",
     "@better-auth/passkey": "^1.5.0-beta.2",
-    "better-auth": "^1.5.0-beta.2"
+    "better-auth": "^1.5.0-beta.2",
+    "zod": "4.4.0-canary.20251231T230035"
   }
 }

@@ -1,14 +1,15 @@
 import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { Link, routeLoader$, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
-import { InFlask, InHomeSimple, InShop, InUser } from '@qwikest/icons/iconoir'
+import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
-import { TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
+import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
+import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -96,8 +97,14 @@ const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navHome: InHomeSimple,
   navStore: InShop,
   navLab: InFlask,
-  navLogin: InUser
+  navLogin: InUser,
+  navProfile: InUserCircle,
+  navChat: InChatLines,
+  navSettings: InSettings,
+  navDashboard: InDashboard
 }
+
+export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request }) => loadAuthSession(request))
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
@@ -145,7 +152,10 @@ export default component$(() => {
   const langSignal = useSharedLangSignal()
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
-  const dockItems = TOPBAR_NAV_ITEMS.map((item) => {
+  const authSession = useAuthSession()
+  const isAuthenticated = authSession.value.status === 'authenticated'
+  const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
+  const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
     return { href: item.href, label: copy.value[item.labelKey], icon: Icon }
   })
@@ -236,10 +246,17 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
-      <DockBar ariaLabel={copy.value.dockAriaLabel}>
-        {dockItems.map(({ href, label, icon: Icon }) => (
+      <DockBar ariaLabel={copy.value.dockAriaLabel} dockMode={isAuthenticated ? 'auth' : 'public'}>
+        {dockItems.map(({ href, label, icon: Icon }, index) => (
           <DockIcon key={href} label={label}>
-            <Link class="dock-link" href={href} data-fragment-link aria-label={label} title={label}>
+            <Link
+              class="dock-link"
+              href={href}
+              data-fragment-link
+              aria-label={label}
+              title={label}
+              style={{ '--dock-index': `${index}` }}
+            >
               <Icon class="dock-icon-svg" aria-hidden="true" />
             </Link>
           </DockIcon>

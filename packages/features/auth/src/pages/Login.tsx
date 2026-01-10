@@ -9,7 +9,7 @@ export const head: DocumentHead = {
   meta: [
     {
       name: 'description',
-      content: 'Access your workspace and deployment history.'
+      content: 'Authenticate to access your workspace and deployment history.'
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from './FragmentCard'
 
 type StaticRouteTemplateProps = {
@@ -83,6 +83,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             <div class="meta-line">{metaLine}</div>
             <h1>{title}</h1>
             <p>{description}</p>
+            <Slot />
             <button class="action-button" type="button">
               {actionLabel}
             </button>

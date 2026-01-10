@@ -1,5 +1,13 @@
 export type SiteFeature = 'store' | 'lab' | 'login'
-export type NavLabelKey = 'navHome' | 'navStore' | 'navLab' | 'navLogin'
+export type NavLabelKey =
+  | 'navHome'
+  | 'navStore'
+  | 'navLab'
+  | 'navLogin'
+  | 'navProfile'
+  | 'navChat'
+  | 'navSettings'
+  | 'navDashboard'
 export type NavItem = { href: string; labelKey: NavLabelKey; feature?: SiteFeature }
 
 export const siteBrand = {
@@ -22,6 +30,13 @@ export const navItems: ReadonlyArray<NavItem> = [
   { href: '/store', labelKey: 'navStore', feature: 'store' },
   { href: '/lab', labelKey: 'navLab', feature: 'lab' },
   { href: '/login', labelKey: 'navLogin', feature: 'login' }
+]
+
+export const authNavItems: ReadonlyArray<NavItem> = [
+  { href: '/profile', labelKey: 'navProfile' },
+  { href: '/chat', labelKey: 'navChat' },
+  { href: '/settings', labelKey: 'navSettings' },
+  { href: '/dashboard', labelKey: 'navDashboard' }
 ]
 
 const buildEnabledNav = () =>

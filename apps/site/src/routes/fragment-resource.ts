@@ -1,7 +1,8 @@
-import { normalizeApiBase, resolveApiBase, type AppConfig } from '@platform/env'
+import { type AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
+import { resolveServerApiBase } from '../shared/api-base'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue
@@ -58,32 +59,6 @@ export const loadHybridFragmentResource = async (
   }
 
   return { plan, fragments, path: plan.path }
-}
-
-const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
-
-const resolveOrigin = (request?: Request) => {
-  if (!request) return ''
-  try {
-    return new URL(request.url).origin
-  } catch {
-    return ''
-  }
-}
-
-const resolveServerApiBase = (apiBase: string, request?: Request) => {
-  const normalized = normalizeApiBase(apiBase)
-  const runtimeApiBase = resolveApiBase()
-  if (runtimeApiBase && isAbsoluteUrl(runtimeApiBase)) return runtimeApiBase
-  if (normalized && isAbsoluteUrl(normalized)) return normalized
-
-  const origin = resolveOrigin(request)
-  const relative = normalized || (runtimeApiBase && !isAbsoluteUrl(runtimeApiBase) ? runtimeApiBase : '')
-  if (origin && relative) {
-    return `${origin}${relative.startsWith('/') ? relative : `/${relative}`}`
-  }
-
-  return normalized || runtimeApiBase
 }
 
 export const resolveRequestLang = (request: Request): Lang => {

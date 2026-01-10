@@ -55,11 +55,23 @@ const EnabledLoginRoute = component$(() => {
   const copy = useLangCopy()
   return (
     <FeatureLoginRoute
+      apiBase={appConfig.apiBase}
       copy={{
         metaLine: copy.value.loginMetaLine,
         title: copy.value.loginTitle,
         description: copy.value.loginDescription,
         actionLabel: copy.value.loginAction,
+        loginTabLabel: copy.value.loginTab,
+        signupTabLabel: copy.value.signupTab,
+        signupTitle: copy.value.signupTitle,
+        signupDescription: copy.value.signupDescription,
+        signupActionLabel: copy.value.signupAction,
+        nameLabel: copy.value.authNameLabel,
+        emailLabel: copy.value.authEmailLabel,
+        passwordLabel: copy.value.authPasswordLabel,
+        rememberLabel: copy.value.authRememberLabel,
+        passkeyLabel: copy.value.authPasskeyLabel,
+        passkeyHint: copy.value.authPasskeyHint,
         closeLabel: copy.value.fragmentClose
       }}
     />

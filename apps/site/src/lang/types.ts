@@ -5,6 +5,10 @@ export type UiCopy = {
   navStore: string
   navLab: string
   navLogin: string
+  navProfile: string
+  navChat: string
+  navSettings: string
+  navDashboard: string
   dockAriaLabel: string
   themeLight: string
   themeDark: string
@@ -24,6 +28,20 @@ export type UiCopy = {
   loginTitle: string
   loginDescription: string
   loginAction: string
+  loginTab: string
+  signupTab: string
+  signupTitle: string
+  signupDescription: string
+  signupAction: string
+  authNameLabel: string
+  authEmailLabel: string
+  authPasswordLabel: string
+  authRememberLabel: string
+  authPasskeyLabel: string
+  authPasskeyHint: string
+  protectedMetaLine: string
+  protectedDescription: string
+  protectedAction: string
   featureUnavailableMeta: string
   featureUnavailableTitle: string
   featureUnavailableDescription: string
