@@ -5,9 +5,12 @@ import { siteBrand } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
-import { resolveRequestLang } from '../fragment-resource'
+import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
+import { FragmentShell } from '../../fragment/ui'
+import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import { appConfig } from '../../app-config'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -20,6 +23,31 @@ export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request, re
     throw redirect(302, '/login')
   }
   return { lang }
+})
+
+type FragmentResource = {
+  plan: FragmentPlanValue
+  fragments: FragmentPayloadValue
+  path: string
+  lang: Lang
+}
+
+export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
+  const path = url.pathname || '/chat'
+  const lang = resolveRequestLang(request)
+
+  try {
+    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    return {
+      plan,
+      fragments: fragments as FragmentPayloadValue,
+      path: planPath,
+      lang
+    }
+  } catch (error) {
+    console.error('Fragment plan fetch failed for chat', error)
+    return null
+  }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -46,9 +74,22 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 
 export default component$(() => {
   const data = useChatData()
+  const fragmentResource = useFragmentResource()
+  const fragmentData = fragmentResource.value
   const copy = useLangCopy()
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navChat)
+
+  if (fragmentData?.plan?.fragments?.length) {
+    return (
+      <FragmentShell
+        plan={fragmentData.plan}
+        initialFragments={fragmentData.fragments}
+        path={fragmentData.path}
+        initialLang={fragmentData.lang}
+      />
+    )
+  }
 
   return (
     <StaticRouteTemplate

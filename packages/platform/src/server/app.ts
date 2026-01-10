@@ -12,7 +12,16 @@ import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
 import type { DatabaseClient } from '../db'
 import { prepareDatabase } from '../db/prepare'
-import { authKeys, authSessions, chatMessages, passkeys, storeItems, users, verification } from '../db/schema'
+import {
+  authKeys,
+  authSessions,
+  chatMessages,
+  contactInvites,
+  passkeys,
+  storeItems,
+  users,
+  verification
+} from '../db/schema'
 import { checkEarlyLimit, recordLatencySample } from '../cache-helpers'
 import { createLogger } from '../logger'
 import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from '../network'
@@ -167,6 +176,9 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         createMessagingRoutes({
           db,
           chatMessagesTable: chatMessages,
+          contactInvitesTable: contactInvites,
+          usersTable: users,
+          validateSession: authFeature?.validateSession,
           valkey,
           isValkeyReady,
           getClientIp,

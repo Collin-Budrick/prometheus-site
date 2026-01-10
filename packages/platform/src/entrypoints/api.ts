@@ -1,5 +1,6 @@
 import '@site/fragment/definitions/home'
 import '@site/fragment/definitions/store'
+import '@site/fragment/definitions/chat'
 import { createFragmentTranslator } from '@site/fragment/definitions/i18n'
 import { startApiServer, type ApiServerOptions } from '../server/app'
 

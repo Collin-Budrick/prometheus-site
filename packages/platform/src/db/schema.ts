@@ -103,6 +103,28 @@ export const passkeys = pgTable(
   ]
 )
 
+export const contactInvites = pgTable(
+  'contact_invites',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    inviterId: uuid('inviter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    inviteeId: uuid('invitee_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex('contact_invites_unique').on(table.inviterId, table.inviteeId),
+    index('contact_invites_inviter_idx').on(table.inviterId),
+    index('contact_invites_invitee_idx').on(table.inviteeId),
+    index('contact_invites_status_idx').on(table.status)
+  ]
+)
+
 export const verification = pgTable(
   'verification',
   {

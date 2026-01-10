@@ -95,6 +95,12 @@
       "metaLine": "store writer",
       "title": "Create a new store item.",
       "description": "Write to Postgres, validate with drizzle-zod, and stream updates into the feed."
+    },
+    "fragment://page/chat/contacts@v1": {
+      "heading": "h2",
+      "metaLine": "contact invites",
+      "title": "Invite and manage contacts.",
+      "description": "Search by email to send invites, accept or decline requests, and keep your contact list in sync."
     }
   },
   "lab": {
@@ -288,6 +294,31 @@
     "Added item #{{id}}": "Added item #{{id}}",
     "Item created.": "Item created.",
     "Unable to create item.": "Unable to create item.",
-    "Saving...": "Saving..."
+    "Saving...": "Saving...",
+    "Contact invites": "Contact invites",
+    "Search by email to connect.": "Search by email to connect.",
+    "Search by email": "Search by email",
+    "name@domain.com": "name@domain.com",
+    "Invite": "Invite",
+    "Accept": "Accept",
+    "Decline": "Decline",
+    "Remove": "Remove",
+    "Incoming": "Incoming",
+    "Outgoing": "Outgoing",
+    "Contacts": "Contacts",
+    "No invites yet.": "No invites yet.",
+    "Unable to load invites.": "Unable to load invites.",
+    "Unable to search.": "Unable to search.",
+    "Invite unavailable.": "Invite unavailable.",
+    "Invite sent.": "Invite sent.",
+    "Invite accepted.": "Invite accepted.",
+    "Invite declined.": "Invite declined.",
+    "Invite removed.": "Invite removed.",
+    "Ready": "Ready",
+    "Searching...": "Searching...",
+    "Search results": "Search results",
+    "Connected": "Connected",
+    "Pending": "Pending",
+    "No contacts yet.": "No contacts yet."
   }
 }

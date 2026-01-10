@@ -8,6 +8,7 @@ import { PlannerDemo } from '../../components/PlannerDemo'
 import { StoreStream } from '../../components/StoreStream'
 import { StoreCreateForm } from '../../components/StoreCreateForm'
 import { StoreCart } from '../../components/StoreCart'
+import { ContactInvites } from '../../components/ContactInvites'
 
 type NodeProps = {
   node: RenderNode
@@ -105,6 +106,27 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         totalLabel={node.attrs?.['data-total']}
         dropLabel={node.attrs?.['data-drop']}
         removeLabel={node.attrs?.['data-remove']}
+      />
+    )
+  }
+
+  if (node.tag === 'contact-invites') {
+    return (
+      <ContactInvites
+        class={node.attrs?.class}
+        title={node.attrs?.['data-title']}
+        helper={node.attrs?.['data-helper']}
+        searchLabel={node.attrs?.['data-search-label']}
+        searchPlaceholder={node.attrs?.['data-search-placeholder']}
+        searchActionLabel={node.attrs?.['data-search-action']}
+        inviteActionLabel={node.attrs?.['data-invite-action']}
+        acceptActionLabel={node.attrs?.['data-accept-action']}
+        declineActionLabel={node.attrs?.['data-decline-action']}
+        removeActionLabel={node.attrs?.['data-remove-action']}
+        incomingLabel={node.attrs?.['data-incoming-label']}
+        outgoingLabel={node.attrs?.['data-outgoing-label']}
+        contactsLabel={node.attrs?.['data-contacts-label']}
+        emptyLabel={node.attrs?.['data-empty-label']}
       />
     )
   }
