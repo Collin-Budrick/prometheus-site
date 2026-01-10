@@ -52,19 +52,22 @@ type ContactSearchPayload = {
 
 type RealtimeState = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
 
-type PanelKey = 'contacts'
-
-const collapsedStorageKey = 'contacts:panels:collapsed'
 const countStorageKey = 'contacts:panels:counts'
-
-const defaultCollapsedState: Record<PanelKey, boolean> = {
-  contacts: false
-}
 
 type BaselineInviteCounts = {
   incoming: number
   outgoing: number
   contacts: number
+}
+
+type ContactSearchItem = {
+  id: string
+  name?: string | null
+  email: string
+  status?: ContactSearchResult['status']
+  inviteId?: string
+  isContact: boolean
+  online?: boolean
 }
 
 const buildApiUrl = (path: string, origin: string) => {
@@ -85,6 +88,15 @@ const buildWsUrl = (path: string, origin: string) => {
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? fallback : trimmed
+}
+
+const normalizeQuery = (value: string) => value.trim().toLowerCase()
+
+const matchesQuery = (entry: { name?: string | null; email: string }, query: string) => {
+  if (!query) return false
+  const emailMatch = entry.email.toLowerCase().includes(query)
+  const nameMatch = entry.name?.toLowerCase().includes(query) ?? false
+  return emailMatch || nameMatch
 }
 
 const formatDisplayName = (entry: { name?: string | null; email: string }) => {
@@ -124,7 +136,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const busyKeys = useSignal<string[]>([])
     const realtimeState = useSignal<RealtimeState>('idle')
     const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
-    const panelCollapsed = useSignal<Record<PanelKey, boolean>>({ ...defaultCollapsedState })
     const baselineCounts = useSignal<BaselineInviteCounts | null>(null)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
@@ -269,17 +280,28 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const handleSearchInput = $((event: Event) => {
       const value = (event.target as HTMLInputElement).value
       searchQuery.value = value
-      if (value.trim() === '') {
-        searchResults.value = []
-        searchState.value = 'idle'
-        searchError.value = null
-      }
+      searchResults.value = []
+      searchState.value = 'idle'
+      searchError.value = null
     })
 
     const handleSearchSubmit = $(async () => {
       if (typeof window === 'undefined') return
       const trimmed = searchQuery.value.trim()
       if (!trimmed) {
+        searchResults.value = []
+        searchState.value = 'idle'
+        searchError.value = null
+        return
+      }
+
+      const normalized = trimmed.toLowerCase()
+      const contactMatches = contacts.value.filter((invite) => {
+        const emailMatch = invite.user.email.toLowerCase().includes(normalized)
+        const nameMatch = invite.user.name?.toLowerCase().includes(normalized) ?? false
+        return emailMatch || nameMatch
+      })
+      if (contactMatches.length > 0) {
         searchResults.value = []
         searchState.value = 'idle'
         searchError.value = null
@@ -312,7 +334,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
         }
 
         const payload = (await response.json()) as ContactSearchPayload
-        searchResults.value = Array.isArray(payload.results) ? payload.results : []
+        const contactIds = new Set(contacts.value.map((invite) => invite.user.id))
+        const results = Array.isArray(payload.results) ? payload.results : []
+        searchResults.value = results.filter((result) => !contactIds.has(result.id))
         searchState.value = 'idle'
       } catch (error) {
         searchState.value = 'error'
@@ -532,17 +556,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }
     })
 
-    const togglePanel = $((panel: PanelKey) => {
-      const nextState = { ...panelCollapsed.value, [panel]: !panelCollapsed.value[panel] }
-      panelCollapsed.value = nextState
-      if (typeof window === 'undefined') return
-      try {
-        window.localStorage.setItem(collapsedStorageKey, JSON.stringify(nextState))
-      } catch {
-        // ignore storage failures
-      }
-    })
-
     const toggleBell = $(() => {
       bellOpen.value = !bellOpen.value
     })
@@ -567,26 +580,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
         const handleKeyDown = (event: KeyboardEvent) => {
           if (event.key === 'Escape') {
             bellOpen.value = false
-          }
-        }
-
-        const readCollapsedState = () => {
-          try {
-            const raw = window.localStorage.getItem(collapsedStorageKey)
-            if (!raw) return
-            const parsed = JSON.parse(raw)
-            if (!parsed || typeof parsed !== 'object') return
-            const next = { ...defaultCollapsedState }
-            const contacts = (parsed as Record<string, unknown>).contacts
-            const online = (parsed as Record<string, unknown>).online
-            if (typeof contacts === 'boolean') {
-              next.contacts = contacts
-            } else if (typeof online === 'boolean') {
-              next.contacts = online
-            }
-            panelCollapsed.value = next
-          } catch {
-            // ignore storage failures
           }
         }
 
@@ -642,7 +635,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
           }
         }
 
-        readCollapsedState()
         readBaselineCounts()
 
         window.addEventListener('beforeunload', saveCounts)
@@ -820,10 +812,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const incomingCount = incoming.value.length
     const outgoingCount = outgoing.value.length
     const contactsCount = contacts.value.length
-    const contactsCollapsed = panelCollapsed.value.contacts
     const incomingAlert = isAlertCount('incoming', incomingCount)
     const outgoingAlert = isAlertCount('outgoing', outgoingCount)
-    const contactsAlert = isAlertCount('contacts', contactsCount)
     const baseline = baselineCounts.value
     const outgoingAcceptedAlert =
       !!baseline &&
@@ -833,6 +823,34 @@ export const ContactInvites = component$<ContactInvitesProps>(
       outgoingCount < baseline.outgoing
     const bellAlert = incomingAlert || outgoingAcceptedAlert
     const BellIcon = InBellNotification
+    const normalizedQuery = normalizeQuery(searchQuery.value)
+    const contactMatches = normalizedQuery
+      ? contacts.value.filter((invite) => matchesQuery(invite.user, normalizedQuery))
+      : contacts.value
+    const shouldSearchRemote = normalizedQuery !== '' && contactMatches.length === 0
+    const contactResults = contactMatches.map<ContactSearchItem>((invite) => ({
+      id: invite.user.id,
+      name: invite.user.name,
+      email: invite.user.email,
+      status: 'accepted',
+      inviteId: invite.id,
+      isContact: true,
+      online: onlineSet.has(invite.user.id)
+    }))
+    const remoteResults = shouldSearchRemote
+      ? searchResults.value.map<ContactSearchItem>((result) => ({
+          id: result.id,
+          name: result.name,
+          email: result.email,
+          status: result.status,
+          inviteId: result.inviteId,
+          isContact: false,
+          online: false
+        }))
+      : []
+    const displayResults: ContactSearchItem[] = [...contactResults, ...remoteResults]
+    const resultsLabel =
+      normalizedQuery === '' || contactMatches.length > 0 ? resolvedContactsLabel : resolve('Search results')
 
     return (
       <section class={rootClass} data-state={invitesState.value}>
@@ -982,21 +1000,26 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
         <div class="chat-invites-results" data-state={searchState.value}>
           <div class="chat-invites-results-header">
-            <span>{resolve('Search results')}</span>
+            <span>{resultsLabel}</span>
             {searchError.value ? <span class="chat-invites-error">{searchError.value}</span> : null}
           </div>
-          {searchState.value === 'loading' && searchResults.value.length === 0 ? (
+          {searchState.value === 'loading' && displayResults.length === 0 ? (
             <p class="chat-invites-empty">{resolve('Searching...')}</p>
           ) : null}
-          {searchState.value !== 'loading' && searchResults.value.length === 0 && searchQuery.value.trim() ? (
+          {searchState.value !== 'loading' && displayResults.length === 0 && normalizedQuery ? (
             <p class="chat-invites-empty">{resolve('No matches yet.')}</p>
           ) : null}
+          {searchState.value !== 'loading' && displayResults.length === 0 && !normalizedQuery ? (
+            <p class="chat-invites-empty">{resolve('No contacts yet.')}</p>
+          ) : null}
           <div class="chat-invites-list">
-            {searchResults.value.map((result, index) => {
+            {displayResults.map((result, index) => {
               const displayName = formatDisplayName(result)
+              const isContact = result.isContact || result.status === 'accepted'
               const isPending = result.status === 'outgoing'
               const isIncoming = result.status === 'incoming'
-              const isAccepted = result.status === 'accepted'
+              const isAccepted = result.status === 'accepted' || isContact
+              const isOnline = isContact ? !!result.online : false
 
               return (
                 <article
@@ -1005,14 +1028,33 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   style={`--stagger-index:${index};`}
                 >
                   <div>
-                    <p class="chat-invites-item-name">{displayName}</p>
+                    <div class="chat-invites-item-heading">
+                      {isContact ? (
+                        <span
+                          class="chat-invites-presence"
+                          data-online={isOnline ? 'true' : 'false'}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <p class="chat-invites-item-name">{displayName}</p>
+                    </div>
                     <p class="chat-invites-item-meta">{result.email}</p>
                   </div>
                   <div class="chat-invites-actions">
                     {isAccepted ? <span class="chat-invites-pill">{resolve('Connected')}</span> : null}
                     {isPending ? <span class="chat-invites-pill">{resolve('Pending')}</span> : null}
                     {isIncoming ? <span class="chat-invites-pill accent">{resolve('Incoming')}</span> : null}
-                    {result.status === 'none' || result.status === undefined ? (
+                    {isContact && result.inviteId ? (
+                      <button
+                        type="button"
+                        class="chat-invites-action ghost"
+                        disabled={busyKeys.value.includes(`remove:${result.inviteId}`)}
+                        onClick$={() => handleRemove(result.inviteId!, result.id, result.email)}
+                      >
+                        {resolvedRemoveAction}
+                      </button>
+                    ) : null}
+                    {(result.status === 'none' || result.status === undefined) && !isContact ? (
                       <button
                         type="button"
                         class="chat-invites-action"
@@ -1022,7 +1064,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                         {resolvedInviteAction}
                       </button>
                     ) : null}
-                    {isIncoming && result.inviteId ? (
+                    {isIncoming && result.inviteId && !isContact ? (
                       <button
                         type="button"
                         class="chat-invites-action success"
@@ -1032,7 +1074,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                         {resolvedAcceptAction}
                       </button>
                     ) : null}
-                    {isIncoming && result.inviteId ? (
+                    {isIncoming && result.inviteId && !isContact ? (
                       <button
                         type="button"
                         class="chat-invites-action ghost"
@@ -1042,7 +1084,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                         {resolvedDeclineAction}
                       </button>
                     ) : null}
-                    {(isPending || isAccepted) && result.inviteId ? (
+                    {(isPending || isAccepted) && result.inviteId && !isContact ? (
                       <button
                         type="button"
                         class="chat-invites-action ghost"
@@ -1057,67 +1099,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
               )
             })}
           </div>
-        </div>
-
-        <div class="chat-invites-grid">
-          <section class="chat-invites-panel" data-collapsed={contactsCollapsed ? 'true' : 'false'}>
-            <header class="chat-invites-panel-header">
-              <button
-                type="button"
-                class="chat-invites-collapse"
-                aria-expanded={!contactsCollapsed}
-                aria-controls="chat-invites-panel-contacts"
-                onClick$={() => togglePanel('contacts')}
-              >
-                <span>{resolvedContactsLabel}</span>
-              </button>
-              <span class="chat-invites-count" data-alert={contactsAlert ? 'true' : 'false'}>
-                {contactsCount}
-              </span>
-            </header>
-            <div
-              id="chat-invites-panel-contacts"
-              class="chat-invites-panel-body"
-              data-collapsed={contactsCollapsed ? 'true' : 'false'}
-            >
-              {contacts.value.length === 0 ? (
-                <p class="chat-invites-empty">{resolve('No contacts yet.')}</p>
-              ) : (
-                <div class="chat-invites-list">
-                  {contacts.value.map((invite, index) => (
-                    <article
-                      key={invite.id}
-                      class="chat-invites-item"
-                      style={`--stagger-index:${index};`}
-                    >
-                      <div>
-                        <div class="chat-invites-item-heading">
-                          <span
-                            class="chat-invites-presence"
-                            data-online={onlineSet.has(invite.user.id) ? 'true' : 'false'}
-                            aria-hidden="true"
-                          />
-                          <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                        </div>
-                        <p class="chat-invites-item-meta">{invite.user.email}</p>
-                      </div>
-                      <div class="chat-invites-actions">
-                        <span class="chat-invites-pill">{resolve('Connected')}</span>
-                        <button
-                          type="button"
-                          class="chat-invites-action ghost"
-                          disabled={busyKeys.value.includes(`remove:${invite.id}`)}
-                          onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
-                        >
-                          {resolvedRemoveAction}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
         </div>
       </section>
     )
