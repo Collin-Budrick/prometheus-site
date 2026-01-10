@@ -92,6 +92,8 @@ const buildWsUrl = (path: string, origin: string) => {
   return url.toString()
 }
 
+const dmCloseDelayMs = 220
+
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? fallback : trimmed
@@ -145,6 +147,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
     const baselineCounts = useSignal<BaselineInviteCounts | null>(null)
     const activeContact = useSignal<ActiveContact | null>(null)
+    const dmClosing = useSignal(false)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -242,6 +245,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           const stillConnected = contacts.value.some((invite) => invite.user.id === activeContact.value?.id)
           if (!stillConnected) {
             activeContact.value = null
+            dmClosing.value = false
           }
         }
         if (searchResults.value.length) {
@@ -578,6 +582,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact.isContact) return
       const target = event.target as Element | null
       if (target?.closest('button')) return
+      dmClosing.value = false
       activeContact.value = {
         id: contact.id,
         name: contact.name ?? null,
@@ -590,6 +595,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact.isContact) return
       if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
       event.preventDefault()
+      dmClosing.value = false
       activeContact.value = {
         id: contact.id,
         name: contact.name ?? null,
@@ -599,7 +605,17 @@ export const ContactInvites = component$<ContactInvitesProps>(
     })
 
     const closeContact = $(() => {
-      activeContact.value = null
+      if (!activeContact.value || dmClosing.value) return
+      dmClosing.value = true
+      if (typeof window === 'undefined') {
+        activeContact.value = null
+        dmClosing.value = false
+        return
+      }
+      window.setTimeout(() => {
+        activeContact.value = null
+        dmClosing.value = false
+      }, dmCloseDelayMs)
     })
 
     useVisibleTask$(
@@ -622,7 +638,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
         const handleKeyDown = (event: KeyboardEvent) => {
           if (event.key === 'Escape') {
             bellOpen.value = false
-            activeContact.value = null
+            void closeContact()
           }
         }
 
@@ -698,6 +714,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             const stillConnected = nextContacts.some((invite) => invite.user.id === activeContact.value?.id)
             if (!stillConnected) {
               activeContact.value = null
+              dmClosing.value = false
             }
           }
           const baseline = baselineCounts.value
@@ -856,6 +873,21 @@ export const ContactInvites = component$<ContactInvitesProps>(
       },
       { strategy: 'document-ready' }
     )
+
+    useVisibleTask$(({ track, cleanup }) => {
+      track(() => activeContact.value)
+      track(() => dmClosing.value)
+      if (typeof document === 'undefined') return
+      const root = document.documentElement
+      if (activeContact.value || dmClosing.value) {
+        root.dataset.chatDmOpen = 'true'
+      } else {
+        delete root.dataset.chatDmOpen
+      }
+      cleanup(() => {
+        delete root.dataset.chatDmOpen
+      })
+    })
 
     const onlineSet = new Set(onlineIds.value)
     const incomingCount = incoming.value.length
@@ -1159,7 +1191,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
           </div>
         </div>
         {activeContact.value ? (
-          <div class="chat-invites-dm" role="dialog" aria-modal="true" aria-label={resolve('Direct message')}>
+          <div
+            class="chat-invites-dm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={resolve('Direct message')}
+            data-closing={dmClosing.value ? 'true' : 'false'}
+          >
             <div class="chat-invites-dm-card">
               <header class="chat-invites-dm-header">
                 <button type="button" class="chat-invites-dm-close" onClick$={closeContact}>

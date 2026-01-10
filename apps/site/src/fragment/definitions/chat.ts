@@ -463,28 +463,37 @@ const chatInvitesCss = `
 .chat-invites-dm {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
   background: rgba(6, 8, 18, 0.92);
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  z-index: 40;
-  animation: chat-dm-fade 240ms ease;
+  display: block;
+  overflow: hidden;
+  z-index: 80;
+  animation: chat-dm-fade-in 220ms ease;
 }
 
 .chat-invites-dm-card {
-  width: min(860px, 92vw);
-  min-height: min(520px, 80vh);
-  border-radius: 28px;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
   border: 1px solid rgb(var(--stroke));
   background:
     radial-gradient(circle at 20% 0%, rgb(var(--accent) / 0.18), transparent 55%),
     rgb(var(--surface));
   box-shadow: 0 30px 50px rgba(2, 6, 23, 0.45);
-  padding: 24px;
+  padding: 28px;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 20px;
-  animation: chat-dm-rise 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 50% 20%;
+  animation: chat-dm-expand 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-chat-dm-open='true'] .fragment-card {
+  transform: none !important;
+  will-change: auto;
+  overflow: visible;
+  backdrop-filter: none;
 }
 
 .chat-invites-dm-header {
@@ -533,6 +542,7 @@ const chatInvitesCss = `
   padding: 20px;
   display: grid;
   place-items: center;
+  overflow: auto;
 }
 
 .chat-invites-dm-placeholder {
@@ -540,7 +550,7 @@ const chatInvitesCss = `
   color: rgb(var(--muted));
 }
 
-@keyframes chat-dm-fade {
+@keyframes chat-dm-fade-in {
   from {
     opacity: 0;
   }
@@ -549,15 +559,47 @@ const chatInvitesCss = `
   }
 }
 
-@keyframes chat-dm-rise {
+@keyframes chat-dm-expand {
   from {
     opacity: 0.7;
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(18px) scale(0.92);
+    border-radius: 28px;
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+    border-radius: 0;
   }
+}
+
+@keyframes chat-dm-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes chat-dm-collapse {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    border-radius: 0;
+  }
+  to {
+    opacity: 0.5;
+    transform: translateY(18px) scale(0.92);
+    border-radius: 28px;
+  }
+}
+
+.chat-invites-dm[data-closing='true'] {
+  animation: chat-dm-fade-out 220ms ease forwards;
+}
+
+.chat-invites-dm[data-closing='true'] .chat-invites-dm-card {
+  animation: chat-dm-collapse 220ms ease forwards;
 }
 
 @keyframes chat-invite-in {
@@ -602,7 +644,6 @@ const chatInvitesCss = `
 
   .chat-invites-dm-card {
     padding: 18px;
-    min-height: min(420px, 86vh);
   }
 
   .chat-invites-item {
