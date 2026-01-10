@@ -645,6 +645,11 @@
     transition: opacity 200ms ease, transform 200ms ease;
   }
 
+  html[data-chat-dm-open='true'] .dock-shell {
+    transform: translateX(-50%) translateY(140%);
+    opacity: 0;
+  }
+
   .dock {
     --dock-bg-scale: 1;
     --dock-bg-shift: 0px;

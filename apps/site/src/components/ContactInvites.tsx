@@ -67,6 +67,14 @@ type ActiveContact = {
   online: boolean
 }
 
+type DmOrigin = {
+  x: number
+  y: number
+  scaleX: number
+  scaleY: number
+  radius: number
+}
+
 type ContactSearchItem = {
   id: string
   name?: string | null
@@ -93,6 +101,8 @@ const buildWsUrl = (path: string, origin: string) => {
 }
 
 const dmCloseDelayMs = 220
+const dmOriginRadius = 16
+const dmMinScale = 0.02
 
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
@@ -148,6 +158,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const baselineCounts = useSignal<BaselineInviteCounts | null>(null)
     const activeContact = useSignal<ActiveContact | null>(null)
     const dmClosing = useSignal(false)
+    const dmOrigin = useSignal<DmOrigin | null>(null)
+    const dmAnimated = useSignal(false)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -246,6 +258,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           if (!stillConnected) {
             activeContact.value = null
             dmClosing.value = false
+            dmOrigin.value = null
           }
         }
         if (searchResults.value.length) {
@@ -582,7 +595,27 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact.isContact) return
       const target = event.target as Element | null
       if (target?.closest('button')) return
+      const card =
+        (target?.closest('[data-contact-card="true"]') as HTMLElement | null) ??
+        (event.currentTarget as HTMLElement | null)
+      if (card && typeof window !== 'undefined') {
+        const rect = card.getBoundingClientRect()
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.width
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || rect.height
+        const scaleX = viewportWidth ? rect.width / viewportWidth : 1
+        const scaleY = viewportHeight ? rect.height / viewportHeight : 1
+        dmOrigin.value = {
+          x: rect.left,
+          y: rect.top,
+          scaleX: Math.min(Math.max(scaleX, dmMinScale), 1),
+          scaleY: Math.min(Math.max(scaleY, dmMinScale), 1),
+          radius: dmOriginRadius
+        }
+      } else {
+        dmOrigin.value = null
+      }
       dmClosing.value = false
+      dmAnimated.value = false
       activeContact.value = {
         id: contact.id,
         name: contact.name ?? null,
@@ -595,7 +628,28 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact.isContact) return
       if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
       event.preventDefault()
+      const target = event.target as Element | null
+      const card =
+        (target?.closest('[data-contact-card="true"]') as HTMLElement | null) ??
+        (event.currentTarget as HTMLElement | null)
+      if (card && typeof window !== 'undefined') {
+        const rect = card.getBoundingClientRect()
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.width
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || rect.height
+        const scaleX = viewportWidth ? rect.width / viewportWidth : 1
+        const scaleY = viewportHeight ? rect.height / viewportHeight : 1
+        dmOrigin.value = {
+          x: rect.left,
+          y: rect.top,
+          scaleX: Math.min(Math.max(scaleX, dmMinScale), 1),
+          scaleY: Math.min(Math.max(scaleY, dmMinScale), 1),
+          radius: dmOriginRadius
+        }
+      } else {
+        dmOrigin.value = null
+      }
       dmClosing.value = false
+      dmAnimated.value = false
       activeContact.value = {
         id: contact.id,
         name: contact.name ?? null,
@@ -610,11 +664,15 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (typeof window === 'undefined') {
         activeContact.value = null
         dmClosing.value = false
+        dmAnimated.value = false
+        dmOrigin.value = null
         return
       }
       window.setTimeout(() => {
         activeContact.value = null
         dmClosing.value = false
+        dmAnimated.value = false
+        dmOrigin.value = null
       }, dmCloseDelayMs)
     })
 
@@ -715,6 +773,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             if (!stillConnected) {
               activeContact.value = null
               dmClosing.value = false
+              dmOrigin.value = null
             }
           }
           const baseline = baselineCounts.value
@@ -875,7 +934,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     )
 
     useVisibleTask$(({ track, cleanup }) => {
-      track(() => activeContact.value)
+      const contact = track(() => activeContact.value)
       track(() => dmClosing.value)
       if (typeof document === 'undefined') return
       const root = document.documentElement
@@ -883,6 +942,14 @@ export const ContactInvites = component$<ContactInvitesProps>(
         root.dataset.chatDmOpen = 'true'
       } else {
         delete root.dataset.chatDmOpen
+      }
+      if (contact) {
+        dmAnimated.value = false
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            dmAnimated.value = true
+          })
+        })
       }
       cleanup(() => {
         delete root.dataset.chatDmOpen
@@ -1110,6 +1177,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   class="chat-invites-item"
                   data-interactive={isContact ? 'true' : 'false'}
                   data-active={isActiveContact ? 'true' : 'false'}
+                  data-contact-card={isContact ? 'true' : undefined}
                   style={`--stagger-index:${index};`}
                   role={isContact ? 'button' : undefined}
                   tabIndex={isContact ? 0 : undefined}
@@ -1197,6 +1265,18 @@ export const ContactInvites = component$<ContactInvitesProps>(
             aria-modal="true"
             aria-label={resolve('Direct message')}
             data-closing={dmClosing.value ? 'true' : 'false'}
+            data-animate={dmAnimated.value ? 'true' : 'false'}
+            style={
+              dmOrigin.value
+                ? {
+                    '--dm-origin-x': `${dmOrigin.value.x}px`,
+                    '--dm-origin-y': `${dmOrigin.value.y}px`,
+                    '--dm-origin-scale-x': `${dmOrigin.value.scaleX}`,
+                    '--dm-origin-scale-y': `${dmOrigin.value.scaleY}`,
+                    '--dm-origin-radius': `${dmOrigin.value.radius}px`
+                  }
+                : undefined
+            }
           >
             <div class="chat-invites-dm-card">
               <header class="chat-invites-dm-header">
