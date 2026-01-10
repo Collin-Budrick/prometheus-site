@@ -127,8 +127,6 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
         outgoingLabel={node.attrs?.['data-outgoing-label']}
         contactsLabel={node.attrs?.['data-contacts-label']}
         emptyLabel={node.attrs?.['data-empty-label']}
-        onlineLabel={node.attrs?.['data-online-label']}
-        onlineEmptyLabel={node.attrs?.['data-online-empty-label']}
       />
     )
   }

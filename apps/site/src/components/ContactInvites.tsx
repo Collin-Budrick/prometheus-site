@@ -18,9 +18,7 @@ type ContactInvitesProps = {
   incomingLabel?: string
   outgoingLabel?: string
   contactsLabel?: string
-  onlineLabel?: string
   emptyLabel?: string
-  onlineEmptyLabel?: string
 }
 
 type ContactInviteView = {
@@ -53,18 +51,16 @@ type ContactSearchPayload = {
 
 type RealtimeState = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
 
-type PanelKey = 'incoming' | 'outgoing' | 'contacts' | 'online'
+type PanelKey = 'invites' | 'contacts'
 
-const panelKeys: PanelKey[] = ['incoming', 'outgoing', 'contacts', 'online']
+const panelKeys: PanelKey[] = ['invites', 'contacts']
 
 const collapsedStorageKey = 'contacts:panels:collapsed'
 const countStorageKey = 'contacts:panels:counts'
 
 const defaultCollapsedState: Record<PanelKey, boolean> = {
-  incoming: false,
-  outgoing: false,
-  contacts: false,
-  online: false
+  invites: false,
+  contacts: false
 }
 
 const buildApiUrl = (path: string, origin: string) => {
@@ -107,9 +103,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     incomingLabel,
     outgoingLabel,
     contactsLabel,
-    onlineLabel,
-    emptyLabel,
-    onlineEmptyLabel
+    emptyLabel
   }) => {
     const langSignal = useSharedLangSignal()
     const searchQuery = useSignal('')
@@ -176,14 +170,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
       contactsLabel ? resolve(contactsLabel) : undefined,
       resolve('Contacts')
     )
-    const resolvedOnlineLabel = normalizeLabel(onlineLabel ? resolve(onlineLabel) : undefined, resolve('Online'))
     const resolvedEmptyLabel = normalizeLabel(
       emptyLabel ? resolve(emptyLabel) : undefined,
       resolve('No invites yet.')
-    )
-    const resolvedOnlineEmptyLabel = normalizeLabel(
-      onlineEmptyLabel ? resolve(onlineEmptyLabel) : undefined,
-      resolve('No contacts online.')
     )
 
     const isAlertCount = (panel: PanelKey, value: number) => {
@@ -535,10 +524,38 @@ export const ContactInvites = component$<ContactInvitesProps>(
             const parsed = JSON.parse(raw)
             if (!parsed || typeof parsed !== 'object') return
             const next = { ...defaultCollapsedState }
+            let hasDirect = false
             panelKeys.forEach((key) => {
               const value = (parsed as Record<string, unknown>)[key]
-              if (typeof value === 'boolean') next[key] = value
+              if (typeof value === 'boolean') {
+                next[key] = value
+                hasDirect = true
+              }
             })
+            if (!hasDirect) {
+              const incoming = (parsed as Record<string, unknown>).incoming
+              const outgoing = (parsed as Record<string, unknown>).outgoing
+              const contacts = (parsed as Record<string, unknown>).contacts
+              const online = (parsed as Record<string, unknown>).online
+              if (typeof incoming === 'boolean' || typeof outgoing === 'boolean') {
+                if (typeof incoming === 'boolean' && typeof outgoing === 'boolean') {
+                  next.invites = incoming && outgoing
+                } else if (typeof incoming === 'boolean') {
+                  next.invites = incoming
+                } else if (typeof outgoing === 'boolean') {
+                  next.invites = outgoing
+                }
+              }
+              if (typeof contacts === 'boolean' || typeof online === 'boolean') {
+                if (typeof contacts === 'boolean' && typeof online === 'boolean') {
+                  next.contacts = contacts && online
+                } else if (typeof contacts === 'boolean') {
+                  next.contacts = contacts
+                } else if (typeof online === 'boolean') {
+                  next.contacts = online
+                }
+              }
+            }
             panelCollapsed.value = next
           } catch {
             // ignore storage failures
@@ -552,10 +569,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
             const parsed = JSON.parse(raw)
             if (!parsed || typeof parsed !== 'object') return
             const next: Record<PanelKey, number> = {
-              incoming: Number.NaN,
-              outgoing: Number.NaN,
-              contacts: Number.NaN,
-              online: Number.NaN
+              invites: Number.NaN,
+              contacts: Number.NaN
             }
             let hasValue = false
             panelKeys.forEach((key) => {
@@ -565,6 +580,22 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 hasValue = true
               }
             })
+            if (!hasValue) {
+              const incoming = Number((parsed as Record<string, unknown>).incoming)
+              const outgoing = Number((parsed as Record<string, unknown>).outgoing)
+              const contacts = Number((parsed as Record<string, unknown>).contacts)
+              const incomingCount = Number.isFinite(incoming) ? incoming : 0
+              const outgoingCount = Number.isFinite(outgoing) ? outgoing : 0
+              const invitesCount = incomingCount + outgoingCount
+              if (Number.isFinite(contacts)) {
+                next.contacts = contacts
+                hasValue = true
+              }
+              if (Number.isFinite(invitesCount) && (Number.isFinite(incoming) || Number.isFinite(outgoing))) {
+                next.invites = invitesCount
+                hasValue = true
+              }
+            }
             baselineCounts.value = hasValue ? next : null
           } catch {
             // ignore storage failures
@@ -572,13 +603,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
         }
 
         const saveCounts = () => {
-          const onlineSet = new Set(onlineIds.value)
-          const onlineCount = contacts.value.filter((invite) => onlineSet.has(invite.user.id)).length
           const payload = {
-            incoming: incoming.value.length,
-            outgoing: outgoing.value.length,
-            contacts: contacts.value.length,
-            online: onlineCount
+            invites: incoming.value.length + outgoing.value.length,
+            contacts: contacts.value.length
           }
           try {
             window.localStorage.setItem(countStorageKey, JSON.stringify(payload))
@@ -738,19 +765,14 @@ export const ContactInvites = component$<ContactInvitesProps>(
     )
 
     const onlineSet = new Set(onlineIds.value)
-    const onlineContacts = contacts.value.filter((invite) => onlineSet.has(invite.user.id))
     const incomingCount = incoming.value.length
     const outgoingCount = outgoing.value.length
+    const invitesCount = incomingCount + outgoingCount
     const contactsCount = contacts.value.length
-    const onlineCount = onlineContacts.length
-    const incomingCollapsed = panelCollapsed.value.incoming
-    const outgoingCollapsed = panelCollapsed.value.outgoing
+    const invitesCollapsed = panelCollapsed.value.invites
     const contactsCollapsed = panelCollapsed.value.contacts
-    const onlineCollapsed = panelCollapsed.value.online
-    const incomingAlert = isAlertCount('incoming', incomingCount)
-    const outgoingAlert = isAlertCount('outgoing', outgoingCount)
+    const invitesAlert = isAlertCount('invites', invitesCount)
     const contactsAlert = isAlertCount('contacts', contactsCount)
-    const onlineAlert = isAlertCount('online', onlineCount)
 
     return (
       <section class={rootClass} data-state={invitesState.value}>
@@ -861,114 +883,105 @@ export const ContactInvites = component$<ContactInvitesProps>(
         </div>
 
         <div class="chat-invites-grid">
-          <section class="chat-invites-panel" data-collapsed={incomingCollapsed ? 'true' : 'false'}>
+          <section class="chat-invites-panel" data-collapsed={invitesCollapsed ? 'true' : 'false'}>
             <header class="chat-invites-panel-header">
               <button
                 type="button"
                 class="chat-invites-collapse"
-                aria-expanded={!incomingCollapsed}
-                aria-controls="chat-invites-panel-incoming"
-                onClick$={() => togglePanel('incoming')}
+                aria-expanded={!invitesCollapsed}
+                aria-controls="chat-invites-panel-invites"
+                onClick$={() => togglePanel('invites')}
               >
-                <span>{resolvedIncomingLabel}</span>
+                <span>{resolve('Invites')}</span>
               </button>
-              <span class="chat-invites-count" data-alert={incomingAlert ? 'true' : 'false'}>
-                {incomingCount}
+              <span class="chat-invites-count" data-alert={invitesAlert ? 'true' : 'false'}>
+                {invitesCount}
               </span>
             </header>
             <div
-              id="chat-invites-panel-incoming"
+              id="chat-invites-panel-invites"
               class="chat-invites-panel-body"
-              data-collapsed={incomingCollapsed ? 'true' : 'false'}
+              data-collapsed={invitesCollapsed ? 'true' : 'false'}
             >
-              {incoming.value.length === 0 ? (
-                <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
-              ) : (
-                <div class="chat-invites-list">
-                  {incoming.value.map((invite, index) => (
-                    <article
-                      key={invite.id}
-                      class="chat-invites-item"
-                      style={`--stagger-index:${index};`}
-                    >
-                      <div>
-                        <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                        <p class="chat-invites-item-meta">{invite.user.email}</p>
-                      </div>
-                      <div class="chat-invites-actions">
-                        <button
-                          type="button"
-                          class="chat-invites-action success"
-                          disabled={busyKeys.value.includes(`accept:${invite.id}`)}
-                          onClick$={() => handleAccept(invite.id, invite.user.id)}
+              <div class="chat-invites-split">
+                <section class="chat-invites-subsection">
+                  <header class="chat-invites-subheader">
+                    <span>{resolvedIncomingLabel}</span>
+                    <span class="chat-invites-subcount">{incomingCount}</span>
+                  </header>
+                  {incoming.value.length === 0 ? (
+                    <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
+                  ) : (
+                    <div class="chat-invites-list">
+                      {incoming.value.map((invite, index) => (
+                        <article
+                          key={invite.id}
+                          class="chat-invites-item"
+                          style={`--stagger-index:${index};`}
                         >
-                          {resolvedAcceptAction}
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-invites-action ghost"
-                          disabled={busyKeys.value.includes(`decline:${invite.id}`)}
-                          onClick$={() => handleDecline(invite.id, invite.user.id)}
+                          <div>
+                            <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                            <p class="chat-invites-item-meta">{invite.user.email}</p>
+                          </div>
+                          <div class="chat-invites-actions">
+                            <button
+                              type="button"
+                              class="chat-invites-action success"
+                              disabled={busyKeys.value.includes(`accept:${invite.id}`)}
+                              onClick$={() => handleAccept(invite.id, invite.user.id)}
+                            >
+                              {resolvedAcceptAction}
+                            </button>
+                            <button
+                              type="button"
+                              class="chat-invites-action ghost"
+                              disabled={busyKeys.value.includes(`decline:${invite.id}`)}
+                              onClick$={() => handleDecline(invite.id, invite.user.id)}
+                            >
+                              {resolvedDeclineAction}
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+                <section class="chat-invites-subsection">
+                  <header class="chat-invites-subheader">
+                    <span>{resolvedOutgoingLabel}</span>
+                    <span class="chat-invites-subcount">{outgoingCount}</span>
+                  </header>
+                  {outgoing.value.length === 0 ? (
+                    <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
+                  ) : (
+                    <div class="chat-invites-list">
+                      {outgoing.value.map((invite, index) => (
+                        <article
+                          key={invite.id}
+                          class="chat-invites-item"
+                          style={`--stagger-index:${index};`}
                         >
-                          {resolvedDeclineAction}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section class="chat-invites-panel" data-collapsed={outgoingCollapsed ? 'true' : 'false'}>
-            <header class="chat-invites-panel-header">
-              <button
-                type="button"
-                class="chat-invites-collapse"
-                aria-expanded={!outgoingCollapsed}
-                aria-controls="chat-invites-panel-outgoing"
-                onClick$={() => togglePanel('outgoing')}
-              >
-                <span>{resolvedOutgoingLabel}</span>
-              </button>
-              <span class="chat-invites-count" data-alert={outgoingAlert ? 'true' : 'false'}>
-                {outgoingCount}
-              </span>
-            </header>
-            <div
-              id="chat-invites-panel-outgoing"
-              class="chat-invites-panel-body"
-              data-collapsed={outgoingCollapsed ? 'true' : 'false'}
-            >
-              {outgoing.value.length === 0 ? (
-                <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
-              ) : (
-                <div class="chat-invites-list">
-                  {outgoing.value.map((invite, index) => (
-                    <article
-                      key={invite.id}
-                      class="chat-invites-item"
-                      style={`--stagger-index:${index};`}
-                    >
-                      <div>
-                        <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                        <p class="chat-invites-item-meta">{invite.user.email}</p>
-                      </div>
-                      <div class="chat-invites-actions">
-                        <span class="chat-invites-pill">{resolve('Pending')}</span>
-                        <button
-                          type="button"
-                          class="chat-invites-action ghost"
-                          disabled={busyKeys.value.includes(`remove:${invite.id}`)}
-                          onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
-                        >
-                          {resolvedRemoveAction}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
+                          <div>
+                            <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                            <p class="chat-invites-item-meta">{invite.user.email}</p>
+                          </div>
+                          <div class="chat-invites-actions">
+                            <span class="chat-invites-pill">{resolve('Pending')}</span>
+                            <button
+                              type="button"
+                              class="chat-invites-action ghost"
+                              disabled={busyKeys.value.includes(`remove:${invite.id}`)}
+                              onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
+                            >
+                              {resolvedRemoveAction}
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </div>
             </div>
           </section>
 
@@ -1003,63 +1016,18 @@ export const ContactInvites = component$<ContactInvitesProps>(
                       style={`--stagger-index:${index};`}
                     >
                       <div>
-                        <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                        <div class="chat-invites-item-heading">
+                          <span
+                            class="chat-invites-presence"
+                            data-online={onlineSet.has(invite.user.id) ? 'true' : 'false'}
+                            aria-hidden="true"
+                          />
+                          <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                        </div>
                         <p class="chat-invites-item-meta">{invite.user.email}</p>
                       </div>
                       <div class="chat-invites-actions">
                         <span class="chat-invites-pill">{resolve('Connected')}</span>
-                        <button
-                          type="button"
-                          class="chat-invites-action ghost"
-                          disabled={busyKeys.value.includes(`remove:${invite.id}`)}
-                          onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
-                        >
-                          {resolvedRemoveAction}
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section class="chat-invites-panel" data-collapsed={onlineCollapsed ? 'true' : 'false'}>
-            <header class="chat-invites-panel-header">
-              <button
-                type="button"
-                class="chat-invites-collapse"
-                aria-expanded={!onlineCollapsed}
-                aria-controls="chat-invites-panel-online"
-                onClick$={() => togglePanel('online')}
-              >
-                <span>{resolvedOnlineLabel}</span>
-              </button>
-              <span class="chat-invites-count" data-alert={onlineAlert ? 'true' : 'false'}>
-                {onlineCount}
-              </span>
-            </header>
-            <div
-              id="chat-invites-panel-online"
-              class="chat-invites-panel-body"
-              data-collapsed={onlineCollapsed ? 'true' : 'false'}
-            >
-              {onlineContacts.length === 0 ? (
-                <p class="chat-invites-empty">{resolvedOnlineEmptyLabel}</p>
-              ) : (
-                <div class="chat-invites-list">
-                  {onlineContacts.map((invite, index) => (
-                    <article
-                      key={`online-${invite.id}`}
-                      class="chat-invites-item"
-                      style={`--stagger-index:${index};`}
-                    >
-                      <div>
-                        <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                        <p class="chat-invites-item-meta">{invite.user.email}</p>
-                      </div>
-                      <div class="chat-invites-actions">
-                        <span class="chat-invites-pill accent">{resolve('Online')}</span>
                         <button
                           type="button"
                           class="chat-invites-action ghost"

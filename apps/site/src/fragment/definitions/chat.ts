@@ -254,6 +254,36 @@ const chatInvitesCss = `
   pointer-events: none;
 }
 
+.chat-invites-split {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.chat-invites-subsection {
+  display: grid;
+  gap: 12px;
+}
+
+.chat-invites-subheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgb(var(--muted));
+}
+
+.chat-invites-subcount {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--stroke));
+  font-size: 10px;
+  color: rgb(var(--muted));
+}
+
 .chat-invites-list {
   display: grid;
   gap: 10px;
@@ -283,9 +313,29 @@ const chatInvitesCss = `
   color: rgb(var(--ink));
 }
 
+.chat-invites-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chat-invites-item-meta {
   font-size: 0.85rem;
   color: rgb(var(--muted));
+}
+
+.chat-invites-presence {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(var(--signal));
+  box-shadow: 0 0 12px rgb(var(--signal) / 0.35);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.chat-invites-presence[data-online='true'] {
+  opacity: 1;
 }
 
 .chat-invites-actions {
@@ -369,6 +419,7 @@ const chatInvitesCss = `
   .chat-invites-button,
   .chat-invites-action,
   .chat-invites-panel-body,
+  .chat-invites-presence,
   .chat-invites-collapse::after {
     transition: none;
   }
@@ -408,9 +459,7 @@ const contactInvites: FragmentDefinition = {
       'data-incoming-label': t('Incoming'),
       'data-outgoing-label': t('Outgoing'),
       'data-contacts-label': t('Contacts'),
-      'data-online-label': t('Online'),
-      'data-empty-label': t('No invites yet.'),
-      'data-online-empty-label': t('No contacts online.')
+      'data-empty-label': t('No invites yet.')
     })
 }
 
