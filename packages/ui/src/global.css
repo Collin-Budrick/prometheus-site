@@ -1197,34 +1197,8 @@
     box-shadow: 0 22px 36px rgba(249, 115, 22, 0.35);
   }
 
-  @keyframes auth-scan {
-    0% {
-      opacity: 0.35;
-      transform: translateY(-35%);
-    }
-    50% {
-      opacity: 0.6;
-    }
-    100% {
-      opacity: 0.35;
-      transform: translateY(35%);
-    }
-  }
-
   .auth-shell {
     position: relative;
-  }
-
-  .auth-shell::before {
-    content: "";
-    position: absolute;
-    inset: -20% -10% 0;
-    background:
-      radial-gradient(circle at 20% 20%, rgb(var(--signal) / 0.2), transparent 55%),
-      radial-gradient(circle at 80% 10%, rgb(var(--accent) / 0.2), transparent 50%),
-      linear-gradient(160deg, rgb(var(--surface) / 0.8), transparent 65%);
-    pointer-events: none;
-    opacity: 0.6;
   }
 
   .auth-grid {
@@ -1237,32 +1211,6 @@
     display: grid;
     gap: 20px;
     isolation: isolate;
-  }
-
-  .auth-card::before {
-    content: "";
-    position: absolute;
-    inset: 12px;
-    border-radius: 20px;
-    border: 1px solid rgb(var(--stroke) / 0.5);
-    background:
-      radial-gradient(circle at 15% 15%, rgb(var(--signal) / 0.14), transparent 45%),
-      radial-gradient(circle at 85% 5%, rgb(var(--accent) / 0.16), transparent 40%),
-      linear-gradient(180deg, rgb(var(--surface) / 0.8), rgb(var(--surface) / 0.6));
-    opacity: 0.9;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  .auth-card::after {
-    content: "";
-    position: absolute;
-    inset: -40% 0;
-    background: linear-gradient(120deg, transparent, rgb(var(--signal) / 0.2), transparent);
-    mix-blend-mode: screen;
-    animation: auth-scan 8s ease-in-out infinite;
-    pointer-events: none;
-    z-index: 0;
   }
 
   .auth-card > * {
@@ -1497,6 +1445,14 @@
     background: rgb(220 252 231 / 0.75);
   }
 
+  .auth-shell .fragment-card {
+    backdrop-filter: none;
+  }
+
+  .auth-shell .fragment-card::after {
+    content: none;
+  }
+
   .profile-details {
     margin-top: 18px;
     display: grid;
@@ -1529,10 +1485,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .auth-card::after {
-      animation: none;
-    }
-
     .auth-tab,
     .auth-panel,
     .auth-primary,

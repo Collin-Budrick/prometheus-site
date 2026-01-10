@@ -38,6 +38,7 @@
     "authRememberLabel": "このデバイスを記憶",
     "authPasskeyLabel": "キーパスを使用",
     "authPasskeyHint": "デバイス資格情報で即時サインインします。",
+    "authLogoutLabel": "ログアウト",
     "protectedMetaLine": "認証済み",
     "protectedDescription": "セッションで保護された{{label}}専用画面です。",
     "protectedAction": "開く",

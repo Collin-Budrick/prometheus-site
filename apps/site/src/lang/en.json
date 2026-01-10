@@ -38,6 +38,7 @@
     "authRememberLabel": "Remember this device",
     "authPasskeyLabel": "Use keypass",
     "authPasskeyHint": "Keypass signs in with your device credential.",
+    "authLogoutLabel": "Log out",
     "protectedMetaLine": "Authenticated",
     "protectedDescription": "Private {{label}} surface secured by your session.",
     "protectedAction": "Open panel",

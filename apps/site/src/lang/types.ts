@@ -39,6 +39,7 @@ export type UiCopy = {
   authRememberLabel: string
   authPasskeyLabel: string
   authPasskeyHint: string
+  authLogoutLabel: string
   protectedMetaLine: string
   protectedDescription: string
   protectedAction: string

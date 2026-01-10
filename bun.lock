@@ -39,12 +39,12 @@
         "@rolldown/binding-win32-x64-msvc": "1.0.0-beta.9-commit.d91dfb5",
         "@serwist/vite": "^9.5.0",
         "@tailwindcss/vite": "^4.1.18",
-        "@types/node": "25.0.3",
+        "@types/node": "25.0.5",
         "lightningcss": "^1.30.2",
         "oxlint": "1.38.0",
         "serwist": "^9.5.0",
         "tailwindcss": "^4.1.18",
-        "typescript": "6.0.0-dev.20260108",
+        "typescript": "6.0.0-dev.20260109",
         "vite": "8.0.0-beta.7",
         "vite-plugin-compression2": "^2.4.0",
       },
@@ -1332,7 +1332,7 @@
 
     "serwist/typescript": ["typescript@6.0.0-dev.20260108", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-mWAHxyi0eVqDwbiSaTUqhR24MdNBWgpEtjBd/GlawwhcsK/7Nsrdc7pKMDz5aMmnSwD+SQA9jtAHCnGPV29Rnw=="],
 
-    "site/typescript": ["typescript@6.0.0-dev.20260108", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-mWAHxyi0eVqDwbiSaTUqhR24MdNBWgpEtjBd/GlawwhcsK/7Nsrdc7pKMDz5aMmnSwD+SQA9jtAHCnGPV29Rnw=="],
+    "site/@types/node": ["@types/node@25.0.5", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-FuLxeLuSVOqHPxSN1fkcD8DLU21gAP7nCKqGRJ/FglbCUBs0NYN6TpHcdmyLeh8C0KwGIaZQJSv+OYG+KZz+Gw=="],
 
     "string-width-cjs/emoji-regex": ["emoji-regex@8.0.0", "", {}, "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A=="],
 

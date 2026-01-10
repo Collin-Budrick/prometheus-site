@@ -1,16 +1,18 @@
-import { $, component$, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, Slot, useOnDocument, useSignal, useVisibleTask$, type PropFunction } from '@builder.io/qwik'
 import { FragmentCard } from './FragmentCard'
 
 type StaticRouteTemplateProps = {
   actionLabel: string
+  actionDisabled?: boolean
   closeLabel: string
   description: string
   metaLine: string
+  onAction$?: PropFunction<() => void | Promise<void>>
   title: string
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
-  ({ actionLabel, closeLabel, description, metaLine, title }) => {
+  ({ actionLabel, actionDisabled, closeLabel, description, metaLine, onAction$, title }) => {
     const expandedId = useSignal<string | null>(null)
     const layoutTick = useSignal(0)
     const gridRef = useSignal<HTMLDivElement>()
@@ -84,7 +86,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             <h1>{title}</h1>
             <p>{description}</p>
             <Slot />
-            <button class="action-button" type="button">
+            <button class="action-button" type="button" disabled={actionDisabled} onClick$={onAction$}>
               {actionLabel}
             </button>
           </FragmentCard>

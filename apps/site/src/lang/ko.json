@@ -38,6 +38,7 @@
     "authRememberLabel": "이 기기를 기억",
     "authPasskeyLabel": "키패스 사용",
     "authPasskeyHint": "기기 자격 증명으로 즉시 로그인합니다.",
+    "authLogoutLabel": "로그아웃",
     "protectedMetaLine": "인증됨",
     "protectedDescription": "세션으로 보호되는 {{label}} 전용 화면입니다.",
     "protectedAction": "열기",
