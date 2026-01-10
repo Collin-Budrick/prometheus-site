@@ -306,6 +306,7 @@
     "Incoming": "Incoming",
     "Outgoing": "Outgoing",
     "Contacts": "Contacts",
+    "Online": "Online",
     "No invites yet.": "No invites yet.",
     "Unable to load invites.": "Unable to load invites.",
     "Unable to search.": "Unable to search.",
@@ -319,6 +320,7 @@
     "Search results": "Search results",
     "Connected": "Connected",
     "Pending": "Pending",
-    "No contacts yet.": "No contacts yet."
+    "No contacts yet.": "No contacts yet.",
+    "No contacts online.": "No contacts online."
   }
 }

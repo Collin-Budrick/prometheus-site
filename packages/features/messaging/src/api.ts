@@ -10,6 +10,7 @@ import { readChatHistoryCache, writeChatHistoryCache } from './cache'
 
 export const maxPromptLength = 2000
 export const maxPromptPayloadBytes = 32 * 1024
+export const contactsChannel = 'contacts:stream'
 
 export class PromptBodyError extends Error {
   status: number
@@ -284,6 +285,17 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
     const normalizeStatus = (value: unknown): ContactInviteStatus => {
       if (value === 'accepted' || value === 'declined' || value === 'revoked') return value
       return 'pending'
+    }
+
+    const publishContactsRefresh = async (userIds: string[]) => {
+      if (!options.isValkeyReady()) return
+      const unique = Array.from(new Set(userIds)).filter((id) => id.trim() !== '')
+      if (!unique.length) return
+      try {
+        await options.valkey.publish(contactsChannel, JSON.stringify({ type: 'contacts:refresh', userIds: unique }))
+      } catch (error) {
+        console.error('Failed to publish contact updates', error)
+      }
     }
 
     app.get('/chat/contacts/invites', async ({ request, set }) => {
@@ -636,6 +648,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
               .returning()
             const row = updated[0]
             if (row && typeof row.id === 'string') {
+              void publishContactsRefresh([session.id, targetUser.id])
               return { id: row.id, status: normalizeStatus(row.status) }
             }
           } catch (error) {
@@ -657,6 +670,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .returning()
           const row = created[0]
           if (row && typeof row.id === 'string') {
+            void publishContactsRefresh([session.id, targetUser.id])
             return { id: row.id, status: normalizeStatus(row.status) }
           }
         } catch (error) {
@@ -721,6 +735,9 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           return attachRateLimitHeaders(options.jsonError(409, 'Invite is no longer pending'), rateLimit.headers)
         }
 
+        const inviterId = typeof invite.inviterId === 'string' ? invite.inviterId : ''
+        const inviteeId = typeof invite.inviteeId === 'string' ? invite.inviteeId : ''
+
         try {
           const updated = await options.db
             .update(contactInvitesTable)
@@ -729,6 +746,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .returning()
           const row = updated[0]
           if (row && typeof row.id === 'string') {
+            void publishContactsRefresh([inviterId, inviteeId])
             return { id: row.id, status: normalizeStatus(row.status) }
           }
         } catch (error) {
@@ -793,6 +811,9 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           return attachRateLimitHeaders(options.jsonError(409, 'Invite is no longer pending'), rateLimit.headers)
         }
 
+        const inviterId = typeof invite.inviterId === 'string' ? invite.inviterId : ''
+        const inviteeId = typeof invite.inviteeId === 'string' ? invite.inviteeId : ''
+
         try {
           const updated = await options.db
             .update(contactInvitesTable)
@@ -801,6 +822,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .returning()
           const row = updated[0]
           if (row && typeof row.id === 'string') {
+            void publishContactsRefresh([inviterId, inviteeId])
             return { id: row.id, status: normalizeStatus(row.status) }
           }
         } catch (error) {
@@ -861,8 +883,12 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           return attachRateLimitHeaders(options.jsonError(403, 'Invite not found'), rateLimit.headers)
         }
 
+        const inviterId = typeof invite.inviterId === 'string' ? invite.inviterId : ''
+        const inviteeId = typeof invite.inviteeId === 'string' ? invite.inviteeId : ''
+
         try {
           await options.db.delete(contactInvitesTable).where(eq(contactInvitesTable.id, invite.id))
+          void publishContactsRefresh([inviterId, inviteeId])
           return { id: invite.id, status: 'removed' }
         } catch (error) {
           console.error('Failed to remove invite', error)

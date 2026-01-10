@@ -1,4 +1,5 @@
-import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
@@ -17,7 +18,9 @@ type ContactInvitesProps = {
   incomingLabel?: string
   outgoingLabel?: string
   contactsLabel?: string
+  onlineLabel?: string
   emptyLabel?: string
+  onlineEmptyLabel?: string
 }
 
 type ContactInviteView = {
@@ -48,11 +51,21 @@ type ContactSearchPayload = {
   results?: ContactSearchResult[]
 }
 
+type RealtimeState = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
+
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
   if (!base) return `${origin}${path}`
   if (base.startsWith('/')) return `${origin}${base}${path}`
   return `${base}${path}`
+}
+
+const buildWsUrl = (path: string, origin: string) => {
+  const httpUrl = buildApiUrl(path, origin)
+  if (!httpUrl) return ''
+  const url = new URL(httpUrl)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString()
 }
 
 const normalizeLabel = (value: string | undefined, fallback: string) => {
@@ -80,7 +93,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
     incomingLabel,
     outgoingLabel,
     contactsLabel,
-    emptyLabel
+    onlineLabel,
+    emptyLabel,
+    onlineEmptyLabel
   }) => {
     const langSignal = useSharedLangSignal()
     const searchQuery = useSignal('')
@@ -91,9 +106,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const incoming = useSignal<ContactInviteView[]>([])
     const outgoing = useSignal<ContactInviteView[]>([])
     const contacts = useSignal<ContactInviteView[]>([])
+    const onlineIds = useSignal<string[]>([])
     const statusMessage = useSignal<string | null>(null)
     const statusTone = useSignal<'neutral' | 'success' | 'error'>('neutral')
     const busyKeys = useSignal<string[]>([])
+    const realtimeState = useSignal<RealtimeState>('idle')
+    const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -142,9 +160,14 @@ export const ContactInvites = component$<ContactInvitesProps>(
       contactsLabel ? resolve(contactsLabel) : undefined,
       resolve('Contacts')
     )
+    const resolvedOnlineLabel = normalizeLabel(onlineLabel ? resolve(onlineLabel) : undefined, resolve('Online'))
     const resolvedEmptyLabel = normalizeLabel(
       emptyLabel ? resolve(emptyLabel) : undefined,
       resolve('No invites yet.')
+    )
+    const resolvedOnlineEmptyLabel = normalizeLabel(
+      onlineEmptyLabel ? resolve(onlineEmptyLabel) : undefined,
+      resolve('No contacts online.')
     )
 
     const refreshInvites = $(async (resetStatus = true) => {
@@ -175,6 +198,20 @@ export const ContactInvites = component$<ContactInvitesProps>(
         incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
         outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
         contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
+        onlineIds.value = []
+        if (searchResults.value.length) {
+          const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
+          incoming.value.forEach((invite) => statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id }))
+          outgoing.value.forEach((invite) => statusByUser.set(invite.user.id, { status: 'outgoing', inviteId: invite.id }))
+          contacts.value.forEach((invite) => statusByUser.set(invite.user.id, { status: 'accepted', inviteId: invite.id }))
+          searchResults.value = searchResults.value.map((entry) => {
+            const status = statusByUser.get(entry.id)
+            if (!status) {
+              return { ...entry, status: 'none', inviteId: undefined }
+            }
+            return { ...entry, status: status.status, inviteId: status.inviteId }
+          })
+        }
         invitesState.value = 'idle'
       } catch (error) {
         invitesState.value = 'error'
@@ -279,7 +316,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
               : entry
           )
         }
-        await refreshInvites(false)
+        if (
+          realtimeState.value === 'idle' ||
+          realtimeState.value === 'offline' ||
+          realtimeState.value === 'error'
+        ) {
+          await refreshInvites(false)
+        }
       } catch (error) {
         statusTone.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
@@ -323,7 +366,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
         searchResults.value = searchResults.value.map((entry) =>
           entry.id === userId ? { ...entry, status: 'accepted', inviteId } : entry
         )
-        await refreshInvites(false)
+        if (
+          realtimeState.value === 'idle' ||
+          realtimeState.value === 'offline' ||
+          realtimeState.value === 'error'
+        ) {
+          await refreshInvites(false)
+        }
       } catch (error) {
         statusTone.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
@@ -367,7 +416,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
         searchResults.value = searchResults.value.map((entry) =>
           entry.id === userId ? { ...entry, status: 'none', inviteId: undefined } : entry
         )
-        await refreshInvites(false)
+        if (
+          realtimeState.value === 'idle' ||
+          realtimeState.value === 'offline' ||
+          realtimeState.value === 'error'
+        ) {
+          await refreshInvites(false)
+        }
       } catch (error) {
         statusTone.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
@@ -416,7 +471,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
             entry.email === email ? { ...entry, status: 'none', inviteId: undefined } : entry
           )
         }
-        await refreshInvites(false)
+        if (
+          realtimeState.value === 'idle' ||
+          realtimeState.value === 'offline' ||
+          realtimeState.value === 'error'
+        ) {
+          await refreshInvites(false)
+        }
       } catch (error) {
         statusTone.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
@@ -428,13 +489,147 @@ export const ContactInvites = component$<ContactInvitesProps>(
     useVisibleTask$(
       (ctx) => {
         if (typeof window === 'undefined') return
-        void refreshInvites()
-        ctx.cleanup(() => {
+        let active = true
+        let hasSnapshot = false
+        let reconnectTimer: number | null = null
+
+        const applySnapshot = (payload: Record<string, unknown>) => {
+          const nextIncoming = Array.isArray(payload.incoming) ? (payload.incoming as ContactInviteView[]) : []
+          const nextOutgoing = Array.isArray(payload.outgoing) ? (payload.outgoing as ContactInviteView[]) : []
+          const nextContacts = Array.isArray(payload.contacts) ? (payload.contacts as ContactInviteView[]) : []
+          const nextOnline = Array.isArray(payload.onlineIds) ? payload.onlineIds.filter((id) => typeof id === 'string') : []
+          incoming.value = nextIncoming
+          outgoing.value = nextOutgoing
+          contacts.value = nextContacts
+          onlineIds.value = Array.from(new Set(nextOnline))
           invitesState.value = 'idle'
+          realtimeState.value = 'live'
+          hasSnapshot = true
+          if (searchResults.value.length) {
+            const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
+            nextIncoming.forEach((invite) => statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id }))
+            nextOutgoing.forEach((invite) => statusByUser.set(invite.user.id, { status: 'outgoing', inviteId: invite.id }))
+            nextContacts.forEach((invite) => statusByUser.set(invite.user.id, { status: 'accepted', inviteId: invite.id }))
+            searchResults.value = searchResults.value.map((entry) => {
+              const status = statusByUser.get(entry.id)
+              if (!status) {
+                return { ...entry, status: 'none', inviteId: undefined }
+              }
+              return { ...entry, status: status.status, inviteId: status.inviteId }
+            })
+          }
+        }
+
+        const applyPresence = (userId: string, online: boolean) => {
+          if (!userId) return
+          const contactIds = new Set(contacts.value.map((invite) => invite.user.id))
+          if (!contactIds.has(userId)) return
+          const next = new Set(onlineIds.value)
+          if (online) {
+            next.add(userId)
+          } else {
+            next.delete(userId)
+          }
+          onlineIds.value = Array.from(next)
+        }
+
+        const scheduleReconnect = (delayMs = 4000) => {
+          if (!active) return
+          if (reconnectTimer !== null) return
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            connect()
+          }, delayMs)
+        }
+
+        const connect = () => {
+          if (!active) return
+          const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
+          if (!wsUrl) {
+            void refreshInvites()
+            return
+          }
+          if (!hasSnapshot) {
+            invitesState.value = 'loading'
+          }
+          realtimeState.value = 'connecting'
+          wsRef.value?.close()
+          const ws = new WebSocket(wsUrl)
+          wsRef.value = noSerialize(ws)
+
+          ws.addEventListener('message', (event) => {
+            let payload: unknown
+            try {
+              payload = JSON.parse(String(event.data))
+            } catch {
+              return
+            }
+            if (!payload || typeof payload !== 'object') return
+            const record = payload as Record<string, unknown>
+            const type = record.type
+            if (type === 'ping') {
+              ws.send(JSON.stringify({ type: 'pong' }))
+              return
+            }
+            if (type === 'contacts:init' || type === 'contacts:update') {
+              applySnapshot(record)
+              return
+            }
+            if (type === 'contacts:presence') {
+              const userId = typeof record.userId === 'string' ? record.userId : ''
+              const online = typeof record.online === 'boolean' ? record.online : null
+              if (online !== null) applyPresence(userId, online)
+              return
+            }
+            if (type === 'error') {
+              realtimeState.value = 'error'
+              invitesState.value = 'error'
+              if (!hasSnapshot) {
+                void refreshInvites()
+              }
+              const retryAfter = Number(record.retryAfter)
+              if (Number.isFinite(retryAfter) && retryAfter > 0) {
+                scheduleReconnect(retryAfter * 1000)
+              } else {
+                scheduleReconnect()
+              }
+            }
+          })
+
+          ws.addEventListener('open', () => {
+            realtimeState.value = 'connecting'
+          })
+
+          ws.addEventListener('close', () => {
+            if (!active) return
+            realtimeState.value = realtimeState.value === 'error' ? 'error' : 'offline'
+            if (!hasSnapshot) {
+              void refreshInvites()
+            }
+            scheduleReconnect()
+          })
+
+          ws.addEventListener('error', () => {
+            realtimeState.value = 'error'
+          })
+        }
+
+        connect()
+
+        ctx.cleanup(() => {
+          active = false
+          if (reconnectTimer !== null) {
+            window.clearTimeout(reconnectTimer)
+          }
+          wsRef.value?.close()
+          realtimeState.value = 'idle'
         })
       },
       { strategy: 'document-ready' }
     )
+
+    const onlineSet = new Set(onlineIds.value)
+    const onlineContacts = contacts.value.filter((invite) => onlineSet.has(invite.user.id))
 
     return (
       <section class={rootClass} data-state={invitesState.value}>
@@ -645,6 +840,42 @@ export const ContactInvites = component$<ContactInvitesProps>(
                     </div>
                     <div class="chat-invites-actions">
                       <span class="chat-invites-pill">{resolve('Connected')}</span>
+                      <button
+                        type="button"
+                        class="chat-invites-action ghost"
+                        disabled={busyKeys.value.includes(`remove:${invite.id}`)}
+                        onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
+                      >
+                        {resolvedRemoveAction}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section class="chat-invites-panel">
+            <header class="chat-invites-panel-header">
+              <span>{resolvedOnlineLabel}</span>
+              <span class="chat-invites-count">{onlineContacts.length}</span>
+            </header>
+            {onlineContacts.length === 0 ? (
+              <p class="chat-invites-empty">{resolvedOnlineEmptyLabel}</p>
+            ) : (
+              <div class="chat-invites-list">
+                {onlineContacts.map((invite, index) => (
+                  <article
+                    key={`online-${invite.id}`}
+                    class="chat-invites-item"
+                    style={`--stagger-index:${index};`}
+                  >
+                    <div>
+                      <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                      <p class="chat-invites-item-meta">{invite.user.email}</p>
+                    </div>
+                    <div class="chat-invites-actions">
+                      <span class="chat-invites-pill accent">{resolve('Online')}</span>
                       <button
                         type="button"
                         class="chat-invites-action ghost"

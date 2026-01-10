@@ -1,10 +1,12 @@
+import { and, eq, inArray, or } from 'drizzle-orm'
 import type { AnyElysia, Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'
 import type { ValidateSessionHandler } from '@features/auth/server'
 import type { DatabaseClient } from '@platform/db'
 import type { ValkeyClientType } from '@valkey/client'
 import type { RateLimitResult } from '@platform/rate-limit'
-import type { ChatMessagesTable } from './api'
+import { contactsChannel } from './api'
+import type { ChatMessagesTable, ContactInvitesTable, UsersTable } from './api'
 
 type ValkeyClient = ValkeyClientType
 type IsValkeyReadyFn = () => boolean
@@ -210,6 +212,410 @@ export const registerChatWs = <App extends AnyElysia>(app: App, options: ChatWsO
       } catch (error) {
         console.error('Failed to persist chat message', error)
         ws.send(JSON.stringify({ type: 'error', error: 'Unable to send message' } satisfies ChatErrorEvent))
+      }
+    }
+  })
+
+type ContactInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked'
+
+type ContactInviteView = {
+  id: string
+  status: ContactInviteStatus
+  user: {
+    id: string
+    name?: string | null
+    email: string
+  }
+}
+
+type ContactsSnapshot = {
+  incoming: ContactInviteView[]
+  outgoing: ContactInviteView[]
+  contacts: ContactInviteView[]
+  onlineIds: string[]
+}
+
+type ContactsErrorEvent = { type: 'error'; error: string; retryAfter?: number }
+
+type ContactsWsData = {
+  subscriber?: Awaited<ReturnType<ValkeyClient['duplicate']>>
+  clientIp?: string
+  user?: WsUser
+  heartbeatInterval?: NodeJS.Timeout
+  heartbeatTimeout?: NodeJS.Timeout
+  lastSeen?: number
+}
+
+type ContactsWsContextData = ContactsWsData & { request?: Request; headers?: HeadersInit }
+type ContactsWsSocket = ElysiaWS<ContactsWsContextData>
+
+const presenceKeyPrefix = 'contacts:presence:'
+const presenceTtlSeconds = 45
+
+const buildPresenceKey = (userId: string) => `${presenceKeyPrefix}${userId}`
+
+const normalizeContactStatus = (value: unknown): ContactInviteStatus => {
+  if (value === 'accepted' || value === 'declined' || value === 'revoked') return value
+  return 'pending'
+}
+
+const resolveOnlineIds = async (valkey: ValkeyClient, isValkeyReady: IsValkeyReadyFn, ids: string[]) => {
+  if (!isValkeyReady()) return []
+  const uniqueIds = Array.from(new Set(ids))
+  if (!uniqueIds.length) return []
+  try {
+    const keys = uniqueIds.map(buildPresenceKey)
+    const results = await valkey.mGet(keys)
+    return uniqueIds.filter((id, index) => {
+      const value = results[index]
+      if (value === null || value === undefined) return false
+      const count = Number(value)
+      return Number.isFinite(count) ? count > 0 : String(value).trim() !== ''
+    })
+  } catch (error) {
+    console.error('Failed to resolve contact presence', error)
+    return []
+  }
+}
+
+const buildContactsSnapshot = async (
+  options: ContactsWsOptions,
+  userId: string
+): Promise<ContactsSnapshot> => {
+  let invites: Array<Record<string, unknown>> = []
+  try {
+    invites = (await options.db
+      .select()
+      .from(options.contactInvitesTable)
+      .where(
+        and(
+          or(
+            eq(options.contactInvitesTable.inviterId, userId),
+            eq(options.contactInvitesTable.inviteeId, userId)
+          ),
+          inArray(options.contactInvitesTable.status, ['pending', 'accepted'])
+        )
+      )) as Array<Record<string, unknown>>
+  } catch (error) {
+    console.error('Failed to load contact invites', error)
+    return { incoming: [], outgoing: [], contacts: [], onlineIds: [] }
+  }
+
+  const otherIds = Array.from(
+    new Set(
+      invites.map((invite) => (invite.inviterId === userId ? invite.inviteeId : invite.inviterId))
+    )
+  ).filter((id): id is string => typeof id === 'string' && id !== '')
+
+  if (!otherIds.length) {
+    return { incoming: [], outgoing: [], contacts: [], onlineIds: [] }
+  }
+
+  let users: Array<{ id: string; name?: string | null; email: string }> = []
+  try {
+    users = await options.db
+      .select({ id: options.usersTable.id, name: options.usersTable.name, email: options.usersTable.email })
+      .from(options.usersTable)
+      .where(inArray(options.usersTable.id, otherIds))
+  } catch (error) {
+    console.error('Failed to load contact users', error)
+    return { incoming: [], outgoing: [], contacts: [], onlineIds: [] }
+  }
+
+  const userById = new Map<string, { id: string; name?: string | null; email: string }>()
+  users.forEach((user) => {
+    if (typeof user.id === 'string' && typeof user.email === 'string') {
+      userById.set(user.id, {
+        id: user.id,
+        name: typeof user.name === 'string' ? user.name : null,
+        email: user.email
+      })
+    }
+  })
+
+  const buildView = (invite: Record<string, unknown>): ContactInviteView | null => {
+    const inviteId = invite.id
+    const inviterId = invite.inviterId
+    const inviteeId = invite.inviteeId
+    if (typeof inviteId !== 'string' || typeof inviterId !== 'string' || typeof inviteeId !== 'string') return null
+    const otherId = inviterId === userId ? inviteeId : inviterId
+    const user = userById.get(otherId)
+    if (!user) return null
+    return {
+      id: inviteId,
+      status: normalizeContactStatus(invite.status),
+      user
+    }
+  }
+
+  const incoming: ContactInviteView[] = []
+  const outgoing: ContactInviteView[] = []
+  const contacts: ContactInviteView[] = []
+
+  invites.forEach((invite) => {
+    const view = buildView(invite)
+    if (!view) return
+    if (view.status === 'accepted') {
+      contacts.push(view)
+      return
+    }
+    if (invite.inviteeId === userId) {
+      incoming.push(view)
+      return
+    }
+    if (invite.inviterId === userId) {
+      outgoing.push(view)
+    }
+  })
+
+  const onlineIds = await resolveOnlineIds(
+    options.valkey,
+    options.isValkeyReady,
+    contacts.map((invite) => invite.user.id)
+  )
+
+  return { incoming, outgoing, contacts, onlineIds }
+}
+
+const attachContactsHeartbeat = (ws: ContactsWsSocket) => {
+  const data = ws.data
+  data.lastSeen = Date.now()
+  const sendPing = () => {
+    try {
+      ws.send(JSON.stringify({ type: 'ping' }))
+    } catch {
+      ws.close(1011, 'Heartbeat failed')
+      return
+    }
+    if (data.heartbeatTimeout !== undefined) clearTimeout(data.heartbeatTimeout)
+    data.heartbeatTimeout = setTimeout(() => {
+      ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
+      ws.close(1013, 'Heartbeat timeout')
+    }, 10000)
+  }
+
+  data.heartbeatInterval = setInterval(() => {
+    const now = Date.now()
+    const lastSeen = data.lastSeen ?? now
+    if (now - lastSeen > 25000) {
+      ws.send(JSON.stringify({ type: 'error', error: 'Heartbeat timeout' }))
+      ws.close(1013, 'Heartbeat timeout')
+      return
+    }
+    sendPing()
+  }, 15000)
+
+  sendPing()
+}
+
+const clearContactsHeartbeat = (ws: ContactsWsSocket) => {
+  const data = ws.data
+  if (data.heartbeatInterval !== undefined) clearInterval(data.heartbeatInterval)
+  if (data.heartbeatTimeout !== undefined) clearTimeout(data.heartbeatTimeout)
+}
+
+const markPresenceOnline = async (valkey: ValkeyClient, userId: string) => {
+  const key = buildPresenceKey(userId)
+  const count = await valkey.incr(key)
+  await valkey.expire(key, presenceTtlSeconds)
+  return count === 1
+}
+
+const touchPresence = async (valkey: ValkeyClient, userId: string) => {
+  const key = buildPresenceKey(userId)
+  const updated = await valkey.expire(key, presenceTtlSeconds)
+  if (updated > 0) return false
+  const count = await valkey.incr(key)
+  await valkey.expire(key, presenceTtlSeconds)
+  return count === 1
+}
+
+const markPresenceOffline = async (valkey: ValkeyClient, userId: string) => {
+  const key = buildPresenceKey(userId)
+  const count = await valkey.decr(key)
+  if (count <= 0) {
+    await valkey.del(key)
+    return true
+  }
+  await valkey.expire(key, presenceTtlSeconds)
+  return false
+}
+
+export type ContactsWsOptions = {
+  valkey: ValkeyClient
+  isValkeyReady: IsValkeyReadyFn
+  validateSession: ValidateSessionFn
+  checkWsOpenQuota: (route: string, clientIp: string) => Promise<RateLimitResult>
+  db: DatabaseClient['db']
+  usersTable: UsersTable
+  contactInvitesTable: ContactInvitesTable
+  resolveWsClientIp: ResolveWsClientIp
+  resolveWsHeaders: ResolveWsHeaders
+  resolveWsRequest: ResolveWsRequest
+}
+
+export const registerContactsWs = <App extends AnyElysia>(app: App, options: ContactsWsOptions) =>
+  app.ws('/chat/contacts/ws', {
+    upgrade(context: WsUpgradeContext) {
+      return { headers: context.request.headers, request: context.request }
+    },
+    async open(ws: ContactsWsSocket) {
+      const clientIp = options.resolveWsClientIp(ws)
+      const headers = options.resolveWsHeaders(ws)
+      const request = options.resolveWsRequest(ws)
+      const { allowed, retryAfter } = await options.checkWsOpenQuota('/chat/contacts/ws', clientIp)
+      if (!allowed) {
+        ws.send(
+          JSON.stringify({ type: 'error', error: 'Too many realtime attempts', retryAfter } satisfies ContactsErrorEvent)
+        )
+        ws.close(4408, 'Too many attempts')
+        return
+      }
+
+      let sessionPayload: { user?: WsUser } | null = null
+      try {
+        const sessionResponse = await options.validateSession({ headers, request })
+        if (sessionResponse.ok) {
+          sessionPayload = await parseSessionPayload(sessionResponse)
+        }
+      } catch (error) {
+        console.error('Failed to validate contacts session', error)
+      }
+
+      const sessionUser = sessionPayload?.user
+      const sessionUserId = sessionUser?.id
+      if (sessionUserId === undefined || sessionUserId === '') {
+        ws.send(
+          JSON.stringify({ type: 'error', error: 'Authentication required for contacts' } satisfies ContactsErrorEvent)
+        )
+        ws.close(4401, 'Unauthorized')
+        return
+      }
+
+      if (!options.isValkeyReady()) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Realtime unavailable' } satisfies ContactsErrorEvent))
+        ws.close(1013, 'Cache unavailable')
+        return
+      }
+
+      const data = ws.data
+      data.clientIp = clientIp
+      data.user = sessionUser
+      data.lastSeen = Date.now()
+
+      let subscriber: Awaited<ReturnType<ValkeyClient['duplicate']>> | null = null
+      try {
+        subscriber = options.valkey.duplicate()
+        await subscriber.connect()
+        await subscriber.subscribe(contactsChannel, (message: string) => {
+          const payload = parseMessage(message)
+          if (!payload) return
+          const type = payload.type
+          if (type === 'contacts:refresh') {
+            const targetIds = Array.isArray(payload.userIds) ? payload.userIds : []
+            if (targetIds.includes(sessionUserId)) {
+              void (async () => {
+                const snapshot = await buildContactsSnapshot(options, sessionUserId)
+                ws.send(
+                  JSON.stringify({
+                    type: 'contacts:update',
+                    ...snapshot
+                  })
+                )
+              })()
+            }
+            return
+          }
+          if (type === 'contacts:presence') {
+            ws.send(message)
+          }
+        })
+        data.subscriber = subscriber
+      } catch (error) {
+        console.error('WebSocket subscription failed', error)
+        if (subscriber !== null) {
+          try {
+            await subscriber.quit()
+          } catch (quitError) {
+            console.error('Failed to close partial subscriber', quitError)
+          }
+        }
+        ws.send(JSON.stringify({ type: 'error', error: 'Unable to join realtime' } satisfies ContactsErrorEvent))
+        ws.close(1011, 'Subscription failed')
+        return
+      }
+
+      try {
+        const snapshot = await buildContactsSnapshot(options, sessionUserId)
+        ws.send(JSON.stringify({ type: 'contacts:init', ...snapshot }))
+      } catch (error) {
+        console.error('Failed to load contacts snapshot', error)
+        ws.send(JSON.stringify({ type: 'error', error: 'Unable to load contacts' } satisfies ContactsErrorEvent))
+      }
+
+      try {
+        const wentOnline = await markPresenceOnline(options.valkey, sessionUserId)
+        if (wentOnline) {
+          await options.valkey.publish(
+            contactsChannel,
+            JSON.stringify({ type: 'contacts:presence', userId: sessionUserId, online: true })
+          )
+        }
+      } catch (error) {
+        console.error('Failed to mark contact presence', error)
+      }
+
+      attachContactsHeartbeat(ws)
+    },
+    async message(ws: ContactsWsSocket, message: unknown) {
+      const data = ws.data
+      data.lastSeen = Date.now()
+      if (data.heartbeatTimeout !== undefined) {
+        clearTimeout(data.heartbeatTimeout)
+        data.heartbeatTimeout = undefined
+      }
+      const sessionUserId = data.user?.id
+      if (sessionUserId) {
+        try {
+          const revived = await touchPresence(options.valkey, sessionUserId)
+          if (revived) {
+            await options.valkey.publish(
+              contactsChannel,
+              JSON.stringify({ type: 'contacts:presence', userId: sessionUserId, online: true })
+            )
+          }
+        } catch (error) {
+          console.error('Failed to refresh contact presence', error)
+        }
+      }
+      if (typeof message === 'string') {
+        try {
+          const parsed: unknown = JSON.parse(message)
+          if (parsed && typeof parsed === 'object' && (parsed as Record<string, unknown>).type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }))
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+    },
+    async close(ws: ContactsWsSocket) {
+      clearContactsHeartbeat(ws)
+      const data = ws.data
+      if (data.subscriber !== undefined) await data.subscriber.quit()
+      const sessionUserId = data.user?.id
+      if (sessionUserId) {
+        try {
+          const wentOffline = await markPresenceOffline(options.valkey, sessionUserId)
+          if (wentOffline) {
+            await options.valkey.publish(
+              contactsChannel,
+              JSON.stringify({ type: 'contacts:presence', userId: sessionUserId, online: false })
+            )
+          }
+        } catch (error) {
+          console.error('Failed to clear contact presence', error)
+        }
       }
     }
   })

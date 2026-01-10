@@ -348,7 +348,9 @@ const contactInvites: FragmentDefinition = {
       'data-incoming-label': t('Incoming'),
       'data-outgoing-label': t('Outgoing'),
       'data-contacts-label': t('Contacts'),
-      'data-empty-label': t('No invites yet.')
+      'data-online-label': t('Online'),
+      'data-empty-label': t('No invites yet.'),
+      'data-online-empty-label': t('No contacts online.')
     })
 }
 
