@@ -60,6 +60,13 @@ type BaselineInviteCounts = {
   contacts: number
 }
 
+type ActiveContact = {
+  id: string
+  name?: string | null
+  email: string
+  online: boolean
+}
+
 type ContactSearchItem = {
   id: string
   name?: string | null
@@ -137,6 +144,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const realtimeState = useSignal<RealtimeState>('idle')
     const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
     const baselineCounts = useSignal<BaselineInviteCounts | null>(null)
+    const activeContact = useSignal<ActiveContact | null>(null)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -230,6 +238,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
         outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
         contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
         onlineIds.value = []
+        if (activeContact.value) {
+          const stillConnected = contacts.value.some((invite) => invite.user.id === activeContact.value?.id)
+          if (!stillConnected) {
+            activeContact.value = null
+          }
+        }
         if (searchResults.value.length) {
           const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
           incoming.value.forEach((invite) => statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id }))
@@ -560,6 +574,34 @@ export const ContactInvites = component$<ContactInvitesProps>(
       bellOpen.value = !bellOpen.value
     })
 
+    const handleContactClick = $((event: Event, contact: ContactSearchItem) => {
+      if (!contact.isContact) return
+      const target = event.target as Element | null
+      if (target?.closest('button')) return
+      activeContact.value = {
+        id: contact.id,
+        name: contact.name ?? null,
+        email: contact.email,
+        online: !!contact.online
+      }
+    })
+
+    const handleContactKeyDown = $((event: KeyboardEvent, contact: ContactSearchItem) => {
+      if (!contact.isContact) return
+      if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+      event.preventDefault()
+      activeContact.value = {
+        id: contact.id,
+        name: contact.name ?? null,
+        email: contact.email,
+        online: !!contact.online
+      }
+    })
+
+    const closeContact = $(() => {
+      activeContact.value = null
+    })
+
     useVisibleTask$(
       (ctx) => {
         if (typeof window === 'undefined') return
@@ -580,6 +622,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
         const handleKeyDown = (event: KeyboardEvent) => {
           if (event.key === 'Escape') {
             bellOpen.value = false
+            activeContact.value = null
           }
         }
 
@@ -651,6 +694,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
           outgoing.value = nextOutgoing
           contacts.value = nextContacts
           onlineIds.value = Array.from(new Set(nextOnline))
+          if (activeContact.value) {
+            const stillConnected = nextContacts.some((invite) => invite.user.id === activeContact.value?.id)
+            if (!stillConnected) {
+              activeContact.value = null
+            }
+          }
           const baseline = baselineCounts.value
           if (!baseline) {
             baselineCounts.value = {
@@ -823,6 +872,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       outgoingCount < baseline.outgoing
     const bellAlert = incomingAlert || outgoingAcceptedAlert
     const BellIcon = InBellNotification
+    const dmOpen = activeContact.value !== null
     const normalizedQuery = normalizeQuery(searchQuery.value)
     const contactMatches = normalizedQuery
       ? contacts.value.filter((invite) => matchesQuery(invite.user, normalizedQuery))
@@ -853,7 +903,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       normalizedQuery === '' || contactMatches.length > 0 ? resolvedContactsLabel : resolve('Search results')
 
     return (
-      <section class={rootClass} data-state={invitesState.value}>
+      <section class={rootClass} data-state={invitesState.value} data-dm-open={dmOpen ? 'true' : 'false'}>
         <header class="chat-invites-header">
           <div>
             <p class="chat-invites-title">{resolvedTitle}</p>
@@ -1020,12 +1070,20 @@ export const ContactInvites = component$<ContactInvitesProps>(
               const isIncoming = result.status === 'incoming'
               const isAccepted = result.status === 'accepted' || isContact
               const isOnline = isContact ? !!result.online : false
+              const isActiveContact = activeContact.value?.id === result.id
 
               return (
                 <article
                   key={`${result.id}-${result.email}`}
                   class="chat-invites-item"
+                  data-interactive={isContact ? 'true' : 'false'}
+                  data-active={isActiveContact ? 'true' : 'false'}
                   style={`--stagger-index:${index};`}
+                  role={isContact ? 'button' : undefined}
+                  tabIndex={isContact ? 0 : undefined}
+                  aria-label={isContact ? resolve('Open direct message') : undefined}
+                  onClick$={isContact ? (event) => handleContactClick(event, result) : undefined}
+                  onKeyDown$={isContact ? (event) => handleContactKeyDown(event, result) : undefined}
                 >
                   <div>
                     <div class="chat-invites-item-heading">
@@ -1100,6 +1158,31 @@ export const ContactInvites = component$<ContactInvitesProps>(
             })}
           </div>
         </div>
+        {activeContact.value ? (
+          <div class="chat-invites-dm" role="dialog" aria-modal="true" aria-label={resolve('Direct message')}>
+            <div class="chat-invites-dm-card">
+              <header class="chat-invites-dm-header">
+                <button type="button" class="chat-invites-dm-close" onClick$={closeContact}>
+                  {resolve('Back')}
+                </button>
+                <div>
+                  <div class="chat-invites-item-heading">
+                    <span
+                      class="chat-invites-presence"
+                      data-online={activeContact.value.online ? 'true' : 'false'}
+                      aria-hidden="true"
+                    />
+                    <p class="chat-invites-dm-title">{formatDisplayName(activeContact.value)}</p>
+                  </div>
+                  <p class="chat-invites-dm-meta">{activeContact.value.email}</p>
+                </div>
+              </header>
+              <div class="chat-invites-dm-body">
+                <p class="chat-invites-dm-placeholder">{resolve('Direct messages are coming soon.')}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     )
   }

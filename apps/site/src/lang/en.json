@@ -322,6 +322,10 @@
     "Connected": "Connected",
     "Pending": "Pending",
     "No contacts yet.": "No contacts yet.",
-    "No contacts online.": "No contacts online."
+    "No contacts online.": "No contacts online.",
+    "Open direct message": "Open direct message",
+    "Direct message": "Direct message",
+    "Direct messages are coming soon.": "Direct messages are coming soon.",
+    "Back": "Back"
   }
 }
