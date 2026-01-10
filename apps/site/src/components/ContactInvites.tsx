@@ -1,5 +1,6 @@
 import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
+import { InBellNotification } from '@qwikest/icons/iconoir'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
@@ -51,16 +52,19 @@ type ContactSearchPayload = {
 
 type RealtimeState = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
 
-type PanelKey = 'invites' | 'contacts'
-
-const panelKeys: PanelKey[] = ['invites', 'contacts']
+type PanelKey = 'contacts'
 
 const collapsedStorageKey = 'contacts:panels:collapsed'
 const countStorageKey = 'contacts:panels:counts'
 
 const defaultCollapsedState: Record<PanelKey, boolean> = {
-  invites: false,
   contacts: false
+}
+
+type BaselineInviteCounts = {
+  incoming: number
+  outgoing: number
+  contacts: number
 }
 
 const buildApiUrl = (path: string, origin: string) => {
@@ -121,7 +125,10 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const realtimeState = useSignal<RealtimeState>('idle')
     const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
     const panelCollapsed = useSignal<Record<PanelKey, boolean>>({ ...defaultCollapsedState })
-    const baselineCounts = useSignal<Record<PanelKey, number> | null>(null)
+    const baselineCounts = useSignal<BaselineInviteCounts | null>(null)
+    const bellOpen = useSignal(false)
+    const bellButtonRef = useSignal<HTMLButtonElement>()
+    const bellPopoverRef = useSignal<HTMLDivElement>()
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -175,10 +182,10 @@ export const ContactInvites = component$<ContactInvitesProps>(
       resolve('No invites yet.')
     )
 
-    const isAlertCount = (panel: PanelKey, value: number) => {
+    const isAlertCount = (key: keyof BaselineInviteCounts, value: number) => {
       const baseline = baselineCounts.value
       if (!baseline) return false
-      const previous = baseline[panel]
+      const previous = baseline[key]
       if (!Number.isFinite(previous)) return false
       return value > previous
     }
@@ -224,6 +231,32 @@ export const ContactInvites = component$<ContactInvitesProps>(
             }
             return { ...entry, status: status.status, inviteId: status.inviteId }
           })
+        }
+        const baseline = baselineCounts.value
+        if (!baseline) {
+          baselineCounts.value = {
+            incoming: incoming.value.length,
+            outgoing: outgoing.value.length,
+            contacts: contacts.value.length
+          }
+        } else {
+          const next = { ...baseline }
+          let changed = false
+          if (!Number.isFinite(next.incoming)) {
+            next.incoming = incoming.value.length
+            changed = true
+          }
+          if (!Number.isFinite(next.outgoing)) {
+            next.outgoing = outgoing.value.length
+            changed = true
+          }
+          if (!Number.isFinite(next.contacts)) {
+            next.contacts = contacts.value.length
+            changed = true
+          }
+          if (changed) {
+            baselineCounts.value = next
+          }
         }
         invitesState.value = 'idle'
       } catch (error) {
@@ -510,12 +543,32 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }
     })
 
+    const toggleBell = $(() => {
+      bellOpen.value = !bellOpen.value
+    })
+
     useVisibleTask$(
       (ctx) => {
         if (typeof window === 'undefined') return
         let active = true
         let hasSnapshot = false
         let reconnectTimer: number | null = null
+
+        const handleDocumentClick = (event: MouseEvent) => {
+          if (!bellOpen.value) return
+          const target = event.target as Node | null
+          const button = bellButtonRef.value
+          const popover = bellPopoverRef.value
+          if (button && target && button.contains(target)) return
+          if (popover && target && popover.contains(target)) return
+          bellOpen.value = false
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+          if (event.key === 'Escape') {
+            bellOpen.value = false
+          }
+        }
 
         const readCollapsedState = () => {
           try {
@@ -524,37 +577,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
             const parsed = JSON.parse(raw)
             if (!parsed || typeof parsed !== 'object') return
             const next = { ...defaultCollapsedState }
-            let hasDirect = false
-            panelKeys.forEach((key) => {
-              const value = (parsed as Record<string, unknown>)[key]
-              if (typeof value === 'boolean') {
-                next[key] = value
-                hasDirect = true
-              }
-            })
-            if (!hasDirect) {
-              const incoming = (parsed as Record<string, unknown>).incoming
-              const outgoing = (parsed as Record<string, unknown>).outgoing
-              const contacts = (parsed as Record<string, unknown>).contacts
-              const online = (parsed as Record<string, unknown>).online
-              if (typeof incoming === 'boolean' || typeof outgoing === 'boolean') {
-                if (typeof incoming === 'boolean' && typeof outgoing === 'boolean') {
-                  next.invites = incoming && outgoing
-                } else if (typeof incoming === 'boolean') {
-                  next.invites = incoming
-                } else if (typeof outgoing === 'boolean') {
-                  next.invites = outgoing
-                }
-              }
-              if (typeof contacts === 'boolean' || typeof online === 'boolean') {
-                if (typeof contacts === 'boolean' && typeof online === 'boolean') {
-                  next.contacts = contacts && online
-                } else if (typeof contacts === 'boolean') {
-                  next.contacts = contacts
-                } else if (typeof online === 'boolean') {
-                  next.contacts = online
-                }
-              }
+            const contacts = (parsed as Record<string, unknown>).contacts
+            const online = (parsed as Record<string, unknown>).online
+            if (typeof contacts === 'boolean') {
+              next.contacts = contacts
+            } else if (typeof online === 'boolean') {
+              next.contacts = online
             }
             panelCollapsed.value = next
           } catch {
@@ -568,33 +596,26 @@ export const ContactInvites = component$<ContactInvitesProps>(
             if (!raw) return
             const parsed = JSON.parse(raw)
             if (!parsed || typeof parsed !== 'object') return
-            const next: Record<PanelKey, number> = {
-              invites: Number.NaN,
+            const next: BaselineInviteCounts = {
+              incoming: Number.NaN,
+              outgoing: Number.NaN,
               contacts: Number.NaN
             }
             let hasValue = false
-            panelKeys.forEach((key) => {
-              const value = Number((parsed as Record<string, unknown>)[key])
-              if (Number.isFinite(value)) {
-                next[key] = value
-                hasValue = true
-              }
-            })
-            if (!hasValue) {
-              const incoming = Number((parsed as Record<string, unknown>).incoming)
-              const outgoing = Number((parsed as Record<string, unknown>).outgoing)
-              const contacts = Number((parsed as Record<string, unknown>).contacts)
-              const incomingCount = Number.isFinite(incoming) ? incoming : 0
-              const outgoingCount = Number.isFinite(outgoing) ? outgoing : 0
-              const invitesCount = incomingCount + outgoingCount
-              if (Number.isFinite(contacts)) {
-                next.contacts = contacts
-                hasValue = true
-              }
-              if (Number.isFinite(invitesCount) && (Number.isFinite(incoming) || Number.isFinite(outgoing))) {
-                next.invites = invitesCount
-                hasValue = true
-              }
+            const incoming = Number((parsed as Record<string, unknown>).incoming)
+            const outgoing = Number((parsed as Record<string, unknown>).outgoing)
+            const contacts = Number((parsed as Record<string, unknown>).contacts)
+            if (Number.isFinite(incoming)) {
+              next.incoming = incoming
+              hasValue = true
+            }
+            if (Number.isFinite(outgoing)) {
+              next.outgoing = outgoing
+              hasValue = true
+            }
+            if (Number.isFinite(contacts)) {
+              next.contacts = contacts
+              hasValue = true
             }
             baselineCounts.value = hasValue ? next : null
           } catch {
@@ -604,7 +625,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
         const saveCounts = () => {
           const payload = {
-            invites: incoming.value.length + outgoing.value.length,
+            incoming: incoming.value.length,
+            outgoing: outgoing.value.length,
             contacts: contacts.value.length
           }
           try {
@@ -625,6 +647,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
         window.addEventListener('beforeunload', saveCounts)
         document.addEventListener('visibilitychange', handleVisibility)
+        document.addEventListener('click', handleDocumentClick)
+        document.addEventListener('keydown', handleKeyDown)
 
         const applySnapshot = (payload: Record<string, unknown>) => {
           const nextIncoming = Array.isArray(payload.incoming) ? (payload.incoming as ContactInviteView[]) : []
@@ -635,6 +659,32 @@ export const ContactInvites = component$<ContactInvitesProps>(
           outgoing.value = nextOutgoing
           contacts.value = nextContacts
           onlineIds.value = Array.from(new Set(nextOnline))
+          const baseline = baselineCounts.value
+          if (!baseline) {
+            baselineCounts.value = {
+              incoming: nextIncoming.length,
+              outgoing: nextOutgoing.length,
+              contacts: nextContacts.length
+            }
+          } else {
+            const next = { ...baseline }
+            let changed = false
+            if (!Number.isFinite(next.incoming)) {
+              next.incoming = nextIncoming.length
+              changed = true
+            }
+            if (!Number.isFinite(next.outgoing)) {
+              next.outgoing = nextOutgoing.length
+              changed = true
+            }
+            if (!Number.isFinite(next.contacts)) {
+              next.contacts = nextContacts.length
+              changed = true
+            }
+            if (changed) {
+              baselineCounts.value = next
+            }
+          }
           invitesState.value = 'idle'
           realtimeState.value = 'live'
           hasSnapshot = true
@@ -757,6 +807,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
           saveCounts()
           window.removeEventListener('beforeunload', saveCounts)
           document.removeEventListener('visibilitychange', handleVisibility)
+          document.removeEventListener('click', handleDocumentClick)
+          document.removeEventListener('keydown', handleKeyDown)
           wsRef.value?.close()
           realtimeState.value = 'idle'
         })
@@ -767,12 +819,20 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const onlineSet = new Set(onlineIds.value)
     const incomingCount = incoming.value.length
     const outgoingCount = outgoing.value.length
-    const invitesCount = incomingCount + outgoingCount
     const contactsCount = contacts.value.length
-    const invitesCollapsed = panelCollapsed.value.invites
     const contactsCollapsed = panelCollapsed.value.contacts
-    const invitesAlert = isAlertCount('invites', invitesCount)
+    const incomingAlert = isAlertCount('incoming', incomingCount)
+    const outgoingAlert = isAlertCount('outgoing', outgoingCount)
     const contactsAlert = isAlertCount('contacts', contactsCount)
+    const baseline = baselineCounts.value
+    const outgoingAcceptedAlert =
+      !!baseline &&
+      Number.isFinite(baseline.contacts) &&
+      Number.isFinite(baseline.outgoing) &&
+      contactsCount > baseline.contacts &&
+      outgoingCount < baseline.outgoing
+    const bellAlert = incomingAlert || outgoingAcceptedAlert
+    const BellIcon = InBellNotification
 
     return (
       <section class={rootClass} data-state={invitesState.value}>
@@ -781,8 +841,125 @@ export const ContactInvites = component$<ContactInvitesProps>(
             <p class="chat-invites-title">{resolvedTitle}</p>
             <p class="chat-invites-helper">{resolvedHelper}</p>
           </div>
-          <div class="chat-invites-status" data-tone={statusTone.value} aria-live="polite">
-            {statusMessage.value ?? resolve('Ready')}
+          <div class="chat-invites-header-actions">
+            {statusMessage.value ? (
+              <p class="chat-invites-status-note" data-tone={statusTone.value} aria-live="polite">
+                {statusMessage.value}
+              </p>
+            ) : null}
+            <div class="chat-invites-bell-wrap">
+              <button
+                type="button"
+                class="chat-invites-bell"
+                data-alert={bellAlert ? 'true' : 'false'}
+                data-open={bellOpen.value ? 'true' : 'false'}
+                aria-haspopup="dialog"
+                aria-expanded={bellOpen.value}
+                aria-controls="chat-invites-popover"
+                aria-label={resolve('Invites')}
+                onClick$={toggleBell}
+                ref={bellButtonRef}
+              >
+                <BellIcon class="chat-invites-bell-icon" />
+              </button>
+              <div
+                id="chat-invites-popover"
+                class="chat-invites-popover"
+                data-open={bellOpen.value ? 'true' : 'false'}
+                role="dialog"
+                aria-label={resolve('Invites')}
+                aria-hidden={!bellOpen.value}
+                ref={bellPopoverRef}
+              >
+                <div class="chat-invites-popover-header">
+                  <span>{resolve('Invites')}</span>
+                  <span class="chat-invites-popover-count">{incomingCount + outgoingCount}</span>
+                </div>
+                <div class="chat-invites-popover-body">
+                  <section class="chat-invites-subsection">
+                    <header class="chat-invites-subheader">
+                      <span>{resolvedIncomingLabel}</span>
+                      <span class="chat-invites-subcount" data-alert={incomingAlert ? 'true' : 'false'}>
+                        {incomingCount}
+                      </span>
+                    </header>
+                    {incoming.value.length === 0 ? (
+                      <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
+                    ) : (
+                      <div class="chat-invites-list">
+                        {incoming.value.map((invite, index) => (
+                          <article
+                            key={invite.id}
+                            class="chat-invites-item"
+                            style={`--stagger-index:${index};`}
+                          >
+                            <div>
+                              <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                              <p class="chat-invites-item-meta">{invite.user.email}</p>
+                            </div>
+                            <div class="chat-invites-actions">
+                              <button
+                                type="button"
+                                class="chat-invites-action success"
+                                disabled={busyKeys.value.includes(`accept:${invite.id}`)}
+                                onClick$={() => handleAccept(invite.id, invite.user.id)}
+                              >
+                                {resolvedAcceptAction}
+                              </button>
+                              <button
+                                type="button"
+                                class="chat-invites-action ghost"
+                                disabled={busyKeys.value.includes(`decline:${invite.id}`)}
+                                onClick$={() => handleDecline(invite.id, invite.user.id)}
+                              >
+                                {resolvedDeclineAction}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                  <section class="chat-invites-subsection">
+                    <header class="chat-invites-subheader">
+                      <span>{resolvedOutgoingLabel}</span>
+                      <span class="chat-invites-subcount" data-alert={outgoingAlert ? 'true' : 'false'}>
+                        {outgoingCount}
+                      </span>
+                    </header>
+                    {outgoing.value.length === 0 ? (
+                      <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
+                    ) : (
+                      <div class="chat-invites-list">
+                        {outgoing.value.map((invite, index) => (
+                          <article
+                            key={invite.id}
+                            class="chat-invites-item"
+                            style={`--stagger-index:${index};`}
+                          >
+                            <div>
+                              <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
+                              <p class="chat-invites-item-meta">{invite.user.email}</p>
+                            </div>
+                            <div class="chat-invites-actions">
+                              <span class="chat-invites-pill">{resolve('Pending')}</span>
+                              <button
+                                type="button"
+                                class="chat-invites-action ghost"
+                                disabled={busyKeys.value.includes(`remove:${invite.id}`)}
+                                onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
+                              >
+                                {resolvedRemoveAction}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -883,108 +1060,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
         </div>
 
         <div class="chat-invites-grid">
-          <section class="chat-invites-panel" data-collapsed={invitesCollapsed ? 'true' : 'false'}>
-            <header class="chat-invites-panel-header">
-              <button
-                type="button"
-                class="chat-invites-collapse"
-                aria-expanded={!invitesCollapsed}
-                aria-controls="chat-invites-panel-invites"
-                onClick$={() => togglePanel('invites')}
-              >
-                <span>{resolve('Invites')}</span>
-              </button>
-              <span class="chat-invites-count" data-alert={invitesAlert ? 'true' : 'false'}>
-                {invitesCount}
-              </span>
-            </header>
-            <div
-              id="chat-invites-panel-invites"
-              class="chat-invites-panel-body"
-              data-collapsed={invitesCollapsed ? 'true' : 'false'}
-            >
-              <div class="chat-invites-split">
-                <section class="chat-invites-subsection">
-                  <header class="chat-invites-subheader">
-                    <span>{resolvedIncomingLabel}</span>
-                    <span class="chat-invites-subcount">{incomingCount}</span>
-                  </header>
-                  {incoming.value.length === 0 ? (
-                    <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
-                  ) : (
-                    <div class="chat-invites-list">
-                      {incoming.value.map((invite, index) => (
-                        <article
-                          key={invite.id}
-                          class="chat-invites-item"
-                          style={`--stagger-index:${index};`}
-                        >
-                          <div>
-                            <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                            <p class="chat-invites-item-meta">{invite.user.email}</p>
-                          </div>
-                          <div class="chat-invites-actions">
-                            <button
-                              type="button"
-                              class="chat-invites-action success"
-                              disabled={busyKeys.value.includes(`accept:${invite.id}`)}
-                              onClick$={() => handleAccept(invite.id, invite.user.id)}
-                            >
-                              {resolvedAcceptAction}
-                            </button>
-                            <button
-                              type="button"
-                              class="chat-invites-action ghost"
-                              disabled={busyKeys.value.includes(`decline:${invite.id}`)}
-                              onClick$={() => handleDecline(invite.id, invite.user.id)}
-                            >
-                              {resolvedDeclineAction}
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-                <section class="chat-invites-subsection">
-                  <header class="chat-invites-subheader">
-                    <span>{resolvedOutgoingLabel}</span>
-                    <span class="chat-invites-subcount">{outgoingCount}</span>
-                  </header>
-                  {outgoing.value.length === 0 ? (
-                    <p class="chat-invites-empty">{resolvedEmptyLabel}</p>
-                  ) : (
-                    <div class="chat-invites-list">
-                      {outgoing.value.map((invite, index) => (
-                        <article
-                          key={invite.id}
-                          class="chat-invites-item"
-                          style={`--stagger-index:${index};`}
-                        >
-                          <div>
-                            <p class="chat-invites-item-name">{formatDisplayName(invite.user)}</p>
-                            <p class="chat-invites-item-meta">{invite.user.email}</p>
-                          </div>
-                          <div class="chat-invites-actions">
-                            <span class="chat-invites-pill">{resolve('Pending')}</span>
-                            <button
-                              type="button"
-                              class="chat-invites-action ghost"
-                              disabled={busyKeys.value.includes(`remove:${invite.id}`)}
-                              onClick$={() => handleRemove(invite.id, invite.user.id, invite.user.email)}
-                            >
-                              {resolvedRemoveAction}
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </div>
-            </div>
-          </section>
-
           <section class="chat-invites-panel" data-collapsed={contactsCollapsed ? 'true' : 'false'}>
             <header class="chat-invites-panel-header">
               <button
