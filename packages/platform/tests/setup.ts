@@ -253,10 +253,10 @@ const handleAuthRequest = async (request: Request) => {
     return authJson({ authenticated: true }, { headers: { 'set-cookie': session.cookie } })
   }
 
-  const oauthStart = pathname.match(/\/api\/auth\/oauth\/(.+?)\/start/)
+  const oauthStart = pathname.match(/\/auth\/oauth\/(.+?)\/start/)
   if (oauthStart !== null) {
     const provider = oauthStart[1]
-    const redirect = `/api/auth/oauth/${provider}/callback?code=mock-code&state=mock-state`
+    const redirect = `/auth/oauth/${provider}/callback?code=mock-code&state=mock-state`
     oauthStarts.push({ provider, redirect })
     return new Response(null, {
       status: 302,
@@ -264,7 +264,7 @@ const handleAuthRequest = async (request: Request) => {
     })
   }
 
-  const oauthCallback = pathname.match(/\/api\/auth\/oauth\/(.+?)\/callback/)
+  const oauthCallback = pathname.match(/\/auth\/oauth\/(.+?)\/callback/)
   if (oauthCallback !== null) {
     const provider = oauthCallback[1]
     oauthCallbacks.push({ provider, code: url.searchParams.get('code'), state: url.searchParams.get('state') })
@@ -278,7 +278,7 @@ const handleAuthRequest = async (request: Request) => {
   return authJson({ message: 'Unhandled auth route' }, { status: 404 })
 }
 
-const authRoutes = new Elysia({ prefix: '/api/auth' })
+const authRoutes = new Elysia({ prefix: '/auth' })
   .post('/sign-in/email', async ({ body, request }) => signInWithEmail(body as any, { request }))
   .post('/sign-up/email', async ({ body, request }) => signUpWithEmail(body as any, { request }))
   .post('/sign-up/passkey', async ({ body, request }) => signUpWithPasskey(body as any, { request }))

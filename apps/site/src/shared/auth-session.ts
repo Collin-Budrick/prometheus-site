@@ -1,5 +1,5 @@
 import { appConfig } from '../app-config'
-import { resolveServerApiBase } from './api-base'
+import { resolveRequestOrigin, resolveServerApiBase } from './api-base'
 
 type AuthSessionPayload = {
   session?: {
@@ -30,11 +30,13 @@ export type AuthSessionState =
 export const loadAuthSession = async (request: Request): Promise<AuthSessionState> => {
   const apiBase = resolveServerApiBase(appConfig.apiBase, request)
   if (!apiBase) return { status: 'anonymous' }
+  const requestOrigin = resolveRequestOrigin(request)
 
   try {
-    const response = await fetch(`${apiBase}/api/auth/session`, {
+    const response = await fetch(`${apiBase}/auth/session`, {
       headers: {
-        cookie: request.headers.get('cookie') ?? ''
+        cookie: request.headers.get('cookie') ?? '',
+        ...(requestOrigin ? { origin: requestOrigin } : {})
       }
     })
     if (!response.ok) return { status: 'anonymous' }

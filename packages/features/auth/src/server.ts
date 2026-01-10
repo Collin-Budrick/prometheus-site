@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth'
 import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { randomUUID } from 'node:crypto'
-import { Elysia, t } from 'elysia'
+import { Elysia, t, type AnyElysia } from 'elysia'
 import type { AuthConfig, RelyingPartyConfig } from '@platform/config'
 import type { DatabaseClient } from '@platform/db'
 import type { AnyPgTable } from 'drizzle-orm/pg-core'
@@ -250,7 +250,7 @@ const getAuthForRequest = (
 
 export type AuthFeature = {
   auth: ReturnType<typeof betterAuth>
-  authRoutes: Elysia
+  authRoutes: AnyElysia
   handleAuthRequest: (request: Request) => Promise<Response> | Response
   signInWithEmail: (body: SignInBody, context?: AuthRequestContext) => Promise<Response>
   signUpWithEmail: (body: SignUpBody, context?: AuthRequestContext) => Promise<Response>
@@ -280,7 +280,7 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
 
   const baseAuthConfig = {
     appName: 'Fragment App',
-    basePath: '/api/auth',
+    basePath: '/auth',
     secret: options.authConfig.cookieSecret,
     socialProviders: socialProvidersConfig,
     database: drizzleAdapter(options.db, {
@@ -382,7 +382,7 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
       asResponse: true
     })
 
-  const authRoutes = new Elysia({ prefix: '/api/auth' })
+  const authRoutes = new Elysia({ prefix: '/auth' })
     .post(
       '/sign-in/email',
       async ({ body, request }) => signInWithEmail(body, { request }),

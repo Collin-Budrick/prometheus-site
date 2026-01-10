@@ -20,7 +20,7 @@ beforeEach(() => {
 
 describe('email session endpoints', () => {
   it('creates a session on signup and allows session verification', async () => {
-    const signup = await fetch(`${apiUrl}/api/auth/sign-up/email`, {
+    const signup = await fetch(`${apiUrl}/auth/sign-up/email`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -36,7 +36,7 @@ describe('email session endpoints', () => {
     expect(cookie).toContain('session=')
     expect(authUsersData.find((user) => user.email === 'new@example.com')).toBeDefined()
 
-    const session = await fetch(`${apiUrl}/api/auth/session`, {
+    const session = await fetch(`${apiUrl}/auth/session`, {
       headers: { cookie: cookie ?? '' }
     })
 
@@ -47,7 +47,7 @@ describe('email session endpoints', () => {
   })
 
   it('signs in existing users and returns refreshed cookies', async () => {
-    const login = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
+    const login = await fetch(`${apiUrl}/auth/sign-in/email`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -65,7 +65,7 @@ describe('email session endpoints', () => {
   })
 
   it('rejects session lookups without a valid cookie', async () => {
-    const session = await fetch(`${apiUrl}/api/auth/session`)
+    const session = await fetch(`${apiUrl}/auth/session`)
 
     expect(session.status).toBe(401)
     const payload = await session.json()
@@ -75,12 +75,12 @@ describe('email session endpoints', () => {
 
 describe('passkey endpoints', () => {
   it('serves registration options and records verification payloads', async () => {
-    const options = await fetch(`${apiUrl}/api/auth/passkey/generate-register-options`)
+    const options = await fetch(`${apiUrl}/auth/passkey/generate-register-options`)
     expect(options.status).toBe(200)
     const data = await options.json()
     expect(data.challenge).toBe('register-challenge')
 
-    const verify = await fetch(`${apiUrl}/api/auth/passkey/verify-registration`, {
+    const verify = await fetch(`${apiUrl}/auth/passkey/verify-registration`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ response: { id: 'cred-1' } })
@@ -94,13 +94,13 @@ describe('passkey endpoints', () => {
   })
 
   it('provides authentication options and completes verification', async () => {
-    const options = await fetch(`${apiUrl}/api/auth/passkey/generate-authenticate-options`)
+    const options = await fetch(`${apiUrl}/auth/passkey/generate-authenticate-options`)
     expect(options.status).toBe(200)
     const data = await options.json()
     expect(data.challenge).toBe('authenticate-challenge')
     expect(Array.isArray(data.allowCredentials)).toBe(true)
 
-    const verify = await fetch(`${apiUrl}/api/auth/passkey/verify-authentication`, {
+    const verify = await fetch(`${apiUrl}/auth/passkey/verify-authentication`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ response: { id: 'cred-auth' } })
@@ -116,11 +116,11 @@ describe('passkey endpoints', () => {
 
 describe('oauth endpoints', () => {
   it('redirects to provider start and completes callback with a session', async () => {
-    const start = await fetch(`${apiUrl}/api/auth/oauth/github/start`, { redirect: 'manual' })
+    const start = await fetch(`${apiUrl}/auth/oauth/github/start`, { redirect: 'manual' })
 
     expect(start.status).toBe(302)
     expect(oauthStarts).toEqual([
-      { provider: 'github', redirect: '/api/auth/oauth/github/callback?code=mock-code&state=mock-state' }
+      { provider: 'github', redirect: '/auth/oauth/github/callback?code=mock-code&state=mock-state' }
     ])
     const redirect = start.headers.get('location')
     expect(redirect).toContain('/callback')

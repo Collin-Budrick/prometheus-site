@@ -142,7 +142,7 @@ describe('chat websocket publish', () => {
   })
 
   it('publishes authenticated chat messages with user metadata', async () => {
-    const login = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
+    const login = await fetch(`${apiUrl}/auth/sign-in/email`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

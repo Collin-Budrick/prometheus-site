@@ -1,9 +1,39 @@
 import { normalizeApiBase, resolveApiBase } from '@platform/env'
 
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
+const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
 
-const resolveOrigin = (request?: Request) => {
+const readForwardedHeader = (value: string | null) => value?.split(',')[0]?.trim() ?? ''
+
+export const resolveRequestOrigin = (request?: Request) => {
   if (!request) return ''
+  const originHeader = readForwardedHeader(request.headers.get('origin'))
+  if (originHeader) {
+    const candidate = originHeader.includes('://') ? originHeader : `https://${originHeader}`
+    try {
+      return new URL(candidate).origin
+    } catch {
+      // ignore malformed origin headers
+    }
+  }
+
+  const forwardedHost = readForwardedHeader(request.headers.get('x-forwarded-host'))
+  const host = forwardedHost || readForwardedHeader(request.headers.get('host'))
+  const forwardedProto = readForwardedHeader(request.headers.get('x-forwarded-proto'))
+  let protocol = forwardedProto
+
+  if (!protocol) {
+    try {
+      protocol = new URL(request.url).protocol.replace(':', '')
+    } catch {
+      protocol = ''
+    }
+  }
+
+  if (host && protocol) {
+    return `${protocol}://${host}`
+  }
+
   try {
     return new URL(request.url).origin
   } catch {
@@ -14,10 +44,33 @@ const resolveOrigin = (request?: Request) => {
 export const resolveServerApiBase = (apiBase: string, request?: Request) => {
   const normalized = normalizeApiBase(apiBase)
   const runtimeApiBase = resolveApiBase()
-  if (runtimeApiBase && isAbsoluteUrl(runtimeApiBase)) return runtimeApiBase
-  if (normalized && isAbsoluteUrl(normalized)) return normalized
+  const origin = resolveRequestOrigin(request)
 
-  const origin = resolveOrigin(request)
+  const preferSameOrigin = (value: string) => {
+    if (!origin) return null
+    try {
+      const apiUrl = new URL(value)
+      const originUrl = new URL(origin)
+    if (isLocalHost(apiUrl.hostname) && !isLocalHost(originUrl.hostname) && apiUrl.hostname !== originUrl.hostname) {
+      return `${origin}/api`
+    }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  if (runtimeApiBase && isAbsoluteUrl(runtimeApiBase)) {
+    const sameOriginBase = preferSameOrigin(runtimeApiBase)
+    if (sameOriginBase) return sameOriginBase
+    return runtimeApiBase
+  }
+
+  if (normalized && isAbsoluteUrl(normalized)) {
+    const sameOriginBase = preferSameOrigin(normalized)
+    if (sameOriginBase) return sameOriginBase
+    return normalized
+  }
   const relative = normalized || (runtimeApiBase && !isAbsoluteUrl(runtimeApiBase) ? runtimeApiBase : '')
   if (origin && relative) {
     return `${origin}${relative.startsWith('/') ? relative : `/${relative}`}`

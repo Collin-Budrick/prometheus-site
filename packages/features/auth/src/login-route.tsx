@@ -59,10 +59,40 @@ const signupSchema = z.object({
   rememberMe: z.boolean().optional()
 })
 
+const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
+
+const resolveAuthBase = (origin: string, apiBase?: string) => {
+  if (!apiBase) return ''
+  if (apiBase.startsWith('/')) return apiBase
+  try {
+    const apiUrl = new URL(apiBase)
+    const originUrl = new URL(origin)
+    const apiHost = apiUrl.hostname
+    const originHost = originUrl.hostname
+    if (isLocalHost(apiHost) && !isLocalHost(originHost) && apiHost !== originHost) {
+      return '/api'
+    }
+  } catch {
+    return ''
+  }
+  return apiBase
+}
+
 const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
-  if (!apiBase) return `${origin}${path}`
-  if (apiBase.startsWith('/')) return `${origin}${apiBase}${path}`
-  return `${apiBase}${path}`
+  const base = resolveAuthBase(origin, apiBase)
+  if (!base) return `${origin}${path}`
+
+  if (base.startsWith('/')) {
+    if (path.startsWith(base)) return `${origin}${path}`
+    return `${origin}${base}${path}`
+  }
+
+  if (path.startsWith('/api')) {
+    const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base
+    return `${normalizedBase}${path}`
+  }
+
+  return `${base}${path}`
 }
 
 const readFormValue = (data: FormData, key: string) => {
@@ -101,7 +131,7 @@ const normalizeCredentialDescriptor = (descriptor: CredentialDescriptorInput) =>
   } as PublicKeyCredentialDescriptor
 }
 
-const normalizePublicKeyOptions = (options: unknown) => {
+const normalizePublicKeyOptions = (options: unknown): PublicKeyCredentialRequestOptions => {
   const candidate = options && typeof options === 'object' ? (options as Record<string, unknown>) : {}
   const publicKey = (candidate.publicKey ?? candidate) as Record<string, unknown>
   const normalized: Record<string, unknown> = { ...publicKey }
@@ -129,7 +159,7 @@ const normalizePublicKeyOptions = (options: unknown) => {
     )
   }
 
-  return normalized as PublicKeyCredentialRequestOptions
+  return normalized as unknown as PublicKeyCredentialRequestOptions
 }
 
 const serializeCredential = (credential: PublicKeyCredential) => {
@@ -143,9 +173,10 @@ const serializeCredential = (credential: PublicKeyCredential) => {
   }
 
   if ('attestationObject' in response) {
+    const attestation = response as AuthenticatorAttestationResponse
     payload.response = {
       clientDataJSON,
-      attestationObject: encodeBase64Url(response.attestationObject)
+      attestationObject: encodeBase64Url(attestation.attestationObject)
     }
   } else {
     const assertion = response as AuthenticatorAssertionResponse
@@ -194,6 +225,14 @@ export const LoginRoute = component$<{
   const clearStatus = $(() => {
     statusTone.value = 'neutral'
     statusMessage.value = null
+  })
+
+  const goToProfile = $(() => {
+    if (typeof window !== 'undefined') {
+      window.location.assign('/profile')
+      return
+    }
+    return navigate('/profile', { forceReload: true })
   })
 
   useOnDocument(
@@ -270,7 +309,7 @@ export const LoginRoute = component$<{
 
     try {
       const origin = window.location.origin
-      const response = await fetch(buildApiUrl('/api/auth/sign-in/email', origin, apiBase), {
+      const response = await fetch(buildApiUrl('/auth/sign-in/email', origin, apiBase), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
@@ -290,7 +329,7 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
-      await navigate('/profile')
+      await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Unable to sign in.')
     }
@@ -318,7 +357,7 @@ export const LoginRoute = component$<{
 
     try {
       const origin = window.location.origin
-      const response = await fetch(buildApiUrl('/api/auth/sign-up/email', origin, apiBase), {
+      const response = await fetch(buildApiUrl('/auth/sign-up/email', origin, apiBase), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
@@ -338,7 +377,7 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
-      await navigate('/profile')
+      await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Unable to create account.')
     }
@@ -358,7 +397,7 @@ export const LoginRoute = component$<{
     try {
       const origin = window.location.origin
       const optionsResponse = await fetch(
-        buildApiUrl('/api/auth/passkey/generate-authenticate-options', origin, apiBase),
+        buildApiUrl('/auth/passkey/generate-authenticate-options', origin, apiBase),
         { credentials: 'include' }
       )
 
@@ -379,7 +418,7 @@ export const LoginRoute = component$<{
         return
       }
 
-      const verifyResponse = await fetch(buildApiUrl('/api/auth/passkey/verify-authentication', origin, apiBase), {
+      const verifyResponse = await fetch(buildApiUrl('/auth/passkey/verify-authentication', origin, apiBase), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
@@ -401,7 +440,7 @@ export const LoginRoute = component$<{
 
       state.value = 'success'
       passkeyState.value = 'idle'
-      await navigate('/profile')
+      await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Keypass authentication failed.')
       passkeyState.value = 'idle'
