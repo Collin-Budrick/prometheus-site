@@ -1,4 +1,4 @@
-import { normalizeApiBase, resolveApiBase } from '@platform/env'
+import { normalizeApiBase, resolveApiBase, resolveRuntimeEnv } from '@platform/env'
 
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
@@ -43,7 +43,9 @@ export const resolveRequestOrigin = (request?: Request) => {
 
 export const resolveServerApiBase = (apiBase: string, request?: Request) => {
   const normalized = normalizeApiBase(apiBase)
-  const runtimeApiBase = resolveApiBase()
+  const runtimeEnv = resolveRuntimeEnv()
+  const explicitApiBase = normalizeApiBase(typeof runtimeEnv.API_BASE === 'string' ? runtimeEnv.API_BASE : undefined)
+  const runtimeApiBase = resolveApiBase(runtimeEnv)
   const origin = resolveRequestOrigin(request)
 
   const preferSameOrigin = (value: string) => {
@@ -58,6 +60,10 @@ export const resolveServerApiBase = (apiBase: string, request?: Request) => {
       return null
     }
     return null
+  }
+
+  if (explicitApiBase && isAbsoluteUrl(explicitApiBase)) {
+    return explicitApiBase
   }
 
   if (runtimeApiBase && isAbsoluteUrl(runtimeApiBase)) {
