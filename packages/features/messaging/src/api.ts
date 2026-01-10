@@ -140,7 +140,7 @@ export type ChatMessagesTable = AnyPgTable & {
 
 export type UsersTable = AnyPgTable & {
   id: AnyPgColumn
-  name?: AnyPgColumn
+  name: AnyPgColumn
   email: AnyPgColumn
 }
 
@@ -153,8 +153,13 @@ export type ContactInvitesTable = AnyPgTable & {
   updatedAt?: AnyPgColumn
 }
 
-const applyRateLimitHeaders = (set: { headers?: HeadersInit }, headers: Headers) => {
-  const resolved = new Headers(set.headers ?? undefined)
+const applyRateLimitHeaders = (set: { headers?: unknown }, headers: Headers) => {
+  let resolved: Headers
+  try {
+    resolved = new Headers(set.headers as HeadersInit | undefined)
+  } catch {
+    resolved = new Headers()
+  }
   headers.forEach((value, key) => {
     resolved.set(key, value)
   })
@@ -219,7 +224,7 @@ const searchEmailSchema = z.object({
 
 const p2pDeviceSchema = z.object({
   deviceId: z.string().min(8).optional(),
-  publicKey: z.record(z.unknown()),
+  publicKey: z.record(z.string(), z.unknown()),
   label: z.string().min(1).max(64).optional(),
   role: z.enum(['device', 'relay']).optional()
 })
@@ -607,14 +612,17 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .from(usersTable)
             .where(ilike(usersTable.email, `%${term}%`))
             .limit(8)
-          matches = rows
-            .filter((row) => typeof row.id === 'string' && typeof row.email === 'string')
-            .map((row) => ({
+          const normalized: Array<{ id: string; name?: string | null; email: string }> = []
+          for (const row of rows) {
+            if (typeof row.id !== 'string' || typeof row.email !== 'string') continue
+            if (row.id === session.id) continue
+            normalized.push({
               id: row.id,
               name: typeof row.name === 'string' ? row.name : null,
               email: row.email
-            }))
-            .filter((row) => row.id !== session.id)
+            })
+          }
+          matches = normalized
         } catch (error) {
           console.error('Failed to search contacts', error)
           return attachRateLimitHeaders(options.jsonError(500, 'Search unavailable'), rateLimit.headers)
@@ -805,7 +813,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
                 updatedAt: new Date()
               })
               .where(eq(contactInvitesTable.id, existingId ?? ''))
-              .returning()
+              .returning({ id: contactInvitesTable.id, status: contactInvitesTable.status })
             const row = updated[0]
             if (row && typeof row.id === 'string') {
               void publishContactsRefresh([session.id, targetUser.id])
@@ -827,7 +835,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
               createdAt: new Date(),
               updatedAt: new Date()
             })
-            .returning()
+            .returning({ id: contactInvitesTable.id, status: contactInvitesTable.status })
           const row = created[0]
           if (row && typeof row.id === 'string') {
             void publishContactsRefresh([session.id, targetUser.id])
@@ -903,7 +911,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .update(contactInvitesTable)
             .set({ status: 'accepted', updatedAt: new Date() })
             .where(eq(contactInvitesTable.id, invite.id))
-            .returning()
+            .returning({ id: contactInvitesTable.id, status: contactInvitesTable.status })
           const row = updated[0]
           if (row && typeof row.id === 'string') {
             void publishContactsRefresh([inviterId, inviteeId])
@@ -979,7 +987,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             .update(contactInvitesTable)
             .set({ status: 'declined', updatedAt: new Date() })
             .where(eq(contactInvitesTable.id, invite.id))
-            .returning()
+            .returning({ id: contactInvitesTable.id, status: contactInvitesTable.status })
           const row = updated[0]
           if (row && typeof row.id === 'string') {
             void publishContactsRefresh([inviterId, inviteeId])
@@ -1112,12 +1120,27 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       }
 
       try {
-        await options.valkey.set(deviceKey, JSON.stringify(entry), { EX: p2pDeviceTtlSeconds })
-        await options.valkey.sAdd(buildUserDevicesKey(session.id), deviceId)
-        await options.valkey.expire(buildUserDevicesKey(session.id), p2pDeviceTtlSeconds)
+        const userDevicesKey = buildUserDevicesKey(session.id)
+        const persist = async () => {
+          await options.valkey.set(deviceKey, JSON.stringify(entry), { EX: p2pDeviceTtlSeconds })
+          await options.valkey.sAdd(userDevicesKey, deviceId)
+          await options.valkey.expire(userDevicesKey, p2pDeviceTtlSeconds)
+        }
+        try {
+          await persist()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : ''
+          if (message.includes('WRONGTYPE')) {
+            await options.valkey.del(deviceKey)
+            await options.valkey.del(userDevicesKey)
+            await persist()
+          } else {
+            throw error
+          }
+        }
       } catch (error) {
         console.error('Failed to register device', error)
-        return attachRateLimitHeaders(options.jsonError(500, 'Device registration failed'), rateLimit.headers)
+        return attachRateLimitHeaders(options.jsonError(503, 'Device registration failed'), rateLimit.headers)
       }
 
       return { deviceId, role }

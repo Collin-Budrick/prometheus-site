@@ -1234,36 +1234,36 @@ export const ContactInvites = component$<ContactInvitesProps>(
           dmStatus.value = 'error'
         }
         next.onmessage = async (event) => {
-          const raw = String(event.data ?? '')
-          let parsed: unknown
           try {
-            parsed = JSON.parse(raw)
-          } catch {
-            return
-          }
-          if (!isRecord(parsed) || parsed.type !== 'message') return
-          const encrypted = resolveEncryptedPayload(parsed.payload)
-          if (!encrypted) return
-          const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
-          const identity = identityRef.value
-          if (!identity) return
-          const deviceId = senderDeviceId ?? sessionRef.value?.remoteDeviceId ?? remoteDeviceRef.value?.deviceId
-          if (!deviceId) return
-          const device = await resolveDevice(deviceId)
-          if (!device) return
-          const key = await deriveSessionKey(
-            identity.privateKey,
-            device.publicKey,
-            decodeBase64(encrypted.salt),
-            encrypted.sessionId
-          )
-          sessionRef.value = noSerialize({
-            sessionId: encrypted.sessionId,
-            salt: encrypted.salt,
-            key,
-            remoteDeviceId: device.deviceId
-          })
-          try {
+            const raw = String(event.data ?? '')
+            let parsed: unknown
+            try {
+              parsed = JSON.parse(raw)
+            } catch {
+              return
+            }
+            if (!isRecord(parsed) || parsed.type !== 'message') return
+            const encrypted = resolveEncryptedPayload(parsed.payload)
+            if (!encrypted) return
+            const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
+            const identity = identityRef.value
+            if (!identity) return
+            const deviceId = senderDeviceId ?? sessionRef.value?.remoteDeviceId ?? remoteDeviceRef.value?.deviceId
+            if (!deviceId) return
+            const device = await resolveDevice(deviceId)
+            if (!device) return
+            const key = await deriveSessionKey(
+              identity.privateKey,
+              device.publicKey,
+              decodeBase64(encrypted.salt),
+              encrypted.sessionId
+            )
+            sessionRef.value = noSerialize({
+              sessionId: encrypted.sessionId,
+              salt: encrypted.salt,
+              key,
+              remoteDeviceId: device.deviceId
+            })
             const plaintext = await decryptPayload(key, encrypted)
             let messageText = plaintext
             let messageId = createMessageId()
@@ -1281,6 +1281,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
             ]
           } catch (error) {
+            dmStatus.value = 'error'
             dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
           }
         }
@@ -1394,7 +1395,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
           const fromId = typeof payload.from === 'string' ? payload.from : ''
           const userId = typeof payload.userId === 'string' ? payload.userId : ''
           if (payloadType === 'p2p:signal' && fromId === contact.id) {
-            await handleSignal(payload)
+            try {
+              await handleSignal(payload)
+            } catch (error) {
+              dmStatus.value = 'error'
+              dmError.value =
+                error instanceof Error ? error.message : fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error'
+            }
             return
           }
           if (payloadType === 'p2p:mailbox' && userId) {
