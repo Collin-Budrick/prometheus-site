@@ -241,6 +241,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const identityRef = useSignal<NoSerialize<DeviceIdentity> | undefined>(undefined)
     const sessionRef = useSignal<NoSerialize<P2pSession> | undefined>(undefined)
     const remoteDeviceRef = useSignal<NoSerialize<ContactDevice> | undefined>(undefined)
+    const identityReady = useSignal(false)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -296,6 +297,36 @@ export const ContactInvites = component$<ContactInvitesProps>(
       emptyLabel ? resolve(emptyLabel) : undefined,
       resolve('No invites yet.')
     )
+
+    const registerIdentity = $(async () => {
+      let stored = loadStoredIdentity()
+      if (!stored) {
+        stored = await createStoredIdentity()
+        saveStoredIdentity(stored)
+      }
+      let identity = await importStoredIdentity(stored)
+      try {
+        const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
+        const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ deviceId: identity.deviceId, publicKey: identity.publicKeyJwk, label })
+        })
+        if (response.ok) {
+          const payload = (await response.json()) as { deviceId?: string }
+          if (payload.deviceId && payload.deviceId !== identity.deviceId) {
+            stored = { ...stored, deviceId: payload.deviceId }
+            saveStoredIdentity(stored)
+            identity = await importStoredIdentity(stored)
+          }
+        }
+      } catch {
+        // ignore registration failures; retry later
+      }
+      identityRef.value = noSerialize(identity)
+      return identity
+    })
 
     const isAlertCount = (key: keyof BaselineInviteCounts, value: number) => {
       const baseline = baselineCounts.value
@@ -831,7 +862,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
           message.id === messageId ? { ...message, status: response.ok ? 'queued' : 'failed' } : message
         )
         if (!response.ok) {
-          dmError.value = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+          let errorMessage = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+          try {
+            const payload: unknown = await response.json()
+            if (isRecord(payload) && typeof payload.error === 'string') {
+              errorMessage = payload.error
+            }
+          } catch {
+            // ignore parse errors
+          }
+          dmError.value = errorMessage
         }
       } catch (error) {
         dmMessages.value = dmMessages.value.map((message) =>
@@ -850,6 +890,11 @@ export const ContactInvites = component$<ContactInvitesProps>(
         let active = true
         let hasSnapshot = false
         let reconnectTimer: number | null = null
+
+        if (!identityReady.value) {
+          identityReady.value = true
+          void registerIdentity()
+        }
 
         const handleDocumentClick = (event: MouseEvent) => {
           if (!bellOpen.value) return
@@ -1146,35 +1191,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
         ws?.close()
         ws = null
         channelRef.value = undefined
-      }
-
-      const ensureIdentity = async () => {
-        let stored = loadStoredIdentity()
-        if (!stored) {
-          stored = await createStoredIdentity()
-          saveStoredIdentity(stored)
-        }
-        let identity = await importStoredIdentity(stored)
-        try {
-          const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
-          const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ deviceId: identity.deviceId, publicKey: identity.publicKeyJwk, label })
-          })
-          if (response.ok) {
-            const payload = (await response.json()) as { deviceId?: string }
-            if (payload.deviceId && payload.deviceId !== identity.deviceId) {
-              stored = { ...stored, deviceId: payload.deviceId }
-              saveStoredIdentity(stored)
-              identity = await importStoredIdentity(stored)
-            }
-          }
-        } catch {
-          // ignore registration failures; retry later
-        }
-        return identity
       }
 
       const fetchDevices = async () => {
@@ -1529,9 +1545,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
       ;(async () => {
         try {
-          const identity = await ensureIdentity()
+          const identity = await registerIdentity()
           if (!active) return
-          identityRef.value = noSerialize(identity)
           const nextDevices = await fetchDevices()
           if (!active) return
           if (!nextDevices.length) {
