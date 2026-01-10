@@ -141,6 +141,9 @@ const buildWsUrl = (path: string, origin: string) => {
 const dmCloseDelayMs = 220
 const dmOriginRadius = 16
 const dmMinScale = 0.02
+const historyStoragePrefix = 'chat:p2p:history:'
+const historyCacheLimit = 200
+const historyRequestLimit = 120
 
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
@@ -158,6 +161,165 @@ const matchesQuery = (entry: { name?: string | null; email: string }, query: str
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
+
+const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary)
+}
+
+type StoredHistoryEnvelope = {
+  v: 1
+  iv: string
+  ciphertext: string
+}
+
+type StoredHistoryPayload = {
+  messages: DmMessage[]
+  updatedAt?: string
+}
+
+const buildHistoryStorageKey = (contactId: string) => `${historyStoragePrefix}${contactId}`
+
+const parseHistoryEnvelope = (raw: string): StoredHistoryEnvelope | null => {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!isRecord(parsed)) return null
+    if (parsed.v !== 1) return null
+    if (typeof parsed.iv !== 'string' || typeof parsed.ciphertext !== 'string') return null
+    return { v: 1, iv: parsed.iv, ciphertext: parsed.ciphertext }
+  } catch {
+    return null
+  }
+}
+
+const deriveHistoryKey = async (identity: DeviceIdentity) => {
+  if (typeof crypto === 'undefined' || !crypto.subtle) return null
+  const jwk = await crypto.subtle.exportKey('jwk', identity.privateKey)
+  const seed = typeof jwk.d === 'string' ? jwk.d : JSON.stringify(jwk)
+  const material = new TextEncoder().encode(`p2p-history:${seed}`)
+  const digest = await crypto.subtle.digest('SHA-256', material)
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+}
+
+const encryptHistoryEnvelope = async (key: CryptoKey, payload: StoredHistoryPayload) => {
+  if (typeof crypto === 'undefined' || !crypto.subtle) return null
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encoded = new TextEncoder().encode(JSON.stringify(payload))
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)
+  return {
+    v: 1,
+    iv: encodeBase64(iv),
+    ciphertext: encodeBase64(new Uint8Array(ciphertext))
+  } satisfies StoredHistoryEnvelope
+}
+
+const decryptHistoryEnvelope = async (key: CryptoKey, envelope: StoredHistoryEnvelope) => {
+  if (typeof crypto === 'undefined' || !crypto.subtle) return null
+  const iv = decodeBase64(envelope.iv)
+  const ciphertext = decodeBase64(envelope.ciphertext)
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
+  const decoded = new TextDecoder().decode(plaintext)
+  try {
+    return JSON.parse(decoded) as StoredHistoryPayload
+  } catch {
+    return null
+  }
+}
+
+const messageTimestamp = (value: string) => {
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? 0 : time
+}
+
+const statusRank = (status?: DmMessage['status']) => {
+  if (status === 'sent') return 4
+  if (status === 'queued') return 3
+  if (status === 'pending') return 2
+  if (status === 'failed') return 1
+  return 0
+}
+
+const mergeMessageStatus = (current?: DmMessage['status'], next?: DmMessage['status']) =>
+  statusRank(next) > statusRank(current) ? next : current
+
+const normalizeHistoryMessages = (messages: DmMessage[]) =>
+  messages
+    .filter((message) => message && typeof message.id === 'string')
+    .map((message) => ({
+      id: message.id,
+      text: message.text,
+      author: message.author,
+      createdAt: message.createdAt,
+      status: message.status
+    }))
+    .filter(
+      (message) =>
+        typeof message.text === 'string' &&
+        typeof message.createdAt === 'string' &&
+        (message.author === 'self' || message.author === 'contact')
+    )
+
+const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[]) => {
+  const merged = new Map<string, DmMessage>()
+  const upsert = (message: DmMessage) => {
+    const current = merged.get(message.id)
+    if (!current) {
+      merged.set(message.id, message)
+      return
+    }
+    merged.set(message.id, {
+      id: current.id,
+      text: message.text || current.text,
+      author: current.author ?? message.author,
+      createdAt: current.createdAt || message.createdAt,
+      status: mergeMessageStatus(current.status, message.status)
+    })
+  }
+  existing.forEach(upsert)
+  incoming.forEach(upsert)
+  return Array.from(merged.values()).sort((a, b) => {
+    const delta = messageTimestamp(a.createdAt) - messageTimestamp(b.createdAt)
+    if (delta !== 0) return delta
+    return a.id.localeCompare(b.id)
+  })
+}
+
+const loadHistory = async (contactId: string, identity: DeviceIdentity) => {
+  if (typeof window === 'undefined') return []
+  const raw = window.localStorage.getItem(buildHistoryStorageKey(contactId))
+  if (!raw) return []
+  const envelope = parseHistoryEnvelope(raw)
+  if (!envelope) return []
+  const key = await deriveHistoryKey(identity)
+  if (!key) return []
+  try {
+    const payload = await decryptHistoryEnvelope(key, envelope)
+    if (!payload || !Array.isArray(payload.messages)) return []
+    return normalizeHistoryMessages(payload.messages)
+  } catch {
+    return []
+  }
+}
+
+const persistHistory = async (contactId: string, identity: DeviceIdentity, messages: DmMessage[]) => {
+  if (typeof window === 'undefined') return
+  const key = await deriveHistoryKey(identity)
+  if (!key) return
+  const trimmed = normalizeHistoryMessages(messages).slice(-historyCacheLimit)
+  const envelope = await encryptHistoryEnvelope(key, {
+    messages: trimmed,
+    updatedAt: new Date().toISOString()
+  })
+  if (!envelope) return
+  try {
+    window.localStorage.setItem(buildHistoryStorageKey(contactId), JSON.stringify(envelope))
+  } catch {
+    // ignore storage failures
+  }
+}
 
 const resolveEncryptedPayload = (payload: unknown): EncryptedPayload | null => {
   if (!isRecord(payload)) return null
@@ -800,6 +962,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact || !text) return
       const messageId = createMessageId()
       const createdAt = new Date().toISOString()
+      const identity = identityRef.value
 
       dmInput.value = ''
       dmError.value = null
@@ -807,15 +970,17 @@ export const ContactInvites = component$<ContactInvitesProps>(
         ...dmMessages.value,
         { id: messageId, text, author: 'self', createdAt, status: 'pending' }
       ]
+      if (identity) {
+        void persistHistory(contact.id, identity, dmMessages.value)
+      }
 
       try {
         const channel = channelRef.value
         const session = sessionRef.value
-        const identity = identityRef.value
         if (channel && channel.readyState === 'open' && session && identity) {
           const payload = await encryptPayload(
             session.key,
-            JSON.stringify({ id: messageId, text, createdAt }),
+            JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
             session.sessionId,
             session.salt,
             identity.deviceId
@@ -824,6 +989,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           dmMessages.value = dmMessages.value.map((message) =>
             message.id === messageId ? { ...message, status: 'sent' } : message
           )
+          void persistHistory(contact.id, identity, dmMessages.value)
           return
         }
 
@@ -833,6 +999,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
             message.id === messageId ? { ...message, status: 'failed' } : message
           )
           dmError.value = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+          if (identity) {
+            void persistHistory(contact.id, identity, dmMessages.value)
+          }
           return
         }
 
@@ -846,7 +1015,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
         )
         const payload = await encryptPayload(
           key,
-          JSON.stringify({ id: messageId, text, createdAt }),
+          JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
           sessionId,
           salt,
           identity.deviceId
@@ -861,6 +1030,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
         dmMessages.value = dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: response.ok ? 'queued' : 'failed' } : message
         )
+        void persistHistory(contact.id, identity, dmMessages.value)
         if (!response.ok) {
           let errorMessage = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
           try {
@@ -877,6 +1047,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
         dmMessages.value = dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'failed' } : message
         )
+        if (identity) {
+          void persistHistory(contact.id, identity, dmMessages.value)
+        }
         dmError.value =
           error instanceof Error
             ? error.message
@@ -1146,8 +1319,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       { strategy: 'document-ready' }
     )
 
-    useVisibleTask$(({ track, cleanup }) => {
-      const contact = track(() => activeContact.value)
+    useVisibleTask$((ctx) => {
+      const contact = ctx.track(() => activeContact.value)
       if (typeof window === 'undefined') return
 
       if (!contact) {
@@ -1166,6 +1339,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       let channel: RTCDataChannel | null = null
       let ws: WebSocket | null = null
       let reconnectTimer: number | null = null
+      let historyRequested = false
+      let historyNeeded = false
       const pendingSignals: Array<Record<string, unknown>> = []
 
       dmStatus.value = 'connecting'
@@ -1268,6 +1443,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             if (!deviceId) return
             const device = await resolveDevice(deviceId)
             if (!device) return
+            remoteDeviceRef.value = noSerialize(device)
             const key = await deriveSessionKey(
               identity.privateKey,
               device.publicKey,
@@ -1286,18 +1462,42 @@ export const ContactInvites = component$<ContactInvitesProps>(
             let createdAt = new Date().toISOString()
             let isReceipt = false
             let receiptTargetId: string | null = null
+            let isHistoryRequest = false
+            let historyLimit = historyRequestLimit
+            let historyResponse: DmMessage[] | null = null
             try {
               const messagePayload = JSON.parse(plaintext) as {
                 kind?: string
                 id?: string
                 text?: string
                 createdAt?: string
+                limit?: number
+                messages?: Array<Record<string, unknown>>
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
                 if (typeof messagePayload.id === 'string') {
                   receiptTargetId = messagePayload.id
                 }
+              } else if (messagePayload?.kind === 'history-request') {
+                isHistoryRequest = true
+                if (Number.isFinite(Number(messagePayload.limit))) {
+                  historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
+                }
+              } else if (messagePayload?.kind === 'history-response') {
+                const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
+                const mapped: DmMessage[] = []
+                for (const entry of historyEntries) {
+                  if (!isRecord(entry)) continue
+                  const id = typeof entry.id === 'string' ? entry.id : ''
+                  const text = typeof entry.text === 'string' ? entry.text : ''
+                  const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
+                  const author =
+                    entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
+                  if (!id || !text || !created || !author) continue
+                  mapped.push({ id, text, createdAt: created, author, status: 'sent' })
+                }
+                historyResponse = mapped
               } else {
                 if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
                 if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
@@ -1314,6 +1514,42 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 dmMessages.value = dmMessages.value.map((message) =>
                   message.id === receiptTargetId ? { ...message, status: 'sent' } : message
                 )
+                void persistHistory(contact.id, identity, dmMessages.value)
+              }
+              return
+            }
+            if (historyResponse) {
+              dmMessages.value = mergeHistoryMessages(dmMessages.value, historyResponse)
+              void persistHistory(contact.id, identity, dmMessages.value)
+              return
+            }
+            if (isHistoryRequest) {
+              let snapshot = dmMessages.value
+              if (!snapshot.length) {
+                snapshot = await loadHistory(contact.id, identity)
+              }
+              if (!snapshot.length) return
+              const trimmed = snapshot
+                .slice(-historyLimit)
+                .map((message) => ({
+                  id: message.id,
+                  text: message.text,
+                  createdAt: message.createdAt,
+                  author: message.author
+                }))
+              try {
+                const responsePayload = await encryptPayload(
+                  key,
+                  JSON.stringify({ kind: 'history-response', messages: trimmed }),
+                  encrypted.sessionId,
+                  encrypted.salt,
+                  identity.deviceId
+                )
+                if (next.readyState === 'open') {
+                  next.send(JSON.stringify({ type: 'message', payload: responsePayload }))
+                }
+              } catch {
+                // ignore history response failures
               }
               return
             }
@@ -1321,6 +1557,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               ...dmMessages.value,
               { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
             ]
+            void persistHistory(contact.id, identity, dmMessages.value)
             if (receiptTargetId) {
               try {
                 const receipt = await encryptPayload(
@@ -1341,6 +1578,55 @@ export const ContactInvites = component$<ContactInvitesProps>(
             dmStatus.value = 'error'
             dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
           }
+        }
+      }
+
+      const requestHistory = async (identity: DeviceIdentity) => {
+        if (historyRequested || !historyNeeded) return
+        historyRequested = true
+        const session = sessionRef.value
+        const payload = { kind: 'history-request', limit: historyRequestLimit }
+        if (channel && channel.readyState === 'open' && session) {
+          try {
+            const encrypted = await encryptPayload(
+              session.key,
+              JSON.stringify(payload),
+              session.sessionId,
+              session.salt,
+              identity.deviceId
+            )
+            channel.send(JSON.stringify({ type: 'message', payload: encrypted }))
+          } catch {
+            // ignore history request failures
+          }
+          return
+        }
+        const remoteDevice = remoteDeviceRef.value
+        if (!remoteDevice) return
+        try {
+          const sessionId = createMessageId()
+          const salt = randomBase64(16)
+          const key = await deriveSessionKey(
+            identity.privateKey,
+            remoteDevice.publicKey,
+            decodeBase64(salt),
+            sessionId
+          )
+          const encrypted = await encryptPayload(
+            key,
+            JSON.stringify(payload),
+            sessionId,
+            salt,
+            identity.deviceId
+          )
+          await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ recipientId: contact.id, sessionId, payload: encrypted })
+          })
+        } catch {
+          // ignore history request failures
         }
       }
 
@@ -1505,6 +1791,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             if (!deviceId) continue
             const device = await resolveDevice(deviceId)
             if (!device) continue
+            remoteDeviceRef.value = noSerialize(device)
             const key = await deriveSessionKey(
               identityDevice.privateKey,
               device.publicKey,
@@ -1524,18 +1811,42 @@ export const ContactInvites = component$<ContactInvitesProps>(
               let createdAt = new Date().toISOString()
               let isReceipt = false
               let receiptTargetId: string | null = null
+              let isHistoryRequest = false
+              let historyLimit = historyRequestLimit
+              let historyResponse: DmMessage[] | null = null
               try {
                 const messagePayload = JSON.parse(plaintext) as {
                   kind?: string
                   id?: string
                   text?: string
                   createdAt?: string
+                  limit?: number
+                  messages?: Array<Record<string, unknown>>
                 }
                 if (messagePayload?.kind === 'receipt') {
                   isReceipt = true
                   if (typeof messagePayload.id === 'string') {
                     receiptTargetId = messagePayload.id
                   }
+                } else if (messagePayload?.kind === 'history-request') {
+                  isHistoryRequest = true
+                  if (Number.isFinite(Number(messagePayload.limit))) {
+                    historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
+                  }
+              } else if (messagePayload?.kind === 'history-response') {
+                const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
+                const mapped: DmMessage[] = []
+                for (const entry of historyEntries) {
+                  if (!isRecord(entry)) continue
+                  const id = typeof entry.id === 'string' ? entry.id : ''
+                  const text = typeof entry.text === 'string' ? entry.text : ''
+                  const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
+                  const author =
+                    entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
+                  if (!id || !text || !created || !author) continue
+                  mapped.push({ id, text, createdAt: created, author, status: 'sent' })
+                }
+                historyResponse = mapped
                 } else {
                   if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
                   if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
@@ -1552,17 +1863,59 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   dmMessages.value = dmMessages.value.map((message) =>
                     message.id === receiptTargetId ? { ...message, status: 'sent' } : message
                   )
+                  void persistHistory(contact.id, identityDevice, dmMessages.value)
+                }
+              } else if (historyResponse) {
+                dmMessages.value = mergeHistoryMessages(dmMessages.value, historyResponse)
+                void persistHistory(contact.id, identityDevice, dmMessages.value)
+              } else if (isHistoryRequest) {
+                let snapshot = dmMessages.value
+                if (!snapshot.length) {
+                  snapshot = await loadHistory(contact.id, identityDevice)
+                }
+                if (snapshot.length) {
+                  const trimmed = snapshot
+                    .slice(-historyLimit)
+                    .map((message) => ({
+                      id: message.id,
+                      text: message.text,
+                      createdAt: message.createdAt,
+                      author: message.author
+                    }))
+                  try {
+                    const responsePayload = await encryptPayload(
+                      key,
+                      JSON.stringify({ kind: 'history-response', messages: trimmed }),
+                      encrypted.sessionId,
+                      encrypted.salt,
+                      identityDevice.deviceId
+                    )
+                    const channel = channelRef.value
+                    if (channel && channel.readyState === 'open') {
+                      channel.send(JSON.stringify({ type: 'message', payload: responsePayload }))
+                    } else {
+                      await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ recipientId: entry.from, payload: responsePayload })
+                      })
+                    }
+                  } catch {
+                    // ignore history response failures
+                  }
                 }
               } else {
                 dmMessages.value = [
                   ...dmMessages.value,
                   { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
                 ]
+                void persistHistory(contact.id, identityDevice, dmMessages.value)
               }
               if (typeof entry.id === 'string') {
                 ackIds.push(entry.id)
               }
-              if (!isReceipt && receiptTargetId) {
+              if (!isReceipt && !historyResponse && !isHistoryRequest && receiptTargetId) {
                 try {
                   const receipt = await encryptPayload(
                     key,
@@ -1633,10 +1986,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
         })
       }
 
-      ;(async () => {
+      void (async () => {
         try {
           const identity = await registerIdentity()
           if (!active) return
+          const cached = await loadHistory(contact.id, identity)
+          if (!active) return
+          historyNeeded = cached.length === 0
+          if (cached.length) {
+            dmMessages.value = cached
+          }
           const nextDevices = await fetchDevices()
           if (!active) return
           if (!nextDevices.length) {
@@ -1651,6 +2010,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           remoteDeviceRef.value = noSerialize(target)
           connectWs(identity)
           await pullMailbox(identity)
+          await requestHistory(identity)
           await startCaller(identity, target)
         } catch (error) {
           dmStatus.value = 'error'
@@ -1658,15 +2018,15 @@ export const ContactInvites = component$<ContactInvitesProps>(
         }
       })()
 
-      cleanup(() => {
+      ctx.cleanup(() => {
         active = false
         closeConnection()
       })
     })
 
-    useVisibleTask$(({ track, cleanup }) => {
-      const contact = track(() => activeContact.value)
-      track(() => dmClosing.value)
+    useVisibleTask$((ctx) => {
+      const contact = ctx.track(() => activeContact.value)
+      ctx.track(() => dmClosing.value)
       if (typeof document === 'undefined') return
       const root = document.documentElement
       if (activeContact.value || dmClosing.value) {
@@ -1682,7 +2042,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           })
         })
       }
-      cleanup(() => {
+      ctx.cleanup(() => {
         delete root.dataset.chatDmOpen
       })
     })
