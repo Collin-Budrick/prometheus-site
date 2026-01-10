@@ -1284,18 +1284,59 @@ export const ContactInvites = component$<ContactInvitesProps>(
             let messageText = plaintext
             let messageId = createMessageId()
             let createdAt = new Date().toISOString()
+            let isReceipt = false
+            let receiptTargetId: string | null = null
             try {
-              const messagePayload = JSON.parse(plaintext) as { id?: string; text?: string; createdAt?: string }
-              if (messagePayload?.text) messageText = messagePayload.text
-              if (messagePayload?.id) messageId = messagePayload.id
-              if (messagePayload?.createdAt) createdAt = messagePayload.createdAt
+              const messagePayload = JSON.parse(plaintext) as {
+                kind?: string
+                id?: string
+                text?: string
+                createdAt?: string
+              }
+              if (messagePayload?.kind === 'receipt') {
+                isReceipt = true
+                if (typeof messagePayload.id === 'string') {
+                  receiptTargetId = messagePayload.id
+                }
+              } else {
+                if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
+                if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
+                if (typeof messagePayload?.createdAt === 'string') createdAt = messagePayload.createdAt
+                if (typeof messagePayload?.id === 'string') {
+                  receiptTargetId = messagePayload.id
+                }
+              }
             } catch {
               // ignore parse errors
+            }
+            if (isReceipt) {
+              if (receiptTargetId) {
+                dmMessages.value = dmMessages.value.map((message) =>
+                  message.id === receiptTargetId ? { ...message, status: 'sent' } : message
+                )
+              }
+              return
             }
             dmMessages.value = [
               ...dmMessages.value,
               { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
             ]
+            if (receiptTargetId) {
+              try {
+                const receipt = await encryptPayload(
+                  key,
+                  JSON.stringify({ kind: 'receipt', id: receiptTargetId }),
+                  encrypted.sessionId,
+                  encrypted.salt,
+                  identity.deviceId
+                )
+                if (next.readyState === 'open') {
+                  next.send(JSON.stringify({ type: 'message', payload: receipt }))
+                }
+              } catch {
+                // ignore receipt failures
+              }
+            }
           } catch (error) {
             dmStatus.value = 'error'
             dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
@@ -1481,20 +1522,69 @@ export const ContactInvites = component$<ContactInvitesProps>(
               let messageText = plaintext
               let messageId = createMessageId()
               let createdAt = new Date().toISOString()
+              let isReceipt = false
+              let receiptTargetId: string | null = null
               try {
-                const messagePayload = JSON.parse(plaintext) as { id?: string; text?: string; createdAt?: string }
-                if (messagePayload?.text) messageText = messagePayload.text
-                if (messagePayload?.id) messageId = messagePayload.id
-                if (messagePayload?.createdAt) createdAt = messagePayload.createdAt
+                const messagePayload = JSON.parse(plaintext) as {
+                  kind?: string
+                  id?: string
+                  text?: string
+                  createdAt?: string
+                }
+                if (messagePayload?.kind === 'receipt') {
+                  isReceipt = true
+                  if (typeof messagePayload.id === 'string') {
+                    receiptTargetId = messagePayload.id
+                  }
+                } else {
+                  if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
+                  if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
+                  if (typeof messagePayload?.createdAt === 'string') createdAt = messagePayload.createdAt
+                  if (typeof messagePayload?.id === 'string') {
+                    receiptTargetId = messagePayload.id
+                  }
+                }
               } catch {
                 // ignore parse errors
               }
-              dmMessages.value = [
-                ...dmMessages.value,
-                { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
-              ]
+              if (isReceipt) {
+                if (receiptTargetId) {
+                  dmMessages.value = dmMessages.value.map((message) =>
+                    message.id === receiptTargetId ? { ...message, status: 'sent' } : message
+                  )
+                }
+              } else {
+                dmMessages.value = [
+                  ...dmMessages.value,
+                  { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
+                ]
+              }
               if (typeof entry.id === 'string') {
                 ackIds.push(entry.id)
+              }
+              if (!isReceipt && receiptTargetId) {
+                try {
+                  const receipt = await encryptPayload(
+                    key,
+                    JSON.stringify({ kind: 'receipt', id: receiptTargetId }),
+                    encrypted.sessionId,
+                    encrypted.salt,
+                    identityDevice.deviceId
+                  )
+                  const channel = channelRef.value
+                  if (channel && channel.readyState === 'open') {
+                    channel.send(JSON.stringify({ type: 'message', payload: receipt }))
+                  } else {
+                    await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ recipientId: entry.from, payload: receipt })
+                    })
+                  }
+                } catch {
+                  // ignore receipt failures
+                }
               }
             } catch (error) {
               dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
