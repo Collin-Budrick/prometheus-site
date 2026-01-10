@@ -326,6 +326,15 @@
     "Open direct message": "Open direct message",
     "Direct message": "Direct message",
     "Direct messages are coming soon.": "Direct messages are coming soon.",
+    "Message": "Message",
+    "Send": "Send",
+    "No messages yet.": "No messages yet.",
+    "Sending": "Sending",
+    "Queued": "Queued",
+    "Failed": "Failed",
+    "Sent": "Sent",
+    "Unavailable": "Unavailable",
+    "Unable to deliver message.": "Unable to deliver message.",
     "Back": "Back"
   }
 }

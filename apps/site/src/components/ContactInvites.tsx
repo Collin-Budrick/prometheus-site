@@ -4,6 +4,19 @@ import { InBellNotification } from '@qwikest/icons/iconoir'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import {
+  createStoredIdentity,
+  decodeBase64,
+  decryptPayload,
+  deriveSessionKey,
+  encryptPayload,
+  importStoredIdentity,
+  loadStoredIdentity,
+  randomBase64,
+  saveStoredIdentity,
+  type DeviceIdentity,
+  type EncryptedPayload
+} from '../shared/p2p-crypto'
 
 type ContactInvitesProps = {
   class?: string
@@ -85,6 +98,31 @@ type ContactSearchItem = {
   online?: boolean
 }
 
+type DmConnectionState = 'idle' | 'connecting' | 'connected' | 'offline' | 'error'
+
+type DmMessage = {
+  id: string
+  text: string
+  author: 'self' | 'contact'
+  createdAt: string
+  status?: 'pending' | 'sent' | 'failed' | 'queued'
+}
+
+type ContactDevice = {
+  deviceId: string
+  publicKey: JsonWebKey
+  label?: string
+  role?: 'device' | 'relay'
+  updatedAt?: string
+}
+
+type P2pSession = {
+  sessionId: string
+  salt: string
+  key: CryptoKey
+  remoteDeviceId: string
+}
+
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
   if (!base) return `${origin}${path}`
@@ -116,6 +154,41 @@ const matchesQuery = (entry: { name?: string | null; email: string }, query: str
   const emailMatch = entry.email.toLowerCase().includes(query)
   const nameMatch = entry.name?.toLowerCase().includes(query) ?? false
   return emailMatch || nameMatch
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const resolveEncryptedPayload = (payload: unknown): EncryptedPayload | null => {
+  if (!isRecord(payload)) return null
+  if (payload.version !== 1) return null
+  if (typeof payload.sessionId !== 'string') return null
+  if (typeof payload.salt !== 'string') return null
+  if (typeof payload.iv !== 'string') return null
+  if (typeof payload.ciphertext !== 'string') return null
+  const senderDeviceId = typeof payload.senderDeviceId === 'string' ? payload.senderDeviceId : undefined
+  return {
+    version: 1,
+    sessionId: payload.sessionId,
+    salt: payload.salt,
+    iv: payload.iv,
+    ciphertext: payload.ciphertext,
+    senderDeviceId
+  }
+}
+
+const pickPreferredDevice = (devices: ContactDevice[]) =>
+  devices.find((device) => device.role !== 'relay') ?? devices[0] ?? null
+
+const createMessageId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+const formatMessageTime = (value: string) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 const formatDisplayName = (entry: { name?: string | null; email: string }) => {
@@ -160,6 +233,14 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const dmClosing = useSignal(false)
     const dmOrigin = useSignal<DmOrigin | null>(null)
     const dmAnimated = useSignal(false)
+    const dmMessages = useSignal<DmMessage[]>([])
+    const dmInput = useSignal('')
+    const dmStatus = useSignal<DmConnectionState>('idle')
+    const dmError = useSignal<string | null>(null)
+    const channelRef = useSignal<NoSerialize<RTCDataChannel> | undefined>(undefined)
+    const identityRef = useSignal<NoSerialize<DeviceIdentity> | undefined>(undefined)
+    const sessionRef = useSignal<NoSerialize<P2pSession> | undefined>(undefined)
+    const remoteDeviceRef = useSignal<NoSerialize<ContactDevice> | undefined>(undefined)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -676,6 +757,93 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }, dmCloseDelayMs)
     })
 
+    const handleDmInput = $((event: Event) => {
+      const target = event.target as HTMLInputElement | null
+      dmInput.value = target?.value ?? ''
+    })
+
+    const handleDmSubmit = $(async () => {
+      if (typeof window === 'undefined') return
+      const contact = activeContact.value
+      const text = dmInput.value.trim()
+      if (!contact || !text) return
+      const messageId = createMessageId()
+      const createdAt = new Date().toISOString()
+
+      dmInput.value = ''
+      dmError.value = null
+      dmMessages.value = [
+        ...dmMessages.value,
+        { id: messageId, text, author: 'self', createdAt, status: 'pending' }
+      ]
+
+      try {
+        const channel = channelRef.value
+        const session = sessionRef.value
+        const identity = identityRef.value
+        if (channel && channel.readyState === 'open' && session && identity) {
+          const payload = await encryptPayload(
+            session.key,
+            JSON.stringify({ id: messageId, text, createdAt }),
+            session.sessionId,
+            session.salt,
+            identity.deviceId
+          )
+          channel.send(JSON.stringify({ type: 'message', payload }))
+          dmMessages.value = dmMessages.value.map((message) =>
+            message.id === messageId ? { ...message, status: 'sent' } : message
+          )
+          return
+        }
+
+        const remoteDevice = remoteDeviceRef.value
+        if (!identity || !remoteDevice) {
+          dmMessages.value = dmMessages.value.map((message) =>
+            message.id === messageId ? { ...message, status: 'failed' } : message
+          )
+          dmError.value = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+          return
+        }
+
+        const sessionId = createMessageId()
+        const salt = randomBase64(16)
+        const key = await deriveSessionKey(
+          identity.privateKey,
+          remoteDevice.publicKey,
+          decodeBase64(salt),
+          sessionId
+        )
+        const payload = await encryptPayload(
+          key,
+          JSON.stringify({ id: messageId, text, createdAt }),
+          sessionId,
+          salt,
+          identity.deviceId
+        )
+        const response = await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ recipientId: contact.id, messageId, sessionId, payload })
+        })
+
+        dmMessages.value = dmMessages.value.map((message) =>
+          message.id === messageId ? { ...message, status: response.ok ? 'queued' : 'failed' } : message
+        )
+        if (!response.ok) {
+          dmError.value = fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+        }
+      } catch (error) {
+        dmMessages.value = dmMessages.value.map((message) =>
+          message.id === messageId ? { ...message, status: 'failed' } : message
+        )
+        dmError.value =
+          error instanceof Error
+            ? error.message
+            : fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+      }
+    })
+
     useVisibleTask$(
       (ctx) => {
         if (typeof window === 'undefined') return
@@ -935,6 +1103,457 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
     useVisibleTask$(({ track, cleanup }) => {
       const contact = track(() => activeContact.value)
+      if (typeof window === 'undefined') return
+
+      if (!contact) {
+        dmStatus.value = 'idle'
+        dmMessages.value = []
+        dmInput.value = ''
+        dmError.value = null
+        sessionRef.value = undefined
+        remoteDeviceRef.value = undefined
+        return
+      }
+
+      let active = true
+      let devices: ContactDevice[] = []
+      let connection: RTCPeerConnection | null = null
+      let channel: RTCDataChannel | null = null
+      let ws: WebSocket | null = null
+      let reconnectTimer: number | null = null
+      const pendingSignals: Array<Record<string, unknown>> = []
+
+      dmStatus.value = 'connecting'
+      dmMessages.value = []
+      dmInput.value = ''
+      dmError.value = null
+      sessionRef.value = undefined
+
+      const closeConnection = () => {
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+        pendingSignals.splice(0, pendingSignals.length)
+        if (channel) {
+          channel.close()
+          channel = null
+        }
+        if (connection) {
+          connection.close()
+          connection = null
+        }
+        ws?.close()
+        ws = null
+        channelRef.value = undefined
+      }
+
+      const ensureIdentity = async () => {
+        let stored = loadStoredIdentity()
+        if (!stored) {
+          stored = await createStoredIdentity()
+          saveStoredIdentity(stored)
+        }
+        let identity = await importStoredIdentity(stored)
+        try {
+          const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
+          const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ deviceId: identity.deviceId, publicKey: identity.publicKeyJwk, label })
+          })
+          if (response.ok) {
+            const payload = (await response.json()) as { deviceId?: string }
+            if (payload.deviceId && payload.deviceId !== identity.deviceId) {
+              stored = { ...stored, deviceId: payload.deviceId }
+              saveStoredIdentity(stored)
+              identity = await importStoredIdentity(stored)
+            }
+          }
+        } catch {
+          // ignore registration failures; retry later
+        }
+        return identity
+      }
+
+      const fetchDevices = async () => {
+        try {
+          const response = await fetch(
+            buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
+            { credentials: 'include' }
+          )
+          if (!response.ok) return []
+          const payload = (await response.json()) as { devices?: ContactDevice[] }
+          const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+          devices = next
+          return next
+        } catch {
+          return []
+        }
+      }
+
+      const resolveDevice = async (deviceId: string) => {
+        let device = devices.find((entry) => entry.deviceId === deviceId)
+        if (device) return device
+        await fetchDevices()
+        device = devices.find((entry) => entry.deviceId === deviceId)
+        return device ?? null
+      }
+
+      const sendSignal = (signal: Record<string, unknown>) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(signal))
+          return
+        }
+        pendingSignals.push(signal)
+      }
+
+      const applyConnectionState = () => {
+        if (!connection) return
+        const state = connection.connectionState
+        if (state === 'connected') {
+          dmStatus.value = 'connected'
+          return
+        }
+        if (state === 'failed' || state === 'disconnected') {
+          dmStatus.value = 'offline'
+        }
+      }
+
+      const setupChannel = (next: RTCDataChannel) => {
+        channel = next
+        channelRef.value = noSerialize(next)
+        next.onopen = () => {
+          dmStatus.value = 'connected'
+        }
+        next.onclose = () => {
+          dmStatus.value = 'offline'
+        }
+        next.onerror = () => {
+          dmStatus.value = 'error'
+        }
+        next.onmessage = async (event) => {
+          const raw = String(event.data ?? '')
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(raw)
+          } catch {
+            return
+          }
+          if (!isRecord(parsed) || parsed.type !== 'message') return
+          const encrypted = resolveEncryptedPayload(parsed.payload)
+          if (!encrypted) return
+          const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
+          const identity = identityRef.value
+          if (!identity) return
+          const deviceId = senderDeviceId ?? sessionRef.value?.remoteDeviceId ?? remoteDeviceRef.value?.deviceId
+          if (!deviceId) return
+          const device = await resolveDevice(deviceId)
+          if (!device) return
+          const key = await deriveSessionKey(
+            identity.privateKey,
+            device.publicKey,
+            decodeBase64(encrypted.salt),
+            encrypted.sessionId
+          )
+          sessionRef.value = noSerialize({
+            sessionId: encrypted.sessionId,
+            salt: encrypted.salt,
+            key,
+            remoteDeviceId: device.deviceId
+          })
+          try {
+            const plaintext = await decryptPayload(key, encrypted)
+            let messageText = plaintext
+            let messageId = createMessageId()
+            let createdAt = new Date().toISOString()
+            try {
+              const messagePayload = JSON.parse(plaintext) as { id?: string; text?: string; createdAt?: string }
+              if (messagePayload?.text) messageText = messagePayload.text
+              if (messagePayload?.id) messageId = messagePayload.id
+              if (messagePayload?.createdAt) createdAt = messagePayload.createdAt
+            } catch {
+              // ignore parse errors
+            }
+            dmMessages.value = [
+              ...dmMessages.value,
+              { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
+            ]
+          } catch (error) {
+            dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
+          }
+        }
+      }
+
+      const ensurePeerConnection = (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+        if (connection) return
+        connection = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        })
+        connection.onicecandidate = (event) => {
+          if (!event.candidate) return
+          const session = sessionRef.value
+          const payload = {
+            type: 'candidate',
+            candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
+          }
+          const signal = {
+            type: 'signal',
+            to: contact.id,
+            toDeviceId: remoteDevice.deviceId,
+            sessionId: session?.sessionId,
+            payload
+          }
+          sendSignal(signal)
+        }
+        connection.onconnectionstatechange = applyConnectionState
+        connection.ondatachannel = (event) => {
+          setupChannel(event.channel)
+        }
+      }
+
+      const handleSignal = async (signal: Record<string, unknown>) => {
+        const payload = isRecord(signal.payload) ? signal.payload : null
+        if (!payload) return
+        const payloadType = payload.type
+        if (payloadType !== 'offer' && payloadType !== 'answer' && payloadType !== 'candidate') return
+        const identity = identityRef.value
+        if (!identity) return
+        const fromDeviceId = typeof signal.fromDeviceId === 'string' ? signal.fromDeviceId : undefined
+        const sessionId = typeof signal.sessionId === 'string' ? signal.sessionId : undefined
+        const salt = typeof payload.salt === 'string' ? payload.salt : undefined
+        const remoteDevice = fromDeviceId ? await resolveDevice(fromDeviceId) : remoteDeviceRef.value ?? null
+        if (!remoteDevice) return
+        remoteDeviceRef.value = noSerialize(remoteDevice)
+        ensurePeerConnection(identity, remoteDevice)
+        if (!connection) return
+
+        if (payloadType === 'offer' && typeof payload.sdp === 'string' && sessionId && salt) {
+          const key = await deriveSessionKey(
+            identity.privateKey,
+            remoteDevice.publicKey,
+            decodeBase64(salt),
+            sessionId
+          )
+          sessionRef.value = noSerialize({
+            sessionId,
+            salt,
+            key,
+            remoteDeviceId: remoteDevice.deviceId
+          })
+          await connection.setRemoteDescription({ type: 'offer', sdp: payload.sdp })
+          const answer = await connection.createAnswer()
+          await connection.setLocalDescription(answer)
+          sendSignal({
+            type: 'signal',
+            to: contact.id,
+            toDeviceId: remoteDevice.deviceId,
+            sessionId,
+            payload: { type: 'answer', sdp: answer.sdp }
+          })
+          return
+        }
+
+        if (payloadType === 'answer' && typeof payload.sdp === 'string') {
+          await connection.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
+          return
+        }
+
+        if (payloadType === 'candidate' && payload.candidate) {
+          try {
+            await connection.addIceCandidate(payload.candidate as RTCIceCandidateInit)
+          } catch {
+            // ignore candidate errors
+          }
+        }
+      }
+
+      const connectWs = (identity: DeviceIdentity) => {
+        const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
+        if (!wsUrl) return
+        ws?.close()
+        ws = new WebSocket(wsUrl)
+        ws.addEventListener('open', () => {
+          ws?.send(JSON.stringify({ type: 'hello', deviceId: identity.deviceId }))
+          while (pendingSignals.length) {
+            const signal = pendingSignals.shift()
+            if (!signal) break
+            ws?.send(JSON.stringify(signal))
+          }
+        })
+        ws.addEventListener('message', async (event) => {
+          let payload: unknown
+          try {
+            payload = JSON.parse(String(event.data))
+          } catch {
+            return
+          }
+          if (!isRecord(payload)) return
+          const payloadType = payload.type
+          const fromId = typeof payload.from === 'string' ? payload.from : ''
+          const userId = typeof payload.userId === 'string' ? payload.userId : ''
+          if (payloadType === 'p2p:signal' && fromId === contact.id) {
+            await handleSignal(payload)
+            return
+          }
+          if (payloadType === 'p2p:mailbox' && userId) {
+            await pullMailbox(identity)
+          }
+        })
+        ws.addEventListener('close', () => {
+          if (!active) return
+          dmStatus.value = dmStatus.value === 'connected' ? 'offline' : dmStatus.value
+          if (reconnectTimer !== null) return
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            connectWs(identity)
+          }, 4000)
+        })
+        ws.addEventListener('error', () => {
+          dmStatus.value = 'error'
+        })
+      }
+
+      const pullMailbox = async (identity: DeviceIdentity) => {
+        try {
+          const response = await fetch(buildApiUrl('/chat/p2p/mailbox/pull', window.location.origin), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ deviceId: identity.deviceId, limit: 50 })
+          })
+          if (!response.ok) return
+          const payload = (await response.json()) as { messages?: Array<Record<string, unknown>> }
+          const messages = Array.isArray(payload.messages) ? payload.messages : []
+          if (!messages.length) return
+          const ackIds: string[] = []
+          for (const entry of messages) {
+            if (!isRecord(entry)) continue
+            const fromId = typeof entry.from === 'string' ? entry.from : ''
+            if (fromId !== contact.id) continue
+            const encrypted = resolveEncryptedPayload(entry.payload)
+            if (!encrypted) continue
+            const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
+            const identityDevice = identityRef.value
+            if (!identityDevice) continue
+            const deviceId = senderDeviceId ?? remoteDeviceRef.value?.deviceId
+            if (!deviceId) continue
+            const device = await resolveDevice(deviceId)
+            if (!device) continue
+            const key = await deriveSessionKey(
+              identityDevice.privateKey,
+              device.publicKey,
+              decodeBase64(encrypted.salt),
+              encrypted.sessionId
+            )
+            sessionRef.value = noSerialize({
+              sessionId: encrypted.sessionId,
+              salt: encrypted.salt,
+              key,
+              remoteDeviceId: device.deviceId
+            })
+            try {
+              const plaintext = await decryptPayload(key, encrypted)
+              let messageText = plaintext
+              let messageId = createMessageId()
+              let createdAt = new Date().toISOString()
+              try {
+                const messagePayload = JSON.parse(plaintext) as { id?: string; text?: string; createdAt?: string }
+                if (messagePayload?.text) messageText = messagePayload.text
+                if (messagePayload?.id) messageId = messagePayload.id
+                if (messagePayload?.createdAt) createdAt = messagePayload.createdAt
+              } catch {
+                // ignore parse errors
+              }
+              dmMessages.value = [
+                ...dmMessages.value,
+                { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
+              ]
+              if (typeof entry.id === 'string') {
+                ackIds.push(entry.id)
+              }
+            } catch (error) {
+              dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
+            }
+          }
+          if (ackIds.length) {
+            await fetch(buildApiUrl('/chat/p2p/mailbox/ack', window.location.origin), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ deviceId: identity.deviceId, messageIds: ackIds })
+            })
+          }
+        } catch {
+          // ignore mailbox failures
+        }
+      }
+
+      const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+        ensurePeerConnection(identity, remoteDevice)
+        if (!connection) return
+        channel = connection.createDataChannel('dm', { ordered: true })
+        setupChannel(channel)
+        const sessionId = createMessageId()
+        const salt = randomBase64(16)
+        const key = await deriveSessionKey(
+          identity.privateKey,
+          remoteDevice.publicKey,
+          decodeBase64(salt),
+          sessionId
+        )
+        sessionRef.value = noSerialize({
+          sessionId,
+          salt,
+          key,
+          remoteDeviceId: remoteDevice.deviceId
+        })
+        const offer = await connection.createOffer()
+        await connection.setLocalDescription(offer)
+        sendSignal({
+          type: 'signal',
+          to: contact.id,
+          toDeviceId: remoteDevice.deviceId,
+          sessionId,
+          payload: { type: 'offer', sdp: offer.sdp, salt }
+        })
+      }
+
+      ;(async () => {
+        try {
+          const identity = await ensureIdentity()
+          if (!active) return
+          identityRef.value = noSerialize(identity)
+          const nextDevices = await fetchDevices()
+          if (!active) return
+          if (!nextDevices.length) {
+            dmStatus.value = 'offline'
+            return
+          }
+          const target = pickPreferredDevice(nextDevices)
+          if (!target) {
+            dmStatus.value = 'offline'
+            return
+          }
+          remoteDeviceRef.value = noSerialize(target)
+          connectWs(identity)
+          await pullMailbox(identity)
+          await startCaller(identity, target)
+        } catch (error) {
+          dmStatus.value = 'error'
+          dmError.value = error instanceof Error ? error.message : 'Unable to start direct message.'
+        }
+      })()
+
+      cleanup(() => {
+        active = false
+        closeConnection()
+      })
+    })
+
+    useVisibleTask$(({ track, cleanup }) => {
+      const contact = track(() => activeContact.value)
       track(() => dmClosing.value)
       if (typeof document === 'undefined') return
       const root = document.documentElement
@@ -972,6 +1591,21 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const bellAlert = incomingAlert || outgoingAcceptedAlert
     const BellIcon = InBellNotification
     const dmOpen = activeContact.value !== null
+    const dmStatusLabel =
+      dmStatus.value === 'connected'
+        ? resolve('Connected')
+        : dmStatus.value === 'connecting'
+          ? resolve('Connecting')
+          : dmStatus.value === 'offline'
+            ? resolve('Offline')
+            : resolve('Unavailable')
+    const dmStatusTone = dmStatus.value === 'error' ? 'error' : dmStatus.value === 'offline' ? 'muted' : 'neutral'
+    const resolveMessageStatus = (status: DmMessage['status']) => {
+      if (status === 'pending') return resolve('Sending')
+      if (status === 'queued') return resolve('Queued')
+      if (status === 'failed') return resolve('Failed')
+      return resolve('Sent')
+    }
     const normalizedQuery = normalizeQuery(searchQuery.value)
     const contactMatches = normalizedQuery
       ? contacts.value.filter((invite) => matchesQuery(invite.user, normalizedQuery))
@@ -1296,7 +1930,45 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 </div>
               </header>
               <div class="chat-invites-dm-body">
-                <p class="chat-invites-dm-placeholder">{resolve('Direct messages are coming soon.')}</p>
+                <div class="chat-invites-dm-status" data-tone={dmStatusTone}>
+                  <span>{dmStatusLabel}</span>
+                  {dmError.value ? <span class="chat-invites-dm-error">{dmError.value}</span> : null}
+                </div>
+                <div class="chat-invites-dm-messages" role="log" aria-live="polite">
+                  {dmMessages.value.length === 0 ? (
+                    <p class="chat-invites-dm-placeholder">{resolve('No messages yet.')}</p>
+                  ) : (
+                    dmMessages.value.map((message) => (
+                      <article
+                        key={message.id}
+                        class="chat-invites-dm-message"
+                        data-author={message.author}
+                        data-status={message.status ?? 'sent'}
+                      >
+                        <p class="chat-invites-dm-text">{message.text}</p>
+                        <div class="chat-invites-dm-meta">
+                          <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
+                          {message.author === 'self' && message.status && message.status !== 'sent' ? (
+                            <span class="chat-invites-dm-state">{resolveMessageStatus(message.status)}</span>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+                <form class="chat-invites-dm-compose" preventdefault:submit onSubmit$={handleDmSubmit}>
+                  <input
+                    type="text"
+                    class="chat-invites-dm-input"
+                    placeholder={resolve('Message')}
+                    value={dmInput.value}
+                    onInput$={handleDmInput}
+                    aria-label={resolve('Message')}
+                  />
+                  <button class="chat-invites-dm-send" type="submit" disabled={!dmInput.value.trim()}>
+                    {resolve('Send')}
+                  </button>
+                </form>
               </div>
             </div>
           </div>

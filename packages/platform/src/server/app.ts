@@ -2,7 +2,13 @@ import { Elysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
 import type { FragmentLang, FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
-import { createMessagingRoutes, invalidateChatHistoryCache, registerChatWs, registerContactsWs } from '@features/messaging'
+import {
+  createMessagingRoutes,
+  invalidateChatHistoryCache,
+  registerChatWs,
+  registerContactsWs,
+  registerP2pWs
+} from '@features/messaging'
 import { createStoreRoutes, type StoreTelemetry } from '@features/store/api'
 import { invalidateStoreItemsCache } from '@features/store/cache'
 import { createStoreRealtime, type StoreRealtimeEvent } from '@features/store/realtime'
@@ -275,6 +281,18 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         checkWsOpenQuota,
         db,
         usersTable: users,
+        contactInvitesTable: contactInvites,
+        resolveWsClientIp,
+        resolveWsHeaders,
+        resolveWsRequest
+      })
+      registerP2pWs(app, {
+        valkey,
+        isValkeyReady,
+        validateSession: authFeature.validateSession,
+        checkWsOpenQuota,
+        checkWsQuota,
+        db,
         contactInvitesTable: contactInvites,
         resolveWsClientIp,
         resolveWsHeaders,

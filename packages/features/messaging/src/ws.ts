@@ -5,7 +5,7 @@ import type { ValidateSessionHandler } from '@features/auth/server'
 import type { DatabaseClient } from '@platform/db'
 import type { ValkeyClientType } from '@valkey/client'
 import type { RateLimitResult } from '@platform/rate-limit'
-import { contactsChannel } from './api'
+import { contactsChannel, p2pChannel } from './api'
 import type { ChatMessagesTable, ContactInvitesTable, UsersTable } from './api'
 
 type ValkeyClient = ValkeyClientType
@@ -32,6 +32,10 @@ type ChatErrorEvent = { type: 'error'; error: string }
 
 export const chatChannel = 'chat:stream'
 export const maxChatLength = 1000
+const p2pDeviceKeyPrefix = 'chat:p2p:device:'
+const maxP2pPayloadBytes = 64 * 1024
+
+const buildDeviceKey = (deviceId: string) => `${p2pDeviceKeyPrefix}${deviceId}`
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -615,6 +619,285 @@ export const registerContactsWs = <App extends AnyElysia>(app: App, options: Con
           }
         } catch (error) {
           console.error('Failed to clear contact presence', error)
+        }
+      }
+    }
+  })
+
+type P2pWsData = {
+  subscriber?: Awaited<ReturnType<ValkeyClient['duplicate']>>
+  clientIp?: string
+  user?: WsUser
+  deviceId?: string
+}
+
+type P2pWsContextData = P2pWsData & { request?: Request; headers?: HeadersInit }
+type P2pWsSocket = ElysiaWS<P2pWsContextData>
+
+type P2pSignalEvent = {
+  type: 'p2p:signal'
+  to: string
+  from: string
+  payload: Record<string, unknown>
+  sessionId?: string
+  fromDeviceId?: string
+  toDeviceId?: string
+}
+
+type P2pClientSignal = {
+  type: 'signal'
+  to: string
+  payload: Record<string, unknown>
+  sessionId?: string
+  toDeviceId?: string
+}
+
+type P2pClientHello = {
+  type: 'hello'
+  deviceId: string
+}
+
+type P2pClientPing = {
+  type: 'ping' | 'pong'
+}
+
+type P2pClientMessage = P2pClientSignal | P2pClientHello | P2pClientPing
+
+export type P2pWsOptions = {
+  valkey: ValkeyClient
+  isValkeyReady: IsValkeyReadyFn
+  validateSession: ValidateSessionFn
+  checkWsOpenQuota: (route: string, clientIp: string) => Promise<RateLimitResult>
+  checkWsQuota: (clientIp: string) => Promise<RateLimitResult>
+  db: DatabaseClient['db']
+  contactInvitesTable: ContactInvitesTable
+  resolveWsClientIp: ResolveWsClientIp
+  resolveWsHeaders: ResolveWsHeaders
+  resolveWsRequest: ResolveWsRequest
+}
+
+const resolveP2pClientMessage = (payload: Record<string, unknown>): P2pClientMessage | null => {
+  const type = payload.type
+  if (type === 'hello' && typeof payload.deviceId === 'string') {
+    return { type, deviceId: payload.deviceId }
+  }
+  if (type === 'signal' && typeof payload.to === 'string' && isRecord(payload.payload)) {
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
+    const toDeviceId = typeof payload.toDeviceId === 'string' ? payload.toDeviceId : undefined
+    return { type, to: payload.to, payload: payload.payload, sessionId, toDeviceId }
+  }
+  if (type === 'ping' || type === 'pong') {
+    return { type }
+  }
+  return null
+}
+
+const resolveDeviceOwner = async (valkey: ValkeyClient, deviceId: string) => {
+  try {
+    const raw = await valkey.get(buildDeviceKey(deviceId))
+    if (typeof raw !== 'string') return null
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const ownerId = parsed?.userId
+    return typeof ownerId === 'string' ? ownerId : null
+  } catch {
+    return null
+  }
+}
+
+const ensureP2pContacts = async (
+  db: DatabaseClient['db'],
+  contactInvitesTable: ContactInvitesTable,
+  userId: string,
+  targetId: string
+) => {
+  if (!userId || !targetId || userId === targetId) return false
+  try {
+    const rows = await db
+      .select({ id: contactInvitesTable.id })
+      .from(contactInvitesTable)
+      .where(
+        and(
+          eq(contactInvitesTable.status, 'accepted'),
+          or(
+            and(eq(contactInvitesTable.inviterId, userId), eq(contactInvitesTable.inviteeId, targetId)),
+            and(eq(contactInvitesTable.inviterId, targetId), eq(contactInvitesTable.inviteeId, userId))
+          )
+        )
+      )
+      .limit(1)
+    return rows.length > 0
+  } catch (error) {
+    console.error('Failed to verify P2P contact', error)
+    return false
+  }
+}
+
+export const registerP2pWs = <App extends AnyElysia>(app: App, options: P2pWsOptions) =>
+  app.ws('/chat/p2p/ws', {
+    upgrade(context: WsUpgradeContext) {
+      return { headers: context.request.headers, request: context.request }
+    },
+    async open(ws: P2pWsSocket) {
+      const clientIp = options.resolveWsClientIp(ws)
+      const headers = options.resolveWsHeaders(ws)
+      const request = options.resolveWsRequest(ws)
+      const { allowed, retryAfter } = await options.checkWsOpenQuota('/chat/p2p/ws', clientIp)
+
+      if (!allowed) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Too many realtime attempts', retryAfter }))
+        ws.close(4408, 'Too many attempts')
+        return
+      }
+
+      let sessionPayload: { user?: WsUser } | null = null
+      try {
+        const sessionResponse = await options.validateSession({ headers, request })
+        if (sessionResponse.ok) {
+          sessionPayload = await parseSessionPayload(sessionResponse)
+        }
+      } catch (error) {
+        console.error('Failed to validate p2p session', error)
+      }
+
+      const sessionUser = sessionPayload?.user
+      const sessionUserId = sessionUser?.id
+      if (sessionUserId === undefined || sessionUserId === '') {
+        ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for p2p' }))
+        ws.close(4401, 'Unauthorized')
+        return
+      }
+
+      if (!options.isValkeyReady()) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Realtime unavailable' }))
+        ws.close(1013, 'Cache unavailable')
+        return
+      }
+
+      const data = ws.data
+      data.clientIp = clientIp
+      data.user = sessionUser
+
+      ws.send(JSON.stringify({ type: 'welcome', text: 'Connected to p2p' }))
+
+      let subscriber: Awaited<ReturnType<ValkeyClient['duplicate']>> | null = null
+      try {
+        subscriber = options.valkey.duplicate()
+        await subscriber.connect()
+        await subscriber.subscribe(p2pChannel, (message: string) => {
+          const payload = parseMessage(message)
+          if (!payload) return
+          const type = payload.type
+          if (type === 'p2p:signal') {
+            const targetId = typeof payload.to === 'string' ? payload.to : ''
+            const targetDeviceId = typeof payload.toDeviceId === 'string' ? payload.toDeviceId : ''
+            if (targetId !== sessionUserId) return
+            if (targetDeviceId && targetDeviceId !== data.deviceId) return
+            ws.send(JSON.stringify(payload))
+            return
+          }
+          if (type === 'p2p:mailbox') {
+            const targetId = typeof payload.userId === 'string' ? payload.userId : ''
+            if (targetId !== sessionUserId) return
+            ws.send(JSON.stringify(payload))
+          }
+        })
+        data.subscriber = subscriber
+      } catch (error) {
+        console.error('P2P subscription failed', error)
+        if (subscriber !== null) {
+          try {
+            await subscriber.quit()
+          } catch (quitError) {
+            console.error('Failed to close partial subscriber', quitError)
+          }
+        }
+        ws.send(JSON.stringify({ type: 'error', error: 'Unable to join realtime' }))
+        ws.close(1011, 'Subscription failed')
+      }
+    },
+    async close(ws: P2pWsSocket) {
+      const data = ws.data
+      if (data.subscriber !== undefined) await data.subscriber.quit()
+    },
+    async message(ws: P2pWsSocket, message: unknown) {
+      if (!options.isValkeyReady()) return
+      const data = ws.data
+      const clientIp = data.clientIp ?? options.resolveWsClientIp(ws)
+      const { allowed, retryAfter } = await options.checkWsQuota(clientIp)
+
+      if (!allowed) {
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            error: `Message quota exceeded. Try again in ${retryAfter}s`
+          })
+        )
+        ws.close(4408, 'Quota exceeded')
+        return
+      }
+
+      const payload = parseMessage(message)
+      if (payload === null) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Invalid message format' }))
+        return
+      }
+
+      const parsed = resolveP2pClientMessage(payload)
+      if (!parsed) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Unsupported message type' }))
+        return
+      }
+
+      if (parsed.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }))
+        return
+      }
+
+      if (parsed.type === 'hello') {
+        const ownerId = await resolveDeviceOwner(options.valkey, parsed.deviceId)
+        if (!ownerId || ownerId !== data.user?.id) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Unknown device' }))
+          return
+        }
+        data.deviceId = parsed.deviceId
+        ws.send(JSON.stringify({ type: 'ready', deviceId: parsed.deviceId }))
+        return
+      }
+
+      if (parsed.type === 'signal') {
+        if (!data.user) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Authentication required for p2p' }))
+          ws.close(4401, 'Unauthorized')
+          return
+        }
+
+        const encoded = JSON.stringify(parsed.payload)
+        if (encoded.length > maxP2pPayloadBytes) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Signal payload too large' }))
+          return
+        }
+
+        const allowed = await ensureP2pContacts(options.db, options.contactInvitesTable, data.user.id, parsed.to)
+        if (!allowed) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Contact required for p2p' }))
+          return
+        }
+
+        const event: P2pSignalEvent = {
+          type: 'p2p:signal',
+          to: parsed.to,
+          from: data.user.id,
+          payload: parsed.payload,
+          sessionId: parsed.sessionId,
+          fromDeviceId: data.deviceId,
+          toDeviceId: parsed.toDeviceId
+        }
+
+        try {
+          await options.valkey.publish(p2pChannel, JSON.stringify(event))
+        } catch (error) {
+          console.error('Failed to publish p2p signal', error)
+          ws.send(JSON.stringify({ type: 'error', error: 'Signal unavailable' }))
         }
       }
     }
