@@ -1017,19 +1017,56 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const sendTyping = $(async (state: 'start' | 'stop') => {
       if (typeof window === 'undefined') return
       if (!chatSettings.value.typingIndicators) return
+      const identity = identityRef.value
+      const contact = activeContact.value
+      if (!identity || !contact) return
       const channel = channelRef.value
       const session = sessionRef.value
-      const identity = identityRef.value
-      if (!channel || channel.readyState !== 'open' || !session || !identity) return
+      const payloadText = JSON.stringify({ kind: 'typing', state })
+      if (channel && channel.readyState === 'open' && session) {
+        try {
+          const payload = await encryptPayload(
+            session.key,
+            payloadText,
+            session.sessionId,
+            session.salt,
+            identity.deviceId
+          )
+          channel.send(JSON.stringify({ type: 'message', payload }))
+        } catch {
+          // ignore typing failures
+        }
+        return
+      }
+      const remoteDevice = remoteDeviceRef.value
+      if (!session && !remoteDevice) return
       try {
+        let fallbackSession: P2pSession | null = session ?? null
+        if (!fallbackSession && remoteDevice) {
+          const sessionId = createMessageId()
+          const salt = randomBase64(16)
+          const key = await deriveSessionKey(
+            identity.privateKey,
+            remoteDevice.publicKey,
+            decodeBase64(salt),
+            sessionId
+          )
+          fallbackSession = { sessionId, salt, key, remoteDeviceId: remoteDevice.deviceId }
+        }
+        if (!fallbackSession) return
         const payload = await encryptPayload(
-          session.key,
-          JSON.stringify({ kind: 'typing', state }),
-          session.sessionId,
-          session.salt,
+          fallbackSession.key,
+          payloadText,
+          fallbackSession.sessionId,
+          fallbackSession.salt,
           identity.deviceId
         )
-        channel.send(JSON.stringify({ type: 'message', payload }))
+        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ recipientId: contact.id, payload })
+        })
       } catch {
         // ignore typing failures
       }
@@ -1061,6 +1098,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
         }, 1600)
       } else {
         typingTimer.value = null
+      }
+    })
+
+    const handleDmKeyDown = $((event: KeyboardEvent) => {
+      if (!chatSettings.value.typingIndicators || typeof window === 'undefined') return
+      if (event.isComposing) return
+      if (event.key.length !== 1) return
+      if (!typingActive.value) {
+        typingActive.value = true
+        void sendTyping('start')
       }
     })
 
@@ -1498,6 +1545,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       let channel: RTCDataChannel | null = null
       let ws: WebSocket | null = null
       let reconnectTimer: number | null = null
+      let mailboxPulling = false
+      let mailboxPullPending = false
       let historyRequested = false
       let historyNeeded = false
       const pendingSignals: Array<Record<string, unknown>> = []
@@ -1537,6 +1586,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
           const payload = (await response.json()) as { devices?: ContactDevice[] }
           const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
           devices = next
+          if (!remoteDeviceRef.value) {
+            const preferred = pickPreferredDevice(next)
+            if (preferred) {
+              remoteDeviceRef.value = noSerialize(preferred)
+            }
+          }
           return next
         } catch {
           return []
@@ -1569,6 +1624,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
         if (state === 'failed' || state === 'disconnected') {
           dmStatus.value = 'offline'
         }
+      }
+
+      const appendIncomingMessage = (message: DmMessage) => {
+        if (dmMessages.value.some((entry) => entry.id === message.id)) return false
+        dmMessages.value = [...dmMessages.value, message]
+        return true
       }
 
       const setupChannel = (next: RTCDataChannel) => {
@@ -1725,11 +1786,17 @@ export const ContactInvites = component$<ContactInvitesProps>(
               }
               return
             }
-            dmMessages.value = [
-              ...dmMessages.value,
-              { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
-            ]
-            void persistHistory(contact.id, identity, dmMessages.value)
+            if (
+              appendIncomingMessage({
+                id: messageId,
+                text: messageText,
+                author: 'contact',
+                createdAt,
+                status: 'sent'
+              })
+            ) {
+              void persistHistory(contact.id, identity, dmMessages.value)
+            }
             if (receiptTargetId && chatSettings.value.readReceipts) {
               try {
                 const receipt = await encryptPayload(
@@ -1938,6 +2005,11 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }
 
       const pullMailbox = async (identity: DeviceIdentity) => {
+        if (mailboxPulling) {
+          mailboxPullPending = true
+          return
+        }
+        mailboxPulling = true
         try {
           const response = await fetch(buildApiUrl('/chat/p2p/mailbox/pull', window.location.origin), {
             method: 'POST',
@@ -2086,11 +2158,17 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   }
                 }
               } else {
-                dmMessages.value = [
-                  ...dmMessages.value,
-                  { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
-                ]
-                void persistHistory(contact.id, identityDevice, dmMessages.value)
+                if (
+                  appendIncomingMessage({
+                    id: messageId,
+                    text: messageText,
+                    author: 'contact',
+                    createdAt,
+                    status: 'sent'
+                  })
+                ) {
+                  void persistHistory(contact.id, identityDevice, dmMessages.value)
+                }
               }
               if (typeof entry.id === 'string') {
                 ackIds.push(entry.id)
@@ -2133,6 +2211,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
           }
         } catch {
           // ignore mailbox failures
+        } finally {
+          mailboxPulling = false
+          if (mailboxPullPending) {
+            mailboxPullPending = false
+            void pullMailbox(identity)
+          }
         }
       }
 
@@ -2688,6 +2772,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                     placeholder={resolve('Message')}
                     value={dmInput.value}
                     onInput$={handleDmInput}
+                    onKeyDown$={handleDmKeyDown}
                     aria-label={resolve('Message')}
                   />
                   <button class="chat-invites-dm-send" type="submit" disabled={!dmInput.value.trim()}>
