@@ -113,7 +113,7 @@ type DmMessage = {
   text: string
   author: 'self' | 'contact'
   createdAt: string
-  status?: 'pending' | 'sent' | 'failed' | 'queued'
+  status?: 'pending' | 'sent' | 'failed' | 'queued' | 'read'
 }
 
 type ContactDevice = {
@@ -1576,6 +1576,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
         channelRef.value = noSerialize(next)
         next.onopen = () => {
           dmStatus.value = 'connected'
+          if (chatSettings.value.typingIndicators && dmInput.value.trim()) {
+            void sendTyping('start')
+          }
         }
         next.onclose = () => {
           dmStatus.value = 'offline'
@@ -1677,7 +1680,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             if (isReceipt) {
               if (receiptTargetId) {
                 dmMessages.value = dmMessages.value.map((message) =>
-                  message.id === receiptTargetId ? { ...message, status: 'sent' } : message
+                  message.id === receiptTargetId ? { ...message, status: 'read' } : message
                 )
                 void persistHistory(contact.id, identity, dmMessages.value)
               }
@@ -2036,7 +2039,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               if (isReceipt) {
                 if (receiptTargetId) {
                   dmMessages.value = dmMessages.value.map((message) =>
-                    message.id === receiptTargetId ? { ...message, status: 'sent' } : message
+                    message.id === receiptTargetId ? { ...message, status: 'read' } : message
                   )
                   void persistHistory(contact.id, identityDevice, dmMessages.value)
                 }
@@ -2253,6 +2256,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (status === 'pending') return resolve('Sending')
       if (status === 'queued') return resolve('Queued')
       if (status === 'failed') return resolve('Failed')
+      if (status === 'read') return resolve('Read')
       return resolve('Sent')
     }
     const normalizedQuery = normalizeQuery(searchQuery.value)
@@ -2669,7 +2673,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
                         <p class="chat-invites-dm-text">{message.text}</p>
                         <div class="chat-invites-dm-meta">
                           <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-                          {message.author === 'self' && message.status && message.status !== 'sent' ? (
+                          {message.author === 'self' && message.status ? (
                             <span class="chat-invites-dm-state">{resolveMessageStatus(message.status)}</span>
                           ) : null}
                         </div>

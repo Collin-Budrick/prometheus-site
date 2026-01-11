@@ -378,6 +378,7 @@
     "Queued": "대기열",
     "Failed": "실패",
     "Sent": "전송됨",
+    "Read": "읽음",
     "Unavailable": "사용할 수 없음",
     "Unable to deliver message.": "메시지를 전송할 수 없습니다.",
     "Back": "뒤로",

@@ -794,6 +794,10 @@ html[data-chat-dm-open='true'] .fragment-card {
   color: rgb(var(--muted));
 }
 
+.chat-invites-dm-message[data-status='read'] .chat-invites-dm-state {
+  color: rgb(var(--signal-strong));
+}
+
 .chat-invites-dm-compose {
   display: flex;
   align-items: center;

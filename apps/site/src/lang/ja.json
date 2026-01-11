@@ -378,6 +378,7 @@
     "Queued": "送信待ち",
     "Failed": "失敗",
     "Sent": "送信済み",
+    "Read": "既読",
     "Unavailable": "利用不可",
     "Unable to deliver message.": "メッセージを送信できません。",
     "Back": "戻る",

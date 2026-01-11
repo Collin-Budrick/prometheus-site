@@ -339,6 +339,7 @@
     "Queued": "Queued",
     "Failed": "Failed",
     "Sent": "Sent",
+    "Read": "Read",
     "Unavailable": "Unavailable",
     "Unable to deliver message.": "Unable to deliver message.",
     "Back": "Back",
