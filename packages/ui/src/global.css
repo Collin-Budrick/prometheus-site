@@ -1511,6 +1511,7 @@
   }
 
   .chat-settings-toggle {
+    --chat-toggle-shift: 26px;
     width: 52px;
     height: 28px;
     border-radius: 999px;
@@ -1566,7 +1567,7 @@
   }
 
   .chat-settings-toggle[data-active='true'] .chat-settings-toggle-knob {
-    transform: translateX(18px);
+    transform: translateX(var(--chat-toggle-shift));
     background: rgb(var(--signal-strong));
     box-shadow: 0 0 12px rgb(var(--signal) / 0.45);
   }
