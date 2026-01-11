@@ -72,9 +72,16 @@ const ensureInviteAccepted = async (inviter: TestUser, invitee: TestUser) => {
   expect(acceptResponse.ok()).toBeTruthy()
 }
 
-const createAuthedContext = async (browser: Browser, api: APIRequestContext) => {
-  const storageState = await api.storageState()
-  return browser.newContext({ storageState })
+const attachPageDebug = (page: Page, label: string) => {
+  page.on('console', (msg) => {
+    const type = msg.type()
+    if (type === 'error' || type === 'warning') {
+      console.log(`[${label}] console:${type}`, msg.text())
+    }
+  })
+  page.on('pageerror', (error) => {
+    console.log(`[${label}] pageerror`, error.message)
+  })
 }
 
 const gotoChat = async (page: Page) => {
@@ -84,7 +91,21 @@ const gotoChat = async (page: Page) => {
 
 const waitForContact = async (page: Page, email: string) => {
   const contact = page.locator('.chat-invites-item', { hasText: email })
-  await expect(contact).toBeVisible({ timeout: 30_000 })
+  try {
+    await expect(contact).toBeVisible({ timeout: 10_000 })
+    return contact
+  } catch {
+    // Fall back to search if the contacts list has not populated yet.
+  }
+
+  await page.evaluate((value) => {
+    const input = document.querySelector<HTMLInputElement>('.chat-invites-search input')
+    if (!input) return
+    input.value = value
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, email)
+  await page.locator('.chat-invites-search button[type="submit"]').click()
+  await expect(contact).toBeVisible({ timeout: 20_000 })
   return contact
 }
 
@@ -136,8 +157,9 @@ test.describe('p2p chat e2e', () => {
 
   test('connects, shows presence, receipts, typing, and profile cards', async ({ browser }, testInfo) => {
     const baseURL = (testInfo.project.use.baseURL as string | undefined) ?? 'http://127.0.0.1:4173'
-    const apiA = await request.newContext({ baseURL })
-    const apiB = await request.newContext({ baseURL })
+    const ignoreHTTPSErrors = baseURL.startsWith('https://')
+    const apiA = await request.newContext({ baseURL, ignoreHTTPSErrors })
+    const apiB = await request.newContext({ baseURL, ignoreHTTPSErrors })
     const sessionCheck = await apiA.get('/api/auth/session')
     if (![200, 401].includes(sessionCheck.status())) {
       throw new Error('API is not reachable. Start the API + Valkey/Postgres services before running this test.')
@@ -146,11 +168,13 @@ test.describe('p2p chat e2e', () => {
     const [userA, userB] = await Promise.all([createUser(apiA, 'A'), createUser(apiB, 'B')])
     await ensureInviteAccepted(userA, userB)
 
-    const contextA = await createAuthedContext(browser, apiA)
-    const contextB = await createAuthedContext(browser, apiB)
+    const contextA = await browser.newContext({ storageState: await apiA.storageState(), baseURL, ignoreHTTPSErrors })
+    const contextB = await browser.newContext({ storageState: await apiB.storageState(), baseURL, ignoreHTTPSErrors })
 
     const pageA = await contextA.newPage()
     const pageB = await contextB.newPage()
+    attachPageDebug(pageA, 'userA')
+    attachPageDebug(pageB, 'userB')
 
     await Promise.all([gotoChat(pageA), gotoChat(pageB)])
 

@@ -1,0 +1,67 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e6]:
+      - strong [ref=e7]: Prometheus
+      - generic [ref=e8]: Binary Fragment Platform
+    - generic [ref=e10]:
+      - status "Idle" [ref=e11]
+      - button "Switch language" [ref=e13]:
+        - img [ref=e14]
+      - button "Switch to dark mode" [ref=e17]:
+        - img [ref=e18]
+  - main [ref=e20]:
+    - article [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - paragraph [ref=e27]: Contact invites
+            - paragraph [ref=e28]: Search by email to connect.
+          - generic [ref=e30]:
+            - button "Invites" [ref=e31] [cursor=pointer]:
+              - img [ref=e32]
+            - dialog:
+              - generic:
+                - generic: Invites
+                - generic: "0"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: Incoming
+                    - generic: "0"
+                  - paragraph: No invites yet.
+                - generic:
+                  - generic:
+                    - generic: Outgoing
+                    - generic: "0"
+                  - paragraph: No invites yet.
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]: Search by email
+            - textbox "Search by email" [ref=e39]:
+              - /placeholder: name@domain.com
+              - text: pw-B-1768160820860-3a365dfc2687c@example.com
+          - button "Search" [active] [ref=e40] [cursor=pointer]
+        - generic [ref=e41]:
+          - generic [ref=e43]: Contacts
+          - paragraph [ref=e44]: No contacts yet.
+  - list "Dock shortcuts" [ref=e45]:
+    - listitem "Profile" [ref=e46]:
+      - link "Profile" [ref=e47] [cursor=pointer]:
+        - /url: /profile
+        - img [ref=e48]
+    - listitem "Chat" [ref=e52]:
+      - link "Chat" [ref=e53] [cursor=pointer]:
+        - /url: /chat
+        - img [ref=e54]
+    - listitem "Settings" [ref=e56]:
+      - link "Settings" [ref=e57] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e58]
+    - listitem "Dashboard" [ref=e61]:
+      - link "Dashboard" [ref=e62] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e63]
+```
