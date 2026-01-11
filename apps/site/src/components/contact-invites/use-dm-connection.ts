@@ -11,6 +11,7 @@ import {
 import {
   buildProfileMeta,
   loadLocalProfile,
+  loadRemoteProfile,
   loadRemoteProfileMeta,
   parseProfileMeta,
   parseProfilePayload,
@@ -162,6 +163,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return device ?? null
     }
 
+    const resolveRemoteDevice = async (deviceId?: string) => {
+      if (deviceId) {
+        const found = await resolveDevice(deviceId)
+        if (found) return found
+      }
+      await fetchDevices()
+      return pickPreferredDevice(devices)
+    }
+
     const sendSignal = (signal: Record<string, unknown>) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(signal))
@@ -219,16 +229,80 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await sendProfilePayload({ kind: 'profile-meta', meta })
     }
 
-    const sendProfileUpdate = async (profile: ProfilePayload | null) => {
+    const sendProfileUpdate = async (profile: ProfilePayload | null, targetDeviceId?: string) => {
       const nextProfile = profile ?? resolveLocalProfile()
       if (!nextProfile) return
       const meta = buildProfileMeta(nextProfile)
       const payload = { ...nextProfile, ...meta }
-      await sendProfilePayload({ kind: 'profile-update', profile: payload })
+      if (channel && channel.readyState === 'open') {
+        await sendProfilePayload({ kind: 'profile-update', profile: payload })
+        return
+      }
+      const identity = options.identityRef.value
+      if (!identity) return
+      const device = await resolveRemoteDevice(targetDeviceId)
+      if (!device) return
+      try {
+        const sessionId = createMessageId()
+        const salt = randomBase64(16)
+        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+        const encrypted = await encryptPayload(
+          key,
+          JSON.stringify({ kind: 'profile-update', profile: payload }),
+          sessionId,
+          salt,
+          identity.deviceId
+        )
+        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            recipientId: contact.id,
+            sessionId,
+            deviceIds: [device.deviceId],
+            payload: encrypted
+          })
+        })
+      } catch {
+        // ignore profile update failures
+      }
     }
 
-    const requestProfileUpdate = async (meta: ProfileMeta) => {
-      await sendProfilePayload({ kind: 'profile-request', meta })
+    const requestProfileUpdate = async (meta: ProfileMeta, targetDeviceId?: string) => {
+      if (channel && channel.readyState === 'open') {
+        await sendProfilePayload({ kind: 'profile-request', meta })
+        return
+      }
+      const identity = options.identityRef.value
+      if (!identity) return
+      const device = await resolveRemoteDevice(targetDeviceId)
+      if (!device) return
+      try {
+        const sessionId = createMessageId()
+        const salt = randomBase64(16)
+        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+        const encrypted = await encryptPayload(
+          key,
+          JSON.stringify({ kind: 'profile-request', meta }),
+          sessionId,
+          salt,
+          identity.deviceId
+        )
+        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            recipientId: contact.id,
+            sessionId,
+            deviceIds: [device.deviceId],
+            payload: encrypted
+          })
+        })
+      } catch {
+        // ignore profile request failures
+      }
     }
 
     const handleProfileUpdateEvent = (event: Event) => {
@@ -380,24 +454,28 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             setRemoteTyping(typingState === 'start')
             return
           }
-          if (profileMeta) {
-            const cached = loadRemoteProfileMeta(contact.id)
-            if (!cached || cached.hash !== profileMeta.hash) {
-              saveRemoteProfileMeta(contact.id, profileMeta)
-              if (next.readyState === 'open') {
-                await requestProfileUpdate(profileMeta)
+            if (profileMeta) {
+              const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
+              if (cachedProfile && !options.contactProfiles.value[contact.id]) {
+                options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
               }
+              const cachedMeta = loadRemoteProfileMeta(contact.id)
+              const needsProfile = !cachedProfile
+              const metaChanged = !cachedMeta || cachedMeta.hash !== profileMeta.hash
+              saveRemoteProfileMeta(contact.id, profileMeta)
+              if ((metaChanged || needsProfile) && next.readyState === 'open') {
+                await requestProfileUpdate(profileMeta, senderDeviceId)
+              }
+              return
             }
-            return
-          }
-          if (profileRequest) {
-            await sendProfileUpdate(resolveLocalProfile())
-            return
-          }
-          if (profilePayload) {
-            applyRemoteProfile(profilePayload)
-            return
-          }
+            if (profileRequest) {
+              await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
+              return
+            }
+            if (profilePayload) {
+              applyRemoteProfile(profilePayload)
+              return
+            }
           if (historyResponse) {
             if (options.historySuppressed.value) return
             options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
@@ -658,6 +736,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const ackIds: string[] = []
         for (const entry of messages) {
           if (!isRecord(entry)) continue
+          const entryId = typeof entry.id === 'string' ? entry.id : ''
           const fromId = typeof entry.from === 'string' ? entry.from : ''
           if (fromId !== contact.id) continue
           const encrypted = resolveEncryptedPayload(entry.payload)
@@ -693,7 +772,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let historyLimit = historyRequestLimit
             let historyResponse: DmMessage[] | null = null
             let typingState: 'start' | 'stop' | null = null
-            let isProfileSignal = false
+            let profileMeta: ProfileMeta | null = null
+            let profilePayload: ProfilePayload | null = null
+            let profileRequest = false
             try {
               const messagePayload = JSON.parse(plaintext) as {
                 kind?: string
@@ -715,12 +796,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                   typingState = messagePayload.state
                 }
-              } else if (
-                messagePayload?.kind === 'profile-meta' ||
-                messagePayload?.kind === 'profile-request' ||
-                messagePayload?.kind === 'profile-update'
-              ) {
-                isProfileSignal = true
+              } else if (messagePayload?.kind === 'profile-meta') {
+                const meta = parseProfileMeta(messagePayload.meta)
+                if (meta) {
+                  profileMeta = meta
+                }
+              } else if (messagePayload?.kind === 'profile-request') {
+                profileRequest = true
+              } else if (messagePayload?.kind === 'profile-update') {
+                const parsed = parseProfilePayload(messagePayload.profile ?? messagePayload)
+                if (parsed) {
+                  profilePayload = parsed
+                }
               } else if (messagePayload?.kind === 'history-request') {
                 isHistoryRequest = true
                 if (Number.isFinite(Number(messagePayload.limit))) {
@@ -751,7 +838,35 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             } catch {
               // ignore parse errors
             }
-            if (isProfileSignal) {
+            if (profileMeta) {
+              const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
+              if (cachedProfile && !options.contactProfiles.value[contact.id]) {
+                options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
+              }
+              const cachedMeta = loadRemoteProfileMeta(contact.id)
+              const needsProfile = !cachedProfile
+              const metaChanged = !cachedMeta || cachedMeta.hash !== profileMeta.hash
+              saveRemoteProfileMeta(contact.id, profileMeta)
+              if (metaChanged || needsProfile) {
+                await requestProfileUpdate(profileMeta, senderDeviceId)
+              }
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (profileRequest) {
+              await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (profilePayload) {
+              applyRemoteProfile(profilePayload)
+              if (entryId) {
+                ackIds.push(entryId)
+              }
               continue
             }
             if (isReceipt) {
@@ -817,8 +932,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 void persistHistory(contact.id, identityDevice, options.dmMessages.value)
               }
             }
-            if (typeof entry.id === 'string') {
-              ackIds.push(entry.id)
+            if (entryId) {
+              ackIds.push(entryId)
             }
             if (
               !isReceipt &&

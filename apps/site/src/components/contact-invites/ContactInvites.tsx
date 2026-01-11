@@ -17,6 +17,7 @@ import { ContactInvitesSearch } from './ContactInvitesSearch'
 import { matchesQuery, normalizeLabel, normalizeQuery } from './utils'
 import { useContactInvitesActions } from './use-contact-invites-actions'
 import { useContactInvitesShell } from './use-contact-invites-shell'
+import { useContactInvitesProfileSync } from './use-contact-invites-profile-sync'
 import { useDmComposer } from './use-dm-composer'
 import { useDmConnection } from './use-dm-connection'
 import type {
@@ -260,6 +261,15 @@ export const ContactInvites = component$<ContactInvitesProps>(
       registerIdentity,
       refreshInvites,
       closeContact
+    })
+
+    useContactInvitesProfileSync({
+      contacts,
+      onlineIds,
+      contactProfiles,
+      localProfile,
+      identityRef,
+      registerIdentity
     })
 
     useDmConnection({
