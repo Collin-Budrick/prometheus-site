@@ -1,6 +1,7 @@
 import { component$, type PropFunction } from '@builder.io/qwik'
-import { formatDisplayName } from './utils'
+import { formatDisplayName, formatInitials } from './utils'
 import type { ContactSearchItem } from './types'
+import type { ProfilePayload } from '../../shared/profile-storage'
 
 type ContactInvitesSearchProps = {
   copy: Record<string, string>
@@ -14,6 +15,7 @@ type ContactInvitesSearchProps = {
   displayResults: ContactSearchItem[]
   normalizedQuery: string
   activeContactId?: string
+  profilesById: Record<string, ProfilePayload | undefined>
   resolvedInviteAction: string
   resolvedAcceptAction: string
   resolvedDeclineAction: string
@@ -27,6 +29,7 @@ type ContactInvitesSearchProps = {
   onRemove$: PropFunction<(inviteId: string, userId: string, email: string) => void | Promise<void>>
   onContactClick$: PropFunction<(event: Event, contact: ContactSearchItem) => void>
   onContactKeyDown$: PropFunction<(event: KeyboardEvent, contact: ContactSearchItem) => void>
+  onAvatarClick$: PropFunction<(event: Event, contact: ContactSearchItem) => void>
 }
 
 export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props) => {
@@ -74,6 +77,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
             const isAccepted = result.status === 'accepted' || isContact
             const isOnline = isContact ? !!result.online : false
             const isActiveContact = props.activeContactId === result.id
+            const profile = props.profilesById[result.id]
+            const avatar = profile?.avatar ?? null
+            const initials = formatInitials(result)
 
             return (
               <article
@@ -92,11 +98,23 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                 <div>
                   <div class="chat-invites-item-heading">
                     {isContact ? (
-                      <span
-                        class="chat-invites-presence"
-                        data-online={isOnline ? 'true' : 'false'}
-                        aria-hidden="true"
-                      />
+                      <button
+                        type="button"
+                        class="chat-invites-avatar"
+                        data-clickable="true"
+                        aria-label={resolve('View profile')}
+                        onClick$={(event) => {
+                          event.stopPropagation()
+                          void props.onAvatarClick$(event, result)
+                        }}
+                      >
+                        {avatar ? <img src={avatar} alt={displayName} loading="lazy" /> : <span>{initials}</span>}
+                        <span
+                          class="chat-invites-presence"
+                          data-online={isOnline ? 'true' : 'false'}
+                          aria-hidden="true"
+                        />
+                      </button>
                     ) : null}
                     <p class="chat-invites-item-name">{displayName}</p>
                   </div>

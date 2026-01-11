@@ -1,9 +1,16 @@
-import { component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
 import { getLanguagePack } from '../../lang'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { buildChatSettingsKey, defaultChatSettings, type ChatSettings } from '../../shared/chat-settings'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
+import type { ProfilePayload } from '../../shared/profile-storage'
+import {
+  loadLocalProfile,
+  loadRemoteProfiles,
+  PROFILE_UPDATED_EVENT
+} from '../../shared/profile-storage'
+import { ContactProfileCard } from './ContactProfileCard'
 import { ContactInvitesDm } from './ContactInvitesDm'
 import { ContactInvitesHeader } from './ContactInvitesHeader'
 import { ContactInvitesSearch } from './ContactInvitesSearch'
@@ -73,6 +80,10 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const sessionRef = useSignal<NoSerialize<P2pSession> | undefined>(undefined)
     const remoteDeviceRef = useSignal<NoSerialize<ContactDevice> | undefined>(undefined)
     const identityReady = useSignal(false)
+    const localProfile = useSignal<ProfilePayload | null>(null)
+    const contactProfiles = useSignal<Record<string, ProfilePayload>>({})
+    const profileCardContact = useSignal<ActiveContact | null>(null)
+    const profileCardOpen = useSignal(false)
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
@@ -139,6 +150,24 @@ export const ContactInvites = component$<ContactInvitesProps>(
       emptyLabel ? resolve(emptyLabel) : undefined,
       resolve('No invites yet.')
     )
+
+    useVisibleTask$((ctx) => {
+      if (typeof window === 'undefined') return
+      localProfile.value = loadLocalProfile()
+      contactProfiles.value = loadRemoteProfiles()
+      const handleProfileUpdate = (event: Event) => {
+        const detail = (event as CustomEvent).detail as { profile?: ProfilePayload } | undefined
+        if (detail?.profile) {
+          localProfile.value = detail.profile
+        } else {
+          localProfile.value = loadLocalProfile()
+        }
+      }
+      window.addEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdate)
+      ctx.cleanup(() => {
+        window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdate)
+      })
+    })
 
     const {
       registerIdentity,
@@ -243,6 +272,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       identityRef,
       sessionRef,
       remoteDeviceRef,
+      localProfile,
+      contactProfiles,
       chatSettings,
       remoteTyping,
       remoteTypingTimer,
@@ -273,6 +304,30 @@ export const ContactInvites = component$<ContactInvitesProps>(
       ctx.cleanup(() => {
         delete root.dataset.chatDmOpen
       })
+    })
+
+    const closeProfileCard = $(() => {
+      profileCardOpen.value = false
+      profileCardContact.value = null
+    })
+
+    const handleAvatarClick = $((event: Event, contact: ContactSearchItem) => {
+      if (!contact.isContact) return
+      event.stopPropagation()
+      profileCardContact.value = {
+        id: contact.id,
+        name: contact.name ?? null,
+        email: contact.email,
+        online: !!contact.online
+      }
+      profileCardOpen.value = true
+    })
+
+    const handleActiveProfileClick = $(() => {
+      const contact = activeContact.value
+      if (!contact) return
+      profileCardContact.value = contact
+      profileCardOpen.value = true
     })
 
     const onlineSet = new Set(onlineIds.value)
@@ -318,6 +373,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const displayResults: ContactSearchItem[] = [...contactResults, ...remoteResults]
     const resultsLabel =
       normalizedQuery === '' || contactMatches.length > 0 ? resolvedContactsLabel : resolve('Search results')
+    const activeContactProfile = activeContact.value
+      ? contactProfiles.value[activeContact.value.id] ?? null
+      : null
+    const profileCardProfile = profileCardContact.value
+      ? contactProfiles.value[profileCardContact.value.id] ?? null
+      : null
+    const selfLabel = resolve('You')
 
     return (
       <section class={rootClass} data-state={invitesState.value} data-dm-open={dmOpen ? 'true' : 'false'}>
@@ -362,6 +424,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           displayResults={displayResults}
           normalizedQuery={normalizedQuery}
           activeContactId={activeContact.value?.id}
+          profilesById={contactProfiles.value}
           resolvedInviteAction={resolvedInviteAction}
           resolvedAcceptAction={resolvedAcceptAction}
           resolvedDeclineAction={resolvedDeclineAction}
@@ -375,6 +438,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
           onRemove$={handleRemove}
           onContactClick$={handleContactClick}
           onContactKeyDown$={handleContactKeyDown}
+          onAvatarClick$={handleAvatarClick}
         />
 
         {activeContact.value ? (
@@ -386,11 +450,15 @@ export const ContactInvites = component$<ContactInvitesProps>(
             dmOrigin={dmOrigin.value}
             dmStatus={dmStatus.value}
             remoteTyping={remoteTyping.value}
+            contactProfile={activeContactProfile}
+            selfProfile={localProfile.value}
+            selfLabel={selfLabel}
             chatSettings={chatSettings.value}
             chatSettingsOpen={chatSettingsOpen.value}
             chatSettingsButtonRef={chatSettingsButtonRef}
             chatSettingsPopoverRef={chatSettingsPopoverRef}
             onClose$={closeContact}
+            onProfileClick$={handleActiveProfileClick}
             onToggleSettings$={toggleChatSettings}
             onToggleReadReceipts$={toggleReadReceipts}
             onToggleTypingIndicators$={toggleTypingIndicators}
@@ -403,6 +471,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
             onDmSubmit$={handleDmSubmit}
           />
         ) : null}
+        <ContactProfileCard
+          open={profileCardOpen.value}
+          contact={profileCardContact.value}
+          profile={profileCardProfile}
+          onClose$={closeProfileCard}
+        />
       </section>
     )
   }

@@ -9,6 +9,16 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
+import {
+  buildLocalProfilePayload,
+  clampChannel,
+  DEFAULT_PROFILE_COLOR,
+  emitProfileUpdate,
+  loadLocalProfile,
+  PROFILE_AVATAR_MAX_BYTES,
+  saveLocalProfile,
+  type ProfileColor
+} from '../../shared/profile-storage'
 
 type ProfileData = {
   user: {
@@ -20,82 +30,6 @@ type ProfileData = {
   lang: Lang
 }
 
-type ProfileColor = {
-  r: number
-  g: number
-  b: number
-}
-
-type LocalProfileCard = {
-  bio?: string
-  avatar?: string
-  color?: ProfileColor
-}
-
-const PROFILE_STORAGE_KEY = 'prometheus.profile.local'
-const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
-const PROFILE_AVATAR_MAX_BYTES = 1_200_000
-
-const clampChannel = (value: number) => Math.min(255, Math.max(0, Math.round(value)))
-
-const parseProfileColor = (value: unknown): ProfileColor | null => {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const r = typeof record.r === 'number' ? clampChannel(record.r) : null
-  const g = typeof record.g === 'number' ? clampChannel(record.g) : null
-  const b = typeof record.b === 'number' ? clampChannel(record.b) : null
-  if (r === null || g === null || b === null) return null
-  return { r, g, b }
-}
-
-const parseLocalProfile = (raw: string | null): LocalProfileCard | null => {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as LocalProfileCard
-    if (!parsed || typeof parsed !== 'object') return null
-    const color = parseProfileColor(parsed.color)
-    return {
-      bio: typeof parsed.bio === 'string' ? parsed.bio : undefined,
-      avatar: typeof parsed.avatar === 'string' ? parsed.avatar : undefined,
-      color: color ?? undefined
-    }
-  } catch {
-    return null
-  }
-}
-
-const buildLocalProfilePayload = (
-  bio: string,
-  avatar: string | null,
-  color: ProfileColor
-): LocalProfileCard => {
-  const trimmedBio = bio.trim()
-  const hasCustomColor =
-    color.r !== DEFAULT_PROFILE_COLOR.r ||
-    color.g !== DEFAULT_PROFILE_COLOR.g ||
-    color.b !== DEFAULT_PROFILE_COLOR.b
-  return {
-    bio: trimmedBio.length ? trimmedBio : undefined,
-    avatar: avatar ?? undefined,
-    color: hasCustomColor ? color : undefined
-  }
-}
-
-const saveLocalProfile = (profile: LocalProfileCard) => {
-  if (typeof window === 'undefined') return false
-  try {
-    const hasData = Boolean(profile.bio || profile.avatar || profile.color)
-    if (!hasData) {
-      window.localStorage.removeItem(PROFILE_STORAGE_KEY)
-      return true
-    }
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
-    return true
-  } catch {
-    return false
-  }
-}
-
 const rgbToHex = (color: ProfileColor) => {
   const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, '0').toUpperCase()
   return `#${toHex(color.r)}${toHex(color.g)}${toHex(color.b)}`
@@ -103,7 +37,11 @@ const rgbToHex = (color: ProfileColor) => {
 
 const persistLocalProfile = (bio: string, avatar: string | null, color: ProfileColor) => {
   const payload = buildLocalProfilePayload(bio, avatar, color)
-  return saveLocalProfile(payload)
+  const saved = saveLocalProfile(payload)
+  if (saved) {
+    emitProfileUpdate(payload)
+  }
+  return saved
 }
 
 const parseHexColor = (value: string): ProfileColor | null => {
@@ -214,7 +152,7 @@ export default component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
-    const stored = parseLocalProfile(window.localStorage.getItem(PROFILE_STORAGE_KEY))
+    const stored = loadLocalProfile()
     if (!stored) return
     localBio.value = stored.bio ?? ''
     localAvatar.value = stored.avatar ?? null

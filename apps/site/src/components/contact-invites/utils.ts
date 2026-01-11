@@ -54,3 +54,13 @@ export const formatDisplayName = (entry: { name?: string | null; email: string }
   const trimmed = entry.name?.trim() ?? ''
   return trimmed === '' ? entry.email : trimmed
 }
+
+export const formatInitials = (entry: { name?: string | null; email?: string }) => {
+  const name = entry.name?.trim() ?? ''
+  const email = entry.email?.trim() ?? ''
+  const base = name !== '' ? name : email.split('@')[0] ?? ''
+  const parts = base.split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'NA'
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('')
+  return initials || 'NA'
+}

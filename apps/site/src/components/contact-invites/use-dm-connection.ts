@@ -8,6 +8,18 @@ import {
   randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
+import {
+  buildProfileMeta,
+  loadLocalProfile,
+  loadRemoteProfileMeta,
+  parseProfileMeta,
+  parseProfilePayload,
+  saveRemoteProfile,
+  saveRemoteProfileMeta,
+  PROFILE_UPDATED_EVENT,
+  type ProfileMeta,
+  type ProfilePayload
+} from '../../shared/profile-storage'
 import { buildApiUrl, buildWsUrl } from './api'
 import {
   historyCacheLimit,
@@ -30,6 +42,8 @@ type DmConnectionOptions = {
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   sessionRef: Signal<NoSerialize<P2pSession> | undefined>
   remoteDeviceRef: Signal<NoSerialize<ContactDevice> | undefined>
+  localProfile: Signal<ProfilePayload | null>
+  contactProfiles: Signal<Record<string, ProfilePayload>>
   chatSettings: Signal<ChatSettings>
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
@@ -68,6 +82,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           options.remoteTypingTimer.value = null
         }, 2500)
       }
+    }
+
+    const resolveLocalProfile = () => {
+      const cached = options.localProfile.value
+      if (cached) return cached
+      const stored = loadLocalProfile()
+      if (stored) {
+        options.localProfile.value = stored
+      }
+      return stored
     }
 
     let active = true
@@ -164,6 +188,60 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return true
     }
 
+    const applyRemoteProfile = (profile: ProfilePayload) => {
+      saveRemoteProfile(contact.id, profile)
+      options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: profile }
+    }
+
+    const sendProfilePayload = async (payload: Record<string, unknown>) => {
+      const identity = options.identityRef.value
+      const session = options.sessionRef.value
+      if (!identity || !session || !channel || channel.readyState !== 'open') return
+      try {
+        const encrypted = await encryptPayload(
+          session.key,
+          JSON.stringify(payload),
+          session.sessionId,
+          session.salt,
+          identity.deviceId
+        )
+        channel.send(JSON.stringify({ type: 'message', payload: encrypted }))
+      } catch {
+        // ignore profile payload failures
+      }
+    }
+
+    const sendProfileMeta = async () => {
+      const profile = resolveLocalProfile()
+      if (!profile) return
+      const meta = buildProfileMeta(profile)
+      if (!meta) return
+      await sendProfilePayload({ kind: 'profile-meta', meta })
+    }
+
+    const sendProfileUpdate = async (profile: ProfilePayload | null) => {
+      const nextProfile = profile ?? resolveLocalProfile()
+      if (!nextProfile) return
+      const meta = buildProfileMeta(nextProfile)
+      const payload = { ...nextProfile, ...meta }
+      await sendProfilePayload({ kind: 'profile-update', profile: payload })
+    }
+
+    const requestProfileUpdate = async (meta: ProfileMeta) => {
+      await sendProfilePayload({ kind: 'profile-request', meta })
+    }
+
+    const handleProfileUpdateEvent = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { profile?: ProfilePayload } | undefined
+      if (!detail?.profile) return
+      options.localProfile.value = detail.profile
+      if (channel && channel.readyState === 'open') {
+        void sendProfileUpdate(detail.profile)
+      }
+    }
+
+    window.addEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
+
     const setupChannel = (next: RTCDataChannel) => {
       channel = next
       options.channelRef.value = noSerialize(next)
@@ -172,6 +250,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (options.chatSettings.value.typingIndicators && options.dmInput.value.trim()) {
           void options.sendTyping('start')
         }
+        void sendProfileMeta()
       }
       next.onclose = () => {
         options.dmStatus.value = 'offline'
@@ -222,6 +301,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           let historyLimit = historyRequestLimit
           let historyResponse: DmMessage[] | null = null
           let typingState: 'start' | 'stop' | null = null
+          let profileMeta: ProfileMeta | null = null
+          let profilePayload: ProfilePayload | null = null
+          let profileRequest = false
           try {
             const messagePayload = JSON.parse(plaintext) as {
               kind?: string
@@ -231,6 +313,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               limit?: number
               messages?: Array<Record<string, unknown>>
               state?: string
+              meta?: Record<string, unknown>
+              profile?: Record<string, unknown>
             }
             if (messagePayload?.kind === 'receipt') {
               isReceipt = true
@@ -240,6 +324,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             } else if (messagePayload?.kind === 'typing') {
               if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                 typingState = messagePayload.state
+              }
+            } else if (messagePayload?.kind === 'profile-meta') {
+              const meta = parseProfileMeta(messagePayload.meta)
+              if (meta) {
+                profileMeta = meta
+              }
+            } else if (messagePayload?.kind === 'profile-request') {
+              profileRequest = true
+            } else if (messagePayload?.kind === 'profile-update') {
+              const parsed = parseProfilePayload(messagePayload.profile ?? messagePayload)
+              if (parsed) {
+                profilePayload = parsed
               }
             } else if (messagePayload?.kind === 'history-request') {
               isHistoryRequest = true
@@ -282,6 +378,24 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           if (typingState) {
             setRemoteTyping(typingState === 'start')
+            return
+          }
+          if (profileMeta) {
+            const cached = loadRemoteProfileMeta(contact.id)
+            if (!cached || cached.hash !== profileMeta.hash) {
+              saveRemoteProfileMeta(contact.id, profileMeta)
+              if (next.readyState === 'open') {
+                await requestProfileUpdate(profileMeta)
+              }
+            }
+            return
+          }
+          if (profileRequest) {
+            await sendProfileUpdate(resolveLocalProfile())
+            return
+          }
+          if (profilePayload) {
+            applyRemoteProfile(profilePayload)
             return
           }
           if (historyResponse) {
@@ -579,6 +693,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let historyLimit = historyRequestLimit
             let historyResponse: DmMessage[] | null = null
             let typingState: 'start' | 'stop' | null = null
+            let isProfileSignal = false
             try {
               const messagePayload = JSON.parse(plaintext) as {
                 kind?: string
@@ -588,6 +703,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 limit?: number
                 messages?: Array<Record<string, unknown>>
                 state?: string
+                meta?: Record<string, unknown>
+                profile?: Record<string, unknown>
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
@@ -598,6 +715,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                   typingState = messagePayload.state
                 }
+              } else if (
+                messagePayload?.kind === 'profile-meta' ||
+                messagePayload?.kind === 'profile-request' ||
+                messagePayload?.kind === 'profile-update'
+              ) {
+                isProfileSignal = true
               } else if (messagePayload?.kind === 'history-request') {
                 isHistoryRequest = true
                 if (Number.isFinite(Number(messagePayload.limit))) {
@@ -627,6 +750,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               }
             } catch {
               // ignore parse errors
+            }
+            if (isProfileSignal) {
+              continue
             }
             if (isReceipt) {
               if (receiptTargetId) {
@@ -808,6 +934,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     ctx.cleanup(() => {
       active = false
+      window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       closeConnection()
     })
   })

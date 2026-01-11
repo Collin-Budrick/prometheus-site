@@ -1,7 +1,8 @@
 import { component$, type PropFunction, type Signal } from '@builder.io/qwik'
 import { InSettings } from '@qwikest/icons/iconoir'
 import type { ChatSettings } from '../../shared/chat-settings'
-import { formatDisplayName, formatMessageTime } from './utils'
+import type { ProfilePayload } from '../../shared/profile-storage'
+import { formatDisplayName, formatInitials, formatMessageTime } from './utils'
 import type { ActiveContact, DmConnectionState, DmMessage, DmOrigin } from './types'
 
 type ContactInvitesDmProps = {
@@ -12,11 +13,15 @@ type ContactInvitesDmProps = {
   dmOrigin: DmOrigin | null
   dmStatus: DmConnectionState
   remoteTyping: boolean
+  contactProfile: ProfilePayload | null
+  selfProfile: ProfilePayload | null
+  selfLabel: string
   chatSettings: ChatSettings
   chatSettingsOpen: boolean
   chatSettingsButtonRef: Signal<HTMLButtonElement | undefined>
   chatSettingsPopoverRef: Signal<HTMLDivElement | undefined>
   onClose$: PropFunction<() => void>
+  onProfileClick$: PropFunction<() => void>
   onToggleSettings$: PropFunction<() => void>
   onToggleReadReceipts$: PropFunction<() => void>
   onToggleTypingIndicators$: PropFunction<() => void>
@@ -47,6 +52,10 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
     if (status === 'read') return resolve('Read')
     return resolve('Sent')
   }
+  const contactAvatar = props.contactProfile?.avatar ?? null
+  const selfAvatar = props.selfProfile?.avatar ?? null
+  const contactInitials = formatInitials(props.activeContact)
+  const selfInitials = formatInitials({ name: props.selfLabel, email: props.selfLabel })
 
   return (
     <div
@@ -75,15 +84,29 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
           </button>
           <div class="chat-invites-dm-header-main">
             <div class="chat-invites-dm-contact">
-              <div class="chat-invites-item-heading">
+              <button
+                type="button"
+                class="chat-invites-avatar"
+                data-size="lg"
+                data-clickable="true"
+                aria-label={resolve('View profile')}
+                onClick$={props.onProfileClick$}
+              >
+                {contactAvatar ? (
+                  <img src={contactAvatar} alt={formatDisplayName(props.activeContact)} loading="lazy" />
+                ) : (
+                  <span>{contactInitials}</span>
+                )}
                 <span
                   class="chat-invites-presence"
                   data-online={props.activeContact.online ? 'true' : 'false'}
                   aria-hidden="true"
                 />
+              </button>
+              <div>
                 <p class="chat-invites-dm-title">{formatDisplayName(props.activeContact)}</p>
+                <p class="chat-invites-dm-meta">{props.activeContact.email}</p>
               </div>
-              <p class="chat-invites-dm-meta">{props.activeContact.email}</p>
             </div>
             <div class="chat-invites-dm-controls">
               <button
@@ -170,20 +193,41 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
               <p class="chat-invites-dm-placeholder">{resolve('No messages yet.')}</p>
             ) : (
               props.dmMessages.map((message) => (
-                <article
-                  key={message.id}
-                  class="chat-invites-dm-message"
-                  data-author={message.author}
-                  data-status={message.status ?? 'sent'}
-                >
-                  <p class="chat-invites-dm-text">{message.text}</p>
-                  <div class="chat-invites-dm-meta">
-                    <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-                    {message.author === 'self' && message.status ? (
-                      <span class="chat-invites-dm-state">{resolveMessageStatus(message.status)}</span>
-                    ) : null}
-                  </div>
-                </article>
+                <div key={message.id} class="chat-invites-dm-row" data-author={message.author}>
+                  {message.author === 'contact' ? (
+                    <button
+                      type="button"
+                      class="chat-invites-avatar"
+                      data-size="sm"
+                      data-clickable="true"
+                      aria-label={resolve('View profile')}
+                      onClick$={props.onProfileClick$}
+                    >
+                      {contactAvatar ? (
+                        <img src={contactAvatar} alt={formatDisplayName(props.activeContact)} loading="lazy" />
+                      ) : (
+                        <span>{contactInitials}</span>
+                      )}
+                    </button>
+                  ) : (
+                    <div class="chat-invites-avatar" data-size="sm" data-clickable="false">
+                      {selfAvatar ? <img src={selfAvatar} alt={props.selfLabel} loading="lazy" /> : <span>{selfInitials}</span>}
+                    </div>
+                  )}
+                  <article
+                    class="chat-invites-dm-message"
+                    data-author={message.author}
+                    data-status={message.status ?? 'sent'}
+                  >
+                    <p class="chat-invites-dm-text">{message.text}</p>
+                    <div class="chat-invites-dm-meta">
+                      <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
+                      {message.author === 'self' && message.status ? (
+                        <span class="chat-invites-dm-state">{resolveMessageStatus(message.status)}</span>
+                      ) : null}
+                    </div>
+                  </article>
+                </div>
               ))
             )}
           </div>
