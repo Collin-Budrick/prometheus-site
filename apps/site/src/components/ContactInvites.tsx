@@ -1,9 +1,17 @@
 import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
-import { InBellNotification } from '@qwikest/icons/iconoir'
+import { InBellNotification, InSettings } from '@qwikest/icons/iconoir'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import {
+  buildChatSettingsKey,
+  defaultChatSettings,
+  loadChatSettings,
+  parseChatSettings,
+  saveChatSettings,
+  type ChatSettings
+} from '../shared/chat-settings'
 import {
   createStoredIdentity,
   decodeBase64,
@@ -128,6 +136,29 @@ const buildApiUrl = (path: string, origin: string) => {
   if (!base) return `${origin}${path}`
   if (base.startsWith('/')) return `${origin}${base}${path}`
   return `${base}${path}`
+}
+
+const resolveChatSettingsUserId = async () => {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const response = await fetch(buildApiUrl('/auth/session', window.location.origin), {
+      credentials: 'include'
+    })
+    if (!response.ok) return undefined
+    const payload: unknown = await response.json()
+    if (!isRecord(payload)) return undefined
+    const userRecord = isRecord(payload.user) ? payload.user : {}
+    const sessionRecord = isRecord(payload.session) ? payload.session : {}
+    const id =
+      typeof userRecord.id === 'string'
+        ? userRecord.id
+        : typeof sessionRecord.userId === 'string'
+          ? sessionRecord.userId
+          : undefined
+    return id
+  } catch {
+    return undefined
+  }
 }
 
 const buildWsUrl = (path: string, origin: string) => {
@@ -407,6 +438,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const bellOpen = useSignal(false)
     const bellButtonRef = useSignal<HTMLButtonElement>()
     const bellPopoverRef = useSignal<HTMLDivElement>()
+    const chatSettings = useSignal<ChatSettings>({ ...defaultChatSettings })
+    const chatSettingsKey = useSignal(buildChatSettingsKey())
+    const chatSettingsUserId = useSignal<string | undefined>(undefined)
+    const chatSettingsOpen = useSignal(false)
+    const chatSettingsButtonRef = useSignal<HTMLButtonElement>()
+    const chatSettingsPopoverRef = useSignal<HTMLDivElement>()
+    const typingActive = useSignal(false)
+    const typingTimer = useSignal<number | null>(null)
+    const remoteTyping = useSignal(false)
+    const remoteTypingTimer = useSignal<number | null>(null)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -497,6 +538,29 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!Number.isFinite(previous)) return false
       return value > previous
     }
+
+    const toggleChatSettings = $(() => {
+      chatSettingsOpen.value = !chatSettingsOpen.value
+    })
+
+    const toggleReadReceipts = $(() => {
+      const next = { ...chatSettings.value, readReceipts: !chatSettings.value.readReceipts }
+      chatSettings.value = next
+      saveChatSettings(chatSettingsUserId.value, next)
+    })
+
+    const toggleTypingIndicators = $(() => {
+      const next = { ...chatSettings.value, typingIndicators: !chatSettings.value.typingIndicators }
+      chatSettings.value = next
+      saveChatSettings(chatSettingsUserId.value, next)
+      if (!next.typingIndicators) {
+        remoteTyping.value = false
+        if (remoteTypingTimer.value !== null) {
+          window.clearTimeout(remoteTypingTimer.value)
+          remoteTypingTimer.value = null
+        }
+      }
+    })
 
     const refreshInvites = $(async (resetStatus = true) => {
       if (typeof window === 'undefined') return
@@ -950,9 +1014,54 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }, dmCloseDelayMs)
     })
 
+    const sendTyping = $(async (state: 'start' | 'stop') => {
+      if (typeof window === 'undefined') return
+      if (!chatSettings.value.typingIndicators) return
+      const channel = channelRef.value
+      const session = sessionRef.value
+      const identity = identityRef.value
+      if (!channel || channel.readyState !== 'open' || !session || !identity) return
+      try {
+        const payload = await encryptPayload(
+          session.key,
+          JSON.stringify({ kind: 'typing', state }),
+          session.sessionId,
+          session.salt,
+          identity.deviceId
+        )
+        channel.send(JSON.stringify({ type: 'message', payload }))
+      } catch {
+        // ignore typing failures
+      }
+    })
+
     const handleDmInput = $((event: Event) => {
       const target = event.target as HTMLInputElement | null
       dmInput.value = target?.value ?? ''
+      if (!chatSettings.value.typingIndicators || typeof window === 'undefined') return
+      const hasText = dmInput.value.trim().length > 0
+      if (hasText && !typingActive.value) {
+        typingActive.value = true
+        void sendTyping('start')
+      }
+      if (!hasText && typingActive.value) {
+        typingActive.value = false
+        void sendTyping('stop')
+      }
+      if (typingTimer.value !== null) {
+        window.clearTimeout(typingTimer.value)
+      }
+      if (hasText) {
+        typingTimer.value = window.setTimeout(() => {
+          typingTimer.value = null
+          if (typingActive.value) {
+            typingActive.value = false
+            void sendTyping('stop')
+          }
+        }, 1600)
+      } else {
+        typingTimer.value = null
+      }
     })
 
     const handleDmSubmit = $(async () => {
@@ -966,6 +1075,14 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
       dmInput.value = ''
       dmError.value = null
+      if (typingTimer.value !== null) {
+        window.clearTimeout(typingTimer.value)
+        typingTimer.value = null
+      }
+      if (typingActive.value) {
+        typingActive.value = false
+        void sendTyping('stop')
+      }
       dmMessages.value = [
         ...dmMessages.value,
         { id: messageId, text, author: 'self', createdAt, status: 'pending' }
@@ -1068,6 +1185,12 @@ export const ContactInvites = component$<ContactInvitesProps>(
           identityReady.value = true
           void registerIdentity()
         }
+        void (async () => {
+          const userId = await resolveChatSettingsUserId()
+          chatSettingsUserId.value = userId
+          chatSettingsKey.value = buildChatSettingsKey(userId)
+          chatSettings.value = loadChatSettings(userId)
+        })()
 
         const handleDocumentClick = (event: MouseEvent) => {
           if (!bellOpen.value) return
@@ -1079,11 +1202,28 @@ export const ContactInvites = component$<ContactInvitesProps>(
           bellOpen.value = false
         }
 
+        const handleSettingsClick = (event: MouseEvent) => {
+          if (!chatSettingsOpen.value) return
+          const target = event.target as Node | null
+          const button = chatSettingsButtonRef.value
+          const popover = chatSettingsPopoverRef.value
+          if (button && target && button.contains(target)) return
+          if (popover && target && popover.contains(target)) return
+          chatSettingsOpen.value = false
+        }
+
         const handleKeyDown = (event: KeyboardEvent) => {
           if (event.key === 'Escape') {
             bellOpen.value = false
+            chatSettingsOpen.value = false
             void closeContact()
           }
+        }
+
+        const handleStorage = (event: StorageEvent) => {
+          if (!event.key || event.key !== chatSettingsKey.value) return
+          const parsed = parseChatSettings(event.newValue)
+          chatSettings.value = parsed ? { ...defaultChatSettings, ...parsed } : { ...defaultChatSettings }
         }
 
         const readBaselineCounts = () => {
@@ -1143,7 +1283,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
         window.addEventListener('beforeunload', saveCounts)
         document.addEventListener('visibilitychange', handleVisibility)
         document.addEventListener('click', handleDocumentClick)
+        document.addEventListener('click', handleSettingsClick)
         document.addEventListener('keydown', handleKeyDown)
+        window.addEventListener('storage', handleStorage)
 
         const applySnapshot = (payload: Record<string, unknown>) => {
           const nextIncoming = Array.isArray(payload.incoming) ? (payload.incoming as ContactInviteView[]) : []
@@ -1311,7 +1453,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
           window.removeEventListener('beforeunload', saveCounts)
           document.removeEventListener('visibilitychange', handleVisibility)
           document.removeEventListener('click', handleDocumentClick)
+          document.removeEventListener('click', handleSettingsClick)
           document.removeEventListener('keydown', handleKeyDown)
+          window.removeEventListener('storage', handleStorage)
           wsRef.value?.close()
           realtimeState.value = 'idle'
         })
@@ -1331,6 +1475,21 @@ export const ContactInvites = component$<ContactInvitesProps>(
         sessionRef.value = undefined
         remoteDeviceRef.value = undefined
         return
+      }
+
+      const setRemoteTyping = (activeState: boolean) => {
+        if (!chatSettings.value.typingIndicators) return
+        remoteTyping.value = activeState
+        if (remoteTypingTimer.value !== null) {
+          window.clearTimeout(remoteTypingTimer.value)
+          remoteTypingTimer.value = null
+        }
+        if (activeState) {
+          remoteTypingTimer.value = window.setTimeout(() => {
+            remoteTyping.value = false
+            remoteTypingTimer.value = null
+          }, 2500)
+        }
       }
 
       let active = true
@@ -1465,6 +1624,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             let isHistoryRequest = false
             let historyLimit = historyRequestLimit
             let historyResponse: DmMessage[] | null = null
+            let typingState: 'start' | 'stop' | null = null
             try {
               const messagePayload = JSON.parse(plaintext) as {
                 kind?: string
@@ -1473,11 +1633,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 createdAt?: string
                 limit?: number
                 messages?: Array<Record<string, unknown>>
+                state?: string
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
                 if (typeof messagePayload.id === 'string') {
                   receiptTargetId = messagePayload.id
+                }
+              } else if (messagePayload?.kind === 'typing') {
+                if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
+                  typingState = messagePayload.state
                 }
               } else if (messagePayload?.kind === 'history-request') {
                 isHistoryRequest = true
@@ -1516,6 +1681,10 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 )
                 void persistHistory(contact.id, identity, dmMessages.value)
               }
+              return
+            }
+            if (typingState) {
+              setRemoteTyping(typingState === 'start')
               return
             }
             if (historyResponse) {
@@ -1558,7 +1727,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               { id: messageId, text: messageText, author: 'contact', createdAt, status: 'sent' }
             ]
             void persistHistory(contact.id, identity, dmMessages.value)
-            if (receiptTargetId) {
+            if (receiptTargetId && chatSettings.value.readReceipts) {
               try {
                 const receipt = await encryptPayload(
                   key,
@@ -1814,6 +1983,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               let isHistoryRequest = false
               let historyLimit = historyRequestLimit
               let historyResponse: DmMessage[] | null = null
+              let typingState: 'start' | 'stop' | null = null
               try {
                 const messagePayload = JSON.parse(plaintext) as {
                   kind?: string
@@ -1822,31 +1992,36 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   createdAt?: string
                   limit?: number
                   messages?: Array<Record<string, unknown>>
+                  state?: string
                 }
                 if (messagePayload?.kind === 'receipt') {
                   isReceipt = true
                   if (typeof messagePayload.id === 'string') {
                     receiptTargetId = messagePayload.id
                   }
+                } else if (messagePayload?.kind === 'typing') {
+                  if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
+                    typingState = messagePayload.state
+                  }
                 } else if (messagePayload?.kind === 'history-request') {
                   isHistoryRequest = true
                   if (Number.isFinite(Number(messagePayload.limit))) {
                     historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
                   }
-              } else if (messagePayload?.kind === 'history-response') {
-                const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
-                const mapped: DmMessage[] = []
-                for (const entry of historyEntries) {
-                  if (!isRecord(entry)) continue
-                  const id = typeof entry.id === 'string' ? entry.id : ''
-                  const text = typeof entry.text === 'string' ? entry.text : ''
-                  const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
-                  const author =
-                    entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
-                  if (!id || !text || !created || !author) continue
-                  mapped.push({ id, text, createdAt: created, author, status: 'sent' })
-                }
-                historyResponse = mapped
+                } else if (messagePayload?.kind === 'history-response') {
+                  const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
+                  const mapped: DmMessage[] = []
+                  for (const entry of historyEntries) {
+                    if (!isRecord(entry)) continue
+                    const id = typeof entry.id === 'string' ? entry.id : ''
+                    const text = typeof entry.text === 'string' ? entry.text : ''
+                    const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
+                    const author =
+                      entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
+                    if (!id || !text || !created || !author) continue
+                    mapped.push({ id, text, createdAt: created, author, status: 'sent' })
+                  }
+                  historyResponse = mapped
                 } else {
                   if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
                   if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
@@ -1865,6 +2040,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
                   )
                   void persistHistory(contact.id, identityDevice, dmMessages.value)
                 }
+              } else if (typingState) {
+                setRemoteTyping(typingState === 'start')
               } else if (historyResponse) {
                 dmMessages.value = mergeHistoryMessages(dmMessages.value, historyResponse)
                 void persistHistory(contact.id, identityDevice, dmMessages.value)
@@ -1915,7 +2092,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               if (typeof entry.id === 'string') {
                 ackIds.push(entry.id)
               }
-              if (!isReceipt && !historyResponse && !isHistoryRequest && receiptTargetId) {
+              if (!isReceipt && !historyResponse && !isHistoryRequest && receiptTargetId && chatSettings.value.readReceipts) {
                 try {
                   const receipt = await encryptPayload(
                     key,
@@ -2389,21 +2566,93 @@ export const ContactInvites = component$<ContactInvitesProps>(
                 <button type="button" class="chat-invites-dm-close" onClick$={closeContact}>
                   {resolve('Back')}
                 </button>
-                <div>
-                  <div class="chat-invites-item-heading">
-                    <span
-                      class="chat-invites-presence"
-                      data-online={activeContact.value.online ? 'true' : 'false'}
-                      aria-hidden="true"
-                    />
-                    <p class="chat-invites-dm-title">{formatDisplayName(activeContact.value)}</p>
+                <div class="chat-invites-dm-header-main">
+                  <div class="chat-invites-dm-contact">
+                    <div class="chat-invites-item-heading">
+                      <span
+                        class="chat-invites-presence"
+                        data-online={activeContact.value.online ? 'true' : 'false'}
+                        aria-hidden="true"
+                      />
+                      <p class="chat-invites-dm-title">{formatDisplayName(activeContact.value)}</p>
+                    </div>
+                    <p class="chat-invites-dm-meta">{activeContact.value.email}</p>
                   </div>
-                  <p class="chat-invites-dm-meta">{activeContact.value.email}</p>
+                  <div class="chat-invites-dm-controls">
+                    <button
+                      type="button"
+                      class="chat-invites-dm-gear"
+                      data-open={chatSettingsOpen.value ? 'true' : 'false'}
+                      aria-haspopup="dialog"
+                      aria-expanded={chatSettingsOpen.value}
+                      aria-controls="chat-invites-dm-settings"
+                      aria-label={resolve('Chat settings')}
+                      onClick$={toggleChatSettings}
+                      ref={chatSettingsButtonRef}
+                    >
+                      <InSettings class="chat-invites-dm-gear-icon" />
+                    </button>
+                    <div
+                      id="chat-invites-dm-settings"
+                      class="chat-invites-dm-settings"
+                      data-open={chatSettingsOpen.value ? 'true' : 'false'}
+                      role="dialog"
+                      aria-label={resolve('Chat settings')}
+                      aria-hidden={!chatSettingsOpen.value}
+                      ref={chatSettingsPopoverRef}
+                    >
+                      <div class="chat-invites-dm-settings-header">{resolve('Chat settings')}</div>
+                      <div class="chat-invites-dm-setting">
+                        <div class="chat-invites-dm-setting-label">
+                          <span class="chat-invites-dm-setting-title">{resolve('Read receipts')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          class="chat-settings-toggle"
+                          data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
+                          role="switch"
+                          aria-checked={chatSettings.value.readReceipts}
+                          onClick$={toggleReadReceipts}
+                        >
+                          <span class="chat-settings-toggle-track">
+                            <span class="chat-settings-toggle-knob" />
+                          </span>
+                        </button>
+                      </div>
+                      <div class="chat-invites-dm-setting">
+                        <div class="chat-invites-dm-setting-label">
+                          <span class="chat-invites-dm-setting-title">{resolve('Typing indicators')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          class="chat-settings-toggle"
+                          data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
+                          role="switch"
+                          aria-checked={chatSettings.value.typingIndicators}
+                          onClick$={toggleTypingIndicators}
+                        >
+                          <span class="chat-settings-toggle-track">
+                            <span class="chat-settings-toggle-knob" />
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </header>
               <div class="chat-invites-dm-body">
                 <div class="chat-invites-dm-status" data-tone={dmStatusTone}>
                   <span>{dmStatusLabel}</span>
+                  {remoteTyping.value && chatSettings.value.typingIndicators ? (
+                    <span class="chat-invites-dm-typing">
+                      {resolve('Typing…')}
+                      <span class="chat-invites-dm-typing-dots" aria-hidden="true">
+                        <span class="chat-invites-dm-typing-dot" />
+                        <span class="chat-invites-dm-typing-dot" />
+                        <span class="chat-invites-dm-typing-dot" />
+                      </span>
+                    </span>
+                  ) : null}
                   {dmError.value ? <span class="chat-invites-dm-error">{dmError.value}</span> : null}
                 </div>
                 <div class="chat-invites-dm-messages" role="log" aria-live="polite">

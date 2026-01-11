@@ -1,4 +1,4 @@
-import { $, component$, useSignal } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
@@ -9,9 +9,17 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
+import {
+  buildChatSettingsKey,
+  defaultChatSettings,
+  parseChatSettings,
+  saveChatSettings,
+  type ChatSettings
+} from '../../shared/chat-settings'
 
 type ProtectedRouteData = {
   lang: Lang
+  userId?: string
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
@@ -56,7 +64,7 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { lang }
+  return { lang, userId: session.user.id }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -86,8 +94,35 @@ export default component$(() => {
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
+  const chatSettings = useSignal<ChatSettings>({ ...defaultChatSettings })
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
+  const userId = data.value.userId
+
+  useVisibleTask$(() => {
+    if (typeof window === 'undefined') return
+    const key = buildChatSettingsKey(userId)
+    const stored = parseChatSettings(window.localStorage.getItem(key))
+    if (!stored) {
+      saveChatSettings(userId, defaultChatSettings)
+      chatSettings.value = { ...defaultChatSettings }
+      return
+    }
+    chatSettings.value = { ...defaultChatSettings, ...stored }
+  })
+
+  const updateChatSettings = $((next: ChatSettings) => {
+    chatSettings.value = next
+    saveChatSettings(userId, next)
+  })
+
+  const toggleReadReceipts = $(() => {
+    updateChatSettings({ ...chatSettings.value, readReceipts: !chatSettings.value.readReceipts })
+  })
+
+  const toggleTypingIndicators = $(() => {
+    updateChatSettings({ ...chatSettings.value, typingIndicators: !chatSettings.value.typingIndicators })
+  })
 
   const handleLogout = $(async () => {
     if (logoutBusy.value || typeof window === 'undefined') return
@@ -123,6 +158,48 @@ export default component$(() => {
       onAction$={handleLogout}
       closeLabel={copy.value.fragmentClose}
     >
+      <section class="settings-panel">
+        <div class="settings-panel-header">
+          <span class="settings-panel-title">{copy.value.settingsChatTitle}</span>
+          <p class="settings-panel-description">{copy.value.settingsChatDescription}</p>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-label">
+            <span class="settings-toggle-title">{copy.value.settingsChatReadReceipts}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsChatReadReceiptsHint}</span>
+          </div>
+          <button
+            type="button"
+            class="chat-settings-toggle"
+            data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
+            role="switch"
+            aria-checked={chatSettings.value.readReceipts}
+            onClick$={toggleReadReceipts}
+          >
+            <span class="chat-settings-toggle-track">
+              <span class="chat-settings-toggle-knob" />
+            </span>
+          </button>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-label">
+            <span class="settings-toggle-title">{copy.value.settingsChatTypingIndicators}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsChatTypingIndicatorsHint}</span>
+          </div>
+          <button
+            type="button"
+            class="chat-settings-toggle"
+            data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
+            role="switch"
+            aria-checked={chatSettings.value.typingIndicators}
+            onClick$={toggleTypingIndicators}
+          >
+            <span class="chat-settings-toggle-track">
+              <span class="chat-settings-toggle-knob" />
+            </span>
+          </button>
+        </div>
+      </section>
       {logoutMessage.value ? (
         <div class="auth-status" role="status" aria-live="polite" data-tone="error">
           {logoutMessage.value}

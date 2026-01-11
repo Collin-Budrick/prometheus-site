@@ -39,6 +39,12 @@
     "authPasskeyLabel": "Use keypass",
     "authPasskeyHint": "Keypass signs in with your device credential.",
     "authLogoutLabel": "Log out",
+    "settingsChatTitle": "Chat preferences",
+    "settingsChatDescription": "Control messaging signals that are shared with your contacts.",
+    "settingsChatReadReceipts": "Read receipts",
+    "settingsChatReadReceiptsHint": "Let contacts know when their messages reach you.",
+    "settingsChatTypingIndicators": "Typing indicators",
+    "settingsChatTypingIndicatorsHint": "Share when you're composing a message.",
     "protectedMetaLine": "Authenticated",
     "protectedDescription": "Private {{label}} surface secured by your session.",
     "protectedAction": "Open panel",
@@ -335,6 +341,10 @@
     "Sent": "Sent",
     "Unavailable": "Unavailable",
     "Unable to deliver message.": "Unable to deliver message.",
-    "Back": "Back"
+    "Back": "Back",
+    "Chat settings": "Chat settings",
+    "Read receipts": "Read receipts",
+    "Typing indicators": "Typing indicators",
+    "Typing…": "Typing…"
   }
 }

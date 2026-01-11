@@ -40,6 +40,12 @@ export type UiCopy = {
   authPasskeyLabel: string
   authPasskeyHint: string
   authLogoutLabel: string
+  settingsChatTitle: string
+  settingsChatDescription: string
+  settingsChatReadReceipts: string
+  settingsChatReadReceiptsHint: string
+  settingsChatTypingIndicators: string
+  settingsChatTypingIndicatorsHint: string
   protectedMetaLine: string
   protectedDescription: string
   protectedAction: string

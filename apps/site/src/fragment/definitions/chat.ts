@@ -518,6 +518,123 @@ html[data-chat-dm-open='true'] .fragment-card {
   gap: 16px;
 }
 
+.chat-invites-dm-header-main {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.chat-invites-dm-contact {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-invites-dm-controls {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.chat-invites-dm-gear {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--stroke));
+  background:
+    radial-gradient(circle at 30% 20%, rgb(var(--signal) / 0.14), transparent 60%),
+    rgb(var(--surface));
+  color: rgb(var(--muted));
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+
+.chat-invites-dm-gear:hover {
+  border-color: rgb(var(--stroke-strong));
+  transform: translateY(-1px);
+}
+
+.chat-invites-dm-gear:focus-visible {
+  outline: 2px solid rgb(var(--signal));
+  outline-offset: 3px;
+}
+
+.chat-invites-dm-gear[data-open='true'] {
+  border-color: rgb(var(--signal) / 0.6);
+  color: rgb(var(--signal));
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.22);
+}
+
+.chat-invites-dm-gear-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.chat-invites-dm-settings {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  min-width: min(220px, 80vw);
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--stroke));
+  background:
+    radial-gradient(circle at 80% 0%, rgb(var(--signal) / 0.14), transparent 60%),
+    rgb(var(--surface));
+  box-shadow: 0 20px 34px rgba(15, 23, 42, 0.25);
+  display: grid;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 10;
+}
+
+.chat-invites-dm-settings[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.chat-invites-dm-settings-header {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  color: rgb(var(--muted));
+}
+
+.chat-invites-dm-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(var(--stroke) / 0.6);
+}
+
+.chat-invites-dm-setting:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.chat-invites-dm-setting-label {
+  display: grid;
+  gap: 2px;
+}
+
+.chat-invites-dm-setting-title {
+  font-size: 0.78rem;
+  color: rgb(var(--ink));
+}
+
 .chat-invites-dm-title {
   font-size: 1.2rem;
   font-weight: 600;
@@ -564,11 +681,17 @@ html[data-chat-dm-open='true'] .fragment-card {
 .chat-invites-dm-status {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
   font-size: 0.7rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: rgb(var(--muted));
+}
+
+.chat-invites-dm-status > span:first-child {
+  margin-right: auto;
 }
 
 .chat-invites-dm-status[data-tone='error'] {
@@ -584,6 +707,38 @@ html[data-chat-dm-open='true'] .fragment-card {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   color: rgb(var(--accent));
+}
+
+.chat-invites-dm-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: rgb(var(--signal-strong));
+}
+
+.chat-invites-dm-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-invites-dm-typing-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--signal));
+  opacity: 0.5;
+  animation: chat-typing-dot 1s ease-in-out infinite;
+}
+
+.chat-invites-dm-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-invites-dm-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 .chat-invites-dm-messages {
@@ -707,6 +862,19 @@ html[data-chat-dm-open='true'] .fragment-card {
   border-radius: var(--dm-origin-radius);
 }
 
+@keyframes chat-typing-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
 @keyframes chat-invite-in {
   to {
     opacity: 1;
@@ -733,9 +901,15 @@ html[data-chat-dm-open='true'] .fragment-card {
   .chat-invites-dm,
   .chat-invites-dm-card,
   .chat-invites-dm-close,
+  .chat-invites-dm-gear,
+  .chat-invites-dm-settings,
   .chat-invites-dm-input,
   .chat-invites-dm-send {
     transition: none;
+  }
+
+  .chat-invites-dm-typing-dot {
+    animation: none;
   }
 
   .chat-invites-dm,
