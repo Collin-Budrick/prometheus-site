@@ -1,4 +1,4 @@
-import { component$, type PropFunction } from '@builder.io/qwik'
+import { $, component$, type PropFunction } from '@builder.io/qwik'
 import { formatDisplayName, formatInitials } from './utils'
 import type { ContactSearchItem } from './types'
 import type { ProfilePayload } from '../../shared/profile-storage'
@@ -34,6 +34,117 @@ type ContactInvitesSearchProps = {
 
 export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props) => {
   const resolve = (value: string) => props.copy?.[value] ?? value
+  const handleContactClick = $((event: Event) => {
+    const target = event.target as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    const source =
+      (target?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      current
+    if (!source) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
+      source.dataset
+    if (!contactId || !contactEmail) return
+    const status =
+      contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
+        ? contactStatus
+        : undefined
+    const contact: ContactSearchItem = {
+      id: contactId,
+      email: contactEmail,
+      isContact: contactIsContact === 'true',
+      online: contactOnline === 'true'
+    }
+    if (contactName) contact.name = contactName
+    if (status) contact.status = status
+    if (contactInviteId) contact.inviteId = contactInviteId
+    if (!contact?.isContact) return
+    void props.onContactClick$(event, contact)
+  })
+  const handleContactKeyDown = $((event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    const source =
+      (target?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      current
+    if (!source) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
+      source.dataset
+    if (!contactId || !contactEmail) return
+    const status =
+      contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
+        ? contactStatus
+        : undefined
+    const contact: ContactSearchItem = {
+      id: contactId,
+      email: contactEmail,
+      isContact: contactIsContact === 'true',
+      online: contactOnline === 'true'
+    }
+    if (contactName) contact.name = contactName
+    if (status) contact.status = status
+    if (contactInviteId) contact.inviteId = contactInviteId
+    if (!contact?.isContact) return
+    void props.onContactKeyDown$(event, contact)
+  })
+  const handleAvatarClick = $((event: Event) => {
+    const target = event.target as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    const source =
+      (target?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
+      current
+    if (!source) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
+      source.dataset
+    if (!contactId || !contactEmail) return
+    const status =
+      contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
+        ? contactStatus
+        : undefined
+    const contact: ContactSearchItem = {
+      id: contactId,
+      email: contactEmail,
+      isContact: contactIsContact === 'true',
+      online: contactOnline === 'true'
+    }
+    if (contactName) contact.name = contactName
+    if (status) contact.status = status
+    if (contactInviteId) contact.inviteId = contactInviteId
+    if (!contact?.isContact) return
+    event.stopPropagation()
+    void props.onAvatarClick$(event, contact)
+  })
+  const handleInviteClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const email = target?.dataset.contactEmail
+    const userId = target?.dataset.contactId
+    if (!email) return
+    void props.onInvite$(email, userId)
+  })
+  const handleAcceptClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.contactId
+    if (!inviteId || !userId) return
+    void props.onAccept$(inviteId, userId)
+  })
+  const handleDeclineClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.contactId
+    if (!inviteId || !userId) return
+    void props.onDecline$(inviteId, userId)
+  })
+  const handleRemoveClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.contactId
+    const email = target?.dataset.contactEmail
+    if (!inviteId || !userId || !email) return
+    void props.onRemove$(inviteId, userId, email)
+  })
 
   return (
     <>
@@ -88,12 +199,19 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                 data-interactive={isContact ? 'true' : 'false'}
                 data-active={isActiveContact ? 'true' : 'false'}
                 data-contact-card={isContact ? 'true' : undefined}
+                data-contact-id={result.id}
+                data-contact-email={result.email}
+                data-contact-name={result.name ?? undefined}
+                data-contact-status={result.status ?? undefined}
+                data-contact-invite-id={result.inviteId ?? undefined}
+                data-contact-is-contact={isContact ? 'true' : 'false'}
+                data-contact-online={isOnline ? 'true' : 'false'}
                 style={`--stagger-index:${index};`}
                 role={isContact ? 'button' : undefined}
                 tabIndex={isContact ? 0 : undefined}
                 aria-label={isContact ? resolve('Open direct message') : undefined}
-                onClick$={isContact ? (event) => props.onContactClick$(event, result) : undefined}
-                onKeyDown$={isContact ? (event) => props.onContactKeyDown$(event, result) : undefined}
+                onClick$={isContact ? handleContactClick : undefined}
+                onKeyDown$={isContact ? handleContactKeyDown : undefined}
               >
                 <div>
                   <div class="chat-invites-item-heading">
@@ -103,10 +221,7 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                         class="chat-invites-avatar"
                         data-clickable="true"
                         aria-label={resolve('View profile')}
-                        onClick$={(event) => {
-                          event.stopPropagation()
-                          void props.onAvatarClick$(event, result)
-                        }}
+                        onClick$={handleAvatarClick}
                       >
                         {avatar ? <img src={avatar} alt={displayName} loading="lazy" /> : <span>{initials}</span>}
                         <span
@@ -129,7 +244,10 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                       type="button"
                       class="chat-invites-action ghost"
                       disabled={props.busyKeys.includes(`remove:${result.inviteId}`)}
-                      onClick$={() => props.onRemove$(result.inviteId!, result.id, result.email)}
+                      data-invite-id={result.inviteId}
+                      data-contact-id={result.id}
+                      data-contact-email={result.email}
+                      onClick$={handleRemoveClick}
                     >
                       {props.resolvedRemoveAction}
                     </button>
@@ -139,7 +257,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                       type="button"
                       class="chat-invites-action"
                       disabled={props.busyKeys.includes(`invite:${result.email}`)}
-                      onClick$={() => props.onInvite$(result.email, result.id)}
+                      data-contact-id={result.id}
+                      data-contact-email={result.email}
+                      onClick$={handleInviteClick}
                     >
                       {props.resolvedInviteAction}
                     </button>
@@ -149,7 +269,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                       type="button"
                       class="chat-invites-action success"
                       disabled={props.busyKeys.includes(`accept:${result.inviteId}`)}
-                      onClick$={() => props.onAccept$(result.inviteId!, result.id)}
+                      data-invite-id={result.inviteId}
+                      data-contact-id={result.id}
+                      onClick$={handleAcceptClick}
                     >
                       {props.resolvedAcceptAction}
                     </button>
@@ -159,7 +281,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                       type="button"
                       class="chat-invites-action ghost"
                       disabled={props.busyKeys.includes(`decline:${result.inviteId}`)}
-                      onClick$={() => props.onDecline$(result.inviteId!, result.id)}
+                      data-invite-id={result.inviteId}
+                      data-contact-id={result.id}
+                      onClick$={handleDeclineClick}
                     >
                       {props.resolvedDeclineAction}
                     </button>
@@ -169,7 +293,10 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
                       type="button"
                       class="chat-invites-action ghost"
                       disabled={props.busyKeys.includes(`remove:${result.inviteId}`)}
-                      onClick$={() => props.onRemove$(result.inviteId!, result.id, result.email)}
+                      data-invite-id={result.inviteId}
+                      data-contact-id={result.id}
+                      data-contact-email={result.email}
+                      onClick$={handleRemoveClick}
                     >
                       {props.resolvedRemoveAction}
                     </button>

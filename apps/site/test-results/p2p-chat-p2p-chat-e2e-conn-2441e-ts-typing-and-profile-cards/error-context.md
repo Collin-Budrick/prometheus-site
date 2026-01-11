@@ -42,26 +42,66 @@
             - generic [ref=e38]: Search by email
             - textbox "Search by email" [ref=e39]:
               - /placeholder: name@domain.com
-              - text: pw-B-1768160820860-3a365dfc2687c@example.com
-          - button "Search" [active] [ref=e40] [cursor=pointer]
+          - button "Search" [ref=e40] [cursor=pointer]
         - generic [ref=e41]:
           - generic [ref=e43]: Contacts
-          - paragraph [ref=e44]: No contacts yet.
-  - list "Dock shortcuts" [ref=e45]:
-    - listitem "Profile" [ref=e46]:
-      - link "Profile" [ref=e47] [cursor=pointer]:
+          - button "Open direct message" [active] [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]:
+              - generic [ref=e47]:
+                - button "View profile" [ref=e48]:
+                  - img "Playwright B" [ref=e49]
+                - paragraph [ref=e51]: Playwright B
+              - paragraph [ref=e52]: pw-b-1768163509392-ddfbe241c44d4@example.com
+            - generic [ref=e53]:
+              - generic [ref=e54]: Connected
+              - button "Remove" [ref=e55]
+        - dialog "Direct message" [ref=e56]:
+          - generic [ref=e57]:
+            - generic [ref=e58]:
+              - button "Back" [ref=e59] [cursor=pointer]
+              - generic [ref=e60]:
+                - generic [ref=e61]:
+                  - button "View profile" [ref=e62] [cursor=pointer]:
+                    - img "Playwright B" [ref=e63]
+                  - generic [ref=e65]:
+                    - paragraph [ref=e66]: Playwright B
+                    - paragraph [ref=e67]: pw-b-1768163509392-ddfbe241c44d4@example.com
+                - generic [ref=e68]:
+                  - button "Chat settings" [ref=e69] [cursor=pointer]:
+                    - img [ref=e70]
+                  - dialog:
+                    - generic: Chat settings
+                    - generic:
+                      - generic:
+                        - generic: Read receipts
+                      - switch [checked]
+                    - generic:
+                      - generic:
+                        - generic: Typing indicators
+                      - switch [checked]
+                    - button: Archive messages
+            - generic [ref=e73]:
+              - generic [ref=e75]: Connecting
+              - log [ref=e76]:
+                - paragraph [ref=e77]: No messages yet.
+              - generic [ref=e78]:
+                - textbox "Message" [ref=e79]
+                - button "Send" [disabled] [ref=e80]
+  - list "Dock shortcuts" [ref=e81]:
+    - listitem "Profile" [ref=e82]:
+      - link "Profile" [ref=e83] [cursor=pointer]:
         - /url: /profile
-        - img [ref=e48]
-    - listitem "Chat" [ref=e52]:
-      - link "Chat" [ref=e53] [cursor=pointer]:
+        - img [ref=e84]
+    - listitem "Chat" [ref=e88]:
+      - link "Chat" [ref=e89] [cursor=pointer]:
         - /url: /chat
-        - img [ref=e54]
-    - listitem "Settings" [ref=e56]:
-      - link "Settings" [ref=e57] [cursor=pointer]:
+        - img [ref=e90]
+    - listitem "Settings" [ref=e92]:
+      - link "Settings" [ref=e93] [cursor=pointer]:
         - /url: /settings
-        - img [ref=e58]
-    - listitem "Dashboard" [ref=e61]:
-      - link "Dashboard" [ref=e62] [cursor=pointer]:
+        - img [ref=e94]
+    - listitem "Dashboard" [ref=e97]:
+      - link "Dashboard" [ref=e98] [cursor=pointer]:
         - /url: /dashboard
-        - img [ref=e63]
+        - img [ref=e99]
 ```

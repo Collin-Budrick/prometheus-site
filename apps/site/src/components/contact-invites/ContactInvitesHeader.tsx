@@ -1,4 +1,4 @@
-import { component$, type PropFunction, type Signal } from '@builder.io/qwik'
+import { $, component$, type PropFunction, type Signal } from '@builder.io/qwik'
 import { InBellNotification } from '@qwikest/icons/iconoir'
 import { formatDisplayName } from './utils'
 import type { ContactInviteView } from './types'
@@ -35,6 +35,28 @@ type ContactInvitesHeaderProps = {
 export const ContactInvitesHeader = component$<ContactInvitesHeaderProps>((props) => {
   const resolve = (value: string) => props.copy?.[value] ?? value
   const totalInvites = props.incomingCount + props.outgoingCount
+  const handleAcceptClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.userId
+    if (!inviteId || !userId) return
+    void props.onAccept$(inviteId, userId)
+  })
+  const handleDeclineClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.userId
+    if (!inviteId || !userId) return
+    void props.onDecline$(inviteId, userId)
+  })
+  const handleRemoveClick = $((event: Event) => {
+    const target = event.currentTarget as HTMLButtonElement | null
+    const inviteId = target?.dataset.inviteId
+    const userId = target?.dataset.userId
+    const email = target?.dataset.email
+    if (!inviteId || !userId || !email) return
+    void props.onRemove$(inviteId, userId, email)
+  })
 
   return (
     <header class="chat-invites-header">
@@ -99,7 +121,9 @@ export const ContactInvitesHeader = component$<ContactInvitesHeaderProps>((props
                             type="button"
                             class="chat-invites-action success"
                             disabled={props.busyKeys.includes(`accept:${invite.id}`)}
-                            onClick$={() => props.onAccept$(invite.id, invite.user.id)}
+                            data-invite-id={invite.id}
+                            data-user-id={invite.user.id}
+                            onClick$={handleAcceptClick}
                           >
                             {props.resolvedAcceptAction}
                           </button>
@@ -107,7 +131,9 @@ export const ContactInvitesHeader = component$<ContactInvitesHeaderProps>((props
                             type="button"
                             class="chat-invites-action ghost"
                             disabled={props.busyKeys.includes(`decline:${invite.id}`)}
-                            onClick$={() => props.onDecline$(invite.id, invite.user.id)}
+                            data-invite-id={invite.id}
+                            data-user-id={invite.user.id}
+                            onClick$={handleDeclineClick}
                           >
                             {props.resolvedDeclineAction}
                           </button>
@@ -140,7 +166,10 @@ export const ContactInvitesHeader = component$<ContactInvitesHeaderProps>((props
                             type="button"
                             class="chat-invites-action ghost"
                             disabled={props.busyKeys.includes(`remove:${invite.id}`)}
-                            onClick$={() => props.onRemove$(invite.id, invite.user.id, invite.user.email)}
+                            data-invite-id={invite.id}
+                            data-user-id={invite.user.id}
+                            data-email={invite.user.email}
+                            onClick$={handleRemoveClick}
                           >
                             {props.resolvedRemoveAction}
                           </button>

@@ -118,7 +118,7 @@ const ensureOnlinePresence = async (contact: ReturnType<Page['locator']>) => {
 
 const openDm = async (page: Page, email: string) => {
   const contact = await waitForContact(page, email)
-  await contact.click()
+  await contact.locator('.chat-invites-item-name').click()
   await expect(page.locator('.chat-invites-dm')).toBeVisible({ timeout: 20_000 })
   return contact
 }
