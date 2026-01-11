@@ -39,6 +39,7 @@
     "authPasskeyLabel": "キーパスを使用",
     "authPasskeyHint": "デバイス資格情報で即時サインインします。",
     "authLogoutLabel": "ログアウト",
+    "profileNameAction": "名前を更新",
     "settingsChatTitle": "チャット設定",
     "settingsChatDescription": "連絡先と共有するメッセージのシグナルを管理します。",
     "settingsChatReadReceipts": "既読通知",

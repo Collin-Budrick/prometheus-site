@@ -39,6 +39,7 @@
     "authPasskeyLabel": "키패스 사용",
     "authPasskeyHint": "기기 자격 증명으로 즉시 로그인합니다.",
     "authLogoutLabel": "로그아웃",
+    "profileNameAction": "이름 업데이트",
     "settingsChatTitle": "채팅 설정",
     "settingsChatDescription": "연락처와 공유되는 메시지 신호를 관리합니다.",
     "settingsChatReadReceipts": "읽음 확인",

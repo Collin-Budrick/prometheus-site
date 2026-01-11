@@ -2,19 +2,35 @@ import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
 import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { eq } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { Elysia, t, type AnyElysia } from 'elysia'
 import type { AuthConfig, RelyingPartyConfig } from '@platform/config'
 import type { DatabaseClient } from '@platform/db'
-import type { AnyPgTable } from 'drizzle-orm/pg-core'
+import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
 
 export type AuthRequestContext = {
   headers?: HeadersInit
   request?: Request
 }
 
+type SessionUser = {
+  id: string
+  name?: string
+  email?: string
+  image?: string
+}
+
+export type UsersTable = AnyPgTable & {
+  id: AnyPgColumn
+  name: AnyPgColumn
+  email: AnyPgColumn
+  image: AnyPgColumn
+  updatedAt: AnyPgColumn
+}
+
 export type AuthTables = {
-  users: AnyPgTable
+  users: UsersTable
   authSessions: AnyPgTable
   authKeys: AnyPgTable
   verification: AnyPgTable
@@ -50,6 +66,36 @@ type PasskeySignUpBody = Omit<SignUpBodyBase, 'password'> & Record<string, unkno
 
 const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const parseSessionPayload = async (response: Response): Promise<SessionUser | null> => {
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    return null
+  }
+
+  if (!isRecord(payload)) return null
+  const userRecord = isRecord(payload.user) ? payload.user : {}
+  const sessionRecord = isRecord(payload.session) ? payload.session : {}
+  const userId =
+    typeof userRecord.id === 'string'
+      ? userRecord.id
+      : typeof sessionRecord.userId === 'string'
+        ? sessionRecord.userId
+        : null
+  if (!userId) return null
+
+  return {
+    id: userId,
+    name: typeof userRecord.name === 'string' ? userRecord.name : undefined,
+    email: typeof userRecord.email === 'string' ? userRecord.email : undefined,
+    image: typeof userRecord.image === 'string' ? userRecord.image : undefined
+  }
 }
 
 type ConfiguredSocialProvider = keyof AuthConfig['oauth']
@@ -382,6 +428,17 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
       asResponse: true
     })
 
+  const resolveSessionUser = async (request: Request) => {
+    try {
+      const response = await validateSession({ request })
+      if (!response.ok) return null
+      return await parseSessionPayload(response)
+    } catch (error) {
+      console.error('Failed to resolve auth session', error)
+      return null
+    }
+  }
+
   const authRoutes = new Elysia({ prefix: '/auth' })
     .post(
       '/sign-in/email',
@@ -417,6 +474,55 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
           email: t.String({ format: 'email' }),
           callbackURL: t.Optional(t.String()),
           rememberMe: t.Optional(t.Boolean())
+        })
+      }
+    )
+    .post(
+      '/profile/name',
+      async ({ body, request, set }) => {
+        const sessionUser = await resolveSessionUser(request)
+        if (!sessionUser) {
+          set.status = 401
+          return { error: 'Authentication required' }
+        }
+
+        const trimmed = body.name.trim()
+        if (trimmed.length < 2) {
+          set.status = 400
+          return { error: 'Name must be at least 2 characters' }
+        }
+        if (trimmed.length > 64) {
+          set.status = 400
+          return { error: 'Name must be 64 characters or less' }
+        }
+
+        try {
+          const [updated] = await options.db
+            .update(options.tables.users)
+            .set({ name: trimmed, updatedAt: new Date() })
+            .where(eq(options.tables.users.id, sessionUser.id))
+            .returning({
+              id: options.tables.users.id,
+              name: options.tables.users.name,
+              email: options.tables.users.email,
+              image: options.tables.users.image
+            })
+
+          if (!updated) {
+            set.status = 404
+            return { error: 'User not found' }
+          }
+
+          return { user: updated }
+        } catch (error) {
+          console.error('Failed to update user name', error)
+          set.status = 500
+          return { error: 'Unable to update name' }
+        }
+      },
+      {
+        body: t.Object({
+          name: t.String({ minLength: 2, maxLength: 64 })
         })
       }
     )

@@ -39,6 +39,7 @@
     "authPasskeyLabel": "Use keypass",
     "authPasskeyHint": "Keypass signs in with your device credential.",
     "authLogoutLabel": "Log out",
+    "profileNameAction": "Update name",
     "settingsChatTitle": "Chat preferences",
     "settingsChatDescription": "Control messaging signals that are shared with your contacts.",
     "settingsChatReadReceipts": "Read receipts",

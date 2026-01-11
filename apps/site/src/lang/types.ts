@@ -40,6 +40,7 @@ export type UiCopy = {
   authPasskeyLabel: string
   authPasskeyHint: string
   authLogoutLabel: string
+  profileNameAction: string
   settingsChatTitle: string
   settingsChatDescription: string
   settingsChatReadReceipts: string
