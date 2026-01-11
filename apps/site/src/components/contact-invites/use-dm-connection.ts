@@ -1095,12 +1095,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             decodeBase64(encrypted.salt),
             encrypted.sessionId
           )
-          options.sessionRef.value = noSerialize({
-            sessionId: encrypted.sessionId,
-            salt: encrypted.salt,
-            key,
-            remoteDeviceId: device.deviceId
-          })
           try {
             const plaintext = await decryptPayload(key, encrypted)
             let messageText = plaintext
