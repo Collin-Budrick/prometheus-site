@@ -635,6 +635,27 @@ html[data-chat-dm-open='true'] .fragment-card {
   color: rgb(var(--ink));
 }
 
+.chat-invites-dm-archive {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--stroke) / 0.7);
+  background: rgb(var(--surface) / 0.9);
+  color: rgb(var(--muted));
+  padding: 8px 12px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: border-color 200ms ease, color 200ms ease, transform 200ms ease;
+}
+
+.chat-invites-dm-archive:hover {
+  border-color: rgb(var(--accent) / 0.4);
+  color: rgb(var(--ink));
+  transform: translateY(-1px);
+}
+
 .chat-invites-dm-title {
   font-size: 1.2rem;
   font-weight: 600;
@@ -907,6 +928,7 @@ html[data-chat-dm-open='true'] .fragment-card {
   .chat-invites-dm-close,
   .chat-invites-dm-gear,
   .chat-invites-dm-settings,
+  .chat-invites-dm-archive,
   .chat-invites-dm-input,
   .chat-invites-dm-send {
     transition: none;

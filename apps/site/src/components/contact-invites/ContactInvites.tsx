@@ -25,7 +25,15 @@ import {
 } from '../../shared/p2p-crypto'
 import { buildApiUrl, buildWsUrl, resolveChatSettingsUserId } from './api'
 import { countStorageKey, dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
-import { historyCacheLimit, historyRequestLimit, loadHistory, mergeHistoryMessages, persistHistory } from './history'
+import {
+  archiveHistory,
+  historyCacheLimit,
+  historyRequestLimit,
+  loadHistory,
+  loadHistoryArchiveStamp,
+  mergeHistoryMessages,
+  persistHistory
+} from './history'
 import {
   createMessageId,
   formatDisplayName,
@@ -113,6 +121,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const typingTimer = useSignal<number | null>(null)
     const remoteTyping = useSignal(false)
     const remoteTypingTimer = useSignal<number | null>(null)
+    const historySuppressed = useSignal(false)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -225,6 +234,16 @@ export const ContactInvites = component$<ContactInvitesProps>(
           remoteTypingTimer.value = null
         }
       }
+    })
+
+    const handleArchiveMessages = $(() => {
+      const contact = activeContact.value
+      if (!contact) return
+      dmMessages.value = []
+      dmError.value = null
+      historySuppressed.value = true
+      archiveHistory(contact.id)
+      chatSettingsOpen.value = false
     })
 
     const refreshInvites = $(async (resetStatus = true) => {
@@ -1220,6 +1239,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       dmMessages.value = []
       dmInput.value = ''
       dmError.value = null
+      historySuppressed.value = false
       sessionRef.value = undefined
 
       const closeConnection = () => {
@@ -1417,6 +1437,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               return
             }
             if (historyResponse) {
+              if (historySuppressed.value) return
               dmMessages.value = mergeHistoryMessages(dmMessages.value, historyResponse)
               void persistHistory(contact.id, identity, dmMessages.value)
               return
@@ -1486,7 +1507,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       }
 
       const requestHistory = async (identity: DeviceIdentity) => {
-        if (historyRequested || !historyNeeded) return
+        if (historySuppressed.value || historyRequested || !historyNeeded) return
         historyRequested = true
         const session = sessionRef.value
         const payload = { kind: 'history-request', limit: historyRequestLimit }
@@ -1783,6 +1804,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
               } else if (typingState) {
                 setRemoteTyping(typingState === 'start')
               } else if (historyResponse) {
+                if (historySuppressed.value) return
                 dmMessages.value = mergeHistoryMessages(dmMessages.value, historyResponse)
                 void persistHistory(contact.id, identityDevice, dmMessages.value)
               } else if (isHistoryRequest) {
@@ -1919,9 +1941,11 @@ export const ContactInvites = component$<ContactInvitesProps>(
         try {
           const identity = await registerIdentity()
           if (!active) return
+          const archiveStamp = loadHistoryArchiveStamp(contact.id)
+          historySuppressed.value = archiveStamp !== null
           const cached = await loadHistory(contact.id, identity)
           if (!active) return
-          historyNeeded = cached.length === 0
+          historyNeeded = cached.length === 0 && archiveStamp === null
           if (cached.length) {
             dmMessages.value = cached
           }
@@ -2389,6 +2413,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
                           </span>
                         </button>
                       </div>
+                      <button
+                        type="button"
+                        class="chat-invites-dm-archive"
+                        onClick$={handleArchiveMessages}
+                      >
+                        {resolve('Archive messages')}
+                      </button>
                     </div>
                   </div>
                 </div>

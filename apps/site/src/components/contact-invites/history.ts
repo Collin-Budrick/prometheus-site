@@ -3,6 +3,7 @@ import type { DmMessage } from './types'
 import { isRecord } from './utils'
 
 const historyStoragePrefix = 'chat:p2p:history:'
+const historyArchivePrefix = 'chat:p2p:history:archive:'
 
 export const historyCacheLimit = 200
 export const historyRequestLimit = 120
@@ -27,6 +28,7 @@ type StoredHistoryPayload = {
 }
 
 const buildHistoryStorageKey = (contactId: string) => `${historyStoragePrefix}${contactId}`
+const buildHistoryArchiveKey = (contactId: string) => `${historyArchivePrefix}${contactId}`
 
 const parseHistoryEnvelope = (raw: string): StoredHistoryEnvelope | null => {
   try {
@@ -37,6 +39,25 @@ const parseHistoryEnvelope = (raw: string): StoredHistoryEnvelope | null => {
     return { v: 1, iv: parsed.iv, ciphertext: parsed.ciphertext }
   } catch {
     return null
+  }
+}
+
+export const loadHistoryArchiveStamp = (contactId: string) => {
+  if (typeof window === 'undefined') return null
+  const raw = window.localStorage.getItem(buildHistoryArchiveKey(contactId))
+  if (!raw) return null
+  const parsed = Date.parse(raw)
+  if (Number.isNaN(parsed)) return null
+  return parsed
+}
+
+export const archiveHistory = (contactId: string) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(buildHistoryArchiveKey(contactId), new Date().toISOString())
+    window.localStorage.removeItem(buildHistoryStorageKey(contactId))
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -134,6 +155,7 @@ export const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[
 
 export const loadHistory = async (contactId: string, identity: DeviceIdentity) => {
   if (typeof window === 'undefined') return []
+  const archiveStamp = loadHistoryArchiveStamp(contactId)
   const raw = window.localStorage.getItem(buildHistoryStorageKey(contactId))
   if (!raw) return []
   const envelope = parseHistoryEnvelope(raw)
@@ -143,7 +165,9 @@ export const loadHistory = async (contactId: string, identity: DeviceIdentity) =
   try {
     const payload = await decryptHistoryEnvelope(key, envelope)
     if (!payload || !Array.isArray(payload.messages)) return []
-    return normalizeHistoryMessages(payload.messages)
+    const normalized = normalizeHistoryMessages(payload.messages)
+    if (!archiveStamp) return normalized
+    return normalized.filter((message) => messageTimestamp(message.createdAt) > archiveStamp)
   } catch {
     return []
   }
