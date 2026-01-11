@@ -45,6 +45,8 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
     let reconnectTimer: number | null = null
     let mailboxPulling = false
     let mailboxPullPending = false
+    let mailboxCooldownUntil = 0
+    let mailboxTimer: number | null = null
     const devicesByUser = new Map<string, ContactDevice[]>()
     const requestCooldownMs = 60_000
     const updateCooldownMs = 15_000
@@ -185,6 +187,17 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
         mailboxPullPending = true
         return
       }
+      const now = Date.now()
+      if (mailboxCooldownUntil > now) {
+        mailboxPullPending = true
+        if (mailboxTimer === null) {
+          mailboxTimer = window.setTimeout(() => {
+            mailboxTimer = null
+            void pullMailbox(resolved)
+          }, mailboxCooldownUntil - now)
+        }
+        return
+      }
       mailboxPulling = true
       try {
         const response = await fetch(buildApiUrl('/chat/p2p/mailbox/pull', window.location.origin), {
@@ -193,7 +206,15 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
           credentials: 'include',
           body: JSON.stringify({ deviceId: resolved.deviceId, limit: 50 })
         })
+        if (response.status === 429) {
+          const retryAfter = Number(response.headers.get('Retry-After') ?? '2')
+          const delayMs = Number.isFinite(retryAfter) ? Math.max(1, retryAfter) * 1000 : 2000
+          mailboxCooldownUntil = Date.now() + delayMs
+          mailboxPullPending = true
+          return
+        }
         if (!response.ok) return
+        mailboxCooldownUntil = 0
         const payload = (await response.json()) as { messages?: Array<Record<string, unknown>> }
         const messages = Array.isArray(payload.messages) ? payload.messages : []
         if (!messages.length) return
@@ -323,6 +344,9 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
       active = false
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer)
+      }
+      if (mailboxTimer !== null) {
+        window.clearTimeout(mailboxTimer)
       }
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       ws?.close()

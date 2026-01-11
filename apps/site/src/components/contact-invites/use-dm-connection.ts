@@ -101,13 +101,23 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let channel: RTCDataChannel | null = null
     let ws: WebSocket | null = null
     let reconnectTimer: number | null = null
+    let reconnectAttempt = 0
+    let reconnecting = false
+    let isCaller = false
     let mailboxPulling = false
     let mailboxPullPending = false
+    let mailboxCooldownUntil = 0
+    let mailboxTimer: number | null = null
     let historyRequested = false
     let historyNeeded = false
     const pendingSignals: Array<Record<string, unknown>> = []
     const pendingCandidates: RTCIceCandidateInit[] = []
     const handledSignals = new Set<string>()
+    const debug = (...args: unknown[]) => {
+      if (typeof window === 'undefined') return
+      if (window.localStorage?.getItem('p2pDebug') !== '1') return
+      console.info('[p2p]', ...args)
+    }
 
     options.dmStatus.value = 'connecting'
     options.dmMessages.value = []
@@ -117,10 +127,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     options.sessionRef.value = undefined
 
     const closeConnection = () => {
+      debug('closing dm connection')
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
+      if (mailboxTimer !== null) {
+        window.clearTimeout(mailboxTimer)
+        mailboxTimer = null
+      }
+      reconnecting = false
+      reconnectAttempt = 0
+      isCaller = false
       pendingSignals.splice(0, pendingSignals.length)
       if (channel) {
         channel.close()
@@ -135,6 +153,42 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       options.channelRef.value = undefined
     }
 
+    const resetPeerConnection = () => {
+      if (channel) {
+        channel.close()
+        channel = null
+      }
+      if (connection) {
+        connection.close()
+        connection = null
+      }
+      options.channelRef.value = undefined
+      options.sessionRef.value = undefined
+    }
+
+    const scheduleReconnect = async (reason: string) => {
+      if (!active) return
+      if (reconnecting) return
+      const identity = options.identityRef.value
+      const remoteDevice = options.remoteDeviceRef.value
+      if (!identity || !remoteDevice) return
+      if (reconnectAttempt >= 3) {
+        options.dmStatus.value = 'offline'
+        return
+      }
+      reconnectAttempt += 1
+      reconnecting = true
+      options.dmStatus.value = 'connecting'
+      debug('reconnect scheduled', { reason, attempt: reconnectAttempt })
+      await new Promise((resolve) => window.setTimeout(resolve, 1200))
+      resetPeerConnection()
+      reconnecting = false
+      const shouldInitiate = identity.deviceId.localeCompare(remoteDevice.deviceId) < 0
+      if (shouldInitiate) {
+        await startCaller(identity, remoteDevice)
+      }
+    }
+
     const flushCandidates = async () => {
       if (!connection || !connection.remoteDescription) return
       while (pendingCandidates.length) {
@@ -142,6 +196,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (!candidate) continue
         try {
           await connection.addIceCandidate(candidate)
+          debug('added pending ice candidate')
         } catch {
           // ignore candidate failures
         }
@@ -158,6 +213,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const payload = (await response.json()) as { devices?: ContactDevice[] }
         const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
         devices = next
+        debug('fetched devices', { count: next.length, devices: next.map((entry) => entry.deviceId) })
         if (!options.remoteDeviceRef.value) {
           const preferred = pickPreferredDevice(next)
           if (preferred) {
@@ -193,6 +249,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const toDeviceId = typeof signal.toDeviceId === 'string' ? signal.toDeviceId : undefined
       const device = await resolveRemoteDevice(toDeviceId)
       if (!device) return
+      debug('signal via mailbox', { type: (signal.payload as Record<string, unknown> | undefined)?.type, to: device.deviceId })
       try {
         const sessionId = createMessageId()
         const salt = randomBase64(16)
@@ -228,27 +285,50 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const sendSignal = (signal: Record<string, unknown>) => {
       const payload = isRecord(signal.payload) ? signal.payload : null
       const payloadType = payload?.type
-      const shouldMirror = payloadType === 'offer' || payloadType === 'answer'
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(signal))
+      const wsOpen = ws?.readyState === WebSocket.OPEN
+      const shouldMirror =
+        payloadType === 'offer' || payloadType === 'answer' || (!wsOpen && payloadType === 'candidate')
+      if (wsOpen) {
+        debug('signal via ws', { type: payloadType })
+        ws?.send(JSON.stringify(signal))
         if (shouldMirror) {
           void sendSignalViaMailbox(signal)
         }
         return
       }
+      debug('signal queued for mailbox', { type: payloadType })
       void sendSignalViaMailbox(signal)
       pendingSignals.push(signal)
+    }
+
+    const waitForIceGatheringComplete = async (peer: RTCPeerConnection, timeoutMs = 2000) => {
+      if (peer.iceGatheringState === 'complete') return
+      await new Promise<void>((resolve) => {
+        const timer = window.setTimeout(() => {
+          peer.removeEventListener('icegatheringstatechange', handleChange)
+          resolve()
+        }, timeoutMs)
+        const handleChange = () => {
+          if (peer.iceGatheringState === 'complete') {
+            window.clearTimeout(timer)
+            peer.removeEventListener('icegatheringstatechange', handleChange)
+            resolve()
+          }
+        }
+        peer.addEventListener('icegatheringstatechange', handleChange)
+      })
     }
 
     const applyConnectionState = () => {
       if (!connection) return
       const state = connection.connectionState
+      debug('connection state', state)
       if (state === 'connected') {
         options.dmStatus.value = 'connected'
         return
       }
       if (state === 'failed' || state === 'disconnected') {
-        options.dmStatus.value = 'offline'
+        void scheduleReconnect(`connection-${state}`)
       }
     }
 
@@ -380,6 +460,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       channel = next
       options.channelRef.value = noSerialize(next)
       next.onopen = () => {
+        reconnectAttempt = 0
+        debug('data channel open', next.label)
         options.dmStatus.value = 'connected'
         if (options.chatSettings.value.typingIndicators && options.dmInput.value.trim()) {
           void options.sendTyping('start')
@@ -387,10 +469,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         void sendProfileMeta()
       }
       next.onclose = () => {
-        options.dmStatus.value = 'offline'
+        debug('data channel close', next.label)
+        void scheduleReconnect('datachannel-close')
       }
       next.onerror = () => {
-        options.dmStatus.value = 'error'
+        debug('data channel error', next.label)
+        void scheduleReconnect('datachannel-error')
       }
       next.onmessage = async (event) => {
         try {
@@ -649,8 +733,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       connection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       })
+      debug('created RTCPeerConnection', { remoteDeviceId: remoteDevice.deviceId })
       connection.onicecandidate = (event) => {
         if (!event.candidate) return
+        debug('ice candidate', event.candidate.candidate)
         const session = options.sessionRef.value
         const payload = {
           type: 'candidate',
@@ -666,6 +752,24 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         sendSignal(signal)
       }
       connection.onconnectionstatechange = applyConnectionState
+      connection.oniceconnectionstatechange = () => {
+        if (!connection) return
+        const iceState = connection.iceConnectionState
+        debug('ice connection state', iceState)
+        if (iceState === 'connected' || iceState === 'completed') {
+          options.dmStatus.value = 'connected'
+        } else if (iceState === 'failed' || iceState === 'disconnected') {
+          void scheduleReconnect(`ice-${iceState}`)
+        }
+      }
+      connection.onsignalingstatechange = () => {
+        if (!connection) return
+        debug('signaling state', connection.signalingState)
+      }
+      connection.onicegatheringstatechange = () => {
+        if (!connection) return
+        debug('ice gathering state', connection.iceGatheringState)
+      }
       connection.ondatachannel = (event) => {
         setupChannel(event.channel)
       }
@@ -676,6 +780,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!payload) return
       const payloadType = payload.type
       if (payloadType !== 'offer' && payloadType !== 'answer' && payloadType !== 'candidate') return
+      debug('received signal', { type: payloadType, sessionId: signal.sessionId, fromDeviceId: signal.fromDeviceId })
       let signalKey = ''
       if (payloadType === 'candidate') {
         const candidate = isRecord(payload.candidate) ? payload.candidate : payload.candidate
@@ -708,6 +813,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!connection) return
 
       if (payloadType === 'offer' && typeof payload.sdp === 'string' && sessionId && salt) {
+        isCaller = false
         const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
         options.sessionRef.value = noSerialize({
           sessionId,
@@ -719,23 +825,33 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         await flushCandidates()
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
+        await waitForIceGatheringComplete(connection)
         sendSignal({
           type: 'signal',
           to: contact.id,
           toDeviceId: remoteDevice.deviceId,
           sessionId,
-          payload: { type: 'answer', sdp: answer.sdp }
+          payload: { type: 'answer', sdp: connection.localDescription?.sdp ?? answer.sdp }
         })
         return
       }
 
       if (payloadType === 'answer' && typeof payload.sdp === 'string') {
-        await connection.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
-        await flushCandidates()
+        const currentSessionId = options.sessionRef.value?.sessionId
+        if (sessionId && currentSessionId && sessionId !== currentSessionId) return
+        if (connection.signalingState !== 'have-local-offer') return
+        try {
+          await connection.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
+          await flushCandidates()
+        } catch {
+          // ignore duplicate or stale answers
+        }
         return
       }
 
       if (payloadType === 'candidate' && payload.candidate) {
+        const currentSessionId = options.sessionRef.value?.sessionId
+        if (sessionId && currentSessionId && sessionId !== currentSessionId) return
         const candidate = payload.candidate as RTCIceCandidateInit
         if (!connection.remoteDescription) {
           pendingCandidates.push(candidate)
@@ -755,6 +871,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ws?.close()
       ws = new WebSocket(wsUrl)
       ws.addEventListener('open', () => {
+        debug('ws open')
         ws?.send(JSON.stringify({ type: 'hello', deviceId: identity.deviceId }))
         while (pendingSignals.length) {
           const signal = pendingSignals.shift()
@@ -786,10 +903,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           return
         }
         if (payloadType === 'p2p:mailbox' && userId) {
+          const deviceIds = Array.isArray((payload as { deviceIds?: unknown }).deviceIds)
+            ? ((payload as { deviceIds?: unknown[] }).deviceIds ?? [])
+            : []
+          if (deviceIds.length && !deviceIds.includes(identity.deviceId)) return
           await pullMailbox(identity)
         }
       })
       ws.addEventListener('close', () => {
+        debug('ws close')
         if (!active) return
         options.dmStatus.value = options.dmStatus.value === 'connected' ? 'offline' : options.dmStatus.value
         if (reconnectTimer !== null) return
@@ -799,6 +921,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }, 4000)
       })
       ws.addEventListener('error', () => {
+        debug('ws error')
         options.dmStatus.value = 'error'
       })
     }
@@ -806,6 +929,17 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const pullMailbox = async (identity: DeviceIdentity) => {
       if (mailboxPulling) {
         mailboxPullPending = true
+        return
+      }
+      const now = Date.now()
+      if (mailboxCooldownUntil > now) {
+        mailboxPullPending = true
+        if (mailboxTimer === null) {
+          mailboxTimer = window.setTimeout(() => {
+            mailboxTimer = null
+            void pullMailbox(identity)
+          }, mailboxCooldownUntil - now)
+        }
         return
       }
       mailboxPulling = true
@@ -816,9 +950,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           credentials: 'include',
           body: JSON.stringify({ deviceId: identity.deviceId, limit: 50 })
         })
+        if (response.status === 429) {
+          const retryAfter = Number(response.headers.get('Retry-After') ?? '2')
+          const delayMs = Number.isFinite(retryAfter) ? Math.max(1, retryAfter) * 1000 : 2000
+          mailboxCooldownUntil = Date.now() + delayMs
+          debug('mailbox rate limited', { retryAfter: delayMs })
+          mailboxPullPending = true
+          return
+        }
         if (!response.ok) return
+        mailboxCooldownUntil = 0
         const payload = (await response.json()) as { messages?: Array<Record<string, unknown>> }
         const messages = Array.isArray(payload.messages) ? payload.messages : []
+        debug('mailbox pull', { count: messages.length })
         if (!messages.length) return
         const ackIds: string[] = []
         for (const entry of messages) {
@@ -1101,8 +1245,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+      isCaller = true
       ensurePeerConnection(identity, remoteDevice)
       if (!connection) return
+      debug('starting caller', { remoteDeviceId: remoteDevice.deviceId })
       channel = connection.createDataChannel('dm', { ordered: true })
       setupChannel(channel)
       const sessionId = createMessageId()
@@ -1116,12 +1262,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       })
       const offer = await connection.createOffer()
       await connection.setLocalDescription(offer)
+      debug('created offer')
+      await waitForIceGatheringComplete(connection)
       sendSignal({
         type: 'signal',
         to: contact.id,
         toDeviceId: remoteDevice.deviceId,
         sessionId,
-        payload: { type: 'offer', sdp: offer.sdp, salt }
+        payload: { type: 'offer', sdp: connection.localDescription?.sdp ?? offer.sdp, salt }
       })
     }
 

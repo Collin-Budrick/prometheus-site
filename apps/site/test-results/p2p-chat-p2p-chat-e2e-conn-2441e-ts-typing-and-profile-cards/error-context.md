@@ -45,13 +45,13 @@
           - button "Search" [ref=e40] [cursor=pointer]
         - generic [ref=e41]:
           - generic [ref=e43]: Contacts
-          - button "Open direct message" [active] [ref=e45] [cursor=pointer]:
+          - button "Open direct message" [ref=e45] [cursor=pointer]:
             - generic [ref=e46]:
               - generic [ref=e47]:
                 - button "View profile" [ref=e48]:
                   - img "Playwright B" [ref=e49]
                 - paragraph [ref=e51]: Playwright B
-              - paragraph [ref=e52]: pw-b-1768163509392-ddfbe241c44d4@example.com
+              - paragraph [ref=e52]: pw-b-1768169154339-f071c6439f19b@example.com
             - generic [ref=e53]:
               - generic [ref=e54]: Connected
               - button "Remove" [ref=e55]
@@ -65,7 +65,7 @@
                     - img "Playwright B" [ref=e63]
                   - generic [ref=e65]:
                     - paragraph [ref=e66]: Playwright B
-                    - paragraph [ref=e67]: pw-b-1768163509392-ddfbe241c44d4@example.com
+                    - paragraph [ref=e67]: pw-b-1768169154339-f071c6439f19b@example.com
                 - generic [ref=e68]:
                   - button "Chat settings" [ref=e69] [cursor=pointer]:
                     - img [ref=e70]
@@ -81,12 +81,12 @@
                       - switch [checked]
                     - button: Archive messages
             - generic [ref=e73]:
-              - generic [ref=e75]: Connecting
+              - generic [ref=e75]: Connected
               - log [ref=e76]:
                 - paragraph [ref=e77]: No messages yet.
               - generic [ref=e78]:
-                - textbox "Message" [ref=e79]
-                - button "Send" [disabled] [ref=e80]
+                - textbox "Message" [active] [ref=e79]: Hello 1768169160825
+                - button "Send" [ref=e80] [cursor=pointer]
   - list "Dock shortcuts" [ref=e81]:
     - listitem "Profile" [ref=e82]:
       - link "Profile" [ref=e83] [cursor=pointer]:

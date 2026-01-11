@@ -170,6 +170,8 @@ test.describe('p2p chat e2e', () => {
 
     const contextA = await browser.newContext({ storageState: await apiA.storageState(), baseURL, ignoreHTTPSErrors })
     const contextB = await browser.newContext({ storageState: await apiB.storageState(), baseURL, ignoreHTTPSErrors })
+    await contextA.addInitScript(() => localStorage.setItem('p2pDebug', '1'))
+    await contextB.addInitScript(() => localStorage.setItem('p2pDebug', '1'))
 
     const pageA = await contextA.newPage()
     const pageB = await contextB.newPage()
