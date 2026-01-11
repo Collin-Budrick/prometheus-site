@@ -1,4 +1,4 @@
-import { $, component$, useSignal } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
@@ -18,6 +18,101 @@ type ProfileData = {
     image?: string
   }
   lang: Lang
+}
+
+type ProfileColor = {
+  r: number
+  g: number
+  b: number
+}
+
+type LocalProfileCard = {
+  bio?: string
+  avatar?: string
+  color?: ProfileColor
+}
+
+const PROFILE_STORAGE_KEY = 'prometheus.profile.local'
+const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
+const PROFILE_AVATAR_MAX_BYTES = 1_200_000
+
+const clampChannel = (value: number) => Math.min(255, Math.max(0, Math.round(value)))
+
+const parseProfileColor = (value: unknown): ProfileColor | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const r = typeof record.r === 'number' ? clampChannel(record.r) : null
+  const g = typeof record.g === 'number' ? clampChannel(record.g) : null
+  const b = typeof record.b === 'number' ? clampChannel(record.b) : null
+  if (r === null || g === null || b === null) return null
+  return { r, g, b }
+}
+
+const parseLocalProfile = (raw: string | null): LocalProfileCard | null => {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as LocalProfileCard
+    if (!parsed || typeof parsed !== 'object') return null
+    const color = parseProfileColor(parsed.color)
+    return {
+      bio: typeof parsed.bio === 'string' ? parsed.bio : undefined,
+      avatar: typeof parsed.avatar === 'string' ? parsed.avatar : undefined,
+      color: color ?? undefined
+    }
+  } catch {
+    return null
+  }
+}
+
+const buildLocalProfilePayload = (
+  bio: string,
+  avatar: string | null,
+  color: ProfileColor
+): LocalProfileCard => {
+  const trimmedBio = bio.trim()
+  const hasCustomColor =
+    color.r !== DEFAULT_PROFILE_COLOR.r ||
+    color.g !== DEFAULT_PROFILE_COLOR.g ||
+    color.b !== DEFAULT_PROFILE_COLOR.b
+  return {
+    bio: trimmedBio.length ? trimmedBio : undefined,
+    avatar: avatar ?? undefined,
+    color: hasCustomColor ? color : undefined
+  }
+}
+
+const saveLocalProfile = (profile: LocalProfileCard) => {
+  if (typeof window === 'undefined') return false
+  try {
+    const hasData = Boolean(profile.bio || profile.avatar || profile.color)
+    if (!hasData) {
+      window.localStorage.removeItem(PROFILE_STORAGE_KEY)
+      return true
+    }
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const rgbToHex = (color: ProfileColor) => {
+  const toHex = (value: number) => clampChannel(value).toString(16).padStart(2, '0').toUpperCase()
+  return `#${toHex(color.r)}${toHex(color.g)}${toHex(color.b)}`
+}
+
+const persistLocalProfile = (bio: string, avatar: string | null, color: ProfileColor) => {
+  const payload = buildLocalProfilePayload(bio, avatar, color)
+  return saveLocalProfile(payload)
+}
+
+const parseHexColor = (value: string): ProfileColor | null => {
+  const normalized = value.trim().replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null
+  const r = parseInt(normalized.slice(0, 2), 16)
+  const g = parseInt(normalized.slice(2, 4), 16)
+  const b = parseInt(normalized.slice(4, 6), 16)
+  return { r, g, b }
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
@@ -96,16 +191,127 @@ export default component$(() => {
   const saving = useSignal(false)
   const statusMessage = useSignal<string | null>(null)
   const statusTone = useSignal<'success' | 'error'>('success')
+  const localBio = useSignal('')
+  const localAvatar = useSignal<string | null>(null)
+  const localColor = useSignal<ProfileColor>({ ...DEFAULT_PROFILE_COLOR })
+  const localStatus = useSignal<string | null>(null)
+  const localStatusTone = useSignal<'success' | 'error'>('success')
+  const bioCount = useComputed$(() => localBio.value.length)
+  const colorHex = useComputed$(() => rgbToHex(localColor.value))
+  const avatarInitials = useComputed$(() => {
+    const source = `${savedName.value || user.email || user.id || 'Profile'}`
+    const cleaned = source.split('@')[0]?.trim() ?? 'Profile'
+    const parts = cleaned.split(/\s+/).filter(Boolean)
+    const letters = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '')
+    const result = letters.join('')
+    return result || 'P'
+  })
   const nameValue = savedName.value || user.email || user.id
   const emailValue = user.email ?? user.id
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navProfile)
   const trimmedName = nameInput.value.trim()
   const canSave = !saving.value && trimmedName.length >= 2 && trimmedName !== savedName.value
 
+  useVisibleTask$(() => {
+    if (typeof window === 'undefined') return
+    const stored = parseLocalProfile(window.localStorage.getItem(PROFILE_STORAGE_KEY))
+    if (!stored) return
+    localBio.value = stored.bio ?? ''
+    localAvatar.value = stored.avatar ?? null
+    localColor.value = stored.color ?? { ...DEFAULT_PROFILE_COLOR }
+  })
+
   const handleNameInput = $((event: Event) => {
     const target = event.target as HTMLInputElement | null
     nameInput.value = target?.value ?? ''
     statusMessage.value = null
+  })
+
+  const handleBioInput = $((event: Event) => {
+    const target = event.target as HTMLTextAreaElement | null
+    localBio.value = target?.value ?? ''
+    localStatus.value = null
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleAvatarChange = $(async (event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    const file = target?.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      localStatusTone.value = 'error'
+      localStatus.value = 'Please choose an image file.'
+      return
+    }
+    if (file.size > PROFILE_AVATAR_MAX_BYTES) {
+      localStatusTone.value = 'error'
+      localStatus.value = 'Image must be under 1.2MB.'
+      return
+    }
+    const reader = new FileReader()
+    const result = await new Promise<string | null>((resolve) => {
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+    if (!result) {
+      localStatusTone.value = 'error'
+      localStatus.value = 'Unable to read that image.'
+      return
+    }
+    localAvatar.value = result
+    if (target) {
+      target.value = ''
+    }
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleAvatarRemove = $(() => {
+    localAvatar.value = null
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleRedInput = $((event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    const value = clampChannel(Number(target?.value ?? 0))
+    localColor.value = { ...localColor.value, r: value }
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleGreenInput = $((event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    const value = clampChannel(Number(target?.value ?? 0))
+    localColor.value = { ...localColor.value, g: value }
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleBlueInput = $((event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    const value = clampChannel(Number(target?.value ?? 0))
+    localColor.value = { ...localColor.value, b: value }
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+  })
+
+  const handleColorPick = $((event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    const parsed = target?.value ? parseHexColor(target.value) : null
+    if (!parsed) return
+    localColor.value = parsed
+    const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
+    localStatusTone.value = saved ? 'success' : 'error'
+    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
   })
 
   const handleSaveName = $(async () => {
@@ -200,6 +406,138 @@ export default component$(() => {
       {statusMessage.value ? (
         <div class="auth-status" role="status" aria-live="polite" data-tone={statusTone.value}>
           {statusMessage.value}
+        </div>
+      ) : null}
+      <div
+        class="profile-card"
+        style={{
+          '--profile-accent': `${localColor.value.r} ${localColor.value.g} ${localColor.value.b}`
+        }}
+      >
+        <div class="profile-card-header">
+          <div>
+            <p class="profile-card-title">Profile card</p>
+            <p class="profile-card-hint">Stored only on this device.</p>
+          </div>
+          <div class="profile-card-swatch">
+            <span>RGB</span>
+            <strong>{colorHex.value}</strong>
+          </div>
+        </div>
+        <div class="profile-card-body">
+          <div class="profile-preview">
+            <p class="profile-preview-name">{nameValue ?? 'Profile'}</p>
+            {emailValue ? <p class="profile-preview-email">{emailValue}</p> : null}
+            <p class="profile-preview-bio" data-empty={localBio.value ? 'false' : 'true'}>
+              {localBio.value || 'Add a short bio to personalize your profile card.'}
+            </p>
+          </div>
+          <div class="profile-avatar-block">
+            <div class="profile-avatar" data-empty={localAvatar.value ? 'false' : 'true'}>
+              {localAvatar.value ? (
+                <img src={localAvatar.value} alt="Profile" loading="lazy" />
+              ) : (
+                <span>{avatarInitials.value}</span>
+              )}
+            </div>
+            <div class="profile-avatar-info">
+              <p class="profile-avatar-title">Profile photo</p>
+              <p class="profile-avatar-subtitle">PNG or JPG under 1.2MB.</p>
+              <div class="profile-avatar-actions">
+                <label class="profile-avatar-upload">
+                  <input type="file" accept="image/*" onChange$={handleAvatarChange} />
+                  Upload
+                </label>
+                {localAvatar.value ? (
+                  <button type="button" class="profile-avatar-remove" onClick$={handleAvatarRemove}>
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <label class="profile-field">
+            <span>Bio</span>
+            <textarea
+              class="profile-textarea"
+              maxLength={160}
+              rows={3}
+              placeholder="Tell us what you are building."
+              value={localBio.value}
+              onInput$={handleBioInput}
+            />
+            <span class="profile-field-meta">{bioCount.value}/160</span>
+          </label>
+          <div class="profile-color-picker">
+            <div class="profile-color-header">
+              <div>
+                <p class="profile-color-title">Card color</p>
+                <p class="profile-card-hint">Use RGB sliders for precise control.</p>
+              </div>
+              <label class="profile-color-well" style={{ background: `rgb(${localColor.value.r} ${localColor.value.g} ${localColor.value.b})` }}>
+                <input type="color" value={colorHex.value} onInput$={handleColorPick} aria-label="Pick a color" />
+              </label>
+            </div>
+            <div class="profile-color-row">
+              <div class="profile-color-label">
+                <span>Red</span>
+                <strong>{localColor.value.r}</strong>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={255}
+                value={localColor.value.r}
+                class="profile-color-slider"
+                style={{
+                  '--color-start': `0 ${localColor.value.g} ${localColor.value.b}`,
+                  '--color-end': `255 ${localColor.value.g} ${localColor.value.b}`
+                }}
+                onInput$={handleRedInput}
+              />
+            </div>
+            <div class="profile-color-row">
+              <div class="profile-color-label">
+                <span>Green</span>
+                <strong>{localColor.value.g}</strong>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={255}
+                value={localColor.value.g}
+                class="profile-color-slider"
+                style={{
+                  '--color-start': `${localColor.value.r} 0 ${localColor.value.b}`,
+                  '--color-end': `${localColor.value.r} 255 ${localColor.value.b}`
+                }}
+                onInput$={handleGreenInput}
+              />
+            </div>
+            <div class="profile-color-row">
+              <div class="profile-color-label">
+                <span>Blue</span>
+                <strong>{localColor.value.b}</strong>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={255}
+                value={localColor.value.b}
+                class="profile-color-slider"
+                style={{
+                  '--color-start': `${localColor.value.r} ${localColor.value.g} 0`,
+                  '--color-end': `${localColor.value.r} ${localColor.value.g} 255`
+                }}
+                onInput$={handleBlueInput}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      {localStatus.value ? (
+        <div class="auth-status" role="status" aria-live="polite" data-tone={localStatusTone.value}>
+          {localStatus.value}
         </div>
       ) : null}
     </StaticRouteTemplate>
