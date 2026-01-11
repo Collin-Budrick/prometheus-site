@@ -164,7 +164,7 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
       if (!device) return
       const meta = buildProfileMeta(profile)
       if (!meta) return
-      const payload = { ...profile, ...meta }
+      const payload = { ...profile, avatar: undefined, ...meta }
       await sendEncryptedPayload(userId, device, { kind: 'profile-update', profile: payload })
       lastUpdateAt.set(userId, now)
     }

@@ -104,12 +104,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let reconnectAttempt = 0
     let reconnecting = false
     let isCaller = false
+    let isPolite = false
+    let makingOffer = false
     let mailboxPulling = false
     let mailboxPullPending = false
     let mailboxCooldownUntil = 0
     let mailboxTimer: number | null = null
     let historyRequested = false
     let historyNeeded = false
+    const avatarChunkSize = 12_000
+    const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
     const pendingSignals: Array<Record<string, unknown>> = []
     const pendingCandidates: RTCIceCandidateInit[] = []
     const handledSignals = new Set<string>()
@@ -164,6 +168,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       options.channelRef.value = undefined
       options.sessionRef.value = undefined
+      makingOffer = false
     }
 
     const scheduleReconnect = async (reason: string) => {
@@ -339,8 +344,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const applyRemoteProfile = (profile: ProfilePayload) => {
-      saveRemoteProfile(contact.id, profile)
-      options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: profile }
+      const existing = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
+      const merged: ProfilePayload = {
+        ...existing,
+        ...profile,
+        avatar: profile.avatar ?? existing?.avatar
+      }
+      saveRemoteProfile(contact.id, merged)
+      options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: merged }
     }
 
     const sendProfilePayload = async (payload: Record<string, unknown>) => {
@@ -369,13 +380,44 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await sendProfilePayload({ kind: 'profile-meta', meta })
     }
 
+    const sendAvatarChunks = async (avatar: string, meta: ProfileMeta) => {
+      if (!channel || channel.readyState !== 'open') return
+      const total = Math.ceil(avatar.length / avatarChunkSize)
+      for (let index = 0; index < total; index += 1) {
+        if (!channel || channel.readyState !== 'open') return
+        const data = avatar.slice(index * avatarChunkSize, (index + 1) * avatarChunkSize)
+        await sendProfilePayload({
+          kind: 'profile-avatar-chunk',
+          hash: meta.hash,
+          updatedAt: meta.updatedAt,
+          index,
+          total,
+          data
+        })
+        if (total > 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0))
+        }
+      }
+    }
+
     const sendProfileUpdate = async (profile: ProfilePayload | null, targetDeviceId?: string) => {
       const nextProfile = profile ?? resolveLocalProfile()
       if (!nextProfile) return
       const meta = buildProfileMeta(nextProfile)
-      const payload = { ...nextProfile, ...meta }
+      if (!meta) return
+      const avatar = nextProfile.avatar
+      const needsChunking = Boolean(avatar && avatar.length > avatarChunkSize)
+      const payload = {
+        ...nextProfile,
+        avatar: !needsChunking ? avatar : undefined,
+        avatarChunked: needsChunking ? true : undefined,
+        ...meta
+      }
       if (channel && channel.readyState === 'open') {
         await sendProfilePayload({ kind: 'profile-update', profile: payload })
+        if (needsChunking && avatar) {
+          await sendAvatarChunks(avatar, meta)
+        }
         return
       }
       const identity = options.identityRef.value
@@ -388,7 +430,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
         const encrypted = await encryptPayload(
           key,
-          JSON.stringify({ kind: 'profile-update', profile: payload }),
+          JSON.stringify({
+            kind: 'profile-update',
+            profile: { ...payload, avatar: undefined, avatarChunked: undefined }
+          }),
           sessionId,
           salt,
           identity.deviceId
@@ -521,6 +566,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           let typingState: 'start' | 'stop' | null = null
           let profileMeta: ProfileMeta | null = null
           let profilePayload: ProfilePayload | null = null
+          let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
+            null
           let profileRequest = false
           try {
             const messagePayload = JSON.parse(plaintext) as {
@@ -533,6 +580,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               state?: string
               meta?: Record<string, unknown>
               profile?: Record<string, unknown>
+              hash?: string
+              updatedAt?: string
+              index?: number
+              total?: number
+              data?: string
             }
             if (messagePayload?.kind === 'receipt') {
               isReceipt = true
@@ -542,6 +594,20 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             } else if (messagePayload?.kind === 'typing') {
               if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                 typingState = messagePayload.state
+              }
+            } else if (messagePayload?.kind === 'profile-avatar-chunk') {
+              const hash = typeof messagePayload.hash === 'string' ? messagePayload.hash : ''
+              const index = Number(messagePayload.index)
+              const total = Number(messagePayload.total)
+              const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
+              if (hash && Number.isFinite(index) && Number.isFinite(total) && data) {
+                avatarChunk = {
+                  hash,
+                  updatedAt: typeof messagePayload.updatedAt === 'string' ? messagePayload.updatedAt : undefined,
+                  index,
+                  total,
+                  data
+                }
               }
             } else if (messagePayload?.kind === 'profile-meta') {
               const meta = parseProfileMeta(messagePayload.meta)
@@ -598,28 +664,58 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             setRemoteTyping(typingState === 'start')
             return
           }
-            if (profileMeta) {
-              const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
-              if (cachedProfile && !options.contactProfiles.value[contact.id]) {
-                options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
+          if (avatarChunk) {
+            const key = `${contact.id}:${avatarChunk.hash}`
+            const existing =
+              avatarChunks.get(key) ?? {
+                total: avatarChunk.total,
+                chunks: new Array(avatarChunk.total).fill(''),
+                updatedAt: avatarChunk.updatedAt
               }
-              const cachedMeta = loadRemoteProfileMeta(contact.id)
-              const needsProfile = !cachedProfile
-              const metaChanged = !cachedMeta || cachedMeta.hash !== profileMeta.hash
-              saveRemoteProfileMeta(contact.id, profileMeta)
-              if ((metaChanged || needsProfile) && next.readyState === 'open') {
-                await requestProfileUpdate(profileMeta, senderDeviceId)
-              }
-              return
+            if (existing.total !== avatarChunk.total) {
+              existing.total = avatarChunk.total
+              existing.chunks = new Array(avatarChunk.total).fill('')
             }
-            if (profileRequest) {
-              await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
-              return
+            if (avatarChunk.index >= 0 && avatarChunk.index < existing.total) {
+              existing.chunks[avatarChunk.index] = avatarChunk.data
             }
-            if (profilePayload) {
-              applyRemoteProfile(profilePayload)
-              return
+            if (existing.chunks.every((chunk) => chunk)) {
+              const avatar = existing.chunks.join('')
+              const cached = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id) ?? {}
+              applyRemoteProfile({
+                ...cached,
+                avatar,
+                hash: avatarChunk.hash,
+                updatedAt: avatarChunk.updatedAt ?? cached.updatedAt
+              })
+              avatarChunks.delete(key)
+            } else {
+              avatarChunks.set(key, existing)
             }
+            return
+          }
+          if (profileMeta) {
+            const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
+            if (cachedProfile && !options.contactProfiles.value[contact.id]) {
+              options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
+            }
+            const cachedMeta = loadRemoteProfileMeta(contact.id)
+            const needsProfile = !cachedProfile
+            const metaChanged = !cachedMeta || cachedMeta.hash !== profileMeta.hash
+            saveRemoteProfileMeta(contact.id, profileMeta)
+            if ((metaChanged || needsProfile) && next.readyState === 'open') {
+              await requestProfileUpdate(profileMeta, senderDeviceId)
+            }
+            return
+          }
+          if (profileRequest) {
+            await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
+            return
+          }
+          if (profilePayload) {
+            applyRemoteProfile(profilePayload)
+            return
+          }
           if (historyResponse) {
             if (options.historySuppressed.value) return
             options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
@@ -730,6 +826,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const ensurePeerConnection = (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
       if (connection) return
+      isPolite = identity.deviceId.localeCompare(remoteDevice.deviceId) > 0
       connection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       })
@@ -809,10 +906,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const remoteDevice = fromDeviceId ? await resolveDevice(fromDeviceId) : options.remoteDeviceRef.value ?? null
       if (!remoteDevice) return
       options.remoteDeviceRef.value = noSerialize(remoteDevice)
+      isPolite = identity.deviceId.localeCompare(remoteDevice.deviceId) > 0
       ensurePeerConnection(identity, remoteDevice)
       if (!connection) return
 
       if (payloadType === 'offer' && typeof payload.sdp === 'string' && sessionId && salt) {
+        const offerCollision = makingOffer || connection.signalingState !== 'stable'
+        if (offerCollision && !isPolite) {
+          return
+        }
         isCaller = false
         const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
         options.sessionRef.value = noSerialize({
@@ -821,6 +923,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           key,
           remoteDeviceId: remoteDevice.deviceId
         })
+        if (offerCollision) {
+          try {
+            await connection.setLocalDescription({ type: 'rollback' })
+          } catch {
+            // ignore rollback errors
+          }
+        }
         await connection.setRemoteDescription({ type: 'offer', sdp: payload.sdp })
         await flushCandidates()
         const answer = await connection.createAnswer()
@@ -1005,6 +1114,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let typingState: 'start' | 'stop' | null = null
             let profileMeta: ProfileMeta | null = null
             let profilePayload: ProfilePayload | null = null
+            let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
+              null
             let profileRequest = false
             let signalPayload: Record<string, unknown> | null = null
             let signalSessionId: string | undefined
@@ -1023,6 +1134,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 payload?: Record<string, unknown>
                 sessionId?: string
                 toDeviceId?: string
+                hash?: string
+                updatedAt?: string
+                index?: number
+                total?: number
+                data?: string
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
@@ -1032,6 +1148,20 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               } else if (messagePayload?.kind === 'typing') {
                 if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                   typingState = messagePayload.state
+                }
+              } else if (messagePayload?.kind === 'profile-avatar-chunk') {
+                const hash = typeof messagePayload.hash === 'string' ? messagePayload.hash : ''
+                const index = Number(messagePayload.index)
+                const total = Number(messagePayload.total)
+                const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
+                if (hash && Number.isFinite(index) && Number.isFinite(total) && data) {
+                  avatarChunk = {
+                    hash,
+                    updatedAt: typeof messagePayload.updatedAt === 'string' ? messagePayload.updatedAt : undefined,
+                    index,
+                    total,
+                    data
+                  }
                 }
               } else if (messagePayload?.kind === 'signal') {
                 if (isRecord(messagePayload.payload)) {
@@ -1120,6 +1250,39 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             }
             if (profilePayload) {
               applyRemoteProfile(profilePayload)
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (avatarChunk) {
+              const key = `${contact.id}:${avatarChunk.hash}`
+              const existing =
+                avatarChunks.get(key) ?? {
+                  total: avatarChunk.total,
+                  chunks: new Array(avatarChunk.total).fill(''),
+                  updatedAt: avatarChunk.updatedAt
+                }
+              if (existing.total !== avatarChunk.total) {
+                existing.total = avatarChunk.total
+                existing.chunks = new Array(avatarChunk.total).fill('')
+              }
+              if (avatarChunk.index >= 0 && avatarChunk.index < existing.total) {
+                existing.chunks[avatarChunk.index] = avatarChunk.data
+              }
+              if (existing.chunks.every((chunk) => chunk)) {
+                const avatar = existing.chunks.join('')
+                const cached = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id) ?? {}
+                applyRemoteProfile({
+                  ...cached,
+                  avatar,
+                  hash: avatarChunk.hash,
+                  updatedAt: avatarChunk.updatedAt ?? cached.updatedAt
+                })
+                avatarChunks.delete(key)
+              } else {
+                avatarChunks.set(key, existing)
+              }
               if (entryId) {
                 ackIds.push(entryId)
               }
@@ -1246,6 +1409,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
       isCaller = true
+      isPolite = identity.deviceId.localeCompare(remoteDevice.deviceId) > 0
       ensurePeerConnection(identity, remoteDevice)
       if (!connection) return
       debug('starting caller', { remoteDeviceId: remoteDevice.deviceId })
@@ -1260,17 +1424,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         key,
         remoteDeviceId: remoteDevice.deviceId
       })
-      const offer = await connection.createOffer()
-      await connection.setLocalDescription(offer)
-      debug('created offer')
-      await waitForIceGatheringComplete(connection)
-      sendSignal({
-        type: 'signal',
-        to: contact.id,
-        toDeviceId: remoteDevice.deviceId,
-        sessionId,
-        payload: { type: 'offer', sdp: connection.localDescription?.sdp ?? offer.sdp, salt }
-      })
+      try {
+        makingOffer = true
+        const offer = await connection.createOffer()
+        await connection.setLocalDescription(offer)
+        debug('created offer')
+        await waitForIceGatheringComplete(connection)
+        sendSignal({
+          type: 'signal',
+          to: contact.id,
+          toDeviceId: remoteDevice.deviceId,
+          sessionId,
+          payload: { type: 'offer', sdp: connection.localDescription?.sdp ?? offer.sdp, salt }
+        })
+      } finally {
+        makingOffer = false
+      }
     }
 
     void (async () => {
