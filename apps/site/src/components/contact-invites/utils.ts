@@ -36,8 +36,19 @@ export const resolveEncryptedPayload = (payload: unknown): EncryptedPayload | nu
   }
 }
 
-export const pickPreferredDevice = (devices: ContactDevice[]) =>
-  devices.find((device) => device.role !== 'relay') ?? devices[0] ?? null
+export const pickPreferredDevice = (devices: ContactDevice[]) => {
+  if (!devices.length) return null
+  const sorted = [...devices].sort((a, b) => {
+    const roleA = a.role === 'relay' ? 1 : 0
+    const roleB = b.role === 'relay' ? 1 : 0
+    if (roleA !== roleB) return roleA - roleB
+    const timeA = a.updatedAt ? Date.parse(a.updatedAt) : 0
+    const timeB = b.updatedAt ? Date.parse(b.updatedAt) : 0
+    if (timeA !== timeB) return timeB - timeA
+    return a.deviceId.localeCompare(b.deviceId)
+  })
+  return sorted[0] ?? null
+}
 
 export const createMessageId = () =>
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'

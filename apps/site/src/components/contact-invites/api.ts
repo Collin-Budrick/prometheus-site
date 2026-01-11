@@ -1,8 +1,34 @@
 import { appConfig } from '../../app-config'
 import { isRecord } from './utils'
 
-export const buildApiUrl = (path: string, origin: string) => {
+const isLocalHost = (hostname: string) =>
+  hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '::1'
+
+const resolveClientApiBase = (origin: string) => {
   const base = appConfig.apiBase
+  if (!base) return `${origin}/api`
+  if (base.startsWith('http://') || base.startsWith('https://')) {
+    try {
+      const apiUrl = new URL(base)
+      const originUrl = new URL(origin)
+      if (originUrl.protocol === 'https:' && apiUrl.protocol === 'http:') {
+        return `${origin}/api`
+      }
+      if (apiUrl.origin === originUrl.origin && (apiUrl.pathname === '/' || apiUrl.pathname === '')) {
+        return `${origin}/api`
+      }
+      if (isLocalHost(apiUrl.hostname) && !isLocalHost(originUrl.hostname)) {
+        return `${origin}/api`
+      }
+    } catch {
+      return base
+    }
+  }
+  return base
+}
+
+export const buildApiUrl = (path: string, origin: string) => {
+  const base = resolveClientApiBase(origin)
   if (!base) return `${origin}${path}`
   if (base.startsWith('/')) return `${origin}${base}${path}`
   return `${base}${path}`

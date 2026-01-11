@@ -106,6 +106,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let historyRequested = false
     let historyNeeded = false
     const pendingSignals: Array<Record<string, unknown>> = []
+    const pendingCandidates: RTCIceCandidateInit[] = []
+    const handledSignals = new Set<string>()
 
     options.dmStatus.value = 'connecting'
     options.dmMessages.value = []
@@ -131,6 +133,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ws?.close()
       ws = null
       options.channelRef.value = undefined
+    }
+
+    const flushCandidates = async () => {
+      if (!connection || !connection.remoteDescription) return
+      while (pendingCandidates.length) {
+        const candidate = pendingCandidates.shift()
+        if (!candidate) continue
+        try {
+          await connection.addIceCandidate(candidate)
+        } catch {
+          // ignore candidate failures
+        }
+      }
     }
 
     const fetchDevices = async () => {
@@ -172,11 +187,56 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return pickPreferredDevice(devices)
     }
 
+    const sendSignalViaMailbox = async (signal: Record<string, unknown>) => {
+      const identity = options.identityRef.value
+      if (!identity) return
+      const toDeviceId = typeof signal.toDeviceId === 'string' ? signal.toDeviceId : undefined
+      const device = await resolveRemoteDevice(toDeviceId)
+      if (!device) return
+      try {
+        const sessionId = createMessageId()
+        const salt = randomBase64(16)
+        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+        const encrypted = await encryptPayload(
+          key,
+          JSON.stringify({
+            kind: 'signal',
+            payload: signal.payload,
+            sessionId: signal.sessionId,
+            toDeviceId
+          }),
+          sessionId,
+          salt,
+          identity.deviceId
+        )
+        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            recipientId: contact.id,
+            sessionId,
+            deviceIds: [device.deviceId],
+            payload: encrypted
+          })
+        })
+      } catch {
+        // ignore signal mailbox failures
+      }
+    }
+
     const sendSignal = (signal: Record<string, unknown>) => {
+      const payload = isRecord(signal.payload) ? signal.payload : null
+      const payloadType = payload?.type
+      const shouldMirror = payloadType === 'offer' || payloadType === 'answer'
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(signal))
+        if (shouldMirror) {
+          void sendSignalViaMailbox(signal)
+        }
         return
       }
+      void sendSignalViaMailbox(signal)
       pendingSignals.push(signal)
     }
 
@@ -616,10 +676,30 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!payload) return
       const payloadType = payload.type
       if (payloadType !== 'offer' && payloadType !== 'answer' && payloadType !== 'candidate') return
+      let signalKey = ''
+      if (payloadType === 'candidate') {
+        const candidate = isRecord(payload.candidate) ? payload.candidate : payload.candidate
+        let candidateLine = isRecord(candidate) && typeof candidate.candidate === 'string' ? candidate.candidate : ''
+        if (!candidateLine) {
+          try {
+            candidateLine = JSON.stringify(candidate)
+          } catch {
+            candidateLine = ''
+          }
+        }
+        signalKey = `candidate:${candidateLine}`
+      } else if (payloadType === 'offer' || payloadType === 'answer') {
+        signalKey = `${payloadType}:${typeof payload.sdp === 'string' ? payload.sdp : ''}`
+      }
+      const sessionId = typeof signal.sessionId === 'string' ? signal.sessionId : undefined
+      if (signalKey) {
+        const keyed = sessionId ? `${sessionId}:${signalKey}` : signalKey
+        if (handledSignals.has(keyed)) return
+        handledSignals.add(keyed)
+      }
       const identity = options.identityRef.value
       if (!identity) return
       const fromDeviceId = typeof signal.fromDeviceId === 'string' ? signal.fromDeviceId : undefined
-      const sessionId = typeof signal.sessionId === 'string' ? signal.sessionId : undefined
       const salt = typeof payload.salt === 'string' ? payload.salt : undefined
       const remoteDevice = fromDeviceId ? await resolveDevice(fromDeviceId) : options.remoteDeviceRef.value ?? null
       if (!remoteDevice) return
@@ -636,6 +716,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           remoteDeviceId: remoteDevice.deviceId
         })
         await connection.setRemoteDescription({ type: 'offer', sdp: payload.sdp })
+        await flushCandidates()
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
         sendSignal({
@@ -650,12 +731,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
       if (payloadType === 'answer' && typeof payload.sdp === 'string') {
         await connection.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
+        await flushCandidates()
         return
       }
 
       if (payloadType === 'candidate' && payload.candidate) {
+        const candidate = payload.candidate as RTCIceCandidateInit
+        if (!connection.remoteDescription) {
+          pendingCandidates.push(candidate)
+          return
+        }
         try {
-          await connection.addIceCandidate(payload.candidate as RTCIceCandidateInit)
+          await connection.addIceCandidate(candidate)
         } catch {
           // ignore candidate errors
         }
@@ -775,6 +862,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let profileMeta: ProfileMeta | null = null
             let profilePayload: ProfilePayload | null = null
             let profileRequest = false
+            let signalPayload: Record<string, unknown> | null = null
+            let signalSessionId: string | undefined
+            let signalTargetDeviceId: string | undefined
             try {
               const messagePayload = JSON.parse(plaintext) as {
                 kind?: string
@@ -786,6 +876,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 state?: string
                 meta?: Record<string, unknown>
                 profile?: Record<string, unknown>
+                payload?: Record<string, unknown>
+                sessionId?: string
+                toDeviceId?: string
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
@@ -795,6 +888,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               } else if (messagePayload?.kind === 'typing') {
                 if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
                   typingState = messagePayload.state
+                }
+              } else if (messagePayload?.kind === 'signal') {
+                if (isRecord(messagePayload.payload)) {
+                  signalPayload = messagePayload.payload
+                  signalSessionId = typeof messagePayload.sessionId === 'string' ? messagePayload.sessionId : undefined
+                  signalTargetDeviceId =
+                    typeof messagePayload.toDeviceId === 'string' ? messagePayload.toDeviceId : undefined
                 }
               } else if (messagePayload?.kind === 'profile-meta') {
                 const meta = parseProfileMeta(messagePayload.meta)
@@ -837,6 +937,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               }
             } catch {
               // ignore parse errors
+            }
+            if (signalPayload) {
+              await handleSignal({
+                payload: signalPayload,
+                sessionId: signalSessionId,
+                fromDeviceId: senderDeviceId,
+                toDeviceId: signalTargetDeviceId
+              })
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
             }
             if (profileMeta) {
               const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
@@ -1040,7 +1152,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         connectWs(identity)
         await pullMailbox(identity)
         await requestHistory(identity)
-        await startCaller(identity, target)
+        const shouldInitiate = identity.deviceId.localeCompare(target.deviceId) < 0
+        if (shouldInitiate) {
+          await startCaller(identity, target)
+        }
       } catch (error) {
         options.dmStatus.value = 'error'
         options.dmError.value = error instanceof Error ? error.message : 'Unable to start direct message.'
