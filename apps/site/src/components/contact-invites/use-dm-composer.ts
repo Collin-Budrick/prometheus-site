@@ -31,9 +31,14 @@ type DmComposerOptions = {
 }
 
 export const useDmComposer = (options: DmComposerOptions) => {
-  const imageChunkSize = 12_000
   const mailboxMaxChunks = 160
-  const mailboxChunkDelayMs = 1200
+  const mailboxChunkDelayMs = 400
+  const mailboxMinChunkBytes = 64 * 1024
+  const mailboxMaxChunkBytes = 256 * 1024
+  const mailboxBatchMin = 4
+  const mailboxBatchMax = 8
+  const mailboxTargetBatchBytes = 900 * 1024
+  const mailboxPipelineWindow = 3
   const mailboxMaxWaitMs = 30 * 60_000
   const mailboxImageQueue = { current: null as Promise<boolean> | null }
 
@@ -470,8 +475,10 @@ export const useDmComposer = (options: DmComposerOptions) => {
         options.dmError.value = 'Unable to read image.'
         return
       }
-      const mailboxChunkSizeBase = Math.max(imageChunkSize, Math.ceil(base64Raw.length / mailboxMaxChunks))
-      const mailboxChunkSize = Math.ceil(mailboxChunkSizeBase / 4) * 4
+      const idealRawChunk = Math.ceil(payloadBytes.length / mailboxMaxChunks)
+      const rawChunkBytes = Math.min(mailboxMaxChunkBytes, Math.max(mailboxMinChunkBytes, idealRawChunk))
+      const mailboxChunkSizeBase = Math.ceil(rawChunkBytes / 3) * 4
+      const mailboxChunkSize = Math.max(4, Math.ceil(mailboxChunkSizeBase / 4) * 4)
       const mailboxTotal = Math.ceil(base64Raw.length / mailboxChunkSize)
 
       options.dmMessages.value = options.dmMessages.value.map((message) =>
@@ -510,7 +517,6 @@ export const useDmComposer = (options: DmComposerOptions) => {
               })
             })
             if (response.ok) {
-              await sleep(mailboxChunkDelayMs)
               return true
             }
             if (response.status === 429) {
@@ -553,24 +559,35 @@ export const useDmComposer = (options: DmComposerOptions) => {
           `${messageId}-meta`
         )
         if (!metaSent) return false
-        const batchSize = 4
+        const batchSize = Math.min(
+          mailboxBatchMax,
+          Math.max(
+            mailboxBatchMin,
+            Math.floor(mailboxTargetBatchBytes / mailboxChunkSize) || mailboxBatchMin
+          )
+        )
+        const batches: Array<{
+          payload: { kind: 'image-chunk-batch'; id: string; total: number; chunks: Array<{ index: number; data: string }> }
+          messageId: string
+        }> = []
         for (let index = 0; index < mailboxTotal; index += batchSize) {
-          const batch: Array<{ index: number; data: string }> = []
+          const chunks: Array<{ index: number; data: string }> = []
           for (let offset = 0; offset < batchSize && index + offset < mailboxTotal; offset += 1) {
             const chunkIndex = index + offset
             const data = base64Raw.slice(chunkIndex * mailboxChunkSize, (chunkIndex + 1) * mailboxChunkSize)
-            batch.push({ index: chunkIndex, data })
+            chunks.push({ index: chunkIndex, data })
           }
-          const chunkSent = await sendMailboxPayload(
-            {
-              kind: 'image-chunk-batch',
-              id: messageId,
-              total: mailboxTotal,
-              chunks: batch
-            },
-            `${messageId}-chunk-${index}`
+          batches.push({
+            payload: { kind: 'image-chunk-batch', id: messageId, total: mailboxTotal, chunks },
+            messageId: `${messageId}-chunk-${index}`
+          })
+        }
+        for (let index = 0; index < batches.length; index += mailboxPipelineWindow) {
+          const windowed = batches.slice(index, index + mailboxPipelineWindow)
+          const results = await Promise.all(
+            windowed.map((batch) => sendMailboxPayload(batch.payload, batch.messageId))
           )
-          if (!chunkSent) return false
+          if (results.some((result) => !result)) return false
         }
         return true
       }
