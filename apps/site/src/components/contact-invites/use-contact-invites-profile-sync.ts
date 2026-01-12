@@ -358,7 +358,8 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
     ctx.track(() => syncReady.value)
     const contacts = ctx.track(() => options.contacts.value)
     const onlineIds = ctx.track(() => options.onlineIds.value)
-    if (!syncReady.value || !requestProfileForContact) return
+    const requestProfile = requestProfileForContact
+    if (!syncReady.value || !requestProfile) return
     const onlineSet = new Set(onlineIds)
     const nextOnline = new Set<string>()
     contacts.forEach((contact) => {
@@ -369,7 +370,7 @@ export const useContactInvitesProfileSync = (options: ContactInvitesProfileSyncO
       }
       const cached = options.contactProfiles.value[userId] ?? loadRemoteProfile(userId)
       if (!cached) {
-        requestProfileForContact(userId)
+        requestProfile(userId)
       }
     })
     onlineContactIds = nextOnline
