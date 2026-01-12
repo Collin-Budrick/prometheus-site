@@ -99,6 +99,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const remoteTyping = useSignal(false)
     const remoteTypingTimer = useSignal<number | null>(null)
     const historySuppressed = useSignal(false)
+    const incomingImageCount = useSignal(0)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -287,6 +288,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       chatSettings,
       remoteTyping,
       remoteTypingTimer,
+      incomingImageCount,
       historySuppressed,
       fragmentCopy,
       registerIdentity,
@@ -459,6 +461,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             dmAnimated={dmAnimated.value}
             dmOrigin={dmOrigin.value}
             dmStatus={dmStatus.value}
+            incomingImageCount={incomingImageCount.value}
             remoteTyping={remoteTyping.value}
             contactProfile={activeContactProfile}
             selfProfile={localProfile.value}

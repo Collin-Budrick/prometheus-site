@@ -795,6 +795,19 @@ html[data-chat-dm-open='true'] .fragment-card {
   color: rgb(var(--signal-strong));
 }
 
+.chat-invites-dm-transfer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: rgb(var(--signal-strong));
+}
+
+.chat-invites-dm-transfer[data-tone='outgoing'] {
+  color: rgb(var(--accent));
+}
+
 .chat-invites-dm-typing-dots {
   display: inline-flex;
   align-items: center;
@@ -835,7 +848,8 @@ html[data-chat-dm-open='true'] .fragment-card {
 }
 
 .chat-invites-dm-row[data-author='self'] {
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-direction: row-reverse;
 }
 
 .chat-invites-dm-message {

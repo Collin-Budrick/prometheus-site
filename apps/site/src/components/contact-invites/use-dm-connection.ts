@@ -49,6 +49,7 @@ type DmConnectionOptions = {
   chatSettings: Signal<ChatSettings>
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
+  incomingImageCount: Signal<number>
   historySuppressed: Signal<boolean>
   fragmentCopy: Signal<Record<string, string>>
   registerIdentity: QRL<() => Promise<DeviceIdentity>>
@@ -65,6 +66,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       options.dmMessages.value = []
       options.dmInput.value = ''
       options.dmError.value = null
+      options.incomingImageCount.value = 0
       options.sessionRef.value = undefined
       options.remoteDeviceRef.value = undefined
       options.historySuppressed.value = false
@@ -114,6 +116,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let historyNeeded = false
     const mailboxPullLimit = 100
     const avatarChunkSize = 12_000
+    const incomingImageIds = new Set<string>()
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
     const imageChunks = new Map<
       string,
@@ -145,6 +148,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     options.dmMessages.value = []
     options.dmInput.value = ''
     options.dmError.value = null
+    options.incomingImageCount.value = 0
     options.historySuppressed.value = false
     options.sessionRef.value = undefined
 
@@ -522,6 +526,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return btoa(binary)
     }
 
+    const markIncomingImage = (id: string) => {
+      if (incomingImageIds.has(id)) return
+      incomingImageIds.add(id)
+      options.incomingImageCount.value += 1
+    }
+
+    const clearIncomingImage = (id: string) => {
+      if (!incomingImageIds.has(id)) return
+      incomingImageIds.delete(id)
+      options.incomingImageCount.value = Math.max(0, options.incomingImageCount.value - 1)
+    }
+
     const storeImageMeta = (meta: {
       id: string
       createdAt: string
@@ -542,6 +558,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         return
       }
+      markIncomingImage(meta.id)
       imageChunks.set(meta.id, {
         total: meta.total,
         chunks: new Array(meta.total).fill(''),
@@ -559,6 +576,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           chunks: new Array(payload.total).fill(''),
           meta: undefined
         }
+      if (!imageChunks.has(payload.id)) {
+        markIncomingImage(payload.id)
+      }
       if (existing.total !== payload.total) {
         existing.total = payload.total
         existing.chunks = new Array(payload.total).fill('')
@@ -579,6 +599,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const decompressed = await zstdDecompress(encodedBytes)
         if (!decompressed) {
           imageChunks.delete(payload.id)
+          clearIncomingImage(payload.id)
           options.dmError.value = 'Unable to decode image.'
           return null
         }
@@ -587,6 +608,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const dataUrl = `data:${mime};base64,${encodeBase64(imageBytes)}`
       const createdAt = meta?.createdAt ?? new Date().toISOString()
       imageChunks.delete(payload.id)
+      clearIncomingImage(payload.id)
       return {
         id: payload.id,
         text: '',

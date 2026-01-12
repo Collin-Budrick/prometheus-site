@@ -12,6 +12,7 @@ type ContactInvitesDmProps = {
   dmAnimated: boolean
   dmOrigin: DmOrigin | null
   dmStatus: DmConnectionState
+  incomingImageCount: number
   remoteTyping: boolean
   contactProfile: ProfilePayload | null
   selfProfile: ProfilePayload | null
@@ -58,6 +59,17 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
   const contactInitials = formatInitials(props.activeContact)
   const selfInitials = formatInitials({ name: props.selfLabel, email: props.selfLabel })
   const canSendMedia = props.dmStatus !== 'error'
+  const queuedImageCount = props.dmMessages.filter(
+    (message) => message.author === 'self' && message.kind === 'image' && message.status === 'queued'
+  ).length
+  const incomingTransfer =
+    props.incomingImageCount > 0
+      ? `${resolve('Incoming image')}${props.incomingImageCount > 1 ? ` (${props.incomingImageCount})` : ''}...`
+      : null
+  const outgoingTransfer =
+    queuedImageCount > 0
+      ? `${resolve('Delivering image')}${queuedImageCount > 1 ? ` (${queuedImageCount})` : ''}...`
+      : null
 
   return (
     <div
@@ -186,6 +198,12 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
                   <span class="chat-invites-dm-typing-dot" />
                   <span class="chat-invites-dm-typing-dot" />
                 </span>
+              </span>
+            ) : null}
+            {incomingTransfer ? <span class="chat-invites-dm-transfer">{incomingTransfer}</span> : null}
+            {outgoingTransfer ? (
+              <span class="chat-invites-dm-transfer" data-tone="outgoing">
+                {outgoingTransfer}
               </span>
             ) : null}
             {props.dmError ? <span class="chat-invites-dm-error">{props.dmError}</span> : null}
