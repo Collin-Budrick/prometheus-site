@@ -13,6 +13,9 @@ export type OutboxItem = {
   size?: number
   width?: number
   height?: number
+  sentAt?: string
+  attempts?: number
+  sentVia?: 'channel' | 'relay'
 }
 
 type StoredOutboxEnvelope = {
@@ -92,10 +95,16 @@ const normalizeItem = (item: OutboxItem) => {
   if (kind === 'text') {
     const text = typeof item.text === 'string' ? item.text : ''
     if (!text.trim()) return null
-    return { id, kind, createdAt, text } satisfies OutboxItem
+    const sentAt = typeof item.sentAt === 'string' ? item.sentAt : undefined
+    const attempts = typeof item.attempts === 'number' ? item.attempts : undefined
+    const sentVia = item.sentVia === 'relay' ? 'relay' : item.sentVia === 'channel' ? 'channel' : undefined
+    return { id, kind, createdAt, text, sentAt, attempts, sentVia } satisfies OutboxItem
   }
   const payloadBase64 = typeof item.payloadBase64 === 'string' ? item.payloadBase64 : ''
   if (!payloadBase64) return null
+  const sentAt = typeof item.sentAt === 'string' ? item.sentAt : undefined
+  const attempts = typeof item.attempts === 'number' ? item.attempts : undefined
+  const sentVia = item.sentVia === 'relay' ? 'relay' : item.sentVia === 'channel' ? 'channel' : undefined
   return {
     id,
     kind,
@@ -106,7 +115,10 @@ const normalizeItem = (item: OutboxItem) => {
     mime: typeof item.mime === 'string' ? item.mime : undefined,
     size: typeof item.size === 'number' ? item.size : undefined,
     width: typeof item.width === 'number' ? item.width : undefined,
-    height: typeof item.height === 'number' ? item.height : undefined
+    height: typeof item.height === 'number' ? item.height : undefined,
+    sentAt,
+    attempts,
+    sentVia
   } satisfies OutboxItem
 }
 
@@ -153,6 +165,39 @@ export const saveOutbox = async (contactId: string, identity: DeviceIdentity, it
 
 export const enqueueOutboxItem = async (contactId: string, identity: DeviceIdentity, item: OutboxItem) => {
   const existing = await loadOutbox(contactId, identity)
-  const next = [...existing.filter((entry) => entry.id !== item.id), item]
+  const previous = existing.find((entry) => entry.id === item.id)
+  const merged = previous ? { ...previous, ...item } : item
+  const next = [...existing.filter((entry) => entry.id !== item.id), merged]
+  return saveOutbox(contactId, identity, next)
+}
+
+export const markOutboxItemSent = async (
+  contactId: string,
+  identity: DeviceIdentity,
+  itemId: string,
+  sentVia: 'channel' | 'relay'
+) => {
+  const existing = await loadOutbox(contactId, identity)
+  let updated = false
+  const now = new Date().toISOString()
+  const next = existing.map((item) => {
+    if (item.id !== itemId) return item
+    updated = true
+    return {
+      ...item,
+      sentAt: now,
+      attempts: (item.attempts ?? 0) + 1,
+      sentVia
+    }
+  })
+  if (!updated) return false
+  return saveOutbox(contactId, identity, next)
+}
+
+export const removeOutboxItems = async (contactId: string, identity: DeviceIdentity, itemIds: string[]) => {
+  if (!itemIds.length) return true
+  const existing = await loadOutbox(contactId, identity)
+  const filter = new Set(itemIds)
+  const next = existing.filter((item) => !filter.has(item.id))
   return saveOutbox(contactId, identity, next)
 }

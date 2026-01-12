@@ -20,6 +20,12 @@ export type HighlightConfig = {
   serviceName: string
 }
 
+export type P2pIceServer = {
+  urls: string | string[]
+  username?: string
+  credential?: string
+}
+
 export type AppConfig = {
   apiBase: string
   webTransportBase: string
@@ -29,12 +35,17 @@ export type AppConfig = {
   enablePrefetch: boolean
   analytics: AnalyticsConfig
   highlight: HighlightConfig
+  p2pRelayBases: string[]
+  p2pIceServers: P2pIceServer[]
 }
 
 export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
 
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
 const falsyValues = new Set(['0', 'false', 'no', 'off'])
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
 
 const runtimeEnvSchema = arkenvType({
   API_BASE: 'string?',
@@ -57,6 +68,10 @@ const runtimeEnvSchema = arkenvType({
   VITE_HIGHLIGHT_PRIVACY: 'string?',
   VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
+  P2P_RELAY_BASES: 'string?',
+  VITE_P2P_RELAY_BASES: 'string?',
+  P2P_ICE_SERVERS: 'string?',
+  VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -77,6 +92,8 @@ const publicEnvSchema = arkenvType({
   VITE_HIGHLIGHT_PRIVACY: 'string?',
   VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
+  VITE_P2P_RELAY_BASES: 'string?',
+  VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -155,6 +172,12 @@ const normalizePath = (path: string) => {
   if (path === '/') return ''
   return path.endsWith('/') ? path.slice(0, -1) : path
 }
+
+const splitList = (raw: string) =>
+  raw
+    .split(/[,\\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 
 export const normalizeApiBase = (raw?: string | null) => {
   if (!raw) return ''
@@ -298,6 +321,49 @@ export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): Highl
   }
 }
 
+const resolveP2pRelayBases = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.P2P_RELAY_BASES, env.VITE_P2P_RELAY_BASES))?.trim() ?? ''
+  if (!raw) return []
+  return splitList(raw).map(normalizeApiBase).filter(Boolean)
+}
+
+const defaultP2pIceServers: P2pIceServer[] = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }
+]
+
+const normalizeIceServer = (value: unknown): P2pIceServer | null => {
+  if (!value) return null
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    return { urls: trimmed }
+  }
+  if (!isRecord(value)) return null
+  const urls = value.urls
+  if (typeof urls !== 'string' && !Array.isArray(urls)) return null
+  const username = typeof value.username === 'string' ? value.username : undefined
+  const credential = typeof value.credential === 'string' ? value.credential : undefined
+  return { urls, username, credential }
+}
+
+const resolveP2pIceServers = (env: AppEnv): P2pIceServer[] => {
+  const raw = toStringValue(firstDefined(env.P2P_ICE_SERVERS, env.VITE_P2P_ICE_SERVERS))?.trim() ?? ''
+  if (!raw) return defaultP2pIceServers
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) {
+      const normalized = parsed.map(normalizeIceServer).filter(Boolean) as P2pIceServer[]
+      return normalized.length ? normalized : defaultP2pIceServers
+    }
+    const single = normalizeIceServer(parsed)
+    return single ? [single] : defaultP2pIceServers
+  } catch {
+    const urls = splitList(raw)
+    if (!urls.length) return defaultP2pIceServers
+    return [{ urls }]
+  }
+}
+
 export const resolveAppConfig = (env?: AppEnv): AppConfig => {
   const resolvedEnv = resolvePublicEnv(env)
 
@@ -309,6 +375,8 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     preferFragmentCompression: isFragmentCompressionPreferred(resolvedEnv),
     enablePrefetch: isPrefetchEnabled(resolvedEnv),
     analytics: resolveAnalyticsConfig(resolvedEnv),
-    highlight: resolveHighlightConfig(resolvedEnv)
+    highlight: resolveHighlightConfig(resolvedEnv),
+    p2pRelayBases: resolveP2pRelayBases(resolvedEnv),
+    p2pIceServers: resolveP2pIceServers(resolvedEnv)
   }
 }

@@ -1,15 +1,19 @@
 import { $, type NoSerialize, type Signal } from '@builder.io/qwik'
 import type { ChatSettings } from '../../shared/chat-settings'
 import {
+  decodeBase64,
+  deriveSessionKey,
   encryptPayload,
   encryptPayloadBinary,
   encodeBinaryEnvelope,
+  randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
 import { zstdCompress } from '../../shared/zstd-codec'
-import { enqueueOutboxItem } from './outbox'
+import { enqueueOutboxItem, markOutboxItemSent } from './outbox'
 import { persistHistory } from './history'
 import { createMessageId } from './utils'
+import { createRelayClients } from './relay'
 import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -116,6 +120,34 @@ export const useDmComposer = (options: DmComposerOptions) => {
     } catch {
       return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width: 0, height: 0 }
     }
+  }
+
+  const relayInlineLimitBytes = 240_000
+  let relayClients: ReturnType<typeof createRelayClients> | null = null
+
+  const getRelayClients = () => {
+    if (relayClients) return relayClients
+    if (typeof window === 'undefined') return []
+    relayClients = createRelayClients(window.location.origin)
+    return relayClients
+  }
+
+  const sendRelayPayload = async (payload: unknown, messageId: string, sessionId?: string) => {
+    const contact = options.activeContact.value
+    if (!contact) return 0
+    const clients = getRelayClients()
+    if (!clients.length) return 0
+    const results = await Promise.all(
+      clients.map((client) => client.send({ recipientId: contact.id, messageId, sessionId, payload }))
+    )
+    return results.reduce((sum, result) => sum + (result?.delivered ?? 0), 0)
+  }
+
+  const createRelaySession = async (identity: DeviceIdentity, device: ContactDevice) => {
+    const sessionId = createMessageId()
+    const salt = randomBase64(16)
+    const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+    return { sessionId, salt, key }
   }
 
   const sendEncryptedPayload = async (
@@ -226,10 +258,35 @@ export const useDmComposer = (options: DmComposerOptions) => {
       void persistHistory(contact.id, identity, options.dmMessages.value)
     }
 
+    if (!identity) {
+      options.dmMessages.value = options.dmMessages.value.map((message) =>
+        message.id === messageId ? { ...message, status: 'failed' } : message
+      )
+      options.dmError.value =
+        options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+      return
+    }
+
+    const queued = await enqueueOutboxItem(contact.id, identity, {
+      id: messageId,
+      kind: 'text',
+      createdAt,
+      text
+    })
+    if (!queued) {
+      options.dmMessages.value = options.dmMessages.value.map((message) =>
+        message.id === messageId ? { ...message, status: 'failed' } : message
+      )
+      options.dmError.value =
+        options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+      void persistHistory(contact.id, identity, options.dmMessages.value)
+      return
+    }
+
     try {
       const channel = options.channelRef.value
       const session = options.sessionRef.value
-      if (channel && channel.readyState === 'open' && session && identity) {
+      if (channel && channel.readyState === 'open' && session) {
         const payload = await encryptPayload(
           session.key,
           JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
@@ -238,6 +295,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
           identity.deviceId
         )
         channel.send(JSON.stringify({ type: 'message', payload }))
+        void markOutboxItemSent(contact.id, identity, messageId, 'channel')
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
@@ -245,36 +303,31 @@ export const useDmComposer = (options: DmComposerOptions) => {
         return
       }
 
-      if (!identity) {
-        options.dmMessages.value = options.dmMessages.value.map((message) =>
-          message.id === messageId ? { ...message, status: 'failed' } : message
+      const remoteDevice = options.remoteDeviceRef.value
+      if (remoteDevice) {
+        const relaySession = await createRelaySession(identity, remoteDevice)
+        const payload = await encryptPayload(
+          relaySession.key,
+          JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
+          relaySession.sessionId,
+          relaySession.salt,
+          identity.deviceId
         )
-        options.dmError.value =
-          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-        void persistHistory(contact.id, identity, options.dmMessages.value)
-        return
+        const delivered = await sendRelayPayload(payload, messageId, relaySession.sessionId)
+        if (delivered > 0) {
+          void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+        }
       }
-      const queued = await enqueueOutboxItem(contact.id, identity, {
-        id: messageId,
-        kind: 'text',
-        createdAt,
-        text
-      })
+
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: queued ? 'queued' : 'failed' } : message
+        message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
-      if (!queued) {
-        options.dmError.value =
-          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-      }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: 'failed' } : message
+        message.id === messageId ? { ...message, status: 'queued' } : message
       )
-      if (identity) {
-        void persistHistory(contact.id, identity, options.dmMessages.value)
-      }
+      void persistHistory(contact.id, identity, options.dmMessages.value)
       options.dmError.value =
         error instanceof Error
           ? error.message
@@ -355,6 +408,33 @@ export const useDmComposer = (options: DmComposerOptions) => {
         }
       }
     ]
+    const base64Raw = encodeBase64(payloadBytes)
+    if (!base64Raw) {
+      options.dmError.value = 'Unable to read image.'
+      return
+    }
+    const queued = await enqueueOutboxItem(contact.id, identity, {
+      id: messageId,
+      kind: 'image',
+      createdAt,
+      payloadBase64: base64Raw,
+      encoding: encoding === 'zstd' ? 'zstd' : undefined,
+      name: payloadName || undefined,
+      mime: payloadMime || undefined,
+      size: payloadSize,
+      width: width || undefined,
+      height: height || undefined
+    })
+    if (!queued) {
+      options.dmMessages.value = options.dmMessages.value.map((message) =>
+        message.id === messageId ? { ...message, status: 'failed' } : message
+      )
+      void persistHistory(contact.id, identity, options.dmMessages.value)
+      options.dmError.value =
+        options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+      return
+    }
+
     try {
       const channelChunkSize = 32_000
       const channelTotal = Math.max(1, Math.ceil(payloadBytes.length / channelChunkSize))
@@ -383,6 +463,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
           )
           channel.send(envelope)
         }
+        void markOutboxItemSent(contact.id, identity, messageId, 'channel')
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
@@ -390,34 +471,40 @@ export const useDmComposer = (options: DmComposerOptions) => {
         return
       }
 
-      const base64Raw = encodeBase64(payloadBytes)
-      if (!base64Raw) {
-        options.dmError.value = 'Unable to read image.'
-        return
+      const remoteDevice = options.remoteDeviceRef.value
+      if (remoteDevice && payloadBytes.length <= relayInlineLimitBytes) {
+        const relaySession = await createRelaySession(identity, remoteDevice)
+        const payload = await encryptPayload(
+          relaySession.key,
+          JSON.stringify({
+            kind: 'image-inline',
+            id: messageId,
+            createdAt,
+            payloadBase64: base64Raw,
+            encoding: encoding === 'zstd' ? 'zstd' : undefined,
+            name: payloadName || undefined,
+            mime: payloadMime || undefined,
+            size: payloadSize,
+            width: width || undefined,
+            height: height || undefined
+          }),
+          relaySession.sessionId,
+          relaySession.salt,
+          identity.deviceId
+        )
+        const delivered = await sendRelayPayload(payload, messageId, relaySession.sessionId)
+        if (delivered > 0) {
+          void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+        }
       }
-      const queued = await enqueueOutboxItem(contact.id, identity, {
-        id: messageId,
-        kind: 'image',
-        createdAt,
-        payloadBase64: base64Raw,
-        encoding: encoding === 'zstd' ? 'zstd' : undefined,
-        name: payloadName || undefined,
-        mime: payloadMime || undefined,
-        size: payloadSize,
-        width: width || undefined,
-        height: height || undefined
-      })
+
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: queued ? 'queued' : 'failed' } : message
+        message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
-      if (!queued) {
-        options.dmError.value =
-          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-      }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: 'failed' } : message
+        message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
       options.dmError.value =
