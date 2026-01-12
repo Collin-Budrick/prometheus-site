@@ -112,6 +112,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let mailboxTimer: number | null = null
     let historyRequested = false
     let historyNeeded = false
+    const mailboxPullLimit = 50
     const avatarChunkSize = 12_000
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
     const imageChunks = new Map<
@@ -1263,7 +1264,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ deviceId: identity.deviceId, limit: 50 })
+          body: JSON.stringify({ deviceId: identity.deviceId, limit: mailboxPullLimit })
         })
         if (response.status === 429) {
           const retryAfter = Number(response.headers.get('Retry-After') ?? '2')
@@ -1277,6 +1278,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         mailboxCooldownUntil = 0
         const payload = (await response.json()) as { messages?: Array<Record<string, unknown>> }
         const messages = Array.isArray(payload.messages) ? payload.messages : []
+        const shouldContinue = messages.length >= mailboxPullLimit
         debug('mailbox pull', { count: messages.length })
         if (!messages.length) return
         const ackIds: string[] = []
@@ -1674,6 +1676,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             credentials: 'include',
             body: JSON.stringify({ deviceId: identity.deviceId, messageIds: ackIds })
           })
+        }
+        if (shouldContinue) {
+          mailboxPullPending = true
         }
       } catch {
         // ignore mailbox failures
