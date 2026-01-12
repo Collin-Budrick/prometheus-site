@@ -2,11 +2,13 @@ import { noSerialize, useVisibleTask$, type NoSerialize, type QRL, type Signal }
 import type { ChatSettings } from '../../shared/chat-settings'
 import {
   decodeBase64,
+  encodeBinaryEnvelope,
   decodeBinaryEnvelope,
   decryptPayload,
   decryptPayloadBinary,
   deriveSessionKey,
   encryptPayload,
+  encryptPayloadBinary,
   randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
@@ -25,6 +27,7 @@ import {
   type ProfilePayload
 } from '../../shared/profile-storage'
 import { buildApiUrl, buildWsUrl } from './api'
+import { loadOutbox, saveOutbox, type OutboxItem } from './outbox'
 import {
   historyCacheLimit,
   historyRequestLimit,
@@ -110,13 +113,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let reconnecting = false
     let isPolite = false
     let makingOffer = false
-    let mailboxPulling = false
-    let mailboxPullPending = false
-    let mailboxCooldownUntil = 0
-    let mailboxTimer: number | null = null
+    let flushingOutbox = false
     let historyRequested = false
     let historyNeeded = false
-    const mailboxPullLimit = 100
     const avatarChunkSize = 12_000
     const incomingImageIds = new Set<string>()
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
@@ -166,10 +165,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer)
         reconnectTimer = null
-      }
-      if (mailboxTimer !== null) {
-        window.clearTimeout(mailboxTimer)
-        mailboxTimer = null
       }
       reconnecting = false
       reconnectAttempt = 0
@@ -269,70 +264,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return device ?? null
     }
 
-    const resolveRemoteDevice = async (deviceId?: string) => {
-      if (deviceId) {
-        const found = await resolveDevice(deviceId)
-        if (found) return found
-      }
-      await fetchDevices()
-      return pickPreferredDevice(devices)
-    }
-
-    const sendSignalViaMailbox = async (signal: Record<string, unknown>) => {
-      const identity = options.identityRef.value
-      if (!identity) return
-      const toDeviceId = typeof signal.toDeviceId === 'string' ? signal.toDeviceId : undefined
-      const device = await resolveRemoteDevice(toDeviceId)
-      if (!device) return
-      debug('signal via mailbox', { type: (signal.payload as Record<string, unknown> | undefined)?.type, to: device.deviceId })
-      try {
-        const sessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
-        const encrypted = await encryptPayload(
-          key,
-          JSON.stringify({
-            kind: 'signal',
-            payload: signal.payload,
-            sessionId: signal.sessionId,
-            toDeviceId
-          }),
-          sessionId,
-          salt,
-          identity.deviceId
-        )
-        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            recipientId: contact.id,
-            sessionId,
-            deviceIds: [device.deviceId],
-            payload: encrypted
-          })
-        })
-      } catch {
-        // ignore signal mailbox failures
-      }
-    }
-
     const sendSignal = (signal: Record<string, unknown>) => {
       const payload = isRecord(signal.payload) ? signal.payload : null
       const payloadType = payload?.type
       const wsOpen = ws?.readyState === WebSocket.OPEN
-      const shouldMirror =
-        payloadType === 'offer' || payloadType === 'answer' || (!wsOpen && payloadType === 'candidate')
       if (wsOpen) {
         debug('signal via ws', { type: payloadType })
         ws?.send(JSON.stringify(signal))
-        if (shouldMirror) {
-          void sendSignalViaMailbox(signal)
-        }
         return
       }
-      debug('signal queued for mailbox', { type: payloadType })
-      void sendSignalViaMailbox(signal)
+      debug('signal queued', { type: payloadType })
       pendingSignals.push(signal)
     }
 
@@ -439,7 +380,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
-    const sendProfileUpdate = async (profile: ProfilePayload | null, targetDeviceId?: string) => {
+    const sendProfileUpdate = async (profile: ProfilePayload | null, _targetDeviceId?: string) => {
       const nextProfile = profile ?? resolveLocalProfile()
       if (!nextProfile) return
       const meta = buildProfileMeta(nextProfile)
@@ -458,38 +399,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           await sendAvatarChunks(avatar, meta)
         }
         return
-      }
-      const identity = options.identityRef.value
-      if (!identity) return
-      const device = await resolveRemoteDevice(targetDeviceId)
-      if (!device) return
-      try {
-        const sessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
-        const encrypted = await encryptPayload(
-          key,
-          JSON.stringify({
-            kind: 'profile-update',
-            profile: { ...payload, avatar: undefined, avatarChunked: undefined }
-          }),
-          sessionId,
-          salt,
-          identity.deviceId
-        )
-        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            recipientId: contact.id,
-            sessionId,
-            deviceIds: [device.deviceId],
-            payload: encrypted
-          })
-        })
-      } catch {
-        // ignore profile update failures
       }
     }
 
@@ -514,13 +423,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const activeChannel = options.channelRef.value ?? channel
         if (activeChannel && activeChannel.readyState === 'open') {
           activeChannel.send(JSON.stringify({ type: 'message', payload: receipt }))
-        } else {
-          await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ recipientId: contact.id, payload: receipt })
-          })
         }
       } catch {
         // ignore receipt failures
@@ -561,6 +463,96 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return assembled
     }
 
+    const flushOutbox = async () => {
+      if (flushingOutbox) return
+      const identity = options.identityRef.value
+      const activeContact = options.activeContact.value
+      const session = options.sessionRef.value
+      const activeChannel = options.channelRef.value ?? channel
+      if (!identity || !activeContact || !session || !activeChannel || activeChannel.readyState !== 'open') return
+      flushingOutbox = true
+      try {
+        const queued = await loadOutbox(activeContact.id, identity)
+        if (!queued.length) return
+        const remaining: OutboxItem[] = []
+        let updated = false
+        for (const item of queued) {
+          try {
+            if (item.kind === 'text') {
+              const payload = await encryptPayload(
+                session.key,
+                JSON.stringify({
+                  kind: 'message',
+                  id: item.id,
+                  text: item.text ?? '',
+                  createdAt: item.createdAt
+                }),
+                session.sessionId,
+                session.salt,
+                identity.deviceId
+              )
+              activeChannel.send(JSON.stringify({ type: 'message', payload }))
+            } else if (item.kind === 'image') {
+              const payloadBase64 = item.payloadBase64 ?? ''
+              if (!payloadBase64) {
+                remaining.push(item)
+                continue
+              }
+              const payloadBytes = decodeBase64Safe(payloadBase64)
+              const channelChunkSize = 32_000
+              const total = Math.max(1, Math.ceil(payloadBytes.length / channelChunkSize))
+              const metaPayload = {
+                kind: 'image-meta',
+                id: item.id,
+                createdAt: item.createdAt,
+                name: item.name,
+                mime: item.mime,
+                size: item.size,
+                width: item.width,
+                height: item.height,
+                total,
+                encoding: item.encoding === 'zstd' ? 'zstd' : undefined
+              }
+              const metaEncrypted = await encryptPayload(
+                session.key,
+                JSON.stringify(metaPayload),
+                session.sessionId,
+                session.salt,
+                identity.deviceId
+              )
+              activeChannel.send(JSON.stringify({ type: 'message', payload: metaEncrypted }))
+              for (let index = 0; index < total; index += 1) {
+                const start = index * channelChunkSize
+                const end = Math.min(payloadBytes.length, start + channelChunkSize)
+                const data = payloadBytes.slice(start, end)
+                const envelope = encodeBinaryEnvelope(
+                  await encryptPayloadBinary(
+                    session.key,
+                    encodeBinaryMessage({ kind: 'image-chunk-bin', id: item.id, index, total }, data)
+                  )
+                )
+                activeChannel.send(envelope)
+              }
+            } else {
+              continue
+            }
+            options.dmMessages.value = options.dmMessages.value.map((message) =>
+              message.id === item.id ? { ...message, status: 'sent' } : message
+            )
+            updated = true
+          } catch {
+            remaining.push(item)
+          }
+        }
+        await saveOutbox(activeContact.id, identity, remaining)
+        if (updated) {
+          void persistHistory(activeContact.id, identity, options.dmMessages.value)
+        }
+      } finally {
+        flushingOutbox = false
+      }
+    }
+
     const decodeBinaryMessage = (bytes: Uint8Array) => {
       if (bytes.length < 2) return null
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -576,6 +568,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       const data = bytes.slice(2 + headerLength)
       return { header, data }
+    }
+
+    const encodeBinaryMessage = (header: Record<string, unknown>, data: Uint8Array) => {
+      const headerBytes = new TextEncoder().encode(JSON.stringify(header))
+      if (headerBytes.length > 65_535) {
+        throw new Error('Image header too large.')
+      }
+      const buffer = new Uint8Array(2 + headerBytes.length + data.length)
+      const view = new DataView(buffer.buffer)
+      view.setUint16(0, headerBytes.length)
+      buffer.set(headerBytes, 2)
+      buffer.set(data, 2 + headerBytes.length)
+      return buffer
     }
 
     const markIncomingImage = (id: string) => {
@@ -759,39 +764,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       } satisfies DmMessage
     }
 
-    const requestProfileUpdate = async (meta: ProfileMeta, targetDeviceId?: string) => {
+    const requestProfileUpdate = async (meta: ProfileMeta, _targetDeviceId?: string) => {
       if (channel && channel.readyState === 'open') {
         await sendProfilePayload({ kind: 'profile-request', meta })
         return
-      }
-      const identity = options.identityRef.value
-      if (!identity) return
-      const device = await resolveRemoteDevice(targetDeviceId)
-      if (!device) return
-      try {
-        const sessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
-        const encrypted = await encryptPayload(
-          key,
-          JSON.stringify({ kind: 'profile-request', meta }),
-          sessionId,
-          salt,
-          identity.deviceId
-        )
-        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            recipientId: contact.id,
-            sessionId,
-            deviceIds: [device.deviceId],
-            payload: encrypted
-          })
-        })
-      } catch {
-        // ignore profile request failures
       }
     }
 
@@ -818,6 +794,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           void options.sendTyping('start')
         }
         void sendProfileMeta()
+        void flushOutbox()
       }
       next.onclose = () => {
         debug('data channel close', next.label)
@@ -1270,22 +1247,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         return
       }
-      const remoteDevice = options.remoteDeviceRef.value
-      if (!remoteDevice) return
-      try {
-        const sessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
-        const encrypted = await encryptPayload(key, JSON.stringify(payload), sessionId, salt, identity.deviceId)
-        await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ recipientId: contact.id, sessionId, payload: encrypted })
-        })
-      } catch {
-        // ignore history request failures
-      }
     }
 
     const ensurePeerConnection = (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
@@ -1461,7 +1422,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (!isRecord(payload)) return
         const payloadType = payload.type
         const fromId = typeof payload.from === 'string' ? payload.from : ''
-        const userId = typeof payload.userId === 'string' ? payload.userId : ''
         if (payloadType === 'p2p:signal' && fromId === contact.id) {
           try {
             await handleSignal(payload)
@@ -1473,13 +1433,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 : options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error'
           }
           return
-        }
-        if (payloadType === 'p2p:mailbox' && userId) {
-          const deviceIds = Array.isArray((payload as { deviceIds?: unknown }).deviceIds)
-            ? ((payload as { deviceIds?: unknown[] }).deviceIds ?? [])
-            : []
-          if (deviceIds.length && !deviceIds.includes(identity.deviceId)) return
-          await pullMailbox(identity)
         }
       })
       ws.addEventListener('close', () => {
@@ -1496,522 +1449,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('ws error')
         options.dmStatus.value = 'error'
       })
-    }
-
-    const pullMailbox = async (identity: DeviceIdentity) => {
-      if (mailboxPulling) {
-        mailboxPullPending = true
-        return
-      }
-      const now = Date.now()
-      if (mailboxCooldownUntil > now) {
-        mailboxPullPending = true
-        if (mailboxTimer === null) {
-          mailboxTimer = window.setTimeout(() => {
-            mailboxTimer = null
-            void pullMailbox(identity)
-          }, mailboxCooldownUntil - now)
-        }
-        return
-      }
-      mailboxPulling = true
-      try {
-        const response = await fetch(buildApiUrl('/chat/p2p/mailbox/pull', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ deviceId: identity.deviceId, limit: mailboxPullLimit })
-        })
-        if (response.status === 429) {
-          const retryAfter = Number(response.headers.get('Retry-After') ?? '2')
-          const delayMs = Number.isFinite(retryAfter) ? Math.max(1, retryAfter) * 1000 : 2000
-          mailboxCooldownUntil = Date.now() + delayMs
-          debug('mailbox rate limited', { retryAfter: delayMs })
-          mailboxPullPending = true
-          return
-        }
-        if (!response.ok) return
-        mailboxCooldownUntil = 0
-        const payload = (await response.json()) as { messages?: Array<Record<string, unknown>> }
-        const messages = Array.isArray(payload.messages) ? payload.messages : []
-        const shouldContinue = messages.length >= mailboxPullLimit
-        debug('mailbox pull', { count: messages.length })
-        if (!messages.length) return
-        const ackIds: string[] = []
-        for (const entry of messages) {
-          if (!isRecord(entry)) continue
-          const entryId = typeof entry.id === 'string' ? entry.id : ''
-          const fromId = typeof entry.from === 'string' ? entry.from : ''
-          if (fromId !== contact.id) continue
-          const encrypted = resolveEncryptedPayload(entry.payload)
-          if (!encrypted) continue
-          const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
-          const identityDevice = options.identityRef.value
-          if (!identityDevice) continue
-          const deviceId = senderDeviceId ?? options.remoteDeviceRef.value?.deviceId
-          if (!deviceId) continue
-          const device = await resolveDevice(deviceId)
-          if (!device) continue
-          options.remoteDeviceRef.value = noSerialize(device)
-          const key = await deriveSessionKey(
-            identityDevice.privateKey,
-            device.publicKey,
-            decodeBase64(encrypted.salt),
-            encrypted.sessionId
-          )
-          try {
-            const plaintext = await decryptPayload(key, encrypted)
-            let messageText = plaintext
-            let messageId = createMessageId()
-            let createdAt = new Date().toISOString()
-            let isReceipt = false
-            let receiptTargetId: string | null = null
-            let receiptStatus: 'sent' | 'read' | null = null
-            let isHistoryRequest = false
-            let historyLimit = historyRequestLimit
-            let historyResponse: DmMessage[] | null = null
-            let typingState: 'start' | 'stop' | null = null
-            let profileMeta: ProfileMeta | null = null
-            let profilePayload: ProfilePayload | null = null
-            let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
-              null
-            let imageMeta:
-              | {
-                  id: string
-                  createdAt: string
-                  total: number
-                  name?: string
-                  mime?: string
-                  size?: number
-                  width?: number
-                  height?: number
-                  encoding?: 'zstd'
-                }
-              | null = null
-            let imageChunk: { id: string; index: number; total: number; data: string } | null = null
-            let imageChunkBatch:
-              | {
-                  id: string
-                  total: number
-                  chunks: Array<{ index: number; data: string }>
-                }
-              | null = null
-            let profileRequest = false
-            let signalPayload: Record<string, unknown> | null = null
-            let signalSessionId: string | undefined
-            let signalTargetDeviceId: string | undefined
-            try {
-              const messagePayload = JSON.parse(plaintext) as {
-                kind?: string
-                id?: string
-                text?: string
-                createdAt?: string
-                limit?: number
-                messages?: Array<Record<string, unknown>>
-                state?: string
-                status?: string
-                meta?: Record<string, unknown>
-                profile?: Record<string, unknown>
-                payload?: Record<string, unknown>
-                sessionId?: string
-                toDeviceId?: string
-                hash?: string
-                updatedAt?: string
-                index?: number
-                total?: number
-                data?: string
-                name?: string
-                mime?: string
-                encoding?: string
-                size?: number
-                width?: number
-                height?: number
-                chunks?: Array<{ index?: number; data?: string }>
-              }
-              if (messagePayload?.kind === 'receipt') {
-                isReceipt = true
-                if (typeof messagePayload.id === 'string') {
-                  receiptTargetId = messagePayload.id
-                }
-                if (messagePayload.status === 'sent' || messagePayload.status === 'read') {
-                  receiptStatus = messagePayload.status
-                }
-              } else if (messagePayload?.kind === 'typing') {
-                if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
-                  typingState = messagePayload.state
-                }
-              } else if (messagePayload?.kind === 'profile-avatar-chunk') {
-                const hash = typeof messagePayload.hash === 'string' ? messagePayload.hash : ''
-                const index = Number(messagePayload.index)
-                const total = Number(messagePayload.total)
-                const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
-                if (hash && Number.isFinite(index) && Number.isFinite(total) && data) {
-                  avatarChunk = {
-                    hash,
-                    updatedAt: typeof messagePayload.updatedAt === 'string' ? messagePayload.updatedAt : undefined,
-                    index,
-                    total,
-                    data
-                  }
-                }
-              } else if (messagePayload?.kind === 'image-meta') {
-                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
-                const total = Number(messagePayload.total)
-                if (id && Number.isFinite(total) && total > 0) {
-                  imageMeta = {
-                    id,
-                    createdAt:
-                      typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : new Date().toISOString(),
-                    total,
-                    name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
-                    mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
-                    encoding: messagePayload.encoding === 'zstd' ? 'zstd' : undefined,
-                    size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
-                    width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
-                    height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
-                  }
-                }
-              } else if (messagePayload?.kind === 'image-chunk') {
-                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
-                const index = Number(messagePayload.index)
-                const total = Number(messagePayload.total)
-                const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
-                if (id && Number.isFinite(index) && Number.isFinite(total) && data) {
-                  imageChunk = { id, index, total, data }
-                }
-              } else if (messagePayload?.kind === 'image-chunk-batch') {
-                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
-                const total = Number(messagePayload.total)
-                const chunks = Array.isArray(messagePayload.chunks) ? messagePayload.chunks : []
-                const normalized: Array<{ index: number; data: string }> = []
-                for (const chunk of chunks) {
-                  if (!chunk) continue
-                  const index = Number((chunk as { index?: unknown }).index)
-                  const data = typeof (chunk as { data?: unknown }).data === 'string' ? (chunk as { data?: string }).data : ''
-                  if (Number.isFinite(index) && data) {
-                    normalized.push({ index, data })
-                  }
-                }
-                if (id && Number.isFinite(total) && normalized.length) {
-                  imageChunkBatch = { id, total, chunks: normalized }
-                }
-              } else if (messagePayload?.kind === 'signal') {
-                if (isRecord(messagePayload.payload)) {
-                  signalPayload = messagePayload.payload
-                  signalSessionId = typeof messagePayload.sessionId === 'string' ? messagePayload.sessionId : undefined
-                  signalTargetDeviceId =
-                    typeof messagePayload.toDeviceId === 'string' ? messagePayload.toDeviceId : undefined
-                }
-              } else if (messagePayload?.kind === 'profile-meta') {
-                const meta = parseProfileMeta(messagePayload.meta)
-                if (meta) {
-                  profileMeta = meta
-                }
-              } else if (messagePayload?.kind === 'profile-request') {
-                profileRequest = true
-              } else if (messagePayload?.kind === 'profile-update') {
-                const parsed = parseProfilePayload(messagePayload.profile ?? messagePayload)
-                if (parsed) {
-                  profilePayload = parsed
-                }
-              } else if (messagePayload?.kind === 'history-request') {
-                isHistoryRequest = true
-                if (Number.isFinite(Number(messagePayload.limit))) {
-                  historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
-                }
-              } else if (messagePayload?.kind === 'history-response') {
-                const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
-                const mapped: DmMessage[] = []
-                for (const entryMessage of historyEntries) {
-                  if (!isRecord(entryMessage)) continue
-                  const id = typeof entryMessage.id === 'string' ? entryMessage.id : ''
-                  const text = typeof entryMessage.text === 'string' ? entryMessage.text : ''
-                  const created = typeof entryMessage.createdAt === 'string' ? entryMessage.createdAt : ''
-                  const author =
-                    entryMessage.author === 'self' ? 'contact' : entryMessage.author === 'contact' ? 'self' : null
-                  if (!id || !created || !author) continue
-                  const imageRecord = isRecord(entryMessage.image) ? entryMessage.image : null
-                  const image =
-                    imageRecord && typeof imageRecord.dataUrl === 'string'
-                      ? {
-                          dataUrl: imageRecord.dataUrl,
-                          name: typeof imageRecord.name === 'string' ? imageRecord.name : undefined,
-                          mime: typeof imageRecord.mime === 'string' ? imageRecord.mime : undefined,
-                          size: typeof imageRecord.size === 'number' ? imageRecord.size : undefined,
-                          width: typeof imageRecord.width === 'number' ? imageRecord.width : undefined,
-                          height: typeof imageRecord.height === 'number' ? imageRecord.height : undefined
-                        }
-                      : undefined
-                  const kind = entryMessage.kind === 'image' || image ? 'image' : 'text'
-                  if (!image && text.trim().length === 0) continue
-                  mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
-                }
-                historyResponse = mapped
-              } else {
-                if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
-                if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
-                if (typeof messagePayload?.createdAt === 'string') createdAt = messagePayload.createdAt
-                if (typeof messagePayload?.id === 'string') {
-                  receiptTargetId = messagePayload.id
-                }
-              }
-            } catch {
-              // ignore parse errors
-            }
-            if (signalPayload) {
-              await handleSignal({
-                payload: signalPayload,
-                sessionId: signalSessionId,
-                fromDeviceId: senderDeviceId,
-                toDeviceId: signalTargetDeviceId
-              })
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (imageMeta) {
-              storeImageMeta(imageMeta)
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (imageChunk) {
-              const message = await storeImageChunk(imageChunk, 'contact')
-              if (message && appendIncomingMessage(message)) {
-                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-                await sendReceipt(
-                  key,
-                  encrypted.sessionId,
-                  encrypted.salt,
-                  message.id,
-                  options.chatSettings.value.readReceipts ? 'read' : 'sent'
-                )
-              }
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (imageChunkBatch) {
-              let assembled: DmMessage | null = null
-              for (const chunk of imageChunkBatch.chunks) {
-                const message = await storeImageChunk(
-                  { id: imageChunkBatch.id, index: chunk.index, total: imageChunkBatch.total, data: chunk.data },
-                  'contact'
-                )
-                if (message) {
-                  assembled = message
-                }
-              }
-              if (assembled && appendIncomingMessage(assembled)) {
-                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-                await sendReceipt(
-                  key,
-                  encrypted.sessionId,
-                  encrypted.salt,
-                  assembled.id,
-                  options.chatSettings.value.readReceipts ? 'read' : 'sent'
-                )
-              }
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (profileMeta) {
-              const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
-              if (cachedProfile && !options.contactProfiles.value[contact.id]) {
-                options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
-              }
-              const cachedMeta = loadRemoteProfileMeta(contact.id)
-              const needsProfile = !cachedProfile
-              const metaChanged = !cachedMeta || cachedMeta.hash !== profileMeta.hash
-              saveRemoteProfileMeta(contact.id, profileMeta)
-              if (metaChanged || needsProfile) {
-                await requestProfileUpdate(profileMeta, senderDeviceId)
-              }
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (profileRequest) {
-              await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (profilePayload) {
-              applyRemoteProfile(profilePayload)
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (avatarChunk) {
-              const key = `${contact.id}:${avatarChunk.hash}`
-              const existing =
-                avatarChunks.get(key) ?? {
-                  total: avatarChunk.total,
-                  chunks: new Array(avatarChunk.total).fill(''),
-                  updatedAt: avatarChunk.updatedAt
-                }
-              if (existing.total !== avatarChunk.total) {
-                existing.total = avatarChunk.total
-                existing.chunks = new Array(avatarChunk.total).fill('')
-              }
-              if (avatarChunk.index >= 0 && avatarChunk.index < existing.total) {
-                existing.chunks[avatarChunk.index] = avatarChunk.data
-              }
-              if (existing.chunks.every((chunk) => chunk)) {
-                const avatar = existing.chunks.join('')
-                const cached = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id) ?? {}
-                applyRemoteProfile({
-                  ...cached,
-                  avatar,
-                  hash: avatarChunk.hash,
-                  updatedAt: avatarChunk.updatedAt ?? cached.updatedAt
-                })
-                avatarChunks.delete(key)
-              } else {
-                avatarChunks.set(key, existing)
-              }
-              if (entryId) {
-                ackIds.push(entryId)
-              }
-              continue
-            }
-            if (isReceipt) {
-              if (receiptTargetId) {
-                const nextStatus = receiptStatus ?? 'read'
-                options.dmMessages.value = options.dmMessages.value.map((message) => {
-                  if (message.id !== receiptTargetId) return message
-                  if (statusRank(nextStatus) <= statusRank(message.status)) return message
-                  return { ...message, status: nextStatus }
-                })
-                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-              }
-            } else if (typingState) {
-              setRemoteTyping(typingState === 'start')
-            } else if (historyResponse) {
-              if (options.historySuppressed.value) return
-              options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
-              void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-            } else if (isHistoryRequest) {
-              let snapshot = options.dmMessages.value
-              if (!snapshot.length) {
-                snapshot = await loadHistory(contact.id, identityDevice)
-              }
-              if (snapshot.length) {
-                const trimmed = snapshot
-                  .slice(-historyLimit)
-                  .map((message) => ({
-                    id: message.id,
-                    text: message.text,
-                    createdAt: message.createdAt,
-                    author: message.author,
-                    kind: message.kind,
-                    image: message.image
-                  }))
-                try {
-                  const responsePayload = await encryptPayload(
-                    key,
-                    JSON.stringify({ kind: 'history-response', messages: trimmed }),
-                    encrypted.sessionId,
-                    encrypted.salt,
-                    identityDevice.deviceId
-                  )
-                  const channel = options.channelRef.value
-                  if (channel && channel.readyState === 'open') {
-                    channel.send(JSON.stringify({ type: 'message', payload: responsePayload }))
-                  } else {
-                    await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      credentials: 'include',
-                      body: JSON.stringify({ recipientId: entry.from, payload: responsePayload })
-                    })
-                  }
-                } catch {
-                  // ignore history response failures
-                }
-              }
-            } else {
-              if (
-                appendIncomingMessage({
-                  id: messageId,
-                  text: messageText,
-                  author: 'contact',
-                  createdAt,
-                  status: 'sent'
-                })
-              ) {
-                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-              }
-            }
-            if (entryId) {
-              ackIds.push(entryId)
-            }
-            if (
-              !isReceipt &&
-              !historyResponse &&
-              !isHistoryRequest &&
-              receiptTargetId
-            ) {
-              try {
-                const receipt = await encryptPayload(
-                  key,
-                  JSON.stringify({
-                    kind: 'receipt',
-                    id: receiptTargetId,
-                    status: options.chatSettings.value.readReceipts ? 'read' : 'sent'
-                  }),
-                  encrypted.sessionId,
-                  encrypted.salt,
-                  identityDevice.deviceId
-                )
-                const channel = options.channelRef.value
-                if (channel && channel.readyState === 'open') {
-                  channel.send(JSON.stringify({ type: 'message', payload: receipt }))
-                } else {
-                  await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ recipientId: entry.from, payload: receipt })
-                  })
-                }
-              } catch {
-                // ignore receipt failures
-              }
-            }
-          } catch (error) {
-            options.dmError.value = error instanceof Error ? error.message : 'Unable to decrypt message.'
-          }
-        }
-        if (ackIds.length) {
-          await fetch(buildApiUrl('/chat/p2p/mailbox/ack', window.location.origin), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ deviceId: identity.deviceId, messageIds: ackIds })
-          })
-        }
-        if (shouldContinue) {
-          mailboxPullPending = true
-        }
-      } catch {
-        // ignore mailbox failures
-      } finally {
-        mailboxPulling = false
-        if (mailboxPullPending) {
-          mailboxPullPending = false
-          void pullMailbox(identity)
-        }
-      }
     }
 
     const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
@@ -2073,7 +1510,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         options.remoteDeviceRef.value = noSerialize(target)
         connectWs(identity)
-        await pullMailbox(identity)
         await requestHistory(identity)
         const shouldInitiate = identity.deviceId.localeCompare(target.deviceId) < 0
         if (shouldInitiate) {

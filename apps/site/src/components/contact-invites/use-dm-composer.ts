@@ -1,18 +1,15 @@
 import { $, type NoSerialize, type Signal } from '@builder.io/qwik'
 import type { ChatSettings } from '../../shared/chat-settings'
 import {
-  decodeBase64,
-  deriveSessionKey,
   encryptPayload,
   encryptPayloadBinary,
   encodeBinaryEnvelope,
-  randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
 import { zstdCompress } from '../../shared/zstd-codec'
-import { buildApiUrl } from './api'
+import { enqueueOutboxItem } from './outbox'
 import { persistHistory } from './history'
-import { createMessageId, isRecord } from './utils'
+import { createMessageId } from './utils'
 import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -31,17 +28,6 @@ type DmComposerOptions = {
 }
 
 export const useDmComposer = (options: DmComposerOptions) => {
-  const mailboxMaxChunks = 160
-  const mailboxChunkDelayMs = 400
-  const mailboxMinChunkBytes = 64 * 1024
-  const mailboxMaxChunkBytes = 256 * 1024
-  const mailboxBatchMin = 4
-  const mailboxBatchMax = 8
-  const mailboxTargetBatchBytes = 900 * 1024
-  const mailboxPipelineWindow = 3
-  const mailboxMaxWaitMs = 30 * 60_000
-  const mailboxImageQueue = { current: null as Promise<boolean> | null }
-
   const readBlobAsDataUrl = (blob: Blob) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -70,8 +56,6 @@ export const useDmComposer = (options: DmComposerOptions) => {
     buffer.set(data, 2 + headerBytes.length)
     return buffer
   }
-
-  const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
   const createCanvas = (width: number, height: number) => {
     if (typeof OffscreenCanvas !== 'undefined') {
@@ -161,46 +145,16 @@ export const useDmComposer = (options: DmComposerOptions) => {
     if (!identity || !contact) return
     const channel = options.channelRef.value
     const session = options.sessionRef.value
-    const payloadText = JSON.stringify({ kind: 'typing', state })
-    if (channel && channel.readyState === 'open' && session) {
-      try {
-        const payload = await encryptPayload(
-          session.key,
-          payloadText,
-          session.sessionId,
-          session.salt,
-          identity.deviceId
-        )
-        channel.send(JSON.stringify({ type: 'message', payload }))
-      } catch {
-        // ignore typing failures
-      }
-      return
-    }
-    const remoteDevice = options.remoteDeviceRef.value
-    if (!session && !remoteDevice) return
+    if (!channel || channel.readyState !== 'open' || !session) return
     try {
-      let fallbackSession: P2pSession | null = session ?? null
-      if (!fallbackSession && remoteDevice) {
-        const sessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
-        fallbackSession = { sessionId, salt, key, remoteDeviceId: remoteDevice.deviceId }
-      }
-      if (!fallbackSession) return
       const payload = await encryptPayload(
-        fallbackSession.key,
-        payloadText,
-        fallbackSession.sessionId,
-        fallbackSession.salt,
+        session.key,
+        JSON.stringify({ kind: 'typing', state }),
+        session.sessionId,
+        session.salt,
         identity.deviceId
       )
-      await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ recipientId: contact.id, payload })
-      })
+      channel.send(JSON.stringify({ type: 'message', payload }))
     } catch {
       // ignore typing failures
     }
@@ -291,51 +245,28 @@ export const useDmComposer = (options: DmComposerOptions) => {
         return
       }
 
-      const remoteDevice = options.remoteDeviceRef.value
-      if (!identity || !remoteDevice) {
+      if (!identity) {
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'failed' } : message
         )
         options.dmError.value =
           options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-        if (identity) {
-          void persistHistory(contact.id, identity, options.dmMessages.value)
-        }
+        void persistHistory(contact.id, identity, options.dmMessages.value)
         return
       }
-
-      const sessionId = createMessageId()
-      const salt = randomBase64(16)
-      const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
-      const payload = await encryptPayload(
-        key,
-        JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
-        sessionId,
-        salt,
-        identity.deviceId
-      )
-      const response = await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ recipientId: contact.id, messageId, sessionId, payload })
+      const queued = await enqueueOutboxItem(contact.id, identity, {
+        id: messageId,
+        kind: 'text',
+        createdAt,
+        text
       })
-
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: response.ok ? 'queued' : 'failed' } : message
+        message.id === messageId ? { ...message, status: queued ? 'queued' : 'failed' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
-      if (!response.ok) {
-        let errorMessage = options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-        try {
-          const payload: unknown = await response.json()
-          if (isRecord(payload) && typeof payload.error === 'string') {
-            errorMessage = payload.error
-          }
-        } catch {
-          // ignore parse errors
-        }
-        options.dmError.value = errorMessage
+      if (!queued) {
+        options.dmError.value =
+          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
       }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
@@ -459,146 +390,30 @@ export const useDmComposer = (options: DmComposerOptions) => {
         return
       }
 
-      const remoteDevice = options.remoteDeviceRef.value
-      if (!remoteDevice) {
-        options.dmMessages.value = options.dmMessages.value.map((message) =>
-          message.id === messageId ? { ...message, status: 'failed' } : message
-        )
-        void persistHistory(contact.id, identity, options.dmMessages.value)
-        options.dmError.value =
-          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-        return
-      }
-
       const base64Raw = encodeBase64(payloadBytes)
       if (!base64Raw) {
         options.dmError.value = 'Unable to read image.'
         return
       }
-      const idealRawChunk = Math.ceil(payloadBytes.length / mailboxMaxChunks)
-      const rawChunkBytes = Math.min(mailboxMaxChunkBytes, Math.max(mailboxMinChunkBytes, idealRawChunk))
-      const mailboxChunkSizeBase = Math.ceil(rawChunkBytes / 3) * 4
-      const mailboxChunkSize = Math.max(4, Math.ceil(mailboxChunkSizeBase / 4) * 4)
-      const mailboxTotal = Math.ceil(base64Raw.length / mailboxChunkSize)
-
+      const queued = await enqueueOutboxItem(contact.id, identity, {
+        id: messageId,
+        kind: 'image',
+        createdAt,
+        payloadBase64: base64Raw,
+        encoding: encoding === 'zstd' ? 'zstd' : undefined,
+        name: payloadName || undefined,
+        mime: payloadMime || undefined,
+        size: payloadSize,
+        width: width || undefined,
+        height: height || undefined
+      })
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: 'queued' } : message
+        message.id === messageId ? { ...message, status: queued ? 'queued' : 'failed' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
-
-      const runMailboxSend = async () => {
-        const mailboxSessionId = createMessageId()
-        const salt = randomBase64(16)
-        const key = await deriveSessionKey(
-          identity.privateKey,
-          remoteDevice.publicKey,
-          decodeBase64(salt),
-          mailboxSessionId
-        )
-        const startedAt = Date.now()
-        const sendMailboxPayload = async (payload: Record<string, unknown>, mailboxMessageId: string) => {
-          while (Date.now() - startedAt < mailboxMaxWaitMs) {
-            const encrypted = await encryptPayload(
-              key,
-              JSON.stringify(payload),
-              mailboxSessionId,
-              salt,
-              identity.deviceId
-            )
-            const response = await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({
-                recipientId: contact.id,
-                sessionId: mailboxSessionId,
-                messageId: mailboxMessageId,
-                payload: encrypted
-              })
-            })
-            if (response.ok) {
-              return true
-            }
-            if (response.status === 429) {
-              const retryAfter = Number(response.headers.get('Retry-After') ?? '1')
-              const retryMs = Number.isFinite(retryAfter) ? Math.max(1, retryAfter) * 1000 : mailboxChunkDelayMs
-              await sleep(Math.max(mailboxChunkDelayMs, retryMs))
-              continue
-            }
-            let errorMessage =
-              options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-            try {
-              const payload: unknown = await response.json()
-              if (isRecord(payload) && typeof payload.error === 'string') {
-                errorMessage = payload.error
-              }
-            } catch {
-              // ignore parse errors
-            }
-            options.dmError.value = errorMessage
-            return false
-          }
-          options.dmError.value =
-            options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-          return false
-        }
-
-        const metaSent = await sendMailboxPayload(
-          {
-            kind: 'image-meta',
-            id: messageId,
-            createdAt,
-            name: payloadName || undefined,
-            mime: payloadMime || undefined,
-            size: payloadSize,
-            width: width || undefined,
-            height: height || undefined,
-            total: mailboxTotal,
-            encoding: encoding === 'zstd' ? 'zstd' : undefined
-          },
-          `${messageId}-meta`
-        )
-        if (!metaSent) return false
-        const batchSize = Math.min(
-          mailboxBatchMax,
-          Math.max(
-            mailboxBatchMin,
-            Math.floor(mailboxTargetBatchBytes / mailboxChunkSize) || mailboxBatchMin
-          )
-        )
-        const batches: Array<{
-          payload: { kind: 'image-chunk-batch'; id: string; total: number; chunks: Array<{ index: number; data: string }> }
-          messageId: string
-        }> = []
-        for (let index = 0; index < mailboxTotal; index += batchSize) {
-          const chunks: Array<{ index: number; data: string }> = []
-          for (let offset = 0; offset < batchSize && index + offset < mailboxTotal; offset += 1) {
-            const chunkIndex = index + offset
-            const data = base64Raw.slice(chunkIndex * mailboxChunkSize, (chunkIndex + 1) * mailboxChunkSize)
-            chunks.push({ index: chunkIndex, data })
-          }
-          batches.push({
-            payload: { kind: 'image-chunk-batch', id: messageId, total: mailboxTotal, chunks },
-            messageId: `${messageId}-chunk-${index}`
-          })
-        }
-        for (let index = 0; index < batches.length; index += mailboxPipelineWindow) {
-          const windowed = batches.slice(index, index + mailboxPipelineWindow)
-          const results = await Promise.all(
-            windowed.map((batch) => sendMailboxPayload(batch.payload, batch.messageId))
-          )
-          if (results.some((result) => !result)) return false
-        }
-        return true
-      }
-
-      mailboxImageQueue.current = (mailboxImageQueue.current ?? Promise.resolve(true)).then(runMailboxSend, runMailboxSend)
-      const success = await mailboxImageQueue.current
-      if (!success) {
-        options.dmMessages.value = options.dmMessages.value.map((message) =>
-          message.id === messageId ? { ...message, status: 'failed' } : message
-        )
-        void persistHistory(contact.id, identity, options.dmMessages.value)
+      if (!queued) {
+        options.dmError.value =
+          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
       }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
