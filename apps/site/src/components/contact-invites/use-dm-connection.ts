@@ -8,6 +8,7 @@ import {
   randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
+import { zstdDecompress } from '../../shared/zstd-codec'
 import {
   buildProfileMeta,
   loadLocalProfile,
@@ -126,6 +127,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           size?: number
           width?: number
           height?: number
+          encoding?: 'zstd'
         }
       }
     >()
@@ -496,6 +498,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
+    const encodeBase64 = (bytes: Uint8Array) => {
+      let binary = ''
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte)
+      }
+      return btoa(binary)
+    }
+
     const storeImageMeta = (meta: {
       id: string
       createdAt: string
@@ -505,6 +515,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       size?: number
       width?: number
       height?: number
+      encoding?: 'zstd'
     }) => {
       const existing = imageChunks.get(meta.id)
       if (existing) {
@@ -522,7 +533,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       })
     }
 
-    const storeImageChunk = (
+    const storeImageChunk = async (
       payload: { id: string; index: number; total: number; data: string },
       author: DmMessage['author']
     ) => {
@@ -546,7 +557,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const meta = existing.meta
       const base64 = existing.chunks.join('')
       const mime = meta?.mime ?? 'image/png'
-      const dataUrl = `data:${mime};base64,${base64}`
+      const encodedBytes = decodeBase64(base64)
+      let imageBytes = encodedBytes
+      if (meta?.encoding === 'zstd') {
+        const decompressed = await zstdDecompress(encodedBytes)
+        if (!decompressed) {
+          imageChunks.delete(payload.id)
+          options.dmError.value = 'Unable to decode image.'
+          return null
+        }
+        imageBytes = new Uint8Array(decompressed)
+      }
+      const dataUrl = `data:${mime};base64,${encodeBase64(imageBytes)}`
       const createdAt = meta?.createdAt ?? new Date().toISOString()
       imageChunks.delete(payload.id)
       return {
@@ -682,7 +704,17 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
             null
           let imageMeta:
-            | { id: string; createdAt: string; total: number; name?: string; mime?: string; size?: number; width?: number; height?: number }
+            | {
+                id: string
+                createdAt: string
+                total: number
+                name?: string
+                mime?: string
+                size?: number
+                width?: number
+                height?: number
+                encoding?: 'zstd'
+              }
             | null = null
           let imageChunk: { id: string; index: number; total: number; data: string } | null = null
           let profileRequest = false
@@ -704,6 +736,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               data?: string
               name?: string
               mime?: string
+              encoding?: string
               size?: number
               width?: number
               height?: number
@@ -741,6 +774,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   total,
                   name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
                   mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
+                  encoding: messagePayload.encoding === 'zstd' ? 'zstd' : undefined,
                   size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
                   width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
                   height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
@@ -828,7 +862,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             return
           }
           if (imageChunk) {
-            const message = storeImageChunk(imageChunk, 'contact')
+            const message = await storeImageChunk(imageChunk, 'contact')
             if (message && appendIncomingMessage(message)) {
               void persistHistory(contact.id, identity, options.dmMessages.value)
               await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)
@@ -1292,6 +1326,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   size?: number
                   width?: number
                   height?: number
+                  encoding?: 'zstd'
                 }
               | null = null
             let imageChunk: { id: string; index: number; total: number; data: string } | null = null
@@ -1320,6 +1355,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 data?: string
                 name?: string
                 mime?: string
+                encoding?: string
                 size?: number
                 width?: number
                 height?: number
@@ -1358,6 +1394,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                     total,
                     name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
                     mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
+                    encoding: messagePayload.encoding === 'zstd' ? 'zstd' : undefined,
                     size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
                     width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
                     height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
@@ -1454,7 +1491,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               continue
             }
             if (imageChunk) {
-              const message = storeImageChunk(imageChunk, 'contact')
+              const message = await storeImageChunk(imageChunk, 'contact')
               if (message && appendIncomingMessage(message)) {
                 void persistHistory(contact.id, identityDevice, options.dmMessages.value)
                 await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)

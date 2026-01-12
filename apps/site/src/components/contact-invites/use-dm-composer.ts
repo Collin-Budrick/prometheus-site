@@ -7,6 +7,7 @@ import {
   randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
+import { zstdCompress } from '../../shared/zstd-codec'
 import { buildApiUrl } from './api'
 import { persistHistory } from './history'
 import { createMessageId, isRecord } from './utils'
@@ -28,24 +29,81 @@ type DmComposerOptions = {
 }
 
 export const useDmComposer = (options: DmComposerOptions) => {
-  const maxImageBytes = 2_000_000
   const imageChunkSize = 12_000
 
-  const readFileAsDataUrl = (file: File) =>
+  const readBlobAsDataUrl = (blob: Blob) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result ?? ''))
       reader.onerror = () => reject(new Error('Unable to read image.'))
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(blob)
     })
 
-  const resolveImageSize = (dataUrl: string) =>
-    new Promise<{ width: number; height: number } | null>((resolve) => {
-      const image = new Image()
-      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
-      image.onerror = () => resolve(null)
-      image.src = dataUrl
+  const encodeBase64 = (bytes: Uint8Array) => {
+    let binary = ''
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte)
+    }
+    return btoa(binary)
+  }
+
+  const createCanvas = (width: number, height: number) => {
+    if (typeof OffscreenCanvas !== 'undefined') {
+      return new OffscreenCanvas(width, height)
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    return canvas
+  }
+
+  const encodeCanvas = async (canvas: OffscreenCanvas | HTMLCanvasElement, type: string, quality: number) => {
+    if ('convertToBlob' in canvas) {
+      return (canvas as OffscreenCanvas).convertToBlob({ type, quality })
+    }
+    return new Promise<Blob | null>((resolve) => {
+      ;(canvas as HTMLCanvasElement).toBlob(resolve, type, quality)
     })
+  }
+
+  const swapExtension = (name: string, extension: string) => {
+    const safeName = name || 'image'
+    const dotIndex = safeName.lastIndexOf('.')
+    const base = dotIndex > 0 ? safeName.slice(0, dotIndex) : safeName
+    return `${base}.${extension}`
+  }
+
+  const reencodeImage = async (file: File) => {
+    try {
+      const bitmap = await createImageBitmap(file)
+      const width = bitmap.width
+      const height = bitmap.height
+      const canvas = createCanvas(width, height)
+      const ctx = canvas.getContext('2d', { alpha: true })
+      if (!ctx) {
+        bitmap.close?.()
+        return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width, height }
+      }
+      ctx.drawImage(bitmap, 0, 0, width, height)
+      bitmap.close?.()
+      const candidates: Array<{ blob: Blob; mime: string; name: string }> = []
+      const avifBlob = await encodeCanvas(canvas, 'image/avif', 0.72)
+      if (avifBlob) {
+        candidates.push({ blob: avifBlob, mime: 'image/avif', name: swapExtension(file.name, 'avif') })
+      }
+      const webpBlob = await encodeCanvas(canvas, 'image/webp', 0.82)
+      if (webpBlob) {
+        candidates.push({ blob: webpBlob, mime: 'image/webp', name: swapExtension(file.name, 'webp') })
+      }
+      const fallbackMime = file.type || 'image/png'
+      candidates.push({ blob: file, mime: fallbackMime, name: file.name || `image.${fallbackMime.split('/')[1] ?? 'png'}` })
+      candidates.sort((a, b) => a.blob.size - b.blob.size)
+      const chosen = candidates[0]
+      return { blob: chosen.blob, mime: chosen.mime, name: chosen.name, width, height }
+    } catch {
+      return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width: 0, height: 0 }
+    }
+  }
 
   const sendEncryptedPayload = async (
     session: P2pSession,
@@ -274,10 +332,6 @@ export const useDmComposer = (options: DmComposerOptions) => {
       options.dmError.value = 'Please choose an image file.'
       return
     }
-    if (file.size > maxImageBytes) {
-      options.dmError.value = 'Image too large.'
-      return
-    }
     const contact = options.activeContact.value
     const identity = options.identityRef.value
     const session = options.sessionRef.value
@@ -291,8 +345,29 @@ export const useDmComposer = (options: DmComposerOptions) => {
     const messageId = createMessageId()
     const createdAt = new Date().toISOString()
     let dataUrl: string
+    let payloadBytes = new Uint8Array()
+    let payloadMime = file.type || 'image/png'
+    let payloadName = file.name || 'image.png'
+    let payloadSize = file.size
+    let width = 0
+    let height = 0
+    let encoding: 'zstd' | 'none' = 'none'
     try {
-      dataUrl = await readFileAsDataUrl(file)
+      const reencoded = await reencodeImage(file)
+      payloadMime = reencoded.mime
+      payloadName = reencoded.name
+      payloadSize = reencoded.blob.size
+      width = reencoded.width
+      height = reencoded.height
+      dataUrl = await readBlobAsDataUrl(reencoded.blob)
+      const rawBytes = new Uint8Array(await reencoded.blob.arrayBuffer())
+      const compressed = await zstdCompress(rawBytes, 15)
+      if (compressed && compressed.byteLength < rawBytes.byteLength) {
+        payloadBytes = compressed
+        encoding = 'zstd'
+      } else {
+        payloadBytes = rawBytes
+      }
     } catch (error) {
       options.dmError.value = error instanceof Error ? error.message : 'Unable to read image.'
       return
@@ -301,12 +376,11 @@ export const useDmComposer = (options: DmComposerOptions) => {
       options.dmError.value = 'Unable to read image.'
       return
     }
-    const [, base64Raw = ''] = dataUrl.split(',', 2)
+    const base64Raw = encodeBase64(payloadBytes)
     if (!base64Raw) {
       options.dmError.value = 'Unable to read image.'
       return
     }
-    const dimensions = await resolveImageSize(dataUrl)
     options.dmMessages.value = [
       ...options.dmMessages.value,
       {
@@ -318,11 +392,11 @@ export const useDmComposer = (options: DmComposerOptions) => {
         kind: 'image',
         image: {
           dataUrl,
-          name: file.name || undefined,
-          mime: file.type || undefined,
-          width: dimensions?.width,
-          height: dimensions?.height,
-          size: file.size
+          name: payloadName || undefined,
+          mime: payloadMime || undefined,
+          width: width || undefined,
+          height: height || undefined,
+          size: payloadSize
         }
       }
     ]
@@ -333,12 +407,13 @@ export const useDmComposer = (options: DmComposerOptions) => {
           kind: 'image-meta',
           id: messageId,
           createdAt,
-          name: file.name || undefined,
-          mime: file.type || undefined,
-          size: file.size,
-          width: dimensions?.width,
-          height: dimensions?.height,
-          total
+          name: payloadName || undefined,
+          mime: payloadMime || undefined,
+          size: payloadSize,
+          width: width || undefined,
+          height: height || undefined,
+          total,
+          encoding: encoding === 'zstd' ? 'zstd' : undefined
         })
         for (let index = 0; index < total; index += 1) {
           const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
@@ -400,12 +475,13 @@ export const useDmComposer = (options: DmComposerOptions) => {
         kind: 'image-meta',
         id: messageId,
         createdAt,
-        name: file.name || undefined,
-        mime: file.type || undefined,
-        size: file.size,
-        width: dimensions?.width,
-        height: dimensions?.height,
-        total
+        name: payloadName || undefined,
+        mime: payloadMime || undefined,
+        size: payloadSize,
+        width: width || undefined,
+        height: height || undefined,
+        total,
+        encoding: encoding === 'zstd' ? 'zstd' : undefined
       })
       if (!metaSent) {
         options.dmMessages.value = options.dmMessages.value.map((message) =>

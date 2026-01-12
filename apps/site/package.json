@@ -10,6 +10,7 @@
     "lint": "oxlint ."
   },
   "dependencies": {
+    "@bokuweb/zstd-wasm": "^0.0.27",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
     "@preact/signals-core": "^1.12.1",

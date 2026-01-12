@@ -346,6 +346,9 @@ export default defineConfig(
           swUrl: '/service-worker.js'
         })
       ],
+      optimizeDeps: {
+        exclude: ['@bokuweb/zstd-wasm']
+      },
       oxc: false,
       resolve: {
         alias: [
