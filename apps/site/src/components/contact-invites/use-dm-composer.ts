@@ -282,7 +282,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
     const identity = options.identityRef.value
     const session = options.sessionRef.value
     const channel = options.channelRef.value
-    if (!contact || !identity || !session || !channel || channel.readyState !== 'open') {
+    if (!contact || !identity) {
       options.dmError.value =
         options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
       return
@@ -328,7 +328,75 @@ export const useDmComposer = (options: DmComposerOptions) => {
     ]
     try {
       const total = Math.ceil(base64Raw.length / imageChunkSize)
-      await sendEncryptedPayload(session, identity, {
+      if (channel && channel.readyState === 'open' && session) {
+        await sendEncryptedPayload(session, identity, {
+          kind: 'image-meta',
+          id: messageId,
+          createdAt,
+          name: file.name || undefined,
+          mime: file.type || undefined,
+          size: file.size,
+          width: dimensions?.width,
+          height: dimensions?.height,
+          total
+        })
+        for (let index = 0; index < total; index += 1) {
+          const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
+          await sendEncryptedPayload(session, identity, {
+            kind: 'image-chunk',
+            id: messageId,
+            index,
+            total,
+            data
+          })
+        }
+        options.dmMessages.value = options.dmMessages.value.map((message) =>
+          message.id === messageId ? { ...message, status: 'sent' } : message
+        )
+        void persistHistory(contact.id, identity, options.dmMessages.value)
+        return
+      }
+
+      const remoteDevice = options.remoteDeviceRef.value
+      if (!remoteDevice) {
+        options.dmMessages.value = options.dmMessages.value.map((message) =>
+          message.id === messageId ? { ...message, status: 'failed' } : message
+        )
+        void persistHistory(contact.id, identity, options.dmMessages.value)
+        options.dmError.value =
+          options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+        return
+      }
+
+      const mailboxSessionId = createMessageId()
+      const salt = randomBase64(16)
+      const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), mailboxSessionId)
+      const sendMailboxPayload = async (payload: Record<string, unknown>) => {
+        const encrypted = await encryptPayload(key, JSON.stringify(payload), mailboxSessionId, salt, identity.deviceId)
+        const response = await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ recipientId: contact.id, sessionId: mailboxSessionId, payload: encrypted })
+        })
+        if (!response.ok) {
+          let errorMessage =
+            options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+          try {
+            const payload: unknown = await response.json()
+            if (isRecord(payload) && typeof payload.error === 'string') {
+              errorMessage = payload.error
+            }
+          } catch {
+            // ignore parse errors
+          }
+          options.dmError.value = errorMessage
+          return false
+        }
+        return true
+      }
+
+      const metaSent = await sendMailboxPayload({
         kind: 'image-meta',
         id: messageId,
         createdAt,
@@ -339,18 +407,32 @@ export const useDmComposer = (options: DmComposerOptions) => {
         height: dimensions?.height,
         total
       })
+      if (!metaSent) {
+        options.dmMessages.value = options.dmMessages.value.map((message) =>
+          message.id === messageId ? { ...message, status: 'failed' } : message
+        )
+        void persistHistory(contact.id, identity, options.dmMessages.value)
+        return
+      }
       for (let index = 0; index < total; index += 1) {
         const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
-        await sendEncryptedPayload(session, identity, {
+        const chunkSent = await sendMailboxPayload({
           kind: 'image-chunk',
           id: messageId,
           index,
           total,
           data
         })
+        if (!chunkSent) {
+          options.dmMessages.value = options.dmMessages.value.map((message) =>
+            message.id === messageId ? { ...message, status: 'failed' } : message
+          )
+          void persistHistory(contact.id, identity, options.dmMessages.value)
+          return
+        }
       }
       options.dmMessages.value = options.dmMessages.value.map((message) =>
-        message.id === messageId ? { ...message, status: 'sent' } : message
+        message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
     } catch (error) {

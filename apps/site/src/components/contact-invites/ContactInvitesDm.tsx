@@ -57,7 +57,7 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
   const selfAvatar = props.selfProfile?.avatar ?? null
   const contactInitials = formatInitials(props.activeContact)
   const selfInitials = formatInitials({ name: props.selfLabel, email: props.selfLabel })
-  const canSendMedia = props.dmStatus === 'connected'
+  const canSendMedia = props.dmStatus !== 'error'
 
   return (
     <div
