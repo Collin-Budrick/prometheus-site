@@ -354,6 +354,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
+    const statusRank = (status?: DmMessage['status']) => {
+      if (status === 'read') return 5
+      if (status === 'sent') return 4
+      if (status === 'queued') return 3
+      if (status === 'pending') return 2
+      if (status === 'failed') return 1
+      return 0
+    }
+
     const appendIncomingMessage = (message: DmMessage) => {
       if (options.dmMessages.value.some((entry) => entry.id === message.id)) return false
       options.dmMessages.value = [...options.dmMessages.value, message]
@@ -471,14 +480,20 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
-    const sendReceipt = async (key: CryptoKey, sessionId: string, salt: string, receiptId: string) => {
-      if (!options.chatSettings.value.readReceipts) return
+    const sendReceipt = async (
+      key: CryptoKey,
+      sessionId: string,
+      salt: string,
+      receiptId: string,
+      status: 'sent' | 'read'
+    ) => {
+      if (status === 'read' && !options.chatSettings.value.readReceipts) return
       const identity = options.identityRef.value
       if (!identity) return
       try {
         const receipt = await encryptPayload(
           key,
-          JSON.stringify({ kind: 'receipt', id: receiptId }),
+          JSON.stringify({ kind: 'receipt', id: receiptId, status }),
           sessionId,
           salt,
           identity.deviceId
@@ -696,6 +711,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           let createdAt = new Date().toISOString()
           let isReceipt = false
           let receiptTargetId: string | null = null
+          let receiptStatus: 'sent' | 'read' | null = null
           let isHistoryRequest = false
           let historyLimit = historyRequestLimit
           let historyResponse: DmMessage[] | null = null
@@ -728,6 +744,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               limit?: number
               messages?: Array<Record<string, unknown>>
               state?: string
+              status?: string
               meta?: Record<string, unknown>
               profile?: Record<string, unknown>
               hash?: string
@@ -746,6 +763,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               isReceipt = true
               if (typeof messagePayload.id === 'string') {
                 receiptTargetId = messagePayload.id
+              }
+              if (messagePayload.status === 'sent' || messagePayload.status === 'read') {
+                receiptStatus = messagePayload.status
               }
             } else if (messagePayload?.kind === 'typing') {
               if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
@@ -847,9 +867,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           if (isReceipt) {
             if (receiptTargetId) {
-              options.dmMessages.value = options.dmMessages.value.map((message) =>
-                message.id === receiptTargetId ? { ...message, status: 'read' } : message
-              )
+              const nextStatus = receiptStatus ?? 'read'
+              options.dmMessages.value = options.dmMessages.value.map((message) => {
+                if (message.id !== receiptTargetId) return message
+                if (statusRank(nextStatus) <= statusRank(message.status)) return message
+                return { ...message, status: nextStatus }
+              })
               void persistHistory(contact.id, identity, options.dmMessages.value)
             }
             return
@@ -866,7 +889,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             const message = await storeImageChunk(imageChunk, 'contact')
             if (message && appendIncomingMessage(message)) {
               void persistHistory(contact.id, identity, options.dmMessages.value)
-              await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)
+              await sendReceipt(
+                key,
+                encrypted.sessionId,
+                encrypted.salt,
+                message.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
             }
             return
           }
@@ -971,21 +1000,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           ) {
             void persistHistory(contact.id, identity, options.dmMessages.value)
           }
-          if (receiptTargetId && options.chatSettings.value.readReceipts) {
-            try {
-              const receipt = await encryptPayload(
-                key,
-                JSON.stringify({ kind: 'receipt', id: receiptTargetId }),
-                encrypted.sessionId,
-                encrypted.salt,
-                identity.deviceId
-              )
-              if (next.readyState === 'open') {
-                next.send(JSON.stringify({ type: 'message', payload: receipt }))
-              }
-            } catch {
-              // ignore receipt failures
-            }
+          if (receiptTargetId) {
+            await sendReceipt(
+              key,
+              encrypted.sessionId,
+              encrypted.salt,
+              receiptTargetId,
+              options.chatSettings.value.readReceipts ? 'read' : 'sent'
+            )
           }
         } catch (error) {
           options.dmStatus.value = 'error'
@@ -1310,6 +1332,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let createdAt = new Date().toISOString()
             let isReceipt = false
             let receiptTargetId: string | null = null
+            let receiptStatus: 'sent' | 'read' | null = null
             let isHistoryRequest = false
             let historyLimit = historyRequestLimit
             let historyResponse: DmMessage[] | null = null
@@ -1345,6 +1368,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 limit?: number
                 messages?: Array<Record<string, unknown>>
                 state?: string
+                status?: string
                 meta?: Record<string, unknown>
                 profile?: Record<string, unknown>
                 payload?: Record<string, unknown>
@@ -1366,6 +1390,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 isReceipt = true
                 if (typeof messagePayload.id === 'string') {
                   receiptTargetId = messagePayload.id
+                }
+                if (messagePayload.status === 'sent' || messagePayload.status === 'read') {
+                  receiptStatus = messagePayload.status
                 }
               } else if (messagePayload?.kind === 'typing') {
                 if (messagePayload.state === 'start' || messagePayload.state === 'stop') {
@@ -1496,7 +1523,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               const message = await storeImageChunk(imageChunk, 'contact')
               if (message && appendIncomingMessage(message)) {
                 void persistHistory(contact.id, identityDevice, options.dmMessages.value)
-                await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)
+                await sendReceipt(
+                  key,
+                  encrypted.sessionId,
+                  encrypted.salt,
+                  message.id,
+                  options.chatSettings.value.readReceipts ? 'read' : 'sent'
+                )
               }
               if (entryId) {
                 ackIds.push(entryId)
@@ -1569,9 +1602,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             }
             if (isReceipt) {
               if (receiptTargetId) {
-                options.dmMessages.value = options.dmMessages.value.map((message) =>
-                  message.id === receiptTargetId ? { ...message, status: 'read' } : message
-                )
+                const nextStatus = receiptStatus ?? 'read'
+                options.dmMessages.value = options.dmMessages.value.map((message) => {
+                  if (message.id !== receiptTargetId) return message
+                  if (statusRank(nextStatus) <= statusRank(message.status)) return message
+                  return { ...message, status: nextStatus }
+                })
                 void persistHistory(contact.id, identityDevice, options.dmMessages.value)
               }
             } else if (typingState) {
@@ -1639,13 +1675,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               !isReceipt &&
               !historyResponse &&
               !isHistoryRequest &&
-              receiptTargetId &&
-              options.chatSettings.value.readReceipts
+              receiptTargetId
             ) {
               try {
                 const receipt = await encryptPayload(
                   key,
-                  JSON.stringify({ kind: 'receipt', id: receiptTargetId }),
+                  JSON.stringify({
+                    kind: 'receipt',
+                    id: receiptTargetId,
+                    status: options.chatSettings.value.readReceipts ? 'read' : 'sent'
+                  }),
                   encrypted.sessionId,
                   encrypted.salt,
                   identityDevice.deviceId
