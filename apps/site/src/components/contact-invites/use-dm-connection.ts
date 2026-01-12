@@ -103,7 +103,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let reconnecting = false
-    let isCaller = false
     let isPolite = false
     let makingOffer = false
     let mailboxPulling = false
@@ -114,6 +113,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let historyNeeded = false
     const avatarChunkSize = 12_000
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
+    const imageChunks = new Map<
+      string,
+      {
+        total: number
+        chunks: string[]
+        meta?: {
+          id: string
+          createdAt: string
+          name?: string
+          mime?: string
+          size?: number
+          width?: number
+          height?: number
+        }
+      }
+    >()
     const pendingSignals: Array<Record<string, unknown>> = []
     const pendingCandidates: RTCIceCandidateInit[] = []
     const handledSignals = new Set<string>()
@@ -142,7 +157,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       reconnecting = false
       reconnectAttempt = 0
-      isCaller = false
       pendingSignals.splice(0, pendingSignals.length)
       if (channel) {
         channel.close()
@@ -454,6 +468,105 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
+    const sendReceipt = async (key: CryptoKey, sessionId: string, salt: string, receiptId: string) => {
+      if (!options.chatSettings.value.readReceipts) return
+      const identity = options.identityRef.value
+      if (!identity) return
+      try {
+        const receipt = await encryptPayload(
+          key,
+          JSON.stringify({ kind: 'receipt', id: receiptId }),
+          sessionId,
+          salt,
+          identity.deviceId
+        )
+        const activeChannel = options.channelRef.value ?? channel
+        if (activeChannel && activeChannel.readyState === 'open') {
+          activeChannel.send(JSON.stringify({ type: 'message', payload: receipt }))
+        } else {
+          await fetch(buildApiUrl('/chat/p2p/mailbox/send', window.location.origin), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ recipientId: contact.id, payload: receipt })
+          })
+        }
+      } catch {
+        // ignore receipt failures
+      }
+    }
+
+    const storeImageMeta = (meta: {
+      id: string
+      createdAt: string
+      total: number
+      name?: string
+      mime?: string
+      size?: number
+      width?: number
+      height?: number
+    }) => {
+      const existing = imageChunks.get(meta.id)
+      if (existing) {
+        existing.meta = meta
+        if (existing.total !== meta.total) {
+          existing.total = meta.total
+          existing.chunks = new Array(meta.total).fill('')
+        }
+        return
+      }
+      imageChunks.set(meta.id, {
+        total: meta.total,
+        chunks: new Array(meta.total).fill(''),
+        meta
+      })
+    }
+
+    const storeImageChunk = (
+      payload: { id: string; index: number; total: number; data: string },
+      author: DmMessage['author']
+    ) => {
+      const existing =
+        imageChunks.get(payload.id) ?? {
+          total: payload.total,
+          chunks: new Array(payload.total).fill(''),
+          meta: undefined
+        }
+      if (existing.total !== payload.total) {
+        existing.total = payload.total
+        existing.chunks = new Array(payload.total).fill('')
+      }
+      if (payload.index >= 0 && payload.index < existing.total) {
+        existing.chunks[payload.index] = payload.data
+      }
+      imageChunks.set(payload.id, existing)
+      if (!existing.chunks.every((chunk) => chunk)) {
+        return null
+      }
+      const meta = existing.meta
+      const base64 = existing.chunks.join('')
+      const mime = meta?.mime ?? 'image/png'
+      const dataUrl = `data:${mime};base64,${base64}`
+      const createdAt = meta?.createdAt ?? new Date().toISOString()
+      imageChunks.delete(payload.id)
+      return {
+        id: payload.id,
+        text: '',
+        author,
+        createdAt,
+        status: 'sent',
+        kind: 'image',
+        image: {
+          dataUrl,
+          name: meta?.name,
+          mime,
+          size: meta?.size,
+          width: meta?.width,
+          height: meta?.height
+        }
+      } satisfies DmMessage
+    }
+
     const requestProfileUpdate = async (meta: ProfileMeta, targetDeviceId?: string) => {
       if (channel && channel.readyState === 'open') {
         await sendProfilePayload({ kind: 'profile-request', meta })
@@ -568,6 +681,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           let profilePayload: ProfilePayload | null = null
           let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
             null
+          let imageMeta:
+            | { id: string; createdAt: string; total: number; name?: string; mime?: string; size?: number; width?: number; height?: number }
+            | null = null
+          let imageChunk: { id: string; index: number; total: number; data: string } | null = null
           let profileRequest = false
           try {
             const messagePayload = JSON.parse(plaintext) as {
@@ -585,6 +702,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               index?: number
               total?: number
               data?: string
+              name?: string
+              mime?: string
+              size?: number
+              width?: number
+              height?: number
             }
             if (messagePayload?.kind === 'receipt') {
               isReceipt = true
@@ -608,6 +730,29 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   total,
                   data
                 }
+              }
+            } else if (messagePayload?.kind === 'image-meta') {
+              const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+              const total = Number(messagePayload.total)
+              if (id && Number.isFinite(total) && total > 0) {
+                imageMeta = {
+                  id,
+                  createdAt: typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : new Date().toISOString(),
+                  total,
+                  name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
+                  mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
+                  size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
+                  width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
+                  height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
+                }
+              }
+            } else if (messagePayload?.kind === 'image-chunk') {
+              const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+              const index = Number(messagePayload.index)
+              const total = Number(messagePayload.total)
+              const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
+              if (id && Number.isFinite(index) && Number.isFinite(total) && data) {
+                imageChunk = { id, index, total, data }
               }
             } else if (messagePayload?.kind === 'profile-meta') {
               const meta = parseProfileMeta(messagePayload.meta)
@@ -636,8 +781,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
                 const author =
                   entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
-                if (!id || !text || !created || !author) continue
-                mapped.push({ id, text, createdAt: created, author, status: 'sent' })
+                if (!id || !created || !author) continue
+                const imageRecord = isRecord(entry.image) ? entry.image : null
+                const image =
+                  imageRecord && typeof imageRecord.dataUrl === 'string'
+                    ? {
+                        dataUrl: imageRecord.dataUrl,
+                        name: typeof imageRecord.name === 'string' ? imageRecord.name : undefined,
+                        mime: typeof imageRecord.mime === 'string' ? imageRecord.mime : undefined,
+                        size: typeof imageRecord.size === 'number' ? imageRecord.size : undefined,
+                        width: typeof imageRecord.width === 'number' ? imageRecord.width : undefined,
+                        height: typeof imageRecord.height === 'number' ? imageRecord.height : undefined
+                      }
+                    : undefined
+                const kind = entry.kind === 'image' || image ? 'image' : 'text'
+                if (!image && text.trim().length === 0) continue
+                mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
               }
               historyResponse = mapped
             } else {
@@ -662,6 +821,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           if (typingState) {
             setRemoteTyping(typingState === 'start')
+            return
+          }
+          if (imageMeta) {
+            storeImageMeta(imageMeta)
+            return
+          }
+          if (imageChunk) {
+            const message = storeImageChunk(imageChunk, 'contact')
+            if (message && appendIncomingMessage(message)) {
+              void persistHistory(contact.id, identity, options.dmMessages.value)
+              await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)
+            }
             return
           }
           if (avatarChunk) {
@@ -734,7 +905,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 id: message.id,
                 text: message.text,
                 createdAt: message.createdAt,
-                author: message.author
+                author: message.author,
+                kind: message.kind,
+                image: message.image
               }))
             try {
               const responsePayload = await encryptPayload(
@@ -915,7 +1088,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (offerCollision && !isPolite) {
           return
         }
-        isCaller = false
         const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
         options.sessionRef.value = noSerialize({
           sessionId,
@@ -1110,6 +1282,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             let profilePayload: ProfilePayload | null = null
             let avatarChunk: { hash: string; updatedAt?: string; index: number; total: number; data: string } | null =
               null
+            let imageMeta:
+              | {
+                  id: string
+                  createdAt: string
+                  total: number
+                  name?: string
+                  mime?: string
+                  size?: number
+                  width?: number
+                  height?: number
+                }
+              | null = null
+            let imageChunk: { id: string; index: number; total: number; data: string } | null = null
             let profileRequest = false
             let signalPayload: Record<string, unknown> | null = null
             let signalSessionId: string | undefined
@@ -1133,6 +1318,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 index?: number
                 total?: number
                 data?: string
+                name?: string
+                mime?: string
+                size?: number
+                width?: number
+                height?: number
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
@@ -1156,6 +1346,30 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                     total,
                     data
                   }
+                }
+              } else if (messagePayload?.kind === 'image-meta') {
+                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+                const total = Number(messagePayload.total)
+                if (id && Number.isFinite(total) && total > 0) {
+                  imageMeta = {
+                    id,
+                    createdAt:
+                      typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : new Date().toISOString(),
+                    total,
+                    name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
+                    mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
+                    size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
+                    width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
+                    height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
+                  }
+                }
+              } else if (messagePayload?.kind === 'image-chunk') {
+                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+                const index = Number(messagePayload.index)
+                const total = Number(messagePayload.total)
+                const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
+                if (id && Number.isFinite(index) && Number.isFinite(total) && data) {
+                  imageChunk = { id, index, total, data }
                 }
               } else if (messagePayload?.kind === 'signal') {
                 if (isRecord(messagePayload.payload)) {
@@ -1191,8 +1405,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   const created = typeof entryMessage.createdAt === 'string' ? entryMessage.createdAt : ''
                   const author =
                     entryMessage.author === 'self' ? 'contact' : entryMessage.author === 'contact' ? 'self' : null
-                  if (!id || !text || !created || !author) continue
-                  mapped.push({ id, text, createdAt: created, author, status: 'sent' })
+                  if (!id || !created || !author) continue
+                  const imageRecord = isRecord(entryMessage.image) ? entryMessage.image : null
+                  const image =
+                    imageRecord && typeof imageRecord.dataUrl === 'string'
+                      ? {
+                          dataUrl: imageRecord.dataUrl,
+                          name: typeof imageRecord.name === 'string' ? imageRecord.name : undefined,
+                          mime: typeof imageRecord.mime === 'string' ? imageRecord.mime : undefined,
+                          size: typeof imageRecord.size === 'number' ? imageRecord.size : undefined,
+                          width: typeof imageRecord.width === 'number' ? imageRecord.width : undefined,
+                          height: typeof imageRecord.height === 'number' ? imageRecord.height : undefined
+                        }
+                      : undefined
+                  const kind = entryMessage.kind === 'image' || image ? 'image' : 'text'
+                  if (!image && text.trim().length === 0) continue
+                  mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
                 }
                 historyResponse = mapped
               } else {
@@ -1213,6 +1441,24 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 fromDeviceId: senderDeviceId,
                 toDeviceId: signalTargetDeviceId
               })
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (imageMeta) {
+              storeImageMeta(imageMeta)
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (imageChunk) {
+              const message = storeImageChunk(imageChunk, 'contact')
+              if (message && appendIncomingMessage(message)) {
+                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
+                await sendReceipt(key, encrypted.sessionId, encrypted.salt, message.id)
+              }
               if (entryId) {
                 ackIds.push(entryId)
               }
@@ -1307,7 +1553,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                     id: message.id,
                     text: message.text,
                     createdAt: message.createdAt,
-                    author: message.author
+                    author: message.author,
+                    kind: message.kind,
+                    image: message.image
                   }))
                 try {
                   const responsePayload = await encryptPayload(
@@ -1402,7 +1650,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
-      isCaller = true
       isPolite = identity.deviceId.localeCompare(remoteDevice.deviceId) > 0
       ensurePeerConnection(identity, remoteDevice)
       if (!connection) return

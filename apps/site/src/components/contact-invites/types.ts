@@ -78,12 +78,23 @@ export type ContactSearchItem = {
 
 export type DmConnectionState = 'idle' | 'connecting' | 'connected' | 'offline' | 'error'
 
+export type DmImage = {
+  dataUrl: string
+  name?: string
+  mime?: string
+  width?: number
+  height?: number
+  size?: number
+}
+
 export type DmMessage = {
   id: string
   text: string
   author: 'self' | 'contact'
   createdAt: string
   status?: 'pending' | 'sent' | 'failed' | 'queued' | 'read'
+  kind?: 'text' | 'image'
+  image?: DmImage
 }
 
 export type ContactDevice = {

@@ -28,6 +28,44 @@ type DmComposerOptions = {
 }
 
 export const useDmComposer = (options: DmComposerOptions) => {
+  const maxImageBytes = 2_000_000
+  const imageChunkSize = 12_000
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.onerror = () => reject(new Error('Unable to read image.'))
+      reader.readAsDataURL(file)
+    })
+
+  const resolveImageSize = (dataUrl: string) =>
+    new Promise<{ width: number; height: number } | null>((resolve) => {
+      const image = new Image()
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+      image.onerror = () => resolve(null)
+      image.src = dataUrl
+    })
+
+  const sendEncryptedPayload = async (
+    session: P2pSession,
+    identity: DeviceIdentity,
+    payload: Record<string, unknown>
+  ) => {
+    const encrypted = await encryptPayload(
+      session.key,
+      JSON.stringify(payload),
+      session.sessionId,
+      session.salt,
+      identity.deviceId
+    )
+    const channel = options.channelRef.value
+    if (!channel || channel.readyState !== 'open') {
+      throw new Error('Channel unavailable')
+    }
+    channel.send(JSON.stringify({ type: 'message', payload: encrypted }))
+  }
+
   const sendTyping = $(async (state: 'start' | 'stop') => {
     if (typeof window === 'undefined') return
     if (!options.chatSettings.value.typingIndicators) return
@@ -226,10 +264,112 @@ export const useDmComposer = (options: DmComposerOptions) => {
     }
   })
 
+  const handleDmImage = $(async (event: Event) => {
+    if (typeof window === 'undefined') return
+    const input = event.target as HTMLInputElement | null
+    const file = input?.files?.[0]
+    if (input) input.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      options.dmError.value = 'Please choose an image file.'
+      return
+    }
+    if (file.size > maxImageBytes) {
+      options.dmError.value = 'Image too large.'
+      return
+    }
+    const contact = options.activeContact.value
+    const identity = options.identityRef.value
+    const session = options.sessionRef.value
+    const channel = options.channelRef.value
+    if (!contact || !identity || !session || !channel || channel.readyState !== 'open') {
+      options.dmError.value =
+        options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+      return
+    }
+    options.dmError.value = null
+    const messageId = createMessageId()
+    const createdAt = new Date().toISOString()
+    let dataUrl: string
+    try {
+      dataUrl = await readFileAsDataUrl(file)
+    } catch (error) {
+      options.dmError.value = error instanceof Error ? error.message : 'Unable to read image.'
+      return
+    }
+    if (!dataUrl) {
+      options.dmError.value = 'Unable to read image.'
+      return
+    }
+    const [, base64Raw = ''] = dataUrl.split(',', 2)
+    if (!base64Raw) {
+      options.dmError.value = 'Unable to read image.'
+      return
+    }
+    const dimensions = await resolveImageSize(dataUrl)
+    options.dmMessages.value = [
+      ...options.dmMessages.value,
+      {
+        id: messageId,
+        text: '',
+        author: 'self',
+        createdAt,
+        status: 'pending',
+        kind: 'image',
+        image: {
+          dataUrl,
+          name: file.name || undefined,
+          mime: file.type || undefined,
+          width: dimensions?.width,
+          height: dimensions?.height,
+          size: file.size
+        }
+      }
+    ]
+    try {
+      const total = Math.ceil(base64Raw.length / imageChunkSize)
+      await sendEncryptedPayload(session, identity, {
+        kind: 'image-meta',
+        id: messageId,
+        createdAt,
+        name: file.name || undefined,
+        mime: file.type || undefined,
+        size: file.size,
+        width: dimensions?.width,
+        height: dimensions?.height,
+        total
+      })
+      for (let index = 0; index < total; index += 1) {
+        const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
+        await sendEncryptedPayload(session, identity, {
+          kind: 'image-chunk',
+          id: messageId,
+          index,
+          total,
+          data
+        })
+      }
+      options.dmMessages.value = options.dmMessages.value.map((message) =>
+        message.id === messageId ? { ...message, status: 'sent' } : message
+      )
+      void persistHistory(contact.id, identity, options.dmMessages.value)
+    } catch (error) {
+      options.dmMessages.value = options.dmMessages.value.map((message) =>
+        message.id === messageId ? { ...message, status: 'failed' } : message
+      )
+      void persistHistory(contact.id, identity, options.dmMessages.value)
+      options.dmError.value =
+        error instanceof Error
+          ? error.message
+          : options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
+    }
+  })
+
   return {
     sendTyping,
     handleDmInput,
     handleDmKeyDown,
-    handleDmSubmit
+    handleDmSubmit,
+    handleDmImage
   }
 }

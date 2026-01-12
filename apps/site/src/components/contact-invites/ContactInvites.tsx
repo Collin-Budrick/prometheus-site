@@ -220,7 +220,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       remoteTypingTimer
     })
 
-    const { sendTyping, handleDmInput, handleDmKeyDown, handleDmSubmit } = useDmComposer({
+    const { sendTyping, handleDmInput, handleDmKeyDown, handleDmSubmit, handleDmImage } = useDmComposer({
       activeContact,
       dmInput,
       dmMessages,
@@ -479,6 +479,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             onDmInput$={handleDmInput}
             onDmKeyDown$={handleDmKeyDown}
             onDmSubmit$={handleDmSubmit}
+            onDmImage$={handleDmImage}
           />
         ) : null}
         <ContactProfileCard

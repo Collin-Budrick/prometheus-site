@@ -111,21 +111,36 @@ const statusRank = (status?: DmMessage['status']) => {
 const mergeMessageStatus = (current?: DmMessage['status'], next?: DmMessage['status']) =>
   statusRank(next) > statusRank(current) ? next : current
 
+const normalizeImage = (value: unknown) => {
+  if (!isRecord(value)) return undefined
+  const dataUrl = typeof value.dataUrl === 'string' ? value.dataUrl : ''
+  if (!dataUrl) return undefined
+  const name = typeof value.name === 'string' ? value.name : undefined
+  const mime = typeof value.mime === 'string' ? value.mime : undefined
+  const width = typeof value.width === 'number' ? value.width : undefined
+  const height = typeof value.height === 'number' ? value.height : undefined
+  const size = typeof value.size === 'number' ? value.size : undefined
+  return { dataUrl, name, mime, width, height, size }
+}
+
 const normalizeHistoryMessages = (messages: DmMessage[]) =>
   messages
     .filter((message) => message && typeof message.id === 'string')
     .map((message) => ({
       id: message.id,
-      text: message.text,
+      text: typeof message.text === 'string' ? message.text : '',
       author: message.author,
       createdAt: message.createdAt,
-      status: message.status
+      status: message.status,
+      kind: message.kind,
+      image: normalizeImage(message.image)
     }))
     .filter(
       (message) =>
-        typeof message.text === 'string' &&
         typeof message.createdAt === 'string' &&
         (message.author === 'self' || message.author === 'contact')
+        &&
+        (message.text.trim().length > 0 || Boolean(message.image))
     )
 
 export const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[]) => {
@@ -141,7 +156,9 @@ export const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[
       text: message.text || current.text,
       author: current.author ?? message.author,
       createdAt: current.createdAt || message.createdAt,
-      status: mergeMessageStatus(current.status, message.status)
+      status: mergeMessageStatus(current.status, message.status),
+      kind: message.kind ?? current.kind,
+      image: message.image ?? current.image
     })
   }
   existing.forEach(upsert)

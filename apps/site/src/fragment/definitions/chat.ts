@@ -852,10 +852,41 @@ html[data-chat-dm-open='true'] .fragment-card {
   background: linear-gradient(135deg, rgb(var(--surface)), rgb(var(--signal) / 0.12));
 }
 
+.chat-invites-dm-message[data-kind='image'] {
+  padding: 10px;
+}
+
 .chat-invites-dm-text {
   margin: 0;
   font-size: 0.95rem;
   color: rgb(var(--ink));
+}
+
+.chat-invites-dm-media-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-invites-dm-image {
+  width: min(320px, 70vw);
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--stroke));
+  box-shadow: 0 8px 20px rgb(10 14 28 / 0.25);
+}
+
+.chat-invites-dm-row[data-author='self'] .chat-invites-dm-image {
+  border-color: rgb(var(--signal) / 0.3);
+}
+
+.chat-invites-dm-image-name {
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  color: rgb(var(--muted));
 }
 
 .chat-invites-dm-meta {
@@ -888,6 +919,50 @@ html[data-chat-dm-open='true'] .fragment-card {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.chat-invites-dm-media {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--stroke));
+  background: rgb(var(--surface-soft));
+  color: rgb(var(--muted));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease, color 200ms ease;
+}
+
+.chat-invites-dm-media:hover {
+  border-color: rgb(var(--signal) / 0.6);
+  color: rgb(var(--ink));
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgb(var(--signal) / 0.15);
+}
+
+.chat-invites-dm-media[data-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.chat-invites-dm-media input {
+  display: none;
+}
+
+.chat-invites-dm-media-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.chat-invites-dm-media-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .chat-invites-dm-input {
@@ -1040,6 +1115,7 @@ html[data-chat-dm-open='true'] .fragment-card {
   .chat-invites-dm-gear,
   .chat-invites-dm-settings,
   .chat-invites-dm-archive,
+  .chat-invites-dm-media,
   .chat-invites-dm-input,
   .chat-invites-dm-send {
     transition: none;

@@ -1,5 +1,5 @@
 import { component$, type PropFunction, type Signal } from '@builder.io/qwik'
-import { InSettings } from '@qwikest/icons/iconoir'
+import { InMediaImage, InSettings } from '@qwikest/icons/iconoir'
 import type { ChatSettings } from '../../shared/chat-settings'
 import type { ProfilePayload } from '../../shared/profile-storage'
 import { formatDisplayName, formatInitials, formatMessageTime } from './utils'
@@ -32,6 +32,7 @@ type ContactInvitesDmProps = {
   onDmInput$: PropFunction<(event: Event) => void>
   onDmKeyDown$: PropFunction<(event: KeyboardEvent) => void>
   onDmSubmit$: PropFunction<() => void>
+  onDmImage$: PropFunction<(event: Event) => void>
 }
 
 export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
@@ -56,6 +57,7 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
   const selfAvatar = props.selfProfile?.avatar ?? null
   const contactInitials = formatInitials(props.activeContact)
   const selfInitials = formatInitials({ name: props.selfLabel, email: props.selfLabel })
+  const canSendMedia = props.dmStatus === 'connected'
 
   return (
     <div
@@ -218,8 +220,23 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
                     class="chat-invites-dm-message"
                     data-author={message.author}
                     data-status={message.status ?? 'sent'}
+                    data-kind={message.kind ?? 'text'}
                   >
-                    <p class="chat-invites-dm-text">{message.text}</p>
+                    {message.kind === 'image' && message.image?.dataUrl ? (
+                      <div class="chat-invites-dm-media-body">
+                        <img
+                          class="chat-invites-dm-image"
+                          src={message.image.dataUrl}
+                          alt={message.image.name ?? resolve('Shared image')}
+                          loading="lazy"
+                        />
+                        {message.image.name ? (
+                          <span class="chat-invites-dm-image-name">{message.image.name}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p class="chat-invites-dm-text">{message.text}</p>
+                    )}
                     <div class="chat-invites-dm-meta">
                       <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
                       {message.author === 'self' && message.status ? (
@@ -232,6 +249,18 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
             )}
           </div>
           <form class="chat-invites-dm-compose" preventdefault:submit onSubmit$={props.onDmSubmit$}>
+            <label class="chat-invites-dm-media" data-disabled={canSendMedia ? 'false' : 'true'}>
+              <input
+                type="file"
+                accept="image/*"
+                disabled={!canSendMedia}
+                aria-label={resolve('Send image')}
+                onChange$={props.onDmImage$}
+              />
+              <span class="chat-invites-dm-media-icon" aria-hidden="true">
+                <InMediaImage />
+              </span>
+            </label>
             <input
               type="text"
               class="chat-invites-dm-input"
