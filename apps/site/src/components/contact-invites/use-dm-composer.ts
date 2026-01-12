@@ -4,6 +4,8 @@ import {
   decodeBase64,
   deriveSessionKey,
   encryptPayload,
+  encryptPayloadBinary,
+  encodeBinaryEnvelope,
   randomBase64,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
@@ -49,6 +51,19 @@ export const useDmComposer = (options: DmComposerOptions) => {
       binary += String.fromCharCode(byte)
     }
     return btoa(binary)
+  }
+
+  const encodeBinaryMessage = (header: Record<string, unknown>, data: Uint8Array) => {
+    const headerBytes = new TextEncoder().encode(JSON.stringify(header))
+    if (headerBytes.length > 65_535) {
+      throw new Error('Image header too large.')
+    }
+    const buffer = new Uint8Array(2 + headerBytes.length + data.length)
+    const view = new DataView(buffer.buffer)
+    view.setUint16(0, headerBytes.length)
+    buffer.set(headerBytes, 2)
+    buffer.set(data, 2 + headerBytes.length)
+    return buffer
   }
 
   const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
@@ -372,7 +387,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       const rawBytes = new Uint8Array(await reencoded.blob.arrayBuffer())
       const compressed = await zstdCompress(rawBytes, 15)
       if (compressed && compressed.byteLength < rawBytes.byteLength) {
-        payloadBytes = new Uint8Array(compressed)
+        payloadBytes = Uint8Array.from(compressed)
         encoding = 'zstd'
       } else {
         payloadBytes = rawBytes
@@ -382,11 +397,6 @@ export const useDmComposer = (options: DmComposerOptions) => {
       return
     }
     if (!dataUrl) {
-      options.dmError.value = 'Unable to read image.'
-      return
-    }
-    const base64Raw = encodeBase64(payloadBytes)
-    if (!base64Raw) {
       options.dmError.value = 'Unable to read image.'
       return
     }
@@ -410,9 +420,8 @@ export const useDmComposer = (options: DmComposerOptions) => {
       }
     ]
     try {
-      const streamTotal = Math.ceil(base64Raw.length / imageChunkSize)
-      const mailboxChunkSize = Math.max(imageChunkSize, Math.ceil(base64Raw.length / mailboxMaxChunks))
-      const mailboxTotal = Math.ceil(base64Raw.length / mailboxChunkSize)
+      const channelChunkSize = 32_000
+      const channelTotal = Math.max(1, Math.ceil(payloadBytes.length / channelChunkSize))
       if (channel && channel.readyState === 'open' && session) {
         await sendEncryptedPayload(session, identity, {
           kind: 'image-meta',
@@ -423,18 +432,20 @@ export const useDmComposer = (options: DmComposerOptions) => {
           size: payloadSize,
           width: width || undefined,
           height: height || undefined,
-          total: streamTotal,
+          total: channelTotal,
           encoding: encoding === 'zstd' ? 'zstd' : undefined
         })
-        for (let index = 0; index < streamTotal; index += 1) {
-          const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
-          await sendEncryptedPayload(session, identity, {
-            kind: 'image-chunk',
-            id: messageId,
-            index,
-            total: streamTotal,
-            data
-          })
+        for (let index = 0; index < channelTotal; index += 1) {
+          const start = index * channelChunkSize
+          const end = Math.min(payloadBytes.length, start + channelChunkSize)
+          const data = payloadBytes.slice(start, end)
+          const envelope = encodeBinaryEnvelope(
+            await encryptPayloadBinary(
+              session.key,
+              encodeBinaryMessage({ kind: 'image-chunk-bin', id: messageId, index, total: channelTotal }, data)
+            )
+          )
+          channel.send(envelope)
         }
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'sent' } : message
@@ -453,6 +464,15 @@ export const useDmComposer = (options: DmComposerOptions) => {
           options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
         return
       }
+
+      const base64Raw = encodeBase64(payloadBytes)
+      if (!base64Raw) {
+        options.dmError.value = 'Unable to read image.'
+        return
+      }
+      const mailboxChunkSizeBase = Math.max(imageChunkSize, Math.ceil(base64Raw.length / mailboxMaxChunks))
+      const mailboxChunkSize = Math.ceil(mailboxChunkSizeBase / 4) * 4
+      const mailboxTotal = Math.ceil(base64Raw.length / mailboxChunkSize)
 
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
@@ -533,15 +553,20 @@ export const useDmComposer = (options: DmComposerOptions) => {
           `${messageId}-meta`
         )
         if (!metaSent) return false
-        for (let index = 0; index < mailboxTotal; index += 1) {
-          const data = base64Raw.slice(index * mailboxChunkSize, (index + 1) * mailboxChunkSize)
+        const batchSize = 4
+        for (let index = 0; index < mailboxTotal; index += batchSize) {
+          const batch: Array<{ index: number; data: string }> = []
+          for (let offset = 0; offset < batchSize && index + offset < mailboxTotal; offset += 1) {
+            const chunkIndex = index + offset
+            const data = base64Raw.slice(chunkIndex * mailboxChunkSize, (chunkIndex + 1) * mailboxChunkSize)
+            batch.push({ index: chunkIndex, data })
+          }
           const chunkSent = await sendMailboxPayload(
             {
-              kind: 'image-chunk',
+              kind: 'image-chunk-batch',
               id: messageId,
-              index,
               total: mailboxTotal,
-              data
+              chunks: batch
             },
             `${messageId}-chunk-${index}`
           )

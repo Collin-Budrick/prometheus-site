@@ -2,7 +2,9 @@ import { noSerialize, useVisibleTask$, type NoSerialize, type QRL, type Signal }
 import type { ChatSettings } from '../../shared/chat-settings'
 import {
   decodeBase64,
+  decodeBinaryEnvelope,
   decryptPayload,
+  decryptPayloadBinary,
   deriveSessionKey,
   encryptPayload,
   randomBase64,
@@ -133,6 +135,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           height?: number
           encoding?: 'zstd'
         }
+      }
+    >()
+    const binaryImageChunks = new Map<
+      string,
+      {
+        total: number
+        chunks: Array<Uint8Array | null>
       }
     >()
     const pendingSignals: Array<Record<string, unknown>> = []
@@ -526,6 +535,49 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return btoa(binary)
     }
 
+    const normalizeBase64 = (value: string) => {
+      const cleaned = value.replace(/\s+/g, '')
+      const padding = cleaned.length % 4
+      if (padding === 0) return cleaned
+      return `${cleaned}${'='.repeat(4 - padding)}`
+    }
+
+    const decodeBase64Safe = (value: string) => decodeBase64(normalizeBase64(value))
+
+    const decodeBase64Chunks = (chunks: string[]) => {
+      const decodedChunks: Uint8Array[] = []
+      let total = 0
+      for (const chunk of chunks) {
+        const bytes = decodeBase64Safe(chunk)
+        decodedChunks.push(bytes)
+        total += bytes.length
+      }
+      const assembled = new Uint8Array(total)
+      let offset = 0
+      for (const chunk of decodedChunks) {
+        assembled.set(chunk, offset)
+        offset += chunk.length
+      }
+      return assembled
+    }
+
+    const decodeBinaryMessage = (bytes: Uint8Array) => {
+      if (bytes.length < 2) return null
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      const headerLength = view.getUint16(0)
+      if (bytes.length < 2 + headerLength) return null
+      const headerBytes = bytes.slice(2, 2 + headerLength)
+      const headerText = new TextDecoder().decode(headerBytes)
+      let header: Record<string, unknown>
+      try {
+        header = JSON.parse(headerText) as Record<string, unknown>
+      } catch {
+        return null
+      }
+      const data = bytes.slice(2 + headerLength)
+      return { header, data }
+    }
+
     const markIncomingImage = (id: string) => {
       if (incomingImageIds.has(id)) return
       incomingImageIds.add(id)
@@ -591,9 +643,21 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         return null
       }
       const meta = existing.meta
-      const base64 = existing.chunks.join('')
+      const base64 = normalizeBase64(existing.chunks.join(''))
       const mime = meta?.mime ?? 'image/png'
-      const encodedBytes = decodeBase64(base64)
+      let encodedBytes: Uint8Array
+      try {
+        encodedBytes = decodeBase64Safe(base64)
+      } catch {
+        try {
+          encodedBytes = decodeBase64Chunks(existing.chunks)
+        } catch {
+          imageChunks.delete(payload.id)
+          clearIncomingImage(payload.id)
+          options.dmError.value = 'Unable to decode image.'
+          return null
+        }
+      }
       let imageBytes = encodedBytes
       if (meta?.encoding === 'zstd') {
         const decompressed = await zstdDecompress(encodedBytes)
@@ -603,12 +667,80 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           options.dmError.value = 'Unable to decode image.'
           return null
         }
-        imageBytes = new Uint8Array(decompressed)
+        imageBytes = Uint8Array.from(decompressed)
       }
       const dataUrl = `data:${mime};base64,${encodeBase64(imageBytes)}`
       const createdAt = meta?.createdAt ?? new Date().toISOString()
       imageChunks.delete(payload.id)
       clearIncomingImage(payload.id)
+      return {
+        id: payload.id,
+        text: '',
+        author,
+        createdAt,
+        status: 'sent',
+        kind: 'image',
+        image: {
+          dataUrl,
+          name: meta?.name,
+          mime,
+          size: meta?.size,
+          width: meta?.width,
+          height: meta?.height
+        }
+      } satisfies DmMessage
+    }
+
+    const storeImageChunkBinary = async (
+      payload: { id: string; index: number; total: number; data: Uint8Array },
+      author: DmMessage['author']
+    ) => {
+      const existing =
+        binaryImageChunks.get(payload.id) ?? {
+          total: payload.total,
+          chunks: new Array(payload.total).fill(null)
+        }
+      if (!binaryImageChunks.has(payload.id)) {
+        markIncomingImage(payload.id)
+      }
+      if (existing.total !== payload.total) {
+        existing.total = payload.total
+        existing.chunks = new Array(payload.total).fill(null)
+      }
+      if (payload.index >= 0 && payload.index < existing.total) {
+        existing.chunks[payload.index] = payload.data
+      }
+      binaryImageChunks.set(payload.id, existing)
+      if (!existing.chunks.every((chunk) => chunk)) {
+        return null
+      }
+      const meta = imageChunks.get(payload.id)?.meta
+      const mime = meta?.mime ?? 'image/png'
+      const totalSize = existing.chunks.reduce((sum, chunk) => sum + (chunk?.length ?? 0), 0)
+      const assembled = new Uint8Array(totalSize)
+      let offset = 0
+      for (const chunk of existing.chunks) {
+        if (!chunk) continue
+        assembled.set(chunk, offset)
+        offset += chunk.length
+      }
+      binaryImageChunks.delete(payload.id)
+      imageChunks.delete(payload.id)
+      clearIncomingImage(payload.id)
+      let imageBytes = assembled
+      if (meta?.encoding === 'zstd') {
+        const decompressed = await zstdDecompress(assembled)
+        if (!decompressed) {
+          binaryImageChunks.delete(payload.id)
+          imageChunks.delete(payload.id)
+          clearIncomingImage(payload.id)
+          options.dmError.value = 'Unable to decode image.'
+          return null
+        }
+        imageBytes = Uint8Array.from(decompressed)
+      }
+      const dataUrl = `data:${mime};base64,${encodeBase64(imageBytes)}`
+      const createdAt = meta?.createdAt ?? new Date().toISOString()
       return {
         id: payload.id,
         text: '',
@@ -677,6 +809,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const setupChannel = (next: RTCDataChannel) => {
       channel = next
       options.channelRef.value = noSerialize(next)
+      next.binaryType = 'arraybuffer'
       next.onopen = () => {
         reconnectAttempt = 0
         debug('data channel open', next.label)
@@ -696,6 +829,38 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       next.onmessage = async (event) => {
         try {
+          if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+            const buffer =
+              event.data instanceof Blob ? await event.data.arrayBuffer() : (event.data as ArrayBuffer)
+            const envelope = decodeBinaryEnvelope(buffer)
+            if (!envelope) return
+            const session = options.sessionRef.value
+            if (!session) return
+            const plaintextBytes = await decryptPayloadBinary(session.key, envelope)
+            const decoded = decodeBinaryMessage(plaintextBytes)
+            if (!decoded || !isRecord(decoded.header)) return
+            if (decoded.header.kind !== 'image-chunk-bin') return
+            const id = typeof decoded.header.id === 'string' ? decoded.header.id : ''
+            const index = Number(decoded.header.index)
+            const total = Number(decoded.header.total)
+            if (!id || !Number.isFinite(index) || !Number.isFinite(total)) return
+            const message = await storeImageChunkBinary({ id, index, total, data: decoded.data }, 'contact')
+            if (message && appendIncomingMessage(message)) {
+              const identity = options.identityRef.value
+              if (identity) {
+                void persistHistory(contact.id, identity, options.dmMessages.value)
+              }
+              await sendReceipt(
+                session.key,
+                session.sessionId,
+                session.salt,
+                message.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
+            }
+            return
+          }
+
           const raw = String(event.data ?? '')
           let parsed: unknown
           try {
@@ -756,6 +921,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               }
             | null = null
           let imageChunk: { id: string; index: number; total: number; data: string } | null = null
+          let imageChunkBatch:
+            | {
+                id: string
+                total: number
+                chunks: Array<{ index: number; data: string }>
+              }
+            | null = null
           let profileRequest = false
           try {
             const messagePayload = JSON.parse(plaintext) as {
@@ -780,6 +952,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               size?: number
               width?: number
               height?: number
+              chunks?: Array<{ index?: number; data?: string }>
             }
             if (messagePayload?.kind === 'receipt') {
               isReceipt = true
@@ -830,6 +1003,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
               if (id && Number.isFinite(index) && Number.isFinite(total) && data) {
                 imageChunk = { id, index, total, data }
+              }
+            } else if (messagePayload?.kind === 'image-chunk-batch') {
+              const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+              const total = Number(messagePayload.total)
+              const chunks = Array.isArray(messagePayload.chunks) ? messagePayload.chunks : []
+              const normalized: Array<{ index: number; data: string }> = []
+              for (const chunk of chunks) {
+                if (!chunk) continue
+                const index = Number((chunk as { index?: unknown }).index)
+                const data = typeof (chunk as { data?: unknown }).data === 'string' ? (chunk as { data?: string }).data : ''
+                if (Number.isFinite(index) && data) {
+                  normalized.push({ index, data })
+                }
+              }
+              if (id && Number.isFinite(total) && normalized.length) {
+                imageChunkBatch = { id, total, chunks: normalized }
               }
             } else if (messagePayload?.kind === 'profile-meta') {
               const meta = parseProfileMeta(messagePayload.meta)
@@ -916,6 +1105,29 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 encrypted.sessionId,
                 encrypted.salt,
                 message.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
+            }
+            return
+          }
+          if (imageChunkBatch) {
+            let assembled: DmMessage | null = null
+            for (const chunk of imageChunkBatch.chunks) {
+              const message = await storeImageChunk(
+                { id: imageChunkBatch.id, index: chunk.index, total: imageChunkBatch.total, data: chunk.data },
+                'contact'
+              )
+              if (message) {
+                assembled = message
+              }
+            }
+            if (assembled && appendIncomingMessage(assembled)) {
+              void persistHistory(contact.id, identity, options.dmMessages.value)
+              await sendReceipt(
+                key,
+                encrypted.sessionId,
+                encrypted.salt,
+                assembled.id,
                 options.chatSettings.value.readReceipts ? 'read' : 'sent'
               )
             }
@@ -1377,6 +1589,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 }
               | null = null
             let imageChunk: { id: string; index: number; total: number; data: string } | null = null
+            let imageChunkBatch:
+              | {
+                  id: string
+                  total: number
+                  chunks: Array<{ index: number; data: string }>
+                }
+              | null = null
             let profileRequest = false
             let signalPayload: Record<string, unknown> | null = null
             let signalSessionId: string | undefined
@@ -1407,6 +1626,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 size?: number
                 width?: number
                 height?: number
+                chunks?: Array<{ index?: number; data?: string }>
               }
               if (messagePayload?.kind === 'receipt') {
                 isReceipt = true
@@ -1458,6 +1678,22 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
                 if (id && Number.isFinite(index) && Number.isFinite(total) && data) {
                   imageChunk = { id, index, total, data }
+                }
+              } else if (messagePayload?.kind === 'image-chunk-batch') {
+                const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+                const total = Number(messagePayload.total)
+                const chunks = Array.isArray(messagePayload.chunks) ? messagePayload.chunks : []
+                const normalized: Array<{ index: number; data: string }> = []
+                for (const chunk of chunks) {
+                  if (!chunk) continue
+                  const index = Number((chunk as { index?: unknown }).index)
+                  const data = typeof (chunk as { data?: unknown }).data === 'string' ? (chunk as { data?: string }).data : ''
+                  if (Number.isFinite(index) && data) {
+                    normalized.push({ index, data })
+                  }
+                }
+                if (id && Number.isFinite(total) && normalized.length) {
+                  imageChunkBatch = { id, total, chunks: normalized }
                 }
               } else if (messagePayload?.kind === 'signal') {
                 if (isRecord(messagePayload.payload)) {
@@ -1550,6 +1786,32 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   encrypted.sessionId,
                   encrypted.salt,
                   message.id,
+                  options.chatSettings.value.readReceipts ? 'read' : 'sent'
+                )
+              }
+              if (entryId) {
+                ackIds.push(entryId)
+              }
+              continue
+            }
+            if (imageChunkBatch) {
+              let assembled: DmMessage | null = null
+              for (const chunk of imageChunkBatch.chunks) {
+                const message = await storeImageChunk(
+                  { id: imageChunkBatch.id, index: chunk.index, total: imageChunkBatch.total, data: chunk.data },
+                  'contact'
+                )
+                if (message) {
+                  assembled = message
+                }
+              }
+              if (assembled && appendIncomingMessage(assembled)) {
+                void persistHistory(contact.id, identityDevice, options.dmMessages.value)
+                await sendReceipt(
+                  key,
+                  encrypted.sessionId,
+                  encrypted.salt,
+                  assembled.id,
                   options.chatSettings.value.readReceipts ? 'read' : 'sent'
                 )
               }

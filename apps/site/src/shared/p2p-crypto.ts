@@ -22,6 +22,12 @@ export type EncryptedPayload = {
   senderDeviceId?: string
 }
 
+export type EncryptedBinaryPayload = {
+  version: 1
+  iv: Uint8Array
+  ciphertext: Uint8Array
+}
+
 const storageKey = 'chat:p2p:identity'
 
 const ensureCrypto = () => {
@@ -170,6 +176,60 @@ export const decryptPayload = async (key: CryptoKey, payload: EncryptedPayload) 
   const ciphertext = base64ToBytes(payload.ciphertext)
   const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
   return new TextDecoder().decode(plaintext)
+}
+
+export const encryptPayloadBinary = async (key: CryptoKey, plaintext: Uint8Array): Promise<EncryptedBinaryPayload> => {
+  ensureCrypto()
+  const iv = new Uint8Array(12)
+  crypto.getRandomValues(iv)
+  const payloadBytes = new Uint8Array(plaintext.byteLength)
+  payloadBytes.set(plaintext)
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, payloadBytes)
+  return {
+    version: 1,
+    iv,
+    ciphertext: new Uint8Array(ciphertext)
+  }
+}
+
+export const decryptPayloadBinary = async (key: CryptoKey, payload: EncryptedBinaryPayload) => {
+  ensureCrypto()
+  const iv = new Uint8Array(payload.iv.byteLength)
+  iv.set(payload.iv)
+  const ciphertext = new Uint8Array(payload.ciphertext.byteLength)
+  ciphertext.set(payload.ciphertext)
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
+  return new Uint8Array(plaintext)
+}
+
+export const encodeBinaryEnvelope = (payload: EncryptedBinaryPayload) => {
+  const ivLength = payload.iv.length
+  const ciphertextLength = payload.ciphertext.length
+  const headerSize = 6
+  const buffer = new Uint8Array(headerSize + ivLength + ciphertextLength)
+  buffer[0] = payload.version
+  buffer[1] = ivLength
+  const view = new DataView(buffer.buffer)
+  view.setUint32(2, ciphertextLength)
+  buffer.set(payload.iv, headerSize)
+  buffer.set(payload.ciphertext, headerSize + ivLength)
+  return buffer
+}
+
+export const decodeBinaryEnvelope = (buffer: ArrayBuffer): EncryptedBinaryPayload | null => {
+  const bytes = new Uint8Array(buffer)
+  if (bytes.length < 6) return null
+  const version = bytes[0]
+  if (version !== 1) return null
+  const ivLength = bytes[1]
+  const view = new DataView(buffer)
+  const ciphertextLength = view.getUint32(2)
+  const headerSize = 6
+  const totalLength = headerSize + ivLength + ciphertextLength
+  if (bytes.length < totalLength) return null
+  const iv = bytes.slice(headerSize, headerSize + ivLength)
+  const ciphertext = bytes.slice(headerSize + ivLength, headerSize + ivLength + ciphertextLength)
+  return { version: 1, iv, ciphertext }
 }
 
 export const decodeBase64 = (value: string) => base64ToBytes(value)
