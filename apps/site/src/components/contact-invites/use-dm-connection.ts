@@ -112,7 +112,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let mailboxTimer: number | null = null
     let historyRequested = false
     let historyNeeded = false
-    const mailboxPullLimit = 50
+    const mailboxPullLimit = 100
     const avatarChunkSize = 12_000
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
     const imageChunks = new Map<

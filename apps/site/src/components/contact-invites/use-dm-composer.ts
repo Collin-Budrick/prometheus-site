@@ -30,6 +30,7 @@ type DmComposerOptions = {
 
 export const useDmComposer = (options: DmComposerOptions) => {
   const imageChunkSize = 12_000
+  const mailboxMaxChunks = 160
   const mailboxChunkDelayMs = 1200
   const mailboxMaxWaitMs = 30 * 60_000
   const mailboxImageQueue = { current: null as Promise<boolean> | null }
@@ -409,7 +410,9 @@ export const useDmComposer = (options: DmComposerOptions) => {
       }
     ]
     try {
-      const total = Math.ceil(base64Raw.length / imageChunkSize)
+      const streamTotal = Math.ceil(base64Raw.length / imageChunkSize)
+      const mailboxChunkSize = Math.max(imageChunkSize, Math.ceil(base64Raw.length / mailboxMaxChunks))
+      const mailboxTotal = Math.ceil(base64Raw.length / mailboxChunkSize)
       if (channel && channel.readyState === 'open' && session) {
         await sendEncryptedPayload(session, identity, {
           kind: 'image-meta',
@@ -420,16 +423,16 @@ export const useDmComposer = (options: DmComposerOptions) => {
           size: payloadSize,
           width: width || undefined,
           height: height || undefined,
-          total,
+          total: streamTotal,
           encoding: encoding === 'zstd' ? 'zstd' : undefined
         })
-        for (let index = 0; index < total; index += 1) {
+        for (let index = 0; index < streamTotal; index += 1) {
           const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
           await sendEncryptedPayload(session, identity, {
             kind: 'image-chunk',
             id: messageId,
             index,
-            total,
+            total: streamTotal,
             data
           })
         }
@@ -524,20 +527,20 @@ export const useDmComposer = (options: DmComposerOptions) => {
             size: payloadSize,
             width: width || undefined,
             height: height || undefined,
-            total,
+            total: mailboxTotal,
             encoding: encoding === 'zstd' ? 'zstd' : undefined
           },
           `${messageId}-meta`
         )
         if (!metaSent) return false
-        for (let index = 0; index < total; index += 1) {
-          const data = base64Raw.slice(index * imageChunkSize, (index + 1) * imageChunkSize)
+        for (let index = 0; index < mailboxTotal; index += 1) {
+          const data = base64Raw.slice(index * mailboxChunkSize, (index + 1) * mailboxChunkSize)
           const chunkSent = await sendMailboxPayload(
             {
               kind: 'image-chunk',
               id: messageId,
               index,
-              total,
+              total: mailboxTotal,
               data
             },
             `${messageId}-chunk-${index}`

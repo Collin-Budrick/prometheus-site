@@ -19,7 +19,7 @@ const p2pUserDevicesPrefix = 'chat:p2p:user:'
 const p2pMailboxPrefix = 'chat:p2p:mailbox:'
 const p2pDeviceTtlSeconds = 60 * 60 * 24 * 30
 const p2pMailboxTtlSeconds = 60 * 60 * 24 * 7
-const p2pMailboxMaxEntries = 200
+const p2pMailboxMaxEntries = 2000
 
 const buildDeviceKey = (deviceId: string) => `${p2pDeviceKeyPrefix}${deviceId}`
 const buildUserDevicesKey = (userId: string) => `${p2pUserDevicesPrefix}${userId}:devices`
