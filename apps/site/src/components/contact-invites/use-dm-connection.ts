@@ -39,7 +39,7 @@ import {
   persistHistory
 } from './history'
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
-import { createRelayClients, type RelayMessage } from './relay'
+import { createRelayManager, type RelayMessage } from './relay'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -55,6 +55,7 @@ type DmConnectionOptions = {
   localProfile: Signal<ProfilePayload | null>
   contactProfiles: Signal<Record<string, ProfilePayload>>
   chatSettings: Signal<ChatSettings>
+  selfUserId: Signal<string | undefined>
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
   incomingImageCount: Signal<number>
@@ -114,13 +115,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let reconnecting = false
+    let iceRestarting = false
+    let iceRestartAttempts = 0
     let isPolite = false
     let makingOffer = false
     let flushingOutbox = false
     let historyRequested = false
     let historyNeeded = false
     let mailboxPulling = false
-    const relayClients = createRelayClients(window.location.origin)
+    let relayManager: ReturnType<typeof createRelayManager> | null = null
+    let relayManagerKey = ''
     const outboxResendIntervalMs = 15_000
     const resolvedIceServers =
       appConfig.p2pIceServers && appConfig.p2pIceServers.length
@@ -161,6 +165,46 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (window.localStorage?.getItem('p2pDebug') !== '1') return
       console.info('[p2p]', ...args)
     }
+    const resolveRelayIdentity = (identity: DeviceIdentity) => {
+      if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
+      return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+    }
+    const resolveDiscoveredRelays = () => {
+      const discovered = new Set<string>()
+      for (const device of devices) {
+        const urls = device.relayUrls ?? []
+        for (const url of urls) {
+          if (url) discovered.add(url)
+        }
+      }
+      const remoteUrls = options.remoteDeviceRef.value?.relayUrls ?? []
+      for (const url of remoteUrls) {
+        if (url) discovered.add(url)
+      }
+      return Array.from(discovered)
+    }
+    const buildRelayManagerKey = (identity: DeviceIdentity, remoteDevice: ContactDevice | undefined) => {
+      const discovered = resolveDiscoveredRelays().slice().sort().join(',')
+      const relayKey = identity.relayPublicKey ?? ''
+      const recipientKey = remoteDevice?.relayPublicKey ?? ''
+      return `${relayKey}|${recipientKey}|${discovered}`
+    }
+    const getRelayManager = () => {
+      if (typeof window === 'undefined') return null
+      const identity = options.identityRef.value
+      if (!identity) return null
+      const remoteDevice = options.remoteDeviceRef.value ?? undefined
+      const nextKey = buildRelayManagerKey(identity, remoteDevice)
+      if (!relayManager || nextKey !== relayManagerKey) {
+        relayManagerKey = nextKey
+        relayManager = createRelayManager(window.location.origin, {
+          relayIdentity: resolveRelayIdentity(identity),
+          recipientRelayKey: remoteDevice?.relayPublicKey,
+          discoveredRelays: resolveDiscoveredRelays()
+        })
+      }
+      return relayManager
+    }
     const reportDmError = (message: string) => {
       options.dmError.value = message
       const activeChannel = options.channelRef.value ?? channel
@@ -196,6 +240,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       reconnecting = false
       reconnectAttempt = 0
+      iceRestarting = false
+      iceRestartAttempts = 0
       pendingSignals.splice(0, pendingSignals.length)
       if (channel) {
         channel.close()
@@ -222,6 +268,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       options.channelRef.value = undefined
       options.sessionRef.value = undefined
       makingOffer = false
+      iceRestarting = false
+      iceRestartAttempts = 0
     }
 
     const scheduleReconnect = async (reason: string) => {
@@ -328,11 +376,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const state = connection.connectionState
       debug('connection state', state)
       if (state === 'connected') {
+        iceRestartAttempts = 0
         options.dmStatus.value = 'connected'
         return
       }
       if (state === 'failed' || state === 'disconnected') {
-        void scheduleReconnect(`connection-${state}`)
+        void handleConnectionFailure(`connection-${state}`)
       }
     }
 
@@ -431,11 +480,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const sendRelayPayload = async (payload: Record<string, unknown>, messageId: string, sessionId?: string) => {
-      if (!relayClients.length) return 0
-      const results = await Promise.all(
-        relayClients.map((client) => client.send({ recipientId: contact.id, messageId, sessionId, payload }))
-      )
-      return results.reduce((sum, result) => sum + (result?.delivered ?? 0), 0)
+      const manager = getRelayManager()
+      if (!manager || !manager.clients.length) return 0
+      const identity = options.identityRef.value
+      const result = await manager.send({
+        recipientId: contact.id,
+        messageId,
+        sessionId,
+        payload,
+        senderId: options.selfUserId.value,
+        senderDeviceId: identity?.deviceId,
+        recipientRelayKey: options.remoteDeviceRef.value?.relayPublicKey
+      })
+      return result?.delivered ?? 0
     }
 
     const sendReceipt = async (
@@ -1042,15 +1099,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const pullMailbox = async () => {
-      if (mailboxPulling || !relayClients.length) return
+      if (mailboxPulling) return
       const identity = options.identityRef.value
       if (!identity) return
+      const manager = getRelayManager()
+      if (!manager || !manager.clients.length) return
       mailboxPulling = true
       try {
-        const results = await Promise.all(
-          relayClients.map((client) => client.pull({ deviceId: identity.deviceId, limit: 50 }))
-        )
-        const messages = results.flat().filter((message) => message.from === contact.id)
+        const messages = (await manager.pull({
+          deviceId: identity.deviceId,
+          limit: 50,
+          relayPublicKey: identity.relayPublicKey || undefined
+        })).filter((message) => message.from === contact.id)
         if (!messages.length) return
         const handled: RelayMessage[] = []
         for (const message of messages) {
@@ -1073,7 +1133,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         await Promise.all(
           Array.from(grouped.entries()).map(([relayBase, ids]) => {
-            const client = relayClients.find((entry) => entry.baseUrl === relayBase)
+            const client = manager.clients.find((entry) => entry.baseUrl === relayBase)
             if (!client) return Promise.resolve(0)
             return client.ack(identity.deviceId, ids)
           })
@@ -1489,9 +1549,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const iceState = connection.iceConnectionState
         debug('ice connection state', iceState)
         if (iceState === 'connected' || iceState === 'completed') {
+          iceRestartAttempts = 0
           options.dmStatus.value = 'connected'
         } else if (iceState === 'failed' || iceState === 'disconnected') {
-          void scheduleReconnect(`ice-${iceState}`)
+          void handleConnectionFailure(`ice-${iceState}`)
         }
       }
       connection.onsignalingstatechange = () => {
@@ -1606,6 +1667,52 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           // ignore candidate errors
         }
       }
+    }
+
+    const attemptIceRestart = async (reason: string) => {
+      if (!connection || iceRestarting || makingOffer) return false
+      const identity = options.identityRef.value
+      const remoteDevice = options.remoteDeviceRef.value
+      const session = options.sessionRef.value
+      if (!identity || !remoteDevice || !session) return false
+      if (connection.signalingState !== 'stable') return false
+      if (iceRestartAttempts >= 2) return false
+      iceRestartAttempts += 1
+      iceRestarting = true
+      debug('ice restart', { reason, attempt: iceRestartAttempts })
+      try {
+        if (typeof connection.restartIce === 'function') {
+          connection.restartIce()
+        }
+        makingOffer = true
+        const offer = await connection.createOffer({ iceRestart: true })
+        await connection.setLocalDescription(offer)
+        await waitForIceGatheringComplete(connection)
+        sendSignal({
+          type: 'signal',
+          to: contact.id,
+          toDeviceId: remoteDevice.deviceId,
+          sessionId: session.sessionId,
+          payload: {
+            type: 'offer',
+            sdp: connection.localDescription?.sdp ?? offer.sdp,
+            salt: session.salt,
+            iceRestart: true
+          }
+        })
+        return true
+      } catch {
+        return false
+      } finally {
+        makingOffer = false
+        iceRestarting = false
+      }
+    }
+
+    const handleConnectionFailure = async (reason: string) => {
+      const restarted = await attemptIceRestart(reason)
+      if (restarted) return
+      await scheduleReconnect(reason)
     }
 
     const connectWs = (identity: DeviceIdentity) => {

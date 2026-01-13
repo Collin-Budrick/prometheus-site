@@ -13,7 +13,7 @@ import { zstdCompress } from '../../shared/zstd-codec'
 import { enqueueOutboxItem, markOutboxItemSent } from './outbox'
 import { persistHistory } from './history'
 import { createMessageId } from './utils'
-import { createRelayClients } from './relay'
+import { createRelayManager } from './relay'
 import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -22,6 +22,7 @@ type DmComposerOptions = {
   dmMessages: Signal<DmMessage[]>
   dmError: Signal<string | null>
   chatSettings: Signal<ChatSettings>
+  selfUserId: Signal<string | undefined>
   typingActive: Signal<boolean>
   typingTimer: Signal<number | null>
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
@@ -123,24 +124,46 @@ export const useDmComposer = (options: DmComposerOptions) => {
   }
 
   const relayInlineLimitBytes = 240_000
-  let relayClients: ReturnType<typeof createRelayClients> | null = null
+  let relayManager: ReturnType<typeof createRelayManager> | null = null
+  let relayManagerKey = ''
 
-  const getRelayClients = () => {
-    if (relayClients) return relayClients
-    if (typeof window === 'undefined') return []
-    relayClients = createRelayClients(window.location.origin)
-    return relayClients
+  const getRelayManager = () => {
+    if (typeof window === 'undefined') return null
+    const identity = options.identityRef.value
+    const remoteDevice = options.remoteDeviceRef.value
+    if (!identity) return null
+    const discoveredRelays = (remoteDevice?.relayUrls ?? []).slice().sort()
+    const nextKey = `${identity.relayPublicKey}|${remoteDevice?.relayPublicKey ?? ''}|${discoveredRelays.join(',')}`
+    if (!relayManager || nextKey !== relayManagerKey) {
+      relayManagerKey = nextKey
+      relayManager = createRelayManager(window.location.origin, {
+        relayIdentity:
+          identity.relayPublicKey && identity.relaySecretKey
+            ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+            : undefined,
+        recipientRelayKey: remoteDevice?.relayPublicKey,
+        discoveredRelays
+      })
+    }
+    return relayManager
   }
 
   const sendRelayPayload = async (payload: unknown, messageId: string, sessionId?: string) => {
     const contact = options.activeContact.value
     if (!contact) return 0
-    const clients = getRelayClients()
-    if (!clients.length) return 0
-    const results = await Promise.all(
-      clients.map((client) => client.send({ recipientId: contact.id, messageId, sessionId, payload }))
-    )
-    return results.reduce((sum, result) => sum + (result?.delivered ?? 0), 0)
+    const manager = getRelayManager()
+    if (!manager || !manager.clients.length) return 0
+    const identity = options.identityRef.value
+    const result = await manager.send({
+      recipientId: contact.id,
+      messageId,
+      sessionId,
+      payload,
+      senderId: options.selfUserId.value,
+      senderDeviceId: identity?.deviceId,
+      recipientRelayKey: options.remoteDeviceRef.value?.relayPublicKey
+    })
+    return result?.delivered ?? 0
   }
 
   const createRelaySession = async (identity: DeviceIdentity, device: ContactDevice) => {

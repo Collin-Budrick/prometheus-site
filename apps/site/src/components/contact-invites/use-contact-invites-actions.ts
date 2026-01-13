@@ -1,7 +1,8 @@
 import { $, noSerialize, type NoSerialize, type Signal } from '@builder.io/qwik'
 import { saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
+import { appConfig } from '../../app-config'
 import {
-  createStoredIdentity,
+  ensureStoredIdentity,
   importStoredIdentity,
   loadStoredIdentity,
   saveStoredIdentity,
@@ -58,18 +59,26 @@ type ContactInvitesActionsOptions = {
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
   const registerIdentity = $(async () => {
     let stored = loadStoredIdentity()
-    if (!stored) {
-      stored = await createStoredIdentity()
-      saveStoredIdentity(stored)
-    }
+    stored = await ensureStoredIdentity(stored)
+    saveStoredIdentity(stored)
     let identity = await importStoredIdentity(stored)
     try {
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
+      const relayUrls = [
+        ...(appConfig.p2pRelayBases ?? []),
+        ...(appConfig.p2pNostrRelays ?? [])
+      ].filter(Boolean)
       const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ deviceId: identity.deviceId, publicKey: identity.publicKeyJwk, label })
+        body: JSON.stringify({
+          deviceId: identity.deviceId,
+          publicKey: identity.publicKeyJwk,
+          relayPublicKey: identity.relayPublicKey,
+          relayUrls,
+          label
+        })
       })
       if (response.ok) {
         const payload = (await response.json()) as { deviceId?: string }

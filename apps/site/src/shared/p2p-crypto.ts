@@ -1,8 +1,12 @@
+import { generateSecretKey, getPublicKey } from 'nostr-tools'
+
 type StoredDeviceIdentity = {
   deviceId: string
   publicKeyJwk: JsonWebKey
   privateKeyJwk: JsonWebKey
   role?: 'device' | 'relay'
+  relayPublicKey?: string
+  relaySecretKey?: string
 }
 
 export type DeviceIdentity = {
@@ -11,6 +15,8 @@ export type DeviceIdentity = {
   privateKey: CryptoKey
   publicKeyJwk: JsonWebKey
   role: 'device' | 'relay'
+  relayPublicKey: string
+  relaySecretKey: string
 }
 
 export type EncryptedPayload = {
@@ -53,6 +59,20 @@ const base64ToBytes = (value: string) => {
   return bytes
 }
 
+const bytesToHex = (bytes: Uint8Array) => {
+  let hex = ''
+  for (const byte of bytes) {
+    hex += byte.toString(16).padStart(2, '0')
+  }
+  return hex
+}
+
+const createRelayKeypair = () => {
+  const secret = generateSecretKey()
+  const pubkey = getPublicKey(secret)
+  return { relaySecretKey: bytesToHex(secret), relayPublicKey: pubkey }
+}
+
 export const loadStoredIdentity = (): StoredDeviceIdentity | null => {
   if (typeof window === 'undefined') return null
   try {
@@ -75,6 +95,18 @@ export const saveStoredIdentity = (identity: StoredDeviceIdentity) => {
   }
 }
 
+export const ensureStoredIdentity = async (stored: StoredDeviceIdentity | null): Promise<StoredDeviceIdentity> => {
+  let next = stored
+  if (!next) {
+    next = await createStoredIdentity()
+  }
+  if (!next.relaySecretKey || !next.relayPublicKey) {
+    const relayKeys = createRelayKeypair()
+    next = { ...next, ...relayKeys }
+  }
+  return next
+}
+
 export const createStoredIdentity = async (): Promise<StoredDeviceIdentity> => {
   ensureCrypto()
   const { publicKey, privateKey } = (await crypto.subtle.generateKey(
@@ -85,7 +117,8 @@ export const createStoredIdentity = async (): Promise<StoredDeviceIdentity> => {
   const publicKeyJwk = await crypto.subtle.exportKey('jwk', publicKey)
   const privateKeyJwk = await crypto.subtle.exportKey('jwk', privateKey)
   const deviceId = crypto.randomUUID()
-  return { deviceId, publicKeyJwk, privateKeyJwk, role: 'device' }
+  const relayKeys = createRelayKeypair()
+  return { deviceId, publicKeyJwk, privateKeyJwk, role: 'device', ...relayKeys }
 }
 
 export const importStoredIdentity = async (stored: StoredDeviceIdentity): Promise<DeviceIdentity> => {
@@ -109,7 +142,9 @@ export const importStoredIdentity = async (stored: StoredDeviceIdentity): Promis
     publicKey,
     privateKey,
     publicKeyJwk: stored.publicKeyJwk,
-    role: stored.role === 'relay' ? 'relay' : 'device'
+    role: stored.role === 'relay' ? 'relay' : 'device',
+    relayPublicKey: stored.relayPublicKey ?? '',
+    relaySecretKey: stored.relaySecretKey ?? ''
   }
 }
 

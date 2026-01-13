@@ -20,6 +20,7 @@
     "@qwikest/icons": "^0.0.13",
     "arkenv": "0.8.3",
     "arktype": "2.1.29",
+    "nostr-tools": "^2.19.4",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121"
   },
@@ -28,16 +29,16 @@
     "@rolldown/binding-win32-x64-msvc": "1.0.0-beta.9-commit.d91dfb5",
     "@serwist/vite": "^9.5.0",
     "@tailwindcss/vite": "^4.1.18",
-    "@types/node": "25.0.6",
+    "@types/node": "25.0.8",
     "lightningcss": "^1.30.2",
-    "oxlint": "1.38.0",
+    "oxlint": "1.39.0",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260111",
+    "typescript": "6.0.0-dev.20260113",
     "vite": "8.0.0-beta.7",
     "vite-plugin-compression2": "^2.4.0"
   },
   "optionalDependencies": {
-    "@oxlint/win32-arm64": "^1.38.0"
+    "@oxlint/win32-arm64": "^1.39.0"
   }
 }

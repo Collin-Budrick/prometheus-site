@@ -36,6 +36,7 @@ export type AppConfig = {
   analytics: AnalyticsConfig
   highlight: HighlightConfig
   p2pRelayBases: string[]
+  p2pNostrRelays: string[]
   p2pIceServers: P2pIceServer[]
 }
 
@@ -70,6 +71,8 @@ const runtimeEnvSchema = arkenvType({
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
   P2P_RELAY_BASES: 'string?',
   VITE_P2P_RELAY_BASES: 'string?',
+  P2P_NOSTR_RELAYS: 'string?',
+  VITE_P2P_NOSTR_RELAYS: 'string?',
   P2P_ICE_SERVERS: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
@@ -93,6 +96,7 @@ const publicEnvSchema = arkenvType({
   VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
   VITE_P2P_RELAY_BASES: 'string?',
+  VITE_P2P_NOSTR_RELAYS: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
   MODE: 'string?',
@@ -327,6 +331,14 @@ const resolveP2pRelayBases = (env: AppEnv) => {
   return splitList(raw).map(normalizeApiBase).filter(Boolean)
 }
 
+const resolveP2pNostrRelays = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.P2P_NOSTR_RELAYS, env.VITE_P2P_NOSTR_RELAYS))?.trim() ?? ''
+  if (!raw) return []
+  return splitList(raw)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.startsWith('wss://') || entry.startsWith('ws://'))
+}
+
 const defaultP2pIceServers: P2pIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }
 ]
@@ -377,6 +389,7 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     analytics: resolveAnalyticsConfig(resolvedEnv),
     highlight: resolveHighlightConfig(resolvedEnv),
     p2pRelayBases: resolveP2pRelayBases(resolvedEnv),
+    p2pNostrRelays: resolveP2pNostrRelays(resolvedEnv),
     p2pIceServers: resolveP2pIceServers(resolvedEnv)
   }
 }

@@ -200,6 +200,8 @@ type P2pDeviceEntry = {
   publicKey: Record<string, unknown>
   label?: string
   role: P2pDeviceRole
+  relayPublicKey?: string
+  relayUrls?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -226,7 +228,9 @@ const p2pDeviceSchema = z.object({
   deviceId: z.string().min(8).optional(),
   publicKey: z.record(z.string(), z.unknown()),
   label: z.string().min(1).max(64).optional(),
-  role: z.enum(['device', 'relay']).optional()
+  role: z.enum(['device', 'relay']).optional(),
+  relayPublicKey: z.string().min(16).optional(),
+  relayUrls: z.array(z.string().min(6)).max(16).optional()
 })
 
 const p2pMailboxSendSchema = z.object({
@@ -373,9 +377,15 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         const deviceId = parsed.deviceId
         const userId = parsed.userId
         const publicKey = parsed.publicKey
+        const relayPublicKey = parsed.relayPublicKey
+        const relayUrls = parsed.relayUrls
         if (typeof deviceId !== 'string' || typeof userId !== 'string' || !isRecord(publicKey)) return null
         const role = parsed.role === 'relay' ? 'relay' : 'device'
         const label = typeof parsed.label === 'string' ? parsed.label : undefined
+        const relayKey = typeof relayPublicKey === 'string' ? relayPublicKey : undefined
+        const relayHints = Array.isArray(relayUrls)
+          ? relayUrls.filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+          : undefined
         const createdAt = typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString()
         const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : createdAt
         return {
@@ -384,6 +394,8 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           publicKey,
           label,
           role,
+          relayPublicKey: relayKey,
+          relayUrls: relayHints,
           createdAt,
           updatedAt
         }
@@ -1115,6 +1127,8 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         publicKey: payload.publicKey,
         label: payload.label,
         role,
+        relayPublicKey: payload.relayPublicKey,
+        relayUrls: payload.relayUrls,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now
       }
@@ -1182,6 +1196,8 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
             publicKey: entry.publicKey,
             label: entry.label,
             role: entry.role,
+            relayPublicKey: entry.relayPublicKey,
+            relayUrls: entry.relayUrls,
             updatedAt: entry.updatedAt
           }))
         }

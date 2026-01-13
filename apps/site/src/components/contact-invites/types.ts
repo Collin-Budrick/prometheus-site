@@ -103,6 +103,8 @@ export type ContactDevice = {
   label?: string
   role?: 'device' | 'relay'
   updatedAt?: string
+  relayPublicKey?: string
+  relayUrls?: string[]
 }
 
 export type P2pSession = {
