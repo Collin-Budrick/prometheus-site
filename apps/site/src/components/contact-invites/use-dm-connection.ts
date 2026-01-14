@@ -364,7 +364,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       return selfRelayManager
     }
-    const reportDmError = (message: string) => {
+    const reportDmError = (message: string, fallbackStatus: 'error' | 'offline' = 'error') => {
       options.dmError.value = message
       const activeChannel = options.channelRef.value ?? channel
       const channelOpen = activeChannel?.readyState === 'open'
@@ -380,7 +380,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         options.dmStatus.value = 'connected'
         return
       }
-      options.dmStatus.value = 'error'
+      options.dmStatus.value = fallbackStatus
     }
 
     options.dmStatus.value = 'connecting'
@@ -1681,7 +1681,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const activeChannel = options.channelRef.value ?? channel
       if (!identity || !activeContact) return
       const channelReady = Boolean(session && activeChannel && activeChannel.readyState === 'open')
-      let relayDevice = options.remoteDeviceRef.value
+      let relayDevice: ContactDevice | undefined = options.remoteDeviceRef.value ?? undefined
       if (!channelReady && !relayDevice) {
         await fetchDevices()
         relayDevice = options.remoteDeviceRef.value ?? pickPreferredDevice(devices) ?? undefined
@@ -2947,7 +2947,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           options.dmStatus.value = 'offline'
         } else {
-          reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error')
+          reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error', 'offline')
         }
         scheduleWsReconnect(identity, 'ws-error')
         void maybeStartPeerJsFallback(identity, 'ws-error')
