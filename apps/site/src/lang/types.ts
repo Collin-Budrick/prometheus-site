@@ -47,6 +47,35 @@ export type UiCopy = {
   settingsChatReadReceiptsHint: string
   settingsChatTypingIndicators: string
   settingsChatTypingIndicatorsHint: string
+  settingsOfflineTitle: string
+  settingsOfflineDescription: string
+  settingsOfflineToggleLabel: string
+  settingsOfflineToggleHint: string
+  settingsOfflineRefreshLabel: string
+  settingsOfflineRefreshHint: string
+  settingsOfflineRefreshAction: string
+  settingsOfflineRefreshPending: string
+  settingsOfflineRefreshSuccess: string
+  settingsOfflineCleanupLabel: string
+  settingsOfflineCleanupHint: string
+  settingsOfflineCleanupAction: string
+  settingsOfflineCleanupPending: string
+  settingsOfflineCleanupSuccess: string
+  settingsOfflineSyncQueued: string
+  settingsOfflineEnabled: string
+  settingsOfflineDisabled: string
+  settingsOfflineStorageError: string
+  networkOfflineTitle: string
+  networkOfflineHint: string
+  networkOnlineTitle: string
+  networkOnlineHint: string
+  networkRetrySync: string
+  networkSyncTitle: string
+  networkSyncQueued: string
+  networkCacheRefreshed: string
+  networkCacheRefreshedHint: string
+  networkCacheCleared: string
+  networkCacheClearedHint: string
   protectedMetaLine: string
   protectedDescription: string
   protectedAction: string

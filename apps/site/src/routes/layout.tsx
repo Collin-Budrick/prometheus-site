@@ -1,4 +1,4 @@
-import { $, component$, HTMLFragment, Slot, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, HTMLFragment, Slot, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
@@ -157,6 +157,8 @@ export default component$(() => {
   const fragmentStatus = useSharedFragmentStatusSignal()
   const authSession = useAuthSession()
   const isAuthenticated = authSession.value.status === 'authenticated'
+  const bannerMode = useSignal<'offline' | 'online' | 'sync' | 'cache-refreshed' | 'cache-cleared' | null>(null)
+  const bannerTimeoutId = useSignal<number | null>(null)
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
@@ -186,6 +188,27 @@ export default component$(() => {
         variant: 'ui'
       }
     )
+  })
+
+  const setBanner = $((mode: typeof bannerMode.value, durationMs?: number) => {
+    if (typeof window === 'undefined') return
+    if (bannerTimeoutId.value) {
+      window.clearTimeout(bannerTimeoutId.value)
+      bannerTimeoutId.value = null
+    }
+    bannerMode.value = mode
+    if (mode && durationMs && durationMs > 0) {
+      bannerTimeoutId.value = window.setTimeout(() => {
+        bannerMode.value = null
+        bannerTimeoutId.value = null
+      }, durationMs)
+    }
+  })
+
+  const handleRetrySync = $(() => {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('prom:sw-manual-sync'))
+    void setBanner('sync', 3200)
   })
 
   useVisibleTask$((ctx) => {
@@ -224,8 +247,112 @@ export default component$(() => {
     })
   })
 
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    if (navigator.onLine === false) {
+      void setBanner('offline')
+    }
+
+    const handleOnline = () => {
+      void setBanner('online', 4200)
+    }
+    const handleOffline = () => {
+      void setBanner('offline')
+    }
+    const handleNetworkStatus = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return
+      const detail = event.detail as { online?: boolean } | undefined
+      if (detail?.online === false) {
+        handleOffline()
+      } else if (detail?.online === true) {
+        handleOnline()
+      }
+    }
+    const handleCacheRefreshed = () => {
+      void setBanner('cache-refreshed', 4200)
+    }
+    const handleCacheCleared = () => {
+      void setBanner('cache-cleared', 4200)
+    }
+    const handleSyncRequested = () => {
+      void setBanner('sync', 3200)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('prom:network-status', handleNetworkStatus)
+    window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+    window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
+    window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+
+    ctx.cleanup(() => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('prom:network-status', handleNetworkStatus)
+      window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+      window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
+      window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+    })
+  })
+
+  const bannerConfig = (() => {
+    if (!bannerMode.value) return null
+    switch (bannerMode.value) {
+      case 'offline':
+        return {
+          tone: 'offline',
+          title: copy.value.networkOfflineTitle,
+          message: copy.value.networkOfflineHint,
+          showAction: true
+        }
+      case 'online':
+        return {
+          tone: 'online',
+          title: copy.value.networkOnlineTitle,
+          message: copy.value.networkOnlineHint,
+          showAction: true
+        }
+      case 'sync':
+        return {
+          tone: 'info',
+          title: copy.value.networkSyncTitle,
+          message: copy.value.networkSyncQueued,
+          showAction: false
+        }
+      case 'cache-refreshed':
+        return {
+          tone: 'info',
+          title: copy.value.networkCacheRefreshed,
+          message: copy.value.networkCacheRefreshedHint,
+          showAction: false
+        }
+      case 'cache-cleared':
+        return {
+          tone: 'warning',
+          title: copy.value.networkCacheCleared,
+          message: copy.value.networkCacheClearedHint,
+          showAction: false
+        }
+      default:
+        return null
+    }
+  })()
+
   return (
     <div class="layout-shell">
+      {bannerConfig ? (
+        <div class="connection-banner" data-tone={bannerConfig.tone} role="status" aria-live="polite">
+          <div class="connection-banner-content">
+            <strong>{bannerConfig.title}</strong>
+            <span>{bannerConfig.message}</span>
+          </div>
+          {bannerConfig.showAction ? (
+            <button type="button" class="connection-banner-action" onClick$={handleRetrySync}>
+              {copy.value.networkRetrySync}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <header class="topbar" data-view-transition="shell-header">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true" />

@@ -133,6 +133,14 @@ const broadcastMessage = async (message: Record<string, unknown>) => {
   await Promise.all(clients.map((client: Client) => client.postMessage(message)))
 }
 
+const clearRuntimeCaches = async () => {
+  const keys = await caches.keys()
+  const targets = keys.filter(
+    (key) => key.startsWith('fragment-prime-shell') || key.startsWith('fragment-prime-data')
+  )
+  await Promise.all(targets.map((key) => caches.delete(key)))
+}
+
 const flushOutbox = async (reason: string) => {
   await broadcastMessage({ type: 'p2p:flush-outbox', reason })
 }
@@ -169,6 +177,25 @@ void serwist.addEventListeners()
 self.addEventListener('sync', (event: SyncEvent) => {
   if (event.tag !== OUTBOX_SYNC_TAG) return
   event.waitUntil(flushOutbox('sync'))
+})
+
+self.addEventListener('message', (event) => {
+  const payload = event.data as Record<string, unknown> | null
+  if (!payload || typeof payload.type !== 'string') return
+  if (payload.type === 'p2p:flush-outbox') {
+    const reason = typeof payload.reason === 'string' ? payload.reason : 'manual'
+    event.waitUntil(flushOutbox(reason))
+  }
+  if (payload.type === 'sw:refresh-cache') {
+    event.waitUntil(
+      clearRuntimeCaches().then(() => broadcastMessage({ type: 'sw:cache-refreshed' }))
+    )
+  }
+  if (payload.type === 'sw:clear-cache') {
+    event.waitUntil(
+      clearRuntimeCaches().then(() => broadcastMessage({ type: 'sw:cache-cleared' }))
+    )
+  }
 })
 
 self.addEventListener('push', (event: PushEvent) => {
