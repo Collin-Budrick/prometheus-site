@@ -2,6 +2,7 @@ import { $, noSerialize, type NoSerialize, type Signal } from '@builder.io/qwik'
 import { saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
 import { appConfig } from '../../app-config'
 import {
+  createStoredIdentity,
   ensureStoredIdentity,
   importStoredIdentity,
   loadStoredIdentity,
@@ -64,34 +65,52 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     stored = await ensureStoredIdentity(stored)
     saveStoredIdentity(stored)
     let identity = await importStoredIdentity(stored)
+    let registered = false
     try {
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
       const relayUrls = [
         ...(appConfig.p2pRelayBases ?? []),
         ...(appConfig.p2pNostrRelays ?? [])
       ].filter(Boolean)
-      const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          deviceId: identity.deviceId,
-          publicKey: identity.publicKeyJwk,
-          relayPublicKey: identity.relayPublicKey,
-          relayUrls,
-          label
+      const registerDevice = async () => {
+        const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            deviceId: identity.deviceId,
+            publicKey: identity.publicKeyJwk,
+            relayPublicKey: identity.relayPublicKey,
+            relayUrls,
+            label
+          })
         })
-      })
-      if (response.ok) {
+        if (response.status === 409) {
+          return { ok: false, conflict: true }
+        }
+        if (!response.ok) {
+          return { ok: false }
+        }
         const payload = (await response.json()) as { deviceId?: string }
         if (payload.deviceId && payload.deviceId !== identity.deviceId) {
           stored = { ...stored, deviceId: payload.deviceId }
           saveStoredIdentity(stored)
           identity = await importStoredIdentity(stored)
         }
+        return { ok: true }
       }
-      void publishSignalPrekeys(identity)
-      void registerPushSubscription(identity)
+      let result = await registerDevice()
+      if (!result.ok && result.conflict) {
+        stored = await createStoredIdentity()
+        saveStoredIdentity(stored)
+        identity = await importStoredIdentity(stored)
+        result = await registerDevice()
+      }
+      registered = result.ok
+      if (registered) {
+        void publishSignalPrekeys(identity)
+        void registerPushSubscription(identity)
+      }
     } catch {
       // ignore registration failures; retry later
     }

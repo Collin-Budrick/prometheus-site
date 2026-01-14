@@ -42,9 +42,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
       (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
       current
     if (!source) return
-    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
-      source.dataset
-    if (!contactId || !contactEmail) return
+    const dataset = source.dataset
+    if (!dataset?.contactId || !dataset?.contactEmail) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } = dataset
     const status =
       contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
         ? contactStatus
@@ -69,9 +69,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
       (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
       current
     if (!source) return
-    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
-      source.dataset
-    if (!contactId || !contactEmail) return
+    const dataset = source.dataset
+    if (!dataset?.contactId || !dataset?.contactEmail) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } = dataset
     const status =
       contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
         ? contactStatus
@@ -96,9 +96,9 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
       (current?.closest?.('[data-contact-id]') as HTMLElement | null) ??
       current
     if (!source) return
-    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } =
-      source.dataset
-    if (!contactId || !contactEmail) return
+    const dataset = source.dataset
+    if (!dataset?.contactId || !dataset?.contactEmail) return
+    const { contactId, contactEmail, contactName, contactStatus, contactInviteId, contactIsContact, contactOnline } = dataset
     const status =
       contactStatus === 'incoming' || contactStatus === 'outgoing' || contactStatus === 'accepted' || contactStatus === 'none'
         ? contactStatus
@@ -118,30 +118,30 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
   })
   const handleInviteClick = $((event: Event) => {
     const target = event.currentTarget as HTMLButtonElement | null
-    const email = target?.dataset.contactEmail
-    const userId = target?.dataset.contactId
+    const email = target?.dataset?.contactEmail
+    const userId = target?.dataset?.contactId
     if (!email) return
     void props.onInvite$(email, userId)
   })
   const handleAcceptClick = $((event: Event) => {
     const target = event.currentTarget as HTMLButtonElement | null
-    const inviteId = target?.dataset.inviteId
-    const userId = target?.dataset.contactId
+    const inviteId = target?.dataset?.inviteId
+    const userId = target?.dataset?.contactId
     if (!inviteId || !userId) return
     void props.onAccept$(inviteId, userId)
   })
   const handleDeclineClick = $((event: Event) => {
     const target = event.currentTarget as HTMLButtonElement | null
-    const inviteId = target?.dataset.inviteId
-    const userId = target?.dataset.contactId
+    const inviteId = target?.dataset?.inviteId
+    const userId = target?.dataset?.contactId
     if (!inviteId || !userId) return
     void props.onDecline$(inviteId, userId)
   })
   const handleRemoveClick = $((event: Event) => {
     const target = event.currentTarget as HTMLButtonElement | null
-    const inviteId = target?.dataset.inviteId
-    const userId = target?.dataset.contactId
-    const email = target?.dataset.contactEmail
+    const inviteId = target?.dataset?.inviteId
+    const userId = target?.dataset?.contactId
+    const email = target?.dataset?.contactEmail
     if (!inviteId || !userId || !email) return
     void props.onRemove$(inviteId, userId, email)
   })
