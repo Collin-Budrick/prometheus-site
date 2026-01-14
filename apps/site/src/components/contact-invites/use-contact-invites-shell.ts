@@ -79,6 +79,13 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         options.bellOpen.value = false
       }
 
+      const restoreSettingsFocus = () => {
+        const popover = options.chatSettingsPopoverRef.value
+        const active = document.activeElement
+        if (!popover || !active || !popover.contains(active)) return
+        options.chatSettingsButtonRef.value?.focus()
+      }
+
       const handleSettingsClick = (event: MouseEvent) => {
         if (!options.chatSettingsOpen.value) return
         const target = event.target as Node | null
@@ -86,12 +93,14 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         const popover = options.chatSettingsPopoverRef.value
         if (button && target && button.contains(target)) return
         if (popover && target && popover.contains(target)) return
+        restoreSettingsFocus()
         options.chatSettingsOpen.value = false
       }
 
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
           options.bellOpen.value = false
+          restoreSettingsFocus()
           options.chatSettingsOpen.value = false
           void options.closeContact()
         }

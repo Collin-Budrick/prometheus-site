@@ -218,6 +218,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       chatSettings,
       chatSettingsUserId,
       chatSettingsOpen,
+      chatSettingsButtonRef,
+      chatSettingsPopoverRef,
       identityRef,
       remoteTyping,
       remoteTypingTimer

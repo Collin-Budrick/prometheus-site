@@ -16,7 +16,16 @@ export const createDatabase = (
   config: PostgresConfig,
   logger: PlatformLogger = createLogger('db')
 ): DatabaseClient => {
-  const pgClient = postgres(config.connectionString, { max: 5, ssl: config.ssl })
+  const ignoredNoticeCodes = new Set(['42P06', '42P07'])
+  const pgClient = postgres(config.connectionString, {
+    max: 5,
+    ssl: config.ssl,
+    onnotice: (notice) => {
+      const code = typeof notice?.code === 'string' ? notice.code : ''
+      if (code && ignoredNoticeCodes.has(code)) return
+      logger.debug('Postgres notice', { notice })
+    }
+  })
   const db = drizzle({ client: pgClient })
 
   const connect = async () => {

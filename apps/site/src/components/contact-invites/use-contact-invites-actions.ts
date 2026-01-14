@@ -55,12 +55,27 @@ type ContactInvitesActionsOptions = {
   chatSettings: Signal<ChatSettings>
   chatSettingsUserId: Signal<string | undefined>
   chatSettingsOpen: Signal<boolean>
+  chatSettingsButtonRef: Signal<HTMLButtonElement | undefined>
+  chatSettingsPopoverRef: Signal<HTMLDivElement | undefined>
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
 }
 
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
+  const restoreSettingsFocus = () => {
+    if (typeof document === 'undefined') return
+    const popover = options.chatSettingsPopoverRef.value
+    const active = document.activeElement
+    if (!popover || !active || !popover.contains(active)) return
+    options.chatSettingsButtonRef.value?.focus()
+  }
+
+  const closeChatSettings = () => {
+    restoreSettingsFocus()
+    options.chatSettingsOpen.value = false
+  }
+
   const publishRelayIdentity = $(async (identity?: DeviceIdentity) => {
     if (typeof window === 'undefined') return false
     const userId = options.chatSettingsUserId.value
@@ -149,7 +164,11 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   }
 
   const toggleChatSettings = $(() => {
-    options.chatSettingsOpen.value = !options.chatSettingsOpen.value
+    if (options.chatSettingsOpen.value) {
+      closeChatSettings()
+      return
+    }
+    options.chatSettingsOpen.value = true
   })
 
   const toggleReadReceipts = $(() => {
@@ -181,7 +200,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (identity) {
       void archiveHistory(contact.id, identity)
     }
-    options.chatSettingsOpen.value = false
+    closeChatSettings()
   })
 
   const refreshInvites = $(async (resetStatus = true) => {
