@@ -30,6 +30,7 @@ import {
 } from '../../shared/profile-storage'
 import { buildApiUrl, buildWsUrl } from './api'
 import { loadOutbox, removeOutboxItems, saveOutbox, type OutboxItem } from './outbox'
+import { decryptSignalPayload, encryptSignalPayload, resolveSignalEnvelope, type SignalEnvelope } from './signal'
 import {
   historyCacheLimit,
   historyRequestLimit,
@@ -622,51 +623,72 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return assembled
     }
 
-    const resolveSelfSyncEnvelope = (payload: unknown) => {
+    const normalizeHistoryImage = (value: unknown) => {
+      if (!isRecord(value)) return undefined
+      const dataUrl = typeof value.dataUrl === 'string' ? value.dataUrl : ''
+      if (!dataUrl) return undefined
+      const name = typeof value.name === 'string' ? value.name : undefined
+      const mime = typeof value.mime === 'string' ? value.mime : undefined
+      const width = typeof value.width === 'number' ? value.width : undefined
+      const height = typeof value.height === 'number' ? value.height : undefined
+      const size = typeof value.size === 'number' ? value.size : undefined
+      return { dataUrl, name, mime, width, height, size }
+    }
+
+    type Envelope =
+      | { kind: 'signal'; envelope: SignalEnvelope }
+      | { kind: 'aes'; envelope: EncryptedPayload }
+
+    const resolveEnvelope = (payload: unknown): Envelope | null => {
+      const signal = resolveSignalEnvelope(payload)
+      if (signal) return { kind: 'signal', envelope: signal }
+      const encrypted = resolveEncryptedPayload(payload)
+      if (encrypted) return { kind: 'aes', envelope: encrypted }
+      return null
+    }
+
+    const resolveSelfSyncEnvelope = (
+      payload: unknown
+    ): { contactId: string; author: PayloadContext['author']; envelope: Envelope } | null => {
       if (!isRecord(payload)) return null
       if (payload.kind !== 'sync') return null
       const contactId = typeof payload.contactId === 'string' ? payload.contactId : ''
       if (!contactId) return null
       const authorValue = payload.author
-      const author = authorValue === 'contact' || authorValue === 'self' ? authorValue : 'self'
-      const encrypted = resolveEncryptedPayload(payload.payload)
-      if (!encrypted) return null
-      return { contactId, author, encrypted }
+      const author: PayloadContext['author'] = authorValue === 'contact' ? 'contact' : 'self'
+      const envelope = resolveEnvelope(payload.payload)
+      if (!envelope) return null
+      return { contactId, author, envelope }
     }
 
-    const handleEncryptedPayload = async (encrypted: EncryptedPayload, context: PayloadContext) => {
+    const resolvePayloadDevice = async (senderDeviceId: string | undefined, context: PayloadContext) => {
+      const deviceId =
+        senderDeviceId ??
+        (context.source === 'contact'
+          ? options.sessionRef.value?.remoteDeviceId ?? options.remoteDeviceRef.value?.deviceId
+          : undefined)
+      if (!deviceId) return null
+      const device =
+        context.source === 'self' ? await resolveSelfDevice(deviceId) : await resolveContactDevice(deviceId)
+      if (!device) return null
+      if (context.source === 'contact') {
+        options.remoteDeviceRef.value = noSerialize(device)
+      }
+      return device
+    }
+
+    const handlePlaintextPayload = async (
+      plaintext: string,
+      context: PayloadContext,
+      senderDeviceId: string | undefined,
+      respond: {
+        sendReceipt?: (messageId: string, status: 'sent' | 'read') => Promise<void>
+        sendHistoryResponse?: (messages: DmMessage[]) => Promise<void>
+      }
+    ) => {
       try {
-        const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
         const identity = options.identityRef.value
         if (!identity) return false
-        const deviceId =
-          senderDeviceId ??
-          (context.source === 'contact'
-            ? options.sessionRef.value?.remoteDeviceId ?? options.remoteDeviceRef.value?.deviceId
-            : undefined)
-        if (!deviceId) return false
-        const device =
-          context.source === 'self' ? await resolveSelfDevice(deviceId) : await resolveContactDevice(deviceId)
-        if (!device) return false
-        if (context.source === 'contact') {
-          options.remoteDeviceRef.value = noSerialize(device)
-        }
-        const key = await deriveSessionKey(
-          identity.privateKey,
-          device.publicKey,
-          decodeBase64(encrypted.salt),
-          encrypted.sessionId
-        )
-        const currentSession = options.sessionRef.value
-        if (context.source === 'contact' && (!currentSession || currentSession.sessionId === encrypted.sessionId)) {
-          options.sessionRef.value = noSerialize({
-            sessionId: encrypted.sessionId,
-            salt: encrypted.salt,
-            key,
-            remoteDeviceId: device.deviceId
-          })
-        }
-        const plaintext = await decryptPayload(key, encrypted)
         let messageText = plaintext
         let messageId = createMessageId()
         let createdAt = new Date().toISOString()
@@ -759,28 +781,55 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             const total = Number(messagePayload.total)
             const data = typeof messagePayload.data === 'string' ? messagePayload.data : ''
             if (hash && Number.isFinite(index) && Number.isFinite(total) && data) {
-              avatarChunk = {
-                hash,
-                updatedAt: typeof messagePayload.updatedAt === 'string' ? messagePayload.updatedAt : undefined,
-                index,
-                total,
-                data
+              avatarChunk = { hash, index, total, data }
+              if (typeof messagePayload.updatedAt === 'string') {
+                avatarChunk.updatedAt = messagePayload.updatedAt
               }
             }
+          } else if (messagePayload?.kind === 'profile-meta') {
+            const meta = parseProfileMeta(messagePayload.meta)
+            if (meta) profileMeta = meta
+          } else if (messagePayload?.kind === 'profile-request') {
+            const meta = parseProfileMeta(messagePayload.meta)
+            if (meta) profileRequest = true
+          } else if (messagePayload?.kind === 'profile-update') {
+            const profile = parseProfilePayload(messagePayload.profile)
+            if (profile) profilePayload = profile
+          } else if (messagePayload?.kind === 'history-request') {
+            isHistoryRequest = true
+            if (Number.isFinite(messagePayload.limit)) {
+              historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
+            }
+          } else if (messagePayload?.kind === 'history-response') {
+            const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
+            const mapped: DmMessage[] = []
+            for (const entry of historyEntries) {
+              if (!isRecord(entry)) continue
+              const id = typeof entry.id === 'string' ? entry.id : ''
+              const text = typeof entry.text === 'string' ? entry.text : ''
+              const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
+              const author = entry.author === 'self' || entry.author === 'contact' ? entry.author : undefined
+              const kind = entry.kind === 'image' ? 'image' : 'text'
+              const image = normalizeHistoryImage(entry.image)
+              if (!id || !created || !author) continue
+              mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
+            }
+            historyResponse = mapped
           } else if (messagePayload?.kind === 'image-meta') {
             const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+            const created = typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : ''
             const total = Number(messagePayload.total)
-            if (id && Number.isFinite(total) && total > 0) {
+            if (id && created && Number.isFinite(total)) {
               imageMeta = {
                 id,
-                createdAt: typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : new Date().toISOString(),
+                createdAt: created,
                 total,
                 name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
                 mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
                 encoding: messagePayload.encoding === 'zstd' ? 'zstd' : undefined,
-                size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
-                width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
-                height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
+                size: Number.isFinite(messagePayload.size) ? messagePayload.size : undefined,
+                width: Number.isFinite(messagePayload.width) ? messagePayload.width : undefined,
+                height: Number.isFinite(messagePayload.height) ? messagePayload.height : undefined
               }
             }
           } else if (messagePayload?.kind === 'image-chunk') {
@@ -795,86 +844,44 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
             const total = Number(messagePayload.total)
             const chunks = Array.isArray(messagePayload.chunks) ? messagePayload.chunks : []
-            const normalized: Array<{ index: number; data: string }> = []
-            for (const chunk of chunks) {
-              if (!chunk) continue
-              const index = Number((chunk as { index?: unknown }).index)
-              const data = typeof (chunk as { data?: unknown }).data === 'string' ? (chunk as { data?: string }).data : ''
-              if (Number.isFinite(index) && data) {
-                normalized.push({ index, data })
+            if (id && Number.isFinite(total) && chunks.length) {
+              const normalized: Array<{ index: number; data: string }> = []
+              for (const chunk of chunks) {
+                const index = Number(chunk.index)
+                const data = typeof chunk.data === 'string' ? chunk.data : ''
+                if (Number.isFinite(index) && data) {
+                  normalized.push({ index, data })
+                }
               }
-            }
-            if (id && Number.isFinite(total) && normalized.length) {
-              imageChunkBatch = { id, total, chunks: normalized }
+              if (normalized.length) {
+                imageChunkBatch = { id, total, chunks: normalized }
+              }
             }
           } else if (messagePayload?.kind === 'image-inline') {
             const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
+            const created = typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : ''
             const payloadBase64 = typeof messagePayload.payloadBase64 === 'string' ? messagePayload.payloadBase64 : ''
-            if (id && payloadBase64) {
+            if (id && created && payloadBase64) {
               inlineImage = {
                 id,
-                createdAt: typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : new Date().toISOString(),
+                createdAt: created,
                 payloadBase64,
                 encoding: messagePayload.encoding === 'zstd' ? 'zstd' : undefined,
                 name: typeof messagePayload.name === 'string' ? messagePayload.name : undefined,
                 mime: typeof messagePayload.mime === 'string' ? messagePayload.mime : undefined,
-                size: typeof messagePayload.size === 'number' ? messagePayload.size : undefined,
-                width: typeof messagePayload.width === 'number' ? messagePayload.width : undefined,
-                height: typeof messagePayload.height === 'number' ? messagePayload.height : undefined
+                size: Number.isFinite(messagePayload.size) ? messagePayload.size : undefined,
+                width: Number.isFinite(messagePayload.width) ? messagePayload.width : undefined,
+                height: Number.isFinite(messagePayload.height) ? messagePayload.height : undefined
               }
             }
-          } else if (messagePayload?.kind === 'profile-meta') {
-            const meta = parseProfileMeta(messagePayload.meta)
-            if (meta) {
-              profileMeta = meta
-            }
-          } else if (messagePayload?.kind === 'profile-request') {
-            profileRequest = true
-          } else if (messagePayload?.kind === 'profile-update') {
-            const parsed = parseProfilePayload(messagePayload.profile ?? messagePayload)
-            if (parsed) {
-              profilePayload = parsed
-            }
-          } else if (messagePayload?.kind === 'history-request') {
-            isHistoryRequest = true
-            if (Number.isFinite(Number(messagePayload.limit))) {
-              historyLimit = Math.max(1, Math.min(historyCacheLimit, Number(messagePayload.limit)))
-            }
-          } else if (messagePayload?.kind === 'history-response') {
-            const historyEntries = Array.isArray(messagePayload.messages) ? messagePayload.messages : []
-            const mapped: DmMessage[] = []
-            for (const entry of historyEntries) {
-              if (!isRecord(entry)) continue
-              const id = typeof entry.id === 'string' ? entry.id : ''
-              const text = typeof entry.text === 'string' ? entry.text : ''
-              const created = typeof entry.createdAt === 'string' ? entry.createdAt : ''
-              const author =
-                entry.author === 'self' ? 'contact' : entry.author === 'contact' ? 'self' : null
-              if (!id || !created || !author) continue
-              const imageRecord = isRecord(entry.image) ? entry.image : null
-              const image =
-                imageRecord && typeof imageRecord.dataUrl === 'string'
-                  ? {
-                      dataUrl: imageRecord.dataUrl,
-                      name: typeof imageRecord.name === 'string' ? imageRecord.name : undefined,
-                      mime: typeof imageRecord.mime === 'string' ? imageRecord.mime : undefined,
-                      size: typeof imageRecord.size === 'number' ? imageRecord.size : undefined,
-                      width: typeof imageRecord.width === 'number' ? imageRecord.width : undefined,
-                      height: typeof imageRecord.height === 'number' ? imageRecord.height : undefined
-                    }
-                  : undefined
-              const kind = entry.kind === 'image' || image ? 'image' : 'text'
-              if (!image && text.trim().length === 0) continue
-              mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
-            }
-            historyResponse = mapped
-          } else {
-            if (typeof messagePayload?.text === 'string') messageText = messagePayload.text
-            if (typeof messagePayload?.id === 'string') messageId = messagePayload.id
-            if (typeof messagePayload?.createdAt === 'string') createdAt = messagePayload.createdAt
-            if (typeof messagePayload?.id === 'string') {
-              receiptTargetId = messagePayload.id
-            }
+          } else if (messagePayload?.kind === 'message') {
+            const nextId = typeof messagePayload.id === 'string' ? messagePayload.id : messageId
+            const nextText = typeof messagePayload.text === 'string' ? messagePayload.text : messageText
+            const nextCreatedAt =
+              typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : createdAt
+            messageId = nextId
+            messageText = nextText
+            createdAt = nextCreatedAt
           }
         } catch {
           // ignore parse errors
@@ -913,11 +920,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 void sendSelfSyncPayload(syncPayload, message.id, message.author)
               }
             }
-            if (allowRemoteMetadata) {
-              await sendReceipt(
-                key,
-                encrypted.sessionId,
-                encrypted.salt,
+            if (allowRemoteMetadata && respond.sendReceipt) {
+              await respond.sendReceipt(
                 message.id,
                 options.chatSettings.value.readReceipts ? 'read' : 'sent'
               )
@@ -944,11 +948,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 void sendSelfSyncPayload(syncPayload, assembled.id, assembled.author)
               }
             }
-            if (allowRemoteMetadata) {
-              await sendReceipt(
-                key,
-                encrypted.sessionId,
-                encrypted.salt,
+            if (allowRemoteMetadata && respond.sendReceipt) {
+              await respond.sendReceipt(
                 assembled.id,
                 options.chatSettings.value.readReceipts ? 'read' : 'sent'
               )
@@ -966,11 +967,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 void sendSelfSyncPayload(syncPayload, message.id, message.author)
               }
             }
-            if (allowRemoteMetadata) {
-              await sendReceipt(
-                key,
-                encrypted.sessionId,
-                encrypted.salt,
+            if (allowRemoteMetadata && respond.sendReceipt) {
+              await respond.sendReceipt(
                 message.id,
                 options.chatSettings.value.readReceipts ? 'read' : 'sent'
               )
@@ -983,12 +981,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           const existing =
             avatarChunks.get(key) ?? {
               total: avatarChunk.total,
-              chunks: new Array(avatarChunk.total).fill(''),
+              chunks: Array.from({ length: avatarChunk.total }, () => ''),
               updatedAt: avatarChunk.updatedAt
             }
           if (existing.total !== avatarChunk.total) {
             existing.total = avatarChunk.total
-            existing.chunks = new Array(avatarChunk.total).fill('')
+            existing.chunks = Array.from({ length: avatarChunk.total }, () => '')
           }
           if (avatarChunk.index >= 0 && avatarChunk.index < existing.total) {
             existing.chunks[avatarChunk.index] = avatarChunk.data
@@ -1036,7 +1034,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           void persistHistory(contact.id, identity, options.dmMessages.value)
           return true
         }
-        if (isHistoryRequest && allowRemoteMetadata) {
+        if (isHistoryRequest && allowRemoteMetadata && respond.sendHistoryResponse) {
           let snapshot = options.dmMessages.value
           if (!snapshot.length) {
             snapshot = await loadHistory(contact.id, identity)
@@ -1052,20 +1050,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               kind: message.kind,
               image: message.image
             }))
-          try {
-            const responsePayload = await encryptPayload(
-              key,
-              JSON.stringify({ kind: 'history-response', messages: trimmed }),
-              encrypted.sessionId,
-              encrypted.salt,
-              identity.deviceId
-            )
-            if (activeChannel && activeChannel.readyState === 'open') {
-              activeChannel.send(JSON.stringify({ type: 'message', payload: responsePayload }))
-            }
-          } catch {
-            // ignore history response failures
-          }
+          await respond.sendHistoryResponse(trimmed)
           return true
         }
         if (
@@ -1091,16 +1076,113 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             }
           }
         }
-        if (receiptTargetId && allowRemoteMetadata) {
-          await sendReceipt(
-            key,
-            encrypted.sessionId,
-            encrypted.salt,
-            receiptTargetId,
-            options.chatSettings.value.readReceipts ? 'read' : 'sent'
-          )
+        if (receiptTargetId && allowRemoteMetadata && respond.sendReceipt) {
+          await respond.sendReceipt(receiptTargetId, options.chatSettings.value.readReceipts ? 'read' : 'sent')
         }
         return true
+      } catch (error) {
+        reportDmError(error instanceof Error ? error.message : 'Unable to decrypt message.')
+        return false
+      }
+    }
+
+    const handleEncryptedPayload = async (encrypted: EncryptedPayload, context: PayloadContext) => {
+      try {
+        const identity = options.identityRef.value
+        if (!identity) return false
+        const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
+        const device = await resolvePayloadDevice(senderDeviceId, context)
+        if (!device) return false
+        const key = await deriveSessionKey(
+          identity.privateKey,
+          device.publicKey,
+          decodeBase64(encrypted.salt),
+          encrypted.sessionId
+        )
+        const currentSession = options.sessionRef.value
+        if (context.source === 'contact' && (!currentSession || currentSession.sessionId === encrypted.sessionId)) {
+          options.sessionRef.value = noSerialize({
+            sessionId: encrypted.sessionId,
+            salt: encrypted.salt,
+            key,
+            remoteDeviceId: device.deviceId
+          })
+        }
+        const plaintext = await decryptPayload(key, encrypted)
+        return await handlePlaintextPayload(plaintext, context, senderDeviceId, {
+          sendReceipt: async (messageId, status) => {
+            await sendReceipt(key, encrypted.sessionId, encrypted.salt, messageId, status)
+          },
+          sendHistoryResponse: async (messages) => {
+            try {
+              const responsePayload = await encryptPayload(
+                key,
+                JSON.stringify({ kind: 'history-response', messages }),
+                encrypted.sessionId,
+                encrypted.salt,
+                identity.deviceId
+              )
+              const activeChannel = options.channelRef.value ?? channel
+              if (activeChannel && activeChannel.readyState === 'open') {
+                activeChannel.send(JSON.stringify({ type: 'message', payload: responsePayload }))
+              }
+            } catch {
+              // ignore history response failures
+            }
+          }
+        })
+      } catch (error) {
+        reportDmError(error instanceof Error ? error.message : 'Unable to decrypt message.')
+        return false
+      }
+    }
+
+    const handleSignalPayload = async (envelope: SignalEnvelope, context: PayloadContext) => {
+      try {
+        const identity = options.identityRef.value
+        if (!identity) return false
+        const senderDeviceId = typeof envelope.senderDeviceId === 'string' ? envelope.senderDeviceId : undefined
+        const device = await resolvePayloadDevice(senderDeviceId, context)
+        if (!device) return false
+        const senderId = context.source === 'contact' ? contact.id : options.selfUserId.value
+        if (!senderId) return false
+        const plaintext = await decryptSignalPayload({
+          identity,
+          senderId,
+          senderDeviceId: device.deviceId,
+          envelope
+        })
+        if (!plaintext) return false
+        const allowRemoteMetadata = context.source === 'contact'
+        return await handlePlaintextPayload(plaintext, context, device.deviceId, {
+          sendReceipt: allowRemoteMetadata
+            ? async (messageId, status) => {
+                if (status === 'read' && !options.chatSettings.value.readReceipts) return
+                const receipt = await encryptSignalPayload({
+                  identity,
+                  recipientId: senderId,
+                  recipientDeviceId: device.deviceId,
+                  payload: { kind: 'receipt', id: messageId, status }
+                })
+                if (!receipt) return
+                const relayId = `receipt:${messageId}:${createMessageId()}`
+                await sendRelayPayload(receipt, relayId)
+              }
+            : undefined,
+          sendHistoryResponse: allowRemoteMetadata
+            ? async (messages) => {
+                const response = await encryptSignalPayload({
+                  identity,
+                  recipientId: senderId,
+                  recipientDeviceId: device.deviceId,
+                  payload: { kind: 'history-response', messages }
+                })
+                if (!response) return
+                const relayId = `history:${createMessageId()}`
+                await sendRelayPayload(response, relayId)
+              }
+            : undefined
+        })
       } catch (error) {
         reportDmError(error instanceof Error ? error.message : 'Unable to decrypt message.')
         return false
@@ -1263,12 +1345,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const handled: RelayMessage[] = []
         for (const message of filtered) {
           if (message.from === contact.id) {
-            const encrypted = resolveEncryptedPayload(message.payload)
-            if (!encrypted) {
+            const envelope = resolveEnvelope(message.payload)
+            if (!envelope) {
               handled.push(message)
               continue
             }
-            const processed = await handleEncryptedPayload(encrypted, { source: 'contact', author: 'contact' })
+            const processed =
+              envelope.kind === 'signal'
+                ? await handleSignalPayload(envelope.envelope, { source: 'contact', author: 'contact' })
+                : await handleEncryptedPayload(envelope.envelope, { source: 'contact', author: 'contact' })
             if (processed) {
               handled.push(message)
             }
@@ -1279,10 +1364,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             if (!sync || sync.contactId !== contact.id) {
               continue
             }
-            const processed = await handleEncryptedPayload(sync.encrypted, {
-              source: 'self',
-              author: sync.author
-            })
+            const processed =
+              sync.envelope.kind === 'signal'
+                ? await handleSignalPayload(sync.envelope.envelope, { source: 'self', author: sync.author })
+                : await handleEncryptedPayload(sync.envelope.envelope, { source: 'self', author: sync.author })
             if (processed) {
               handled.push(message)
             }
@@ -1381,14 +1466,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         existing.meta = meta
         if (existing.total !== meta.total) {
           existing.total = meta.total
-          existing.chunks = new Array(meta.total).fill('')
+          existing.chunks = Array.from({ length: meta.total }, () => '')
         }
         return
       }
       markIncomingImage(meta.id)
       imageChunks.set(meta.id, {
         total: meta.total,
-        chunks: new Array(meta.total).fill(''),
+        chunks: Array.from({ length: meta.total }, () => ''),
         meta
       })
     }
@@ -1400,7 +1485,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const existing =
         imageChunks.get(payload.id) ?? {
           total: payload.total,
-          chunks: new Array(payload.total).fill(''),
+          chunks: Array.from({ length: payload.total }, () => ''),
           meta: undefined
         }
       if (!imageChunks.has(payload.id)) {
@@ -1408,7 +1493,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       if (existing.total !== payload.total) {
         existing.total = payload.total
-        existing.chunks = new Array(payload.total).fill('')
+        existing.chunks = Array.from({ length: payload.total }, () => '')
       }
       if (payload.index >= 0 && payload.index < existing.total) {
         existing.chunks[payload.index] = payload.data
@@ -1473,14 +1558,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const existing =
         binaryImageChunks.get(payload.id) ?? {
           total: payload.total,
-          chunks: new Array(payload.total).fill(null)
+          chunks: Array.from({ length: payload.total }, () => null)
         }
       if (!binaryImageChunks.has(payload.id)) {
         markIncomingImage(payload.id)
       }
       if (existing.total !== payload.total) {
         existing.total = payload.total
-        existing.chunks = new Array(payload.total).fill(null)
+        existing.chunks = Array.from({ length: payload.total }, () => null)
       }
       if (payload.index >= 0 && payload.index < existing.total) {
         existing.chunks[payload.index] = payload.data
@@ -1626,6 +1711,33 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return { sessionId, salt, key }
     }
 
+    const encryptRelayPayloadForDevice = async (
+      payload: Record<string, unknown>,
+      recipientId: string,
+      device: ContactDevice
+    ) => {
+      const identity = options.identityRef.value
+      if (!identity) return null
+      const signalEnvelope = await encryptSignalPayload({
+        identity,
+        recipientId,
+        recipientDeviceId: device.deviceId,
+        payload
+      })
+      if (signalEnvelope) {
+        return { payload: signalEnvelope, sessionId: undefined as string | undefined }
+      }
+      const session = await createSelfSyncSession(identity, device)
+      const encrypted = await encryptPayload(
+        session.key,
+        JSON.stringify(payload),
+        session.sessionId,
+        session.salt,
+        identity.deviceId
+      )
+      return { payload: encrypted, sessionId: session.sessionId }
+    }
+
     const sendSelfSyncPayload = async (
       payload: Record<string, unknown>,
       messageId: string,
@@ -1642,19 +1754,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await Promise.all(
         targets.map(async (device) => {
           try {
-            const session = await createSelfSyncSession(identity, device)
-            const encrypted = await encryptPayload(
-              session.key,
-              JSON.stringify(payload),
-              session.sessionId,
-              session.salt,
-              identity.deviceId
-            )
+            const encrypted = await encryptRelayPayloadForDevice(payload, selfUserId, device)
+            if (!encrypted) return
             await manager.send({
               recipientId: selfUserId,
               messageId: `sync:${messageId}:${device.deviceId}`,
-              sessionId: session.sessionId,
-              payload: { kind: 'sync', contactId: contact.id, author, payload: encrypted },
+              sessionId: encrypted.sessionId,
+              payload: { kind: 'sync', contactId: contact.id, author, payload: encrypted.payload },
               deviceIds: [device.deviceId],
               senderId: selfUserId,
               senderDeviceId: identity.deviceId,

@@ -11,6 +11,8 @@ import {
 import { buildApiUrl } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
+import { registerPushSubscription } from './push'
+import { publishSignalPrekeys } from './signal'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -88,18 +90,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           identity = await importStoredIdentity(stored)
         }
       }
-      await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          deviceId: identity.deviceId,
-          identityKey: identity.publicKeyJwk,
-          signedPreKey: identity.publicKeyJwk,
-          signature: identity.deviceId,
-          oneTimePreKeys: []
-        })
-      })
+      void publishSignalPrekeys(identity)
+      void registerPushSubscription(identity)
     } catch {
       // ignore registration failures; retry later
     }

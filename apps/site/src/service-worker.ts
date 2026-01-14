@@ -4,7 +4,7 @@ declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
-const CACHE_NAME = 'fragment-prime-shell-v3'
+const CACHE_NAME = 'fragment-prime-shell-v4'
 const SHELL_URL = '/'
 const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
@@ -26,7 +26,7 @@ const handleShell = async ({ event, request }: { event: ExtendableEvent; request
   const cache = await caches.open(CACHE_NAME)
   const cached = await cache.match(request)
 
-  const networkPromise = fetch(request)
+  const networkPromise = fetch(request, { cache: 'reload' })
     .then((response) => {
       if (isCacheableResponse(response)) {
         cache.put(request, response.clone())
@@ -55,7 +55,8 @@ const handleShell = async ({ event, request }: { event: ExtendableEvent; request
 
 const staticAssetStrategy = new StaleWhileRevalidate({
   cacheName: CACHE_NAME,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
+  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })],
+  fetchOptions: { cache: 'reload' }
 })
 
 const handleStaticAsset = async ({

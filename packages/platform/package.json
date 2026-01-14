@@ -38,6 +38,7 @@
     "highlight.run": "9.25.0",
     "postgres": "3.4.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
+    "web-push": "^3.6.7",
     "zod": "4.4.0-canary.20251231T230035"
   },
   "devDependencies": {

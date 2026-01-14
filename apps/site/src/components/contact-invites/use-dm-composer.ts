@@ -15,6 +15,7 @@ import { persistHistory } from './history'
 import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
 import { buildApiUrl } from './api'
+import { encryptSignalPayload } from './signal'
 import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -239,19 +240,13 @@ export const useDmComposer = (options: DmComposerOptions) => {
     await Promise.all(
       targets.map(async (device) => {
         try {
-          const relaySession = await createRelaySession(identity, device)
-          const encrypted = await encryptPayload(
-            relaySession.key,
-            JSON.stringify(payload),
-            relaySession.sessionId,
-            relaySession.salt,
-            identity.deviceId
-          )
+          const encrypted = await encryptRelayPayloadForDevice(payload, selfUserId, device)
+          if (!encrypted) return
           await manager.send({
             recipientId: selfUserId,
             messageId: `sync:${messageId}:${device.deviceId}`,
-            sessionId: relaySession.sessionId,
-            payload: { kind: 'sync', contactId, author, payload: encrypted },
+            sessionId: encrypted.sessionId,
+            payload: { kind: 'sync', contactId, author, payload: encrypted.payload },
             deviceIds: [device.deviceId],
             senderId: selfUserId,
             senderDeviceId: identity.deviceId,
@@ -269,6 +264,33 @@ export const useDmComposer = (options: DmComposerOptions) => {
     const salt = randomBase64(16)
     const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
     return { sessionId, salt, key }
+  }
+
+  const encryptRelayPayloadForDevice = async (
+    payload: Record<string, unknown>,
+    recipientId: string,
+    device: ContactDevice
+  ) => {
+    const identity = options.identityRef.value
+    if (!identity) return null
+    const signalEnvelope = await encryptSignalPayload({
+      identity,
+      recipientId,
+      recipientDeviceId: device.deviceId,
+      payload
+    })
+    if (signalEnvelope) {
+      return { payload: signalEnvelope, sessionId: undefined as string | undefined }
+    }
+    const relaySession = await createRelaySession(identity, device)
+    const encrypted = await encryptPayload(
+      relaySession.key,
+      JSON.stringify(payload),
+      relaySession.sessionId,
+      relaySession.salt,
+      identity.deviceId
+    )
+    return { payload: encrypted, sessionId: relaySession.sessionId }
   }
 
   const sendEncryptedPayload = async (
@@ -428,17 +450,16 @@ export const useDmComposer = (options: DmComposerOptions) => {
 
       const remoteDevice = options.remoteDeviceRef.value
       if (remoteDevice) {
-        const relaySession = await createRelaySession(identity, remoteDevice)
-        const payload = await encryptPayload(
-          relaySession.key,
-          JSON.stringify({ kind: 'message', id: messageId, text, createdAt }),
-          relaySession.sessionId,
-          relaySession.salt,
-          identity.deviceId
+        const encrypted = await encryptRelayPayloadForDevice(
+          { kind: 'message', id: messageId, text, createdAt },
+          contact.id,
+          remoteDevice
         )
-        const delivered = await sendRelayPayload(payload, messageId, relaySession.sessionId)
-        if (delivered > 0) {
-          void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+        if (encrypted) {
+          const delivered = await sendRelayPayload(encrypted.payload, messageId, encrypted.sessionId)
+          if (delivered > 0) {
+            void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+          }
         }
       }
 
@@ -613,10 +634,8 @@ export const useDmComposer = (options: DmComposerOptions) => {
 
       const remoteDevice = options.remoteDeviceRef.value
       if (remoteDevice && payloadBytes.length <= relayInlineLimitBytes) {
-        const relaySession = await createRelaySession(identity, remoteDevice)
-        const payload = await encryptPayload(
-          relaySession.key,
-          JSON.stringify({
+        const encrypted = await encryptRelayPayloadForDevice(
+          {
             kind: 'image-inline',
             id: messageId,
             createdAt,
@@ -627,14 +646,15 @@ export const useDmComposer = (options: DmComposerOptions) => {
             size: payloadSize,
             width: width || undefined,
             height: height || undefined
-          }),
-          relaySession.sessionId,
-          relaySession.salt,
-          identity.deviceId
+          },
+          contact.id,
+          remoteDevice
         )
-        const delivered = await sendRelayPayload(payload, messageId, relaySession.sessionId)
-        if (delivered > 0) {
-          void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+        if (encrypted) {
+          const delivered = await sendRelayPayload(encrypted.payload, messageId, encrypted.sessionId)
+          if (delivered > 0) {
+            void markOutboxItemSent(contact.id, identity, messageId, 'relay')
+          }
         }
       }
 

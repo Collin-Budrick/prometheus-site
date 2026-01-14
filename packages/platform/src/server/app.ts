@@ -193,7 +193,8 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
           recordLatencySample: (metric, durationMs) => {
             void recordLatencySample(cache, metric, durationMs)
           },
-          jsonError
+          jsonError,
+          push: platformConfig.push
         })
       )
     }

@@ -6,6 +6,7 @@ import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
 import type { ValidateSessionHandler } from '@features/auth/server'
 import { randomUUID } from 'node:crypto'
+import webPush from 'web-push'
 import { z } from 'zod'
 import { readChatHistoryCache, writeChatHistoryCache } from './cache'
 
@@ -18,16 +19,21 @@ const p2pDeviceKeyPrefix = 'chat:p2p:device:'
 const p2pUserDevicesPrefix = 'chat:p2p:user:'
 const p2pMailboxPrefix = 'chat:p2p:mailbox:'
 const p2pPrekeyPrefix = 'chat:p2p:prekey:'
+const p2pPushPrefix = 'chat:p2p:push:'
+const p2pPushUserPrefix = 'chat:p2p:push:user:'
 const p2pDeviceTtlSeconds = 60 * 60 * 24 * 30
 const p2pMailboxTtlSeconds = 60 * 60 * 24 * 7
 const p2pMailboxMaxEntries = 2000
 const p2pPrekeyTtlSeconds = 60 * 60 * 24 * 30
+const p2pPushTtlSeconds = 60 * 60 * 24 * 30
 
 const buildDeviceKey = (deviceId: string) => `${p2pDeviceKeyPrefix}${deviceId}`
 const buildUserDevicesKey = (userId: string) => `${p2pUserDevicesPrefix}${userId}:devices`
 const buildMailboxKey = (deviceId: string) => `${p2pMailboxPrefix}${deviceId}`
 const buildMailboxIndexKey = (deviceId: string) => `${p2pMailboxPrefix}${deviceId}:index`
 const buildPrekeyKey = (deviceId: string) => `${p2pPrekeyPrefix}${deviceId}`
+const buildPushKey = (deviceId: string) => `${p2pPushPrefix}${deviceId}`
+const buildPushUserKey = (userId: string) => `${p2pPushUserPrefix}${userId}:devices`
 
 export class PromptBodyError extends Error {
   status: number
@@ -133,6 +139,11 @@ export type MessagingRouteOptions = {
   recordLatencySample: (metric: string, durationMs: number) => void | Promise<void>
   jsonError: (status: number, error: string, meta?: Record<string, unknown>) => Response
   maxChatHistory?: number
+  push?: {
+    vapidPublicKey?: string
+    vapidPrivateKey?: string
+    subject?: string
+  }
 }
 
 export type ChatMessagesTable = AnyPgTable & {
@@ -219,13 +230,37 @@ type P2pMailboxEnvelope = {
   createdAt: string
 }
 
+type P2pPrekey = {
+  keyId: number
+  publicKey: string
+}
+
+type P2pSignedPrekey = P2pPrekey & {
+  signature: string
+}
+
 type P2pPrekeyBundle = {
   deviceId: string
   userId: string
-  identityKey: Record<string, unknown>
-  signedPreKey: Record<string, unknown>
-  signature?: string
-  oneTimePreKeys?: Array<Record<string, unknown>>
+  registrationId: number
+  identityKey: string
+  signedPreKey: P2pSignedPrekey
+  oneTimePreKeys?: P2pPrekey[]
+  createdAt: string
+  updatedAt: string
+}
+
+type P2pPushSubscription = {
+  deviceId: string
+  userId: string
+  subscription: {
+    endpoint: string
+    expirationTime?: number | null
+    keys: {
+      p256dh: string
+      auth: string
+    }
+  }
   createdAt: string
   updatedAt: string
 }
@@ -249,10 +284,40 @@ const p2pDeviceSchema = z.object({
 
 const p2pPrekeySchema = z.object({
   deviceId: z.string().min(8),
-  identityKey: z.record(z.string(), z.unknown()),
-  signedPreKey: z.record(z.string(), z.unknown()),
-  signature: z.string().min(8).optional(),
-  oneTimePreKeys: z.array(z.record(z.string(), z.unknown())).max(50).optional()
+  registrationId: z.number().int().positive(),
+  identityKey: z.string().min(8),
+  signedPreKey: z.object({
+    keyId: z.number().int().nonnegative(),
+    publicKey: z.string().min(8),
+    signature: z.string().min(8)
+  }),
+  oneTimePreKeys: z
+    .array(
+      z.object({
+        keyId: z.number().int().nonnegative(),
+        publicKey: z.string().min(8)
+      })
+    )
+    .max(50)
+    .optional()
+})
+
+const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().min(10),
+    auth: z.string().min(6)
+  })
+})
+
+const p2pPushSubscribeSchema = z.object({
+  deviceId: z.string().min(8),
+  subscription: pushSubscriptionSchema
+})
+
+const p2pPushUnsubscribeSchema = z.object({
+  deviceId: z.string().min(8)
 })
 
 const p2pMailboxSendSchema = z.object({
@@ -434,27 +499,121 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         if (!isRecord(parsed)) return null
         const deviceId = typeof parsed.deviceId === 'string' ? parsed.deviceId : ''
         const userId = typeof parsed.userId === 'string' ? parsed.userId : ''
-        const identityKey = isRecord(parsed.identityKey) ? parsed.identityKey : null
+        const registrationId = Number(parsed.registrationId)
+        const identityKey = typeof parsed.identityKey === 'string' ? parsed.identityKey : ''
         const signedPreKey = isRecord(parsed.signedPreKey) ? parsed.signedPreKey : null
-        if (!deviceId || !userId || !identityKey || !signedPreKey) return null
-        const signature = typeof parsed.signature === 'string' ? parsed.signature : undefined
+        if (!deviceId || !userId || !Number.isFinite(registrationId) || !identityKey || !signedPreKey) return null
+        const signedKeyId = Number(signedPreKey.keyId)
+        const signedPublicKey = typeof signedPreKey.publicKey === 'string' ? signedPreKey.publicKey : ''
+        const signedSignature = typeof signedPreKey.signature === 'string' ? signedPreKey.signature : ''
+        if (!Number.isFinite(signedKeyId) || !signedPublicKey || !signedSignature) return null
         const oneTimePreKeys = Array.isArray(parsed.oneTimePreKeys)
-          ? parsed.oneTimePreKeys.filter((entry) => isRecord(entry))
+          ? parsed.oneTimePreKeys
+              .map((entry) => {
+                if (!isRecord(entry)) return null
+                const keyId = Number(entry.keyId)
+                const publicKey = typeof entry.publicKey === 'string' ? entry.publicKey : ''
+                if (!Number.isFinite(keyId) || !publicKey) return null
+                return { keyId, publicKey }
+              })
+              .filter((entry): entry is P2pPrekey => Boolean(entry))
           : undefined
         const createdAt = typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString()
         const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : createdAt
         return {
           deviceId,
           userId,
+          registrationId,
           identityKey,
-          signedPreKey,
-          signature,
+          signedPreKey: {
+            keyId: signedKeyId,
+            publicKey: signedPublicKey,
+            signature: signedSignature
+          },
           oneTimePreKeys,
           createdAt,
           updatedAt
         }
       } catch {
         return null
+      }
+    }
+
+    const pushConfig = options.push
+    const pushEnabled = Boolean(
+      pushConfig?.vapidPublicKey && pushConfig?.vapidPrivateKey && pushConfig?.subject
+    )
+
+    if (pushEnabled) {
+      try {
+        webPush.setVapidDetails(
+          pushConfig?.subject ?? 'mailto:notifications@prometheus.dev',
+          pushConfig?.vapidPublicKey ?? '',
+          pushConfig?.vapidPrivateKey ?? ''
+        )
+      } catch (error) {
+        console.error('Failed to initialize web push', error)
+      }
+    }
+
+    const resolvePushSubscription = (raw: string | null): P2pPushSubscription | null => {
+      if (!raw) return null
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (!isRecord(parsed)) return null
+        const deviceId = typeof parsed.deviceId === 'string' ? parsed.deviceId : ''
+        const userId = typeof parsed.userId === 'string' ? parsed.userId : ''
+        const subscription = isRecord(parsed.subscription) ? parsed.subscription : null
+        if (!deviceId || !userId || !subscription) return null
+        const endpoint = typeof subscription.endpoint === 'string' ? subscription.endpoint : ''
+        const keys = isRecord(subscription.keys) ? subscription.keys : null
+        const p256dh = keys && typeof keys.p256dh === 'string' ? keys.p256dh : ''
+        const auth = keys && typeof keys.auth === 'string' ? keys.auth : ''
+        if (!endpoint || !p256dh || !auth) return null
+        const expirationTime =
+          subscription.expirationTime === null || typeof subscription.expirationTime === 'number'
+            ? subscription.expirationTime
+            : undefined
+        return {
+          deviceId,
+          userId,
+          subscription: {
+            endpoint,
+            expirationTime,
+            keys: { p256dh, auth }
+          },
+          createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString(),
+          updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString()
+        }
+      } catch {
+        return null
+      }
+    }
+
+    const removePushSubscription = async (entry: { deviceId: string; userId: string }) => {
+      if (!options.isValkeyReady()) return
+      try {
+        await options.valkey.del(buildPushKey(entry.deviceId))
+        await options.valkey.sRem(buildPushUserKey(entry.userId), entry.deviceId)
+      } catch (error) {
+        console.error('Failed to remove push subscription', error)
+      }
+    }
+
+    const sendPushNotification = async (
+      entry: P2pPushSubscription,
+      payload: Record<string, unknown>
+    ) => {
+      if (!pushEnabled) return
+      try {
+        await webPush.sendNotification(entry.subscription, JSON.stringify(payload), { TTL: 60 * 60 })
+      } catch (error) {
+        const statusCode = (error as { statusCode?: number }).statusCode
+        if (statusCode === 404 || statusCode === 410) {
+          await removePushSubscription(entry)
+          return
+        }
+        console.error('Failed to deliver push notification', error)
       }
     }
 
@@ -1214,6 +1373,122 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       return { deviceId, role }
     })
 
+    app.get('/chat/p2p/push/vapid', async ({ request, set }) => {
+      const clientIp = options.getClientIp(request)
+      const rateLimit = await options.checkRateLimit('/chat/p2p/push', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
+
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+          rateLimit.headers
+        )
+      }
+
+      const session = await resolveSessionUser(request)
+      if (!session) {
+        return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
+      }
+
+      if (!pushEnabled) {
+        return { enabled: false }
+      }
+
+      return { enabled: true, publicKey: pushConfig?.vapidPublicKey }
+    })
+
+    app.post('/chat/p2p/push/subscribe', async ({ body, request, set }) => {
+      const clientIp = options.getClientIp(request)
+      const rateLimit = await options.checkRateLimit('/chat/p2p/push', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
+
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+          rateLimit.headers
+        )
+      }
+
+      if (!pushEnabled || !options.isValkeyReady()) {
+        return attachRateLimitHeaders(options.jsonError(503, 'Push subscription unavailable'), rateLimit.headers)
+      }
+
+      const session = await resolveSessionUser(request)
+      if (!session) {
+        return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
+      }
+
+      const parsed = p2pPushSubscribeSchema.safeParse(body)
+      if (!parsed.success) {
+        return attachRateLimitHeaders(options.jsonError(400, 'Invalid push subscription'), rateLimit.headers)
+      }
+
+      const { deviceId, subscription } = parsed.data
+      const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
+      const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
+      if (!device || device.userId !== session.id) {
+        return attachRateLimitHeaders(options.jsonError(403, 'Device required'), rateLimit.headers)
+      }
+
+      const now = new Date().toISOString()
+      const entry: P2pPushSubscription = {
+        deviceId,
+        userId: session.id,
+        subscription,
+        createdAt: now,
+        updatedAt: now
+      }
+
+      try {
+        const userKey = buildPushUserKey(session.id)
+        await options.valkey.set(buildPushKey(deviceId), JSON.stringify(entry), { EX: p2pPushTtlSeconds })
+        await options.valkey.sAdd(userKey, deviceId)
+        await options.valkey.expire(userKey, p2pPushTtlSeconds)
+      } catch (error) {
+        console.error('Failed to store push subscription', error)
+        return attachRateLimitHeaders(options.jsonError(503, 'Push subscription failed'), rateLimit.headers)
+      }
+
+      return { deviceId }
+    })
+
+    app.post('/chat/p2p/push/unsubscribe', async ({ body, request, set }) => {
+      const clientIp = options.getClientIp(request)
+      const rateLimit = await options.checkRateLimit('/chat/p2p/push', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
+
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+          rateLimit.headers
+        )
+      }
+
+      if (!options.isValkeyReady()) {
+        return attachRateLimitHeaders(options.jsonError(503, 'Push subscription unavailable'), rateLimit.headers)
+      }
+
+      const session = await resolveSessionUser(request)
+      if (!session) {
+        return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
+      }
+
+      const parsed = p2pPushUnsubscribeSchema.safeParse(body)
+      if (!parsed.success) {
+        return attachRateLimitHeaders(options.jsonError(400, 'Invalid push subscription'), rateLimit.headers)
+      }
+
+      const { deviceId } = parsed.data
+      const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
+      const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
+      if (!device || device.userId !== session.id) {
+        return attachRateLimitHeaders(options.jsonError(403, 'Device required'), rateLimit.headers)
+      }
+
+      await removePushSubscription({ deviceId, userId: session.id })
+      return { deviceId }
+    })
+
     app.post('/chat/p2p/prekeys', async ({ body, request, set }) => {
       const clientIp = options.getClientIp(request)
       const rateLimit = await options.checkRateLimit('/chat/p2p/prekeys', clientIp)
@@ -1240,7 +1515,7 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         return attachRateLimitHeaders(options.jsonError(400, 'Invalid prekey bundle'), rateLimit.headers)
       }
 
-      const { deviceId, identityKey, signedPreKey, signature, oneTimePreKeys } = parsed.data
+      const { deviceId, registrationId, identityKey, signedPreKey, oneTimePreKeys } = parsed.data
       const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
       const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
       if (!device || device.userId !== session.id) {
@@ -1251,9 +1526,9 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       const bundle: P2pPrekeyBundle = {
         deviceId,
         userId: session.id,
+        registrationId,
         identityKey,
         signedPreKey,
-        signature,
         oneTimePreKeys,
         createdAt: now,
         updatedAt: now
@@ -1318,9 +1593,9 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           }
           bundles.push({
             deviceId: bundle.deviceId,
+            registrationId: bundle.registrationId,
             identityKey: bundle.identityKey,
             signedPreKey: bundle.signedPreKey,
-            signature: bundle.signature,
             oneTimePreKey
           })
         }
@@ -1469,6 +1744,24 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           )
         } catch (error) {
           console.error('Failed to publish mailbox update', error)
+        }
+        if (pushEnabled && options.isValkeyReady()) {
+          try {
+            const rawSubscriptions = await options.valkey.mGet(targets.map((target) => buildPushKey(target.deviceId)))
+            const entries = rawSubscriptions
+              .map((raw) => resolvePushSubscription(typeof raw === 'string' ? raw : null))
+              .filter((entry): entry is P2pPushSubscription => Boolean(entry))
+            if (entries.length) {
+              const payload = {
+                title: 'New message',
+                body: 'Open Fragment Prime to sync.',
+                url: '/chat'
+              }
+              await Promise.allSettled(entries.map((entry) => sendPushNotification(entry, payload)))
+            }
+          } catch (error) {
+            console.error('Failed to send push notifications', error)
+          }
         }
       }
 

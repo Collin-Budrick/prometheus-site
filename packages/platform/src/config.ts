@@ -42,6 +42,12 @@ export type AuthConfig = {
   oauth: Partial<Record<OAuthProvider, OAuthClient>>
 }
 
+export type PushConfig = {
+  vapidPublicKey?: string
+  vapidPrivateKey?: string
+  subject?: string
+}
+
 export type ServerConfig = {
   port: number
   host: string
@@ -56,6 +62,7 @@ export type PlatformConfig = {
   valkey: ValkeyConfig
   rateLimit: RateLimitConfig
   auth: AuthConfig
+  push: PushConfig
 }
 
 type LogFormat = 'json' | 'pretty'
@@ -108,6 +115,9 @@ const platformEnvSchema = arkenvType({
   UNKEY_ROOT_KEY: 'string?',
   UNKEY_RATELIMIT_NAMESPACE: 'string?',
   UNKEY_RATELIMIT_BASE_URL: 'string?',
+  PUSH_VAPID_PUBLIC_KEY: 'string?',
+  PUSH_VAPID_PRIVATE_KEY: 'string?',
+  PUSH_VAPID_SUBJECT: 'string?',
   LOG_LEVEL: 'string?',
   LOG_FORMAT: 'string?'
 })
@@ -417,6 +427,12 @@ const buildConnectionString = (env: Env) => {
   return `postgresql://${user}:${password}@${host}:${port}/${db}`
 }
 
+const resolvePushConfig = (env: Env): PushConfig => ({
+  vapidPublicKey: normalizeOptionalString(env.PUSH_VAPID_PUBLIC_KEY),
+  vapidPrivateKey: normalizeOptionalString(env.PUSH_VAPID_PRIVATE_KEY),
+  subject: normalizeOptionalString(env.PUSH_VAPID_SUBJECT)
+})
+
 const resolveServerConfig = (env: Env): ServerConfig => ({
   port: parsePort(env.API_PORT, 4000, 'API_PORT'),
   host: ensureString(env.API_HOST, '0.0.0.0', 'API_HOST')
@@ -434,6 +450,7 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
   const valkeyHost = ensureString(parsedEnv.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
   const valkeyPort = parsePort(parsedEnv.VALKEY_PORT, 6379, 'VALKEY_PORT')
   const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
+  const push = resolvePushConfig(parsedEnv)
   const runtime = resolveRuntimeFlags(parsedEnv)
   const server = resolveServerConfig(parsedEnv)
   const log: LogConfig = {
@@ -460,7 +477,8 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
       port: valkeyPort
     },
     rateLimit,
-    auth
+    auth,
+    push
   }
 }
 
