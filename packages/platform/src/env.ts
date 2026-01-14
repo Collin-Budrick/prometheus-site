@@ -37,6 +37,9 @@ export type AppConfig = {
   highlight: HighlightConfig
   p2pRelayBases: string[]
   p2pNostrRelays: string[]
+  p2pWakuRelays: string[]
+  p2pCrdtSignaling: string[]
+  p2pPeerjsServer?: string
   p2pIceServers: P2pIceServer[]
 }
 
@@ -73,6 +76,12 @@ const runtimeEnvSchema = arkenvType({
   VITE_P2P_RELAY_BASES: 'string?',
   P2P_NOSTR_RELAYS: 'string?',
   VITE_P2P_NOSTR_RELAYS: 'string?',
+  P2P_WAKU_RELAYS: 'string?',
+  VITE_P2P_WAKU_RELAYS: 'string?',
+  P2P_CRDT_SIGNALING: 'string?',
+  VITE_P2P_CRDT_SIGNALING: 'string?',
+  P2P_PEERJS_SERVER: 'string?',
+  VITE_P2P_PEERJS_SERVER: 'string?',
   P2P_ICE_SERVERS: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
@@ -97,6 +106,9 @@ const publicEnvSchema = arkenvType({
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
   VITE_P2P_RELAY_BASES: 'string?',
   VITE_P2P_NOSTR_RELAYS: 'string?',
+  VITE_P2P_WAKU_RELAYS: 'string?',
+  VITE_P2P_CRDT_SIGNALING: 'string?',
+  VITE_P2P_PEERJS_SERVER: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
   DEV: 'string?',
   MODE: 'string?',
@@ -339,6 +351,28 @@ const resolveP2pNostrRelays = (env: AppEnv) => {
     .filter((entry) => entry.startsWith('wss://') || entry.startsWith('ws://'))
 }
 
+const resolveP2pWakuRelays = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.P2P_WAKU_RELAYS, env.VITE_P2P_WAKU_RELAYS))?.trim() ?? ''
+  if (!raw) return []
+  return splitList(raw).map((entry) => entry.trim()).filter(Boolean)
+}
+
+const resolveP2pCrdtSignaling = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.P2P_CRDT_SIGNALING, env.VITE_P2P_CRDT_SIGNALING))?.trim() ?? ''
+  if (!raw) return []
+  return splitList(raw).map((entry) => entry.trim()).filter(Boolean)
+}
+
+const resolveP2pPeerjsServer = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.P2P_PEERJS_SERVER, env.VITE_P2P_PEERJS_SERVER))?.trim() ?? ''
+  if (!raw) return undefined
+  try {
+    return new URL(raw).toString()
+  } catch {
+    return undefined
+  }
+}
+
 const defaultP2pIceServers: P2pIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }
 ]
@@ -390,6 +424,9 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     highlight: resolveHighlightConfig(resolvedEnv),
     p2pRelayBases: resolveP2pRelayBases(resolvedEnv),
     p2pNostrRelays: resolveP2pNostrRelays(resolvedEnv),
+    p2pWakuRelays: resolveP2pWakuRelays(resolvedEnv),
+    p2pCrdtSignaling: resolveP2pCrdtSignaling(resolvedEnv),
+    p2pPeerjsServer: resolveP2pPeerjsServer(resolvedEnv),
     p2pIceServers: resolveP2pIceServers(resolvedEnv)
   }
 }

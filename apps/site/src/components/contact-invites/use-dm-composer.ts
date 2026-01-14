@@ -16,7 +16,7 @@ import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
 import { buildApiUrl } from './api'
 import { encryptSignalPayload } from './signal'
-import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
+import type { ActiveContact, ContactDevice, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
   activeContact: Signal<ActiveContact | null>
@@ -29,7 +29,7 @@ type DmComposerOptions = {
   typingTimer: Signal<number | null>
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   sessionRef: Signal<NoSerialize<P2pSession> | undefined>
-  channelRef: Signal<NoSerialize<RTCDataChannel> | undefined>
+  channelRef: Signal<NoSerialize<DmDataChannel> | undefined>
   remoteDeviceRef: Signal<NoSerialize<ContactDevice> | undefined>
   fragmentCopy: Signal<Record<string, string>>
 }

@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { randomBase64 } from '../../shared/p2p-crypto'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 
 type ContactStore = {
@@ -62,6 +63,8 @@ const legacyOutboxKeys = (contactId: string) => [
   `chat:p2p:dm:outbox:${contactId}`,
   `chat:p2p:outbox:${contactId}:items`
 ]
+
+const replicationKeyField = 'replicationKey'
 
 const readLegacyArray = (keys: string[], matcher: (key: string) => boolean) => {
   if (typeof window === 'undefined') return null
@@ -213,4 +216,35 @@ export const loadContactMaps = async (contactId: string, identity: DeviceIdentit
     }
   }
   return { doc, meta, messages, outbox }
+}
+
+export const loadReplicationKey = async (contactId: string, identity: DeviceIdentity) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return null
+  const value = maps.meta.get(replicationKeyField)
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+export const setReplicationKey = async (contactId: string, identity: DeviceIdentity, key: string) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return false
+  const trimmed = key.trim()
+  if (!trimmed) return false
+  maps.doc.transact(() => {
+    maps.meta.set(replicationKeyField, trimmed)
+  })
+  return true
+}
+
+export const ensureReplicationKey = async (
+  contactId: string,
+  identity: DeviceIdentity,
+  options?: { generate?: boolean }
+) => {
+  const existing = await loadReplicationKey(contactId, identity)
+  if (existing) return existing
+  if (!options?.generate) return null
+  const next = randomBase64(32)
+  const saved = await setReplicationKey(contactId, identity, next)
+  return saved ? next : null
 }

@@ -29,6 +29,7 @@ import type {
   ContactSearchItem,
   ContactSearchResult,
   DmConnectionState,
+  DmDataChannel,
   DmMessage,
   DmOrigin,
   P2pSession,
@@ -76,7 +77,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const dmInput = useSignal('')
     const dmStatus = useSignal<DmConnectionState>('idle')
     const dmError = useSignal<string | null>(null)
-    const channelRef = useSignal<NoSerialize<RTCDataChannel> | undefined>(undefined)
+    const channelRef = useSignal<NoSerialize<DmDataChannel> | undefined>(undefined)
     const identityRef = useSignal<NoSerialize<DeviceIdentity> | undefined>(undefined)
     const sessionRef = useSignal<NoSerialize<P2pSession> | undefined>(undefined)
     const remoteDeviceRef = useSignal<NoSerialize<ContactDevice> | undefined>(undefined)

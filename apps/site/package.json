@@ -19,12 +19,15 @@
     "@prometheus/platform": "workspace:*",
     "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "^0.0.13",
+    "@waku/sdk": "^0.0.36",
     "arkenv": "0.8.3",
     "arktype": "2.1.29",
     "nostr-tools": "^2.19.4",
+    "peerjs": "^1.5.5",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121",
     "y-indexeddb": "^9.0.12",
+    "y-webrtc": "^10.3.0",
     "yjs": "^13.6.20"
   },
   "devDependencies": {

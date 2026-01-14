@@ -78,6 +78,18 @@ export type ContactSearchItem = {
 
 export type DmConnectionState = 'idle' | 'connecting' | 'connected' | 'offline' | 'error'
 
+export type DmDataChannel = {
+  label: string
+  readyState: 'connecting' | 'open' | 'closing' | 'closed'
+  send: (data: string | ArrayBuffer | Blob | ArrayBufferView) => void
+  close?: () => void
+  onopen?: ((event?: Event) => void) | null
+  onclose?: ((event?: Event) => void) | null
+  onerror?: ((event?: Event) => void) | null
+  onmessage?: ((event: MessageEvent) => void) | null
+  binaryType?: BinaryType
+}
+
 export type DmImage = {
   dataUrl: string
   name?: string

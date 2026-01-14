@@ -1,4 +1,5 @@
 import { noSerialize, useVisibleTask$, type NoSerialize, type QRL, type Signal } from '@builder.io/qwik'
+import { Peer, type DataConnection, type PeerJSOption } from 'peerjs'
 import type { ChatSettings } from '../../shared/chat-settings'
 import { appConfig } from '../../app-config'
 import {
@@ -31,6 +32,7 @@ import {
 import { buildApiUrl, buildWsUrl } from './api'
 import { loadOutbox, removeOutboxItems, saveOutbox, type OutboxItem } from './outbox'
 import { decryptSignalPayload, encryptSignalPayload, resolveSignalEnvelope, type SignalEnvelope } from './signal'
+import { buildCrdtRoomName, destroyCrdtProvider, ensureCrdtProvider, resetCrdtProvider } from './crdt-provider'
 import {
   historyCacheLimit,
   historyRequestLimit,
@@ -39,9 +41,10 @@ import {
   mergeHistoryMessages,
   persistHistory
 } from './history'
+import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './crdt-store'
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
 import { createRelayManager, type RelayMessage } from './relay'
-import type { ActiveContact, ContactDevice, DmConnectionState, DmMessage, P2pSession } from './types'
+import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
   activeContact: Signal<ActiveContact | null>
@@ -49,7 +52,7 @@ type DmConnectionOptions = {
   dmInput: Signal<string>
   dmStatus: Signal<DmConnectionState>
   dmError: Signal<string | null>
-  channelRef: Signal<NoSerialize<RTCDataChannel> | undefined>
+  channelRef: Signal<NoSerialize<DmDataChannel> | undefined>
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   sessionRef: Signal<NoSerialize<P2pSession> | undefined>
   remoteDeviceRef: Signal<NoSerialize<ContactDevice> | undefined>
@@ -118,8 +121,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let selfDevices: ContactDevice[] = []
     let selfDevicesFetchedAt = 0
     let connection: RTCPeerConnection | null = null
-    let channel: RTCDataChannel | null = null
+    let channel: DmDataChannel | null = null
     let ws: WebSocket | null = null
+    let peerJs: Peer | null = null
+    let peerJsConnecting = false
+    let peerJsFallbackActive = false
+    let wsHealthy = true
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let reconnecting = false
@@ -140,6 +147,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       appConfig.p2pIceServers && appConfig.p2pIceServers.length
         ? appConfig.p2pIceServers
         : [{ urls: 'stun:stun.l.google.com:19302' }]
+    const peerJsEnabled = Boolean(appConfig.p2pPeerjsServer)
     const avatarChunkSize = 12_000
     const selfSyncInlineLimitBytes = 240_000
     const incomingImageIds = new Set<string>()
@@ -308,7 +316,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       iceRestartAttempts = 0
       pendingSignals.splice(0, pendingSignals.length)
       if (channel) {
-        channel.close()
+        channel.close?.()
         channel = null
       }
       if (connection) {
@@ -317,12 +325,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       ws?.close()
       ws = null
+      if (peerJs) {
+        peerJs.destroy()
+        peerJs = null
+      }
+      peerJsConnecting = false
+      peerJsFallbackActive = false
       options.channelRef.value = undefined
     }
 
     const resetPeerConnection = () => {
       if (channel) {
-        channel.close()
+        channel.close?.()
         channel = null
       }
       if (connection) {
@@ -334,6 +348,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       makingOffer = false
       iceRestarting = false
       iceRestartAttempts = 0
+      peerJsFallbackActive = false
     }
 
     const scheduleReconnect = async (reason: string) => {
@@ -353,6 +368,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await new Promise((resolve) => window.setTimeout(resolve, 1200))
       resetPeerConnection()
       reconnecting = false
+      if (peerJsEnabled && !wsHealthy) {
+        const usedFallback = await maybeStartPeerJsFallback(identity, reason)
+        if (usedFallback) return
+      }
       const shouldInitiate = identity.deviceId.localeCompare(remoteDevice.deviceId) < 0
       if (shouldInitiate) {
         await startCaller(identity, remoteDevice)
@@ -415,6 +434,143 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       debug('signal queued', { type: payloadType })
       pendingSignals.push(signal)
+    }
+
+    const resolvePeerJsOptions = (): PeerJSOption | null => {
+      const raw = appConfig.p2pPeerjsServer
+      if (!raw) return null
+      try {
+        const url = new URL(raw)
+        const secure = url.protocol === 'https:' || url.protocol === 'wss:'
+        const port = url.port ? Number.parseInt(url.port, 10) : secure ? 443 : 80
+        const path = url.pathname.startsWith('/') ? url.pathname : `/${url.pathname}`
+        const key = url.searchParams.get('key') ?? undefined
+        return {
+          host: url.hostname,
+          port,
+          path,
+          secure,
+          key,
+          config: { iceServers: resolvedIceServers }
+        }
+      } catch {
+        return null
+      }
+    }
+
+    const wrapPeerJsConnection = (conn: DataConnection): DmDataChannel => {
+      const channel: DmDataChannel = {
+        label: conn.label ?? 'peerjs',
+        readyState: conn.open ? 'open' : 'connecting',
+        send: (data) => conn.send(data),
+        close: () => conn.close(),
+        onopen: null,
+        onclose: null,
+        onerror: null,
+        onmessage: null
+      }
+      conn.on('open', () => {
+        channel.readyState = 'open'
+        channel.onopen?.(new Event('open'))
+      })
+      conn.on('data', (data) => {
+        channel.onmessage?.({ data } as MessageEvent)
+      })
+      conn.on('close', () => {
+        channel.readyState = 'closed'
+        channel.onclose?.(new Event('close'))
+      })
+      conn.on('error', () => {
+        channel.readyState = 'closed'
+        channel.onerror?.(new Event('error'))
+      })
+      return channel
+    }
+
+    const ensurePeerJsReady = async (identity: DeviceIdentity, timeoutMs = 4500) => {
+      if (!peerJsEnabled) return null
+      if (peerJs?.open) return peerJs
+      if (!peerJsConnecting) {
+        const options = resolvePeerJsOptions()
+        if (!options) return null
+        peerJsConnecting = true
+        peerJs = new Peer(identity.deviceId, options)
+        peerJs.on('open', () => {
+          peerJsConnecting = false
+          debug('peerjs open')
+        })
+        peerJs.on('connection', (conn) => {
+          void handlePeerJsIncoming(conn)
+        })
+        peerJs.on('error', (error) => {
+          debug('peerjs error', error)
+          peerJsConnecting = false
+        })
+      }
+      if (peerJs?.open) return peerJs
+      return new Promise<Peer | null>((resolve) => {
+        const existing = peerJs
+        if (!existing) {
+          resolve(null)
+          return
+        }
+        const timer = window.setTimeout(() => {
+          existing.off('open', handleOpen)
+          existing.off('error', handleError)
+          resolve(existing.open ? existing : null)
+        }, timeoutMs)
+        const handleOpen = () => {
+          window.clearTimeout(timer)
+          existing.off('error', handleError)
+          resolve(existing)
+        }
+        const handleError = () => {
+          window.clearTimeout(timer)
+          existing.off('open', handleOpen)
+          resolve(null)
+        }
+        existing.once('open', handleOpen)
+        existing.once('error', handleError)
+      })
+    }
+
+    const handlePeerJsIncoming = async (conn: DataConnection) => {
+      const remoteDevice = await resolveContactDevice(conn.peer)
+      if (!remoteDevice) {
+        conn.close()
+        return
+      }
+      options.remoteDeviceRef.value = noSerialize(remoteDevice)
+      peerJsFallbackActive = true
+      setupChannel(wrapPeerJsConnection(conn), { initiator: false })
+    }
+
+    const startPeerJsCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+      const peer = await ensurePeerJsReady(identity)
+      if (!peer) return false
+      const conn = peer.connect(remoteDevice.deviceId, {
+        reliable: true,
+        serialization: 'binary'
+      })
+      peerJsFallbackActive = true
+      setupChannel(wrapPeerJsConnection(conn), { initiator: true })
+      return true
+    }
+
+    const maybeStartPeerJsFallback = async (identity: DeviceIdentity, reason: string) => {
+      if (!peerJsEnabled) return false
+      if (peerJsFallbackActive) return true
+      const remoteDevice = options.remoteDeviceRef.value
+      if (!remoteDevice) return false
+      debug('peerjs fallback', { reason, remoteDeviceId: remoteDevice.deviceId })
+      const shouldInitiate = identity.deviceId.localeCompare(remoteDevice.deviceId) < 0
+      if (shouldInitiate) {
+        return await startPeerJsCaller(identity, remoteDevice)
+      }
+      const peer = await ensurePeerJsReady(identity)
+      if (!peer) return false
+      peerJsFallbackActive = true
+      return true
     }
 
     const waitForIceGatheringComplete = async (peer: RTCPeerConnection, timeoutMs = 2000) => {
@@ -736,6 +892,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               height?: number
             }
           | null = null
+        let crdtKey: { key: string; room: string } | null = null
+        let crdtKeyRequest: string | null = null
         let profileRequest = false
         try {
           const messagePayload = JSON.parse(plaintext) as {
@@ -815,6 +973,17 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               mapped.push({ id, text, createdAt: created, author, status: 'sent', kind, image })
             }
             historyResponse = mapped
+          } else if (messagePayload?.kind === 'crdt-key') {
+            const key = typeof messagePayload.key === 'string' ? messagePayload.key : ''
+            const room = typeof messagePayload.room === 'string' ? messagePayload.room : ''
+            if (key && room) {
+              crdtKey = { key, room }
+            }
+          } else if (messagePayload?.kind === 'crdt-key-request') {
+            const room = typeof messagePayload.room === 'string' ? messagePayload.room : ''
+            if (room) {
+              crdtKeyRequest = room
+            }
           } else if (messagePayload?.kind === 'image-meta') {
             const id = typeof messagePayload.id === 'string' ? messagePayload.id : ''
             const created = typeof messagePayload.createdAt === 'string' ? messagePayload.createdAt : ''
@@ -1032,6 +1201,35 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           if (options.historySuppressed.value) return true
           options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
           void persistHistory(contact.id, identity, options.dmMessages.value)
+          return true
+        }
+        if (crdtKey) {
+          const selfUserId = options.selfUserId.value
+          if (selfUserId && crdtKey.room === buildCrdtRoomName(selfUserId, contact.id)) {
+            await setReplicationKey(contact.id, identity, crdtKey.key)
+            await resetCrdtProvider(contact.id, identity, selfUserId)
+          }
+          return true
+        }
+        if (crdtKeyRequest) {
+          const selfUserId = options.selfUserId.value
+          const roomName = selfUserId ? buildCrdtRoomName(selfUserId, contact.id) : null
+          if (selfUserId && roomName && crdtKeyRequest === roomName) {
+            const key = await loadReplicationKey(contact.id, identity)
+            if (key) {
+              await sendCrdtKey(identity, key, roomName)
+            } else {
+              const remoteDevice = options.remoteDeviceRef.value
+              const isLeader = remoteDevice ? identity.deviceId.localeCompare(remoteDevice.deviceId) < 0 : false
+              if (isLeader) {
+                const nextKey = await ensureReplicationKey(contact.id, identity, { generate: true })
+                if (nextKey) {
+                  await resetCrdtProvider(contact.id, identity, selfUserId)
+                  await sendCrdtKey(identity, nextKey, roomName)
+                }
+              }
+            }
+          }
           return true
         }
         if (isHistoryRequest && allowRemoteMetadata && respond.sendHistoryResponse) {
@@ -1316,7 +1514,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             manager.pull({
               deviceId: identity.deviceId,
               limit: 50,
-              relayPublicKey: identity.relayPublicKey || undefined
+              relayPublicKey: identity.relayPublicKey || undefined,
+              userId: selfUserId || undefined
             })
           )
         }
@@ -1325,7 +1524,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             selfManager.pull({
               deviceId: identity.deviceId,
               limit: 50,
-              relayPublicKey: identity.relayPublicKey || undefined
+              relayPublicKey: identity.relayPublicKey || undefined,
+              userId: selfUserId || undefined
             })
           )
         }
@@ -1791,14 +1991,140 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     window.addEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
 
-    const setupChannel = (next: RTCDataChannel) => {
+    const resolveCrdtRoomName = () => {
+      const selfUserId = options.selfUserId.value
+      if (!selfUserId) return null
+      return buildCrdtRoomName(selfUserId, contact.id)
+    }
+
+    const ensureCrdtReplication = async (identity: DeviceIdentity) => {
+      const selfUserId = options.selfUserId.value
+      if (!selfUserId) return
+      await ensureCrdtProvider(contact.id, identity, selfUserId)
+    }
+
+    const sendCrdtKey = async (identity: DeviceIdentity, key: string, roomName: string) => {
+      const session = options.sessionRef.value
+      const activeChannel = options.channelRef.value ?? channel
+      if (!session || !activeChannel || activeChannel.readyState !== 'open') return
+      try {
+        const payload = await encryptPayload(
+          session.key,
+          JSON.stringify({ kind: 'crdt-key', key, room: roomName }),
+          session.sessionId,
+          session.salt,
+          identity.deviceId
+        )
+        activeChannel.send(JSON.stringify({ type: 'message', payload }))
+      } catch {
+        // ignore crdt key send failures
+      }
+    }
+
+    const requestCrdtKey = async (identity: DeviceIdentity, roomName: string) => {
+      const session = options.sessionRef.value
+      const activeChannel = options.channelRef.value ?? channel
+      if (!session || !activeChannel || activeChannel.readyState !== 'open') return
+      try {
+        const payload = await encryptPayload(
+          session.key,
+          JSON.stringify({ kind: 'crdt-key-request', room: roomName }),
+          session.sessionId,
+          session.salt,
+          identity.deviceId
+        )
+        activeChannel.send(JSON.stringify({ type: 'message', payload }))
+      } catch {
+        // ignore request failures
+      }
+    }
+
+    const maybeInitCrdtKey = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+      const roomName = resolveCrdtRoomName()
+      if (!roomName) return
+      const isLeader = identity.deviceId.localeCompare(remoteDevice.deviceId) < 0
+      const current = await loadReplicationKey(contact.id, identity)
+      if (current) {
+        await ensureCrdtReplication(identity)
+        if (isLeader) {
+          await sendCrdtKey(identity, current, roomName)
+        }
+        return
+      }
+      if (isLeader) {
+        const next = await ensureReplicationKey(contact.id, identity, { generate: true })
+        if (!next) return
+        await ensureCrdtReplication(identity)
+        await sendCrdtKey(identity, next, roomName)
+        return
+      }
+      await requestCrdtKey(identity, roomName)
+    }
+
+    const applySessionHandshake = async (payload: Record<string, unknown>) => {
+      const identity = options.identityRef.value
+      if (!identity) return
+      const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
+      const salt = typeof payload.salt === 'string' ? payload.salt : ''
+      const fromDeviceId = typeof payload.fromDeviceId === 'string' ? payload.fromDeviceId : ''
+      if (!sessionId || !salt || !fromDeviceId) return
+      const remoteDevice = await resolveContactDevice(fromDeviceId)
+      if (!remoteDevice) return
+      options.remoteDeviceRef.value = noSerialize(remoteDevice)
+      const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
+      options.sessionRef.value = noSerialize({
+        sessionId,
+        salt,
+        key,
+        remoteDeviceId: remoteDevice.deviceId
+      })
+      await maybeInitCrdtKey(identity, remoteDevice)
+      const activeChannel = options.channelRef.value ?? channel
+      if (activeChannel && activeChannel.readyState === 'open') {
+        if (options.chatSettings.value.typingIndicators && options.dmInput.value.trim()) {
+          void options.sendTyping('start')
+        }
+        void sendProfileMeta()
+        void flushOutbox()
+        void pullMailbox()
+      }
+    }
+
+    const sendSessionHandshake = async (next: DmDataChannel, identity: DeviceIdentity, remoteDevice: ContactDevice) => {
+      const sessionId = createMessageId()
+      const salt = randomBase64(16)
+      const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)
+      options.sessionRef.value = noSerialize({
+        sessionId,
+        salt,
+        key,
+        remoteDeviceId: remoteDevice.deviceId
+      })
+      next.send(JSON.stringify({ type: 'session', sessionId, salt, fromDeviceId: identity.deviceId }))
+      await maybeInitCrdtKey(identity, remoteDevice)
+    }
+
+    const setupChannel = (next: DmDataChannel, opts?: { initiator?: boolean }) => {
       channel = next
       options.channelRef.value = noSerialize(next)
-      next.binaryType = 'arraybuffer'
-      next.onopen = () => {
+      if ('binaryType' in next) {
+        next.binaryType = 'arraybuffer'
+      }
+      next.onopen = async () => {
         reconnectAttempt = 0
         debug('data channel open', next.label)
         options.dmStatus.value = 'connected'
+        const identity = options.identityRef.value
+        const remoteDevice = options.remoteDeviceRef.value
+        if (identity && remoteDevice && opts?.initiator) {
+          await sendSessionHandshake(next, identity, remoteDevice)
+        }
+        if (identity && remoteDevice) {
+          void maybeInitCrdtKey(identity, remoteDevice)
+        }
+        if (!options.sessionRef.value) {
+          return
+        }
         if (options.chatSettings.value.typingIndicators && options.dmInput.value.trim()) {
           void options.sendTyping('start')
         }
@@ -1816,9 +2142,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       next.onmessage = async (event) => {
         try {
-          if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-            const buffer =
-              event.data instanceof Blob ? await event.data.arrayBuffer() : (event.data as ArrayBuffer)
+          if (event.data instanceof ArrayBuffer || event.data instanceof Blob || ArrayBuffer.isView(event.data)) {
+            const buffer = event.data instanceof Blob
+              ? await event.data.arrayBuffer()
+              : event.data instanceof ArrayBuffer
+                ? event.data
+                : event.data.buffer.slice(event.data.byteOffset, event.data.byteOffset + event.data.byteLength)
             const envelope = decodeBinaryEnvelope(buffer)
             if (!envelope) return
             const session = options.sessionRef.value
@@ -1848,14 +2177,20 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             return
           }
 
-          const raw = String(event.data ?? '')
-          let parsed: unknown
-          try {
-            parsed = JSON.parse(raw)
-          } catch {
+          let parsed: unknown = event.data
+          if (typeof parsed === 'string') {
+            try {
+              parsed = JSON.parse(parsed)
+            } catch {
+              return
+            }
+          }
+          if (!isRecord(parsed)) return
+          if (parsed.type === 'session') {
+            await applySessionHandshake(parsed)
             return
           }
-          if (!isRecord(parsed) || parsed.type !== 'message') return
+          if (parsed.type !== 'message') return
           const encrypted = resolveEncryptedPayload(parsed.payload)
           if (!encrypted) return
           await handleEncryptedPayload(encrypted, { source: 'contact', author: 'contact' })
@@ -2089,9 +2424,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
       if (!wsUrl) return
       ws?.close()
+      wsHealthy = false
       ws = new WebSocket(wsUrl)
       ws.addEventListener('open', () => {
         debug('ws open')
+        wsHealthy = true
         ws?.send(JSON.stringify({ type: 'hello', deviceId: identity.deviceId }))
         while (pendingSignals.length) {
           const signal = pendingSignals.shift()
@@ -2130,6 +2467,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       })
       ws.addEventListener('close', () => {
         debug('ws close')
+        wsHealthy = false
         if (!active) return
         const activeChannel = options.channelRef.value ?? channel
         const channelOpen = activeChannel?.readyState === 'open'
@@ -2150,10 +2488,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           reconnectTimer = null
           connectWs(identity)
         }, 4000)
+        void maybeStartPeerJsFallback(identity, 'ws-close')
       })
       ws.addEventListener('error', () => {
         debug('ws error')
+        wsHealthy = false
         reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error')
+        void maybeStartPeerJsFallback(identity, 'ws-error')
       })
     }
 
@@ -2203,6 +2544,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (cached.length) {
           options.dmMessages.value = cached
         }
+        void ensureCrdtReplication(identity)
         const nextDevices = await fetchDevices()
         if (!active) return
         if (!nextDevices.length) {
@@ -2216,6 +2558,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         options.remoteDeviceRef.value = noSerialize(target)
         connectWs(identity)
+        if (peerJsEnabled) {
+          void ensurePeerJsReady(identity)
+        }
         void pullMailbox()
         await requestHistory(identity)
         const shouldInitiate = identity.deviceId.localeCompare(target.deviceId) < 0
@@ -2233,6 +2578,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+      }
+      const identity = options.identityRef.value
+      const selfUserId = options.selfUserId.value
+      if (identity && selfUserId) {
+        destroyCrdtProvider(contact.id, identity, selfUserId)
       }
       closeConnection()
     })

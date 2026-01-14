@@ -1,7 +1,10 @@
 import { SimplePool, finalizeEvent } from 'nostr-tools'
+import type { LightNode } from '@waku/sdk'
 import { appConfig } from '../../app-config'
 import { buildApiUrl } from './api'
 import { isRecord } from './utils'
+
+type WakuSdk = typeof import('@waku/sdk')
 
 export type RelaySendRequest = {
   recipientId: string
@@ -24,6 +27,7 @@ export type RelayPullRequest = {
   deviceId: string
   limit?: number
   relayPublicKey?: string
+  userId?: string
 }
 
 export type RelayMessage = {
@@ -35,7 +39,7 @@ export type RelayMessage = {
   payload: unknown
   createdAt: string
   relayBase: string
-  relayKind?: 'http' | 'nostr'
+  relayKind?: 'http' | 'nostr' | 'waku'
 }
 
 export type RelayIdentity = {
@@ -45,7 +49,7 @@ export type RelayIdentity = {
 
 export type RelayClient = {
   baseUrl: string
-  kind: 'http' | 'nostr'
+  kind: 'http' | 'nostr' | 'waku'
   send: (request: RelaySendRequest) => Promise<RelaySendResult | null>
   pull: (request: RelayPullRequest) => Promise<RelayMessage[]>
   ack: (deviceId: string, messageIds: string[]) => Promise<number>
@@ -61,6 +65,10 @@ export type RelayManager = {
 const relaySendAttempts = 2
 const relayRetryDelayMs = 800
 const nostrKind = 4
+const wakuContentTopic = '/prometheus/1/chat/json'
+const wakuCursorPrefix = 'chat:p2p:waku:cursor:'
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
 
 const normalizeBase = (value: string, origin: string) => {
   const trimmed = value.trim()
@@ -80,9 +88,40 @@ const normalizeBase = (value: string, origin: string) => {
 const normalizeRelayList = (relays: string[]) =>
   Array.from(new Set(relays.map((entry) => entry.trim()).filter(Boolean)))
 
+const wakuPrefix = 'waku:'
+const multiaddrPrefix = 'multiaddr:'
+
+const normalizeWakuPeer = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith(wakuPrefix)) {
+    return trimmed.slice(wakuPrefix.length).trim()
+  }
+  if (trimmed.startsWith(multiaddrPrefix)) {
+    return trimmed.slice(multiaddrPrefix.length).trim()
+  }
+  return trimmed
+}
+
+const isWakuMultiaddr = (value: string) => {
+  const normalized = normalizeWakuPeer(value)
+  if (!normalized.startsWith('/')) return false
+  return (
+    normalized.startsWith('/dns') ||
+    normalized.startsWith('/ip4') ||
+    normalized.startsWith('/ip6') ||
+    normalized.startsWith('/tcp') ||
+    normalized.startsWith('/ws') ||
+    normalized.startsWith('/wss') ||
+    normalized.includes('/p2p/')
+  )
+}
+
 const resolveRelayBases = (origin: string, discovered: string[]) => {
   const configured = appConfig.p2pRelayBases ?? []
-  const all = normalizeRelayList([...configured, ...discovered])
+  const all = normalizeRelayList([...configured, ...discovered]).filter(
+    (entry) => !isWakuMultiaddr(entry) && !entry.startsWith(wakuPrefix) && !entry.startsWith(multiaddrPrefix)
+  )
   const resolved = all.map((entry) => normalizeBase(entry, origin)).filter(Boolean)
   const apiFallback = buildApiUrl('', origin)
   const normalized = resolved.map((base) => {
@@ -98,6 +137,15 @@ const resolveNostrRelays = (discovered: string[]) => {
   return normalizeRelayList([...configured, ...discovered]).filter(
     (entry) => entry.startsWith('wss://') || entry.startsWith('ws://')
   )
+}
+
+const resolveWakuRelays = (discovered: string[]) => {
+  const configured = appConfig.p2pWakuRelays ?? []
+  const all = normalizeRelayList([...configured, ...discovered])
+  const peers = all
+    .map((entry) => normalizeWakuPeer(entry))
+    .filter((entry) => isWakuMultiaddr(entry))
+  return Array.from(new Set(peers))
 }
 
 const buildRelayUrl = (baseUrl: string, path: string) => {
@@ -170,6 +218,23 @@ const hexToBytes = (value: string) => {
   return bytes
 }
 
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary)
+}
+
+const base64ToBytes = (value: string) => {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 const nostrLastPullKey = (pubkey: string) => `chat:p2p:nostr:lastpull:${pubkey}`
 
 const readNostrCursor = (pubkey: string) => {
@@ -189,7 +254,71 @@ const writeNostrCursor = (pubkey: string, createdAt: number) => {
   }
 }
 
+const wakuCursorKey = (deviceId: string, relayKey?: string) =>
+  `${wakuCursorPrefix}${relayKey ? `key:${relayKey}` : `device:${deviceId}`}`
+
+const readWakuCursor = (deviceId: string, relayKey?: string) => {
+  if (typeof window === 'undefined') return undefined
+  const raw = window.localStorage.getItem(wakuCursorKey(deviceId, relayKey))
+  if (!raw) return undefined
+  try {
+    return base64ToBytes(raw)
+  } catch {
+    return undefined
+  }
+}
+
+const writeWakuCursor = (deviceId: string, cursor: Uint8Array, relayKey?: string) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(wakuCursorKey(deviceId, relayKey), bytesToBase64(cursor))
+  } catch {
+    // ignore storage failures
+  }
+}
+
 const pool = new SimplePool()
+
+let wakuSdkPromise: Promise<WakuSdk> | null = null
+const wakuNodes = new Map<string, Promise<LightNode>>()
+
+const loadWakuSdk = async () => {
+  if (!wakuSdkPromise) {
+    wakuSdkPromise = import('@waku/sdk')
+  }
+  return wakuSdkPromise
+}
+
+const buildWakuNodeKey = (peers: string[]) => {
+  if (!peers.length) return 'default'
+  return peers.slice().sort().join(',')
+}
+
+const getWakuNode = async (peers: string[]) => {
+  const key = buildWakuNodeKey(peers)
+  const existing = wakuNodes.get(key)
+  if (existing) return existing
+  const promise = (async () => {
+    const sdk = await loadWakuSdk()
+    const node = await sdk.createLightNode({
+      defaultBootstrap: peers.length === 0,
+      bootstrapPeers: peers.length ? peers : undefined
+    })
+    try {
+      await sdk.waitForRemotePeer(node, [sdk.Protocols.Store, sdk.Protocols.LightPush], 4500)
+    } catch {
+      // ignore bootstrap timeouts
+    }
+    return node
+  })()
+  wakuNodes.set(key, promise)
+  try {
+    return await promise
+  } catch (error) {
+    wakuNodes.delete(key)
+    throw error
+  }
+}
 
 const createHttpRelayClients = (origin: string, discovered: string[]): RelayClient[] => {
   const bases = resolveRelayBases(origin, discovered)
@@ -397,6 +526,145 @@ const createNostrRelayClient = (
   }
 }
 
+type WakuEnvelope = {
+  v?: number
+  messageId?: string
+  sessionId?: string
+  senderId?: string
+  recipientId?: string
+  recipientDeviceId?: string
+  recipientRelayKey?: string
+  senderDeviceId?: string
+  createdAt?: string
+  payload?: unknown
+}
+
+const parseWakuEnvelope = (payload: Uint8Array) => {
+  try {
+    const text = textDecoder.decode(payload)
+    const parsed = JSON.parse(text) as unknown
+    if (!isRecord(parsed)) return null
+    if (typeof parsed.v === 'number' && parsed.v !== 1) return null
+    if (!('payload' in parsed)) return null
+    return parsed as WakuEnvelope
+  } catch {
+    return null
+  }
+}
+
+const createWakuRelayClient = (peers: string[]): RelayClient | null => {
+  if (!peers.length || typeof window === 'undefined') return null
+  const baseUrl = 'waku'
+
+  const send = async (request: RelaySendRequest) => {
+    try {
+      const node = await getWakuNode(peers)
+      const lightPush = node.lightPush
+      if (!lightPush) return null
+      const encoder = node.createEncoder({ contentTopic: wakuContentTopic })
+      const targets = request.deviceIds && request.deviceIds.length ? request.deviceIds : [undefined]
+      const results = await Promise.allSettled(
+        targets.map(async (recipientDeviceId) => {
+          const envelope: WakuEnvelope = {
+            v: 1,
+            messageId: request.messageId,
+            sessionId: request.sessionId,
+            senderId: request.senderId,
+            recipientId: request.recipientId,
+            recipientRelayKey: request.recipientRelayKey,
+            recipientDeviceId,
+            senderDeviceId: request.senderDeviceId,
+            createdAt: new Date().toISOString(),
+            payload: request.payload
+          }
+          const message = {
+            payload: textEncoder.encode(JSON.stringify(envelope)),
+            timestamp: new Date()
+          }
+          return lightPush.send(encoder, message)
+        })
+      )
+      const delivered = results.reduce((sum, result) => {
+        if (result.status !== 'fulfilled') return sum
+        const successes = result.value?.successes?.length ?? 0
+        return sum + successes
+      }, 0)
+      return { id: request.messageId, delivered }
+    } catch {
+      return null
+    }
+  }
+
+  const pull = async (request: RelayPullRequest) => {
+    try {
+      const node = await getWakuNode(peers)
+      const store = node.store
+      if (!store) return []
+      const decoder = node.createDecoder({ contentTopic: wakuContentTopic })
+      const cursor = readWakuCursor(request.deviceId, request.relayPublicKey)
+      const messages: RelayMessage[] = []
+      let lastCursor: Uint8Array | undefined
+      await store.queryWithOrderedCallback([decoder], async (message) => {
+        lastCursor = store.createCursor(message)
+        const envelope = parseWakuEnvelope(message.payload)
+        if (!envelope) return false
+        if (request.relayPublicKey && envelope.recipientRelayKey && envelope.recipientRelayKey !== request.relayPublicKey) {
+          return false
+        }
+        if (request.userId && envelope.recipientId && envelope.recipientId !== request.userId) {
+          return false
+        }
+        if (request.deviceId && envelope.recipientDeviceId && envelope.recipientDeviceId !== request.deviceId) {
+          return false
+        }
+        const from = typeof envelope.senderId === 'string' ? envelope.senderId : ''
+        const to = typeof envelope.recipientId === 'string' ? envelope.recipientId : ''
+        const deviceId = typeof envelope.senderDeviceId === 'string' ? envelope.senderDeviceId : ''
+        if (!from || !to || !deviceId) return false
+        const createdAt =
+          typeof envelope.createdAt === 'string'
+            ? envelope.createdAt
+            : message.timestamp?.toISOString() ?? new Date().toISOString()
+        messages.push({
+          id: message.hashStr,
+          from,
+          to,
+          deviceId,
+          sessionId: typeof envelope.sessionId === 'string' ? envelope.sessionId : undefined,
+          payload: envelope.payload,
+          createdAt,
+          relayBase: baseUrl,
+          relayKind: 'waku'
+        })
+        if (request.limit && messages.length >= request.limit) {
+          return true
+        }
+        return false
+      }, {
+        paginationCursor: cursor,
+        paginationForward: true,
+        paginationLimit: request.limit
+      })
+      if (lastCursor) {
+        writeWakuCursor(request.deviceId, lastCursor, request.relayPublicKey)
+      }
+      return messages
+    } catch {
+      return []
+    }
+  }
+
+  const ack = async (_deviceId: string, _messageIds: string[]) => 0
+
+  return {
+    baseUrl,
+    kind: 'waku',
+    send,
+    pull,
+    ack
+  }
+}
+
 export const createRelayClients = (
   origin: string,
   options?: {
@@ -409,7 +677,9 @@ export const createRelayClients = (
   const httpClients = createHttpRelayClients(origin, discovered)
   const nostrRelays = resolveNostrRelays(discovered)
   const nostrClient = createNostrRelayClient(nostrRelays, options?.relayIdentity, options?.recipientRelayKey)
-  return [...httpClients, ...(nostrClient ? [nostrClient] : [])]
+  const wakuRelays = resolveWakuRelays(discovered)
+  const wakuClient = createWakuRelayClient(wakuRelays)
+  return [...httpClients, ...(nostrClient ? [nostrClient] : []), ...(wakuClient ? [wakuClient] : [])]
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
