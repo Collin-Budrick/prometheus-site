@@ -53,6 +53,7 @@ type DmConnectionOptions = {
   dmInput: Signal<string>
   dmStatus: Signal<DmConnectionState>
   dmError: Signal<string | null>
+  deviceListStaleAt: Signal<string | null>
   channelRef: Signal<NoSerialize<DmDataChannel> | undefined>
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   sessionRef: Signal<NoSerialize<P2pSession> | undefined>
@@ -85,6 +86,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       options.dmMessages.value = []
       options.dmInput.value = ''
       options.dmError.value = null
+      options.deviceListStaleAt.value = null
       options.incomingImageCount.value = 0
       options.sessionRef.value = undefined
       options.remoteDeviceRef.value = undefined
@@ -191,6 +193,29 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const resolveRelayIdentity = (identity: DeviceIdentity) => {
       if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
       return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+    }
+    const buildDeviceCacheKey = (contactId: string) => `p2pDevices:${contactId}`
+    const loadDeviceCache = (contactId: string) => {
+      try {
+        const raw = window.localStorage?.getItem(buildDeviceCacheKey(contactId))
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { devices?: ContactDevice[]; updatedAt?: string }
+        if (!Array.isArray(parsed.devices)) return null
+        const devices = parsed.devices.filter((device) => device?.deviceId)
+        const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null
+        if (!updatedAt) return null
+        return { devices, updatedAt }
+      } catch {
+        return null
+      }
+    }
+    const saveDeviceCache = (contactId: string, nextDevices: ContactDevice[]) => {
+      try {
+        const payload = JSON.stringify({ devices: nextDevices, updatedAt: new Date().toISOString() })
+        window.localStorage?.setItem(buildDeviceCacheKey(contactId), payload)
+      } catch {
+        // ignore cache failures
+      }
     }
     const buildLocalDeviceEntry = (identity: DeviceIdentity, relayUrls?: string[]): ContactDevice => {
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : undefined
@@ -475,9 +500,31 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const fetchDevices = async () => {
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+      const cachedDevices = loadDeviceCache(contact.id)
+      if (isOffline && cachedDevices) {
+        options.deviceListStaleAt.value = cachedDevices.updatedAt
+        devices = cachedDevices.devices
+        debug('loaded cached devices (offline)', {
+          count: devices.length,
+          devices: devices.map((entry) => entry.deviceId)
+        })
+        if (!options.remoteDeviceRef.value) {
+          const preferred = pickPreferredDevice(devices)
+          if (preferred) {
+            options.remoteDeviceRef.value = noSerialize(preferred)
+          }
+        }
+        return devices
+      }
       const relayUrls = resolveDiscoveredRelays()
-      const relayPromise = fetchRelayDevices({ userId: contact.id, relayUrls })
+      let relayFailed = false
+      const relayPromise = fetchRelayDevices({ userId: contact.id, relayUrls }).catch(() => {
+        relayFailed = true
+        return []
+      })
       let apiDevices: ContactDevice[] = []
+      let apiFailed = false
       try {
         const response = await fetch(
           buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
@@ -486,12 +533,24 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (response.ok) {
           const payload = (await response.json()) as { devices?: ContactDevice[] }
           apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+        } else {
+          apiFailed = true
         }
       } catch {
-        // ignore API failures
+        apiFailed = true
       }
       const relayDevices = await relayPromise
-      const next = mergeDeviceLists(apiDevices, relayDevices)
+      const shouldUseCache = isOffline || apiFailed || relayFailed
+      const cacheList = shouldUseCache && cachedDevices ? cachedDevices.devices : []
+      const next = mergeDeviceLists(apiDevices, relayDevices, cacheList)
+      if (shouldUseCache && cachedDevices) {
+        options.deviceListStaleAt.value = cachedDevices.updatedAt
+      } else {
+        options.deviceListStaleAt.value = null
+      }
+      if (!shouldUseCache) {
+        saveDeviceCache(contact.id, next)
+      }
       devices = next
       debug('fetched devices', { count: next.length, devices: next.map((entry) => entry.deviceId) })
       if (!options.remoteDeviceRef.value) {
