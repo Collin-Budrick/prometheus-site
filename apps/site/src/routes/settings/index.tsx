@@ -95,6 +95,8 @@ export default component$(() => {
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
   const chatSettings = useSignal<ChatSettings>({ ...defaultChatSettings })
+  const swOptOut = useSignal(false)
+  const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
   const userId = data.value.userId
@@ -109,6 +111,35 @@ export default component$(() => {
       return
     }
     chatSettings.value = { ...defaultChatSettings, ...stored }
+  })
+
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    try {
+      swOptOut.value = window.localStorage.getItem('fragment:sw-opt-out') === '1'
+    } catch {
+      swOptOut.value = false
+    }
+
+    const handleCacheRefreshed = () => {
+      swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
+    }
+    const handleCacheCleared = () => {
+      swStatus.value = { tone: 'success', message: copy.value.settingsOfflineCleanupSuccess }
+    }
+    const handleSyncRequested = () => {
+      swStatus.value = { tone: 'info', message: copy.value.settingsOfflineSyncQueued }
+    }
+
+    window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+    window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
+    window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+
+    ctx.cleanup(() => {
+      window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+      window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
+      window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+    })
   })
 
   const updateChatSettings = $((next: ChatSettings) => {
@@ -146,6 +177,35 @@ export default component$(() => {
     } finally {
       logoutBusy.value = false
     }
+  })
+
+  const toggleOfflineCache = $(() => {
+    if (typeof window === 'undefined') return
+    const next = !swOptOut.value
+    swOptOut.value = next
+    try {
+      window.localStorage.setItem('fragment:sw-opt-out', next ? '1' : '0')
+    } catch {
+      swStatus.value = { tone: 'error', message: copy.value.settingsOfflineStorageError }
+      return
+    }
+    window.dispatchEvent(new CustomEvent('prom:sw-toggle-cache', { detail: { optOut: next } }))
+    swStatus.value = {
+      tone: 'info',
+      message: next ? copy.value.settingsOfflineDisabled : copy.value.settingsOfflineEnabled
+    }
+  })
+
+  const handleOfflineRefresh = $(() => {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('prom:sw-refresh-cache'))
+    swStatus.value = { tone: 'info', message: copy.value.settingsOfflineRefreshPending }
+  })
+
+  const handleOfflineCleanup = $(() => {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('prom:sw-clear-cache'))
+    swStatus.value = { tone: 'info', message: copy.value.settingsOfflineCleanupPending }
   })
 
   return (
@@ -199,6 +259,53 @@ export default component$(() => {
             </span>
           </button>
         </div>
+      </section>
+      <section class="settings-panel">
+        <div class="settings-panel-header">
+          <span class="settings-panel-title">{copy.value.settingsOfflineTitle}</span>
+          <p class="settings-panel-description">{copy.value.settingsOfflineDescription}</p>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-label">
+            <span class="settings-toggle-title">{copy.value.settingsOfflineToggleLabel}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsOfflineToggleHint}</span>
+          </div>
+          <button
+            type="button"
+            class="chat-settings-toggle"
+            data-active={!swOptOut.value ? 'true' : 'false'}
+            role="switch"
+            aria-checked={!swOptOut.value}
+            onClick$={toggleOfflineCache}
+          >
+            <span class="chat-settings-toggle-track">
+              <span class="chat-settings-toggle-knob" />
+            </span>
+          </button>
+        </div>
+        <div class="settings-action-row">
+          <div class="settings-action-label">
+            <span class="settings-toggle-title">{copy.value.settingsOfflineRefreshLabel}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsOfflineRefreshHint}</span>
+          </div>
+          <button type="button" class="settings-action-button" onClick$={handleOfflineRefresh}>
+            {copy.value.settingsOfflineRefreshAction}
+          </button>
+        </div>
+        <div class="settings-action-row">
+          <div class="settings-action-label">
+            <span class="settings-toggle-title">{copy.value.settingsOfflineCleanupLabel}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsOfflineCleanupHint}</span>
+          </div>
+          <button type="button" class="settings-action-button" onClick$={handleOfflineCleanup}>
+            {copy.value.settingsOfflineCleanupAction}
+          </button>
+        </div>
+        {swStatus.value ? (
+          <div class="auth-status" role="status" aria-live="polite" data-tone={swStatus.value.tone}>
+            {swStatus.value.message}
+          </div>
+        ) : null}
       </section>
       {logoutMessage.value ? (
         <div class="auth-status" role="status" aria-live="polite" data-tone="error">
