@@ -1,6 +1,7 @@
 type BackoffState = {
   attempts: number
   until: number
+  online: boolean
 }
 
 type BackoffOptions = {
@@ -16,9 +17,22 @@ const getState = (key: string) => {
   const resolved = resolveKey(key)
   const existing = states.get(resolved)
   if (existing) return existing
-  const next: BackoffState = { attempts: 0, until: 0 }
+  const next: BackoffState = { attempts: 0, until: 0, online: true }
   states.set(resolved, next)
   return next
+}
+
+const dispatchNetworkStatus = (key: string, online: boolean) => {
+  if (typeof window === 'undefined' || typeof CustomEvent === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent('prom:network-status', { detail: { online, key, source: 'backoff' } })
+  )
+}
+
+const setOnlineState = (key: string, state: BackoffState, online: boolean) => {
+  if (state.online === online) return
+  state.online = online
+  dispatchNetworkStatus(key, online)
 }
 
 const computeDelay = (attempts: number, options?: BackoffOptions) => {
@@ -31,17 +45,21 @@ const computeDelay = (attempts: number, options?: BackoffOptions) => {
 }
 
 export const markServerFailure = (key: string, options?: BackoffOptions) => {
-  const state = getState(key)
+  const resolvedKey = resolveKey(key)
+  const state = getState(resolvedKey)
   state.attempts += 1
   const delay = computeDelay(state.attempts, options)
   state.until = Date.now() + delay
+  setOnlineState(resolvedKey, state, false)
   return state.until
 }
 
 export const markServerSuccess = (key: string) => {
-  const state = getState(key)
+  const resolvedKey = resolveKey(key)
+  const state = getState(resolvedKey)
   state.attempts = 0
   state.until = 0
+  setOnlineState(resolvedKey, state, true)
 }
 
 export const getServerBackoffMs = (key: string) => {
@@ -50,3 +68,5 @@ export const getServerBackoffMs = (key: string) => {
 }
 
 export const isServerBackoffActive = (key: string) => getServerBackoffMs(key) > 0
+
+export const isServerOnline = (key: string) => getState(key).online

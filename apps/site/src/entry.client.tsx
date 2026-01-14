@@ -1,7 +1,7 @@
 import { render } from '@builder.io/qwik'
 import { p as preloadBundles } from '@builder.io/qwik/preloader'
 import { buildApiUrl, buildWsUrl } from './components/contact-invites/api'
-import { getServerBackoffMs, markServerSuccess } from './shared/server-backoff'
+import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import Root from './root'
 
 declare global {
@@ -151,10 +151,11 @@ function setupServerHealthProbe() {
       })
       if (response.ok) {
         markServerSuccess(serverKey)
-        dispatchSwEvent('prom:network-status', { online: true, source: 'health-probe' })
+      } else {
+        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
       }
     } catch {
-      // ignore probe errors
+      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     } finally {
       window.clearTimeout(timeout)
       inFlight = false
