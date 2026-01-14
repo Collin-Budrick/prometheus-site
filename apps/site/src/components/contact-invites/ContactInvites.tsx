@@ -77,6 +77,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const dmInput = useSignal('')
     const dmStatus = useSignal<DmConnectionState>('idle')
     const dmError = useSignal<string | null>(null)
+    const deviceListStaleAt = useSignal<string | null>(null)
     const channelRef = useSignal<NoSerialize<DmDataChannel> | undefined>(undefined)
     const identityRef = useSignal<NoSerialize<DeviceIdentity> | undefined>(undefined)
     const sessionRef = useSignal<NoSerialize<P2pSession> | undefined>(undefined)
@@ -285,6 +286,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       dmInput,
       dmStatus,
       dmError,
+      deviceListStaleAt,
       channelRef,
       identityRef,
       sessionRef,
@@ -468,6 +470,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
             dmAnimated={dmAnimated.value}
             dmOrigin={dmOrigin.value}
             dmStatus={dmStatus.value}
+            deviceListStaleAt={deviceListStaleAt.value}
             incomingImageCount={incomingImageCount.value}
             remoteTyping={remoteTyping.value}
             contactProfile={activeContactProfile}

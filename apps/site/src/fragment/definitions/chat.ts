@@ -786,6 +786,12 @@ html[data-chat-dm-open='true'] .fragment-card {
   color: rgb(var(--accent));
 }
 
+.chat-invites-dm-stale {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: rgb(var(--muted));
+}
+
 .chat-invites-dm-typing {
   display: inline-flex;
   align-items: center;

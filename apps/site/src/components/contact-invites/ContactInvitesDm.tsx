@@ -12,6 +12,7 @@ type ContactInvitesDmProps = {
   dmAnimated: boolean
   dmOrigin: DmOrigin | null
   dmStatus: DmConnectionState
+  deviceListStaleAt: string | null
   incomingImageCount: number
   remoteTyping: boolean
   contactProfile: ProfilePayload | null
@@ -47,6 +48,11 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
           ? resolve('Offline')
           : resolve('Unavailable')
   const statusTone = props.dmStatus === 'error' ? 'error' : props.dmStatus === 'offline' ? 'muted' : 'neutral'
+  const staleDate = props.deviceListStaleAt ? new Date(props.deviceListStaleAt) : null
+  const staleLabel =
+    staleDate && !Number.isNaN(staleDate.getTime())
+      ? `${resolve('Devices last known')} ${staleDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+      : null
   const resolveMessageStatus = (status: DmMessage['status']) => {
     if (status === 'pending') return resolve('Sending')
     if (status === 'queued') return resolve('Queued')
@@ -206,6 +212,7 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
                 {outgoingTransfer}
               </span>
             ) : null}
+            {staleLabel ? <span class="chat-invites-dm-stale">{staleLabel}</span> : null}
             {props.dmError ? <span class="chat-invites-dm-error">{props.dmError}</span> : null}
           </div>
           <div class="chat-invites-dm-messages" role="log" aria-live="polite">
