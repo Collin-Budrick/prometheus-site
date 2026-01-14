@@ -182,7 +182,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const {
       registerIdentity,
       publishRelayIdentity,
-      isAlertCount,
       toggleChatSettings,
       toggleReadReceipts,
       toggleTypingIndicators,
@@ -232,6 +231,13 @@ export const ContactInvites = component$<ContactInvitesProps>(
       remoteTypingTimer,
       offline
     })
+    const isAlertCount = (key: keyof BaselineInviteCounts, value: number) => {
+      const baseline = baselineCounts.value
+      if (!baseline) return false
+      const previous = baseline[key]
+      if (!Number.isFinite(previous)) return false
+      return value > previous
+    }
 
     const { sendTyping, handleDmInput, handleDmKeyDown, handleDmSubmit, handleDmImage } = useDmComposer({
       activeContact,

@@ -451,14 +451,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     return identity
   })
 
-  const isAlertCount = (key: keyof BaselineInviteCounts, value: number) => {
-    const baseline = options.baselineCounts.value
-    if (!baseline) return false
-    const previous = baseline[key]
-    if (!Number.isFinite(previous)) return false
-    return value > previous
-  }
-
   const toggleChatSettings = $(() => {
     if (options.chatSettingsOpen.value) {
       restorePopoverFocus(options.chatSettingsPopoverRef.value, options.chatSettingsButtonRef.value)
@@ -1048,7 +1040,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   return {
     registerIdentity,
     publishRelayIdentity,
-    isAlertCount,
     toggleChatSettings,
     toggleReadReceipts,
     toggleTypingIndicators,
