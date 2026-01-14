@@ -2,6 +2,7 @@ import { normalizeApiBase, resolveApiBase, resolveRuntimeEnv } from '@platform/e
 
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
 const readForwardedHeader = (value: string | null) => value?.split(',')[0]?.trim() ?? ''
 
@@ -47,19 +48,29 @@ export const resolveServerApiBase = (apiBase: string, request?: Request) => {
   const explicitApiBase = normalizeApiBase(typeof runtimeEnv.API_BASE === 'string' ? runtimeEnv.API_BASE : undefined)
   const runtimeApiBase = resolveApiBase(runtimeEnv)
   const origin = resolveRequestOrigin(request)
+  const offline = isOffline()
 
   const preferSameOrigin = (value: string) => {
     if (!origin) return null
     try {
       const apiUrl = new URL(value)
       const originUrl = new URL(origin)
-    if (isLocalHost(apiUrl.hostname) && !isLocalHost(originUrl.hostname) && apiUrl.hostname !== originUrl.hostname) {
-      return `${origin}/api`
-    }
+      if (isLocalHost(apiUrl.hostname) && !isLocalHost(originUrl.hostname) && apiUrl.hostname !== originUrl.hostname) {
+        return `${origin}/api`
+      }
     } catch {
       return null
     }
     return null
+  }
+
+  const fallbackSameOrigin = () => {
+    if (origin) return `${origin}/api`
+    return '/api'
+  }
+
+  if (offline) {
+    return fallbackSameOrigin()
   }
 
   if (explicitApiBase && isAbsoluteUrl(explicitApiBase)) {
@@ -82,5 +93,5 @@ export const resolveServerApiBase = (apiBase: string, request?: Request) => {
     return `${origin}${relative.startsWith('/') ? relative : `/${relative}`}`
   }
 
-  return normalized || runtimeApiBase
+  return normalized || runtimeApiBase || fallbackSameOrigin()
 }

@@ -1,6 +1,7 @@
 import { type AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
+import { fragmentPlanCache } from '../fragment/plan-cache'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { resolveServerApiBase } from '../shared/api-base'
 
@@ -39,12 +40,26 @@ export const loadHybridFragmentResource = async (
   request?: Request
 ): Promise<HybridFragmentResource> => {
   const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
-  const { plan, initialFragments } = await loadFragmentPlan(
-    path,
-    { apiBase: resolvedApiBase },
-    lang,
-    { includeInitial: false }
-  )
+  let plan: FragmentPlanValue
+  let initialFragments: FragmentPayloadMap | undefined
+
+  try {
+    const result = await loadFragmentPlan(path, { apiBase: resolvedApiBase }, lang, { includeInitial: false })
+    plan = result.plan
+    initialFragments = result.initialFragments
+  } catch (error) {
+    const cached = fragmentPlanCache.get(path, lang)
+    if (!cached) {
+      throw error
+    }
+    console.warn('Fragment plan fetch failed, using cached entry', error)
+    const fallbackFragments = pickFragments(
+      cached.initialFragments,
+      selectInitialFragmentIds(cached.plan as FragmentPlanValue)
+    )
+    return { plan: cached.plan as FragmentPlanValue, fragments: fallbackFragments, path: cached.plan.path }
+  }
+
   const initialIds = selectInitialFragmentIds(plan)
   let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
   const missingIds = initialIds.filter((id) => !fragments[id])
@@ -55,8 +70,19 @@ export const loadHybridFragmentResource = async (
       fragments = { ...fragments, ...fetched }
     } catch (error) {
       console.error('Fragment load failed', error)
+      const cached = fragmentPlanCache.get(plan.path, lang)
+      if (cached?.initialFragments) {
+        fragments = { ...fragments, ...pickFragments(cached.initialFragments, missingIds) }
+      }
     }
   }
+
+  const cachedEntry = fragmentPlanCache.get(path, lang)
+  fragmentPlanCache.set(path, lang, {
+    etag: cachedEntry?.etag ?? '',
+    plan,
+    initialFragments: fragments
+  })
 
   return { plan, fragments, path: plan.path }
 }
