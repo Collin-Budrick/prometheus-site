@@ -7,7 +7,8 @@ import {
   invalidateChatHistoryCache,
   registerChatWs,
   registerContactsWs,
-  registerP2pWs
+  registerP2pWs,
+  sendServerOnlinePush
 } from '@features/messaging'
 import { createStoreRoutes, type StoreTelemetry } from '@features/store/api'
 import { invalidateStoreItemsCache } from '@features/store/cache'
@@ -344,6 +345,16 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         } catch (error) {
           logger.error('Store realtime listener failed', { error })
         }
+      }
+
+      if (featureFlags.messaging) {
+        void sendServerOnlinePush({
+          valkey: context.cache.client,
+          isValkeyReady: context.cache.isReady,
+          push: platformConfig.push
+        }).catch((error) => {
+          logger.warn('Server online push failed', { error })
+        })
       }
     },
     onShutdown: async () => {

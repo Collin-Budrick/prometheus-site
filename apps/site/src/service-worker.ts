@@ -232,7 +232,7 @@ const serwist = new Serwist({
   ]
 })
 
-void serwist.addEventListeners()
+serwist.addEventListeners()
 
 self.addEventListener('sync', (event: SyncEvent) => {
   if (event.tag === OUTBOX_SYNC_TAG) {
@@ -287,6 +287,31 @@ self.addEventListener('push', (event: PushEvent) => {
     data = event.data?.json?.() as Record<string, unknown> | undefined
   } catch {
     data = undefined
+  }
+  const type = typeof data?.type === 'string' ? data.type : ''
+  if (type === 'server:online') {
+    event.waitUntil(
+      (async () => {
+        await flushOutbox('server-online')
+        await broadcastMessage({ type: 'sw:status', online: true, source: 'push' })
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        const hasVisibleClient = clients.some((client) => {
+          const windowClient = client as WindowClient
+          return windowClient.focused || windowClient.visibilityState === 'visible'
+        })
+        if (clients.length && hasVisibleClient) return
+        const title = typeof data?.title === 'string' ? data.title : 'Fragment Prime is back online'
+        const body = typeof data?.body === 'string' ? data.body : 'Open Fragment Prime to reconnect.'
+        const url = typeof data?.url === 'string' ? data.url : '/'
+        await self.registration.showNotification(title, {
+          body,
+          data: { url },
+          tag: 'server-online',
+          silent: true
+        })
+      })()
+    )
+    return
   }
   const title = typeof data?.title === 'string' ? data.title : 'New message'
   const body = typeof data?.body === 'string' ? data.body : 'Open Fragment Prime to sync.'

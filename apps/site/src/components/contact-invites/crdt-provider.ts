@@ -13,7 +13,9 @@ const patchWebsocketClientSend = () => {
   const proto = WebsocketClient.prototype as WebsocketClient & { __promSafeSendPatched?: boolean }
   if (proto.__promSafeSendPatched) return
   proto.__promSafeSendPatched = true
-  const original = proto.send
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'send')
+  if (!descriptor || typeof descriptor.value !== 'function') return
+  const original = descriptor.value as (this: WebsocketClient, message: unknown) => unknown
   proto.send = function (message: unknown) {
     const ws = this.ws
     if (!ws || ws.readyState !== 1) return

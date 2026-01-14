@@ -17,7 +17,6 @@ const FORCE_CLEANUP_KEY = 'fragment:sw-force-cleanup'
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const CHAT_PREFETCH_KEY = 'fragment:chat-prefetch-version'
 const CHAT_PREFETCH_PATH = '/chat'
-const HEALTH_CHECK_INTERVAL_MS = 5000
 const HEALTH_CHECK_TIMEOUT_MS = 4000
 
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
@@ -100,6 +99,9 @@ function setupServiceWorkerBridge() {
       dispatchSwEvent('prom:sw-cache-cleared', { source: 'sw' })
     }
     if (payload.type === 'sw:status') {
+      if (payload.online === true) {
+        markServerSuccess(resolveServerKey())
+      }
       dispatchSwEvent('prom:network-status', payload)
     }
   }
@@ -161,10 +163,6 @@ function setupServerHealthProbe() {
       inFlight = false
     }
   }
-
-  window.setInterval(() => {
-    void probe()
-  }, HEALTH_CHECK_INTERVAL_MS)
 
   window.addEventListener('online', () => {
     void probe()
