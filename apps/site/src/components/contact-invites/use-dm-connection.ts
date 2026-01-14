@@ -32,7 +32,13 @@ import {
 import { buildApiUrl, buildWsUrl } from './api'
 import { loadOutbox, removeOutboxItems, saveOutbox, type OutboxItem } from './outbox'
 import { decryptSignalPayload, encryptSignalPayload, resolveSignalEnvelope, type SignalEnvelope } from './signal'
-import { buildCrdtRoomName, destroyCrdtProvider, ensureCrdtProvider, resetCrdtProvider } from './crdt-provider'
+import {
+  buildCrdtRoomName,
+  destroyCrdtProvider,
+  ensureCrdtProvider,
+  isCrdtSignalingBackoff,
+  resetCrdtProvider
+} from './crdt-provider'
 import {
   historyCacheLimit,
   historyRequestLimit,
@@ -45,6 +51,7 @@ import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './c
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
 import { fetchRelayDevices } from './relay-directory'
 import { createRelayManager, type RelayMessage } from './relay'
+import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../shared/server-backoff'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -202,6 +209,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
       return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
     }
+    const resolveServerKey = () => {
+      const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
+      if (wsUrl) {
+        try {
+          return new URL(wsUrl).host
+        } catch {
+          // fall back to window host
+        }
+      }
+      return window.location.host
+    }
+    const serverKey = resolveServerKey()
     const buildDeviceCacheKey = (contactId: string) => `p2pDevices:${contactId}`
     const loadDeviceCache = (contactId: string) => {
       try {
@@ -308,20 +327,27 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
         return selfDevices
       }
+      const skipApi = getServerBackoffMs(serverKey) > 0
       const relayUrls = resolveDiscoveredRelays()
       const relayPromise = fetchRelayDevices({ userId: selfUserId, relayUrls })
       let apiDevices: ContactDevice[] = []
-      try {
-        const response = await fetch(
-          buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
-          { credentials: 'include' }
-        )
-        if (response.ok) {
-          const payload = (await response.json()) as { devices?: ContactDevice[] }
-          apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+      if (!skipApi) {
+        try {
+          const response = await fetch(
+            buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
+            { credentials: 'include' }
+          )
+          if (response.ok) {
+            const payload = (await response.json()) as { devices?: ContactDevice[] }
+            apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+            markServerSuccess(serverKey)
+          } else if (response.status >= 500) {
+            markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+          }
+        } catch {
+          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+          // ignore API failures
         }
-      } catch {
-        // ignore API failures
       }
       const relayDevices = await relayPromise
       const identity = options.identityRef.value
@@ -449,6 +475,26 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('ws reconnect deferred (offline)', { reason })
         return
       }
+      const serverBackoffMs = getServerBackoffMs(serverKey)
+      if (serverBackoffMs > 0) {
+        const activeChannel = options.channelRef.value ?? channel
+        const channelOpen = activeChannel?.readyState === 'open'
+        if (!channelOpen) {
+          options.dmStatus.value = 'offline'
+        }
+        wsReconnectPending = true
+        const selfUserId = options.selfUserId.value
+        if (selfUserId && isCrdtSignalingBackoff()) {
+          destroyCrdtProvider(contact.id, identity, selfUserId)
+        }
+        wsReconnectTimer = window.setTimeout(() => {
+          wsReconnectTimer = null
+          wsReconnectPending = false
+          connectWs(identity)
+        }, serverBackoffMs)
+        debug('ws reconnect deferred (server backoff)', { reason, wait: serverBackoffMs })
+        return
+      }
       wsReconnectAttempt += 1
       const baseDelay = 800
       const maxDelay = 12_000
@@ -523,6 +569,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const fetchDevices = async () => {
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       const cachedDevices = loadDeviceCache(contact.id)
+      const skipApi = getServerBackoffMs(serverKey) > 0
       if (isOffline && cachedDevices) {
         options.deviceListStaleAt.value = cachedDevices.updatedAt
         devices = cachedDevices.devices
@@ -545,20 +592,27 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         return []
       })
       let apiDevices: ContactDevice[] = []
-      let apiFailed = false
-      try {
-        const response = await fetch(
-          buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
-          { credentials: 'include' }
-        )
-        if (response.ok) {
-          const payload = (await response.json()) as { devices?: ContactDevice[] }
-          apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-        } else {
+      let apiFailed = skipApi
+      if (!skipApi) {
+        try {
+          const response = await fetch(
+            buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
+            { credentials: 'include' }
+          )
+          if (response.ok) {
+            const payload = (await response.json()) as { devices?: ContactDevice[] }
+            apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+            markServerSuccess(serverKey)
+          } else {
+            apiFailed = true
+            if (response.status >= 500) {
+              markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+            }
+          }
+        } catch {
           apiFailed = true
+          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
         }
-      } catch {
-        apiFailed = true
       }
       const relayDevices = await relayPromise
       const shouldUseCache = isOffline || apiFailed || relayFailed
@@ -1962,6 +2016,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!active) return
       options.dmStatus.value = 'offline'
       wsReconnectPending = true
+      const identity = options.identityRef.value
+      const selfUserId = options.selfUserId.value
+      if (identity && selfUserId) {
+        destroyCrdtProvider(contact.id, identity, selfUserId)
+      }
     }
 
     window.addEventListener('online', handleOnline)
@@ -2807,6 +2866,28 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const connectWs = (identity: DeviceIdentity) => {
+      const serverBackoffMs = getServerBackoffMs(serverKey)
+      if (serverBackoffMs > 0) {
+        const activeChannel = options.channelRef.value ?? channel
+        const channelOpen = activeChannel?.readyState === 'open'
+        if (!channelOpen) {
+          options.dmStatus.value = 'offline'
+        }
+        wsReconnectPending = true
+        const selfUserId = options.selfUserId.value
+        if (selfUserId && isCrdtSignalingBackoff()) {
+          destroyCrdtProvider(contact.id, identity, selfUserId)
+        }
+        if (wsReconnectTimer === null) {
+          wsReconnectTimer = window.setTimeout(() => {
+            wsReconnectTimer = null
+            wsReconnectPending = false
+            connectWs(identity)
+          }, serverBackoffMs)
+        }
+        debug('ws connect deferred (server backoff)', { wait: serverBackoffMs })
+        return
+      }
       const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
       if (!wsUrl) return
       ws?.close()
@@ -2819,6 +2900,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         wsPongTimer = null
       }
       wsHealthy = false
+      let failureRecorded = false
+      const recordFailure = () => {
+        if (failureRecorded) return
+        failureRecorded = true
+        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+      }
       ws = new WebSocket(wsUrl)
       const startHeartbeat = () => {
         if (wsHeartbeatTimer !== null) {
@@ -2849,6 +2936,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
       ws.addEventListener('open', () => {
         debug('ws open')
+        markServerSuccess(serverKey)
         wsHealthy = true
         wsReconnectAttempt = 0
         wsReconnectPending = false
@@ -2923,6 +3011,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         wsHealthy = false
         stopHeartbeat()
         if (!active) return
+        recordFailure()
         const activeChannel = options.channelRef.value ?? channel
         const channelOpen = activeChannel?.readyState === 'open'
         const connectionState = connection?.connectionState
@@ -2944,6 +3033,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('ws error')
         wsHealthy = false
         stopHeartbeat()
+        recordFailure()
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           options.dmStatus.value = 'offline'
         } else {

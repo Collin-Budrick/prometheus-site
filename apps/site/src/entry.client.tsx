@@ -1,4 +1,5 @@
 import { render } from '@builder.io/qwik'
+import { getServerBackoffMs } from './shared/server-backoff'
 import Root from './root'
 
 declare global {
@@ -31,6 +32,8 @@ export default function () {
     setupServiceWorkerBridge()
   }
 
+  setupOfflineErrorFilters()
+
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       const shouldSkipServiceWorker = isServiceWorkerDisabled() || isServiceWorkerOptedOut()
@@ -53,6 +56,29 @@ export default function () {
       })
     })
   }
+}
+
+function setupOfflineErrorFilters() {
+  if (typeof window === 'undefined') return
+  const isServerOffline = () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+    return getServerBackoffMs(window.location.host) > 0
+  }
+  const isDynamicImportError = (reason: unknown) => {
+    const message = reason instanceof Error ? reason.message : String(reason)
+    return message.includes('Failed to fetch dynamically imported module')
+  }
+  window.addEventListener('unhandledrejection', (event) => {
+    if (isDynamicImportError(event.reason) && isServerOffline()) {
+      event.preventDefault()
+    }
+  })
+  window.addEventListener('error', (event) => {
+    const message = event instanceof ErrorEvent ? event.message : ''
+    if (message.includes('Failed to fetch dynamically imported module') && isServerOffline()) {
+      event.preventDefault()
+    }
+  })
 }
 
 function setupServiceWorkerBridge() {

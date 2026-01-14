@@ -1,8 +1,9 @@
-import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useVisibleTask$, type QRL } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
 import { getLanguagePack } from '../../lang'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { buildChatSettingsKey, defaultChatSettings, type ChatSettings } from '../../shared/chat-settings'
+import { getServerBackoffMs } from '../../shared/server-backoff'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import type { ProfilePayload } from '../../shared/profile-storage'
 import {
@@ -355,6 +356,27 @@ export const ContactInvites = component$<ContactInvitesProps>(
       if (!contact) return
       profileCardContact.value = contact
       profileCardOpen.value = true
+    })
+
+    useVisibleTask$((ctx) => {
+      const contact = ctx.track(() => activeContact.value)
+      if (!contact || typeof window === 'undefined') return
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      if (getServerBackoffMs(window.location.host) > 0) return
+      const preload = (qrl: QRL<unknown> | undefined) => qrl?.resolve?.().catch(() => undefined)
+      void Promise.all([
+        preload(handleDmInput as QRL<unknown>),
+        preload(handleDmKeyDown as QRL<unknown>),
+        preload(handleDmSubmit as QRL<unknown>),
+        preload(handleDmImage as QRL<unknown>),
+        preload(sendTyping as QRL<unknown>),
+        preload(toggleChatSettings as QRL<unknown>),
+        preload(toggleReadReceipts as QRL<unknown>),
+        preload(toggleTypingIndicators as QRL<unknown>),
+        preload(handleArchiveMessages as QRL<unknown>),
+        preload(closeContact as QRL<unknown>),
+        preload(handleActiveProfileClick as QRL<unknown>)
+      ])
     })
 
     const onlineSet = new Set(onlineIds.value)

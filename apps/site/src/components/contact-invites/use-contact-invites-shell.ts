@@ -8,6 +8,7 @@ import {
 } from '../../shared/chat-settings'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import { buildWsUrl, resolveChatSettingsUserId } from './api'
+import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../shared/server-backoff'
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
 import type {
@@ -262,6 +263,18 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       let reconnectAttempt = 0
 
       const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+      const resolveServerKey = () => {
+        const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
+        if (wsUrl) {
+          try {
+            return new URL(wsUrl).host
+          } catch {
+            // fall back to window host
+          }
+        }
+        return window.location.host
+      }
+      const serverKey = resolveServerKey()
 
       const clearReconnectTimer = () => {
         if (reconnectTimer !== null) {
@@ -274,6 +287,15 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         if (!active || reconnectTimer !== null) return
         if (isOffline()) {
           options.realtimeState.value = 'offline'
+          return
+        }
+        const serverBackoffMs = getServerBackoffMs(serverKey)
+        if (serverBackoffMs > 0) {
+          options.realtimeState.value = 'offline'
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            connect()
+          }, serverBackoffMs)
           return
         }
         reconnectAttempt += 1
@@ -296,6 +318,12 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
           options.realtimeState.value = 'offline'
           return
         }
+        const serverBackoffMs = getServerBackoffMs(serverKey)
+        if (serverBackoffMs > 0) {
+          options.realtimeState.value = 'offline'
+          scheduleReconnect(serverBackoffMs)
+          return
+        }
         const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
         if (!wsUrl) {
           void options.refreshInvites()
@@ -306,6 +334,12 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         }
         options.realtimeState.value = 'connecting'
         options.wsRef.value?.close()
+        let failureRecorded = false
+        const recordFailure = () => {
+          if (failureRecorded) return
+          failureRecorded = true
+          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        }
         const ws = new WebSocket(wsUrl)
         options.wsRef.value = noSerialize(ws)
 
@@ -349,6 +383,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         })
 
         ws.addEventListener('open', () => {
+          markServerSuccess(serverKey)
           options.realtimeState.value = 'connecting'
           reconnectAttempt = 0
           clearReconnectTimer()
@@ -356,6 +391,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
 
         ws.addEventListener('close', () => {
           if (!active) return
+          recordFailure()
           options.realtimeState.value = isOffline()
             ? 'offline'
             : options.realtimeState.value === 'error'
@@ -368,7 +404,10 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         })
 
         ws.addEventListener('error', () => {
-          options.realtimeState.value = 'error'
+          if (!active) return
+          recordFailure()
+          options.realtimeState.value = 'offline'
+          scheduleReconnect()
         })
       }
 

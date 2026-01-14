@@ -1,4 +1,4 @@
-import { component$, type PropFunction, type Signal } from '@builder.io/qwik'
+import { component$, useSignal, useVisibleTask$, type PropFunction, type Signal } from '@builder.io/qwik'
 import { InMediaImage, InSettings } from '@qwikest/icons/iconoir'
 import type { ChatSettings } from '../../shared/chat-settings'
 import type { ProfilePayload } from '../../shared/profile-storage'
@@ -76,6 +76,59 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
     queuedImageCount > 0
       ? `${resolve('Delivering image')}${queuedImageCount > 1 ? ` (${queuedImageCount})` : ''}...`
       : null
+  const messagesRef = useSignal<HTMLDivElement>()
+  const stickToBottom = useSignal(true)
+  const didInitialScroll = useSignal(false)
+  const bottomThreshold = 12
+  const isNearBottom = (node: HTMLDivElement) =>
+    node.scrollHeight - node.scrollTop - node.clientHeight <= bottomThreshold
+
+  useVisibleTask$((ctx) => {
+    const node = ctx.track(() => messagesRef.value)
+    ctx.track(() => props.dmMessages.length)
+    if (!node || didInitialScroll.value) return
+    const behavior: ScrollBehavior = 'auto'
+    requestAnimationFrame(() => {
+      if (!node.isConnected) return
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({ top: node.scrollHeight, behavior })
+      } else {
+        node.scrollTop = node.scrollHeight
+      }
+      stickToBottom.value = true
+      didInitialScroll.value = true
+    })
+  })
+
+  useVisibleTask$((ctx) => {
+    const node = ctx.track(() => messagesRef.value)
+    if (!node) return
+    const handleScroll = () => {
+      if (!didInitialScroll.value) return
+      stickToBottom.value = isNearBottom(node)
+    }
+    handleScroll()
+    node.addEventListener('scroll', handleScroll, { passive: true })
+    ctx.cleanup(() => {
+      node.removeEventListener('scroll', handleScroll)
+    })
+  })
+
+  useVisibleTask$((ctx) => {
+    ctx.track(() => props.dmMessages.length)
+    const node = messagesRef.value
+    if (!node || !stickToBottom.value || !didInitialScroll.value) return
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    const behavior: ScrollBehavior = prefersReducedMotion ? 'auto' : 'smooth'
+    requestAnimationFrame(() => {
+      if (!node.isConnected) return
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({ top: node.scrollHeight, behavior })
+      } else {
+        node.scrollTop = node.scrollHeight
+      }
+    })
+  })
 
   return (
     <div
@@ -215,7 +268,7 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
             {staleLabel ? <span class="chat-invites-dm-stale">{staleLabel}</span> : null}
             {props.dmError ? <span class="chat-invites-dm-error">{props.dmError}</span> : null}
           </div>
-          <div class="chat-invites-dm-messages" role="log" aria-live="polite">
+          <div class="chat-invites-dm-messages" role="log" aria-live="polite" ref={messagesRef}>
             {props.dmMessages.length === 0 ? (
               <p class="chat-invites-dm-placeholder">{resolve('No messages yet.')}</p>
             ) : (

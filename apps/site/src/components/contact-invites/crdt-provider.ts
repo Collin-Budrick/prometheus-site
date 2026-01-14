@@ -1,6 +1,7 @@
 import { WebrtcProvider } from 'y-webrtc'
 import { appConfig } from '../../app-config'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
+import { isServerBackoffActive } from '../../shared/server-backoff'
 import { loadContactMaps, loadReplicationKey } from './crdt-store'
 
 const providers = new Map<string, WebrtcProvider>()
@@ -33,6 +34,34 @@ const resolveSignaling = () => {
   return [`${origin}/yjs`]
 }
 
+const resolveHost = (value: string) => {
+  try {
+    return new URL(value).host
+  } catch {
+    return ''
+  }
+}
+
+export const isCrdtSignalingBackoff = () => {
+  const signals = resolveSignaling()
+  if (!signals?.length) return false
+  return signals.some((entry) => {
+    const host = resolveHost(entry)
+    if (!host) return false
+    return isServerBackoffActive(host)
+  })
+}
+
+const filterSignaling = (signals?: string[]) => {
+  if (!signals?.length) return signals
+  const filtered = signals.filter((entry) => {
+    const host = resolveHost(entry)
+    if (!host) return false
+    return !isServerBackoffActive(host)
+  })
+  return filtered
+}
+
 export const buildCrdtRoomName = (selfUserId: string, contactId: string) => {
   const ids = [selfUserId.trim(), contactId.trim()].filter(Boolean).sort()
   return `prometheus:crdt:${ids.join(':')}`
@@ -44,6 +73,16 @@ export const ensureCrdtProvider = async (contactId: string, identity: DeviceIden
   if (!selfUserId || !contactId) return null
   const roomName = buildCrdtRoomName(selfUserId, contactId)
   const key = buildProviderKey(identity, roomName)
+  const signaling = resolveSignaling()
+  const filteredSignaling = filterSignaling(signaling)
+  if (filteredSignaling && filteredSignaling.length === 0) {
+    const existing = providers.get(key)
+    if (existing) {
+      existing.destroy()
+      providers.delete(key)
+    }
+    return null
+  }
   const existing = providers.get(key)
   if (existing) return existing
   const maps = await loadContactMaps(contactId, identity)
@@ -52,7 +91,7 @@ export const ensureCrdtProvider = async (contactId: string, identity: DeviceIden
   if (!password) return null
   const provider = new WebrtcProvider(roomName, maps.doc, {
     password,
-    signaling: resolveSignaling(),
+    signaling: filteredSignaling ?? signaling,
     peerOpts: { config: { iceServers: appConfig.p2pIceServers } }
   })
   providers.set(key, provider)
