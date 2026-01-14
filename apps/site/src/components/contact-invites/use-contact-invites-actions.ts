@@ -88,71 +88,75 @@ type QueuedContactAction =
       createdAt: string
     }
 
+const queueStorageKey = (userId?: string) =>
+  `contact-invite-queue:${userId ? encodeURIComponent(userId) : 'anonymous'}`
+
+const loadQueuedActions = (storageKey: string) => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as QueuedContactAction[]) : []
+  } catch {
+    return []
+  }
+}
+
+const saveQueuedActions = (storageKey: string, queue: QueuedContactAction[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(queue))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+const enqueueQueuedAction = (storageKey: string, action: QueuedContactAction) => {
+  const queue = loadQueuedActions(storageKey)
+  queue.push(action)
+  saveQueuedActions(storageKey, queue)
+}
+
+const resolveFragmentCopy = (copy: Record<string, string> | undefined, value: string) => copy?.[value] ?? value
+
+const isOfflineState = (realtimeState: RealtimeState) =>
+  (typeof navigator !== 'undefined' && navigator.onLine === false) || realtimeState === 'offline'
+
+const parseErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const payload = (await response.json()) as { error?: string }
+    if (payload?.error) return payload.error
+  } catch {
+    // ignore parsing failures
+  }
+  return fallback
+}
+
+const restorePopoverFocus = (
+  popover: HTMLDivElement | undefined,
+  button: HTMLButtonElement | undefined
+) => {
+  if (typeof document === 'undefined') return
+  const active = document.activeElement
+  if (!popover || !active || !popover.contains(active)) return
+  button?.focus()
+}
+
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
   const flushInFlight = { value: false }
-
-  const queueStorageKey = (userId?: string) =>
-    `contact-invite-queue:${userId ? encodeURIComponent(userId) : 'anonymous'}`
-
-  const getQueueStorageKey = () => queueStorageKey(options.chatSettingsUserId.value)
-
-  const loadQueuedActions = () => {
-    if (typeof window === 'undefined') return []
-    try {
-      const raw = window.localStorage.getItem(getQueueStorageKey())
-      if (!raw) return []
-      const parsed = JSON.parse(raw) as unknown
-      return Array.isArray(parsed) ? (parsed as QueuedContactAction[]) : []
-    } catch {
-      return []
-    }
-  }
-
-  const saveQueuedActions = (queue: QueuedContactAction[]) => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(getQueueStorageKey(), JSON.stringify(queue))
-    } catch {
-      // ignore storage errors
-    }
-  }
-
-  const enqueueQueuedAction = (action: QueuedContactAction) => {
-    const queue = loadQueuedActions()
-    queue.push(action)
-    saveQueuedActions(queue)
-  }
-
-  const resolveLocal = (value: string) => options.fragmentCopy.value?.[value] ?? value
-
-  const isOffline = () =>
-    (typeof navigator !== 'undefined' && navigator.onLine === false) || options.realtimeState.value === 'offline'
-
-  const updateOfflineState = () => {
-    if (typeof window === 'undefined') return false
-    const offline = isOffline()
-    options.offline.value = offline
-    return offline
-  }
-
-  const parseErrorMessage = async (response: Response, fallback: string) => {
-    try {
-      const payload = (await response.json()) as { error?: string }
-      if (payload?.error) return payload.error
-    } catch {
-      // ignore parsing failures
-    }
-    return fallback
-  }
 
   const flushQueuedActions = $(async () => {
     if (typeof window === 'undefined') return
     if (flushInFlight.value) return
-    if (isOffline()) return
-    const queued = loadQueuedActions()
+    if (isOfflineState(options.realtimeState.value)) return
+    const storageKey = queueStorageKey(options.chatSettingsUserId.value)
+    const queued = loadQueuedActions(storageKey)
     if (!queued.length) return
 
     flushInFlight.value = true
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
     const remaining: QueuedContactAction[] = []
     let refreshed = false
 
@@ -260,7 +264,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
     }
 
-    saveQueuedActions(remaining)
+    saveQueuedActions(storageKey, remaining)
     if (
       refreshed &&
       (options.realtimeState.value === 'idle' ||
@@ -275,6 +279,11 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   useVisibleTask$(({ track, cleanup }) => {
     if (typeof window === 'undefined') return
+    const updateOfflineState = () => {
+      const offline = isOfflineState(options.realtimeState.value)
+      options.offline.value = offline
+      return offline
+    }
     const handleOnline = () => {
       updateOfflineState()
       void flushQueuedActions()
@@ -294,19 +303,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       window.removeEventListener('offline', handleOffline)
     })
   })
-
-  const restoreSettingsFocus = () => {
-    if (typeof document === 'undefined') return
-    const popover = options.chatSettingsPopoverRef.value
-    const active = document.activeElement
-    if (!popover || !active || !popover.contains(active)) return
-    options.chatSettingsButtonRef.value?.focus()
-  }
-
-  const closeChatSettings = () => {
-    restoreSettingsFocus()
-    options.chatSettingsOpen.value = false
-  }
 
   const publishRelayIdentity = $(async (identity?: DeviceIdentity) => {
     if (typeof window === 'undefined') return false
@@ -397,7 +393,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const toggleChatSettings = $(() => {
     if (options.chatSettingsOpen.value) {
-      closeChatSettings()
+      restorePopoverFocus(options.chatSettingsPopoverRef.value, options.chatSettingsButtonRef.value)
+      options.chatSettingsOpen.value = false
       return
     }
     options.chatSettingsOpen.value = true
@@ -432,11 +429,14 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (identity) {
       void archiveHistory(contact.id, identity)
     }
-    closeChatSettings()
+    restorePopoverFocus(options.chatSettingsPopoverRef.value, options.chatSettingsButtonRef.value)
+    options.chatSettingsOpen.value = false
   })
 
   const refreshInvites = $(async (resetStatus = true) => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
     const applyInvitesPayload = (
       payload: ContactInvitesPayload,
       offline = false,
@@ -569,6 +569,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const handleSearchSubmit = $(async () => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
     const trimmed = options.searchQuery.value.trim()
     if (!trimmed) {
       options.searchResults.value = []
@@ -594,7 +596,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.searchError.value = null
 
     try {
-      if (isOffline()) {
+      if (isOfflineState(options.realtimeState.value)) {
         options.searchState.value = 'idle'
         options.searchError.value = null
         return
@@ -630,6 +632,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const handleInvite = $(async (email: string, userId?: string) => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
+    const storageKey = queueStorageKey(options.chatSettingsUserId.value)
     const key = `invite:${email}`
     if (options.busyKeys.value.includes(key)) return
 
@@ -637,8 +642,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.statusMessage.value = null
 
     try {
-      if (isOffline()) {
-        enqueueQueuedAction({
+      if (isOfflineState(options.realtimeState.value)) {
+        enqueueQueuedAction(storageKey, {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           type: 'invite',
           email,
@@ -695,6 +700,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const handleAccept = $(async (inviteId: string, userId: string) => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
+    const storageKey = queueStorageKey(options.chatSettingsUserId.value)
     const key = `accept:${inviteId}`
     if (options.busyKeys.value.includes(key)) return
 
@@ -702,8 +710,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.statusMessage.value = null
 
     try {
-      if (isOffline()) {
-        enqueueQueuedAction({
+      if (isOfflineState(options.realtimeState.value)) {
+        enqueueQueuedAction(storageKey, {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           type: 'accept',
           inviteId,
@@ -751,6 +759,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const handleDecline = $(async (inviteId: string, userId: string) => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
+    const storageKey = queueStorageKey(options.chatSettingsUserId.value)
     const key = `decline:${inviteId}`
     if (options.busyKeys.value.includes(key)) return
 
@@ -758,8 +769,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.statusMessage.value = null
 
     try {
-      if (isOffline()) {
-        enqueueQueuedAction({
+      if (isOfflineState(options.realtimeState.value)) {
+        enqueueQueuedAction(storageKey, {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           type: 'decline',
           inviteId,
@@ -807,6 +818,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const handleRemove = $(async (inviteId: string, userId: string, email: string) => {
     if (typeof window === 'undefined') return
+    const copy = options.fragmentCopy.value
+    const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
+    const storageKey = queueStorageKey(options.chatSettingsUserId.value)
     const key = `remove:${inviteId}`
     if (options.busyKeys.value.includes(key)) return
 
@@ -814,8 +828,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.statusMessage.value = null
 
     try {
-      if (isOffline()) {
-        enqueueQueuedAction({
+      if (isOfflineState(options.realtimeState.value)) {
+        enqueueQueuedAction(storageKey, {
           id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
           type: 'remove',
           inviteId,
