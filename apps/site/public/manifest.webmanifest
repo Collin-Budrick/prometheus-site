@@ -2,11 +2,17 @@
   "name": "Prometheus",
   "short_name": "Prometheus",
   "description": "Binary fragment experience for Prometheus.",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "id": "/?source=pwa",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "theme_color": "#f97316",
   "background_color": "#f8f2e7",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icons/icon-192.png",

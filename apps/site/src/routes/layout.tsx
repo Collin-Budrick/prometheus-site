@@ -147,6 +147,9 @@ export const RouterHead = component$(() => {
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       <link rel="manifest" href={withBase('manifest.webmanifest')} />
       <meta name="theme-color" content={siteBrand.themeColor} />
+      <meta name="theme-color" media="(prefers-color-scheme: dark)" content={siteBrand.themeColor} />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     </>
   )
 })
