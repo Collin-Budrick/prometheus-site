@@ -89,7 +89,7 @@ type QueuedContactAction =
     }
 
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
-  let flushInFlight = false
+  const flushInFlight = { value: false }
 
   const queueStorageKey = (userId?: string) =>
     `contact-invite-queue:${userId ? encodeURIComponent(userId) : 'anonymous'}`
@@ -147,12 +147,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const flushQueuedActions = $(async () => {
     if (typeof window === 'undefined') return
-    if (flushInFlight) return
+    if (flushInFlight.value) return
     if (isOffline()) return
     const queued = loadQueuedActions()
     if (!queued.length) return
 
-    flushInFlight = true
+    flushInFlight.value = true
     const remaining: QueuedContactAction[] = []
     let refreshed = false
 
@@ -270,7 +270,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       await refreshInvites(false)
     }
 
-    flushInFlight = false
+    flushInFlight.value = false
   })
 
   useVisibleTask$(({ track, cleanup }) => {
