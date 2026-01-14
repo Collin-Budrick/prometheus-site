@@ -17,6 +17,9 @@ export type OutboxItem = {
   sentAt?: string
   attempts?: number
   sentVia?: 'channel' | 'relay'
+  lastAttemptAt?: string
+  nextAttemptAt?: string
+  backoffMs?: number
 }
 
 const requestOutboxSync = async () => {
@@ -37,19 +40,36 @@ const normalizeItem = (item: OutboxItem) => {
   const createdAt = typeof item.createdAt === 'string' ? item.createdAt : ''
   const kind = item.kind === 'image' ? 'image' : 'text'
   if (!id || !createdAt) return null
+  const attempts =
+    typeof item.attempts === 'number' && Number.isFinite(item.attempts) && item.attempts >= 0
+      ? item.attempts
+      : undefined
+  const sentAt = typeof item.sentAt === 'string' ? item.sentAt : undefined
+  const sentVia = item.sentVia === 'relay' ? 'relay' : item.sentVia === 'channel' ? 'channel' : undefined
+  const lastAttemptAt = typeof item.lastAttemptAt === 'string' ? item.lastAttemptAt : undefined
+  const nextAttemptAt = typeof item.nextAttemptAt === 'string' ? item.nextAttemptAt : undefined
+  const backoffMs =
+    typeof item.backoffMs === 'number' && Number.isFinite(item.backoffMs) && item.backoffMs >= 0
+      ? item.backoffMs
+      : undefined
   if (kind === 'text') {
     const text = typeof item.text === 'string' ? item.text : ''
     if (!text.trim()) return null
-    const sentAt = typeof item.sentAt === 'string' ? item.sentAt : undefined
-    const attempts = typeof item.attempts === 'number' ? item.attempts : undefined
-    const sentVia = item.sentVia === 'relay' ? 'relay' : item.sentVia === 'channel' ? 'channel' : undefined
-    return { id, kind, createdAt, text, sentAt, attempts, sentVia } satisfies OutboxItem
+    return {
+      id,
+      kind,
+      createdAt,
+      text,
+      sentAt,
+      attempts,
+      sentVia,
+      lastAttemptAt,
+      nextAttemptAt,
+      backoffMs
+    } satisfies OutboxItem
   }
   const payloadBase64 = typeof item.payloadBase64 === 'string' ? item.payloadBase64 : ''
   if (!payloadBase64) return null
-  const sentAt = typeof item.sentAt === 'string' ? item.sentAt : undefined
-  const attempts = typeof item.attempts === 'number' ? item.attempts : undefined
-  const sentVia = item.sentVia === 'relay' ? 'relay' : item.sentVia === 'channel' ? 'channel' : undefined
   return {
     id,
     kind,
@@ -63,7 +83,10 @@ const normalizeItem = (item: OutboxItem) => {
     height: typeof item.height === 'number' ? item.height : undefined,
     sentAt,
     attempts,
-    sentVia
+    sentVia,
+    lastAttemptAt,
+    nextAttemptAt,
+    backoffMs
   } satisfies OutboxItem
 }
 
@@ -74,6 +97,52 @@ const normalizeItems = (items: OutboxItem[]) => {
     if (next) normalized.push(next)
   }
   return normalized
+}
+
+const areTextBodiesEqual = (left: OutboxItem, right: OutboxItem) => left.text === right.text
+
+const areImageBodiesEqual = (left: OutboxItem, right: OutboxItem) =>
+  left.payloadBase64 === right.payloadBase64 &&
+  left.encoding === right.encoding &&
+  left.name === right.name &&
+  left.mime === right.mime &&
+  left.size === right.size &&
+  left.width === right.width &&
+  left.height === right.height
+
+const shouldClearSendState = (previous: OutboxItem, incoming: OutboxItem) => {
+  const payloadChanged =
+    previous.kind !== incoming.kind ||
+    previous.createdAt !== incoming.createdAt ||
+    (incoming.kind === 'text' && !areTextBodiesEqual(previous, incoming)) ||
+    (incoming.kind === 'image' && !areImageBodiesEqual(previous, incoming))
+  if (payloadChanged) return true
+  const incomingSentState =
+    incoming.sentAt ||
+    incoming.sentVia ||
+    incoming.lastAttemptAt ||
+    incoming.nextAttemptAt ||
+    typeof incoming.backoffMs === 'number'
+  const previousSentState =
+    previous.sentAt ||
+    previous.sentVia ||
+    previous.lastAttemptAt ||
+    previous.nextAttemptAt ||
+    typeof previous.backoffMs === 'number'
+  return previousSentState && !incomingSentState
+}
+
+const mergeOutboxItem = (previous: OutboxItem, incoming: OutboxItem) => {
+  const merged: OutboxItem = { ...previous, ...incoming }
+  if (!shouldClearSendState(previous, incoming)) return merged
+  return {
+    ...merged,
+    sentAt: undefined,
+    sentVia: undefined,
+    lastAttemptAt: undefined,
+    nextAttemptAt: undefined,
+    backoffMs: undefined
+  }
 }
 
 export const loadOutbox = async (contactId: string, identity: DeviceIdentity) => {
@@ -112,7 +181,7 @@ export const saveOutbox = async (contactId: string, identity: DeviceIdentity, it
 export const enqueueOutboxItem = async (contactId: string, identity: DeviceIdentity, item: OutboxItem) => {
   const existing = await loadOutbox(contactId, identity)
   const previous = existing.find((entry) => entry.id === item.id)
-  const merged = previous ? { ...previous, ...item } : item
+  const merged = previous ? mergeOutboxItem(previous, item) : item
   const next = [...existing.filter((entry) => entry.id !== item.id), merged]
   return saveOutbox(contactId, identity, next)
 }
@@ -133,7 +202,10 @@ export const markOutboxItemSent = async (
       ...item,
       sentAt: now,
       attempts: (item.attempts ?? 0) + 1,
-      sentVia
+      sentVia,
+      lastAttemptAt: now,
+      nextAttemptAt: undefined,
+      backoffMs: undefined
     }
   })
   if (!updated) return false
