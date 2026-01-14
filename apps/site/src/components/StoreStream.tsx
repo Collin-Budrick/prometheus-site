@@ -277,14 +277,36 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       let active = true
       let reconnectTimer: number | null = null
+      let reconnectAttempt = 0
 
-      const scheduleReconnect = (delayMs = 3000) => {
-        if (reconnectTimer !== null || !active) return
+      const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+      const clearReconnectTimer = () => {
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+      }
+
+      const scheduleReconnect = (delayMs?: number) => {
+        if (!active || reconnectTimer !== null) return
+        if (isOffline()) {
+          streamState.value = 'offline'
+          return
+        }
+        reconnectAttempt += 1
+        const baseDelay = 1500
+        const maxDelay = 45_000
+        const exponentialDelay = baseDelay * 2 ** (reconnectAttempt - 1)
+        const resolvedDelay = Number.isFinite(delayMs) && delayMs && delayMs > 0 ? Math.max(delayMs, exponentialDelay) : exponentialDelay
+        const cappedDelay = Math.min(resolvedDelay, maxDelay)
+        const jitter = Math.random() * cappedDelay * 0.3
+        const wait = cappedDelay + jitter
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null
           if (!active) return
           connect()
-        }, delayMs)
+        }, wait)
       }
 
       const handleUpsert = (item: StoreItem) => {
@@ -318,6 +340,10 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       const connect = () => {
         if (!active) return
+        if (isOffline()) {
+          streamState.value = 'offline'
+          return
+        }
         const wsUrl = buildWsUrl('/store/ws', window.location.origin)
         if (!wsUrl) return
         streamState.value = 'connecting'
@@ -342,6 +368,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           if (type === 'store:ready') {
             streamState.value = 'live'
             streamError.value = null
+            reconnectAttempt = 0
+            clearReconnectTimer()
             return
           }
           if (type === 'error') {
@@ -367,11 +395,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
         ws.addEventListener('open', () => {
           streamState.value = 'connecting'
+          reconnectAttempt = 0
+          clearReconnectTimer()
         })
 
         ws.addEventListener('close', () => {
           if (!active) return
-          streamState.value = streamState.value === 'error' ? 'error' : 'offline'
+          streamState.value = isOffline() ? 'offline' : streamState.value === 'error' ? 'error' : 'offline'
           scheduleReconnect()
         })
 
@@ -383,11 +413,28 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       connect()
 
+      const handleOnline = () => {
+        if (!active) return
+        if (isOffline()) return
+        const ws = wsRef.value
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          return
+        }
+        scheduleReconnect(0)
+      }
+
+      const handleOffline = () => {
+        streamState.value = 'offline'
+      }
+
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
+
       ctx.cleanup(() => {
         active = false
-        if (reconnectTimer !== null) {
-          window.clearTimeout(reconnectTimer)
-        }
+        clearReconnectTimer()
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
         wsRef.value?.close()
       })
     },

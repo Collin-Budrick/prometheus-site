@@ -259,17 +259,43 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         options.onlineIds.value = Array.from(next)
       }
 
-      const scheduleReconnect = (delayMs = 4000) => {
-        if (!active) return
-        if (reconnectTimer !== null) return
+      let reconnectAttempt = 0
+
+      const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+      const clearReconnectTimer = () => {
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+      }
+
+      const scheduleReconnect = (delayMs?: number) => {
+        if (!active || reconnectTimer !== null) return
+        if (isOffline()) {
+          options.realtimeState.value = 'offline'
+          return
+        }
+        reconnectAttempt += 1
+        const baseDelay = 2000
+        const maxDelay = 45_000
+        const exponentialDelay = baseDelay * 2 ** (reconnectAttempt - 1)
+        const resolvedDelay = Number.isFinite(delayMs) && delayMs && delayMs > 0 ? Math.max(delayMs, exponentialDelay) : exponentialDelay
+        const cappedDelay = Math.min(resolvedDelay, maxDelay)
+        const jitter = Math.random() * cappedDelay * 0.3
+        const wait = cappedDelay + jitter
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null
           connect()
-        }, delayMs)
+        }, wait)
       }
 
       const connect = () => {
         if (!active) return
+        if (isOffline()) {
+          options.realtimeState.value = 'offline'
+          return
+        }
         const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
         if (!wsUrl) {
           void options.refreshInvites()
@@ -324,11 +350,17 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
 
         ws.addEventListener('open', () => {
           options.realtimeState.value = 'connecting'
+          reconnectAttempt = 0
+          clearReconnectTimer()
         })
 
         ws.addEventListener('close', () => {
           if (!active) return
-          options.realtimeState.value = options.realtimeState.value === 'error' ? 'error' : 'offline'
+          options.realtimeState.value = isOffline()
+            ? 'offline'
+            : options.realtimeState.value === 'error'
+              ? 'error'
+              : 'offline'
           if (!hasSnapshot) {
             void options.refreshInvites()
           }
@@ -342,11 +374,28 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
 
       connect()
 
+      const handleOnline = () => {
+        if (!active) return
+        if (isOffline()) return
+        const ws = options.wsRef.value
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          return
+        }
+        scheduleReconnect(0)
+      }
+
+      const handleOffline = () => {
+        options.realtimeState.value = 'offline'
+      }
+
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
+
       ctx.cleanup(() => {
         active = false
-        if (reconnectTimer !== null) {
-          window.clearTimeout(reconnectTimer)
-        }
+        clearReconnectTimer()
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
         saveCounts()
         window.removeEventListener('beforeunload', saveCounts)
         document.removeEventListener('visibilitychange', handleVisibility)
