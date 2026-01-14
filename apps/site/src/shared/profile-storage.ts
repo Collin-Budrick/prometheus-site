@@ -23,10 +23,13 @@ type ProfileCacheEntry = {
 }
 
 export const PROFILE_STORAGE_KEY = 'prometheus.profile.local'
+const PROFILE_STORAGE_BACKUP_KEY = 'prometheus.profile.local.backup'
 export const PROFILE_CACHE_KEY = 'prometheus.profile.cache'
 export const PROFILE_UPDATED_EVENT = 'prometheus:profile-updated'
 export const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
 export const PROFILE_AVATAR_MAX_BYTES = 1_200_000
+const PROFILE_STORAGE_VERSION = 2
+const PROFILE_CACHE_VERSION = 2
 
 export const clampChannel = (value: number) => Math.min(255, Math.max(0, Math.round(value)))
 
@@ -40,12 +43,22 @@ const parseProfileColor = (value: unknown): ProfileColor | null => {
   return { r, g, b }
 }
 
+const isValidTimestamp = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false
+  return !Number.isNaN(Date.parse(value))
+}
+
+const isValidHash = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false
+  return /^[a-f0-9]{8}$/i.test(value)
+}
+
 export const parseProfilePayload = (value: unknown): ProfilePayload | null => {
   if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
   const color = parseProfileColor(record.color)
-  const updatedAt = typeof record.updatedAt === 'string' ? record.updatedAt : undefined
-  const hash = typeof record.hash === 'string' ? record.hash : undefined
+  const updatedAt = isValidTimestamp(record.updatedAt) ? record.updatedAt : undefined
+  const hash = isValidHash(record.hash) ? record.hash : undefined
   const bio = typeof record.bio === 'string' ? record.bio : undefined
   const avatar = typeof record.avatar === 'string' ? record.avatar : undefined
   if (!bio && !avatar && !color && !updatedAt && !hash) return null
@@ -55,7 +68,7 @@ export const parseProfilePayload = (value: unknown): ProfilePayload | null => {
 export const parseProfileMeta = (value: unknown): ProfileMeta | null => {
   if (!value || typeof value !== 'object') return null
   const record = value as Record<string, unknown>
-  if (typeof record.hash !== 'string' || typeof record.updatedAt !== 'string') return null
+  if (!isValidHash(record.hash) || !isValidTimestamp(record.updatedAt)) return null
   return { hash: record.hash, updatedAt: record.updatedAt }
 }
 
@@ -105,13 +118,40 @@ export const buildLocalProfilePayload = (bio: string, avatar: string | null, col
   return payload
 }
 
-export const loadLocalProfile = (): ProfilePayload | null => {
-  if (typeof window === 'undefined') return null
-  const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY)
+type ProfileStorageEnvelope = {
+  version: number
+  payload: ProfilePayload
+}
+
+type ProfileCacheEnvelope = {
+  version: number
+  entries: Record<string, ProfileCacheEntry>
+}
+
+const parseProfileStorageEnvelope = (value: unknown): ProfilePayload | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (typeof record.version !== 'number') return null
+  if (!record.payload) return null
+  if (record.version < 1) return null
+  return parseProfilePayload(record.payload)
+}
+
+const parseProfileCacheEnvelope = (value: unknown): Record<string, ProfileCacheEntry> | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  if (typeof record.version !== 'number' || record.version < 1) return null
+  const entries = record.entries
+  if (!entries || typeof entries !== 'object') return null
+  return entries as Record<string, ProfileCacheEntry>
+}
+
+const loadProfileFromStorage = (key: string) => {
+  const raw = window.localStorage.getItem(key)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as ProfilePayload
-    const payload = parseProfilePayload(parsed)
+    const parsed = JSON.parse(raw) as unknown
+    const payload = parseProfileStorageEnvelope(parsed) ?? parseProfilePayload(parsed)
     if (!payload) return null
     if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
     return payload
@@ -120,18 +160,38 @@ export const loadLocalProfile = (): ProfilePayload | null => {
   }
 }
 
+export const loadLocalProfile = (): ProfilePayload | null => {
+  if (typeof window === 'undefined') return null
+  const payload =
+    loadProfileFromStorage(PROFILE_STORAGE_KEY) ?? loadProfileFromStorage(PROFILE_STORAGE_BACKUP_KEY)
+  if (!payload) return null
+  if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
+  return payload
+}
+
+const persistLocalProfile = (key: string, payload: ProfilePayload) => {
+  const meta = buildProfileMeta(payload)
+  const stored = { ...payload, ...meta }
+  const envelope: ProfileStorageEnvelope = { version: PROFILE_STORAGE_VERSION, payload: stored }
+  window.localStorage.setItem(key, JSON.stringify(envelope))
+}
+
+const removeLocalProfile = (key: string) => {
+  window.localStorage.removeItem(key)
+}
+
 export const saveLocalProfile = (payload: ProfilePayload) => {
   if (typeof window === 'undefined') return false
   try {
     const normalized = normalizeProfilePayload(payload)
     const hasData = Boolean(normalized.bio || normalized.avatar || normalized.color)
     if (!hasData) {
-      window.localStorage.removeItem(PROFILE_STORAGE_KEY)
+      removeLocalProfile(PROFILE_STORAGE_KEY)
+      removeLocalProfile(PROFILE_STORAGE_BACKUP_KEY)
       return true
     }
-    const meta = buildProfileMeta(normalized)
-    const stored = { ...normalized, ...meta }
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(stored))
+    persistLocalProfile(PROFILE_STORAGE_KEY, normalized)
+    persistLocalProfile(PROFILE_STORAGE_BACKUP_KEY, normalized)
     return true
   } catch {
     return false
@@ -153,10 +213,12 @@ const loadRemoteCache = (): Record<string, ProfileCacheEntry> => {
   const raw = window.localStorage.getItem(PROFILE_CACHE_KEY)
   if (!raw) return {}
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (!parsed || typeof parsed !== 'object') return {}
+    const parsed = JSON.parse(raw) as unknown
+    const legacy = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
+    const envelopeEntries = parseProfileCacheEnvelope(parsed) ?? null
+    const entriesSource = envelopeEntries ?? legacy
     const entries: Record<string, ProfileCacheEntry> = {}
-    for (const [key, value] of Object.entries(parsed)) {
+    for (const [key, value] of Object.entries(entriesSource)) {
       if (!value || typeof value !== 'object') continue
       const record = value as Record<string, unknown>
       const profile = parseProfilePayload(record.profile ?? record)
@@ -173,7 +235,8 @@ const loadRemoteCache = (): Record<string, ProfileCacheEntry> => {
 const saveRemoteCache = (entries: Record<string, ProfileCacheEntry>) => {
   if (typeof window === 'undefined') return false
   try {
-    window.localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(entries))
+    const envelope: ProfileCacheEnvelope = { version: PROFILE_CACHE_VERSION, entries }
+    window.localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(envelope))
     return true
   } catch {
     return false
