@@ -81,6 +81,7 @@ const withBase = (value: string) => {
 }
 const pwaPrecacheEntries = [
   { url: withBase('/'), revision: null },
+  { url: withBase('/offline/'), revision: null },
   { url: withBase('/manifest.webmanifest'), revision: null },
   { url: withBase('/favicon.ico'), revision: null },
   { url: withBase('/favicon.svg'), revision: null },

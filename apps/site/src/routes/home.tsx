@@ -22,45 +22,39 @@ const elementNode = (tag: string, attrs?: Record<string, string>, children: Rend
   children
 })
 
-const buildFallbackFragment = (id: string, apiBase: string, path: string, error?: unknown): FragmentPayload => {
-  const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+export const offlineShellFragmentId = 'fragment://fallback/offline-shell@v1'
+
+export const buildOfflineShellFragment = (id: string, path: string): FragmentPayload => {
 
   return {
     id,
     css: '',
-    head: [
-      {
-        op: 'title',
-        value: `${siteBrand.name} | Service unavailable`
-      }
-    ],
+    head: [{ op: 'title', value: `${siteBrand.name} | Offline` }],
     meta: {
       cacheKey: id,
-      ttl: 5,
-      staleTtl: 15,
-      tags: ['fallback', 'offline'],
+      ttl: 30,
+      staleTtl: 300,
+      tags: ['fallback', 'offline', 'shell'],
       runtime: 'node'
     },
-    tree: elementNode('section', undefined, [
-      elementNode('div', { class: 'meta-line' }, [textNode('fragment service offline')]),
-      elementNode('h1', undefined, [textNode('Fragment service unreachable')]),
-      elementNode('p', undefined, [textNode('The frontend cannot reach the fragment service right now.')]),
+    tree: elementNode('section', { class: 'offline-shell' }, [
+      elementNode('div', { class: 'meta-line' }, [textNode('offline mode')]),
+      elementNode('h1', undefined, [textNode('You are offline')]),
+      elementNode('p', undefined, [textNode('The shell is available, but live fragments need connectivity.')]),
       elementNode('div', { class: 'matrix' }, [
-        elementNode('div', { class: 'cell' }, [textNode('API base'), elementNode('strong', undefined, [textNode(apiBase)])]),
-        elementNode('div', { class: 'cell' }, [textNode('Path'), elementNode('strong', undefined, [textNode(path || '/')])]),
         elementNode('div', { class: 'cell' }, [
-          textNode('Status'),
-          elementNode('strong', undefined, [textNode('Degraded')])
+          textNode('Route'),
+          elementNode('strong', undefined, [textNode(path || '/')])
         ]),
         elementNode('div', { class: 'cell' }, [
-          textNode('Error'),
-          elementNode('strong', undefined, [textNode(errorMessage)])
+          textNode('Status'),
+          elementNode('strong', undefined, [textNode('Offline')])
         ])
       ]),
       elementNode('ul', { class: 'inline-list' }, [
-        elementNode('li', undefined, [elementNode('span'), textNode('Verify the fragment API host and credentials')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Confirm the service is running and reachable')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Retry once connectivity is restored')])
+        elementNode('li', undefined, [elementNode('span'), textNode('Check your connection')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Refresh once you are back online')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Cached content will load where available')])
       ])
     ])
   }
@@ -78,7 +72,6 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const cookieLang = readLangFromCookie(request.headers.get('cookie'))
   const acceptLang = request.headers.get('accept-language')
   const lang = cookieLang ?? (acceptLang ? normalizeLang(acceptLang.split(',')[0]) : defaultLang)
-  const apiBase = appConfig.apiBase
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
@@ -91,7 +84,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
     }
   } catch (error) {
     console.error('Fragment plan fetch failed', error)
-    const fallbackId = 'fragment://fallback/offline@v1'
+    const fallbackId = offlineShellFragmentId
     const plan: FragmentPlan = {
       path,
       createdAt: Date.now(),
@@ -107,7 +100,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
     return {
       plan: plan as FragmentPlanValue,
       fragments: {
-        [fallbackId]: buildFallbackFragment(fallbackId, apiBase, path, error)
+        [fallbackId]: buildOfflineShellFragment(fallbackId, path)
       } as FragmentPayloadValue,
       path,
       lang
