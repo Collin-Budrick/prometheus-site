@@ -15,6 +15,16 @@ const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|txt|mp4|webm)$/i
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 
+const scopedPathname = (url: URL) => {
+  if (scopePath === '/' || !url.pathname.startsWith(scopePath)) return url.pathname
+  return `/${url.pathname.slice(scopePath.length)}`
+}
+
+const isChatCachePath = (url: URL) => {
+  const pathname = scopedPathname(url)
+  return pathname.startsWith('/chat/contacts/') || pathname.startsWith('/chat/p2p/')
+}
+
 const isNavigationRequest = (request: Request) =>
   request.mode === 'navigate' ||
   request.destination === 'document' ||
@@ -33,6 +43,7 @@ const isJsonRequest = (request: Request, url: URL) => {
   if (request.method !== 'GET') return false
   if (url.origin !== self.location.origin) return false
   if (isFragmentStreamPath(url)) return false
+  if (isChatCachePath(url)) return true
   const accept = request.headers.get('accept') ?? ''
   return accept.includes('application/json') || url.pathname.endsWith('.json')
 }
@@ -135,6 +146,11 @@ const serwist = new Serwist({
       matcher: ({ request, url }) =>
         url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
       handler: handleShell
+    },
+    {
+      matcher: ({ request, url }) =>
+        request.method === 'GET' && url.origin === self.location.origin && isChatCachePath(url),
+      handler: handleJson
     },
     {
       matcher: ({ request, url }) => isJsonRequest(request, url),
