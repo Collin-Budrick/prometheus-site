@@ -37,7 +37,7 @@ const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
 const previewCrdtSignaling =
   process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
-  '/yjs'
+  '/yjs,wss://signaling.yjs.dev'
 const previewPeerjsServer =
   process.env.VITE_P2P_PEERJS_SERVER?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||

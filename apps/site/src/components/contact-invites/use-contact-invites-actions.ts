@@ -13,6 +13,7 @@ import { buildApiUrl } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
 import { registerPushSubscription } from './push'
+import { publishRelayDevice, buildRelayDirectoryLabels } from './relay-directory'
 import { publishSignalPrekeys } from './signal'
 import type {
   ActiveContact,
@@ -60,9 +61,28 @@ type ContactInvitesActionsOptions = {
 }
 
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
+  const publishRelayIdentity = $(async (identity?: DeviceIdentity) => {
+    if (typeof window === 'undefined') return false
+    const userId = options.chatSettingsUserId.value
+    const identityValue = identity ?? options.identityRef.value
+    if (!userId || !identityValue) return false
+    const relayUrls = [
+      ...(appConfig.p2pRelayBases ?? []),
+      ...(appConfig.p2pNostrRelays ?? []),
+      ...(appConfig.p2pWakuRelays ?? [])
+    ].filter(Boolean)
+    const deviceOk = await publishRelayDevice({
+      identity: identityValue,
+      userId,
+      relayUrls,
+      label: buildRelayDirectoryLabels(identityValue)
+    })
+    const prekeyOk = await publishSignalPrekeys(identityValue, userId, relayUrls)
+    return deviceOk || prekeyOk
+  })
+
   const registerIdentity = $(async () => {
-    let stored = loadStoredIdentity()
-    stored = await ensureStoredIdentity(stored)
+    let stored = await ensureStoredIdentity(loadStoredIdentity())
     saveStoredIdentity(stored)
     let identity = await importStoredIdentity(stored)
     let registered = false
@@ -70,7 +90,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
       const relayUrls = [
         ...(appConfig.p2pRelayBases ?? []),
-        ...(appConfig.p2pNostrRelays ?? [])
+        ...(appConfig.p2pNostrRelays ?? []),
+        ...(appConfig.p2pWakuRelays ?? [])
       ].filter(Boolean)
       const registerDevice = async () => {
         const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
@@ -108,13 +129,14 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
       registered = result.ok
       if (registered) {
-        void publishSignalPrekeys(identity)
+        void publishSignalPrekeys(identity, options.chatSettingsUserId.value, relayUrls)
         void registerPushSubscription(identity)
       }
     } catch {
       // ignore registration failures; retry later
     }
     options.identityRef.value = noSerialize(identity)
+    void publishRelayIdentity(identity)
     return identity
   })
 
@@ -624,6 +646,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   return {
     registerIdentity,
+    publishRelayIdentity,
     isAlertCount,
     toggleChatSettings,
     toggleReadReceipts,

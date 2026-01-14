@@ -277,6 +277,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       identity,
       recipientId,
       recipientDeviceId: device.deviceId,
+      relayUrls: device.relayUrls,
       payload
     })
     if (signalEnvelope) {

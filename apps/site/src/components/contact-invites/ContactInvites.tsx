@@ -174,6 +174,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
 
     const {
       registerIdentity,
+      publishRelayIdentity,
       isAlertCount,
       toggleChatSettings,
       toggleReadReceipts,
@@ -262,6 +263,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       chatSettings,
       identityReady,
       registerIdentity,
+      publishRelayIdentity,
       refreshInvites,
       closeContact
     })

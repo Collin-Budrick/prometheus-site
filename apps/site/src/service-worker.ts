@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 import { CacheableResponsePlugin, Serwist, StaleWhileRevalidate } from 'serwist'
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -5,7 +6,9 @@ declare const self: ServiceWorkerGlobalScope & {
 }
 
 const CACHE_NAME = 'fragment-prime-shell-v4'
-const SHELL_URL = '/'
+const scopeUrl = new URL(self.registration.scope)
+const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
+const SHELL_URL = new URL('./', scopeUrl).toString()
 const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|txt|mp4|webm)$/i
@@ -22,6 +25,9 @@ const isStaticAssetRequest = (request: Request, url: URL) =>
 const isCacheableResponse = (response?: Response) =>
   response && response.ok && (response.type === 'basic' || response.type === 'default')
 
+const isFragmentStreamPath = (url: URL) =>
+  url.pathname === `${scopePath}fragments/stream` || url.pathname.endsWith(FRAGMENT_STREAM_PATH)
+
 const handleShell = async ({ event, request }: { event: ExtendableEvent; request: Request }) => {
   const cache = await caches.open(CACHE_NAME)
   const cached = await cache.match(request)
@@ -29,7 +35,7 @@ const handleShell = async ({ event, request }: { event: ExtendableEvent; request
   const networkPromise = fetch(request, { cache: 'reload' })
     .then((response) => {
       if (isCacheableResponse(response)) {
-        cache.put(request, response.clone())
+        void cache.put(request, response.clone())
       }
       return response
     })
@@ -86,7 +92,7 @@ const handleStaticAsset = async ({
 
 const broadcastMessage = async (message: Record<string, unknown>) => {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  await Promise.all(clients.map((client) => client.postMessage(message)))
+  await Promise.all(clients.map((client: Client) => client.postMessage(message)))
 }
 
 const flushOutbox = async (reason: string) => {
@@ -100,29 +106,25 @@ const serwist = new Serwist({
   runtimeCaching: [
     {
       matcher: ({ request, url }) =>
-        url.origin === self.location.origin &&
-        !url.pathname.startsWith(FRAGMENT_STREAM_PATH) &&
-        isNavigationRequest(request),
+        url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
       handler: handleShell
     },
     {
       matcher: ({ request, url }) =>
-        url.origin === self.location.origin &&
-        !url.pathname.startsWith(FRAGMENT_STREAM_PATH) &&
-        isStaticAssetRequest(request, url),
+        url.origin === self.location.origin && !isFragmentStreamPath(url) && isStaticAssetRequest(request, url),
       handler: handleStaticAsset
     }
   ]
 })
 
-serwist.addEventListeners()
+void serwist.addEventListeners()
 
-self.addEventListener('sync', (event) => {
+self.addEventListener('sync', (event: SyncEvent) => {
   if (event.tag !== OUTBOX_SYNC_TAG) return
   event.waitUntil(flushOutbox('sync'))
 })
 
-self.addEventListener('push', (event) => {
+self.addEventListener('push', (event: PushEvent) => {
   let data: Record<string, unknown> | undefined
   try {
     data = event.data?.json?.() as Record<string, unknown> | undefined
@@ -143,14 +145,14 @@ self.addEventListener('push', (event) => {
   )
 })
 
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close()
   const data = event.notification.data as { url?: string } | undefined
   const targetUrl = typeof data?.url === 'string' ? data.url : '/'
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      const focused = clients.find((client) => 'focus' in client) as WindowClient | undefined
+      const focused = clients.find((client: Client) => 'focus' in client) as WindowClient | undefined
       if (focused) {
         await focused.focus()
         focused.postMessage({ type: 'p2p:flush-outbox', reason: 'notification' })

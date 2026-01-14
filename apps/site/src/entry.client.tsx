@@ -81,23 +81,26 @@ export default function () {
       }
 
       cleanupPromise.finally(() => {
-        navigator.serviceWorker
-          .register('/service-worker.js', { scope: '/' })
-          .catch((error) => console.error('Service worker registration failed:', error))
+        const { swUrl, scope } = resolveServiceWorkerLocation()
+        navigator.serviceWorker.register(swUrl, { scope }).catch((error) => {
+          console.error('Service worker registration failed:', error)
+        })
       })
     })
   }
 }
 
 async function unregisterLegacyServiceWorker() {
-  const registration = await navigator.serviceWorker.getRegistration('/sw.js')
+  const { legacyUrl } = resolveServiceWorkerLocation()
+  const registration = await navigator.serviceWorker.getRegistration(legacyUrl)
   if (registration) {
     await registration.unregister()
   }
 }
 
 async function unregisterActiveServiceWorker() {
-  const registration = await navigator.serviceWorker.getRegistration('/service-worker.js')
+  const { scopeUrl } = resolveServiceWorkerLocation()
+  const registration = await navigator.serviceWorker.getRegistration(scopeUrl)
   if (registration) {
     await registration.unregister()
   }
@@ -111,4 +114,14 @@ async function clearServiceWorkerCaches() {
       .filter((key) => key.startsWith('fragment-prime-shell'))
       .map((key) => caches.delete(key))
   )
+}
+
+function resolveServiceWorkerLocation() {
+  const base = import.meta.env.BASE_URL || '/'
+  const baseUrl = new URL(base, window.location.href)
+  const swUrl = new URL('service-worker.js', baseUrl).toString()
+  const legacyUrl = new URL('sw.js', baseUrl).toString()
+  const scopeUrl = baseUrl.toString()
+  const scope = baseUrl.pathname.endsWith('/') ? baseUrl.pathname : `${baseUrl.pathname}/`
+  return { swUrl, legacyUrl, scopeUrl, scope }
 }

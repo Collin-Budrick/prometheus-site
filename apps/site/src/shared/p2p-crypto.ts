@@ -251,7 +251,7 @@ export const encodeBinaryEnvelope = (payload: EncryptedBinaryPayload) => {
   return buffer
 }
 
-export const decodeBinaryEnvelope = (buffer: ArrayBuffer): EncryptedBinaryPayload | null => {
+export const decodeBinaryEnvelope = (buffer: ArrayBuffer | SharedArrayBuffer): EncryptedBinaryPayload | null => {
   const bytes = new Uint8Array(buffer)
   if (bytes.length < 6) return null
   const version = bytes[0]

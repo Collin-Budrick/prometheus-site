@@ -42,6 +42,7 @@ type ContactInvitesShellOptions = {
   chatSettings: Signal<ChatSettings>
   identityReady: Signal<boolean>
   registerIdentity: QRL<() => Promise<DeviceIdentity>>
+  publishRelayIdentity: QRL<() => Promise<boolean>>
   refreshInvites: QRL<(resetStatus?: boolean) => Promise<void>>
   closeContact: QRL<() => void>
 }
@@ -63,6 +64,9 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         options.chatSettingsUserId.value = userId
         options.chatSettingsKey.value = buildChatSettingsKey(userId)
         options.chatSettings.value = loadChatSettings(userId)
+        if (userId) {
+          void options.publishRelayIdentity()
+        }
       })()
 
       const handleDocumentClick = (event: MouseEvent) => {

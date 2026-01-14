@@ -123,13 +123,11 @@ const resolveRelayBases = (origin: string, discovered: string[]) => {
     (entry) => !isWakuMultiaddr(entry) && !entry.startsWith(wakuPrefix) && !entry.startsWith(multiaddrPrefix)
   )
   const resolved = all.map((entry) => normalizeBase(entry, origin)).filter(Boolean)
-  const apiFallback = buildApiUrl('', origin)
-  const normalized = resolved.map((base) => {
+  return resolved.map((base) => {
+    const apiFallback = buildApiUrl('', origin)
     if (base === origin && apiFallback !== origin) return apiFallback
     return base
   })
-  if (normalized.length) return normalized
-  return [apiFallback]
 }
 
 const resolveNostrRelays = (discovered: string[]) => {
@@ -441,17 +439,12 @@ const createNostrRelayClient = (
           if (!event || typeof event.id !== 'string' || typeof event.content !== 'string') return
           events.push({ id: event.id, content: event.content, created_at: event.created_at })
         },
-        oneose() {
-          if (resolved) return
-          resolved = true
-          subscription.close()
-          resolve()
-        },
         onclose() {
           if (resolved) return
           resolved = true
           resolve()
-        }
+        },
+        maxWait: 1800
       })
       window.setTimeout(() => {
         if (resolved) return
@@ -553,7 +546,7 @@ const parseWakuEnvelope = (payload: Uint8Array) => {
 }
 
 const createWakuRelayClient = (peers: string[]): RelayClient | null => {
-  if (!peers.length || typeof window === 'undefined') return null
+  if (typeof window === 'undefined') return null
   const baseUrl = 'waku'
 
   const send = async (request: RelaySendRequest) => {

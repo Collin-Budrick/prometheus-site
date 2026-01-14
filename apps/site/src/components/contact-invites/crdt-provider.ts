@@ -25,11 +25,8 @@ const resolveSignaling = () => {
       }
     })
     .filter(Boolean)
-  const fallback = `${origin}/yjs`
-  if (!resolved.includes(fallback)) {
-    resolved.push(fallback)
-  }
-  return resolved.length ? resolved : [fallback]
+  if (resolved.length) return resolved
+  return [`${origin}/yjs`]
 }
 
 export const buildCrdtRoomName = (selfUserId: string, contactId: string) => {

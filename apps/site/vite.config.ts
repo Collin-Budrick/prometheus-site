@@ -65,13 +65,27 @@ type QwikManifest = {
 
 const earlyHintLimit = 5
 const placeholderShellAssets = new Set(['/assets/app.css', '/assets/app.js'])
+const resolvePublicBase = () => {
+  const raw = process.env.VITE_PUBLIC_BASE?.trim()
+  if (!raw) return '/'
+  if (raw === '.' || raw === './') return './'
+  if (!raw.startsWith('/')) return `/${raw}`
+  return raw.endsWith('/') ? raw : `${raw}/`
+}
+const publicBase = resolvePublicBase()
+const withBase = (value: string) => {
+  const trimmed = value.replace(/^\/+/, '')
+  if (publicBase === './') return `./${trimmed}`
+  const base = publicBase.endsWith('/') ? publicBase : `${publicBase}/`
+  return `${base}${trimmed}`
+}
 const pwaPrecacheEntries = [
-  { url: '/', revision: null },
-  { url: '/manifest.webmanifest', revision: null },
-  { url: '/favicon.ico', revision: null },
-  { url: '/favicon.svg', revision: null },
-  { url: '/icons/icon-192.png', revision: null },
-  { url: '/icons/icon-512.png', revision: null }
+  { url: withBase('/'), revision: null },
+  { url: withBase('/manifest.webmanifest'), revision: null },
+  { url: withBase('/favicon.ico'), revision: null },
+  { url: withBase('/favicon.svg'), revision: null },
+  { url: withBase('/icons/icon-192.png'), revision: null },
+  { url: withBase('/icons/icon-512.png'), revision: null }
 ]
 
 const resolveApiBase = () => {
@@ -117,10 +131,10 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   const hints: EarlyHint[] = []
 
   if (manifest.core) {
-    hints.push({ href: `/build/${manifest.core}`, rel: 'modulepreload' })
+    hints.push({ href: withBase(`/build/${manifest.core}`), rel: 'modulepreload' })
   }
   if (manifest.preloader && manifest.preloader !== manifest.core) {
-    hints.push({ href: `/build/${manifest.preloader}`, rel: 'modulepreload', crossorigin: true })
+    hints.push({ href: withBase(`/build/${manifest.preloader}`), rel: 'modulepreload', crossorigin: true })
   }
   return hints
 }
@@ -316,6 +330,7 @@ export default defineConfig(
     const binding = await loadQwikBinding()
 
     return {
+      base: publicBase,
       plugins: [
         sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),
@@ -343,7 +358,7 @@ export default defineConfig(
           globDirectory: 'dist',
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff2,ttf,otf,json,txt}'],
           additionalPrecacheEntries: pwaPrecacheEntries,
-          swUrl: '/service-worker.js'
+          swUrl: withBase('/service-worker.js')
         })
       ],
       optimizeDeps: {

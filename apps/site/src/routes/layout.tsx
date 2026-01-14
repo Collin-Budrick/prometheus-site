@@ -117,6 +117,9 @@ export const onRequest: RequestHandler = ({ headers, method }) => {
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
+  const base = import.meta.env.BASE_URL || '/'
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
   return (
     <>
       <title>{head.title}</title>
@@ -140,9 +143,9 @@ export const RouterHead = component$(() => {
       })}
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
-      <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-      <link rel="icon" href="/favicon.ico" sizes="any" />
-      <link rel="manifest" href="/manifest.webmanifest" />
+      <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
+      <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
+      <link rel="manifest" href={withBase('manifest.webmanifest')} />
       <meta name="theme-color" content={siteBrand.themeColor} />
     </>
   )

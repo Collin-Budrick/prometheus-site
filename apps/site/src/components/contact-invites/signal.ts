@@ -9,6 +9,7 @@ import {
 } from '@privacyresearch/libsignal-protocol-typescript'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import { buildApiUrl } from './api'
+import { fetchRelayPrekeys, publishRelayPrekeys } from './relay-directory'
 import { isRecord } from './utils'
 
 type SignalEnvelope = {
@@ -392,19 +393,33 @@ const buildLocalBundle = async (identity: DeviceIdentity) => {
   }
 }
 
-const fetchRemoteBundles = async (userId: string) => {
+const mergeBundles = (bundles: RemotePrekeyBundle[]) => {
+  const byDevice = new Map<string, RemotePrekeyBundle>()
+  for (const bundle of bundles) {
+    if (!bundle.deviceId) continue
+    byDevice.set(bundle.deviceId, bundle)
+  }
+  return Array.from(byDevice.values())
+}
+
+const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
   if (typeof window === 'undefined') return []
+  const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
+  let apiBundles: RemotePrekeyBundle[] = []
   try {
     const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
       credentials: 'include'
     })
-    if (!response.ok) return []
-    const payload = (await response.json()) as unknown
-    if (!isRecord(payload) || !Array.isArray(payload.bundles)) return []
-    return payload.bundles.map(resolveRemoteBundle).filter((bundle): bundle is RemotePrekeyBundle => Boolean(bundle))
+    if (response.ok) {
+      const payload = (await response.json()) as unknown
+      if (isRecord(payload) && Array.isArray(payload.bundles)) {
+        apiBundles = payload.bundles.map(resolveRemoteBundle).filter((bundle): bundle is RemotePrekeyBundle => Boolean(bundle))
+      }
+    }
   } catch {
-    return []
+    // ignore API failures
   }
+  return mergeBundles([...relayBundles, ...apiBundles])
 }
 
 export const resolveSignalEnvelope = (payload: unknown): SignalEnvelope | null => {
@@ -417,10 +432,14 @@ export const resolveSignalEnvelope = (payload: unknown): SignalEnvelope | null =
   return { kind: 'signal', type, body, senderDeviceId }
 }
 
-export const publishSignalPrekeys = async (identity: DeviceIdentity) => {
+export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: string, relayUrls?: string[]) => {
   if (typeof window === 'undefined') return false
   try {
     const { bundle } = await buildLocalBundle(identity)
+    const relayOk =
+      userId && userId.trim()
+        ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
+        : false
     const response = await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -433,7 +452,7 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity) => {
         oneTimePreKeys: bundle.oneTimePreKeys
       })
     })
-    return response.ok
+    return response.ok || relayOk
   } catch {
     return false
   }
@@ -443,6 +462,7 @@ export const encryptSignalPayload = async (options: {
   identity: DeviceIdentity
   recipientId: string
   recipientDeviceId: string
+  relayUrls?: string[]
   payload: Record<string, unknown>
 }) => {
   if (typeof window === 'undefined') return null
@@ -452,7 +472,7 @@ export const encryptSignalPayload = async (options: {
     const address = buildAddress(recipientId, recipientDeviceId)
     const cipher = new SessionCipher(store, address)
     if (!(await cipher.hasOpenSession())) {
-      const bundles = await fetchRemoteBundles(recipientId)
+      const bundles = await fetchRemoteBundles(recipientId, options.relayUrls)
       const target = bundles.find((entry) => entry.deviceId === recipientDeviceId)
       if (!target) return null
       const builder = new SessionBuilder(store, address)

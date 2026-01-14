@@ -43,6 +43,7 @@ import {
 } from './history'
 import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './crdt-store'
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
+import { fetchRelayDevices } from './relay-directory'
 import { createRelayManager, type RelayMessage } from './relay'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
@@ -188,6 +189,37 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
       return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
     }
+    const buildLocalDeviceEntry = (identity: DeviceIdentity, relayUrls?: string[]): ContactDevice => {
+      const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : undefined
+      return {
+        deviceId: identity.deviceId,
+        publicKey: identity.publicKeyJwk,
+        label: label || undefined,
+        role: identity.role,
+        relayPublicKey: identity.relayPublicKey || undefined,
+        relayUrls: relayUrls?.length ? relayUrls : undefined,
+        updatedAt: new Date().toISOString()
+      }
+    }
+    const mergeDeviceLists = (...lists: ContactDevice[][]) => {
+      const byId = new Map<string, ContactDevice>()
+      for (const list of lists) {
+        for (const device of list) {
+          if (!device?.deviceId) continue
+          const existing = byId.get(device.deviceId)
+          if (!existing) {
+            byId.set(device.deviceId, device)
+            continue
+          }
+          const nextUpdated = device.updatedAt ? Date.parse(device.updatedAt) : Number.NaN
+          const prevUpdated = existing.updatedAt ? Date.parse(existing.updatedAt) : Number.NaN
+          if (Number.isFinite(nextUpdated) && (!Number.isFinite(prevUpdated) || nextUpdated > prevUpdated)) {
+            byId.set(device.deviceId, device)
+          }
+        }
+      }
+      return Array.from(byId.values())
+    }
     const resolveDiscoveredRelays = () => {
       const discovered = new Set<string>()
       for (const device of devices) {
@@ -201,6 +233,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (url) discovered.add(url)
       }
       return Array.from(discovered)
+    }
+    const resolveAdvertisedRelays = () => {
+      const configured = [
+        ...(appConfig.p2pRelayBases ?? []),
+        ...(appConfig.p2pNostrRelays ?? []),
+        ...(appConfig.p2pWakuRelays ?? [])
+      ]
+      return Array.from(new Set([...configured, ...resolveDiscoveredRelays()])).filter(Boolean)
     }
     const buildRelayManagerKey = (identity: DeviceIdentity, remoteDevice: ContactDevice | undefined) => {
       const discovered = resolveDiscoveredRelays().slice().sort().join(',')
@@ -232,20 +272,31 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
         return selfDevices
       }
+      const relayUrls = resolveDiscoveredRelays()
+      const relayPromise = fetchRelayDevices({ userId: selfUserId, relayUrls })
+      let apiDevices: ContactDevice[] = []
       try {
         const response = await fetch(
           buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
           { credentials: 'include' }
         )
-        if (!response.ok) return selfDevices
-        const payload = (await response.json()) as { devices?: ContactDevice[] }
-        const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+        if (response.ok) {
+          const payload = (await response.json()) as { devices?: ContactDevice[] }
+          apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+        }
+      } catch {
+        // ignore API failures
+      }
+      const relayDevices = await relayPromise
+      const identity = options.identityRef.value
+      const localEntry = identity ? buildLocalDeviceEntry(identity, resolveAdvertisedRelays()) : null
+      const next = mergeDeviceLists(apiDevices, relayDevices, localEntry ? [localEntry] : [])
+      if (next.length) {
         selfDevices = next
         selfDevicesFetchedAt = now
         return next
-      } catch {
-        return selfDevices
       }
+      return selfDevices
     }
     const resolveSelfDevice = async (deviceId: string) => {
       let device = selfDevices.find((entry) => entry.deviceId === deviceId)
@@ -393,26 +444,32 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const fetchDevices = async () => {
+      const relayUrls = resolveDiscoveredRelays()
+      const relayPromise = fetchRelayDevices({ userId: contact.id, relayUrls })
+      let apiDevices: ContactDevice[] = []
       try {
         const response = await fetch(
           buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
           { credentials: 'include' }
         )
-        if (!response.ok) return []
-        const payload = (await response.json()) as { devices?: ContactDevice[] }
-        const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-        devices = next
-        debug('fetched devices', { count: next.length, devices: next.map((entry) => entry.deviceId) })
-        if (!options.remoteDeviceRef.value) {
-          const preferred = pickPreferredDevice(next)
-          if (preferred) {
-            options.remoteDeviceRef.value = noSerialize(preferred)
-          }
+        if (response.ok) {
+          const payload = (await response.json()) as { devices?: ContactDevice[] }
+          apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
         }
-        return next
       } catch {
-        return []
+        // ignore API failures
       }
+      const relayDevices = await relayPromise
+      const next = mergeDeviceLists(apiDevices, relayDevices)
+      devices = next
+      debug('fetched devices', { count: next.length, devices: next.map((entry) => entry.deviceId) })
+      if (!options.remoteDeviceRef.value) {
+        const preferred = pickPreferredDevice(next)
+        if (preferred) {
+          options.remoteDeviceRef.value = noSerialize(preferred)
+        }
+      }
+      return next
     }
 
     const resolveContactDevice = async (deviceId: string) => {
@@ -483,6 +540,42 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       conn.on('error', () => {
         channel.readyState = 'closed'
         channel.onerror?.(new Event('error'))
+      })
+      return channel
+    }
+
+    const wrapRtcDataChannel = (rtc: RTCDataChannel): DmDataChannel => {
+      const channel: DmDataChannel = {
+        label: rtc.label || 'dm',
+        readyState: rtc.readyState,
+        send: (data) => rtc.send(data as never),
+        close: () => rtc.close(),
+        onopen: null,
+        onclose: null,
+        onerror: null,
+        onmessage: null
+      }
+      rtc.addEventListener('open', (event) => {
+        channel.readyState = rtc.readyState
+        channel.onopen?.(event)
+      })
+      rtc.addEventListener('message', (event) => {
+        channel.onmessage?.(event as MessageEvent)
+      })
+      rtc.addEventListener('close', (event) => {
+        channel.readyState = rtc.readyState
+        channel.onclose?.(event)
+      })
+      rtc.addEventListener('error', (event) => {
+        channel.readyState = rtc.readyState
+        channel.onerror?.(event as Event)
+      })
+      Object.defineProperty(channel, 'binaryType', {
+        get: () => rtc.binaryType,
+        set: (value: BinaryType) => {
+          rtc.binaryType = value
+        },
+        enumerable: true
       })
       return channel
     }
@@ -909,6 +1002,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             profile?: Record<string, unknown>
             hash?: string
             updatedAt?: string
+            key?: string
+            room?: string
             index?: number
             total?: number
             data?: string
@@ -1360,6 +1455,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   identity,
                   recipientId: senderId,
                   recipientDeviceId: device.deviceId,
+                  relayUrls: device.relayUrls,
                   payload: { kind: 'receipt', id: messageId, status }
                 })
                 if (!receipt) return
@@ -1373,6 +1469,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                   identity,
                   recipientId: senderId,
                   recipientDeviceId: device.deviceId,
+                  relayUrls: device.relayUrls,
                   payload: { kind: 'history-response', messages }
                 })
                 if (!response) return
@@ -1922,6 +2019,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         identity,
         recipientId,
         recipientDeviceId: device.deviceId,
+        relayUrls: device.relayUrls,
         payload
       })
       if (signalEnvelope) {
@@ -2267,7 +2365,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('ice gathering state', connection.iceGatheringState)
       }
       connection.ondatachannel = (event) => {
-        setupChannel(event.channel)
+        setupChannel(wrapRtcDataChannel(event.channel))
       }
     }
 
@@ -2503,8 +2601,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ensurePeerConnection(identity, remoteDevice)
       if (!connection) return
       debug('starting caller', { remoteDeviceId: remoteDevice.deviceId })
-      channel = connection.createDataChannel('dm', { ordered: true })
-      setupChannel(channel)
+      const nextChannel = wrapRtcDataChannel(connection.createDataChannel('dm', { ordered: true }))
+      channel = nextChannel
+      setupChannel(nextChannel)
       const sessionId = createMessageId()
       const salt = randomBase64(16)
       const key = await deriveSessionKey(identity.privateKey, remoteDevice.publicKey, decodeBase64(salt), sessionId)

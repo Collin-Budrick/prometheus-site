@@ -4,6 +4,27 @@ import { isRecord } from './utils'
 const isLocalHost = (hostname: string) =>
   hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '::1'
 
+const userIdCacheKey = 'chat:p2p:userId'
+
+const readCachedUserId = () => {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const raw = window.localStorage.getItem(userIdCacheKey)
+    return raw && raw.trim() ? raw : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const writeCachedUserId = (userId?: string) => {
+  if (typeof window === 'undefined' || !userId) return
+  try {
+    window.localStorage.setItem(userIdCacheKey, userId)
+  } catch {
+    // ignore storage failures
+  }
+}
+
 const resolveClientApiBase = (origin: string) => {
   const base = appConfig.apiBase
   if (!base) return `${origin}/api`
@@ -44,13 +65,14 @@ export const buildWsUrl = (path: string, origin: string) => {
 
 export const resolveChatSettingsUserId = async () => {
   if (typeof window === 'undefined') return undefined
+  const cached = readCachedUserId()
   try {
     const response = await fetch(buildApiUrl('/auth/session', window.location.origin), {
       credentials: 'include'
     })
-    if (!response.ok) return undefined
+    if (!response.ok) return cached
     const payload: unknown = await response.json()
-    if (!isRecord(payload)) return undefined
+    if (!isRecord(payload)) return cached
     const userRecord = isRecord(payload.user) ? payload.user : {}
     const sessionRecord = isRecord(payload.session) ? payload.session : {}
     const id =
@@ -59,8 +81,9 @@ export const resolveChatSettingsUserId = async () => {
         : typeof sessionRecord.userId === 'string'
           ? sessionRecord.userId
           : undefined
+    if (id) writeCachedUserId(id)
     return id
   } catch {
-    return undefined
+    return cached
   }
 }
