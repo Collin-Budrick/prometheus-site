@@ -12,6 +12,7 @@ import {
 import { buildApiUrl } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
+import { loadInvitesCache, saveInvitesCache } from './invites-cache'
 import { registerPushSubscription } from './push'
 import { publishRelayDevice, buildRelayDirectoryLabels } from './relay-directory'
 import { publishSignalPrekeys } from './signal'
@@ -208,26 +209,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     const copyValue = options.fragmentCopy.value
     const resolveLocal = (value: string) => copyValue?.[value] ?? value
 
-    options.invitesState.value = 'loading'
-    if (resetStatus) {
-      options.statusMessage.value = null
-      options.statusTone.value = 'neutral'
-    }
-    options.searchError.value = null
-
-    try {
-      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        options.invitesState.value = 'error'
-        options.statusTone.value = 'error'
-        options.statusMessage.value = resolveLocal('Unable to load invites.')
-        return
-      }
-
-      const payload = (await response.json()) as ContactInvitesPayload
+    const applyInvitesPayload = (payload: ContactInvitesPayload, offline = false) => {
       options.incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
       options.outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
       options.contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
@@ -288,7 +270,46 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         }
       }
       options.invitesState.value = 'idle'
+      if (offline) {
+        options.realtimeState.value = options.realtimeState.value === 'error' ? 'error' : 'offline'
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Offline - showing cached contacts.')
+      }
+    }
+
+    options.invitesState.value = 'loading'
+    if (resetStatus) {
+      options.statusMessage.value = null
+      options.statusTone.value = 'neutral'
+    }
+    options.searchError.value = null
+
+    try {
+      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const cached = loadInvitesCache(options.chatSettingsUserId.value)
+        if (cached) {
+          applyInvitesPayload(cached, true)
+          return
+        }
+        options.invitesState.value = 'error'
+        options.statusTone.value = 'error'
+        options.statusMessage.value = resolveLocal('Unable to load invites.')
+        return
+      }
+
+      const payload = (await response.json()) as ContactInvitesPayload
+      applyInvitesPayload(payload)
+      saveInvitesCache(options.chatSettingsUserId.value, payload)
     } catch (error) {
+      const cached = loadInvitesCache(options.chatSettingsUserId.value)
+      if (cached) {
+        applyInvitesPayload(cached, true)
+        return
+      }
       options.invitesState.value = 'error'
       options.statusTone.value = 'error'
       options.statusMessage.value = error instanceof Error ? error.message : resolveLocal('Unable to load invites.')

@@ -1490,7 +1490,17 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const activeContact = options.activeContact.value
       const session = options.sessionRef.value
       const activeChannel = options.channelRef.value ?? channel
-      if (!identity || !activeContact || !session || !activeChannel || activeChannel.readyState !== 'open') return
+      if (!identity || !activeContact) return
+      const channelReady = Boolean(session && activeChannel && activeChannel.readyState === 'open')
+      let relayDevice = options.remoteDeviceRef.value
+      if (!channelReady && !relayDevice) {
+        await fetchDevices()
+        relayDevice = options.remoteDeviceRef.value ?? pickPreferredDevice(devices) ?? undefined
+        if (relayDevice) {
+          options.remoteDeviceRef.value = noSerialize(relayDevice)
+        }
+      }
+      if (!channelReady && !relayDevice) return
       flushingOutbox = true
       try {
         const queued = await loadOutbox(activeContact.id, identity)
@@ -1505,22 +1515,37 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             continue
           }
           let sent = false
+          let sentVia: 'channel' | 'relay' | undefined
           try {
             if (item.kind === 'text') {
-              const payload = await encryptPayload(
-                session.key,
-                JSON.stringify({
-                  kind: 'message',
-                  id: item.id,
-                  text: item.text ?? '',
-                  createdAt: item.createdAt
-                }),
-                session.sessionId,
-                session.salt,
-                identity.deviceId
-              )
-              activeChannel.send(JSON.stringify({ type: 'message', payload }))
-              sent = true
+              if (channelReady && session && activeChannel) {
+                const payload = await encryptPayload(
+                  session.key,
+                  JSON.stringify({
+                    kind: 'message',
+                    id: item.id,
+                    text: item.text ?? '',
+                    createdAt: item.createdAt
+                  }),
+                  session.sessionId,
+                  session.salt,
+                  identity.deviceId
+                )
+                activeChannel.send(JSON.stringify({ type: 'message', payload }))
+                sent = true
+                sentVia = 'channel'
+              } else if (relayDevice) {
+                const encrypted = await encryptRelayPayloadForDevice(
+                  { kind: 'message', id: item.id, text: item.text ?? '', createdAt: item.createdAt },
+                  activeContact.id,
+                  relayDevice
+                )
+                if (encrypted) {
+                  const delivered = await sendRelayPayload(encrypted.payload, item.id, encrypted.sessionId)
+                  sent = delivered > 0
+                  sentVia = sent ? 'relay' : undefined
+                }
+              }
             } else if (item.kind === 'image') {
               const payloadBase64 = item.payloadBase64 ?? ''
               if (!payloadBase64) {
@@ -1528,47 +1553,76 @@ export const useDmConnection = (options: DmConnectionOptions) => {
                 continue
               }
               const payloadBytes = decodeBase64Safe(payloadBase64)
-              const channelChunkSize = 32_000
-              const total = Math.max(1, Math.ceil(payloadBytes.length / channelChunkSize))
-              const metaPayload = {
-                kind: 'image-meta',
-                id: item.id,
-                createdAt: item.createdAt,
-                name: item.name,
-                mime: item.mime,
-                size: item.size,
-                width: item.width,
-                height: item.height,
-                total,
-                encoding: item.encoding === 'zstd' ? 'zstd' : undefined
-              }
-              const metaEncrypted = await encryptPayload(
-                session.key,
-                JSON.stringify(metaPayload),
-                session.sessionId,
-                session.salt,
-                identity.deviceId
-              )
-              activeChannel.send(JSON.stringify({ type: 'message', payload: metaEncrypted }))
-              for (let index = 0; index < total; index += 1) {
-                const start = index * channelChunkSize
-                const end = Math.min(payloadBytes.length, start + channelChunkSize)
-                const data = payloadBytes.slice(start, end)
-                const envelope = encodeBinaryEnvelope(
-                  await encryptPayloadBinary(
-                    session.key,
-                    encodeBinaryMessage({ kind: 'image-chunk-bin', id: item.id, index, total }, data)
-                  )
+              if (channelReady && session && activeChannel) {
+                const channelChunkSize = 32_000
+                const total = Math.max(1, Math.ceil(payloadBytes.length / channelChunkSize))
+                const metaPayload = {
+                  kind: 'image-meta',
+                  id: item.id,
+                  createdAt: item.createdAt,
+                  name: item.name,
+                  mime: item.mime,
+                  size: item.size,
+                  width: item.width,
+                  height: item.height,
+                  total,
+                  encoding: item.encoding === 'zstd' ? 'zstd' : undefined
+                }
+                const metaEncrypted = await encryptPayload(
+                  session.key,
+                  JSON.stringify(metaPayload),
+                  session.sessionId,
+                  session.salt,
+                  identity.deviceId
                 )
-                activeChannel.send(envelope)
+                activeChannel.send(JSON.stringify({ type: 'message', payload: metaEncrypted }))
+                for (let index = 0; index < total; index += 1) {
+                  const start = index * channelChunkSize
+                  const end = Math.min(payloadBytes.length, start + channelChunkSize)
+                  const data = payloadBytes.slice(start, end)
+                  const envelope = encodeBinaryEnvelope(
+                    await encryptPayloadBinary(
+                      session.key,
+                      encodeBinaryMessage({ kind: 'image-chunk-bin', id: item.id, index, total }, data)
+                    )
+                  )
+                  activeChannel.send(envelope)
+                }
+                sent = true
+                sentVia = 'channel'
+              } else if (relayDevice && payloadBytes.length <= selfSyncInlineLimitBytes) {
+                const encrypted = await encryptRelayPayloadForDevice(
+                  {
+                    kind: 'image-inline',
+                    id: item.id,
+                    createdAt: item.createdAt,
+                    payloadBase64,
+                    encoding: item.encoding === 'zstd' ? 'zstd' : undefined,
+                    name: item.name,
+                    mime: item.mime,
+                    size: item.size,
+                    width: item.width,
+                    height: item.height
+                  },
+                  activeContact.id,
+                  relayDevice
+                )
+                if (encrypted) {
+                  const delivered = await sendRelayPayload(encrypted.payload, item.id, encrypted.sessionId)
+                  sent = delivered > 0
+                  sentVia = sent ? 'relay' : undefined
+                }
+              } else {
+                remaining.push(item)
+                continue
               }
-              sent = true
             } else {
               remaining.push(item)
               continue
             }
           } catch {
             sent = false
+            sentVia = undefined
           }
           if (sent) {
             updated = true
@@ -1576,10 +1630,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               ...item,
               sentAt: new Date(now).toISOString(),
               attempts: (item.attempts ?? 0) + 1,
-              sentVia: 'channel'
+              sentVia: sentVia ?? 'channel'
             })
             options.dmMessages.value = options.dmMessages.value.map((message) =>
-              message.id === item.id ? { ...message, status: 'sent' } : message
+              message.id === item.id ? { ...message, status: sentVia === 'relay' ? 'queued' : 'sent' } : message
             )
           } else if (!remaining.includes(item)) {
             remaining.push(item)
@@ -1704,6 +1758,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
     }
+
+    const handleOnline = () => {
+      void flushOutbox()
+      void pullMailbox()
+    }
+
+    window.addEventListener('online', handleOnline)
 
     const decodeBinaryMessage = (bytes: Uint8Array) => {
       if (bytes.length < 2) return null
@@ -2675,6 +2736,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     ctx.cleanup(() => {
       active = false
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
+      window.removeEventListener('online', handleOnline)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
       }

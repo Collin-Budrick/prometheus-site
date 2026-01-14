@@ -5,7 +5,8 @@ declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
-const CACHE_NAME = 'fragment-prime-shell-v4'
+const CACHE_NAME = 'fragment-prime-shell-v5'
+const DATA_CACHE_NAME = 'fragment-prime-data-v1'
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
 const SHELL_URL = new URL('./', scopeUrl).toString()
@@ -27,6 +28,32 @@ const isCacheableResponse = (response?: Response) =>
 
 const isFragmentStreamPath = (url: URL) =>
   url.pathname === `${scopePath}fragments/stream` || url.pathname.endsWith(FRAGMENT_STREAM_PATH)
+
+const isJsonRequest = (request: Request, url: URL) => {
+  if (request.method !== 'GET') return false
+  if (url.origin !== self.location.origin) return false
+  if (isFragmentStreamPath(url)) return false
+  const accept = request.headers.get('accept') ?? ''
+  return accept.includes('application/json') || url.pathname.endsWith('.json')
+}
+
+const handleJson = async ({ event, request }: { event: ExtendableEvent; request: Request }) => {
+  const cache = await caches.open(DATA_CACHE_NAME)
+  try {
+    const response = await fetch(request)
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') ?? ''
+      if (contentType.includes('application/json')) {
+        event.waitUntil(cache.put(request, response.clone()))
+      }
+    }
+    return response
+  } catch {
+    const cached = await cache.match(request)
+    if (cached) return cached
+    return Response.error()
+  }
+}
 
 const handleShell = async ({ event, request }: { event: ExtendableEvent; request: Request }) => {
   const cache = await caches.open(CACHE_NAME)
@@ -108,6 +135,10 @@ const serwist = new Serwist({
       matcher: ({ request, url }) =>
         url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
       handler: handleShell
+    },
+    {
+      matcher: ({ request, url }) => isJsonRequest(request, url),
+      handler: handleJson
     },
     {
       matcher: ({ request, url }) =>
