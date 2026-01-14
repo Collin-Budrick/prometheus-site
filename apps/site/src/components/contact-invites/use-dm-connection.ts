@@ -136,6 +136,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let wsReconnectTimer: number | null = null
     let wsReconnectAttempt = 0
     let wsReconnectPending = false
+    let wsHeartbeatTimer: number | null = null
+    let wsPongTimer: number | null = null
+    let deviceRetryTimer: number | null = null
+    let deviceRetryAttempt = 0
     let iceRestarting = false
     let iceRestartAttempts = 0
     let isPolite = false
@@ -149,6 +153,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
     let selfRelayManagerKey = ''
     const outboxResendIntervalMs = 15_000
+    const wsHeartbeatIntervalMs = 12_000
+    const wsHeartbeatTimeoutMs = 6_000
+    const offerTimeoutMs = 15_000
     const resolvedIceServers =
       appConfig.p2pIceServers && appConfig.p2pIceServers.length
         ? appConfig.p2pIceServers
@@ -185,6 +192,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const pendingSignals: Array<Record<string, unknown>> = []
     const pendingCandidates: RTCIceCandidateInit[] = []
     const handledSignals = new Set<string>()
+    const offerTimeouts = new Map<string, number>()
     const debug = (...args: unknown[]) => {
       if (typeof window === 'undefined') return
       if (window.localStorage?.getItem('p2pDebug') !== '1') return
@@ -393,13 +401,26 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         window.clearTimeout(wsReconnectTimer)
         wsReconnectTimer = null
       }
+      if (wsHeartbeatTimer !== null) {
+        window.clearInterval(wsHeartbeatTimer)
+        wsHeartbeatTimer = null
+      }
+      if (wsPongTimer !== null) {
+        window.clearTimeout(wsPongTimer)
+        wsPongTimer = null
+      }
+      if (deviceRetryTimer !== null) {
+        window.clearTimeout(deviceRetryTimer)
+        deviceRetryTimer = null
+      }
+      clearOfferTimeouts()
       reconnecting = false
       reconnectAttempt = 0
       wsReconnectAttempt = 0
       wsReconnectPending = false
       iceRestarting = false
       iceRestartAttempts = 0
-      pendingSignals.splice(0, pendingSignals.length)
+      clearPendingSignals()
       if (channel) {
         channel.close?.()
         channel = null
@@ -570,7 +591,46 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return device ?? null
     }
 
-    const sendSignal = (signal: Record<string, unknown>) => {
+    const clearPendingSignals = () => {
+      pendingSignals.splice(0, pendingSignals.length)
+    }
+
+    const clearOfferTimeout = (sessionId?: string) => {
+      if (!sessionId) return
+      const timer = offerTimeouts.get(sessionId)
+      if (timer !== undefined) {
+        window.clearTimeout(timer)
+        offerTimeouts.delete(sessionId)
+      }
+    }
+
+    const clearOfferTimeouts = () => {
+      for (const timer of offerTimeouts.values()) {
+        window.clearTimeout(timer)
+      }
+      offerTimeouts.clear()
+    }
+
+    const startOfferTimeout = (sessionId: string) => {
+      clearOfferTimeout(sessionId)
+      const timer = window.setTimeout(() => {
+        offerTimeouts.delete(sessionId)
+        if (!active) return
+        const currentSessionId = options.sessionRef.value?.sessionId
+        if (currentSessionId && currentSessionId !== sessionId) return
+        const activeChannel = options.channelRef.value ?? channel
+        if (activeChannel?.readyState === 'open') return
+        void (async () => {
+          const restarted = await attemptIceRestart('offer-timeout')
+          if (!restarted) {
+            await scheduleReconnect('offer-timeout')
+          }
+        })()
+      }, offerTimeoutMs)
+      offerTimeouts.set(sessionId, timer)
+    }
+
+    const sendSignal = async (signal: Record<string, unknown>) => {
       const payload = isRecord(signal.payload) ? signal.payload : null
       const payloadType = payload?.type
       const wsOpen = ws?.readyState === WebSocket.OPEN
@@ -578,6 +638,35 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('signal via ws', { type: payloadType })
         ws?.send(JSON.stringify(signal))
         return
+      }
+      const shouldRelay =
+        payloadType === 'offer' || payloadType === 'answer' || payloadType === 'candidate'
+      if (shouldRelay) {
+        const identity = options.identityRef.value
+        const remoteDevice = options.remoteDeviceRef.value
+        if (identity && remoteDevice) {
+          const relaySignal = {
+            ...signal,
+            fromDeviceId: identity.deviceId,
+            toDeviceId: remoteDevice.deviceId
+          }
+          const envelope = await encryptSignalPayload({
+            identity,
+            recipientId: contact.id,
+            recipientDeviceId: remoteDevice.deviceId,
+            relayUrls: remoteDevice.relayUrls,
+            payload: { kind: 'signal', signal: relaySignal }
+          })
+          if (envelope) {
+            const messageId = `signal:${createMessageId()}`
+            const delivered = await sendRelayPayload(envelope, messageId, signal.sessionId as string | undefined)
+            if (delivered > 0) {
+              clearPendingSignals()
+              debug('signal via relay', { type: payloadType })
+              return
+            }
+          }
+        }
       }
       debug('signal queued', { type: payloadType })
       pendingSignals.push(signal)
@@ -1536,6 +1625,16 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           envelope
         })
         if (!plaintext) return false
+        let parsed: unknown = null
+        try {
+          parsed = JSON.parse(plaintext)
+        } catch {
+          parsed = null
+        }
+        if (isRecord(parsed) && parsed.kind === 'signal' && isRecord(parsed.signal)) {
+          await handleSignal(parsed.signal)
+          return true
+        }
         const allowRemoteMetadata = context.source === 'contact'
         return await handlePlaintextPayload(plaintext, context, device.deviceId, {
           sendReceipt: allowRemoteMetadata
@@ -1867,6 +1966,29 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+
+    const handleVisibilityResume = () => {
+      if (!active) return
+      if (options.dmStatus.value !== 'offline' && options.dmStatus.value !== 'connecting') return
+      const identity = options.identityRef.value
+      if (!identity) return
+      connectWs(identity)
+      void pullMailbox()
+      void scheduleReconnect('visibility-resume')
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleVisibilityResume()
+      }
+    }
+
+    const handleWindowFocus = () => {
+      handleVisibilityResume()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleWindowFocus)
 
     const decodeBinaryMessage = (bytes: Uint8Array) => {
       if (bytes.length < 2) return null
@@ -2375,6 +2497,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         reconnectAttempt = 0
         debug('data channel open', next.label)
         options.dmStatus.value = 'connected'
+        clearOfferTimeouts()
         const identity = options.identityRef.value
         const remoteDevice = options.remoteDeviceRef.value
         if (identity && remoteDevice && opts?.initiator) {
@@ -2505,7 +2628,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           sessionId: session?.sessionId,
           payload
         }
-        sendSignal(signal)
+        void sendSignal(signal)
       }
       connection.onconnectionstatechange = applyConnectionState
       connection.oniceconnectionstatechange = () => {
@@ -2596,7 +2719,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const answer = await connection.createAnswer()
         await connection.setLocalDescription(answer)
         await waitForIceGatheringComplete(connection)
-        sendSignal({
+        void sendSignal({
           type: 'signal',
           to: contact.id,
           toDeviceId: remoteDevice.deviceId,
@@ -2613,6 +2736,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         try {
           await connection.setRemoteDescription({ type: 'answer', sdp: payload.sdp })
           await flushCandidates()
+          clearOfferTimeout(sessionId ?? currentSessionId)
         } catch {
           // ignore duplicate or stale answers
         }
@@ -2654,7 +2778,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         const offer = await connection.createOffer({ iceRestart: true })
         await connection.setLocalDescription(offer)
         await waitForIceGatheringComplete(connection)
-        sendSignal({
+        void sendSignal({
           type: 'signal',
           to: contact.id,
           toDeviceId: remoteDevice.deviceId,
@@ -2666,6 +2790,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             iceRestart: true
           }
         })
+        startOfferTimeout(session.sessionId)
         return true
       } catch {
         return false
@@ -2685,8 +2810,43 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
       if (!wsUrl) return
       ws?.close()
+      if (wsHeartbeatTimer !== null) {
+        window.clearInterval(wsHeartbeatTimer)
+        wsHeartbeatTimer = null
+      }
+      if (wsPongTimer !== null) {
+        window.clearTimeout(wsPongTimer)
+        wsPongTimer = null
+      }
       wsHealthy = false
       ws = new WebSocket(wsUrl)
+      const startHeartbeat = () => {
+        if (wsHeartbeatTimer !== null) {
+          window.clearInterval(wsHeartbeatTimer)
+        }
+        wsHeartbeatTimer = window.setInterval(() => {
+          if (ws?.readyState !== WebSocket.OPEN) return
+          ws.send(JSON.stringify({ type: 'ping' }))
+          if (wsPongTimer !== null) {
+            window.clearTimeout(wsPongTimer)
+          }
+          wsPongTimer = window.setTimeout(() => {
+            wsPongTimer = null
+            wsHealthy = false
+            scheduleWsReconnect(identity, 'ws-heartbeat-timeout')
+          }, wsHeartbeatTimeoutMs)
+        }, wsHeartbeatIntervalMs)
+      }
+      const stopHeartbeat = () => {
+        if (wsHeartbeatTimer !== null) {
+          window.clearInterval(wsHeartbeatTimer)
+          wsHeartbeatTimer = null
+        }
+        if (wsPongTimer !== null) {
+          window.clearTimeout(wsPongTimer)
+          wsPongTimer = null
+        }
+      }
       ws.addEventListener('open', () => {
         debug('ws open')
         wsHealthy = true
@@ -2702,6 +2862,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           if (!signal) break
           ws?.send(JSON.stringify(signal))
         }
+        startHeartbeat()
         void pullMailbox()
       })
       ws.addEventListener('message', async (event) => {
@@ -2714,6 +2875,31 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (!isRecord(payload)) return
         const payloadType = payload.type
         const fromId = typeof payload.from === 'string' ? payload.from : ''
+        if (payloadType === 'pong') {
+          if (wsPongTimer !== null) {
+            window.clearTimeout(wsPongTimer)
+            wsPongTimer = null
+          }
+          return
+        }
+        if (payloadType === 'ping') {
+          ws?.send(JSON.stringify({ type: 'pong' }))
+          return
+        }
+        if (payloadType === 'error') {
+          const message = typeof payload.error === 'string' ? payload.error : ''
+          if (message === 'Unknown device') {
+            try {
+              const nextIdentity = await options.registerIdentity()
+              if (!active) return
+              options.identityRef.value = noSerialize(nextIdentity)
+              connectWs(nextIdentity)
+            } catch {
+              // ignore registration failures
+            }
+            return
+          }
+        }
         if (payloadType === 'p2p:signal' && fromId === contact.id) {
           try {
             await handleSignal(payload)
@@ -2735,6 +2921,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ws.addEventListener('close', () => {
         debug('ws close')
         wsHealthy = false
+        stopHeartbeat()
         if (!active) return
         const activeChannel = options.channelRef.value ?? channel
         const channelOpen = activeChannel?.readyState === 'open'
@@ -2756,6 +2943,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ws.addEventListener('error', () => {
         debug('ws error')
         wsHealthy = false
+        stopHeartbeat()
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           options.dmStatus.value = 'offline'
         } else {
@@ -2789,13 +2977,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         await connection.setLocalDescription(offer)
         debug('created offer')
         await waitForIceGatheringComplete(connection)
-        sendSignal({
+        void sendSignal({
           type: 'signal',
           to: contact.id,
           toDeviceId: remoteDevice.deviceId,
           sessionId,
           payload: { type: 'offer', sdp: connection.localDescription?.sdp ?? offer.sdp, salt }
         })
+        startOfferTimeout(sessionId)
       } finally {
         makingOffer = false
       }
@@ -2814,27 +3003,63 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           options.dmMessages.value = cached
         }
         void ensureCrdtReplication(identity)
+        const attemptBootstrap = async (targets: ContactDevice[]) => {
+          const target = pickPreferredDevice(targets)
+          if (!target) {
+            options.dmStatus.value = 'offline'
+            return false
+          }
+          options.remoteDeviceRef.value = noSerialize(target)
+          connectWs(identity)
+          if (peerJsEnabled) {
+            void ensurePeerJsReady(identity)
+          }
+          void pullMailbox()
+          await requestHistory(identity)
+          const shouldInitiate = identity.deviceId.localeCompare(target.deviceId) < 0
+          if (shouldInitiate) {
+            await startCaller(identity, target)
+          }
+          return true
+        }
+
+        const scheduleDeviceRetry = () => {
+          if (deviceRetryTimer !== null) return
+          deviceRetryAttempt += 1
+          const baseDelay = 1500
+          const maxDelay = 30_000
+          const delay = Math.min(baseDelay * 2 ** (deviceRetryAttempt - 1), maxDelay)
+          const jitter = Math.random() * delay * 0.2
+          const wait = delay + jitter
+          deviceRetryTimer = window.setTimeout(async () => {
+            deviceRetryTimer = null
+            if (!active) return
+            const nextDevices = await fetchDevices()
+            if (!active) return
+            if (nextDevices.length) {
+              deviceRetryAttempt = 0
+              const bootstrapped = await attemptBootstrap(nextDevices)
+              if (!bootstrapped) {
+                scheduleDeviceRetry()
+              }
+              return
+            }
+            options.dmStatus.value = 'offline'
+            scheduleDeviceRetry()
+          }, wait)
+          debug('device retry scheduled', { attempt: deviceRetryAttempt, wait })
+        }
+
         const nextDevices = await fetchDevices()
         if (!active) return
         if (!nextDevices.length) {
           options.dmStatus.value = 'offline'
+          scheduleDeviceRetry()
           return
         }
-        const target = pickPreferredDevice(nextDevices)
-        if (!target) {
-          options.dmStatus.value = 'offline'
-          return
-        }
-        options.remoteDeviceRef.value = noSerialize(target)
-        connectWs(identity)
-        if (peerJsEnabled) {
-          void ensurePeerJsReady(identity)
-        }
-        void pullMailbox()
-        await requestHistory(identity)
-        const shouldInitiate = identity.deviceId.localeCompare(target.deviceId) < 0
-        if (shouldInitiate) {
-          await startCaller(identity, target)
+        const bootstrapped = await attemptBootstrap(nextDevices)
+        if (!bootstrapped) {
+          scheduleDeviceRetry()
         }
       } catch (error) {
         options.dmStatus.value = 'error'
@@ -2847,8 +3072,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleWindowFocus)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+      }
+      if (deviceRetryTimer !== null) {
+        window.clearTimeout(deviceRetryTimer)
+        deviceRetryTimer = null
       }
       const identity = options.identityRef.value
       const selfUserId = options.selfUserId.value
