@@ -161,8 +161,40 @@ const clearRuntimeCaches = async () => {
   await Promise.all(targets.map((key) => caches.delete(key)))
 }
 
+const resolveOutboxTarget = async () => {
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  if (!clients.length) return { clients: [], target: undefined }
+  const sorted = clients.slice().sort((left, right) => left.id.localeCompare(right.id))
+  const target =
+    sorted.find((client) => (client as WindowClient).focused) ??
+    sorted.find((client) => (client as WindowClient).visibilityState === 'visible') ??
+    sorted[0]
+  return { clients: sorted, target }
+}
+
 const flushOutbox = async (reason: string) => {
-  await broadcastMessage({ type: 'p2p:flush-outbox', reason })
+  const requestId = `outbox:${Date.now()}:${Math.random().toString(16).slice(2)}`
+  const { clients, target } = await resolveOutboxTarget()
+  if (target) {
+    target.postMessage({ type: 'p2p:flush-outbox', reason, requestId })
+    await broadcastMessage({
+      type: 'p2p:outbox:status',
+      status: 'dispatched',
+      reason,
+      requestId,
+      targetClientId: target.id,
+      clientCount: clients.length
+    })
+    return
+  }
+  await broadcastMessage({
+    type: 'p2p:outbox:status',
+    status: 'no-clients',
+    reason,
+    requestId,
+    targetClientId: null,
+    clientCount: 0
+  })
 }
 
 const flushStoreCartQueue = async (reason: string) => {
