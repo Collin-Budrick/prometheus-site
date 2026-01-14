@@ -88,6 +88,18 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           identity = await importStoredIdentity(stored)
         }
       }
+      await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          deviceId: identity.deviceId,
+          identityKey: identity.publicKeyJwk,
+          signedPreKey: identity.publicKeyJwk,
+          signature: identity.deviceId,
+          oneTimePreKeys: []
+        })
+      })
     } catch {
       // ignore registration failures; retry later
     }
@@ -129,10 +141,13 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   const handleArchiveMessages = $(() => {
     const contact = options.activeContact.value
     if (!contact) return
+    const identity = options.identityRef.value
     options.dmMessages.value = []
     options.dmError.value = null
     options.historySuppressed.value = true
-    archiveHistory(contact.id)
+    if (identity) {
+      void archiveHistory(contact.id, identity)
+    }
     options.chatSettingsOpen.value = false
   })
 

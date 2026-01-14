@@ -14,6 +14,7 @@ import { enqueueOutboxItem, markOutboxItemSent } from './outbox'
 import { persistHistory } from './history'
 import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
+import { buildApiUrl } from './api'
 import type { ActiveContact, ContactDevice, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -126,6 +127,11 @@ export const useDmComposer = (options: DmComposerOptions) => {
   const relayInlineLimitBytes = 240_000
   let relayManager: ReturnType<typeof createRelayManager> | null = null
   let relayManagerKey = ''
+  let selfDevices: ContactDevice[] = []
+  let selfDevicesFetchedAt = 0
+  let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
+  let selfRelayManagerKey = ''
+  const selfDevicesCacheMs = 30_000
 
   const getRelayManager = () => {
     if (typeof window === 'undefined') return null
@@ -148,6 +154,56 @@ export const useDmComposer = (options: DmComposerOptions) => {
     return relayManager
   }
 
+  const fetchSelfDevices = async () => {
+    const selfUserId = options.selfUserId.value
+    if (!selfUserId || typeof window === 'undefined') return []
+    const now = Date.now()
+    if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
+      return selfDevices
+    }
+    try {
+      const response = await fetch(
+        buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
+        { credentials: 'include' }
+      )
+      if (!response.ok) return selfDevices
+      const payload = (await response.json()) as { devices?: ContactDevice[] }
+      const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+      selfDevices = next
+      selfDevicesFetchedAt = now
+      return next
+    } catch {
+      return selfDevices
+    }
+  }
+
+  const getSelfRelayManager = async () => {
+    if (typeof window === 'undefined') return null
+    const identity = options.identityRef.value
+    if (!identity) return null
+    const devices = await fetchSelfDevices()
+    const discovered = Array.from(
+      new Set(
+        devices
+          .flatMap((device) => device.relayUrls ?? [])
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      )
+    )
+    const nextKey = `${identity.relayPublicKey ?? ''}|${discovered.slice().sort().join(',')}`
+    if (!selfRelayManager || nextKey !== selfRelayManagerKey) {
+      selfRelayManagerKey = nextKey
+      selfRelayManager = createRelayManager(window.location.origin, {
+        relayIdentity:
+          identity.relayPublicKey && identity.relaySecretKey
+            ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+            : undefined,
+        discoveredRelays: discovered
+      })
+    }
+    return selfRelayManager
+  }
+
   const sendRelayPayload = async (payload: unknown, messageId: string, sessionId?: string) => {
     const contact = options.activeContact.value
     if (!contact) return 0
@@ -164,6 +220,48 @@ export const useDmComposer = (options: DmComposerOptions) => {
       recipientRelayKey: options.remoteDeviceRef.value?.relayPublicKey
     })
     return result?.delivered ?? 0
+  }
+
+  const sendSelfSyncPayload = async (
+    contactId: string,
+    payload: Record<string, unknown>,
+    messageId: string,
+    author: 'self' | 'contact'
+  ) => {
+    const identity = options.identityRef.value
+    const selfUserId = options.selfUserId.value
+    if (!identity || !selfUserId || !contactId) return
+    const devices = await fetchSelfDevices()
+    const targets = devices.filter((device) => device.deviceId !== identity.deviceId)
+    if (!targets.length) return
+    const manager = await getSelfRelayManager()
+    if (!manager || !manager.clients.length) return
+    await Promise.all(
+      targets.map(async (device) => {
+        try {
+          const relaySession = await createRelaySession(identity, device)
+          const encrypted = await encryptPayload(
+            relaySession.key,
+            JSON.stringify(payload),
+            relaySession.sessionId,
+            relaySession.salt,
+            identity.deviceId
+          )
+          await manager.send({
+            recipientId: selfUserId,
+            messageId: `sync:${messageId}:${device.deviceId}`,
+            sessionId: relaySession.sessionId,
+            payload: { kind: 'sync', contactId, author, payload: encrypted },
+            deviceIds: [device.deviceId],
+            senderId: selfUserId,
+            senderDeviceId: identity.deviceId,
+            recipientRelayKey: device.relayPublicKey
+          })
+        } catch {
+          // ignore self sync failures
+        }
+      })
+    )
   }
 
   const createRelaySession = async (identity: DeviceIdentity, device: ContactDevice) => {
@@ -323,6 +421,8 @@ export const useDmComposer = (options: DmComposerOptions) => {
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
         void persistHistory(contact.id, identity, options.dmMessages.value)
+        const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
+        void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
         return
       }
 
@@ -346,6 +446,8 @@ export const useDmComposer = (options: DmComposerOptions) => {
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
+      const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
+      void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
@@ -491,6 +593,21 @@ export const useDmComposer = (options: DmComposerOptions) => {
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
         void persistHistory(contact.id, identity, options.dmMessages.value)
+        if (payloadBytes.length <= relayInlineLimitBytes) {
+          const syncPayload: Record<string, unknown> = {
+            kind: 'image-inline',
+            id: messageId,
+            createdAt,
+            payloadBase64: base64Raw,
+            encoding: encoding === 'zstd' ? 'zstd' : undefined,
+            name: payloadName || undefined,
+            mime: payloadMime || undefined,
+            size: payloadSize,
+            width: width || undefined,
+            height: height || undefined
+          }
+          void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+        }
         return
       }
 
@@ -525,6 +642,21 @@ export const useDmComposer = (options: DmComposerOptions) => {
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
+      if (payloadBytes.length <= relayInlineLimitBytes) {
+        const syncPayload: Record<string, unknown> = {
+          kind: 'image-inline',
+          id: messageId,
+          createdAt,
+          payloadBase64: base64Raw,
+          encoding: encoding === 'zstd' ? 'zstd' : undefined,
+          name: payloadName || undefined,
+          mime: payloadMime || undefined,
+          size: payloadSize,
+          width: width || undefined,
+          height: height || undefined
+        }
+        void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+      }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message

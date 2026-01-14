@@ -1,99 +1,10 @@
-import { decodeBase64, type DeviceIdentity } from '../../shared/p2p-crypto'
+import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import type { DmMessage } from './types'
 import { isRecord } from './utils'
-
-const historyStoragePrefix = 'chat:p2p:history:'
-const historyArchivePrefix = 'chat:p2p:history:archive:'
+import { loadContactMaps } from './crdt-store'
 
 export const historyCacheLimit = 200
 export const historyRequestLimit = 120
-
-const encodeBase64 = (bytes: Uint8Array) => {
-  let binary = ''
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte)
-  }
-  return btoa(binary)
-}
-
-type StoredHistoryEnvelope = {
-  v: 1
-  iv: string
-  ciphertext: string
-}
-
-type StoredHistoryPayload = {
-  messages: DmMessage[]
-  updatedAt?: string
-}
-
-const buildHistoryStorageKey = (contactId: string) => `${historyStoragePrefix}${contactId}`
-const buildHistoryArchiveKey = (contactId: string) => `${historyArchivePrefix}${contactId}`
-
-const parseHistoryEnvelope = (raw: string): StoredHistoryEnvelope | null => {
-  try {
-    const parsed = JSON.parse(raw)
-    if (!isRecord(parsed)) return null
-    if (parsed.v !== 1) return null
-    if (typeof parsed.iv !== 'string' || typeof parsed.ciphertext !== 'string') return null
-    return { v: 1, iv: parsed.iv, ciphertext: parsed.ciphertext }
-  } catch {
-    return null
-  }
-}
-
-export const loadHistoryArchiveStamp = (contactId: string) => {
-  if (typeof window === 'undefined') return null
-  const raw = window.localStorage.getItem(buildHistoryArchiveKey(contactId))
-  if (!raw) return null
-  const parsed = Date.parse(raw)
-  if (Number.isNaN(parsed)) return null
-  return parsed
-}
-
-export const archiveHistory = (contactId: string) => {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(buildHistoryArchiveKey(contactId), new Date().toISOString())
-    window.localStorage.removeItem(buildHistoryStorageKey(contactId))
-  } catch {
-    // ignore storage failures
-  }
-}
-
-const deriveHistoryKey = async (identity: DeviceIdentity) => {
-  if (typeof crypto === 'undefined' || !crypto.subtle) return null
-  const jwk = await crypto.subtle.exportKey('jwk', identity.privateKey)
-  const seed = typeof jwk.d === 'string' ? jwk.d : JSON.stringify(jwk)
-  const material = new TextEncoder().encode(`p2p-history:${seed}`)
-  const digest = await crypto.subtle.digest('SHA-256', material)
-  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
-}
-
-const encryptHistoryEnvelope = async (key: CryptoKey, payload: StoredHistoryPayload) => {
-  if (typeof crypto === 'undefined' || !crypto.subtle) return null
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const encoded = new TextEncoder().encode(JSON.stringify(payload))
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded)
-  return {
-    v: 1,
-    iv: encodeBase64(iv),
-    ciphertext: encodeBase64(new Uint8Array(ciphertext))
-  } satisfies StoredHistoryEnvelope
-}
-
-const decryptHistoryEnvelope = async (key: CryptoKey, envelope: StoredHistoryEnvelope) => {
-  if (typeof crypto === 'undefined' || !crypto.subtle) return null
-  const iv = decodeBase64(envelope.iv)
-  const ciphertext = decodeBase64(envelope.ciphertext)
-  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
-  const decoded = new TextDecoder().decode(plaintext)
-  try {
-    return JSON.parse(decoded) as StoredHistoryPayload
-  } catch {
-    return null
-  }
-}
 
 const messageTimestamp = (value: string) => {
   const time = Date.parse(value)
@@ -101,6 +12,7 @@ const messageTimestamp = (value: string) => {
 }
 
 const statusRank = (status?: DmMessage['status']) => {
+  if (status === 'read') return 5
   if (status === 'sent') return 4
   if (status === 'queued') return 3
   if (status === 'pending') return 2
@@ -108,8 +20,14 @@ const statusRank = (status?: DmMessage['status']) => {
   return 0
 }
 
-const mergeMessageStatus = (current?: DmMessage['status'], next?: DmMessage['status']) =>
-  statusRank(next) > statusRank(current) ? next : current
+const statusFromRank = (rank: number) => {
+  if (rank >= 5) return 'read'
+  if (rank >= 4) return 'sent'
+  if (rank >= 3) return 'queued'
+  if (rank >= 2) return 'pending'
+  if (rank >= 1) return 'failed'
+  return undefined
+}
 
 const normalizeImage = (value: unknown) => {
   if (!isRecord(value)) return undefined
@@ -138,10 +56,12 @@ const normalizeHistoryMessages = (messages: DmMessage[]) =>
     .filter(
       (message) =>
         typeof message.createdAt === 'string' &&
-        (message.author === 'self' || message.author === 'contact')
-        &&
+        (message.author === 'self' || message.author === 'contact') &&
         (message.text.trim().length > 0 || Boolean(message.image))
     )
+
+const mergeMessageStatus = (current?: DmMessage['status'], next?: DmMessage['status']) =>
+  statusRank(next) > statusRank(current) ? next : current
 
 export const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[]) => {
   const merged = new Map<string, DmMessage>()
@@ -170,39 +90,132 @@ export const mergeHistoryMessages = (existing: DmMessage[], incoming: DmMessage[
   })
 }
 
-export const loadHistory = async (contactId: string, identity: DeviceIdentity) => {
-  if (typeof window === 'undefined') return []
-  const archiveStamp = loadHistoryArchiveStamp(contactId)
-  const raw = window.localStorage.getItem(buildHistoryStorageKey(contactId))
-  if (!raw) return []
-  const envelope = parseHistoryEnvelope(raw)
-  if (!envelope) return []
-  const key = await deriveHistoryKey(identity)
-  if (!key) return []
-  try {
-    const payload = await decryptHistoryEnvelope(key, envelope)
-    if (!payload || !Array.isArray(payload.messages)) return []
-    const normalized = normalizeHistoryMessages(payload.messages)
-    if (!archiveStamp) return normalized
-    return normalized.filter((message) => messageTimestamp(message.createdAt) > archiveStamp)
-  } catch {
-    return []
+const parseArchiveStamp = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+  return null
+}
+
+const resolveStoredMessage = (value: unknown): DmMessage | null => {
+  if (!isRecord(value)) return null
+  const id = typeof value.id === 'string' ? value.id : ''
+  const author = value.author === 'self' || value.author === 'contact' ? value.author : null
+  const createdAt = typeof value.createdAt === 'string' ? value.createdAt : ''
+  const text = typeof value.text === 'string' ? value.text : ''
+  if (!id || !author || !createdAt) return null
+  const rankValue = typeof value.statusRank === 'number' ? value.statusRank : statusRank(value.status as DmMessage['status'])
+  const status = statusFromRank(rankValue)
+  const image = normalizeImage(value.image)
+  const kind = value.kind === 'image' || image ? 'image' : 'text'
+  return {
+    id,
+    text,
+    author,
+    createdAt,
+    status,
+    kind,
+    image
   }
 }
 
-export const persistHistory = async (contactId: string, identity: DeviceIdentity, messages: DmMessage[]) => {
-  if (typeof window === 'undefined') return
-  const key = await deriveHistoryKey(identity)
-  if (!key) return
-  const trimmed = normalizeHistoryMessages(messages).slice(-historyCacheLimit)
-  const envelope = await encryptHistoryEnvelope(key, {
-    messages: trimmed,
-    updatedAt: new Date().toISOString()
-  })
-  if (!envelope) return
-  try {
-    window.localStorage.setItem(buildHistoryStorageKey(contactId), JSON.stringify(envelope))
-  } catch {
-    // ignore storage failures
+const chooseCreatedAt = (current?: string, incoming?: string) => {
+  if (!current) return incoming ?? ''
+  if (!incoming) return current
+  return messageTimestamp(current) <= messageTimestamp(incoming) ? current : incoming
+}
+
+const mergeStoredMessage = (current: unknown, incoming: DmMessage) => {
+  const currentRecord = isRecord(current) ? current : null
+  const currentRank = currentRecord
+    ? typeof currentRecord.statusRank === 'number'
+      ? currentRecord.statusRank
+      : statusRank(currentRecord.status as DmMessage['status'])
+    : 0
+  const incomingRank = statusRank(incoming.status)
+  const nextRank = Math.max(currentRank, incomingRank)
+  const status = statusFromRank(nextRank)
+  const createdAt = chooseCreatedAt(
+    currentRecord && typeof currentRecord.createdAt === 'string' ? currentRecord.createdAt : undefined,
+    incoming.createdAt
+  )
+  const text = incoming.text || (currentRecord && typeof currentRecord.text === 'string' ? currentRecord.text : '')
+  const author =
+    currentRecord && (currentRecord.author === 'self' || currentRecord.author === 'contact')
+      ? currentRecord.author
+      : incoming.author
+  const image = incoming.image ?? normalizeImage(currentRecord?.image)
+  const kind = incoming.kind ?? (image ? 'image' : 'text')
+  return {
+    id: incoming.id,
+    text,
+    author,
+    createdAt,
+    status,
+    statusRank: nextRank,
+    kind,
+    image
   }
+}
+
+const trimMessages = (
+  messages: { size: number; forEach: (fn: (value: unknown, key: string) => void) => void },
+  limit: number
+) => {
+  if (messages.size <= limit) return []
+  const entries: Array<{ id: string; createdAt: string }> = []
+  messages.forEach((value, key) => {
+    const createdAt = isRecord(value) && typeof value.createdAt === 'string' ? value.createdAt : ''
+    entries.push({ id: key, createdAt })
+  })
+  entries.sort((a, b) => messageTimestamp(a.createdAt) - messageTimestamp(b.createdAt))
+  const toRemove = entries.slice(0, Math.max(0, entries.length - limit))
+  return toRemove.map((entry) => entry.id)
+}
+
+export const loadHistoryArchiveStamp = async (contactId: string, identity: DeviceIdentity) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return null
+  return parseArchiveStamp(maps.meta.get('archiveStamp'))
+}
+
+export const archiveHistory = async (contactId: string, identity: DeviceIdentity) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return
+  const stamp = new Date().toISOString()
+  maps.doc.transact(() => {
+    maps.meta.set('archiveStamp', stamp)
+    maps.messages.clear()
+  })
+}
+
+export const loadHistory = async (contactId: string, identity: DeviceIdentity) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return []
+  const archiveStamp = parseArchiveStamp(maps.meta.get('archiveStamp'))
+  const collected: DmMessage[] = []
+  maps.messages.forEach((value) => {
+    const parsed = resolveStoredMessage(value)
+    if (parsed) collected.push(parsed)
+  })
+  const normalized = normalizeHistoryMessages(collected)
+  if (!archiveStamp) return normalized
+  return normalized.filter((message) => messageTimestamp(message.createdAt) > archiveStamp)
+}
+
+export const persistHistory = async (contactId: string, identity: DeviceIdentity, messages: DmMessage[]) => {
+  const maps = await loadContactMaps(contactId, identity)
+  if (!maps) return
+  const normalized = normalizeHistoryMessages(messages)
+  maps.doc.transact(() => {
+    normalized.forEach((message) => {
+      const current = maps.messages.get(message.id)
+      maps.messages.set(message.id, mergeStoredMessage(current, message))
+    })
+    const toRemove = trimMessages(maps.messages, historyCacheLimit)
+    toRemove.forEach((id) => maps.messages.delete(id))
+    maps.meta.set('updatedAt', new Date().toISOString())
+  })
 }

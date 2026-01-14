@@ -65,6 +65,11 @@ type DmConnectionOptions = {
   sendTyping: QRL<(state: 'start' | 'stop') => Promise<void>>
 }
 
+type PayloadContext = {
+  source: 'contact' | 'self'
+  author: 'contact' | 'self'
+}
+
 export const useDmConnection = (options: DmConnectionOptions) => {
   useVisibleTask$((ctx) => {
     const contact = ctx.track(() => options.activeContact.value)
@@ -109,6 +114,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     let active = true
     let devices: ContactDevice[] = []
+    let selfDevices: ContactDevice[] = []
+    let selfDevicesFetchedAt = 0
     let connection: RTCPeerConnection | null = null
     let channel: RTCDataChannel | null = null
     let ws: WebSocket | null = null
@@ -125,12 +132,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let mailboxPulling = false
     let relayManager: ReturnType<typeof createRelayManager> | null = null
     let relayManagerKey = ''
+    let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
+    let selfRelayManagerKey = ''
     const outboxResendIntervalMs = 15_000
     const resolvedIceServers =
       appConfig.p2pIceServers && appConfig.p2pIceServers.length
         ? appConfig.p2pIceServers
         : [{ urls: 'stun:stun.l.google.com:19302' }]
     const avatarChunkSize = 12_000
+    const selfSyncInlineLimitBytes = 240_000
     const incomingImageIds = new Set<string>()
     const avatarChunks = new Map<string, { total: number; chunks: string[]; updatedAt?: string }>()
     const imageChunks = new Map<
@@ -204,6 +214,59 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         })
       }
       return relayManager
+    }
+    const selfDevicesCacheMs = 30_000
+    const fetchSelfDevices = async () => {
+      const selfUserId = options.selfUserId.value
+      if (!selfUserId) return []
+      const now = Date.now()
+      if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
+        return selfDevices
+      }
+      try {
+        const response = await fetch(
+          buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
+          { credentials: 'include' }
+        )
+        if (!response.ok) return selfDevices
+        const payload = (await response.json()) as { devices?: ContactDevice[] }
+        const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+        selfDevices = next
+        selfDevicesFetchedAt = now
+        return next
+      } catch {
+        return selfDevices
+      }
+    }
+    const resolveSelfDevice = async (deviceId: string) => {
+      let device = selfDevices.find((entry) => entry.deviceId === deviceId)
+      if (device) return device
+      await fetchSelfDevices()
+      device = selfDevices.find((entry) => entry.deviceId === deviceId)
+      return device ?? null
+    }
+    const getSelfRelayManager = async () => {
+      if (typeof window === 'undefined') return null
+      const identity = options.identityRef.value
+      if (!identity) return null
+      const devices = await fetchSelfDevices()
+      const discovered = Array.from(
+        new Set(
+          devices
+            .flatMap((device) => device.relayUrls ?? [])
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        )
+      )
+      const nextKey = `${identity.relayPublicKey ?? ''}|${discovered.slice().sort().join(',')}`
+      if (!selfRelayManager || nextKey !== selfRelayManagerKey) {
+        selfRelayManagerKey = nextKey
+        selfRelayManager = createRelayManager(window.location.origin, {
+          relayIdentity: resolveRelayIdentity(identity),
+          discoveredRelays: discovered
+        })
+      }
+      return selfRelayManager
     }
     const reportDmError = (message: string) => {
       options.dmError.value = message
@@ -332,7 +395,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
-    const resolveDevice = async (deviceId: string) => {
+    const resolveContactDevice = async (deviceId: string) => {
       let device = devices.find((entry) => entry.deviceId === deviceId)
       if (device) return device
       await fetchDevices()
@@ -559,17 +622,35 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return assembled
     }
 
-    const handleEncryptedPayload = async (encrypted: EncryptedPayload) => {
+    const resolveSelfSyncEnvelope = (payload: unknown) => {
+      if (!isRecord(payload)) return null
+      if (payload.kind !== 'sync') return null
+      const contactId = typeof payload.contactId === 'string' ? payload.contactId : ''
+      if (!contactId) return null
+      const authorValue = payload.author
+      const author = authorValue === 'contact' || authorValue === 'self' ? authorValue : 'self'
+      const encrypted = resolveEncryptedPayload(payload.payload)
+      if (!encrypted) return null
+      return { contactId, author, encrypted }
+    }
+
+    const handleEncryptedPayload = async (encrypted: EncryptedPayload, context: PayloadContext) => {
       try {
         const senderDeviceId = typeof encrypted.senderDeviceId === 'string' ? encrypted.senderDeviceId : undefined
         const identity = options.identityRef.value
         if (!identity) return false
         const deviceId =
-          senderDeviceId ?? options.sessionRef.value?.remoteDeviceId ?? options.remoteDeviceRef.value?.deviceId
+          senderDeviceId ??
+          (context.source === 'contact'
+            ? options.sessionRef.value?.remoteDeviceId ?? options.remoteDeviceRef.value?.deviceId
+            : undefined)
         if (!deviceId) return false
-        const device = await resolveDevice(deviceId)
+        const device =
+          context.source === 'self' ? await resolveSelfDevice(deviceId) : await resolveContactDevice(deviceId)
         if (!device) return false
-        options.remoteDeviceRef.value = noSerialize(device)
+        if (context.source === 'contact') {
+          options.remoteDeviceRef.value = noSerialize(device)
+        }
         const key = await deriveSessionKey(
           identity.privateKey,
           device.publicKey,
@@ -577,7 +658,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           encrypted.sessionId
         )
         const currentSession = options.sessionRef.value
-        if (!currentSession || currentSession.sessionId === encrypted.sessionId) {
+        if (context.source === 'contact' && (!currentSession || currentSession.sessionId === encrypted.sessionId)) {
           options.sessionRef.value = noSerialize({
             sessionId: encrypted.sessionId,
             salt: encrypted.salt,
@@ -799,7 +880,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           // ignore parse errors
         }
         const activeChannel = options.channelRef.value ?? channel
-        if (isReceipt) {
+        const messageAuthor = context.author
+        const allowRemoteMetadata = context.source === 'contact'
+        if (isReceipt && allowRemoteMetadata) {
           if (receiptTargetId) {
             const nextStatus = receiptStatus ?? 'read'
             options.dmMessages.value = options.dmMessages.value.map((message) => {
@@ -812,7 +895,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           return true
         }
-        if (typingState) {
+        if (typingState && allowRemoteMetadata) {
           setRemoteTyping(typingState === 'start')
           return true
         }
@@ -821,16 +904,24 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           return true
         }
         if (imageChunk) {
-          const message = await storeImageChunk(imageChunk, 'contact')
+          const message = await storeImageChunk(imageChunk, messageAuthor)
           if (message && appendIncomingMessage(message)) {
             void persistHistory(contact.id, identity, options.dmMessages.value)
-            await sendReceipt(
-              key,
-              encrypted.sessionId,
-              encrypted.salt,
-              message.id,
-              options.chatSettings.value.readReceipts ? 'read' : 'sent'
-            )
+            if (context.source === 'contact') {
+              const syncPayload = buildSelfSyncPayload(message)
+              if (syncPayload) {
+                void sendSelfSyncPayload(syncPayload, message.id, message.author)
+              }
+            }
+            if (allowRemoteMetadata) {
+              await sendReceipt(
+                key,
+                encrypted.sessionId,
+                encrypted.salt,
+                message.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
+            }
           }
           return true
         }
@@ -839,7 +930,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           for (const chunk of imageChunkBatch.chunks) {
             const message = await storeImageChunk(
               { id: imageChunkBatch.id, index: chunk.index, total: imageChunkBatch.total, data: chunk.data },
-              'contact'
+              messageAuthor
             )
             if (message) {
               assembled = message
@@ -847,31 +938,47 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           if (assembled && appendIncomingMessage(assembled)) {
             void persistHistory(contact.id, identity, options.dmMessages.value)
-            await sendReceipt(
-              key,
-              encrypted.sessionId,
-              encrypted.salt,
-              assembled.id,
-              options.chatSettings.value.readReceipts ? 'read' : 'sent'
-            )
+            if (context.source === 'contact') {
+              const syncPayload = buildSelfSyncPayload(assembled)
+              if (syncPayload) {
+                void sendSelfSyncPayload(syncPayload, assembled.id, assembled.author)
+              }
+            }
+            if (allowRemoteMetadata) {
+              await sendReceipt(
+                key,
+                encrypted.sessionId,
+                encrypted.salt,
+                assembled.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
+            }
           }
           return true
         }
         if (inlineImage) {
-          const message = await buildInlineImageMessage(inlineImage, 'contact')
+          const message = await buildInlineImageMessage(inlineImage, messageAuthor)
           if (message && appendIncomingMessage(message)) {
             void persistHistory(contact.id, identity, options.dmMessages.value)
-            await sendReceipt(
-              key,
-              encrypted.sessionId,
-              encrypted.salt,
-              message.id,
-              options.chatSettings.value.readReceipts ? 'read' : 'sent'
-            )
+            if (context.source === 'contact') {
+              const syncPayload = buildSelfSyncPayload(message)
+              if (syncPayload) {
+                void sendSelfSyncPayload(syncPayload, message.id, message.author)
+              }
+            }
+            if (allowRemoteMetadata) {
+              await sendReceipt(
+                key,
+                encrypted.sessionId,
+                encrypted.salt,
+                message.id,
+                options.chatSettings.value.readReceipts ? 'read' : 'sent'
+              )
+            }
           }
           return true
         }
-        if (avatarChunk) {
+        if (avatarChunk && allowRemoteMetadata) {
           const key = `${contact.id}:${avatarChunk.hash}`
           const existing =
             avatarChunks.get(key) ?? {
@@ -901,7 +1008,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           return true
         }
-        if (profileMeta) {
+        if (profileMeta && allowRemoteMetadata) {
           const cachedProfile = options.contactProfiles.value[contact.id] ?? loadRemoteProfile(contact.id)
           if (cachedProfile && !options.contactProfiles.value[contact.id]) {
             options.contactProfiles.value = { ...options.contactProfiles.value, [contact.id]: cachedProfile }
@@ -915,21 +1022,21 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           }
           return true
         }
-        if (profileRequest) {
+        if (profileRequest && allowRemoteMetadata) {
           await sendProfileUpdate(resolveLocalProfile(), senderDeviceId)
           return true
         }
-        if (profilePayload) {
+        if (profilePayload && allowRemoteMetadata) {
           applyRemoteProfile(profilePayload)
           return true
         }
-        if (historyResponse) {
+        if (historyResponse && allowRemoteMetadata) {
           if (options.historySuppressed.value) return true
           options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
           void persistHistory(contact.id, identity, options.dmMessages.value)
           return true
         }
-        if (isHistoryRequest) {
+        if (isHistoryRequest && allowRemoteMetadata) {
           let snapshot = options.dmMessages.value
           if (!snapshot.length) {
             snapshot = await loadHistory(contact.id, identity)
@@ -965,14 +1072,26 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           appendIncomingMessage({
             id: messageId,
             text: messageText,
-            author: 'contact',
+            author: messageAuthor,
             createdAt,
             status: 'sent'
           })
         ) {
           void persistHistory(contact.id, identity, options.dmMessages.value)
+          if (context.source === 'contact') {
+            const syncPayload = buildSelfSyncPayload({
+              id: messageId,
+              text: messageText,
+              author: messageAuthor,
+              createdAt,
+              status: 'sent'
+            })
+            if (syncPayload) {
+              void sendSelfSyncPayload(syncPayload, messageId, messageAuthor)
+            }
+          }
         }
-        if (receiptTargetId) {
+        if (receiptTargetId && allowRemoteMetadata) {
           await sendReceipt(
             key,
             encrypted.sessionId,
@@ -1103,25 +1222,70 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const identity = options.identityRef.value
       if (!identity) return
       const manager = getRelayManager()
-      if (!manager || !manager.clients.length) return
+      const selfManager = await getSelfRelayManager()
+      const hasRelayClients = Boolean(manager?.clients.length || selfManager?.clients.length)
+      if (!hasRelayClients) return
       mailboxPulling = true
       try {
-        const messages = (await manager.pull({
-          deviceId: identity.deviceId,
-          limit: 50,
-          relayPublicKey: identity.relayPublicKey || undefined
-        })).filter((message) => message.from === contact.id)
-        if (!messages.length) return
+        const selfUserId = options.selfUserId.value
+        const pulls: Array<Promise<RelayMessage[]>> = []
+        if (manager?.clients.length) {
+          pulls.push(
+            manager.pull({
+              deviceId: identity.deviceId,
+              limit: 50,
+              relayPublicKey: identity.relayPublicKey || undefined
+            })
+          )
+        }
+        if (selfManager?.clients.length) {
+          pulls.push(
+            selfManager.pull({
+              deviceId: identity.deviceId,
+              limit: 50,
+              relayPublicKey: identity.relayPublicKey || undefined
+            })
+          )
+        }
+        const results = await Promise.all(pulls)
+        const messages = results.flat()
+        const seen = new Set<string>()
+        const unique = messages.filter((message) => {
+          const key = `${message.relayBase}:${message.id}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        const filtered = unique.filter(
+          (message) => message.from === contact.id || (selfUserId && message.from === selfUserId)
+        )
+        if (!filtered.length) return
         const handled: RelayMessage[] = []
-        for (const message of messages) {
-          const encrypted = resolveEncryptedPayload(message.payload)
-          if (!encrypted) {
-            handled.push(message)
+        for (const message of filtered) {
+          if (message.from === contact.id) {
+            const encrypted = resolveEncryptedPayload(message.payload)
+            if (!encrypted) {
+              handled.push(message)
+              continue
+            }
+            const processed = await handleEncryptedPayload(encrypted, { source: 'contact', author: 'contact' })
+            if (processed) {
+              handled.push(message)
+            }
             continue
           }
-          const processed = await handleEncryptedPayload(encrypted)
-          if (processed) {
-            handled.push(message)
+          if (selfUserId && message.from === selfUserId) {
+            const sync = resolveSelfSyncEnvelope(message.payload)
+            if (!sync || sync.contactId !== contact.id) {
+              continue
+            }
+            const processed = await handleEncryptedPayload(sync.encrypted, {
+              source: 'self',
+              author: sync.author
+            })
+            if (processed) {
+              handled.push(message)
+            }
           }
         }
         if (!handled.length) return
@@ -1131,9 +1295,13 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           entries.push(message.id)
           grouped.set(message.relayBase, entries)
         }
+        const relayClients = [
+          ...(manager?.clients ?? []),
+          ...(selfManager?.clients ?? [])
+        ]
         await Promise.all(
           Array.from(grouped.entries()).map(([relayBase, ids]) => {
-            const client = manager.clients.find((entry) => entry.baseUrl === relayBase)
+            const client = relayClients.find((entry) => entry.baseUrl === relayBase)
             if (!client) return Promise.resolve(0)
             return client.ack(identity.deviceId, ids)
           })
@@ -1141,6 +1309,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       } finally {
         mailboxPulling = false
       }
+    }
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const payload = event.data
+      if (!isRecord(payload)) return
+      if (payload.type !== 'p2p:flush-outbox') return
+      void flushOutbox()
+      void pullMailbox()
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
     }
 
     const decodeBinaryMessage = (bytes: Uint8Array) => {
@@ -1405,6 +1585,88 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       } satisfies DmMessage
     }
 
+    const extractBase64FromDataUrl = (dataUrl: string) => {
+      const commaIndex = dataUrl.indexOf(',')
+      if (commaIndex === -1) return ''
+      return dataUrl.slice(commaIndex + 1)
+    }
+
+    const buildSelfSyncPayload = (message: DmMessage): Record<string, unknown> | null => {
+      if (message.kind === 'image') {
+        const image = message.image
+        if (!image?.dataUrl) return null
+        if (image.size && image.size > selfSyncInlineLimitBytes) return null
+        const payloadBase64 = extractBase64FromDataUrl(image.dataUrl)
+        if (!payloadBase64) return null
+        return {
+          kind: 'image-inline',
+          id: message.id,
+          createdAt: message.createdAt,
+          payloadBase64,
+          name: image.name,
+          mime: image.mime,
+          size: image.size,
+          width: image.width,
+          height: image.height
+        }
+      }
+      if (!message.text.trim()) return null
+      return {
+        kind: 'message',
+        id: message.id,
+        text: message.text,
+        createdAt: message.createdAt
+      }
+    }
+
+    const createSelfSyncSession = async (identity: DeviceIdentity, device: ContactDevice) => {
+      const sessionId = createMessageId()
+      const salt = randomBase64(16)
+      const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+      return { sessionId, salt, key }
+    }
+
+    const sendSelfSyncPayload = async (
+      payload: Record<string, unknown>,
+      messageId: string,
+      author: 'self' | 'contact'
+    ) => {
+      const identity = options.identityRef.value
+      const selfUserId = options.selfUserId.value
+      if (!identity || !selfUserId) return
+      const devices = await fetchSelfDevices()
+      const targets = devices.filter((device) => device.deviceId !== identity.deviceId)
+      if (!targets.length) return
+      const manager = await getSelfRelayManager()
+      if (!manager || !manager.clients.length) return
+      await Promise.all(
+        targets.map(async (device) => {
+          try {
+            const session = await createSelfSyncSession(identity, device)
+            const encrypted = await encryptPayload(
+              session.key,
+              JSON.stringify(payload),
+              session.sessionId,
+              session.salt,
+              identity.deviceId
+            )
+            await manager.send({
+              recipientId: selfUserId,
+              messageId: `sync:${messageId}:${device.deviceId}`,
+              sessionId: session.sessionId,
+              payload: { kind: 'sync', contactId: contact.id, author, payload: encrypted },
+              deviceIds: [device.deviceId],
+              senderId: selfUserId,
+              senderDeviceId: identity.deviceId,
+              recipientRelayKey: device.relayPublicKey
+            })
+          } catch {
+            // ignore self sync failures
+          }
+        })
+      )
+    }
+
     const requestProfileUpdate = async (meta: ProfileMeta, _targetDeviceId?: string) => {
       if (channel && channel.readyState === 'open') {
         await sendProfilePayload({ kind: 'profile-request', meta })
@@ -1490,7 +1752,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           if (!isRecord(parsed) || parsed.type !== 'message') return
           const encrypted = resolveEncryptedPayload(parsed.payload)
           if (!encrypted) return
-          await handleEncryptedPayload(encrypted)
+          await handleEncryptedPayload(encrypted, { source: 'contact', author: 'contact' })
         } catch (error) {
           reportDmError(error instanceof Error ? error.message : 'Unable to decrypt message.')
         }
@@ -1599,7 +1861,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!identity) return
       const fromDeviceId = typeof signal.fromDeviceId === 'string' ? signal.fromDeviceId : undefined
       const salt = typeof payload.salt === 'string' ? payload.salt : undefined
-      const remoteDevice = fromDeviceId ? await resolveDevice(fromDeviceId) : options.remoteDeviceRef.value ?? null
+      const remoteDevice = fromDeviceId
+        ? await resolveContactDevice(fromDeviceId)
+        : options.remoteDeviceRef.value ?? null
       if (!remoteDevice) return
       options.remoteDeviceRef.value = noSerialize(remoteDevice)
       isPolite = identity.deviceId.localeCompare(remoteDevice.deviceId) > 0
@@ -1825,7 +2089,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       try {
         const identity = await options.registerIdentity()
         if (!active) return
-        const archiveStamp = loadHistoryArchiveStamp(contact.id)
+        const archiveStamp = await loadHistoryArchiveStamp(contact.id, identity)
         options.historySuppressed.value = archiveStamp !== null
         const cached = await loadHistory(contact.id, identity)
         if (!active) return
@@ -1861,6 +2125,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     ctx.cleanup(() => {
       active = false
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+      }
       closeConnection()
     })
   })

@@ -17,14 +17,17 @@ export const p2pChannel = 'chat:p2p:stream'
 const p2pDeviceKeyPrefix = 'chat:p2p:device:'
 const p2pUserDevicesPrefix = 'chat:p2p:user:'
 const p2pMailboxPrefix = 'chat:p2p:mailbox:'
+const p2pPrekeyPrefix = 'chat:p2p:prekey:'
 const p2pDeviceTtlSeconds = 60 * 60 * 24 * 30
 const p2pMailboxTtlSeconds = 60 * 60 * 24 * 7
 const p2pMailboxMaxEntries = 2000
+const p2pPrekeyTtlSeconds = 60 * 60 * 24 * 30
 
 const buildDeviceKey = (deviceId: string) => `${p2pDeviceKeyPrefix}${deviceId}`
 const buildUserDevicesKey = (userId: string) => `${p2pUserDevicesPrefix}${userId}:devices`
 const buildMailboxKey = (deviceId: string) => `${p2pMailboxPrefix}${deviceId}`
 const buildMailboxIndexKey = (deviceId: string) => `${p2pMailboxPrefix}${deviceId}:index`
+const buildPrekeyKey = (deviceId: string) => `${p2pPrekeyPrefix}${deviceId}`
 
 export class PromptBodyError extends Error {
   status: number
@@ -216,6 +219,17 @@ type P2pMailboxEnvelope = {
   createdAt: string
 }
 
+type P2pPrekeyBundle = {
+  deviceId: string
+  userId: string
+  identityKey: Record<string, unknown>
+  signedPreKey: Record<string, unknown>
+  signature?: string
+  oneTimePreKeys?: Array<Record<string, unknown>>
+  createdAt: string
+  updatedAt: string
+}
+
 const inviteByEmailSchema = z.object({
   email: z.string().email()
 })
@@ -233,10 +247,19 @@ const p2pDeviceSchema = z.object({
   relayUrls: z.array(z.string().min(6)).max(16).optional()
 })
 
+const p2pPrekeySchema = z.object({
+  deviceId: z.string().min(8),
+  identityKey: z.record(z.string(), z.unknown()),
+  signedPreKey: z.record(z.string(), z.unknown()),
+  signature: z.string().min(8).optional(),
+  oneTimePreKeys: z.array(z.record(z.string(), z.unknown())).max(50).optional()
+})
+
 const p2pMailboxSendSchema = z.object({
   recipientId: z.string().min(6),
   messageId: z.string().min(8).optional(),
   sessionId: z.string().min(8).optional(),
+  senderDeviceId: z.string().min(8).optional(),
   deviceIds: z.array(z.string().min(8)).optional(),
   payload: z.unknown(),
   ttlSeconds: z.number().int().positive().max(p2pMailboxTtlSeconds).optional()
@@ -396,6 +419,37 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
           role,
           relayPublicKey: relayKey,
           relayUrls: relayHints,
+          createdAt,
+          updatedAt
+        }
+      } catch {
+        return null
+      }
+    }
+
+    const resolvePrekeyBundle = (raw: string | null): P2pPrekeyBundle | null => {
+      if (!raw) return null
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (!isRecord(parsed)) return null
+        const deviceId = typeof parsed.deviceId === 'string' ? parsed.deviceId : ''
+        const userId = typeof parsed.userId === 'string' ? parsed.userId : ''
+        const identityKey = isRecord(parsed.identityKey) ? parsed.identityKey : null
+        const signedPreKey = isRecord(parsed.signedPreKey) ? parsed.signedPreKey : null
+        if (!deviceId || !userId || !identityKey || !signedPreKey) return null
+        const signature = typeof parsed.signature === 'string' ? parsed.signature : undefined
+        const oneTimePreKeys = Array.isArray(parsed.oneTimePreKeys)
+          ? parsed.oneTimePreKeys.filter((entry) => isRecord(entry))
+          : undefined
+        const createdAt = typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString()
+        const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : createdAt
+        return {
+          deviceId,
+          userId,
+          identityKey,
+          signedPreKey,
+          signature,
+          oneTimePreKeys,
           createdAt,
           updatedAt
         }
@@ -1160,6 +1214,126 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
       return { deviceId, role }
     })
 
+    app.post('/chat/p2p/prekeys', async ({ body, request, set }) => {
+      const clientIp = options.getClientIp(request)
+      const rateLimit = await options.checkRateLimit('/chat/p2p/prekeys', clientIp)
+      applyRateLimitHeaders(set, rateLimit.headers)
+
+      if (!rateLimit.allowed) {
+        return attachRateLimitHeaders(
+          options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+          rateLimit.headers
+        )
+      }
+
+      if (!options.isValkeyReady()) {
+        return attachRateLimitHeaders(options.jsonError(503, 'Prekey storage unavailable'), rateLimit.headers)
+      }
+
+      const session = await resolveSessionUser(request)
+      if (!session) {
+        return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
+      }
+
+      const parsed = p2pPrekeySchema.safeParse(body)
+      if (!parsed.success) {
+        return attachRateLimitHeaders(options.jsonError(400, 'Invalid prekey bundle'), rateLimit.headers)
+      }
+
+      const { deviceId, identityKey, signedPreKey, signature, oneTimePreKeys } = parsed.data
+      const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
+      const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
+      if (!device || device.userId !== session.id) {
+        return attachRateLimitHeaders(options.jsonError(403, 'Device required'), rateLimit.headers)
+      }
+
+      const now = new Date().toISOString()
+      const bundle: P2pPrekeyBundle = {
+        deviceId,
+        userId: session.id,
+        identityKey,
+        signedPreKey,
+        signature,
+        oneTimePreKeys,
+        createdAt: now,
+        updatedAt: now
+      }
+
+      try {
+        await options.valkey.set(buildPrekeyKey(deviceId), JSON.stringify(bundle), { EX: p2pPrekeyTtlSeconds })
+      } catch (error) {
+        console.error('Failed to store prekey bundle', error)
+        return attachRateLimitHeaders(options.jsonError(503, 'Prekey storage failed'), rateLimit.headers)
+      }
+
+      return { deviceId }
+    })
+
+    app.get(
+      '/chat/p2p/prekeys/:userId',
+      async ({ params, request, set }) => {
+        const clientIp = options.getClientIp(request)
+        const rateLimit = await options.checkRateLimit('/chat/p2p/prekeys', clientIp)
+        applyRateLimitHeaders(set, rateLimit.headers)
+
+        if (!rateLimit.allowed) {
+          return attachRateLimitHeaders(
+            options.jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`),
+            rateLimit.headers
+          )
+        }
+
+        if (!options.isValkeyReady()) {
+          return attachRateLimitHeaders(options.jsonError(503, 'Prekey storage unavailable'), rateLimit.headers)
+        }
+
+        const session = await resolveSessionUser(request)
+        if (!session) {
+          return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
+        }
+
+        const targetId = params.userId
+        const isSelf = targetId === session.id
+        const isContact = isSelf ? true : await ensureContacts(session.id, targetId)
+        if (!isContact) {
+          return attachRateLimitHeaders(options.jsonError(403, 'Contact required'), rateLimit.headers)
+        }
+
+        const devices = await loadUserDevices(targetId)
+        if (!devices.length) {
+          return { bundles: [] }
+        }
+
+        const bundles: Array<Record<string, unknown>> = []
+        for (const device of devices) {
+          const raw = await options.valkey.get(buildPrekeyKey(device.deviceId))
+          const bundle = resolvePrekeyBundle(typeof raw === 'string' ? raw : null)
+          if (!bundle) continue
+          let oneTimePreKey: Record<string, unknown> | undefined
+          if (bundle.oneTimePreKeys && bundle.oneTimePreKeys.length) {
+            oneTimePreKey = bundle.oneTimePreKeys[0]
+            const remaining = bundle.oneTimePreKeys.slice(1)
+            const updated = { ...bundle, oneTimePreKeys: remaining, updatedAt: new Date().toISOString() }
+            await options.valkey.set(buildPrekeyKey(device.deviceId), JSON.stringify(updated), { EX: p2pPrekeyTtlSeconds })
+          }
+          bundles.push({
+            deviceId: bundle.deviceId,
+            identityKey: bundle.identityKey,
+            signedPreKey: bundle.signedPreKey,
+            signature: bundle.signature,
+            oneTimePreKey
+          })
+        }
+
+        return { bundles }
+      },
+      {
+        params: t.Object({
+          userId: t.String()
+        })
+      }
+    )
+
     app.get(
       '/chat/p2p/devices/:userId',
       async ({ params, request, set }) => {
@@ -1184,7 +1358,8 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         }
 
         const targetId = params.userId
-        const isContact = await ensureContacts(session.id, targetId)
+        const isSelf = targetId === session.id
+        const isContact = isSelf ? true : await ensureContacts(session.id, targetId)
         if (!isContact) {
           return attachRateLimitHeaders(options.jsonError(403, 'Contact required'), rateLimit.headers)
         }
@@ -1235,17 +1410,21 @@ export const createMessagingRoutes = (options: MessagingRouteOptions) => {
         return attachRateLimitHeaders(options.jsonError(400, 'Invalid mailbox payload'), rateLimit.headers)
       }
 
-      const { recipientId, payload, deviceIds, sessionId } = parsed.data
-      const isContact = await ensureContacts(session.id, recipientId)
+      const { recipientId, payload, deviceIds, sessionId, senderDeviceId } = parsed.data
+      const isSelf = recipientId === session.id
+      const isContact = isSelf ? true : await ensureContacts(session.id, recipientId)
       if (!isContact) {
         return attachRateLimitHeaders(options.jsonError(403, 'Contact required'), rateLimit.headers)
       }
 
       const devices = await loadUserDevices(recipientId)
-      const targets =
+      let targets =
         deviceIds && deviceIds.length
           ? devices.filter((entry) => deviceIds.includes(entry.deviceId))
           : devices
+      if (isSelf && senderDeviceId) {
+        targets = targets.filter((entry) => entry.deviceId !== senderDeviceId)
+      }
 
       if (!targets.length) {
         return attachRateLimitHeaders(options.jsonError(404, 'Recipient has no mailbox'), rateLimit.headers)
