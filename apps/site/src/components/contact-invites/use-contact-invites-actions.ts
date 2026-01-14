@@ -90,6 +90,7 @@ type QueuedContactAction =
 
 const queueStorageKey = (userId?: string) =>
   `contact-invite-queue:${userId ? encodeURIComponent(userId) : 'anonymous'}`
+const inviteQueueSyncTag = 'contact-invites-queue'
 
 const loadQueuedActions = (storageKey: string) => {
   if (typeof window === 'undefined') return []
@@ -106,16 +107,68 @@ const loadQueuedActions = (storageKey: string) => {
 const saveQueuedActions = (storageKey: string, queue: QueuedContactAction[]) => {
   if (typeof window === 'undefined') return
   try {
+    if (!queue.length) {
+      window.localStorage.removeItem(storageKey)
+      return
+    }
     window.localStorage.setItem(storageKey, JSON.stringify(queue))
   } catch {
     // ignore storage errors
   }
 }
 
+const dedupeQueuedActions = (queue: QueuedContactAction[]) => {
+  const seen = new Set<string>()
+  return queue.filter((action) => {
+    const key =
+      'inviteId' in action
+        ? `${action.type}:${action.inviteId}:${action.userId ?? ''}`
+        : `${action.type}:${action.email}:${action.userId ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 const enqueueQueuedAction = (storageKey: string, action: QueuedContactAction) => {
   const queue = loadQueuedActions(storageKey)
-  queue.push(action)
-  saveQueuedActions(storageKey, queue)
+  const next = dedupeQueuedActions([...queue, action])
+  saveQueuedActions(storageKey, next)
+}
+
+const migrateQueuedActions = (fromKey: string, toKey: string) => {
+  if (fromKey === toKey) return
+  const queued = loadQueuedActions(fromKey)
+  if (!queued.length) return
+  const merged = dedupeQueuedActions([...loadQueuedActions(toKey), ...queued])
+  saveQueuedActions(toKey, merged)
+  saveQueuedActions(fromKey, [])
+}
+
+const requestStoragePersistence = async () => {
+  if (typeof navigator === 'undefined' || !navigator.storage?.persisted) return
+  try {
+    const persisted = await navigator.storage.persisted()
+    if (!persisted) {
+      await navigator.storage.persist()
+    }
+  } catch {
+    // ignore persistence failures
+  }
+}
+
+const requestInviteQueueSync = async (reason: string) => {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  try {
+    const registration = await navigator.serviceWorker.ready
+    if ('sync' in registration) {
+      await registration.sync.register(inviteQueueSyncTag)
+      return
+    }
+  } catch {
+    // ignore sync failures
+  }
+  navigator.serviceWorker.controller?.postMessage({ type: 'contact-invites:flush-queue', reason })
 }
 
 const resolveFragmentCopy = (copy: Record<string, string> | undefined, value: string) => copy?.[value] ?? value
@@ -160,8 +213,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     const remaining: QueuedContactAction[] = []
     let refreshed = false
 
-    for (const action of queued) {
-      try {
+    try {
+      for (const action of queued) {
+        try {
         if (action.type === 'invite') {
           const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
             method: 'POST',
@@ -256,29 +310,34 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           continue
         }
 
-        remaining.push(action)
-      } catch (error) {
-        options.statusTone.value = 'error'
-        options.statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
-        remaining.push(action)
+          remaining.push(action)
+        } catch (error) {
+          options.statusTone.value = 'error'
+          options.statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
+          remaining.push(action)
+        }
       }
+    } finally {
+      saveQueuedActions(storageKey, remaining)
+      if (
+        refreshed &&
+        (options.realtimeState.value === 'idle' ||
+          options.realtimeState.value === 'offline' ||
+          options.realtimeState.value === 'error')
+      ) {
+        try {
+          await refreshInvites(false)
+        } catch {
+          // ignore refresh failures for queued retries
+        }
+      }
+      flushInFlight.value = false
     }
-
-    saveQueuedActions(storageKey, remaining)
-    if (
-      refreshed &&
-      (options.realtimeState.value === 'idle' ||
-        options.realtimeState.value === 'offline' ||
-        options.realtimeState.value === 'error')
-    ) {
-      await refreshInvites(false)
-    }
-
-    flushInFlight.value = false
   })
 
   useVisibleTask$(({ track, cleanup }) => {
     if (typeof window === 'undefined') return
+    void requestStoragePersistence()
     const updateOfflineState = () => {
       const offline = isOfflineState(options.realtimeState.value)
       options.offline.value = offline
@@ -291,9 +350,17 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     const handleOffline = () => {
       updateOfflineState()
     }
+    const handleSwMessage = (event: MessageEvent) => {
+      const payload = event.data as Record<string, unknown> | null
+      if (!payload || payload.type !== 'contact-invites:flush-queue') return
+      void flushQueuedActions()
+    }
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    navigator.serviceWorker?.addEventListener('message', handleSwMessage)
     track(() => options.realtimeState.value)
+    track(() => options.chatSettingsUserId.value)
+    migrateQueuedActions(queueStorageKey(), queueStorageKey(options.chatSettingsUserId.value))
     const offline = updateOfflineState()
     if (!offline && options.realtimeState.value === 'live') {
       void flushQueuedActions()
@@ -301,6 +368,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     cleanup(() => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      navigator.serviceWorker?.removeEventListener('message', handleSwMessage)
     })
   })
 
@@ -650,6 +718,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           userId,
           createdAt: new Date().toISOString()
         })
+        void requestInviteQueueSync('invite')
         options.statusTone.value = 'neutral'
         options.statusMessage.value = resolveLocal('Offline - invite queued.')
         if (userId) {
@@ -718,6 +787,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           userId,
           createdAt: new Date().toISOString()
         })
+        void requestInviteQueueSync('accept')
         options.statusTone.value = 'neutral'
         options.statusMessage.value = resolveLocal('Offline - accept queued.')
         options.searchResults.value = options.searchResults.value.map((entry) =>
@@ -777,6 +847,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           userId,
           createdAt: new Date().toISOString()
         })
+        void requestInviteQueueSync('decline')
         options.statusTone.value = 'neutral'
         options.statusMessage.value = resolveLocal('Offline - decline queued.')
         options.searchResults.value = options.searchResults.value.map((entry) =>
@@ -837,6 +908,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           email,
           createdAt: new Date().toISOString()
         })
+        void requestInviteQueueSync('remove')
         options.statusTone.value = 'neutral'
         options.statusMessage.value = resolveLocal('Offline - removal queued.')
         options.searchResults.value = options.searchResults.value.map((entry) =>
