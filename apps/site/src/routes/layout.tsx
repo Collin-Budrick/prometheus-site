@@ -149,6 +149,7 @@ export const RouterHead = component$(() => {
       <meta name="theme-color" content={siteBrand.themeColor} />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content={siteBrand.themeColor} />
       <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="mobile-web-app-capable" content="yes" />
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     </>
   )
