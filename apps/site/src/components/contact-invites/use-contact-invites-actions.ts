@@ -9,13 +9,14 @@ import {
   saveStoredIdentity,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
-import { buildApiUrl } from './api'
+import { buildApiUrl, resolveApiHost } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
 import { loadInvitesCache, saveInvitesCache } from './invites-cache'
 import { registerPushSubscription } from './push'
 import { publishRelayDevice, buildRelayDirectoryLabels } from './relay-directory'
 import { publishSignalPrekeys } from './signal'
+import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -398,6 +399,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     let identity = await importStoredIdentity(stored)
     let registered = false
     try {
+      const serverKey = resolveApiHost(window.location.origin)
+      if (!shouldAttemptServer(serverKey)) {
+        options.identityRef.value = noSerialize(identity)
+        void publishRelayIdentity(identity)
+        return identity
+      }
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
       const relayUrls = [
         ...(appConfig.p2pRelayBases ?? []),
@@ -417,6 +424,11 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
             label
           })
         })
+        if (response.status < 500) {
+          markServerSuccess(serverKey)
+        } else {
+          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        }
         if (response.status === 409) {
           return { ok: false, conflict: true }
         }
@@ -444,6 +456,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         void registerPushSubscription(identity)
       }
     } catch {
+      markServerFailure(resolveApiHost(window.location.origin), { baseDelayMs: 3000, maxDelayMs: 120000 })
       // ignore registration failures; retry later
     }
     options.identityRef.value = noSerialize(identity)

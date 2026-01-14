@@ -1,6 +1,6 @@
 import { render } from '@builder.io/qwik'
 import { p as preloadBundles } from '@builder.io/qwik/preloader'
-import { buildApiUrl, buildWsUrl } from './components/contact-invites/api'
+import { buildApiUrl, buildWsUrl, resolveApiHost } from './components/contact-invites/api'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import Root from './root'
 
@@ -37,6 +37,7 @@ export default function () {
     setupServiceWorkerBridge()
   }
 
+  setupWebSocketBackoffMonitor()
   setupOfflineErrorFilters()
   setupServerHealthProbe()
 
@@ -67,25 +68,123 @@ export default function () {
 
 function setupOfflineErrorFilters() {
   if (typeof window === 'undefined') return
+  const windowHost = window.location.host
+  const apiHost = resolveApiHost(window.location.origin)
   const isServerOffline = () => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
-    return getServerBackoffMs(window.location.host) > 0
+    return getServerBackoffMs(windowHost) > 0 || getServerBackoffMs(apiHost) > 0
+  }
+  const resolveKnownHost = (host: string) => {
+    if (!host) return ''
+    if (host === windowHost) return host
+    if (host === apiHost) return host
+    return ''
+  }
+  const resolveHostFromMessage = (message: string) => {
+    if (!message) return ''
+    const match = message.match(/(https?:\/\/[^\s'"]+|wss?:\/\/[^\s'"]+)/)
+    if (!match) return ''
+    try {
+      return new URL(match[1]).host
+    } catch {
+      return ''
+    }
+  }
+  const resolveHostFromResource = (value: unknown) => {
+    if (typeof value !== 'string') return ''
+    try {
+      return new URL(value, window.location.origin).host
+    } catch {
+      return ''
+    }
   }
   const isDynamicImportError = (reason: unknown) => {
     const message = reason instanceof Error ? reason.message : String(reason)
     return message.includes('Failed to fetch dynamically imported module')
   }
   window.addEventListener('unhandledrejection', (event) => {
-    if (isDynamicImportError(event.reason) && isServerOffline()) {
+    if (!isDynamicImportError(event.reason)) return
+    const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
+    const host = resolveKnownHost(resolveHostFromMessage(message)) || windowHost
+    markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
+    if (isServerOffline()) {
       event.preventDefault()
     }
   })
-  window.addEventListener('error', (event) => {
-    const message = event instanceof ErrorEvent ? event.message : ''
-    if (message.includes('Failed to fetch dynamically imported module') && isServerOffline()) {
-      event.preventDefault()
+  window.addEventListener(
+    'error',
+    (event) => {
+      if (event instanceof ErrorEvent) {
+        const message = event.message
+        if (!message) return
+        if (message.includes('WebSocket connection to')) {
+          const wsHost = resolveKnownHost(resolveHostFromMessage(message))
+          if (wsHost) {
+            markServerFailure(wsHost, { baseDelayMs: 3000, maxDelayMs: 120000 })
+          }
+        }
+        if (message.includes('Failed to fetch dynamically imported module')) {
+          const host = resolveKnownHost(resolveHostFromMessage(message)) || windowHost
+          markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
+          if (isServerOffline()) {
+            event.preventDefault()
+          }
+        }
+        return
+      }
+      const target = event.target as (HTMLElement & { src?: string; href?: string }) | null
+      const resourceUrl = target?.src || target?.href
+      if (!resourceUrl) return
+      const host = resolveKnownHost(resolveHostFromResource(resourceUrl)) || windowHost
+      markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
+      if (isServerOffline()) {
+        event.preventDefault()
+      }
+    },
+    { capture: true }
+  )
+}
+
+function setupWebSocketBackoffMonitor() {
+  if (typeof window === 'undefined') return
+  const marker = '__FRAGMENT_PRIME_WS_BACKOFF__'
+  if ((window as Record<string, unknown>)[marker]) return
+  ;(window as Record<string, unknown>)[marker] = true
+  if (typeof window.WebSocket !== 'function') return
+  const windowHost = window.location.host
+  const apiHost = resolveApiHost(window.location.origin)
+  const resolveKnownHost = (host: string) => {
+    if (!host) return ''
+    if (host === windowHost) return host
+    if (host === apiHost) return host
+    return ''
+  }
+  const resolveHostFromUrl = (value: string | URL) => {
+    try {
+      return resolveKnownHost(new URL(String(value), window.location.origin).host)
+    } catch {
+      return ''
     }
-  })
+  }
+  const NativeWebSocket = window.WebSocket
+  class BackoffWebSocket extends NativeWebSocket {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(String(url), protocols as string | string[] | undefined)
+      const host = resolveHostFromUrl(url)
+      if (!host) return
+      this.addEventListener('open', () => {
+        markServerSuccess(host)
+      })
+      this.addEventListener('error', () => {
+        markServerFailure(host, { baseDelayMs: 3000, maxDelayMs: 120000 })
+      })
+      this.addEventListener('close', (event) => {
+        if (event.wasClean && event.code === 1000) return
+        markServerFailure(host, { baseDelayMs: 3000, maxDelayMs: 120000 })
+      })
+    }
+  }
+  window.WebSocket = BackoffWebSocket as typeof WebSocket
 }
 
 function setupServiceWorkerBridge() {

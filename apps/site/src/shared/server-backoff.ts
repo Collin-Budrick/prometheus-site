@@ -67,6 +67,11 @@ export const getServerBackoffMs = (key: string) => {
   return Math.max(0, state.until - Date.now())
 }
 
+export const shouldAttemptServer = (key: string) => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
+  return getServerBackoffMs(key) === 0
+}
+
 export const isServerBackoffActive = (key: string) => getServerBackoffMs(key) > 0
 
 export const isServerOnline = (key: string) => getState(key).online

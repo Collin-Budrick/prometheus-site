@@ -63,6 +63,18 @@ export const buildWsUrl = (path: string, origin: string) => {
   return url.toString()
 }
 
+export const resolveApiHost = (origin: string) => {
+  try {
+    return new URL(buildApiUrl('/health', origin)).host
+  } catch {
+    try {
+      return new URL(origin).host
+    } catch {
+      return 'default'
+    }
+  }
+}
+
 export const resolveChatSettingsUserId = async () => {
   if (typeof window === 'undefined') return undefined
   const cached = readCachedUserId()

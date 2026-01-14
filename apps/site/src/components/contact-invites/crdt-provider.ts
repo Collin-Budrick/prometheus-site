@@ -2,15 +2,70 @@ import { WebrtcProvider } from 'y-webrtc'
 import { WebsocketClient } from 'lib0/websocket'
 import { appConfig } from '../../app-config'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
-import { getServerBackoffMs, isServerBackoffActive } from '../../shared/server-backoff'
+import {
+  getServerBackoffMs,
+  isServerBackoffActive,
+  markServerFailure,
+  markServerSuccess
+} from '../../shared/server-backoff'
 import { loadContactMaps, loadReplicationKey } from './crdt-store'
 
 const providers = new Map<string, WebrtcProvider>()
 const providerBackoffCleanup = new WeakMap<WebrtcProvider, () => void>()
 
+const resolveWebsocketHost = (value: unknown) => {
+  if (typeof value !== 'string') return ''
+  try {
+    return new URL(value).host
+  } catch {
+    return ''
+  }
+}
+
+type PatchedWebsocketClient = WebsocketClient & {
+  __promSafeSendPatched?: boolean
+  __promSafeEmitPatched?: boolean
+  __promSafeConnectPatched?: boolean
+  __promBackoffTimer?: number | null
+}
+
+let originalWebsocketConnect: ((this: WebsocketClient) => void) | null = null
+
+const scheduleWebsocketReconnect = (client: PatchedWebsocketClient, host: string) => {
+  if (typeof window === 'undefined') return
+  if (client.__promBackoffTimer != null) return
+
+  const schedule = (delayMs: number) => {
+    client.__promBackoffTimer = window.setTimeout(() => {
+      client.__promBackoffTimer = null
+      attempt()
+    }, delayMs)
+  }
+
+  const attempt = () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      schedule(1000)
+      return
+    }
+    const wait = getServerBackoffMs(host)
+    if (wait > 0) {
+      schedule(wait + 50)
+      return
+    }
+    client.shouldConnect = true
+    if (originalWebsocketConnect) {
+      originalWebsocketConnect.call(client)
+    } else {
+      client.connect()
+    }
+  }
+
+  attempt()
+}
+
 const patchWebsocketClientSend = () => {
   if (typeof window === 'undefined') return
-  const proto = WebsocketClient.prototype as WebsocketClient & { __promSafeSendPatched?: boolean }
+  const proto = WebsocketClient.prototype as PatchedWebsocketClient
   if (proto.__promSafeSendPatched) return
   proto.__promSafeSendPatched = true
   const descriptor = Object.getOwnPropertyDescriptor(proto, 'send')
@@ -23,7 +78,75 @@ const patchWebsocketClientSend = () => {
   }
 }
 
+const patchWebsocketClientEmit = () => {
+  if (typeof window === 'undefined') return
+  const proto = WebsocketClient.prototype as PatchedWebsocketClient & {
+    emit?: (name: unknown, args: unknown[]) => unknown
+  }
+  if (proto.__promSafeEmitPatched) return
+  const baseProto = Object.getPrototypeOf(proto) as { emit?: (name: unknown, args: unknown[]) => unknown } | null
+  const emitDescriptor = baseProto ? Object.getOwnPropertyDescriptor(baseProto, 'emit') : undefined
+  if (!emitDescriptor || typeof emitDescriptor.value !== 'function') return
+  proto.__promSafeEmitPatched = true
+  const original = emitDescriptor.value as (this: WebsocketClient, name: unknown, args: unknown[]) => unknown
+  proto.emit = function (name: unknown, args: unknown[]) {
+    const eventName = typeof name === 'string' ? name : String(name)
+    const host = resolveWebsocketHost(this.url)
+    if (host) {
+      if (eventName === 'connect') {
+        markServerSuccess(host)
+      } else if (eventName === 'disconnect' && this.shouldConnect) {
+        markServerFailure(host, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        this.shouldConnect = false
+        scheduleWebsocketReconnect(this as PatchedWebsocketClient, host)
+      }
+    }
+    return original.call(this, name, args)
+  }
+}
+
+const patchWebsocketClientConnect = () => {
+  if (typeof window === 'undefined') return
+  const proto = WebsocketClient.prototype as PatchedWebsocketClient
+  if (proto.__promSafeConnectPatched) return
+  const descriptor = Object.getOwnPropertyDescriptor(proto, 'connect')
+  if (!descriptor || typeof descriptor.value !== 'function') return
+  proto.__promSafeConnectPatched = true
+  const original = descriptor.value as (this: WebsocketClient) => void
+  originalWebsocketConnect = original
+  proto.connect = function () {
+    const host = resolveWebsocketHost(this.url)
+    if (host && (getServerBackoffMs(host) > 0 || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
+      this.shouldConnect = false
+      scheduleWebsocketReconnect(this, host)
+      return
+    }
+    const result = original.call(this)
+    const ws = this.ws as (WebSocket & { __promBackoffBound?: boolean }) | null
+    if (host && ws && !ws.__promBackoffBound) {
+      ws.__promBackoffBound = true
+      ws.addEventListener('open', () => {
+        markServerSuccess(host)
+      })
+      ws.addEventListener('error', () => {
+        markServerFailure(host, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        this.shouldConnect = false
+        scheduleWebsocketReconnect(this, host)
+      })
+      ws.addEventListener('close', (event) => {
+        if (event.wasClean && event.code === 1000) return
+        markServerFailure(host, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        this.shouldConnect = false
+        scheduleWebsocketReconnect(this, host)
+      })
+    }
+    return result
+  }
+}
+
 patchWebsocketClientSend()
+patchWebsocketClientEmit()
+patchWebsocketClientConnect()
 
 const watchProviderBackoff = (provider: WebrtcProvider, signaling: string[] | undefined) => {
   if (typeof window === 'undefined') return

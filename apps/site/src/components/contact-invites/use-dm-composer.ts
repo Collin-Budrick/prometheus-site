@@ -14,8 +14,9 @@ import { enqueueOutboxItem, markOutboxItemSent } from './outbox'
 import { persistHistory } from './history'
 import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
-import { buildApiUrl } from './api'
+import { buildApiUrl, resolveApiHost } from './api'
 import { encryptSignalPayload } from './signal'
+import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import type { ActiveContact, ContactDevice, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -173,18 +174,29 @@ const fetchSelfDevices = async (runtime: DmComposerRuntime, options: DmComposerO
   if (runtime.selfDevices.length && now - runtime.selfDevicesFetchedAt < selfDevicesCacheMs) {
     return runtime.selfDevices
   }
+  const serverKey = resolveApiHost(window.location.origin)
+  if (!shouldAttemptServer(serverKey)) {
+    return runtime.selfDevices
+  }
   try {
     const response = await fetch(
       buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
       { credentials: 'include' }
     )
-    if (!response.ok) return runtime.selfDevices
+    if (!response.ok) {
+      if (response.status >= 500) {
+        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+      }
+      return runtime.selfDevices
+    }
     const payload = (await response.json()) as { devices?: ContactDevice[] }
     const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
     runtime.selfDevices = next
     runtime.selfDevicesFetchedAt = now
+    markServerSuccess(serverKey)
     return next
   } catch {
+    markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     return runtime.selfDevices
   }
 }

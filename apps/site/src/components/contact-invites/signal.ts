@@ -8,7 +8,8 @@ import {
   type StorageType
 } from '@privacyresearch/libsignal-protocol-typescript'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
-import { buildApiUrl } from './api'
+import { buildApiUrl, resolveApiHost } from './api'
+import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import { fetchRelayPrekeys, publishRelayPrekeys } from './relay-directory'
 import { isRecord } from './utils'
 
@@ -406,18 +407,25 @@ const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
   if (typeof window === 'undefined') return []
   const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
   let apiBundles: RemotePrekeyBundle[] = []
-  try {
-    const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
-      credentials: 'include'
-    })
-    if (response.ok) {
-      const payload = (await response.json()) as unknown
-      if (isRecord(payload) && Array.isArray(payload.bundles)) {
-        apiBundles = payload.bundles.map(resolveRemoteBundle).filter((bundle): bundle is RemotePrekeyBundle => Boolean(bundle))
+  const serverKey = resolveApiHost(window.location.origin)
+  if (shouldAttemptServer(serverKey)) {
+    try {
+      const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const payload = (await response.json()) as unknown
+        if (isRecord(payload) && Array.isArray(payload.bundles)) {
+          apiBundles = payload.bundles.map(resolveRemoteBundle).filter((bundle): bundle is RemotePrekeyBundle => Boolean(bundle))
+        }
+        markServerSuccess(serverKey)
+      } else if (response.status >= 500) {
+        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
       }
+    } catch {
+      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+      // ignore API failures
     }
-  } catch {
-    // ignore API failures
   }
   return mergeBundles([...relayBundles, ...apiBundles])
 }
@@ -440,6 +448,8 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: st
       userId && userId.trim()
         ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
         : false
+    const serverKey = resolveApiHost(window.location.origin)
+    if (!shouldAttemptServer(serverKey)) return relayOk
     const response = await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -452,8 +462,14 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: st
         oneTimePreKeys: bundle.oneTimePreKeys
       })
     })
+    if (response.ok) {
+      markServerSuccess(serverKey)
+    } else if (response.status >= 500) {
+      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+    }
     return response.ok || relayOk
   } catch {
+    markServerFailure(resolveApiHost(window.location.origin), { baseDelayMs: 3000, maxDelayMs: 120000 })
     return false
   }
 }

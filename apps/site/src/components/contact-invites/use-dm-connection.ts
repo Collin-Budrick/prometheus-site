@@ -2877,6 +2877,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const connectWs = (identity: DeviceIdentity) => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        options.dmStatus.value = 'offline'
+        wsReconnectPending = true
+        debug('ws connect deferred (offline)', { reason: 'offline' })
+        return
+      }
       const serverBackoffMs = getServerBackoffMs(serverKey)
       if (serverBackoffMs > 0) {
         const activeChannel = options.channelRef.value ?? channel
