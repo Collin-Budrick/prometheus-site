@@ -496,7 +496,10 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             : `/store/items?limit=${maxItems}`
           const response = await fetch(buildApiUrl(path, window.location.origin), {
             signal: controller.signal,
-            credentials: 'include'
+            credentials: 'include',
+            headers: {
+              accept: 'application/json'
+            }
           })
           if (!response.ok) {
             throw new Error(`Request failed: ${response.status}`)

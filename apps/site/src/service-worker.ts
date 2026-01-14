@@ -5,11 +5,12 @@ declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
 }
 
-const CACHE_NAME = 'fragment-prime-shell-v5'
+const CACHE_NAME = 'fragment-prime-shell-v6'
 const DATA_CACHE_NAME = 'fragment-prime-data-v1'
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
 const SHELL_URL = new URL('./', scopeUrl).toString()
+const OFFLINE_FALLBACK_URL = new URL('./offline/', scopeUrl).toString()
 const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|txt|mp4|webm)$/i
@@ -24,6 +25,12 @@ const scopedPathname = (url: URL) => {
 const isChatCachePath = (url: URL) => {
   const pathname = scopedPathname(url)
   return pathname.startsWith('/chat/contacts/') || pathname.startsWith('/chat/p2p/')
+}
+
+const isStoreCachePath = (url: URL) => {
+  const pathname = scopedPathname(url)
+  const normalized = pathname.startsWith('/api/') ? pathname.slice(4) : pathname
+  return normalized.startsWith('/store/items') || normalized.startsWith('/store/search')
 }
 
 const isNavigationRequest = (request: Request) =>
@@ -45,6 +52,7 @@ const isJsonRequest = (request: Request, url: URL) => {
   if (url.origin !== self.location.origin) return false
   if (isFragmentStreamPath(url)) return false
   if (isChatCachePath(url)) return true
+  if (isStoreCachePath(url)) return true
   const accept = request.headers.get('accept') ?? ''
   return accept.includes('application/json') || url.pathname.endsWith('.json')
 }
@@ -90,9 +98,19 @@ const handleShell = async ({ event, request }: { event: ExtendableEvent; request
     return networkResponse
   }
 
-  const fallback = await cache.match(SHELL_URL)
+  const fallback = await cache.match(OFFLINE_FALLBACK_URL)
   if (fallback) {
     return fallback
+  }
+
+  const shell = await cache.match(SHELL_URL)
+  if (shell) {
+    return shell
+  }
+
+  const root = await cache.match(new Request(SHELL_URL))
+  if (root) {
+    return root
   }
 
   return Response.error()
