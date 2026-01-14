@@ -14,6 +14,7 @@ const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|txt|mp4|webm)$/i
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
+const STORE_CART_SYNC_TAG = 'store-cart-queue'
 
 const scopedPathname = (url: URL) => {
   if (scopePath === '/' || !url.pathname.startsWith(scopePath)) return url.pathname
@@ -137,6 +138,10 @@ const flushOutbox = async (reason: string) => {
   await broadcastMessage({ type: 'p2p:flush-outbox', reason })
 }
 
+const flushStoreCartQueue = async (reason: string) => {
+  await broadcastMessage({ type: 'store:cart:flush', reason })
+}
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
@@ -167,8 +172,20 @@ const serwist = new Serwist({
 void serwist.addEventListeners()
 
 self.addEventListener('sync', (event: SyncEvent) => {
-  if (event.tag !== OUTBOX_SYNC_TAG) return
-  event.waitUntil(flushOutbox('sync'))
+  if (event.tag === OUTBOX_SYNC_TAG) {
+    event.waitUntil(flushOutbox('sync'))
+    return
+  }
+  if (event.tag === STORE_CART_SYNC_TAG) {
+    event.waitUntil(flushStoreCartQueue('sync'))
+  }
+})
+
+self.addEventListener('message', (event) => {
+  const data = event.data as Record<string, unknown> | undefined
+  if (data?.type === 'store:cart:flush') {
+    event.waitUntil(flushStoreCartQueue('message'))
+  }
 })
 
 self.addEventListener('push', (event: PushEvent) => {

@@ -3,7 +3,14 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { consumeStoreItem, setStoreCartDragItem, storeCartAddEvent } from '../shared/store-cart'
+import {
+  consumeStoreItem,
+  flushStoreCartQueue,
+  getStoreCartQueueSize,
+  setStoreCartDragItem,
+  storeCartAddEvent,
+  storeCartQueueEvent
+} from '../shared/store-cart'
 
 type StoreStreamProps = {
   limit?: string
@@ -95,6 +102,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const removingIds = useSignal<number[]>([])
   const deletingIds = useSignal<number[]>([])
   const draggingId = useSignal<number | null>(null)
+  const queuedCount = useSignal(0)
   const streamState = useSignal<StreamState>('idle')
   const streamError = useSignal<string | null>(null)
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
@@ -121,6 +129,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const deleteLabel = copy?.['Delete item'] ?? 'Delete item'
   const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
   const outOfStockLabel = copy?.['Out of stock'] ?? 'Out of stock'
+  const queuedLabel = copy?.['Queued actions'] ?? 'Queued actions'
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -420,6 +429,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
           return
         }
+        void flushStoreCartQueue(window.location.origin)
         scheduleReconnect(0)
       }
 
@@ -436,6 +446,34 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
         wsRef.value?.close()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      queuedCount.value = getStoreCartQueueSize()
+      const handleQueue = (event: Event) => {
+        const detail = (event as CustomEvent).detail as { size?: unknown } | undefined
+        const size = Number(detail?.size)
+        queuedCount.value = Number.isFinite(size) ? Math.max(0, size) : getStoreCartQueueSize()
+      }
+      const handleMessage = (event: MessageEvent) => {
+        const data = event.data as Record<string, unknown> | undefined
+        if (data?.type === 'store:cart:flush') {
+          void flushStoreCartQueue(window.location.origin)
+        }
+      }
+      window.addEventListener(storeCartQueueEvent, handleQueue)
+      navigator.serviceWorker?.addEventListener('message', handleMessage)
+      if (!(queuedCount.value > 0 && navigator.onLine === false)) {
+        void flushStoreCartQueue(window.location.origin)
+      }
+      ctx.cleanup(() => {
+        window.removeEventListener(storeCartQueueEvent, handleQueue)
+        navigator.serviceWorker?.removeEventListener('message', handleMessage)
       })
     },
     { strategy: 'document-ready' }
@@ -556,6 +594,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           <span class="store-stream-status-dot" aria-hidden="true" />
           <span>{statusLabel.value}</span>
         </div>
+        {queuedCount.value > 0 ? (
+          <div class="store-stream-queue" aria-live="polite">
+            {queuedLabel}: {queuedCount.value}
+          </div>
+        ) : null}
       </div>
       <div class="store-stream-meta">
         <span>{query.value.trim() ? valkeyLabel : postgresLabel}</span>
