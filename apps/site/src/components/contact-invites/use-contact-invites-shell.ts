@@ -9,6 +9,7 @@ import {
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import { buildWsUrl, resolveChatSettingsUserId } from './api'
 import { countStorageKey } from './constants'
+import { clearInvitesCache } from './invites-cache'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -54,6 +55,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       let active = true
       let hasSnapshot = false
       let reconnectTimer: number | null = null
+      let previousUserId = options.chatSettingsUserId.value
 
       if (!options.identityReady.value) {
         options.identityReady.value = true
@@ -61,9 +63,13 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       }
       void (async () => {
         const userId = await resolveChatSettingsUserId()
+        if (previousUserId && previousUserId !== userId) {
+          clearInvitesCache(previousUserId)
+        }
         options.chatSettingsUserId.value = userId
         options.chatSettingsKey.value = buildChatSettingsKey(userId)
         options.chatSettings.value = loadChatSettings(userId)
+        previousUserId = userId
         if (userId) {
           void options.publishRelayIdentity()
         }

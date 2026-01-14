@@ -209,7 +209,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     const copyValue = options.fragmentCopy.value
     const resolveLocal = (value: string) => copyValue?.[value] ?? value
 
-    const applyInvitesPayload = (payload: ContactInvitesPayload, offline = false) => {
+    const applyInvitesPayload = (
+      payload: ContactInvitesPayload,
+      offline = false,
+      stale = false,
+      updatedAt?: string
+    ) => {
       options.incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
       options.outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
       options.contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
@@ -272,8 +277,17 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       options.invitesState.value = 'idle'
       if (offline) {
         options.realtimeState.value = options.realtimeState.value === 'error' ? 'error' : 'offline'
-        options.statusTone.value = 'neutral'
-        options.statusMessage.value = resolveLocal('Offline - showing cached contacts.')
+        const formattedUpdatedAt = updatedAt ? new Date(updatedAt).toLocaleString() : null
+        if (stale && formattedUpdatedAt) {
+          options.statusTone.value = 'error'
+          options.statusMessage.value = resolveLocal(`Offline - cached data from ${formattedUpdatedAt} may be stale.`)
+        } else if (stale) {
+          options.statusTone.value = 'error'
+          options.statusMessage.value = resolveLocal('Offline - cached data may be stale.')
+        } else {
+          options.statusTone.value = 'neutral'
+          options.statusMessage.value = resolveLocal('Offline - showing cached contacts.')
+        }
       }
     }
 
@@ -290,9 +304,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       })
 
       if (!response.ok) {
-        const cached = loadInvitesCache(options.chatSettingsUserId.value)
+        const cached = loadInvitesCache(options.chatSettingsUserId.value, { allowStale: true })
         if (cached) {
-          applyInvitesPayload(cached, true)
+          applyInvitesPayload(cached.payload, true, cached.isExpired, cached.updatedAt)
           return
         }
         options.invitesState.value = 'error'
@@ -305,9 +319,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       applyInvitesPayload(payload)
       saveInvitesCache(options.chatSettingsUserId.value, payload)
     } catch (error) {
-      const cached = loadInvitesCache(options.chatSettingsUserId.value)
+      const cached = loadInvitesCache(options.chatSettingsUserId.value, { allowStale: true })
       if (cached) {
-        applyInvitesPayload(cached, true)
+        applyInvitesPayload(cached.payload, true, cached.isExpired, cached.updatedAt)
         return
       }
       options.invitesState.value = 'error'
