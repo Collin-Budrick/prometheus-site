@@ -16,6 +16,7 @@ const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|txt|mp4|webm)$/i
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const STORE_CART_SYNC_TAG = 'store-cart-queue'
+const INVITE_QUEUE_SYNC_TAG = 'contact-invites-queue'
 
 const scopedPathname = (url: URL) => {
   if (scopePath === '/' || !url.pathname.startsWith(scopePath)) return url.pathname
@@ -168,6 +169,10 @@ const flushStoreCartQueue = async (reason: string) => {
   await broadcastMessage({ type: 'store:cart:flush', reason })
 }
 
+const flushContactInviteQueue = async (reason: string) => {
+  await broadcastMessage({ type: 'contact-invites:flush-queue', reason })
+}
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
@@ -204,6 +209,10 @@ self.addEventListener('sync', (event: SyncEvent) => {
   }
   if (event.tag === STORE_CART_SYNC_TAG) {
     event.waitUntil(flushStoreCartQueue('sync'))
+    return
+  }
+  if (event.tag === INVITE_QUEUE_SYNC_TAG) {
+    event.waitUntil(flushContactInviteQueue('sync'))
   }
 })
 
@@ -211,6 +220,9 @@ self.addEventListener('message', (event) => {
   const data = event.data as Record<string, unknown> | undefined
   if (data?.type === 'store:cart:flush') {
     event.waitUntil(flushStoreCartQueue('message'))
+  }
+  if (data?.type === 'contact-invites:flush-queue') {
+    event.waitUntil(flushContactInviteQueue('message'))
   }
 })
 
@@ -220,6 +232,10 @@ self.addEventListener('message', (event) => {
   if (payload.type === 'p2p:flush-outbox') {
     const reason = typeof payload.reason === 'string' ? payload.reason : 'manual'
     event.waitUntil(flushOutbox(reason))
+  }
+  if (payload.type === 'contact-invites:flush-queue') {
+    const reason = typeof payload.reason === 'string' ? payload.reason : 'manual'
+    event.waitUntil(flushContactInviteQueue(reason))
   }
   if (payload.type === 'sw:refresh-cache') {
     event.waitUntil(
