@@ -427,14 +427,26 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         options.realtimeState.value = 'offline'
       }
 
+      const handleNetworkStatus = (event: Event) => {
+        if (!(event instanceof CustomEvent)) return
+        const detail = event.detail as { online?: boolean } | undefined
+        if (detail?.online === true) {
+          handleOnline()
+        } else if (detail?.online === false) {
+          handleOffline()
+        }
+      }
+
       window.addEventListener('online', handleOnline)
       window.addEventListener('offline', handleOffline)
+      window.addEventListener('prom:network-status', handleNetworkStatus)
 
       ctx.cleanup(() => {
         active = false
         clearReconnectTimer()
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
+        window.removeEventListener('prom:network-status', handleNetworkStatus)
         saveCounts()
         window.removeEventListener('beforeunload', saveCounts)
         document.removeEventListener('visibilitychange', handleVisibility)

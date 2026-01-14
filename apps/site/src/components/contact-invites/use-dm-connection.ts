@@ -2023,8 +2023,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
+    const handleNetworkStatus = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return
+      const detail = event.detail as { online?: boolean } | undefined
+      if (detail?.online === true) {
+        handleOnline()
+      } else if (detail?.online === false) {
+        handleOffline()
+      }
+    }
+
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    window.addEventListener('prom:network-status', handleNetworkStatus)
 
     const handleVisibilityResume = () => {
       if (!active) return
@@ -3162,6 +3173,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('prom:network-status', handleNetworkStatus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleWindowFocus)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {

@@ -80,8 +80,6 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
   const stickToBottom = useSignal(true)
   const didInitialScroll = useSignal(false)
   const bottomThreshold = 12
-  const isNearBottom = (node: HTMLDivElement) =>
-    node.scrollHeight - node.scrollTop - node.clientHeight <= bottomThreshold
 
   useVisibleTask$((ctx) => {
     const node = ctx.track(() => messagesRef.value)
@@ -103,6 +101,8 @@ export const ContactInvitesDm = component$<ContactInvitesDmProps>((props) => {
   useVisibleTask$((ctx) => {
     const node = ctx.track(() => messagesRef.value)
     if (!node) return
+    const isNearBottom = (target: HTMLDivElement) =>
+      target.scrollHeight - target.scrollTop - target.clientHeight <= bottomThreshold
     const handleScroll = () => {
       if (!didInitialScroll.value) return
       stickToBottom.value = isNearBottom(node)

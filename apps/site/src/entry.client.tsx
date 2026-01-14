@@ -1,5 +1,7 @@
 import { render } from '@builder.io/qwik'
-import { getServerBackoffMs } from './shared/server-backoff'
+import { p as preloadBundles } from '@builder.io/qwik/preloader'
+import { buildApiUrl, buildWsUrl } from './components/contact-invites/api'
+import { getServerBackoffMs, markServerSuccess } from './shared/server-backoff'
 import Root from './root'
 
 declare global {
@@ -13,6 +15,10 @@ const CLEANUP_VERSION_KEY = 'fragment:sw-cleanup-version'
 const OPT_OUT_KEY = 'fragment:sw-opt-out'
 const FORCE_CLEANUP_KEY = 'fragment:sw-force-cleanup'
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
+const CHAT_PREFETCH_KEY = 'fragment:chat-prefetch-version'
+const CHAT_PREFETCH_PATH = '/chat'
+const HEALTH_CHECK_INTERVAL_MS = 5000
+const HEALTH_CHECK_TIMEOUT_MS = 4000
 
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
   if (typeof window === 'undefined') return
@@ -26,13 +32,14 @@ if (import.meta.hot) {
 }
 
 export default function () {
-  render(document, <Root />)
+  void render(document, <Root />)
 
   if ('serviceWorker' in navigator) {
     setupServiceWorkerBridge()
   }
 
   setupOfflineErrorFilters()
+  setupServerHealthProbe()
 
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -51,8 +58,9 @@ export default function () {
         return
       }
 
-      cleanupPromise.finally(() => {
+      void cleanupPromise.finally(() => {
         void registerServiceWorker()
+        setupChatBundlePrefetch()
       })
     })
   }
@@ -119,6 +127,139 @@ function setupServiceWorkerBridge() {
     const optOut = payload?.optOut === true
     void setServiceWorkerOptOut(optOut)
   })
+}
+
+function setupServerHealthProbe() {
+  if (typeof window === 'undefined') return
+  const serverKey = resolveServerKey()
+  const healthUrl = resolveHealthUrl()
+  if (!healthUrl) return
+  let inFlight = false
+
+  const probe = async () => {
+    if (inFlight) return
+    if (navigator.onLine === false) return
+    if (getServerBackoffMs(serverKey) <= 0) return
+    inFlight = true
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS)
+    try {
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal
+      })
+      if (response.ok) {
+        markServerSuccess(serverKey)
+        dispatchSwEvent('prom:network-status', { online: true, source: 'health-probe' })
+      }
+    } catch {
+      // ignore probe errors
+    } finally {
+      window.clearTimeout(timeout)
+      inFlight = false
+    }
+  }
+
+  window.setInterval(() => {
+    void probe()
+  }, HEALTH_CHECK_INTERVAL_MS)
+
+  window.addEventListener('online', () => {
+    void probe()
+  })
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      void probe()
+    }
+  })
+}
+
+function setupChatBundlePrefetch() {
+  if (typeof window === 'undefined') return
+  if (isServiceWorkerDisabled() || isServiceWorkerOptedOut()) return
+  if (!shouldPrefetchChatBundles()) return
+  const serverKey = resolveServerKey()
+  let completed = false
+  let inFlight = false
+
+  const handleNetworkStatus = (event: Event) => {
+    if (!(event instanceof CustomEvent)) return
+    const detail = event.detail as { online?: boolean } | undefined
+    if (detail?.online === true) {
+      void attemptPrefetch()
+    }
+  }
+
+  const attemptPrefetch = async () => {
+    if (completed || inFlight) return
+    if (navigator.onLine === false) return
+    if (getServerBackoffMs(serverKey) > 0) return
+    if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) return
+    inFlight = true
+    try {
+      const normalizedPath = normalizeRoutePath(CHAT_PREFETCH_PATH)
+      if (normalizedPath) {
+        preloadBundles(normalizedPath, 1)
+        markChatPrefetchComplete()
+        completed = true
+        window.removeEventListener('online', attemptPrefetch)
+        window.removeEventListener('prom:network-status', handleNetworkStatus)
+        navigator.serviceWorker?.removeEventListener?.('controllerchange', attemptPrefetch)
+      }
+    } finally {
+      inFlight = false
+    }
+  }
+
+  window.addEventListener('online', attemptPrefetch)
+  window.addEventListener('prom:network-status', handleNetworkStatus)
+  navigator.serviceWorker?.addEventListener?.('controllerchange', attemptPrefetch)
+  void attemptPrefetch()
+}
+
+function normalizeRoutePath(path: string) {
+  if (!path) return ''
+  let normalized = path.endsWith('/') ? path : `${path}/`
+  if (normalized.length > 1 && normalized.startsWith('/')) {
+    normalized = normalized.slice(1)
+  }
+  return normalized
+}
+
+function resolveServerKey() {
+  if (typeof window === 'undefined') return 'default'
+  const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
+  if (wsUrl) {
+    try {
+      return new URL(wsUrl).host
+    } catch {
+      // fall back to window host
+    }
+  }
+  return window.location.host
+}
+
+function resolveHealthUrl() {
+  if (typeof window === 'undefined') return ''
+  return buildApiUrl('/health', window.location.origin)
+}
+
+function shouldPrefetchChatBundles() {
+  try {
+    return window.localStorage.getItem(CHAT_PREFETCH_KEY) !== getBuildVersion()
+  } catch {
+    return true
+  }
+}
+
+function markChatPrefetchComplete() {
+  try {
+    window.localStorage.setItem(CHAT_PREFETCH_KEY, getBuildVersion())
+  } catch {
+    // ignore storage failures
+  }
 }
 
 async function triggerManualSync() {

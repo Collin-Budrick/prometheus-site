@@ -34,284 +34,306 @@ type DmComposerOptions = {
   fragmentCopy: Signal<Record<string, string>>
 }
 
-export const useDmComposer = (options: DmComposerOptions) => {
-  const readBlobAsDataUrl = (blob: Blob) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result ?? ''))
-      reader.onerror = () => reject(new Error('Unable to read image.'))
-      reader.readAsDataURL(blob)
-    })
+type DmComposerRuntime = {
+  relayManager: ReturnType<typeof createRelayManager> | null
+  relayManagerKey: string
+  selfDevices: ContactDevice[]
+  selfDevicesFetchedAt: number
+  selfRelayManager: ReturnType<typeof createRelayManager> | null
+  selfRelayManagerKey: string
+}
 
-  const encodeBase64 = (bytes: Uint8Array) => {
-    let binary = ''
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte)
-    }
-    return btoa(binary)
+const relayInlineLimitBytes = 240_000
+const selfDevicesCacheMs = 30_000
+
+const createDmComposerRuntime = (): DmComposerRuntime => ({
+  relayManager: null,
+  relayManagerKey: '',
+  selfDevices: [],
+  selfDevicesFetchedAt: 0,
+  selfRelayManager: null,
+  selfRelayManagerKey: ''
+})
+
+const readBlobAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(new Error('Unable to read image.'))
+    reader.readAsDataURL(blob)
+  })
+
+const encodeBase64 = (bytes: Uint8Array) => {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
   }
+  return btoa(binary)
+}
 
-  const encodeBinaryMessage = (header: Record<string, unknown>, data: Uint8Array) => {
-    const headerBytes = new TextEncoder().encode(JSON.stringify(header))
-    if (headerBytes.length > 65_535) {
-      throw new Error('Image header too large.')
-    }
-    const buffer = new Uint8Array(2 + headerBytes.length + data.length)
-    const view = new DataView(buffer.buffer)
-    view.setUint16(0, headerBytes.length)
-    buffer.set(headerBytes, 2)
-    buffer.set(data, 2 + headerBytes.length)
-    return buffer
+const encodeBinaryMessage = (header: Record<string, unknown>, data: Uint8Array) => {
+  const headerBytes = new TextEncoder().encode(JSON.stringify(header))
+  if (headerBytes.length > 65_535) {
+    throw new Error('Image header too large.')
   }
+  const buffer = new Uint8Array(2 + headerBytes.length + data.length)
+  const view = new DataView(buffer.buffer)
+  view.setUint16(0, headerBytes.length)
+  buffer.set(headerBytes, 2)
+  buffer.set(data, 2 + headerBytes.length)
+  return buffer
+}
 
-  const createCanvas = (width: number, height: number) => {
-    if (typeof OffscreenCanvas !== 'undefined') {
-      return new OffscreenCanvas(width, height)
-    }
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    return canvas
+const createCanvas = (width: number, height: number) => {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(width, height)
   }
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  return canvas
+}
 
-  const encodeCanvas = async (canvas: OffscreenCanvas | HTMLCanvasElement, type: string, quality: number) => {
-    if ('convertToBlob' in canvas) {
-      return (canvas as OffscreenCanvas).convertToBlob({ type, quality })
-    }
-    return new Promise<Blob | null>((resolve) => {
-      ;(canvas as HTMLCanvasElement).toBlob(resolve, type, quality)
-    })
+const encodeCanvas = async (canvas: OffscreenCanvas | HTMLCanvasElement, type: string, quality: number) => {
+  if ('convertToBlob' in canvas) {
+    return (canvas as OffscreenCanvas).convertToBlob({ type, quality })
   }
+  return new Promise<Blob | null>((resolve) => {
+    ;(canvas as HTMLCanvasElement).toBlob(resolve, type, quality)
+  })
+}
 
-  const swapExtension = (name: string, extension: string) => {
-    const safeName = name || 'image'
-    const dotIndex = safeName.lastIndexOf('.')
-    const base = dotIndex > 0 ? safeName.slice(0, dotIndex) : safeName
-    return `${base}.${extension}`
-  }
+const swapExtension = (name: string, extension: string) => {
+  const safeName = name || 'image'
+  const dotIndex = safeName.lastIndexOf('.')
+  const base = dotIndex > 0 ? safeName.slice(0, dotIndex) : safeName
+  return `${base}.${extension}`
+}
 
-  const reencodeImage = async (file: File) => {
-    try {
-      const bitmap = await createImageBitmap(file)
-      const width = bitmap.width
-      const height = bitmap.height
-      const canvas = createCanvas(width, height)
-      const ctx = canvas.getContext('2d', { alpha: true }) as
-        | CanvasRenderingContext2D
-        | OffscreenCanvasRenderingContext2D
-        | null
-      if (!ctx) {
-        bitmap.close?.()
-        return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width, height }
-      }
-      ctx.drawImage(bitmap, 0, 0, width, height)
+const reencodeImage = async (file: File) => {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const width = bitmap.width
+    const height = bitmap.height
+    const canvas = createCanvas(width, height)
+    const ctx = canvas.getContext('2d', { alpha: true }) as
+      | CanvasRenderingContext2D
+      | OffscreenCanvasRenderingContext2D
+      | null
+    if (!ctx) {
       bitmap.close?.()
-      const candidates: Array<{ blob: Blob; mime: string; name: string }> = []
-      const avifBlob = await encodeCanvas(canvas, 'image/avif', 0.72)
-      if (avifBlob) {
-        candidates.push({ blob: avifBlob, mime: 'image/avif', name: swapExtension(file.name, 'avif') })
-      }
-      const webpBlob = await encodeCanvas(canvas, 'image/webp', 0.82)
-      if (webpBlob) {
-        candidates.push({ blob: webpBlob, mime: 'image/webp', name: swapExtension(file.name, 'webp') })
-      }
-      const fallbackMime = file.type || 'image/png'
-      candidates.push({ blob: file, mime: fallbackMime, name: file.name || `image.${fallbackMime.split('/')[1] ?? 'png'}` })
-      candidates.sort((a, b) => a.blob.size - b.blob.size)
-      const chosen = candidates[0]
-      return { blob: chosen.blob, mime: chosen.mime, name: chosen.name, width, height }
-    } catch {
-      return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width: 0, height: 0 }
+      return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width, height }
     }
+    ctx.drawImage(bitmap, 0, 0, width, height)
+    bitmap.close?.()
+    const candidates: Array<{ blob: Blob; mime: string; name: string }> = []
+    const avifBlob = await encodeCanvas(canvas, 'image/avif', 0.72)
+    if (avifBlob) {
+      candidates.push({ blob: avifBlob, mime: 'image/avif', name: swapExtension(file.name, 'avif') })
+    }
+    const webpBlob = await encodeCanvas(canvas, 'image/webp', 0.82)
+    if (webpBlob) {
+      candidates.push({ blob: webpBlob, mime: 'image/webp', name: swapExtension(file.name, 'webp') })
+    }
+    const fallbackMime = file.type || 'image/png'
+    candidates.push({ blob: file, mime: fallbackMime, name: file.name || `image.${fallbackMime.split('/')[1] ?? 'png'}` })
+    candidates.sort((a, b) => a.blob.size - b.blob.size)
+    const chosen = candidates[0]
+    return { blob: chosen.blob, mime: chosen.mime, name: chosen.name, width, height }
+  } catch {
+    return { blob: file, mime: file.type || 'image/png', name: file.name || 'image.png', width: 0, height: 0 }
   }
+}
 
-  const relayInlineLimitBytes = 240_000
-  let relayManager: ReturnType<typeof createRelayManager> | null = null
-  let relayManagerKey = ''
-  let selfDevices: ContactDevice[] = []
-  let selfDevicesFetchedAt = 0
-  let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
-  let selfRelayManagerKey = ''
-  const selfDevicesCacheMs = 30_000
-
-  const getRelayManager = () => {
-    if (typeof window === 'undefined') return null
-    const identity = options.identityRef.value
-    const remoteDevice = options.remoteDeviceRef.value
-    if (!identity) return null
-    const discoveredRelays = (remoteDevice?.relayUrls ?? []).slice().sort()
-    const nextKey = `${identity.relayPublicKey}|${remoteDevice?.relayPublicKey ?? ''}|${discoveredRelays.join(',')}`
-    if (!relayManager || nextKey !== relayManagerKey) {
-      relayManagerKey = nextKey
-      relayManager = createRelayManager(window.location.origin, {
-        relayIdentity:
-          identity.relayPublicKey && identity.relaySecretKey
-            ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
-            : undefined,
-        recipientRelayKey: remoteDevice?.relayPublicKey,
-        discoveredRelays
-      })
-    }
-    return relayManager
-  }
-
-  const fetchSelfDevices = async () => {
-    const selfUserId = options.selfUserId.value
-    if (!selfUserId || typeof window === 'undefined') return []
-    const now = Date.now()
-    if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
-      return selfDevices
-    }
-    try {
-      const response = await fetch(
-        buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
-        { credentials: 'include' }
-      )
-      if (!response.ok) return selfDevices
-      const payload = (await response.json()) as { devices?: ContactDevice[] }
-      const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-      selfDevices = next
-      selfDevicesFetchedAt = now
-      return next
-    } catch {
-      return selfDevices
-    }
-  }
-
-  const getSelfRelayManager = async () => {
-    if (typeof window === 'undefined') return null
-    const identity = options.identityRef.value
-    if (!identity) return null
-    const devices = await fetchSelfDevices()
-    const discovered = Array.from(
-      new Set(
-        devices
-          .flatMap((device) => device.relayUrls ?? [])
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-      )
-    )
-    const nextKey = `${identity.relayPublicKey ?? ''}|${discovered.slice().sort().join(',')}`
-    if (!selfRelayManager || nextKey !== selfRelayManagerKey) {
-      selfRelayManagerKey = nextKey
-      selfRelayManager = createRelayManager(window.location.origin, {
-        relayIdentity:
-          identity.relayPublicKey && identity.relaySecretKey
-            ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
-            : undefined,
-        discoveredRelays: discovered
-      })
-    }
-    return selfRelayManager
-  }
-
-  const sendRelayPayload = async (payload: unknown, messageId: string, sessionId?: string) => {
-    const contact = options.activeContact.value
-    if (!contact) return 0
-    const manager = getRelayManager()
-    if (!manager || !manager.clients.length) return 0
-    const identity = options.identityRef.value
-    const result = await manager.send({
-      recipientId: contact.id,
-      messageId,
-      sessionId,
-      payload,
-      senderId: options.selfUserId.value,
-      senderDeviceId: identity?.deviceId,
-      recipientRelayKey: options.remoteDeviceRef.value?.relayPublicKey
+const getRelayManager = (runtime: DmComposerRuntime, options: DmComposerOptions) => {
+  if (typeof window === 'undefined') return null
+  const identity = options.identityRef.value
+  const remoteDevice = options.remoteDeviceRef.value
+  if (!identity) return null
+  const discoveredRelays = (remoteDevice?.relayUrls ?? []).slice().sort()
+  const nextKey = `${identity.relayPublicKey}|${remoteDevice?.relayPublicKey ?? ''}|${discoveredRelays.join(',')}`
+  if (!runtime.relayManager || nextKey !== runtime.relayManagerKey) {
+    runtime.relayManagerKey = nextKey
+    runtime.relayManager = createRelayManager(window.location.origin, {
+      relayIdentity:
+        identity.relayPublicKey && identity.relaySecretKey
+          ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+          : undefined,
+      recipientRelayKey: remoteDevice?.relayPublicKey,
+      discoveredRelays
     })
-    return result?.delivered ?? 0
   }
+  return runtime.relayManager
+}
 
-  const sendSelfSyncPayload = async (
-    contactId: string,
-    payload: Record<string, unknown>,
-    messageId: string,
-    author: 'self' | 'contact'
-  ) => {
-    const identity = options.identityRef.value
-    const selfUserId = options.selfUserId.value
-    if (!identity || !selfUserId || !contactId) return
-    const devices = await fetchSelfDevices()
-    const targets = devices.filter((device) => device.deviceId !== identity.deviceId)
-    if (!targets.length) return
-    const manager = await getSelfRelayManager()
-    if (!manager || !manager.clients.length) return
-    await Promise.all(
-      targets.map(async (device) => {
-        try {
-          const encrypted = await encryptRelayPayloadForDevice(payload, selfUserId, device)
-          if (!encrypted) return
-          await manager.send({
-            recipientId: selfUserId,
-            messageId: `sync:${messageId}:${device.deviceId}`,
-            sessionId: encrypted.sessionId,
-            payload: { kind: 'sync', contactId, author, payload: encrypted.payload },
-            deviceIds: [device.deviceId],
-            senderId: selfUserId,
-            senderDeviceId: identity.deviceId,
-            recipientRelayKey: device.relayPublicKey
-          })
-        } catch {
-          // ignore self sync failures
-        }
-      })
+const fetchSelfDevices = async (runtime: DmComposerRuntime, options: DmComposerOptions) => {
+  const selfUserId = options.selfUserId.value
+  if (!selfUserId || typeof window === 'undefined') return []
+  const now = Date.now()
+  if (runtime.selfDevices.length && now - runtime.selfDevicesFetchedAt < selfDevicesCacheMs) {
+    return runtime.selfDevices
+  }
+  try {
+    const response = await fetch(
+      buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
+      { credentials: 'include' }
     )
+    if (!response.ok) return runtime.selfDevices
+    const payload = (await response.json()) as { devices?: ContactDevice[] }
+    const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+    runtime.selfDevices = next
+    runtime.selfDevicesFetchedAt = now
+    return next
+  } catch {
+    return runtime.selfDevices
   }
+}
 
-  const createRelaySession = async (identity: DeviceIdentity, device: ContactDevice) => {
-    const sessionId = createMessageId()
-    const salt = randomBase64(16)
-    const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
-    return { sessionId, salt, key }
-  }
-
-  const encryptRelayPayloadForDevice = async (
-    payload: Record<string, unknown>,
-    recipientId: string,
-    device: ContactDevice
-  ) => {
-    const identity = options.identityRef.value
-    if (!identity) return null
-    const signalEnvelope = await encryptSignalPayload({
-      identity,
-      recipientId,
-      recipientDeviceId: device.deviceId,
-      relayUrls: device.relayUrls,
-      payload
+const getSelfRelayManager = async (runtime: DmComposerRuntime, options: DmComposerOptions) => {
+  if (typeof window === 'undefined') return null
+  const identity = options.identityRef.value
+  if (!identity) return null
+  const devices = await fetchSelfDevices(runtime, options)
+  const discovered = Array.from(
+    new Set(
+      devices
+        .flatMap((device) => device.relayUrls ?? [])
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  )
+  const nextKey = `${identity.relayPublicKey ?? ''}|${discovered.slice().sort().join(',')}`
+  if (!runtime.selfRelayManager || nextKey !== runtime.selfRelayManagerKey) {
+    runtime.selfRelayManagerKey = nextKey
+    runtime.selfRelayManager = createRelayManager(window.location.origin, {
+      relayIdentity:
+        identity.relayPublicKey && identity.relaySecretKey
+          ? { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
+          : undefined,
+      discoveredRelays: discovered
     })
-    if (signalEnvelope) {
-      return { payload: signalEnvelope, sessionId: undefined as string | undefined }
-    }
-    const relaySession = await createRelaySession(identity, device)
-    const encrypted = await encryptPayload(
-      relaySession.key,
-      JSON.stringify(payload),
-      relaySession.sessionId,
-      relaySession.salt,
-      identity.deviceId
-    )
-    return { payload: encrypted, sessionId: relaySession.sessionId }
   }
+  return runtime.selfRelayManager
+}
 
-  const sendEncryptedPayload = async (
-    session: P2pSession,
-    identity: DeviceIdentity,
-    payload: Record<string, unknown>
-  ) => {
-    const encrypted = await encryptPayload(
-      session.key,
-      JSON.stringify(payload),
-      session.sessionId,
-      session.salt,
-      identity.deviceId
-    )
-    const channel = options.channelRef.value
-    if (!channel || channel.readyState !== 'open') {
-      throw new Error('Channel unavailable')
-    }
-    channel.send(JSON.stringify({ type: 'message', payload: encrypted }))
+const sendRelayPayload = async (
+  runtime: DmComposerRuntime,
+  options: DmComposerOptions,
+  payload: unknown,
+  messageId: string,
+  sessionId?: string
+) => {
+  const contact = options.activeContact.value
+  if (!contact) return 0
+  const manager = getRelayManager(runtime, options)
+  if (!manager || !manager.clients.length) return 0
+  const identity = options.identityRef.value
+  const result = await manager.send({
+    recipientId: contact.id,
+    messageId,
+    sessionId,
+    payload,
+    senderId: options.selfUserId.value,
+    senderDeviceId: identity?.deviceId,
+    recipientRelayKey: options.remoteDeviceRef.value?.relayPublicKey
+  })
+  return result?.delivered ?? 0
+}
+
+const sendSelfSyncPayload = async (
+  runtime: DmComposerRuntime,
+  options: DmComposerOptions,
+  contactId: string,
+  payload: Record<string, unknown>,
+  messageId: string,
+  author: 'self' | 'contact'
+) => {
+  const identity = options.identityRef.value
+  const selfUserId = options.selfUserId.value
+  if (!identity || !selfUserId || !contactId) return
+  const devices = await fetchSelfDevices(runtime, options)
+  const targets = devices.filter((device) => device.deviceId !== identity.deviceId)
+  if (!targets.length) return
+  const manager = await getSelfRelayManager(runtime, options)
+  if (!manager || !manager.clients.length) return
+  await Promise.all(
+    targets.map(async (device) => {
+      try {
+        const encrypted = await encryptRelayPayloadForDevice(identity, payload, selfUserId, device)
+        if (!encrypted) return
+        await manager.send({
+          recipientId: selfUserId,
+          messageId: `sync:${messageId}:${device.deviceId}`,
+          sessionId: encrypted.sessionId,
+          payload: { kind: 'sync', contactId, author, payload: encrypted.payload },
+          deviceIds: [device.deviceId],
+          senderId: selfUserId,
+          senderDeviceId: identity.deviceId,
+          recipientRelayKey: device.relayPublicKey
+        })
+      } catch {
+        // ignore self sync failures
+      }
+    })
+  )
+}
+
+const createRelaySession = async (identity: DeviceIdentity, device: ContactDevice) => {
+  const sessionId = createMessageId()
+  const salt = randomBase64(16)
+  const key = await deriveSessionKey(identity.privateKey, device.publicKey, decodeBase64(salt), sessionId)
+  return { sessionId, salt, key }
+}
+
+const encryptRelayPayloadForDevice = async (
+  identity: DeviceIdentity | undefined,
+  payload: Record<string, unknown>,
+  recipientId: string,
+  device: ContactDevice
+) => {
+  if (!identity) return null
+  const signalEnvelope = await encryptSignalPayload({
+    identity,
+    recipientId,
+    recipientDeviceId: device.deviceId,
+    relayUrls: device.relayUrls,
+    payload
+  })
+  if (signalEnvelope) {
+    return { payload: signalEnvelope, sessionId: undefined as string | undefined }
   }
+  const relaySession = await createRelaySession(identity, device)
+  const encrypted = await encryptPayload(
+    relaySession.key,
+    JSON.stringify(payload),
+    relaySession.sessionId,
+    relaySession.salt,
+    identity.deviceId
+  )
+  return { payload: encrypted, sessionId: relaySession.sessionId }
+}
+
+const sendEncryptedPayload = async (
+  session: P2pSession,
+  identity: DeviceIdentity,
+  payload: Record<string, unknown>,
+  channel: DmDataChannel | undefined
+) => {
+  const encrypted = await encryptPayload(
+    session.key,
+    JSON.stringify(payload),
+    session.sessionId,
+    session.salt,
+    identity.deviceId
+  )
+  if (!channel || channel.readyState !== 'open') {
+    throw new Error('Channel unavailable')
+  }
+  channel.send(JSON.stringify({ type: 'message', payload: encrypted }))
+}
+
+export const useDmComposer = (options: DmComposerOptions) => {
+  const runtime = createDmComposerRuntime()
 
   const sendTyping = $(async (state: 'start' | 'stop') => {
     if (typeof window === 'undefined') return
@@ -445,19 +467,20 @@ export const useDmComposer = (options: DmComposerOptions) => {
         )
         void persistHistory(contact.id, identity, options.dmMessages.value)
         const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
-        void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+        void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
         return
       }
 
       const remoteDevice = options.remoteDeviceRef.value
       if (remoteDevice) {
         const encrypted = await encryptRelayPayloadForDevice(
+          identity,
           { kind: 'message', id: messageId, text, createdAt },
           contact.id,
           remoteDevice
         )
         if (encrypted) {
-          const delivered = await sendRelayPayload(encrypted.payload, messageId, encrypted.sessionId)
+          const delivered = await sendRelayPayload(runtime, options, encrypted.payload, messageId, encrypted.sessionId)
           if (delivered > 0) {
             void markOutboxItemSent(contact.id, identity, messageId, 'relay')
           }
@@ -469,7 +492,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       )
       void persistHistory(contact.id, identity, options.dmMessages.value)
       const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
-      void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+      void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
@@ -597,7 +620,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
           height: height || undefined,
           total: channelTotal,
           encoding: encoding === 'zstd' ? 'zstd' : undefined
-        })
+        }, channel)
         for (let index = 0; index < channelTotal; index += 1) {
           const start = index * channelChunkSize
           const end = Math.min(payloadBytes.length, start + channelChunkSize)
@@ -628,7 +651,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
             width: width || undefined,
             height: height || undefined
           }
-          void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+          void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
         }
         return
       }
@@ -636,6 +659,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       const remoteDevice = options.remoteDeviceRef.value
       if (remoteDevice && payloadBytes.length <= relayInlineLimitBytes) {
         const encrypted = await encryptRelayPayloadForDevice(
+          identity,
           {
             kind: 'image-inline',
             id: messageId,
@@ -652,7 +676,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
           remoteDevice
         )
         if (encrypted) {
-          const delivered = await sendRelayPayload(encrypted.payload, messageId, encrypted.sessionId)
+          const delivered = await sendRelayPayload(runtime, options, encrypted.payload, messageId, encrypted.sessionId)
           if (delivered > 0) {
             void markOutboxItemSent(contact.id, identity, messageId, 'relay')
           }
@@ -676,7 +700,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
           width: width || undefined,
           height: height || undefined
         }
-        void sendSelfSyncPayload(contact.id, syncPayload, messageId, 'self')
+        void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
       }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
