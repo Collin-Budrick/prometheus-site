@@ -357,10 +357,25 @@ const resolveP2pWakuRelays = (env: AppEnv) => {
   return splitList(raw).map((entry) => entry.trim()).filter(Boolean)
 }
 
+const isValidSignalingEntry = (entry: string) => {
+  const trimmed = entry.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) return true
+  if (!/^wss?:\/\//i.test(trimmed)) return false
+  try {
+    const url = new URL(trimmed)
+    if (!url.hostname) return false
+    if (url.hostname === 'sig') return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 const resolveP2pCrdtSignaling = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_CRDT_SIGNALING, env.VITE_P2P_CRDT_SIGNALING))?.trim() ?? ''
   if (!raw) return []
-  return splitList(raw).map((entry) => entry.trim()).filter(Boolean)
+  return splitList(raw).map((entry) => entry.trim()).filter(isValidSignalingEntry)
 }
 
 const resolveP2pPeerjsServer = (env: AppEnv) => {

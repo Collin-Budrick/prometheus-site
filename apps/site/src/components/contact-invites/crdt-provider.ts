@@ -11,7 +11,9 @@ const resolveSignaling = () => {
     return configured.length ? configured : undefined
   }
   const origin = window.location.origin.replace(/^http/, 'ws')
-  const resolved = configured
+  const resolved = Array.from(
+    new Set(
+      configured
     .map((entry) => {
       const trimmed = entry.trim()
       if (!trimmed) return ''
@@ -24,7 +26,9 @@ const resolveSignaling = () => {
         return ''
       }
     })
-    .filter(Boolean)
+      .filter(Boolean)
+    )
+  )
   if (resolved.length) return resolved
   return [`${origin}/yjs`]
 }

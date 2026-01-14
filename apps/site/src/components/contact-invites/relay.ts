@@ -546,7 +546,7 @@ const parseWakuEnvelope = (payload: Uint8Array) => {
 }
 
 const createWakuRelayClient = (peers: string[]): RelayClient | null => {
-  if (typeof window === 'undefined') return null
+  if (typeof window === 'undefined' || peers.length === 0) return null
   const baseUrl = 'waku'
 
   const send = async (request: RelaySendRequest) => {
