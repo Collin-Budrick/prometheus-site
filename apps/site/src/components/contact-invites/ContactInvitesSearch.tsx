@@ -8,6 +8,8 @@ type ContactInvitesSearchProps = {
   resolvedSearchLabel: string
   resolvedSearchPlaceholder: string
   resolvedSearchAction: string
+  offline: boolean
+  offlineMessage: string
   searchQuery: string
   searchState: 'idle' | 'loading' | 'error'
   searchError: string | null
@@ -160,7 +162,11 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
             aria-label={props.resolvedSearchLabel}
           />
         </label>
-        <button class="chat-invites-button" type="submit" disabled={props.searchState === 'loading'}>
+        <button
+          class="chat-invites-button"
+          type="submit"
+          disabled={props.searchState === 'loading' || props.offline}
+        >
           {props.searchState === 'loading' ? resolve('Searching...') : props.resolvedSearchAction}
         </button>
       </form>
@@ -168,7 +174,11 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
       <div class="chat-invites-results" data-state={props.searchState}>
         <div class="chat-invites-results-header">
           <span>{props.resultsLabel}</span>
-          {props.searchError ? <span class="chat-invites-error">{props.searchError}</span> : null}
+          {props.searchError ? (
+            <span class="chat-invites-error">{props.searchError}</span>
+          ) : props.offline ? (
+            <span class="chat-invites-error">{props.offlineMessage}</span>
+          ) : null}
         </div>
         {props.searchState === 'loading' && props.displayResults.length === 0 ? (
           <p class="chat-invites-empty">{resolve('Searching...')}</p>

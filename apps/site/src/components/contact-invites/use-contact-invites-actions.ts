@@ -1,4 +1,4 @@
-import { $, noSerialize, type NoSerialize, type Signal } from '@builder.io/qwik'
+import { $, noSerialize, useVisibleTask$, type NoSerialize, type Signal } from '@builder.io/qwik'
 import { saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
 import { appConfig } from '../../app-config'
 import {
@@ -61,9 +61,240 @@ type ContactInvitesActionsOptions = {
   identityRef: Signal<NoSerialize<DeviceIdentity> | undefined>
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
+  offline: Signal<boolean>
 }
 
+type QueuedContactAction =
+  | {
+      id: string
+      type: 'invite'
+      email: string
+      userId?: string
+      createdAt: string
+    }
+  | {
+      id: string
+      type: 'accept' | 'decline'
+      inviteId: string
+      userId: string
+      createdAt: string
+    }
+  | {
+      id: string
+      type: 'remove'
+      inviteId: string
+      userId: string
+      email: string
+      createdAt: string
+    }
+
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
+  let flushInFlight = false
+
+  const queueStorageKey = (userId?: string) =>
+    `contact-invite-queue:${userId ? encodeURIComponent(userId) : 'anonymous'}`
+
+  const getQueueStorageKey = () => queueStorageKey(options.chatSettingsUserId.value)
+
+  const loadQueuedActions = () => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = window.localStorage.getItem(getQueueStorageKey())
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as unknown
+      return Array.isArray(parsed) ? (parsed as QueuedContactAction[]) : []
+    } catch {
+      return []
+    }
+  }
+
+  const saveQueuedActions = (queue: QueuedContactAction[]) => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(getQueueStorageKey(), JSON.stringify(queue))
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  const enqueueQueuedAction = (action: QueuedContactAction) => {
+    const queue = loadQueuedActions()
+    queue.push(action)
+    saveQueuedActions(queue)
+  }
+
+  const resolveLocal = (value: string) => options.fragmentCopy.value?.[value] ?? value
+
+  const isOffline = () =>
+    (typeof navigator !== 'undefined' && navigator.onLine === false) || options.realtimeState.value === 'offline'
+
+  const updateOfflineState = () => {
+    if (typeof window === 'undefined') return false
+    const offline = isOffline()
+    options.offline.value = offline
+    return offline
+  }
+
+  const parseErrorMessage = async (response: Response, fallback: string) => {
+    try {
+      const payload = (await response.json()) as { error?: string }
+      if (payload?.error) return payload.error
+    } catch {
+      // ignore parsing failures
+    }
+    return fallback
+  }
+
+  const flushQueuedActions = $(async () => {
+    if (typeof window === 'undefined') return
+    if (flushInFlight) return
+    if (isOffline()) return
+    const queued = loadQueuedActions()
+    if (!queued.length) return
+
+    flushInFlight = true
+    const remaining: QueuedContactAction[] = []
+    let refreshed = false
+
+    for (const action of queued) {
+      try {
+        if (action.type === 'invite') {
+          const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email: action.email })
+          })
+          if (!response.ok) {
+            const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
+            options.statusTone.value = 'error'
+            options.statusMessage.value = errorMessage
+            remaining.push(action)
+            continue
+          }
+          const payload = (await response.json()) as { id?: string }
+          options.statusTone.value = 'success'
+          options.statusMessage.value = resolveLocal('Invite sent.')
+          if (action.userId) {
+            options.searchResults.value = options.searchResults.value.map((entry) =>
+              entry.id === action.userId
+                ? { ...entry, status: 'outgoing', inviteId: payload.id ?? entry.inviteId }
+                : entry
+            )
+          }
+          refreshed = true
+          continue
+        }
+
+        if (action.type === 'accept') {
+          const response = await fetch(
+            buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(action.inviteId)}/accept`, window.location.origin),
+            { method: 'POST', credentials: 'include' }
+          )
+          if (!response.ok) {
+            const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
+            options.statusTone.value = 'error'
+            options.statusMessage.value = errorMessage
+            remaining.push(action)
+            continue
+          }
+          options.statusTone.value = 'success'
+          options.statusMessage.value = resolveLocal('Invite accepted.')
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.id === action.userId ? { ...entry, status: 'accepted', inviteId: action.inviteId } : entry
+          )
+          refreshed = true
+          continue
+        }
+
+        if (action.type === 'decline') {
+          const response = await fetch(
+            buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(action.inviteId)}/decline`, window.location.origin),
+            { method: 'POST', credentials: 'include' }
+          )
+          if (!response.ok) {
+            const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
+            options.statusTone.value = 'error'
+            options.statusMessage.value = errorMessage
+            remaining.push(action)
+            continue
+          }
+          options.statusTone.value = 'success'
+          options.statusMessage.value = resolveLocal('Invite declined.')
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.id === action.userId ? { ...entry, status: 'none', inviteId: undefined } : entry
+          )
+          refreshed = true
+          continue
+        }
+
+        if (action.type === 'remove') {
+          const response = await fetch(
+            buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(action.inviteId)}`, window.location.origin),
+            { method: 'DELETE', credentials: 'include' }
+          )
+          if (!response.ok) {
+            const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
+            options.statusTone.value = 'error'
+            options.statusMessage.value = errorMessage
+            remaining.push(action)
+            continue
+          }
+          options.statusTone.value = 'success'
+          options.statusMessage.value = resolveLocal('Invite removed.')
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.id === action.userId ? { ...entry, status: 'none', inviteId: undefined } : entry
+          )
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.email === action.email ? { ...entry, status: 'none', inviteId: undefined } : entry
+          )
+          refreshed = true
+          continue
+        }
+
+        remaining.push(action)
+      } catch (error) {
+        options.statusTone.value = 'error'
+        options.statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
+        remaining.push(action)
+      }
+    }
+
+    saveQueuedActions(remaining)
+    if (
+      refreshed &&
+      (options.realtimeState.value === 'idle' ||
+        options.realtimeState.value === 'offline' ||
+        options.realtimeState.value === 'error')
+    ) {
+      await refreshInvites(false)
+    }
+
+    flushInFlight = false
+  })
+
+  useVisibleTask$(({ track, cleanup }) => {
+    if (typeof window === 'undefined') return
+    const handleOnline = () => {
+      updateOfflineState()
+      void flushQueuedActions()
+    }
+    const handleOffline = () => {
+      updateOfflineState()
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    track(() => options.realtimeState.value)
+    const offline = updateOfflineState()
+    if (!offline && options.realtimeState.value === 'live') {
+      void flushQueuedActions()
+    }
+    cleanup(() => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    })
+  })
+
   const restoreSettingsFocus = () => {
     if (typeof document === 'undefined') return
     const popover = options.chatSettingsPopoverRef.value
@@ -206,9 +437,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const refreshInvites = $(async (resetStatus = true) => {
     if (typeof window === 'undefined') return
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     const applyInvitesPayload = (
       payload: ContactInvitesPayload,
       offline = false,
@@ -362,13 +590,15 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       return
     }
 
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     options.searchState.value = 'loading'
     options.searchError.value = null
 
     try {
+      if (isOffline()) {
+        options.searchState.value = 'idle'
+        options.searchError.value = null
+        return
+      }
       const response = await fetch(
         buildApiUrl(`/chat/contacts/search?email=${encodeURIComponent(trimmed)}`, window.location.origin),
         { credentials: 'include', headers: { Accept: 'application/json' } }
@@ -406,10 +636,24 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
 
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     try {
+      if (isOffline()) {
+        enqueueQueuedAction({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'invite',
+          email,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Offline - invite queued.')
+        if (userId) {
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.id === userId ? { ...entry, status: 'outgoing', inviteId: entry.inviteId } : entry
+          )
+        }
+        return
+      }
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -418,13 +662,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       })
 
       if (!response.ok) {
-        let errorMessage = resolveLocal('Invite unavailable.')
-        try {
-          const payload = (await response.json()) as { error?: string }
-          if (payload?.error) errorMessage = payload.error
-        } catch {
-          // ignore parsing failures
-        }
+        const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
         options.statusTone.value = 'error'
         options.statusMessage.value = errorMessage
         return
@@ -463,23 +701,29 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
 
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     try {
+      if (isOffline()) {
+        enqueueQueuedAction({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'accept',
+          inviteId,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Offline - accept queued.')
+        options.searchResults.value = options.searchResults.value.map((entry) =>
+          entry.id === userId ? { ...entry, status: 'accepted', inviteId } : entry
+        )
+        return
+      }
       const response = await fetch(
         buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(inviteId)}/accept`, window.location.origin),
         { method: 'POST', credentials: 'include' }
       )
 
       if (!response.ok) {
-        let errorMessage = resolveLocal('Invite unavailable.')
-        try {
-          const payload = (await response.json()) as { error?: string }
-          if (payload?.error) errorMessage = payload.error
-        } catch {
-          // ignore parsing failures
-        }
+        const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
         options.statusTone.value = 'error'
         options.statusMessage.value = errorMessage
         return
@@ -513,23 +757,29 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
 
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     try {
+      if (isOffline()) {
+        enqueueQueuedAction({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'decline',
+          inviteId,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Offline - decline queued.')
+        options.searchResults.value = options.searchResults.value.map((entry) =>
+          entry.id === userId ? { ...entry, status: 'none', inviteId: undefined } : entry
+        )
+        return
+      }
       const response = await fetch(
         buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(inviteId)}/decline`, window.location.origin),
         { method: 'POST', credentials: 'include' }
       )
 
       if (!response.ok) {
-        let errorMessage = resolveLocal('Invite unavailable.')
-        try {
-          const payload = (await response.json()) as { error?: string }
-          if (payload?.error) errorMessage = payload.error
-        } catch {
-          // ignore parsing failures
-        }
+        const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
         options.statusTone.value = 'error'
         options.statusMessage.value = errorMessage
         return
@@ -563,23 +813,33 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
 
-    const copyValue = options.fragmentCopy.value
-    const resolveLocal = (value: string) => copyValue?.[value] ?? value
-
     try {
+      if (isOffline()) {
+        enqueueQueuedAction({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'remove',
+          inviteId,
+          userId,
+          email,
+          createdAt: new Date().toISOString()
+        })
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Offline - removal queued.')
+        options.searchResults.value = options.searchResults.value.map((entry) =>
+          entry.id === userId ? { ...entry, status: 'none', inviteId: undefined } : entry
+        )
+        options.searchResults.value = options.searchResults.value.map((entry) =>
+          entry.email === email ? { ...entry, status: 'none', inviteId: undefined } : entry
+        )
+        return
+      }
       const response = await fetch(
         buildApiUrl(`/chat/contacts/invites/${encodeURIComponent(inviteId)}`, window.location.origin),
         { method: 'DELETE', credentials: 'include' }
       )
 
       if (!response.ok) {
-        let errorMessage = resolveLocal('Invite unavailable.')
-        try {
-          const payload = (await response.json()) as { error?: string }
-          if (payload?.error) errorMessage = payload.error
-        } catch {
-          // ignore parsing failures
-        }
+        const errorMessage = await parseErrorMessage(response, resolveLocal('Invite unavailable.'))
         options.statusTone.value = 'error'
         options.statusMessage.value = errorMessage
         return
