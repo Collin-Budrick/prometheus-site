@@ -131,6 +131,9 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let reconnecting = false
+    let wsReconnectTimer: number | null = null
+    let wsReconnectAttempt = 0
+    let wsReconnectPending = false
     let iceRestarting = false
     let iceRestartAttempts = 0
     let isPolite = false
@@ -361,8 +364,14 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         window.clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
+      if (wsReconnectTimer !== null) {
+        window.clearTimeout(wsReconnectTimer)
+        wsReconnectTimer = null
+      }
       reconnecting = false
       reconnectAttempt = 0
+      wsReconnectAttempt = 0
+      wsReconnectPending = false
       iceRestarting = false
       iceRestartAttempts = 0
       pendingSignals.splice(0, pendingSignals.length)
@@ -383,6 +392,28 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       peerJsConnecting = false
       peerJsFallbackActive = false
       options.channelRef.value = undefined
+    }
+
+    const scheduleWsReconnect = (identity: DeviceIdentity, reason: string) => {
+      if (!active) return
+      if (wsReconnectTimer !== null || wsReconnectPending) return
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        options.dmStatus.value = 'offline'
+        wsReconnectPending = true
+        debug('ws reconnect deferred (offline)', { reason })
+        return
+      }
+      wsReconnectAttempt += 1
+      const baseDelay = 800
+      const maxDelay = 12_000
+      const delay = Math.min(baseDelay * 2 ** (wsReconnectAttempt - 1), maxDelay)
+      const jitter = Math.random() * delay * 0.3
+      const wait = delay + jitter
+      wsReconnectTimer = window.setTimeout(() => {
+        wsReconnectTimer = null
+        connectWs(identity)
+      }, wait)
+      debug('ws reconnect scheduled', { reason, attempt: wsReconnectAttempt, wait })
     }
 
     const resetPeerConnection = () => {
@@ -1762,9 +1793,21 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const handleOnline = () => {
       void flushOutbox()
       void pullMailbox()
+      if (!active) return
+      if (!wsHealthy && wsReconnectPending && options.identityRef.value) {
+        wsReconnectPending = false
+        scheduleWsReconnect(options.identityRef.value, 'network-online')
+      }
+    }
+
+    const handleOffline = () => {
+      if (!active) return
+      options.dmStatus.value = 'offline'
+      wsReconnectPending = true
     }
 
     window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
 
     const decodeBinaryMessage = (bytes: Uint8Array) => {
       if (bytes.length < 2) return null
@@ -2588,6 +2631,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       ws.addEventListener('open', () => {
         debug('ws open')
         wsHealthy = true
+        wsReconnectAttempt = 0
+        wsReconnectPending = false
+        if (wsReconnectTimer !== null) {
+          window.clearTimeout(wsReconnectTimer)
+          wsReconnectTimer = null
+        }
         ws?.send(JSON.stringify({ type: 'hello', deviceId: identity.deviceId }))
         while (pendingSignals.length) {
           const signal = pendingSignals.shift()
@@ -2642,17 +2691,18 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         } else if (options.dmStatus.value === 'connected') {
           options.dmStatus.value = 'offline'
         }
-        if (reconnectTimer !== null) return
-        reconnectTimer = window.setTimeout(() => {
-          reconnectTimer = null
-          connectWs(identity)
-        }, 4000)
+        scheduleWsReconnect(identity, 'ws-close')
         void maybeStartPeerJsFallback(identity, 'ws-close')
       })
       ws.addEventListener('error', () => {
         debug('ws error')
         wsHealthy = false
-        reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error')
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          options.dmStatus.value = 'offline'
+        } else {
+          reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error')
+        }
+        scheduleWsReconnect(identity, 'ws-error')
         void maybeStartPeerJsFallback(identity, 'ws-error')
       })
     }
@@ -2737,6 +2787,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       active = false
       window.removeEventListener(PROFILE_UPDATED_EVENT, handleProfileUpdateEvent)
       window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
       }
