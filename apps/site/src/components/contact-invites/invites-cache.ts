@@ -6,7 +6,20 @@ type CachedInvites = {
   updatedAt: string
 }
 
+type CachedInvitesResult = {
+  payload: ContactInvitesPayload
+  updatedAt: string
+  isExpired: boolean
+}
+
 const invitesCacheKey = (userId?: string) => `chat:invites:cache:${userId ?? 'anon'}`
+const invitesCacheTtlMs = 1000 * 60 * 60 * 48
+
+const parseUpdatedAt = (value: unknown) => {
+  if (typeof value !== 'string') return null
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : value
+}
 
 const normalizeInvite = (value: unknown): ContactInviteView | null => {
   if (!isRecord(value)) return null
@@ -44,14 +57,30 @@ const normalizePayload = (payload: ContactInvitesPayload): ContactInvitesPayload
   }
 }
 
-export const loadInvitesCache = (userId?: string): ContactInvitesPayload | null => {
+export const loadInvitesCache = (
+  userId?: string,
+  options?: { allowStale?: boolean }
+): CachedInvitesResult | null => {
   if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(invitesCacheKey(userId))
+    const key = invitesCacheKey(userId)
+    const raw = window.localStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as CachedInvites
     if (!parsed || !isRecord(parsed)) return null
-    return normalizePayload((parsed as CachedInvites).payload ?? {})
+    const updatedAt = parseUpdatedAt((parsed as CachedInvites).updatedAt)
+    if (!updatedAt) return null
+    const ageMs = Date.now() - Date.parse(updatedAt)
+    const isExpired = !Number.isFinite(ageMs) || ageMs > invitesCacheTtlMs
+    if (isExpired && !options?.allowStale) {
+      window.localStorage.removeItem(key)
+      return null
+    }
+    return {
+      payload: normalizePayload((parsed as CachedInvites).payload ?? {}),
+      updatedAt,
+      isExpired
+    }
   } catch {
     return null
   }
@@ -69,5 +98,14 @@ export const saveInvitesCache = (userId: string | undefined, payload: ContactInv
     return true
   } catch {
     return false
+  }
+}
+
+export const clearInvitesCache = (userId?: string) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(invitesCacheKey(userId))
+  } catch {
+    // ignore storage failures
   }
 }
