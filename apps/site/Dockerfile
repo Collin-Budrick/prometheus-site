@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.5
-FROM oven/bun:1.3.5 AS deps
+FROM oven/bun:1.3.6 AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -14,7 +14,7 @@ COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --ignore-scripts --frozen-lockfile --filter site
 
-FROM oven/bun:1.3.5 AS builder
+FROM oven/bun:1.3.6 AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -36,6 +36,8 @@ ARG VITE_HIGHLIGHT_PRIVACY
 ARG VITE_HIGHLIGHT_SESSION_RECORDING
 ARG VITE_HIGHLIGHT_CANVAS_SAMPLING
 ARG VITE_WEBTRANSPORT_BASE
+ARG VITE_P2P_CRDT_SIGNALING
+ARG VITE_P2P_PEERJS_SERVER
 ARG VITE_DISABLE_SW
 ENV VITE_API_BASE=$VITE_API_BASE
 ENV VITE_ENABLE_PREFETCH=$VITE_ENABLE_PREFETCH
@@ -49,6 +51,8 @@ ENV VITE_HIGHLIGHT_PRIVACY=$VITE_HIGHLIGHT_PRIVACY
 ENV VITE_HIGHLIGHT_SESSION_RECORDING=$VITE_HIGHLIGHT_SESSION_RECORDING
 ENV VITE_HIGHLIGHT_CANVAS_SAMPLING=$VITE_HIGHLIGHT_CANVAS_SAMPLING
 ENV VITE_WEBTRANSPORT_BASE=$VITE_WEBTRANSPORT_BASE
+ENV VITE_P2P_CRDT_SIGNALING=$VITE_P2P_CRDT_SIGNALING
+ENV VITE_P2P_PEERJS_SERVER=$VITE_P2P_PEERJS_SERVER
 ENV VITE_DISABLE_SW=$VITE_DISABLE_SW
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
@@ -57,7 +61,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
     bun run --cwd apps/site build -- --ssr src/entry.preview.tsx
 
-FROM oven/bun:1.3.5 AS runner
+FROM oven/bun:1.3.6 AS runner
 WORKDIR /app/apps/site
 
 ENV API_BASE=http://api:4000

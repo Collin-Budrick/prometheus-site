@@ -34,6 +34,14 @@ const previewHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 's
 const previewHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
 const previewHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
+const previewCrdtSignaling =
+  process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
+  process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
+  '/yjs'
+const previewPeerjsServer =
+  process.env.VITE_P2P_PEERJS_SERVER?.trim() ||
+  process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||
+  'https://0.peerjs.com'
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
@@ -83,6 +91,8 @@ const composeEnv = {
   VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
   VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
   VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
+  VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
+  VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
   VITE_DISABLE_SW: previewDisableSw,
   RUN_MIGRATIONS: previewRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
@@ -122,6 +132,23 @@ const buildTargets: BuildTarget[] = [
     ]
   },
   {
+    service: 'yjs-signaling',
+    cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
+    inputs: [
+      'infra/yjs-signaling/Dockerfile',
+      'package.json',
+      'bun.lock',
+      'apps/site/package.json',
+      'packages/core/package.json',
+      'packages/platform/package.json',
+      'packages/ui/package.json',
+      'packages/features/auth/package.json',
+      'packages/features/lab/package.json',
+      'packages/features/messaging/package.json',
+      'packages/features/store/package.json'
+    ]
+  },
+  {
     service: 'web',
     cacheKey: `${cacheKeyPrefix}:web`,
     inputs: [
@@ -145,6 +172,8 @@ const buildTargets: BuildTarget[] = [
       VITE_HIGHLIGHT_PRIVACY: composeEnv.VITE_HIGHLIGHT_PRIVACY,
       VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
       VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
+      VITE_P2P_CRDT_SIGNALING: composeEnv.VITE_P2P_CRDT_SIGNALING,
+      VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
       VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW
     }
   },
@@ -172,7 +201,7 @@ if (buildServices.length) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'caddy']
+const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'yjs-signaling', 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))
 const needsFullUp = !allRunning
@@ -209,7 +238,7 @@ try {
   console.warn(`${previewWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
 }
 
-const logs = spawn(command, [...prefix, 'logs', '-f', 'web', 'api', 'caddy', 'webtransport'], {
+const logs = spawn(command, [...prefix, 'logs', '-f', 'web', 'api', 'caddy', 'webtransport', 'yjs-signaling'], {
   stdio: 'inherit',
   cwd: root,
   shell: false,

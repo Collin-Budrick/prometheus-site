@@ -87,6 +87,23 @@ const buildTargets: BuildTarget[] = [
     ]
   },
   {
+    service: 'yjs-signaling',
+    cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
+    inputs: [
+      'infra/yjs-signaling/Dockerfile',
+      'package.json',
+      'bun.lock',
+      'apps/site/package.json',
+      'packages/core/package.json',
+      'packages/platform/package.json',
+      'packages/ui/package.json',
+      'packages/features/auth/package.json',
+      'packages/features/lab/package.json',
+      'packages/features/messaging/package.json',
+      'packages/features/store/package.json'
+    ]
+  },
+  {
     service: 'webtransport',
     cacheKey: `${cacheKeyPrefix}:webtransport`,
     inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
@@ -110,7 +127,7 @@ if (buildServices.length) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const baseServices = ['postgres', 'valkey', 'api', 'webtransport']
+const baseServices = ['postgres', 'valkey', 'api', 'webtransport', 'yjs-signaling']
 const running = getRunningServices(command, prefix, composeEnv)
 const baseRunning = baseServices.every((service) => running.has(service))
 const baseNeedsBuild = buildServices.some((service) => service === 'api' || service === 'webtransport')

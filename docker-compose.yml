@@ -86,6 +86,19 @@ services:
     ports:
       - "${PROMETHEUS_API_PORT:-4000}:4000"
 
+  yjs-signaling:
+    build:
+      context: .
+      dockerfile: infra/yjs-signaling/Dockerfile
+      cache_from:
+        - type=local,src=.cache/buildx/yjs-signaling
+      cache_to:
+        - type=local,dest=.cache/buildx/yjs-signaling,mode=max
+    environment:
+      PORT: 4444
+    expose:
+      - "4444"
+
   webtransport:
     build:
       context: .
@@ -133,6 +146,8 @@ services:
         VITE_HIGHLIGHT_SESSION_RECORDING: ${VITE_HIGHLIGHT_SESSION_RECORDING:-1}
         VITE_HIGHLIGHT_CANVAS_SAMPLING: ${VITE_HIGHLIGHT_CANVAS_SAMPLING:-}
         VITE_WEBTRANSPORT_BASE: ${PROMETHEUS_VITE_WEBTRANSPORT_BASE:-}
+        VITE_P2P_CRDT_SIGNALING: ${VITE_P2P_CRDT_SIGNALING:-/yjs}
+        VITE_P2P_PEERJS_SERVER: ${VITE_P2P_PEERJS_SERVER:-https://0.peerjs.com}
         VITE_DISABLE_SW: ${VITE_DISABLE_SW:-}
     environment:
       API_BASE: http://api:4000

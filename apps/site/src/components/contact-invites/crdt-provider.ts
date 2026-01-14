@@ -5,8 +5,32 @@ import { loadContactMaps, loadReplicationKey } from './crdt-store'
 
 const providers = new Map<string, WebrtcProvider>()
 
-const resolveSignaling = () =>
-  appConfig.p2pCrdtSignaling && appConfig.p2pCrdtSignaling.length ? appConfig.p2pCrdtSignaling : undefined
+const resolveSignaling = () => {
+  const configured = appConfig.p2pCrdtSignaling ?? []
+  if (typeof window === 'undefined') {
+    return configured.length ? configured : undefined
+  }
+  const origin = window.location.origin.replace(/^http/, 'ws')
+  const resolved = configured
+    .map((entry) => {
+      const trimmed = entry.trim()
+      if (!trimmed) return ''
+      if (trimmed.startsWith('/')) {
+        return `${origin}${trimmed}`
+      }
+      try {
+        return new URL(trimmed).toString()
+      } catch {
+        return ''
+      }
+    })
+    .filter(Boolean)
+  const fallback = `${origin}/yjs`
+  if (!resolved.includes(fallback)) {
+    resolved.push(fallback)
+  }
+  return resolved.length ? resolved : [fallback]
+}
 
 export const buildCrdtRoomName = (selfUserId: string, contactId: string) => {
   const ids = [selfUserId.trim(), contactId.trim()].filter(Boolean).sort()

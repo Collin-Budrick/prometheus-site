@@ -17,6 +17,14 @@ https://prometheus.dev {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
+	handle /yjs {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /yjs/* {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
 			lb_try_duration 5s
@@ -65,6 +73,14 @@ https://prometheus.prod {
 	}
 
 	encode br gzip
+	handle /yjs {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /yjs/* {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
 	handle_path /api/* {
 		reverse_proxy http://api:4000 {
 			header_up -Accept-Encoding
