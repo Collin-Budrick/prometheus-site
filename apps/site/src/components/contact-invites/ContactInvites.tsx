@@ -101,6 +101,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const remoteTypingTimer = useSignal<number | null>(null)
     const historySuppressed = useSignal(false)
     const incomingImageCount = useSignal(0)
+    const offline = useSignal(false)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -152,6 +153,10 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const resolvedEmptyLabel = normalizeLabel(
       emptyLabel ? resolve(emptyLabel) : undefined,
       resolve('No invites yet.')
+    )
+    const resolvedOfflineSearchMessage = normalizeLabel(
+      resolve('Offline - search is limited to cached contacts.'),
+      resolve('Offline - search is limited to cached contacts.')
     )
 
     useVisibleTask$((ctx) => {
@@ -222,7 +227,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
       chatSettingsPopoverRef,
       identityRef,
       remoteTyping,
-      remoteTypingTimer
+      remoteTypingTimer,
+      offline
     })
 
     const { sendTyping, handleDmInput, handleDmKeyDown, handleDmSubmit, handleDmImage } = useDmComposer({
@@ -368,7 +374,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const contactMatches = normalizedQuery
       ? contacts.value.filter((invite) => matchesQuery(invite.user, normalizedQuery))
       : contacts.value
-    const shouldSearchRemote = normalizedQuery !== '' && contactMatches.length === 0
+    const shouldSearchRemote = normalizedQuery !== '' && contactMatches.length === 0 && !offline.value
     const contactResults = contactMatches.map<ContactSearchItem>((invite) => ({
       id: invite.user.id,
       name: invite.user.name,
@@ -436,6 +442,8 @@ export const ContactInvites = component$<ContactInvitesProps>(
           resolvedSearchLabel={resolvedSearchLabel}
           resolvedSearchPlaceholder={resolvedSearchPlaceholder}
           resolvedSearchAction={resolvedSearchAction}
+          offline={offline.value}
+          offlineMessage={resolvedOfflineSearchMessage}
           searchQuery={searchQuery.value}
           searchState={searchState.value}
           searchError={searchError.value}
