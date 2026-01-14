@@ -300,7 +300,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     try {
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        credentials: 'include'
+        credentials: 'include',
+        headers: { Accept: 'application/json' }
       })
 
       if (!response.ok) {
@@ -370,7 +371,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     try {
       const response = await fetch(
         buildApiUrl(`/chat/contacts/search?email=${encodeURIComponent(trimmed)}`, window.location.origin),
-        { credentials: 'include' }
+        { credentials: 'include', headers: { Accept: 'application/json' } }
       )
 
       if (!response.ok) {
