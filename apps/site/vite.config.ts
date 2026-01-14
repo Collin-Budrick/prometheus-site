@@ -140,6 +140,12 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   return hints
 }
 
+const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
+  if (warning.code !== 'EVAL') return false
+  const file = warning.loc?.file ?? warning.id ?? ''
+  return typeof file === 'string' && file.includes('@protobufjs/inquire')
+}
+
 const loadManifestFromDisk = async (rootDir: string) => {
   try {
     const raw = await readFile(path.join(rootDir, 'dist', 'q-manifest.json'), 'utf8')
@@ -391,7 +397,13 @@ export default defineConfig(
         transformer: 'lightningcss'
       },
       build: {
-        cssMinify: 'lightningcss'
+        cssMinify: 'lightningcss',
+        rolldownOptions: {
+          onwarn(warning, defaultHandler) {
+            if (isProtobufEvalWarning(warning)) return
+            defaultHandler(warning)
+          }
+        }
       },
       server: {
         host: true,
