@@ -47,8 +47,16 @@ type LocalPrekeyBundle = {
   }>
 }
 
+type RemotePrekeyCache = {
+  updatedAt: string
+  bundles: RemotePrekeyBundle[]
+}
+
 const preKeyMinCount = 5
 const preKeyTargetCount = 20
+const signedPreKeyTtlMs = 7 * 24 * 60 * 60 * 1000
+const oneTimePreKeyTtlMs = 24 * 60 * 60 * 1000
+const remotePrekeyCacheTtlMs = 30 * 60 * 1000
 const storeName = 'kv'
 const storeCache = new Map<string, Promise<SignalStore>>()
 
@@ -240,6 +248,32 @@ class SignalStore implements StorageType {
     return this.readNumberList('preKeyIds')
   }
 
+  async getSignedPreKeyRotatedAt() {
+    const value = await this.read<unknown>('signedPreKeyRotatedAt')
+    return typeof value === 'number' ? value : undefined
+  }
+
+  async setSignedPreKeyRotatedAt(updatedAt: number) {
+    await this.write('signedPreKeyRotatedAt', updatedAt)
+  }
+
+  async getPreKeyRotatedAt() {
+    const value = await this.read<unknown>('preKeyRotatedAt')
+    return typeof value === 'number' ? value : undefined
+  }
+
+  async setPreKeyRotatedAt(updatedAt: number) {
+    await this.write('preKeyRotatedAt', updatedAt)
+  }
+
+  async getRemotePrekeyCache(userId: string) {
+    return this.read<RemotePrekeyCache>(`remotePrekeys:${userId}`)
+  }
+
+  async setRemotePrekeyCache(userId: string, cache: RemotePrekeyCache) {
+    await this.write(`remotePrekeys:${userId}`, cache)
+  }
+
   async setRegistrationId(registrationId: number) {
     await this.write('registrationId', registrationId)
   }
@@ -330,8 +364,17 @@ const convertRemoteBundle = (bundle: RemotePrekeyBundle) => ({
     : undefined
 })
 
+const resolveRemotePrekeyCache = (value: unknown): RemotePrekeyCache | null => {
+  if (!isRecord(value)) return null
+  const updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt : ''
+  if (!updatedAt || !Array.isArray(value.bundles)) return null
+  const bundles = value.bundles.map(resolveRemoteBundle).filter((entry): entry is RemotePrekeyBundle => Boolean(entry))
+  return { updatedAt, bundles }
+}
+
 const buildLocalBundle = async (identity: DeviceIdentity) => {
   const store = await getSignalStore(identity.deviceId)
+  const now = Date.now()
   let identityKeyPair = await store.getIdentityKeyPair()
   if (!identityKeyPair) {
     identityKeyPair = await KeyHelper.generateIdentityKeyPair()
@@ -345,17 +388,29 @@ const buildLocalBundle = async (identity: DeviceIdentity) => {
   let signedPreKeyId = await store.getSignedPreKeyId()
   let signedPreKey = signedPreKeyId ? await store.loadSignedPreKey(signedPreKeyId) : undefined
   let signedSignature = signedPreKeyId ? await store.getSignedPreKeySignature(signedPreKeyId) : undefined
-  if (!signedPreKey || !signedSignature || signedPreKeyId === undefined) {
+  const signedRotatedAt = await store.getSignedPreKeyRotatedAt()
+  const signedExpired = !signedRotatedAt || now - signedRotatedAt > signedPreKeyTtlMs
+  if (!signedPreKey || !signedSignature || signedPreKeyId === undefined || signedExpired) {
     const nextId = await store.getSignedPreKeyIndex()
     const generated = await KeyHelper.generateSignedPreKey(identityKeyPair, nextId)
+    if (signedPreKeyId !== undefined && signedPreKeyId !== generated.keyId) {
+      await store.removeSignedPreKey(signedPreKeyId)
+    }
     signedPreKeyId = generated.keyId
     signedPreKey = generated.keyPair
     signedSignature = generated.signature
     await store.storeSignedPreKey(signedPreKeyId, signedPreKey)
     await store.setSignedPreKeySignature(signedPreKeyId, signedSignature)
     await store.setSignedPreKeyIndex(nextId + 1)
+    await store.setSignedPreKeyRotatedAt(now)
   }
   let preKeyIds = await store.getPreKeyIds()
+  const preKeyRotatedAt = await store.getPreKeyRotatedAt()
+  const preKeysExpired = !preKeyRotatedAt || now - preKeyRotatedAt > oneTimePreKeyTtlMs
+  if (preKeysExpired && preKeyIds.length) {
+    await Promise.all(preKeyIds.map((keyId) => store.removePreKey(keyId)))
+    preKeyIds = []
+  }
   if (preKeyIds.length < preKeyMinCount) {
     const nextIndex = await store.getPreKeyIndex()
     const needed = Math.max(0, preKeyTargetCount - preKeyIds.length)
@@ -370,6 +425,9 @@ const buildLocalBundle = async (identity: DeviceIdentity) => {
     if (generatedIds.length) {
       preKeyIds = [...preKeyIds, ...generatedIds]
     }
+  }
+  if (preKeysExpired || preKeyRotatedAt === undefined) {
+    await store.setPreKeyRotatedAt(now)
   }
   const oneTimePreKeys: LocalPrekeyBundle['oneTimePreKeys'] = []
   for (const keyId of preKeyIds) {
@@ -401,10 +459,39 @@ const mergeBundles = (bundles: RemotePrekeyBundle[]) => {
   return Array.from(byDevice.values())
 }
 
-const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
+const fetchRemoteBundles = async (userId: string, store: SignalStore, relayUrls?: string[]) => {
   if (typeof window === 'undefined') return []
-  const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
-  return mergeBundles(relayBundles)
+  const cached = resolveRemotePrekeyCache(await store.getRemotePrekeyCache(userId))
+  const cachedUpdatedAt = cached?.updatedAt ? Date.parse(cached.updatedAt) : Number.NaN
+  const cacheFresh = cached && Number.isFinite(cachedUpdatedAt) && Date.now() - cachedUpdatedAt < remotePrekeyCacheTtlMs
+  if (cacheFresh && cached.bundles.length) {
+    return mergeBundles(cached.bundles)
+  }
+  let relayBundles: RemotePrekeyBundle[] = []
+  try {
+    relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
+  } catch {
+    relayBundles = []
+  }
+  const merged = mergeBundles(relayBundles)
+  if (merged.length) {
+    await store.setRemotePrekeyCache(userId, { updatedAt: new Date().toISOString(), bundles: merged })
+    return merged
+  }
+  return cached?.bundles ?? []
+}
+
+const consumeRemotePrekey = async (store: SignalStore, userId: string, deviceId: string) => {
+  const cached = resolveRemotePrekeyCache(await store.getRemotePrekeyCache(userId))
+  if (!cached) return
+  let updated = false
+  const bundles = cached.bundles.map((bundle) => {
+    if (bundle.deviceId !== deviceId || !bundle.oneTimePreKey) return bundle
+    updated = true
+    return { ...bundle, oneTimePreKey: undefined }
+  })
+  if (!updated) return
+  await store.setRemotePrekeyCache(userId, { updatedAt: new Date().toISOString(), bundles })
 }
 
 export const resolveSignalEnvelope = (payload: unknown): SignalEnvelope | null => {
@@ -445,11 +532,14 @@ export const encryptSignalPayload = async (options: {
     const address = buildAddress(recipientId, recipientDeviceId)
     const cipher = new SessionCipher(store, address)
     if (!(await cipher.hasOpenSession())) {
-      const bundles = await fetchRemoteBundles(recipientId, options.relayUrls)
+      const bundles = await fetchRemoteBundles(recipientId, store, options.relayUrls)
       const target = bundles.find((entry) => entry.deviceId === recipientDeviceId)
       if (!target) return null
       const builder = new SessionBuilder(store, address)
       await builder.processPreKey(convertRemoteBundle(target))
+      if (target.oneTimePreKey) {
+        await consumeRemotePrekey(store, recipientId, recipientDeviceId)
+      }
     }
     const plaintext = new TextEncoder().encode(JSON.stringify(payload)).buffer
     const message = await cipher.encrypt(plaintext)

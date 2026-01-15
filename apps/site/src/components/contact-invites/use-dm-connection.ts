@@ -49,6 +49,7 @@ import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './c
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
 import { createRelayManager, type RelayMessage } from './relay'
 import { loadMailboxOutgoing } from './mailbox-store'
+import { buildLocalDeviceEntry, loadDeviceRegistry, saveDeviceRegistry } from './device-registry'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -204,41 +205,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
       return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
     }
-    const buildDeviceCacheKey = (contactId: string) => `p2pDevices:${contactId}`
-    const loadDeviceCache = (contactId: string) => {
-      try {
-        const raw = window.localStorage?.getItem(buildDeviceCacheKey(contactId))
-        if (!raw) return null
-        const parsed = JSON.parse(raw) as { devices?: ContactDevice[]; updatedAt?: string }
-        if (!Array.isArray(parsed.devices)) return null
-        const devices = parsed.devices.filter((device) => device?.deviceId)
-        const updatedAt = typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null
-        if (!updatedAt) return null
-        return { devices, updatedAt }
-      } catch {
-        return null
-      }
-    }
-    const saveDeviceCache = (contactId: string, nextDevices: ContactDevice[]) => {
-      try {
-        const payload = JSON.stringify({ devices: nextDevices, updatedAt: new Date().toISOString() })
-        window.localStorage?.setItem(buildDeviceCacheKey(contactId), payload)
-      } catch {
-        // ignore cache failures
-      }
-    }
-    const buildLocalDeviceEntry = (identity: DeviceIdentity, relayUrls?: string[]): ContactDevice => {
-      const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : undefined
-      return {
-        deviceId: identity.deviceId,
-        publicKey: identity.publicKeyJwk,
-        label: label || undefined,
-        role: identity.role,
-        relayPublicKey: identity.relayPublicKey || undefined,
-        relayUrls: relayUrls?.length ? relayUrls : undefined,
-        updatedAt: new Date().toISOString()
-      }
-    }
     const mergeDeviceLists = (...lists: ContactDevice[][]) => {
       const byId = new Map<string, ContactDevice>()
       for (const list of lists) {
@@ -310,13 +276,27 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
         return selfDevices
       }
-      const relayDevices = await transport.fetchDevices(selfUserId)
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+      const cachedDevices = await loadDeviceRegistry(selfUserId)
+      let relayFailed = false
+      let relayDevices: ContactDevice[] = []
+      try {
+        relayDevices = await transport.fetchDevices(selfUserId)
+      } catch {
+        relayFailed = true
+        relayDevices = []
+      }
       const identity = options.identityRef.value
       const localEntry = identity ? buildLocalDeviceEntry(identity, resolveAdvertisedRelays()) : null
-      const next = mergeDeviceLists(relayDevices, localEntry ? [localEntry] : [])
+      const shouldUseCache = isOffline || relayFailed
+      const cacheList = shouldUseCache && cachedDevices ? cachedDevices.devices : []
+      const next = mergeDeviceLists(relayDevices, cacheList, localEntry ? [localEntry] : [])
       if (next.length) {
         selfDevices = next
         selfDevicesFetchedAt = now
+        if (!shouldUseCache) {
+          void saveDeviceRegistry(selfUserId, next)
+        }
         return next
       }
       return selfDevices
@@ -512,7 +492,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const fetchDevices = async () => {
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
-      const cachedDevices = loadDeviceCache(contact.id)
+      const cachedDevices = await loadDeviceRegistry(contact.id)
       if (isOffline && cachedDevices) {
         options.deviceListStaleAt.value = cachedDevices.updatedAt
         devices = cachedDevices.devices
@@ -545,7 +525,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         options.deviceListStaleAt.value = null
       }
       if (!shouldUseCache) {
-        saveDeviceCache(contact.id, next)
+        void saveDeviceRegistry(contact.id, next)
       }
       devices = next
       debug('fetched devices', { count: next.length, devices: next.map((entry) => entry.deviceId) })
