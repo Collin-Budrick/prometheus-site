@@ -2,14 +2,7 @@ import { Elysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
 import type { FragmentLang, FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
-import {
-  createMessagingRoutes,
-  invalidateChatHistoryCache,
-  registerChatWs,
-  registerContactsWs,
-  registerP2pWs,
-  sendServerOnlinePush
-} from '@features/messaging'
+import { sendServerOnlinePush } from '@features/messaging'
 import { createStoreRoutes, type StoreTelemetry } from '@features/store/api'
 import { invalidateStoreItemsCache } from '@features/store/cache'
 import { createStoreRealtime, type StoreRealtimeEvent } from '@features/store/realtime'
@@ -22,8 +15,6 @@ import { prepareDatabase } from '../db/prepare'
 import {
   authKeys,
   authSessions,
-  chatMessages,
-  contactInvites,
   passkeys,
   storeItems,
   users,
@@ -63,8 +54,6 @@ const jsonError = (status: number, error: string, meta: Record<string, unknown> 
 
 const rateLimitWindowMs = 60_000
 const rateLimitMaxRequests = 60
-const wsMessageWindowMs = 60_000
-const wsMessageLimit = 40
 
 export const startApiServer = async (options: ApiServerOptions = {}) => {
   const logger = createLogger('api')
@@ -115,13 +104,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
     const app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
 
-    rateLimiter.setCleanupInterval(Math.min(rateLimitWindowMs, wsMessageWindowMs))
+    rateLimiter.setCleanupInterval(rateLimitWindowMs)
 
     const checkRateLimit = (route: string, clientIp: string) =>
       rateLimiter.checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
-
-    const checkWsQuota = (clientIp: string) =>
-      rateLimiter.checkQuota(`ws:${clientIp}`, wsMessageLimit, wsMessageWindowMs)
 
     const checkWsOpenQuota = (route: string, clientIp: string) =>
       rateLimiter.checkQuota(`${route}:open:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
@@ -174,28 +160,6 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
           },
           jsonError,
           telemetry
-        })
-      )
-    }
-
-    if (featureFlags.messaging) {
-      app.use(
-        createMessagingRoutes({
-          db,
-          chatMessagesTable: chatMessages,
-          contactInvitesTable: contactInvites,
-          usersTable: users,
-          validateSession: authFeature?.validateSession,
-          valkey,
-          isValkeyReady,
-          getClientIp,
-          checkRateLimit,
-          checkEarlyLimit: (key, max, windowMs) => checkEarlyLimit(cache, key, max, windowMs),
-          recordLatencySample: (metric, durationMs) => {
-            void recordLatencySample(cache, metric, durationMs)
-          },
-          jsonError,
-          push: platformConfig.push
         })
       )
     }
@@ -254,48 +218,6 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         validateSession: authFeature.validateSession,
         allowAnonymous: true,
         checkWsOpenQuota,
-        resolveWsClientIp,
-        resolveWsHeaders,
-        resolveWsRequest
-      })
-    }
-
-    if (featureFlags.messaging && authFeature) {
-      registerChatWs(app, {
-        valkey,
-        isValkeyReady,
-        validateSession: authFeature.validateSession,
-        checkWsQuota,
-        db,
-        chatMessagesTable: chatMessages,
-        resolveWsClientIp,
-        resolveWsHeaders,
-        resolveWsRequest,
-        invalidateChatHistoryCache: () => invalidateChatHistoryCache(valkey, isValkeyReady),
-        recordLatencySample: (metric, durationMs) => {
-          void recordLatencySample(cache, metric, durationMs)
-        }
-      })
-      registerContactsWs(app, {
-        valkey,
-        isValkeyReady,
-        validateSession: authFeature.validateSession,
-        checkWsOpenQuota,
-        db,
-        usersTable: users,
-        contactInvitesTable: contactInvites,
-        resolveWsClientIp,
-        resolveWsHeaders,
-        resolveWsRequest
-      })
-      registerP2pWs(app, {
-        valkey,
-        isValkeyReady,
-        validateSession: authFeature.validateSession,
-        checkWsOpenQuota,
-        checkWsQuota,
-        db,
-        contactInvitesTable: contactInvites,
         resolveWsClientIp,
         resolveWsHeaders,
         resolveWsRequest

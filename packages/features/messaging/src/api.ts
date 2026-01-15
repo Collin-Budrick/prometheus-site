@@ -1,3 +1,6 @@
+/**
+ * @deprecated Messaging HTTP routes are legacy-only in serverless mode.
+ */
 import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
