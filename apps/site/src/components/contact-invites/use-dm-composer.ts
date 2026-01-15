@@ -1,5 +1,6 @@
 import { $, type NoSerialize, type Signal } from '@builder.io/qwik'
 import type { ChatSettings } from '../../shared/chat-settings'
+import { appConfig } from '../../app-config'
 import {
   decodeBase64,
   deriveSessionKey,
@@ -16,6 +17,7 @@ import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
 import { buildApiUrl, resolveApiHost } from './api'
 import { encryptSignalPayload } from './signal'
+import { fetchRelayDevices } from './relay-directory'
 import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import type { ActiveContact, ContactDevice, DmDataChannel, DmMessage, P2pSession } from './types'
 
@@ -47,6 +49,26 @@ type DmComposerRuntime = {
 const relayInlineLimitBytes = 240_000
 const selfDevicesCacheMs = 30_000
 
+const mergeDeviceLists = (...lists: ContactDevice[][]) => {
+  const byId = new Map<string, ContactDevice>()
+  for (const list of lists) {
+    for (const device of list) {
+      if (!device?.deviceId) continue
+      const existing = byId.get(device.deviceId)
+      if (!existing) {
+        byId.set(device.deviceId, device)
+        continue
+      }
+      const nextUpdated = device.updatedAt ? Date.parse(device.updatedAt) : Number.NaN
+      const prevUpdated = existing.updatedAt ? Date.parse(existing.updatedAt) : Number.NaN
+      if (Number.isFinite(nextUpdated) && (!Number.isFinite(prevUpdated) || nextUpdated > prevUpdated)) {
+        byId.set(device.deviceId, device)
+      }
+    }
+  }
+  return Array.from(byId.values())
+}
+
 const createDmComposerRuntime = (): DmComposerRuntime => ({
   relayManager: null,
   relayManagerKey: '',
@@ -59,7 +81,10 @@ const createDmComposerRuntime = (): DmComposerRuntime => ({
 const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onload = () => {
+      const result = reader.result
+      resolve(typeof result === 'string' ? result : '')
+    }
     reader.onerror = () => reject(new Error('Unable to read image.'))
     reader.readAsDataURL(blob)
   })
@@ -175,30 +200,43 @@ const fetchSelfDevices = async (runtime: DmComposerRuntime, options: DmComposerO
     return runtime.selfDevices
   }
   const serverKey = resolveApiHost(window.location.origin)
-  if (!shouldAttemptServer(serverKey)) {
-    return runtime.selfDevices
-  }
+  const relayUrls = [
+    ...(appConfig.p2pRelayBases ?? []),
+    ...(appConfig.p2pNostrRelays ?? []),
+    ...(appConfig.p2pWakuRelays ?? [])
+  ].filter(Boolean)
+  let relayDevices: ContactDevice[] = []
   try {
-    const response = await fetch(
-      buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
-      { credentials: 'include' }
-    )
-    if (!response.ok) {
-      if (response.status >= 500) {
-        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+    relayDevices = await fetchRelayDevices({ userId: selfUserId, relayUrls })
+  } catch {
+    relayDevices = []
+  }
+  let apiDevices: ContactDevice[] = []
+  if (!relayDevices.length && shouldAttemptServer(serverKey)) {
+    try {
+      const response = await fetch(
+        buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
+        { credentials: 'include' }
+      )
+      if (!response.ok) {
+        if (response.status >= 500) {
+          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+        }
+        return runtime.selfDevices
       }
-      return runtime.selfDevices
+      const payload = (await response.json()) as { devices?: ContactDevice[] }
+      apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+      markServerSuccess(serverKey)
+    } catch {
+      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     }
-    const payload = (await response.json()) as { devices?: ContactDevice[] }
-    const next = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
+  }
+  const next = mergeDeviceLists(relayDevices, apiDevices)
+  if (next.length) {
     runtime.selfDevices = next
     runtime.selfDevicesFetchedAt = now
-    markServerSuccess(serverKey)
-    return next
-  } catch {
-    markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-    return runtime.selfDevices
   }
+  return runtime.selfDevices
 }
 
 const getSelfRelayManager = async (runtime: DmComposerRuntime, options: DmComposerOptions) => {

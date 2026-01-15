@@ -363,7 +363,7 @@ export default defineConfig(
           swSrc: 'src/service-worker.ts',
           swDest: 'service-worker.js',
           globDirectory: 'dist',
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff2,ttf,otf,json,txt}'],
+          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webmanifest,woff2,ttf,otf,json,txt}'],
           additionalPrecacheEntries: pwaPrecacheEntries,
           swUrl: withBase('/service-worker.js')
         })

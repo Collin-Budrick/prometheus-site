@@ -1,4 +1,5 @@
 import { appConfig } from '../../app-config'
+import { loadBootstrapSession } from '../../shared/auth-bootstrap'
 import { isRecord } from './utils'
 
 const isLocalHost = (hostname: string) =>
@@ -78,6 +79,12 @@ export const resolveApiHost = (origin: string) => {
 export const resolveChatSettingsUserId = async () => {
   if (typeof window === 'undefined') return undefined
   const cached = readCachedUserId()
+  const bootstrap = await loadBootstrapSession()
+  if (bootstrap?.user?.id) {
+    writeCachedUserId(bootstrap.user.id)
+    return bootstrap.user.id
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return cached
   try {
     const response = await fetch(buildApiUrl('/auth/session', window.location.origin), {
       credentials: 'include'

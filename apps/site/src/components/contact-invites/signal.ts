@@ -408,7 +408,7 @@ const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
   const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
   let apiBundles: RemotePrekeyBundle[] = []
   const serverKey = resolveApiHost(window.location.origin)
-  if (shouldAttemptServer(serverKey)) {
+  if (!relayBundles.length && shouldAttemptServer(serverKey)) {
     try {
       const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
         credentials: 'include'
@@ -449,7 +449,7 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: st
         ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
         : false
     const serverKey = resolveApiHost(window.location.origin)
-    if (!shouldAttemptServer(serverKey)) return relayOk
+    if (!shouldAttemptServer(serverKey) || relayOk) return relayOk
     const response = await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

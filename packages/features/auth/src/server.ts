@@ -3,7 +3,7 @@ import { betterAuth } from 'better-auth'
 import type { SocialProviders } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { eq } from 'drizzle-orm'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, webcrypto } from 'node:crypto'
 import { Elysia, t, type AnyElysia } from 'elysia'
 import type { AuthConfig, RelyingPartyConfig } from '@platform/config'
 import type { DatabaseClient } from '@platform/db'
@@ -63,6 +63,14 @@ type SignUpBodyBase = {
 type SignUpBody = SignUpBodyBase & Record<string, unknown>
 
 type PasskeySignUpBody = Omit<SignUpBodyBase, 'password'> & Record<string, unknown>
+
+type BootstrapTokenPayload = {
+  sub: string
+  email?: string
+  name?: string | null
+  iat: number
+  exp: number
+}
 
 const resolveHeaders = (context?: AuthRequestContext) => {
   return new Headers(context?.headers ?? context?.request?.headers)
@@ -227,6 +235,29 @@ const resolveRequestOrigin = (request: Request) => {
   return `${protocol}://${host}`
 }
 
+const resolveSubtle = (): SubtleCrypto | null => {
+  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
+    return globalThis.crypto.subtle
+  }
+  if (webcrypto?.subtle) {
+    return webcrypto.subtle as SubtleCrypto
+  }
+  return null
+}
+
+const encodeBase64Url = (value: string | Uint8Array) => {
+  const buffer = typeof value === 'string' ? Buffer.from(value) : Buffer.from(value)
+  return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+const parseJson = <T>(value: string) => {
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
+
 const getAuthForRequest = (
   request: Request | undefined,
   authByHost: Map<string, ReturnType<typeof betterAuth>>,
@@ -310,6 +341,7 @@ const generatePasskeyPassword = () => `${randomUUID()}${randomUUID()}`
 
 export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
   const allowDynamicOrigins = options.allowDynamicOrigins ?? process.env.NODE_ENV !== 'production'
+  const bootstrapTokenTtlSeconds = 60 * 60 * 24 * 30
 
   const socialProviders: SocialProviders = {}
 
@@ -428,6 +460,50 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
       asResponse: true
     })
 
+  const loadBootstrapSigningKey = (() => {
+    let cached: Promise<CryptoKey | null> | null = null
+    return () => {
+      if (cached) return cached
+      cached = (async () => {
+        const raw = options.authConfig.bootstrapPrivateKey?.trim() ?? ''
+        if (!raw) return null
+        const subtle = resolveSubtle()
+        if (!subtle) return null
+        const parsed = parseJson<JsonWebKey>(raw)
+        if (!parsed) return null
+        try {
+          return await subtle.importKey(
+            'jwk',
+            parsed,
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            false,
+            ['sign']
+          )
+        } catch {
+          return null
+        }
+      })()
+      return cached
+    }
+  })()
+
+  const signBootstrapToken = async (payload: BootstrapTokenPayload) => {
+    const subtle = resolveSubtle()
+    if (!subtle) return null
+    const key = await loadBootstrapSigningKey()
+    if (!key) return null
+    const header = encodeBase64Url(JSON.stringify({ alg: 'ES256', typ: 'JWT' }))
+    const body = encodeBase64Url(JSON.stringify(payload))
+    const data = `${header}.${body}`
+    const signature = await subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      new TextEncoder().encode(data)
+    )
+    const signed = encodeBase64Url(new Uint8Array(signature))
+    return `${data}.${signed}`
+  }
+
   const resolveSessionUser = async (request: Request) => {
     try {
       const response = await validateSession({ request })
@@ -526,6 +602,35 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
         })
       }
     )
+    .post('/bootstrap', async ({ request, set }) => {
+      const sessionUser = await resolveSessionUser(request)
+      if (!sessionUser) {
+        set.status = 401
+        return { error: 'Authentication required' }
+      }
+
+      const issuedAt = Math.floor(Date.now() / 1000)
+      const expiresAt = issuedAt + bootstrapTokenTtlSeconds
+      const token = await signBootstrapToken({
+        sub: sessionUser.id,
+        email: sessionUser.email,
+        name: sessionUser.name ?? null,
+        iat: issuedAt,
+        exp: expiresAt
+      })
+
+      if (!token) {
+        set.status = 503
+        return { error: 'Bootstrap signing unavailable' }
+      }
+
+      return {
+        token,
+        user: sessionUser,
+        issuedAt,
+        expiresAt
+      }
+    })
     .get('/session', async ({ request }) => validateSession({ request }))
     // Delegate all remaining auth, passkey, and OAuth routes to Better Auth's handler
     .all('/*', async ({ request }) => handleAuthRequest(request))

@@ -1,5 +1,6 @@
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
-import { buildApiUrl } from './api'
+import { buildApiUrl, resolveApiHost } from './api'
+import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import { isRecord } from './utils'
 
 const pushFlagKey = (deviceId: string) => `chat:p2p:push:subscribed:${deviceId}`
@@ -20,6 +21,8 @@ export const registerPushSubscription = async (identity: DeviceIdentity) => {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
   const cached = window.localStorage.getItem(pushFlagKey(identity.deviceId))
   if (cached === '1') return true
+  const serverKey = resolveApiHost(window.location.origin)
+  if (!shouldAttemptServer(serverKey)) return false
   let payload: unknown
   try {
     const response = await fetch(buildApiUrl('/chat/p2p/push/vapid', window.location.origin), {
@@ -27,7 +30,9 @@ export const registerPushSubscription = async (identity: DeviceIdentity) => {
     })
     if (!response.ok) return false
     payload = await response.json()
+    markServerSuccess(serverKey)
   } catch {
+    markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     return false
   }
   if (!isRecord(payload) || !payload.enabled || typeof payload.publicKey !== 'string') return false
@@ -56,9 +61,13 @@ export const registerPushSubscription = async (identity: DeviceIdentity) => {
     })
     if (response.ok) {
       window.localStorage.setItem(pushFlagKey(identity.deviceId), '1')
+      markServerSuccess(serverKey)
+    } else if (response.status >= 500) {
+      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     }
     return response.ok
   } catch {
+    markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     return false
   }
 }

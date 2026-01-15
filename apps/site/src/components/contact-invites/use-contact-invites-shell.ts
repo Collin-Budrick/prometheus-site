@@ -11,6 +11,7 @@ import { buildWsUrl, resolveChatSettingsUserId } from './api'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../shared/server-backoff'
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
+import { loadContactsMaps, mergeContactsPayload } from './contacts-crdt'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -180,71 +181,28 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       document.addEventListener('keydown', handleKeyDown)
       window.addEventListener('storage', handleStorage)
 
-      const applySnapshot = (payload: Record<string, unknown>) => {
+      const applySnapshot = async (payload: Record<string, unknown>) => {
         const nextIncoming = Array.isArray(payload.incoming) ? (payload.incoming as ContactInviteView[]) : []
         const nextOutgoing = Array.isArray(payload.outgoing) ? (payload.outgoing as ContactInviteView[]) : []
         const nextContacts = Array.isArray(payload.contacts) ? (payload.contacts as ContactInviteView[]) : []
         const nextOnline = Array.isArray(payload.onlineIds) ? payload.onlineIds.filter((id) => typeof id === 'string') : []
-        options.incoming.value = nextIncoming
-        options.outgoing.value = nextOutgoing
-        options.contacts.value = nextContacts
+        const userId = options.chatSettingsUserId.value
+        if (userId) {
+          const maps = await loadContactsMaps(userId)
+          if (maps) {
+            maps.doc.transact(() => {
+              mergeContactsPayload(
+                maps.contacts,
+                { incoming: nextIncoming, outgoing: nextOutgoing, contacts: nextContacts },
+                'server'
+              )
+            })
+          }
+        }
         options.onlineIds.value = Array.from(new Set(nextOnline))
-        if (options.activeContact.value) {
-          const stillConnected = nextContacts.some((invite) => invite.user.id === options.activeContact.value?.id)
-          if (!stillConnected) {
-            options.activeContact.value = null
-            options.dmClosing.value = false
-            options.dmOrigin.value = null
-          }
-        }
-        const baseline = options.baselineCounts.value
-        if (!baseline) {
-          options.baselineCounts.value = {
-            incoming: nextIncoming.length,
-            outgoing: nextOutgoing.length,
-            contacts: nextContacts.length
-          }
-        } else {
-          const next = { ...baseline }
-          let changed = false
-          if (!Number.isFinite(next.incoming)) {
-            next.incoming = nextIncoming.length
-            changed = true
-          }
-          if (!Number.isFinite(next.outgoing)) {
-            next.outgoing = nextOutgoing.length
-            changed = true
-          }
-          if (!Number.isFinite(next.contacts)) {
-            next.contacts = nextContacts.length
-            changed = true
-          }
-          if (changed) {
-            options.baselineCounts.value = next
-          }
-        }
         options.invitesState.value = 'idle'
         options.realtimeState.value = 'live'
         hasSnapshot = true
-        if (options.searchResults.value.length) {
-          const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
-          nextIncoming.forEach((invite) =>
-            statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id })
-          )
-          nextOutgoing.forEach((invite) =>
-            statusByUser.set(invite.user.id, { status: 'outgoing', inviteId: invite.id })
-          )
-          nextContacts.forEach((invite) =>
-            statusByUser.set(invite.user.id, { status: 'accepted', inviteId: invite.id })
-          )
-          options.searchResults.value = options.searchResults.value.map((entry) => {
-            const status = statusByUser.get(entry.id)
-            if (!status) {
-              return { ...entry, status: 'none', inviteId: undefined }
-            }
-            return { ...entry, status: status.status, inviteId: status.inviteId }
-          })
-        }
       }
 
       const applyPresence = (userId: string, online: boolean) => {
@@ -358,7 +316,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
             return
           }
           if (type === 'contacts:init' || type === 'contacts:update') {
-            applySnapshot(record)
+            void applySnapshot(record)
             return
           }
           if (type === 'contacts:presence') {

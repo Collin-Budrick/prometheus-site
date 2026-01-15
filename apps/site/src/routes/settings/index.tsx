@@ -9,6 +9,7 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
+import { clearBootstrapSession } from '../../shared/auth-bootstrap'
 import {
   buildChatSettingsKey,
   defaultChatSettings,
@@ -148,11 +149,11 @@ export default component$(() => {
   })
 
   const toggleReadReceipts = $(() => {
-    updateChatSettings({ ...chatSettings.value, readReceipts: !chatSettings.value.readReceipts })
+    void updateChatSettings({ ...chatSettings.value, readReceipts: !chatSettings.value.readReceipts })
   })
 
   const toggleTypingIndicators = $(() => {
-    updateChatSettings({ ...chatSettings.value, typingIndicators: !chatSettings.value.typingIndicators })
+    void updateChatSettings({ ...chatSettings.value, typingIndicators: !chatSettings.value.typingIndicators })
   })
 
   const handleLogout = $(async () => {
@@ -171,6 +172,7 @@ export default component$(() => {
         return
       }
 
+      clearBootstrapSession()
       window.location.assign('/')
     } catch (error) {
       logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'

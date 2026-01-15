@@ -102,6 +102,52 @@ const readFormValue = (data: FormData, key: string) => {
 
 const readCheckbox = (data: FormData, key: string) => data.get(key) === 'on'
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const bootstrapTokenKey = 'auth:bootstrap:token'
+const bootstrapUserKey = 'auth:bootstrap:user'
+
+const storeBootstrapSession = (token: string, user: { id: string; email?: string | null; name?: string | null }) => {
+  if (typeof window === 'undefined') return false
+  try {
+    window.localStorage.setItem(bootstrapTokenKey, token)
+    window.localStorage.setItem(bootstrapUserKey, JSON.stringify(user))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const attemptBootstrapSession = async (origin: string, apiBase?: string) => {
+  if (typeof window === 'undefined') return false
+  try {
+    const response = await fetch(buildApiUrl('/auth/bootstrap', origin, apiBase), {
+      method: 'POST',
+      credentials: 'include'
+    })
+    if (!response.ok) return false
+    const payload: unknown = await response.json()
+    if (!isRecord(payload) || typeof payload.token !== 'string') return false
+    const user = isRecord(payload.user) ? payload.user : null
+    const id = user && typeof user.id === 'string' ? user.id : null
+    if (!id) return false
+    const email = user && typeof user.email === 'string' ? user.email : undefined
+    const name =
+      user && (typeof user.name === 'string' || user.name === null)
+        ? (user.name as string | null)
+        : undefined
+    const storedUser = {
+      id,
+      email,
+      name
+    }
+    return storeBootstrapSession(payload.token, storedUser)
+  } catch {
+    return false
+  }
+}
+
 const decodeBase64Url = (value: string) => {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
   const binary = atob(padded)
@@ -329,6 +375,7 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
+      await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Unable to sign in.')
@@ -377,6 +424,7 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
+      await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Unable to create account.')
@@ -440,6 +488,7 @@ export const LoginRoute = component$<{
 
       state.value = 'success'
       passkeyState.value = 'idle'
+      await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
     } catch (error) {
       await setError(error instanceof Error ? error.message : 'Keypass authentication failed.')

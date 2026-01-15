@@ -41,6 +41,7 @@ export type AppConfig = {
   p2pCrdtSignaling: string[]
   p2pPeerjsServer?: string
   p2pIceServers: P2pIceServer[]
+  authBootstrapPublicKey?: string
 }
 
 export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
@@ -84,6 +85,8 @@ const runtimeEnvSchema = arkenvType({
   VITE_P2P_PEERJS_SERVER: 'string?',
   P2P_ICE_SERVERS: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
+  AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
+  VITE_AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -110,6 +113,8 @@ const publicEnvSchema = arkenvType({
   VITE_P2P_CRDT_SIGNALING: 'string?',
   VITE_P2P_PEERJS_SERVER: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
+  AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
+  VITE_AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -118,7 +123,7 @@ const publicEnvSchema = arkenvType({
 const getRuntimeEnv = (): AppEnv => {
   if (typeof import.meta !== 'undefined') {
     const metaEnv = (import.meta as ImportMeta & { env?: AppEnv }).env
-    if (metaEnv) return metaEnv
+    if (metaEnv !== undefined) return metaEnv
   }
 
   if (typeof process !== 'undefined' && typeof process.env === 'object') {
@@ -196,9 +201,9 @@ const splitList = (raw: string) =>
     .filter(Boolean)
 
 export const normalizeApiBase = (raw?: string | null) => {
-  if (!raw) return ''
+  if (raw === undefined || raw === null) return ''
   const value = raw.trim()
-  if (!value) return ''
+  if (value === '') return ''
 
   if (value.startsWith('/')) {
     return normalizePath(value)
@@ -305,7 +310,7 @@ const resolveHighlightSessionRecording = (env: AppEnv) =>
 
 const resolveHighlightCanvasSampling = (env: AppEnv): number | 'all' | undefined => {
   const raw = toStringValue(env.VITE_HIGHLIGHT_CANVAS_SAMPLING)?.trim().toLowerCase()
-  if (!raw) return undefined
+  if (raw === undefined || raw === '') return undefined
   if (raw === 'all') return 'all'
   const parsed = Number(raw)
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined
@@ -314,9 +319,9 @@ const resolveHighlightCanvasSampling = (env: AppEnv): number | 'all' | undefined
 
 const resolveHighlightEnvironment = (env: AppEnv) => {
   const mode = toStringValue(env.MODE)?.trim()
-  if (mode) return mode
+  if (mode !== undefined && mode !== '') return mode
   const nodeEnv = toStringValue(env.NODE_ENV)?.trim()
-  if (nodeEnv) return nodeEnv
+  if (nodeEnv !== undefined && nodeEnv !== '') return nodeEnv
   return isDevEnv(env) ? 'development' : 'production'
 }
 
@@ -337,15 +342,18 @@ export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): Highl
   }
 }
 
+const resolveAuthBootstrapPublicKey = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_AUTH_BOOTSTRAP_PUBLIC_KEY, env.AUTH_BOOTSTRAP_PUBLIC_KEY))?.trim() ?? ''
+
 const resolveP2pRelayBases = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_RELAY_BASES, env.VITE_P2P_RELAY_BASES))?.trim() ?? ''
-  if (!raw) return []
+  if (raw === '') return []
   return splitList(raw).map(normalizeApiBase).filter(Boolean)
 }
 
 const resolveP2pNostrRelays = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_NOSTR_RELAYS, env.VITE_P2P_NOSTR_RELAYS))?.trim() ?? ''
-  if (!raw) return []
+  if (raw === '') return []
   return splitList(raw)
     .map((entry) => entry.trim())
     .filter((entry) => entry.startsWith('wss://') || entry.startsWith('ws://'))
@@ -353,13 +361,13 @@ const resolveP2pNostrRelays = (env: AppEnv) => {
 
 const resolveP2pWakuRelays = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_WAKU_RELAYS, env.VITE_P2P_WAKU_RELAYS))?.trim() ?? ''
-  if (!raw) return []
+  if (raw === '') return []
   return splitList(raw).map((entry) => entry.trim()).filter(Boolean)
 }
 
 const isValidSignalingEntry = (entry: string) => {
   const trimmed = entry.trim()
-  if (!trimmed) return false
+  if (trimmed === '') return false
   if (trimmed.startsWith('/')) return true
   if (!/^wss?:\/\//i.test(trimmed)) return false
   try {
@@ -374,13 +382,13 @@ const isValidSignalingEntry = (entry: string) => {
 
 const resolveP2pCrdtSignaling = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_CRDT_SIGNALING, env.VITE_P2P_CRDT_SIGNALING))?.trim() ?? ''
-  if (!raw) return []
+  if (raw === '') return []
   return splitList(raw).map((entry) => entry.trim()).filter(isValidSignalingEntry)
 }
 
 const resolveP2pPeerjsServer = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_PEERJS_SERVER, env.VITE_P2P_PEERJS_SERVER))?.trim() ?? ''
-  if (!raw) return undefined
+  if (raw === '') return undefined
   try {
     return new URL(raw).toString()
   } catch {
@@ -393,10 +401,10 @@ const defaultP2pIceServers: P2pIceServer[] = [
 ]
 
 const normalizeIceServer = (value: unknown): P2pIceServer | null => {
-  if (!value) return null
+  if (value === null || value === undefined) return null
   if (typeof value === 'string') {
     const trimmed = value.trim()
-    if (!trimmed) return null
+    if (trimmed === '') return null
     return { urls: trimmed }
   }
   if (!isRecord(value)) return null
@@ -409,11 +417,13 @@ const normalizeIceServer = (value: unknown): P2pIceServer | null => {
 
 const resolveP2pIceServers = (env: AppEnv): P2pIceServer[] => {
   const raw = toStringValue(firstDefined(env.P2P_ICE_SERVERS, env.VITE_P2P_ICE_SERVERS))?.trim() ?? ''
-  if (!raw) return defaultP2pIceServers
+  if (raw === '') return defaultP2pIceServers
   try {
     const parsed = JSON.parse(raw) as unknown
     if (Array.isArray(parsed)) {
-      const normalized = parsed.map(normalizeIceServer).filter(Boolean) as P2pIceServer[]
+      const normalized = parsed
+        .map(normalizeIceServer)
+        .filter((entry): entry is P2pIceServer => Boolean(entry))
       return normalized.length ? normalized : defaultP2pIceServers
     }
     const single = normalizeIceServer(parsed)
@@ -442,6 +452,7 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     p2pWakuRelays: resolveP2pWakuRelays(resolvedEnv),
     p2pCrdtSignaling: resolveP2pCrdtSignaling(resolvedEnv),
     p2pPeerjsServer: resolveP2pPeerjsServer(resolvedEnv),
-    p2pIceServers: resolveP2pIceServers(resolvedEnv)
+    p2pIceServers: resolveP2pIceServers(resolvedEnv),
+    authBootstrapPublicKey: resolveAuthBootstrapPublicKey(resolvedEnv) || undefined
   }
 }

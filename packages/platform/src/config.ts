@@ -40,6 +40,7 @@ export type AuthConfig = {
   rpOrigin: string
   relyingParties: RelyingPartyConfig[]
   oauth: Partial<Record<OAuthProvider, OAuthClient>>
+  bootstrapPrivateKey?: string
 }
 
 export type PushConfig = {
@@ -112,6 +113,7 @@ const platformEnvSchema = arkenvType({
   BETTER_AUTH_DISCORD_CLIENT_SECRET: 'string?',
   BETTER_AUTH_MICROSOFT_CLIENT_ID: 'string?',
   BETTER_AUTH_MICROSOFT_CLIENT_SECRET: 'string?',
+  AUTH_BOOTSTRAP_PRIVATE_KEY: 'string?',
   UNKEY_ROOT_KEY: 'string?',
   UNKEY_RATELIMIT_NAMESPACE: 'string?',
   UNKEY_RATELIMIT_BASE_URL: 'string?',
@@ -203,6 +205,7 @@ const resolveLogLevel = (value: string | undefined): LogLevel => {
     default:
       return 'info'
   }
+  throw new Error(`Unsupported log level: ${normalized ?? ''}`)
 }
 
 const resolveLogFormat = (value: string | undefined): LogFormat => {
@@ -374,12 +377,15 @@ const parseAuthConfig = (env: Env, allowDevDefaults: boolean): AuthConfig => {
     if (config) oauth[provider] = config
   }
 
+  const bootstrapPrivateKey = normalizeOptionalString(env.AUTH_BOOTSTRAP_PRIVATE_KEY)
+
   return {
     cookieSecret,
     rpId: primary.rpId,
     rpOrigin: primary.rpOrigin,
     relyingParties,
-    oauth
+    oauth,
+    bootstrapPrivateKey
   }
 }
 

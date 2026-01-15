@@ -51,7 +51,7 @@ import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './c
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
 import { fetchRelayDevices } from './relay-directory'
 import { createRelayManager, type RelayMessage } from './relay'
-import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../shared/server-backoff'
+import { getServerBackoffMs, markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -327,11 +327,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
         return selfDevices
       }
-      const skipApi = getServerBackoffMs(serverKey) > 0
-      const relayUrls = resolveDiscoveredRelays()
-      const relayPromise = fetchRelayDevices({ userId: selfUserId, relayUrls })
+      const relayUrls = resolveAdvertisedRelays()
+      let relayDevices: ContactDevice[] = []
+      try {
+        relayDevices = await fetchRelayDevices({ userId: selfUserId, relayUrls })
+      } catch {
+        relayDevices = []
+      }
       let apiDevices: ContactDevice[] = []
-      if (!skipApi) {
+      if (!relayDevices.length && shouldAttemptServer(serverKey)) {
         try {
           const response = await fetch(
             buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
@@ -349,7 +353,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
           // ignore API failures
         }
       }
-      const relayDevices = await relayPromise
       const identity = options.identityRef.value
       const localEntry = identity ? buildLocalDeviceEntry(identity, resolveAdvertisedRelays()) : null
       const next = mergeDeviceLists(apiDevices, relayDevices, localEntry ? [localEntry] : [])
@@ -569,7 +572,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const fetchDevices = async () => {
       const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
       const cachedDevices = loadDeviceCache(contact.id)
-      const skipApi = getServerBackoffMs(serverKey) > 0
       if (isOffline && cachedDevices) {
         options.deviceListStaleAt.value = cachedDevices.updatedAt
         devices = cachedDevices.devices
@@ -585,15 +587,20 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         return devices
       }
-      const relayUrls = resolveDiscoveredRelays()
+      const relayUrls = resolveAdvertisedRelays()
       let relayFailed = false
-      const relayPromise = fetchRelayDevices({ userId: contact.id, relayUrls }).catch(() => {
+      let relayDevices: ContactDevice[] = []
+      try {
+        relayDevices = await fetchRelayDevices({ userId: contact.id, relayUrls })
+      } catch {
         relayFailed = true
-        return []
-      })
+        relayDevices = []
+      }
       let apiDevices: ContactDevice[] = []
-      let apiFailed = skipApi
-      if (!skipApi) {
+      let apiAttempted = false
+      let apiFailed = false
+      if (!relayDevices.length && shouldAttemptServer(serverKey)) {
+        apiAttempted = true
         try {
           const response = await fetch(
             buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
@@ -603,19 +610,19 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             const payload = (await response.json()) as { devices?: ContactDevice[] }
             apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
             markServerSuccess(serverKey)
+            apiFailed = false
+          } else if (response.status >= 500) {
+            markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+            apiFailed = true
           } else {
             apiFailed = true
-            if (response.status >= 500) {
-              markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-            }
           }
         } catch {
-          apiFailed = true
           markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
+          apiFailed = true
         }
       }
-      const relayDevices = await relayPromise
-      const shouldUseCache = isOffline || apiFailed || relayFailed
+      const shouldUseCache = isOffline || relayFailed || (apiAttempted && apiFailed)
       const cacheList = shouldUseCache && cachedDevices ? cachedDevices.devices : []
       const next = mergeDeviceLists(apiDevices, relayDevices, cacheList)
       if (shouldUseCache && cachedDevices) {
