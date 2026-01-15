@@ -399,7 +399,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       options.channelRef.value = undefined
     }
 
-    const scheduleWsReconnect = (identity: DeviceIdentity, reason: string) => {
+    const _scheduleWsReconnect = (identity: DeviceIdentity, reason: string) => {
       if (!active) return
       if (!wsEnabled) return
       if (wsReconnectTimer !== null || wsReconnectPending) return
@@ -1896,7 +1896,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       const deliveredIds = new Set(outgoing.filter((entry) => entry.deliveredAt).map((entry) => entry.id))
       if (!deliveredIds.size) return
       let changed = false
-      const next = options.dmMessages.value.map((message) => {
+      const next = options.dmMessages.value.map<DmMessage>((message) => {
         if (message.author !== 'self') return message
         if (message.status === 'read') return message
         if (!deliveredIds.has(message.id)) return message

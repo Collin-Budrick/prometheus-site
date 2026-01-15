@@ -25,11 +25,11 @@ const normalizeAction = (value: unknown): ContactInviteAction | null => {
   return null
 }
 
-const normalizeStatus = (value: unknown): ContactEntry['status'] | null => {
+const normalizeStatus = (value: unknown): ContactEntry['status'] | undefined => {
   if (value === 'incoming' || value === 'outgoing' || value === 'accepted' || value === 'declined' || value === 'removed') {
     return value
   }
-  return null
+  return undefined
 }
 
 export const parseContactInviteEvent = (payload: unknown): ContactInviteRelayEvent | null => {

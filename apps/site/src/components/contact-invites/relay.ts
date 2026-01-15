@@ -323,7 +323,7 @@ const createNostrRelayClient = (
     const relayKey = request.relayPublicKey
     if (!relayKey) return []
     const since = readNostrCursor(relayKey)
-    const filters = {
+    const filter = {
       kinds: [nostrKind],
       '#p': [relayKey],
       '#t': ['prometheus-p2p'],
@@ -333,7 +333,7 @@ const createNostrRelayClient = (
     let resolved = false
 
     await new Promise<void>((resolve) => {
-      const subscription = pool.subscribeManyEose(relays, [filters], {
+      const subscription = pool.subscribeManyEose(relays, filter, {
         onevent(event) {
           if (!event || typeof event.id !== 'string' || typeof event.content !== 'string') return
           events.push({ id: event.id, content: event.content, created_at: event.created_at })
