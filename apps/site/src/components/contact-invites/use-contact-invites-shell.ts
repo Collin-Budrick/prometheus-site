@@ -1,4 +1,4 @@
-import { noSerialize, useVisibleTask$, type NoSerialize, type QRL, type Signal } from '@builder.io/qwik'
+import { useVisibleTask$, type NoSerialize, type QRL, type Signal } from '@builder.io/qwik'
 import {
   buildChatSettingsKey,
   defaultChatSettings,
@@ -7,16 +7,16 @@ import {
   type ChatSettings
 } from '../../shared/chat-settings'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
-import { buildWsUrl, resolveChatSettingsUserId } from './api'
-import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../shared/server-backoff'
+import { resolveChatSettingsUserId } from './api'
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
 import { loadContactsMaps, mergeContactsPayload } from './contacts-crdt'
-import { shouldSkipMessagingServer } from './relay-mode'
+import { createLocalChatTransport } from './local-transport'
 import type {
   ActiveContact,
   BaselineInviteCounts,
   ContactInviteView,
+  ContactInvitesPayload,
   ContactSearchResult,
   DmOrigin,
   RealtimeState
@@ -56,10 +56,9 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
     (ctx) => {
       if (typeof window === 'undefined') return
       let active = true
-      let hasSnapshot = false
-      let reconnectTimer: number | null = null
       let previousUserId = options.chatSettingsUserId.value
-      const relayPreferred = shouldSkipMessagingServer()
+      const transport = createLocalChatTransport()
+      let unsubscribeContacts: (() => void) | null = null
 
       if (!options.identityReady.value) {
         options.identityReady.value = true
@@ -183,11 +182,10 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       document.addEventListener('keydown', handleKeyDown)
       window.addEventListener('storage', handleStorage)
 
-      const applySnapshot = async (payload: Record<string, unknown>) => {
-        const nextIncoming = Array.isArray(payload.incoming) ? (payload.incoming as ContactInviteView[]) : []
-        const nextOutgoing = Array.isArray(payload.outgoing) ? (payload.outgoing as ContactInviteView[]) : []
-        const nextContacts = Array.isArray(payload.contacts) ? (payload.contacts as ContactInviteView[]) : []
-        const nextOnline = Array.isArray(payload.onlineIds) ? payload.onlineIds.filter((id) => typeof id === 'string') : []
+      const applySnapshot = async (payload: ContactInvitesPayload) => {
+        const nextIncoming = Array.isArray(payload.incoming) ? payload.incoming : []
+        const nextOutgoing = Array.isArray(payload.outgoing) ? payload.outgoing : []
+        const nextContacts = Array.isArray(payload.contacts) ? payload.contacts : []
         const userId = options.chatSettingsUserId.value
         if (userId) {
           const maps = await loadContactsMaps(userId)
@@ -201,221 +199,45 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
             })
           }
         }
-        options.onlineIds.value = Array.from(new Set(nextOnline))
+        options.onlineIds.value = []
         options.invitesState.value = 'idle'
         options.realtimeState.value = 'live'
-        hasSnapshot = true
       }
 
-      const applyPresence = (userId: string, online: boolean) => {
+      const syncContacts = async () => {
+        const userId = options.chatSettingsUserId.value
         if (!userId) return
-        const contactIds = new Set(options.contacts.value.map((invite) => invite.user.id))
-        if (!contactIds.has(userId)) return
-        const next = new Set(options.onlineIds.value)
-        if (online) {
-          next.add(userId)
-        } else {
-          next.delete(userId)
+        if (unsubscribeContacts) {
+          unsubscribeContacts()
+          unsubscribeContacts = null
         }
-        options.onlineIds.value = Array.from(next)
-      }
-
-      let reconnectAttempt = 0
-
-      const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
-      const resolveServerKey = () => {
-        const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
-        if (wsUrl) {
-          try {
-            return new URL(wsUrl).host
-          } catch {
-            // fall back to window host
-          }
-        }
-        return window.location.host
-      }
-      const serverKey = resolveServerKey()
-
-      const clearReconnectTimer = () => {
-        if (reconnectTimer !== null) {
-          window.clearTimeout(reconnectTimer)
-          reconnectTimer = null
-        }
-      }
-
-      const scheduleReconnect = (delayMs?: number) => {
-        if (relayPreferred) return
-        if (!active || reconnectTimer !== null) return
-        if (isOffline()) {
-          options.realtimeState.value = 'offline'
-          return
-        }
-        const serverBackoffMs = getServerBackoffMs(serverKey)
-        if (serverBackoffMs > 0) {
-          options.realtimeState.value = 'offline'
-          reconnectTimer = window.setTimeout(() => {
-            reconnectTimer = null
-            connect()
-          }, serverBackoffMs)
-          return
-        }
-        reconnectAttempt += 1
-        const baseDelay = 2000
-        const maxDelay = 45_000
-        const exponentialDelay = baseDelay * 2 ** (reconnectAttempt - 1)
-        const resolvedDelay = Number.isFinite(delayMs) && delayMs && delayMs > 0 ? Math.max(delayMs, exponentialDelay) : exponentialDelay
-        const cappedDelay = Math.min(resolvedDelay, maxDelay)
-        const jitter = Math.random() * cappedDelay * 0.3
-        const wait = cappedDelay + jitter
-        reconnectTimer = window.setTimeout(() => {
-          reconnectTimer = null
-          connect()
-        }, wait)
-      }
-
-      const connect = () => {
-        if (!active) return
-        if (relayPreferred) {
-          options.realtimeState.value = 'live'
-          return
-        }
-        if (isOffline()) {
-          options.realtimeState.value = 'offline'
-          return
-        }
-        const serverBackoffMs = getServerBackoffMs(serverKey)
-        if (serverBackoffMs > 0) {
-          options.realtimeState.value = 'offline'
-          scheduleReconnect(serverBackoffMs)
-          return
-        }
-        const wsUrl = buildWsUrl('/chat/contacts/ws', window.location.origin)
-        if (!wsUrl) {
-          void options.refreshInvites()
-          return
-        }
-        if (!hasSnapshot) {
-          options.invitesState.value = 'loading'
-        }
-        options.realtimeState.value = 'connecting'
-        options.wsRef.value?.close()
-        let failureRecorded = false
-        const recordFailure = () => {
-          if (failureRecorded) return
-          failureRecorded = true
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        const ws = new WebSocket(wsUrl)
-        options.wsRef.value = noSerialize(ws)
-
-        ws.addEventListener('message', (event) => {
-          let payload: unknown
-          try {
-            payload = JSON.parse(String(event.data))
-          } catch {
-            return
-          }
-          if (!payload || typeof payload !== 'object') return
-          const record = payload as Record<string, unknown>
-          const type = record.type
-          if (type === 'ping') {
-            ws.send(JSON.stringify({ type: 'pong' }))
-            return
-          }
-          if (type === 'contacts:init' || type === 'contacts:update') {
-            void applySnapshot(record)
-            return
-          }
-          if (type === 'contacts:presence') {
-            const userId = typeof record.userId === 'string' ? record.userId : ''
-            const online = typeof record.online === 'boolean' ? record.online : null
-            if (online !== null) applyPresence(userId, online)
-            return
-          }
-          if (type === 'error') {
-            options.realtimeState.value = 'error'
-            options.invitesState.value = 'error'
-            if (!hasSnapshot) {
-              void options.refreshInvites()
-            }
-            const retryAfter = Number(record.retryAfter)
-            if (Number.isFinite(retryAfter) && retryAfter > 0) {
-              scheduleReconnect(retryAfter * 1000)
-            } else {
-              scheduleReconnect()
-            }
-          }
+        unsubscribeContacts = await transport.subscribeContacts(userId, (payload) => {
+          void applySnapshot(payload)
         })
-
-        ws.addEventListener('open', () => {
-          markServerSuccess(serverKey)
-          options.realtimeState.value = 'connecting'
-          reconnectAttempt = 0
-          clearReconnectTimer()
-        })
-
-        ws.addEventListener('close', () => {
-          if (!active) return
-          recordFailure()
-          options.realtimeState.value = isOffline()
-            ? 'offline'
-            : options.realtimeState.value === 'error'
-              ? 'error'
-              : 'offline'
-          if (!hasSnapshot) {
-            void options.refreshInvites()
-          }
-          scheduleReconnect()
-        })
-
-        ws.addEventListener('error', () => {
-          if (!active) return
-          recordFailure()
-          options.realtimeState.value = 'offline'
-          scheduleReconnect()
-        })
+        options.realtimeState.value =
+          typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'live'
       }
 
-      connect()
+      void syncContacts()
 
       const handleOnline = () => {
         if (!active) return
-        if (isOffline()) return
-        if (relayPreferred) {
-          options.realtimeState.value = 'live'
-          return
-        }
-        const ws = options.wsRef.value
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-          return
-        }
-        scheduleReconnect(0)
+        options.realtimeState.value = 'live'
       }
 
       const handleOffline = () => {
+        if (!active) return
         options.realtimeState.value = 'offline'
-      }
-
-      const handleNetworkStatus = (event: Event) => {
-        if (!(event instanceof CustomEvent)) return
-        const detail = event.detail as { online?: boolean } | undefined
-        if (detail?.online === true) {
-          handleOnline()
-        } else if (detail?.online === false) {
-          handleOffline()
-        }
       }
 
       window.addEventListener('online', handleOnline)
       window.addEventListener('offline', handleOffline)
-      window.addEventListener('prom:network-status', handleNetworkStatus)
 
       ctx.cleanup(() => {
         active = false
-        clearReconnectTimer()
+        if (unsubscribeContacts) unsubscribeContacts()
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
-        window.removeEventListener('prom:network-status', handleNetworkStatus)
         saveCounts()
         window.removeEventListener('beforeunload', saveCounts)
         document.removeEventListener('visibilitychange', handleVisibility)
@@ -423,7 +245,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
         document.removeEventListener('click', handleSettingsClick)
         document.removeEventListener('keydown', handleKeyDown)
         window.removeEventListener('storage', handleStorage)
-        options.wsRef.value?.close()
+        options.wsRef.value = undefined
         options.realtimeState.value = 'idle'
       })
     },

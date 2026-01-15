@@ -29,7 +29,7 @@ import {
   type ProfileMeta,
   type ProfilePayload
 } from '../../shared/profile-storage'
-import { buildApiUrl, buildWsUrl } from './api'
+import { createLocalChatTransport } from './local-transport'
 import { loadOutbox, removeOutboxItems, saveOutbox, type OutboxItem } from './outbox'
 import { decryptSignalPayload, encryptSignalPayload, resolveSignalEnvelope, type SignalEnvelope } from './signal'
 import {
@@ -42,17 +42,12 @@ import {
 import {
   historyCacheLimit,
   historyRequestLimit,
-  loadHistory,
   loadHistoryArchiveStamp,
-  mergeHistoryMessages,
-  persistHistory
+  mergeHistoryMessages
 } from './history'
 import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './crdt-store'
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
-import { fetchRelayDevices } from './relay-directory'
 import { createRelayManager, type RelayMessage } from './relay'
-import { getServerBackoffMs, markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
-import { shouldSkipMessagingServer } from './relay-mode'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -128,6 +123,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     let active = true
+    const transport = createLocalChatTransport()
     let devices: ContactDevice[] = []
     let selfDevices: ContactDevice[] = []
     let selfDevicesFetchedAt = 0
@@ -137,15 +133,12 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let peerJs: Peer | null = null
     let peerJsConnecting = false
     let peerJsFallbackActive = false
-    let wsHealthy = true
     let reconnectTimer: number | null = null
     let reconnectAttempt = 0
     let reconnecting = false
     let wsReconnectTimer: number | null = null
     let wsReconnectAttempt = 0
     let wsReconnectPending = false
-    let wsHeartbeatTimer: number | null = null
-    let wsPongTimer: number | null = null
     let deviceRetryTimer: number | null = null
     let deviceRetryAttempt = 0
     let iceRestarting = false
@@ -161,9 +154,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
     let selfRelayManagerKey = ''
     const outboxResendIntervalMs = 15_000
-    const wsHeartbeatIntervalMs = 12_000
-    const wsHeartbeatTimeoutMs = 6_000
     const offerTimeoutMs = 15_000
+    const wsEnabled = false
     const resolvedIceServers =
       appConfig.p2pIceServers && appConfig.p2pIceServers.length
         ? appConfig.p2pIceServers
@@ -210,19 +202,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (!identity.relayPublicKey || !identity.relaySecretKey) return undefined
       return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
     }
-    const resolveServerKey = () => {
-      const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
-      if (wsUrl) {
-        try {
-          return new URL(wsUrl).host
-        } catch {
-          // fall back to window host
-        }
-      }
-      return window.location.host
-    }
-    const serverKey = resolveServerKey()
-    const skipServer = shouldSkipMessagingServer()
     const buildDeviceCacheKey = (contactId: string) => `p2pDevices:${contactId}`
     const loadDeviceCache = (contactId: string) => {
       try {
@@ -329,35 +308,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       if (selfDevices.length && now - selfDevicesFetchedAt < selfDevicesCacheMs) {
         return selfDevices
       }
-      const relayUrls = resolveAdvertisedRelays()
-      let relayDevices: ContactDevice[] = []
-      try {
-        relayDevices = await fetchRelayDevices({ userId: selfUserId, relayUrls })
-      } catch {
-        relayDevices = []
-      }
-      let apiDevices: ContactDevice[] = []
-      if (!relayDevices.length && !skipServer && shouldAttemptServer(serverKey)) {
-        try {
-          const response = await fetch(
-            buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
-            { credentials: 'include' }
-          )
-          if (response.ok) {
-            const payload = (await response.json()) as { devices?: ContactDevice[] }
-            apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-            markServerSuccess(serverKey)
-          } else if (response.status >= 500) {
-            markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-          }
-        } catch {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-          // ignore API failures
-        }
-      }
+      const relayDevices = await transport.fetchDevices(selfUserId)
       const identity = options.identityRef.value
       const localEntry = identity ? buildLocalDeviceEntry(identity, resolveAdvertisedRelays()) : null
-      const next = mergeDeviceLists(apiDevices, relayDevices, localEntry ? [localEntry] : [])
+      const next = mergeDeviceLists(relayDevices, localEntry ? [localEntry] : [])
       if (next.length) {
         selfDevices = next
         selfDevicesFetchedAt = now
@@ -432,14 +386,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         window.clearTimeout(wsReconnectTimer)
         wsReconnectTimer = null
       }
-      if (wsHeartbeatTimer !== null) {
-        window.clearInterval(wsHeartbeatTimer)
-        wsHeartbeatTimer = null
-      }
-      if (wsPongTimer !== null) {
-        window.clearTimeout(wsPongTimer)
-        wsPongTimer = null
-      }
       if (deviceRetryTimer !== null) {
         window.clearTimeout(deviceRetryTimer)
         deviceRetryTimer = null
@@ -473,7 +419,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const scheduleWsReconnect = (identity: DeviceIdentity, reason: string) => {
       if (!active) return
-      if (skipServer) return
+      if (!wsEnabled) return
       if (wsReconnectTimer !== null || wsReconnectPending) return
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         options.dmStatus.value = 'offline'
@@ -481,25 +427,15 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         debug('ws reconnect deferred (offline)', { reason })
         return
       }
-      const serverBackoffMs = getServerBackoffMs(serverKey)
-      if (serverBackoffMs > 0) {
-        const activeChannel = options.channelRef.value ?? channel
-        const channelOpen = activeChannel?.readyState === 'open'
-        if (!channelOpen) {
-          options.dmStatus.value = 'offline'
-        }
-        wsReconnectPending = true
-        const selfUserId = options.selfUserId.value
-        if (selfUserId && isCrdtSignalingBackoff()) {
-          destroyCrdtProvider(contact.id, identity, selfUserId)
-        }
-        wsReconnectTimer = window.setTimeout(() => {
-          wsReconnectTimer = null
-          wsReconnectPending = false
-          connectWs(identity)
-        }, serverBackoffMs)
-        debug('ws reconnect deferred (server backoff)', { reason, wait: serverBackoffMs })
-        return
+      const activeChannel = options.channelRef.value ?? channel
+      const channelOpen = activeChannel?.readyState === 'open'
+      if (!channelOpen) {
+        options.dmStatus.value = 'offline'
+      }
+      wsReconnectPending = true
+      const selfUserId = options.selfUserId.value
+      if (selfUserId && isCrdtSignalingBackoff()) {
+        destroyCrdtProvider(contact.id, identity, selfUserId)
       }
       wsReconnectAttempt += 1
       const baseDelay = 800
@@ -548,7 +484,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await new Promise((resolve) => window.setTimeout(resolve, 1200))
       resetPeerConnection()
       reconnecting = false
-      if (peerJsEnabled && !wsHealthy) {
+      if (peerJsEnabled) {
         const usedFallback = await maybeStartPeerJsFallback(identity, reason)
         if (usedFallback) return
       }
@@ -590,44 +526,17 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         return devices
       }
-      const relayUrls = resolveAdvertisedRelays()
       let relayFailed = false
       let relayDevices: ContactDevice[] = []
       try {
-        relayDevices = await fetchRelayDevices({ userId: contact.id, relayUrls })
+        relayDevices = await transport.fetchDevices(contact.id)
       } catch {
         relayFailed = true
         relayDevices = []
       }
-      let apiDevices: ContactDevice[] = []
-      let apiAttempted = false
-      let apiFailed = false
-      if (!relayDevices.length && !skipServer && shouldAttemptServer(serverKey)) {
-        apiAttempted = true
-        try {
-          const response = await fetch(
-            buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(contact.id)}`, window.location.origin),
-            { credentials: 'include' }
-          )
-          if (response.ok) {
-            const payload = (await response.json()) as { devices?: ContactDevice[] }
-            apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-            markServerSuccess(serverKey)
-            apiFailed = false
-          } else if (response.status >= 500) {
-            markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-            apiFailed = true
-          } else {
-            apiFailed = true
-          }
-        } catch {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-          apiFailed = true
-        }
-      }
-      const shouldUseCache = isOffline || relayFailed || (apiAttempted && apiFailed)
+      const shouldUseCache = isOffline || relayFailed
       const cacheList = shouldUseCache && cachedDevices ? cachedDevices.devices : []
-      const next = mergeDeviceLists(apiDevices, relayDevices, cacheList)
+      const next = mergeDeviceLists(relayDevices, cacheList)
       if (shouldUseCache && cachedDevices) {
         options.deviceListStaleAt.value = cachedDevices.updatedAt
       } else {
@@ -697,12 +606,6 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     const sendSignal = async (signal: Record<string, unknown>) => {
       const payload = isRecord(signal.payload) ? signal.payload : null
       const payloadType = payload?.type
-      const wsOpen = ws?.readyState === WebSocket.OPEN
-      if (wsOpen) {
-        debug('signal via ws', { type: payloadType })
-        ws?.send(JSON.stringify(signal))
-        return
-      }
       const shouldRelay =
         payloadType === 'offer' || payloadType === 'answer' || payloadType === 'candidate'
       if (shouldRelay) {
@@ -1404,7 +1307,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
               if (statusRank(nextStatus) <= statusRank(message.status)) return message
               return { ...message, status: nextStatus }
             })
-            void persistHistory(contact.id, identity, options.dmMessages.value)
+            void transport.persistMessages(contact.id, identity, options.dmMessages.value)
             void removeOutboxItems(contact.id, identity, [receiptTargetId])
           }
           return true
@@ -1420,7 +1323,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (imageChunk) {
           const message = await storeImageChunk(imageChunk, messageAuthor)
           if (message && appendIncomingMessage(message)) {
-            void persistHistory(contact.id, identity, options.dmMessages.value)
+            void transport.persistMessages(contact.id, identity, options.dmMessages.value)
             if (context.source === 'contact') {
               const syncPayload = buildSelfSyncPayload(message)
               if (syncPayload) {
@@ -1448,7 +1351,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             }
           }
           if (assembled && appendIncomingMessage(assembled)) {
-            void persistHistory(contact.id, identity, options.dmMessages.value)
+            void transport.persistMessages(contact.id, identity, options.dmMessages.value)
             if (context.source === 'contact') {
               const syncPayload = buildSelfSyncPayload(assembled)
               if (syncPayload) {
@@ -1467,7 +1370,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (inlineImage) {
           const message = await buildInlineImageMessage(inlineImage, messageAuthor)
           if (message && appendIncomingMessage(message)) {
-            void persistHistory(contact.id, identity, options.dmMessages.value)
+            void transport.persistMessages(contact.id, identity, options.dmMessages.value)
             if (context.source === 'contact') {
               const syncPayload = buildSelfSyncPayload(message)
               if (syncPayload) {
@@ -1538,7 +1441,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (historyResponse && allowRemoteMetadata) {
           if (options.historySuppressed.value) return true
           options.dmMessages.value = mergeHistoryMessages(options.dmMessages.value, historyResponse)
-          void persistHistory(contact.id, identity, options.dmMessages.value)
+          void transport.persistMessages(contact.id, identity, options.dmMessages.value)
           return true
         }
         if (crdtKey) {
@@ -1573,7 +1476,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (isHistoryRequest && allowRemoteMetadata && respond.sendHistoryResponse) {
           let snapshot = options.dmMessages.value
           if (!snapshot.length) {
-            snapshot = await loadHistory(contact.id, identity)
+            snapshot = await transport.readMessages(contact.id, identity)
           }
           if (!snapshot.length) return true
           const trimmed = snapshot
@@ -1598,7 +1501,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             status: 'sent'
           })
         ) {
-          void persistHistory(contact.id, identity, options.dmMessages.value)
+          void transport.persistMessages(contact.id, identity, options.dmMessages.value)
           if (context.source === 'contact') {
             const syncPayload = buildSelfSyncPayload({
               id: messageId,
@@ -1894,7 +1797,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         }
         await saveOutbox(activeContact.id, identity, remaining)
         if (updated) {
-          void persistHistory(activeContact.id, identity, options.dmMessages.value)
+          void transport.persistMessages(activeContact.id, identity, options.dmMessages.value)
         }
       } finally {
         flushingOutbox = false
@@ -2016,16 +1919,11 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       void flushOutbox()
       void pullMailbox()
       if (!active) return
-      if (!wsHealthy && wsReconnectPending && options.identityRef.value) {
-        wsReconnectPending = false
-        scheduleWsReconnect(options.identityRef.value, 'network-online')
-      }
     }
 
     const handleOffline = () => {
       if (!active) return
       options.dmStatus.value = 'offline'
-      wsReconnectPending = true
       const identity = options.identityRef.value
       const selfUserId = options.selfUserId.value
       if (identity && selfUserId) {
@@ -2628,7 +2526,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
             if (message && appendIncomingMessage(message)) {
               const identity = options.identityRef.value
               if (identity) {
-                void persistHistory(contact.id, identity, options.dmMessages.value)
+                void transport.persistMessages(contact.id, identity, options.dmMessages.value)
               }
               await sendReceipt(
                 session.key,
@@ -2886,190 +2784,8 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       await scheduleReconnect(reason)
     }
 
-    const connectWs = (identity: DeviceIdentity) => {
-      if (skipServer) return
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        options.dmStatus.value = 'offline'
-        wsReconnectPending = true
-        debug('ws connect deferred (offline)', { reason: 'offline' })
-        return
-      }
-      const serverBackoffMs = getServerBackoffMs(serverKey)
-      if (serverBackoffMs > 0) {
-        const activeChannel = options.channelRef.value ?? channel
-        const channelOpen = activeChannel?.readyState === 'open'
-        if (!channelOpen) {
-          options.dmStatus.value = 'offline'
-        }
-        wsReconnectPending = true
-        const selfUserId = options.selfUserId.value
-        if (selfUserId && isCrdtSignalingBackoff()) {
-          destroyCrdtProvider(contact.id, identity, selfUserId)
-        }
-        if (wsReconnectTimer === null) {
-          wsReconnectTimer = window.setTimeout(() => {
-            wsReconnectTimer = null
-            wsReconnectPending = false
-            connectWs(identity)
-          }, serverBackoffMs)
-        }
-        debug('ws connect deferred (server backoff)', { wait: serverBackoffMs })
-        return
-      }
-      const wsUrl = buildWsUrl('/chat/p2p/ws', window.location.origin)
-      if (!wsUrl) return
-      ws?.close()
-      if (wsHeartbeatTimer !== null) {
-        window.clearInterval(wsHeartbeatTimer)
-        wsHeartbeatTimer = null
-      }
-      if (wsPongTimer !== null) {
-        window.clearTimeout(wsPongTimer)
-        wsPongTimer = null
-      }
-      wsHealthy = false
-      let failureRecorded = false
-      const recordFailure = () => {
-        if (failureRecorded) return
-        failureRecorded = true
-        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      }
-      ws = new WebSocket(wsUrl)
-      const startHeartbeat = () => {
-        if (wsHeartbeatTimer !== null) {
-          window.clearInterval(wsHeartbeatTimer)
-        }
-        wsHeartbeatTimer = window.setInterval(() => {
-          if (ws?.readyState !== WebSocket.OPEN) return
-          ws.send(JSON.stringify({ type: 'ping' }))
-          if (wsPongTimer !== null) {
-            window.clearTimeout(wsPongTimer)
-          }
-          wsPongTimer = window.setTimeout(() => {
-            wsPongTimer = null
-            wsHealthy = false
-            scheduleWsReconnect(identity, 'ws-heartbeat-timeout')
-          }, wsHeartbeatTimeoutMs)
-        }, wsHeartbeatIntervalMs)
-      }
-      const stopHeartbeat = () => {
-        if (wsHeartbeatTimer !== null) {
-          window.clearInterval(wsHeartbeatTimer)
-          wsHeartbeatTimer = null
-        }
-        if (wsPongTimer !== null) {
-          window.clearTimeout(wsPongTimer)
-          wsPongTimer = null
-        }
-      }
-      ws.addEventListener('open', () => {
-        debug('ws open')
-        markServerSuccess(serverKey)
-        wsHealthy = true
-        wsReconnectAttempt = 0
-        wsReconnectPending = false
-        if (wsReconnectTimer !== null) {
-          window.clearTimeout(wsReconnectTimer)
-          wsReconnectTimer = null
-        }
-        ws?.send(JSON.stringify({ type: 'hello', deviceId: identity.deviceId }))
-        while (pendingSignals.length) {
-          const signal = pendingSignals.shift()
-          if (!signal) break
-          ws?.send(JSON.stringify(signal))
-        }
-        startHeartbeat()
-        void pullMailbox()
-      })
-      ws.addEventListener('message', async (event) => {
-        let payload: unknown
-        try {
-          payload = JSON.parse(String(event.data))
-        } catch {
-          return
-        }
-        if (!isRecord(payload)) return
-        const payloadType = payload.type
-        const fromId = typeof payload.from === 'string' ? payload.from : ''
-        if (payloadType === 'pong') {
-          if (wsPongTimer !== null) {
-            window.clearTimeout(wsPongTimer)
-            wsPongTimer = null
-          }
-          return
-        }
-        if (payloadType === 'ping') {
-          ws?.send(JSON.stringify({ type: 'pong' }))
-          return
-        }
-        if (payloadType === 'error') {
-          const message = typeof payload.error === 'string' ? payload.error : ''
-          if (message === 'Unknown device') {
-            try {
-              const nextIdentity = await options.registerIdentity()
-              if (!active) return
-              options.identityRef.value = noSerialize(nextIdentity)
-              connectWs(nextIdentity)
-            } catch {
-              // ignore registration failures
-            }
-            return
-          }
-        }
-        if (payloadType === 'p2p:signal' && fromId === contact.id) {
-          try {
-            await handleSignal(payload)
-          } catch (error) {
-            reportDmError(
-              error instanceof Error
-                ? error.message
-                : options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error'
-            )
-          }
-          return
-        }
-        if (payloadType === 'p2p:mailbox') {
-          const deviceIds = Array.isArray(payload.deviceIds) ? payload.deviceIds : []
-          if (deviceIds.length && !deviceIds.includes(identity.deviceId)) return
-          void pullMailbox()
-        }
-      })
-      ws.addEventListener('close', () => {
-        debug('ws close')
-        wsHealthy = false
-        stopHeartbeat()
-        if (!active) return
-        recordFailure()
-        const activeChannel = options.channelRef.value ?? channel
-        const channelOpen = activeChannel?.readyState === 'open'
-        const connectionState = connection?.connectionState
-        const iceState = connection?.iceConnectionState
-        if (
-          channelOpen ||
-          connectionState === 'connected' ||
-          iceState === 'connected' ||
-          iceState === 'completed'
-        ) {
-          options.dmStatus.value = 'connected'
-        } else if (options.dmStatus.value === 'connected') {
-          options.dmStatus.value = 'offline'
-        }
-        scheduleWsReconnect(identity, 'ws-close')
-        void maybeStartPeerJsFallback(identity, 'ws-close')
-      })
-      ws.addEventListener('error', () => {
-        debug('ws error')
-        wsHealthy = false
-        stopHeartbeat()
-        recordFailure()
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          options.dmStatus.value = 'offline'
-        } else {
-          reportDmError(options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Error', 'offline')
-        }
-        scheduleWsReconnect(identity, 'ws-error')
-        void maybeStartPeerJsFallback(identity, 'ws-error')
-      })
+    const connectWs = (_identity: DeviceIdentity) => {
+      if (!wsEnabled) return
     }
 
     const startCaller = async (identity: DeviceIdentity, remoteDevice: ContactDevice) => {
@@ -3114,7 +2830,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (!active) return
         const archiveStamp = await loadHistoryArchiveStamp(contact.id, identity)
         options.historySuppressed.value = archiveStamp !== null
-        const cached = await loadHistory(contact.id, identity)
+        const cached = await transport.readMessages(contact.id, identity)
         if (!active) return
         historyNeeded = cached.length === 0 && archiveStamp === null
         if (cached.length) {
