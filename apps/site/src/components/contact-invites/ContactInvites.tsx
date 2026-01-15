@@ -404,7 +404,9 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const contactMatches = normalizedQuery
       ? contacts.value.filter((invite) => matchesQuery(invite.user, normalizedQuery))
       : contacts.value
-    const shouldSearchRemote = normalizedQuery !== '' && contactMatches.length === 0 && !offline.value
+    const hasSearchResults = searchResults.value.length > 0
+    const shouldSearchRemote =
+      normalizedQuery !== '' && contactMatches.length === 0 && (!offline.value || hasSearchResults)
     const contactResults = contactMatches.map<ContactSearchItem>((invite) => ({
       id: invite.user.id,
       name: invite.user.name,

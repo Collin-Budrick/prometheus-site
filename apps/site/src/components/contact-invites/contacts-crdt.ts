@@ -99,10 +99,10 @@ const ensureStore = async (userId: string) => {
   return doc
 }
 
-export const applyContactEntry = (contacts: Y.Map<unknown>, entry: ContactEntry) => {
+export const applyContactEntry = (contacts: Y.Map<unknown>, entry: ContactEntry, options?: { force?: boolean }) => {
   if (!entry.inviteId || !entry.user.id || !entry.user.email || !entry.updatedAt) return false
   const existing = normalizeContactEntry(contacts.get(entry.user.id))
-  if (!isNewer(existing, entry)) return false
+  if (!options?.force && !isNewer(existing, entry)) return false
   contacts.set(entry.user.id, entry)
   return true
 }

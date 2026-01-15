@@ -12,6 +12,7 @@ import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
 import { loadContactsMaps, mergeContactsPayload } from './contacts-crdt'
+import { hasRelayDirectory } from './relay-mode'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -58,6 +59,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       let hasSnapshot = false
       let reconnectTimer: number | null = null
       let previousUserId = options.chatSettingsUserId.value
+      const relayPreferred = hasRelayDirectory()
 
       if (!options.identityReady.value) {
         options.identityReady.value = true
@@ -242,6 +244,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       }
 
       const scheduleReconnect = (delayMs?: number) => {
+        if (relayPreferred) return
         if (!active || reconnectTimer !== null) return
         if (isOffline()) {
           options.realtimeState.value = 'offline'
@@ -272,6 +275,10 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
 
       const connect = () => {
         if (!active) return
+        if (relayPreferred) {
+          options.realtimeState.value = 'live'
+          return
+        }
         if (isOffline()) {
           options.realtimeState.value = 'offline'
           return
@@ -374,6 +381,10 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       const handleOnline = () => {
         if (!active) return
         if (isOffline()) return
+        if (relayPreferred) {
+          options.realtimeState.value = 'live'
+          return
+        }
         const ws = options.wsRef.value
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
           return

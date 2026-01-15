@@ -1,6 +1,5 @@
 import { $, noSerialize, useVisibleTask$, type NoSerialize, type Signal } from '@builder.io/qwik'
 import { saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
-import { appConfig } from '../../app-config'
 import {
   createStoredIdentity,
   ensureStoredIdentity,
@@ -17,6 +16,7 @@ import { publishRelayDevice, buildRelayDirectoryLabels, fetchRelayDevices } from
 import { createRelayManager } from './relay'
 import { publishSignalPrekeys } from './signal'
 import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
+import { hasRelayDirectory, resolveRelayUrls } from './relay-mode'
 import {
   applyContactEntry,
   loadContactsMaps,
@@ -225,12 +225,8 @@ const resolveRelayIdentity = (identity?: DeviceIdentity) => {
   return { publicKey: identity.relayPublicKey, secretKey: identity.relaySecretKey }
 }
 
-const resolveRelayUrls = () =>
-  [
-    ...(appConfig.p2pRelayBases ?? []),
-    ...(appConfig.p2pNostrRelays ?? []),
-    ...(appConfig.p2pWakuRelays ?? [])
-  ].filter(Boolean)
+const userIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const looksLikeUserId = (value: string) => userIdPattern.test(value)
 
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
   const flushInFlight = { value: false }
@@ -250,6 +246,96 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     contactsMapsUserIdRef.value = userId
     return maps
   })
+
+  const applyInvitesPayload = $(
+    (payload: ContactInvitesPayload, optionsState?: { offline?: boolean; stale?: boolean; updatedAt?: string }) => {
+      const copy = options.fragmentCopy.value
+      const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
+      const offline = optionsState?.offline ?? false
+      const stale = optionsState?.stale ?? false
+      const updatedAt = optionsState?.updatedAt
+
+      options.incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
+      options.outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
+      options.contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
+      options.onlineIds.value = options.onlineIds.value.filter((id) =>
+        options.contacts.value.some((invite) => invite.user.id === id)
+      )
+      if (options.activeContact.value) {
+        const stillConnected = options.contacts.value.some(
+          (invite) => invite.user.id === options.activeContact.value?.id
+        )
+        if (!stillConnected) {
+          options.activeContact.value = null
+          options.dmClosing.value = false
+          options.dmOrigin.value = null
+        }
+      }
+      if (options.searchResults.value.length) {
+        const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
+        options.incoming.value.forEach((invite) =>
+          statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id })
+        )
+        options.outgoing.value.forEach((invite) =>
+          statusByUser.set(invite.user.id, { status: 'outgoing', inviteId: invite.id })
+        )
+        options.contacts.value.forEach((invite) =>
+          statusByUser.set(invite.user.id, { status: 'accepted', inviteId: invite.id })
+        )
+        options.searchResults.value = options.searchResults.value.map((entry) => {
+          const status = statusByUser.get(entry.id)
+          if (!status) {
+            return { ...entry, status: 'none', inviteId: undefined }
+          }
+          return { ...entry, status: status.status, inviteId: status.inviteId }
+        })
+      }
+      const baseline = options.baselineCounts.value
+      if (!baseline) {
+        options.baselineCounts.value = {
+          incoming: options.incoming.value.length,
+          outgoing: options.outgoing.value.length,
+          contacts: options.contacts.value.length
+        }
+      } else {
+        const next = { ...baseline }
+        let changed = false
+        if (!Number.isFinite(next.incoming)) {
+          next.incoming = options.incoming.value.length
+          changed = true
+        }
+        if (!Number.isFinite(next.outgoing)) {
+          next.outgoing = options.outgoing.value.length
+          changed = true
+        }
+        if (!Number.isFinite(next.contacts)) {
+          next.contacts = options.contacts.value.length
+          changed = true
+        }
+        if (changed) {
+          options.baselineCounts.value = next
+        }
+      }
+      options.invitesState.value = 'idle'
+      if (offline) {
+        const formattedUpdatedAt = updatedAt ? new Date(updatedAt).toLocaleString() : null
+        if (stale && formattedUpdatedAt) {
+          options.statusTone.value = 'error'
+          options.statusMessage.value = resolveLocal(`Offline - cached data from ${formattedUpdatedAt} may be stale.`)
+        } else if (stale) {
+          options.statusTone.value = 'error'
+          options.statusMessage.value = resolveLocal('Offline - cached data may be stale.')
+        } else {
+          options.statusTone.value = 'neutral'
+          options.statusMessage.value = resolveLocal('Offline - showing cached contacts.')
+        }
+        return
+      }
+      if (options.realtimeState.value === 'idle' || options.realtimeState.value === 'offline') {
+        options.realtimeState.value = 'live'
+      }
+    }
+  )
 
   const sendRelayEvent = $(async (targetUserId: string, event: ReturnType<typeof buildContactInviteEvent>) => {
     if (typeof window === 'undefined') return false
@@ -360,7 +446,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const sendInviteViaServer = $(async (email: string) => {
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey)) return null
+    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return null
     try {
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
         method: 'POST',
@@ -388,7 +474,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     inviteId: string
   ) => {
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey)) return false
+    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return false
     const encoded = encodeURIComponent(inviteId)
     const path =
       action === 'accept'
@@ -586,8 +672,9 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
     } finally {
       saveQueuedActions(storageKey, remaining)
-      if (refreshed) {
-        await applyContactsFromMaps(maps)
+      if (refreshed && maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
       }
       flushInFlight.value = false
     }
@@ -598,7 +685,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     void requestStoragePersistence()
     const updateOfflineState = () => {
       const serverKey = resolveServerKey()
-      const offline = isNetworkOffline() || !shouldAttemptServer(serverKey)
+      const relayPreferred = hasRelayDirectory()
+      const offline = isNetworkOffline() || (!relayPreferred && !shouldAttemptServer(serverKey))
       options.offline.value = offline
       return offline
     }
@@ -641,9 +729,13 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       if (!userId) return
       const maps = await ensureContactsMaps()
       if (!maps || !active) return
-      await applyContactsFromMaps(maps)
+      if (maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      }
       cleanupObserver = observeContacts(maps.contacts, () => {
-        void applyContactsFromMaps(maps)
+        const payload = serializeContactsPayload(maps.contacts)
+        void applyInvitesPayload(payload)
       })
       contactsUnsubscribeRef.value = cleanupObserver
     })()
@@ -698,11 +790,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     const userId = options.chatSettingsUserId.value
     const identityValue = identity ?? options.identityRef.value
     if (!userId || !identityValue) return false
-    const relayUrls = [
-      ...(appConfig.p2pRelayBases ?? []),
-      ...(appConfig.p2pNostrRelays ?? []),
-      ...(appConfig.p2pWakuRelays ?? [])
-    ].filter(Boolean)
+    const relayUrls = resolveRelayUrls()
     const deviceOk = await publishRelayDevice({
       identity: identityValue,
       userId,
@@ -720,17 +808,13 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     let registered = false
     try {
       const serverKey = resolveApiHost(window.location.origin)
-      if (!shouldAttemptServer(serverKey)) {
+      if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) {
         options.identityRef.value = noSerialize(identity)
         void publishRelayIdentity(identity)
         return identity
       }
       const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
-      const relayUrls = [
-        ...(appConfig.p2pRelayBases ?? []),
-        ...(appConfig.p2pNostrRelays ?? []),
-        ...(appConfig.p2pWakuRelays ?? [])
-      ].filter(Boolean)
+      const relayUrls = resolveRelayUrls()
       const registerDevice = async () => {
         const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
           method: 'POST',
@@ -826,101 +910,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.chatSettingsOpen.value = false
   })
 
-  const applyInvitesPayload = $(
-    (payload: ContactInvitesPayload, optionsState?: { offline?: boolean; stale?: boolean; updatedAt?: string }) => {
-      const copy = options.fragmentCopy.value
-      const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
-      const offline = optionsState?.offline ?? false
-      const stale = optionsState?.stale ?? false
-      const updatedAt = optionsState?.updatedAt
-
-      options.incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
-      options.outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
-      options.contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
-      options.onlineIds.value = options.onlineIds.value.filter((id) =>
-        options.contacts.value.some((invite) => invite.user.id === id)
-      )
-      if (options.activeContact.value) {
-        const stillConnected = options.contacts.value.some(
-          (invite) => invite.user.id === options.activeContact.value?.id
-        )
-        if (!stillConnected) {
-          options.activeContact.value = null
-          options.dmClosing.value = false
-          options.dmOrigin.value = null
-        }
-      }
-      if (options.searchResults.value.length) {
-        const statusByUser = new Map<string, { status: ContactSearchResult['status']; inviteId: string }>()
-        options.incoming.value.forEach((invite) =>
-          statusByUser.set(invite.user.id, { status: 'incoming', inviteId: invite.id })
-        )
-        options.outgoing.value.forEach((invite) =>
-          statusByUser.set(invite.user.id, { status: 'outgoing', inviteId: invite.id })
-        )
-        options.contacts.value.forEach((invite) =>
-          statusByUser.set(invite.user.id, { status: 'accepted', inviteId: invite.id })
-        )
-        options.searchResults.value = options.searchResults.value.map((entry) => {
-          const status = statusByUser.get(entry.id)
-          if (!status) {
-            return { ...entry, status: 'none', inviteId: undefined }
-          }
-          return { ...entry, status: status.status, inviteId: status.inviteId }
-        })
-      }
-      const baseline = options.baselineCounts.value
-      if (!baseline) {
-        options.baselineCounts.value = {
-          incoming: options.incoming.value.length,
-          outgoing: options.outgoing.value.length,
-          contacts: options.contacts.value.length
-        }
-      } else {
-        const next = { ...baseline }
-        let changed = false
-        if (!Number.isFinite(next.incoming)) {
-          next.incoming = options.incoming.value.length
-          changed = true
-        }
-        if (!Number.isFinite(next.outgoing)) {
-          next.outgoing = options.outgoing.value.length
-          changed = true
-        }
-        if (!Number.isFinite(next.contacts)) {
-          next.contacts = options.contacts.value.length
-          changed = true
-        }
-        if (changed) {
-          options.baselineCounts.value = next
-        }
-      }
-      options.invitesState.value = 'idle'
-      if (offline) {
-        const formattedUpdatedAt = updatedAt ? new Date(updatedAt).toLocaleString() : null
-        if (stale && formattedUpdatedAt) {
-          options.statusTone.value = 'error'
-          options.statusMessage.value = resolveLocal(`Offline - cached data from ${formattedUpdatedAt} may be stale.`)
-        } else if (stale) {
-          options.statusTone.value = 'error'
-          options.statusMessage.value = resolveLocal('Offline - cached data may be stale.')
-        } else {
-          options.statusTone.value = 'neutral'
-          options.statusMessage.value = resolveLocal('Offline - showing cached contacts.')
-        }
-        return
-      }
-      if (options.realtimeState.value === 'idle' || options.realtimeState.value === 'offline') {
-        options.realtimeState.value = 'live'
-      }
-    }
-  )
-
-  const applyContactsFromMaps = $(async (maps: ContactsMaps | null) => {
-    if (!maps) return
-    const payload = serializeContactsPayload(maps.contacts)
-    await applyInvitesPayload(payload)
-  })
 
   const refreshInvites = $(async (resetStatus = true) => {
     if (typeof window === 'undefined') return
@@ -937,10 +926,13 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       return
     }
     options.invitesState.value = 'loading'
-    await applyContactsFromMaps(maps)
+    if (maps) {
+      const payload = serializeContactsPayload(maps.contacts)
+      await applyInvitesPayload(payload)
+    }
 
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey)) return
+    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return
 
     try {
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
@@ -959,7 +951,10 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       maps.doc.transact(() => {
         mergeContactsPayload(maps.contacts, payload, 'server')
       })
-      await applyContactsFromMaps(maps)
+      if (maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      }
       markServerSuccess(serverKey)
     } catch (error) {
       markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
@@ -1006,6 +1001,25 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     try {
       const serverKey = resolveServerKey()
+      if (hasRelayDirectory()) {
+        options.searchState.value = 'idle'
+        options.searchResults.value = []
+        if (looksLikeUserId(trimmed)) {
+          options.searchResults.value = [
+            {
+              id: trimmed,
+              name: null,
+              email: trimmed,
+              status: 'none',
+              inviteId: undefined
+            }
+          ]
+          options.searchError.value = null
+        } else {
+          options.searchError.value = resolveLocal('Relay-only mode - search by user ID.')
+        }
+        return
+      }
       if (isNetworkOffline() || !shouldAttemptServer(serverKey)) {
         options.searchState.value = 'idle'
         options.searchError.value = null
@@ -1059,11 +1073,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     try {
       const maps = await ensureContactsMaps()
       const selfUser = resolveSelfUser(options.chatSettingsUserId.value)
-      if (!maps || !selfUser) {
-        options.statusTone.value = 'error'
-        options.statusMessage.value = resolveLocal('Invite unavailable.')
-        return
-      }
       const inviteId = createMessageId()
       const matching = options.searchResults.value.find((entry) => entry.email === email || entry.id === userId)
       const contact = {
@@ -1071,16 +1080,36 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         email,
         name: matching?.name ?? undefined
       }
-      maps.doc.transact(() => {
-        applyContactEntry(maps.contacts, {
-          inviteId,
-          status: 'outgoing',
-          user: contact,
-          updatedAt: new Date().toISOString(),
-          source: 'local'
+      const upsertPendingFallback = (nextInviteId: string) => {
+        options.incoming.value = options.incoming.value.filter((invite) => invite.user.id !== contact.id)
+        options.contacts.value = options.contacts.value.filter((invite) => invite.user.id !== contact.id)
+        options.outgoing.value = [
+          ...options.outgoing.value.filter((invite) => invite.user.id !== contact.id),
+          { id: nextInviteId, status: 'outgoing', user: contact }
+        ]
+        if (options.searchResults.value.length) {
+          options.searchResults.value = options.searchResults.value.map((entry) =>
+            entry.id === contact.id || entry.email === email
+              ? { ...entry, status: 'outgoing', inviteId: nextInviteId }
+              : entry
+          )
+        }
+      }
+      if (maps) {
+        maps.doc.transact(() => {
+          applyContactEntry(maps.contacts, {
+            inviteId,
+            status: 'outgoing',
+            user: contact,
+            updatedAt: new Date().toISOString(),
+            source: 'local'
+          }, { force: true })
         })
-      })
-      await applyContactsFromMaps(maps)
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      } else {
+        upsertPendingFallback(inviteId)
+      }
 
       if (isNetworkOffline()) {
         enqueueQueuedAction(storageKey, {
@@ -1098,7 +1127,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
 
       let delivered = false
-      if (userId) {
+      if (userId && selfUser) {
         delivered = await sendContactAction({
           action: 'invite',
           inviteId,
@@ -1124,16 +1153,21 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           options.statusMessage.value = resolveLocal('Invite queued.')
           return
         }
-        maps.doc.transact(() => {
-          applyContactEntry(maps.contacts, {
-            inviteId: serverInviteId,
-            status: 'outgoing',
-            user: contact,
-            updatedAt: new Date().toISOString(),
-            source: 'server'
+        if (maps) {
+          maps.doc.transact(() => {
+            applyContactEntry(maps.contacts, {
+              inviteId: serverInviteId,
+              status: 'outgoing',
+              user: contact,
+              updatedAt: new Date().toISOString(),
+              source: 'server'
+            })
           })
-        })
-        await applyContactsFromMaps(maps)
+          const payload = serializeContactsPayload(maps.contacts)
+          await applyInvitesPayload(payload)
+        } else {
+          upsertPendingFallback(serverInviteId)
+        }
       }
 
       options.statusTone.value = 'success'
@@ -1173,9 +1207,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           user: contact,
           updatedAt: new Date().toISOString(),
           source: 'local'
-        })
+        }, { force: true })
       })
-      await applyContactsFromMaps(maps)
+      if (maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      }
 
       if (isNetworkOffline()) {
         enqueueQueuedAction(storageKey, {
@@ -1253,9 +1290,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           user: contact,
           updatedAt: new Date().toISOString(),
           source: 'local'
-        })
+        }, { force: true })
       })
-      await applyContactsFromMaps(maps)
+      if (maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      }
 
       if (isNetworkOffline()) {
         enqueueQueuedAction(storageKey, {
@@ -1333,9 +1373,12 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           user: contact,
           updatedAt: new Date().toISOString(),
           source: 'local'
-        })
+        }, { force: true })
       })
-      await applyContactsFromMaps(maps)
+      if (maps) {
+        const payload = serializeContactsPayload(maps.contacts)
+        await applyInvitesPayload(payload)
+      }
 
       if (isNetworkOffline()) {
         enqueueQueuedAction(storageKey, {
