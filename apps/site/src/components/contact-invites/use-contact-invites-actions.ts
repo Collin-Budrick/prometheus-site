@@ -517,6 +517,16 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     }
   })
 
+  const flushRelayOutbox = $(async (identity: DeviceIdentity) => {
+    if (isNetworkOffline()) return
+    const relayUrls = resolveRelayUrls()
+    const manager = createRelayManager(window.location.origin, {
+      relayIdentity: resolveRelayIdentity(identity),
+      discoveredRelays: relayUrls
+    })
+    await manager.flushOutgoing(identity.deviceId)
+  })
+
   const flushQueuedActions = $(async () => {
     if (typeof window === 'undefined') return
     if (flushInFlight.value) return
@@ -739,12 +749,14 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
       relayPullTimerRef.value = window.setTimeout(async () => {
         relayPullTimerRef.value = null
+        await flushRelayOutbox(identity)
         await pullRelayInbox(identity, userId)
         schedulePull(14_000)
       }, delayMs)
     }
 
     const handleOnline = () => {
+      void flushRelayOutbox(identity)
       schedulePull(0)
     }
 

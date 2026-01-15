@@ -1,8 +1,14 @@
 import { SimplePool, finalizeEvent } from 'nostr-tools'
 import type { LightNode } from '@waku/sdk'
 import { appConfig } from '../../app-config'
-import { buildApiUrl } from './api'
 import { isRecord } from './utils'
+import {
+  enqueueMailboxOutgoing,
+  loadMailboxOutgoing,
+  markMailboxIncomingAcked,
+  recordMailboxIncoming,
+  updateMailboxOutgoing
+} from './mailbox-store'
 
 type WakuSdk = typeof import('@waku/sdk')
 
@@ -60,30 +66,18 @@ export type RelayManager = {
   send: (request: RelaySendRequest) => Promise<RelaySendResult | null>
   pull: (request: RelayPullRequest) => Promise<RelayMessage[]>
   ack: (deviceId: string, messageIds: string[]) => Promise<number>
+  flushOutgoing: (deviceId: string) => Promise<number>
 }
 
 const relaySendAttempts = 2
 const relayRetryDelayMs = 800
+const relayBackoffBaseMs = 1200
+const relayBackoffMaxMs = 15_000
 const nostrKind = 4
 const wakuContentTopic = '/prometheus/1/chat/json'
 const wakuCursorPrefix = 'chat:p2p:waku:cursor:'
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
-
-const normalizeBase = (value: string, origin: string) => {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  if (trimmed.startsWith('/')) {
-    return `${origin}${trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed}`
-  }
-  try {
-    const url = new URL(trimmed)
-    const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')
-    return `${url.origin}${pathname}`
-  } catch {
-    return ''
-  }
-}
 
 const isLikelyHostname = (hostname: string) => {
   if (!hostname) return false
@@ -105,12 +99,6 @@ const isValidWebSocketUrl = (value: string) => {
   } catch {
     return false
   }
-}
-
-const isHttpRelayEntry = (value: string) => {
-  if (!value) return false
-  if (value.startsWith('/')) return true
-  return value.startsWith('https://') || value.startsWith('http://')
 }
 
 const normalizeRelayList = (relays: string[]) =>
@@ -145,21 +133,6 @@ const isWakuMultiaddr = (value: string) => {
   )
 }
 
-const resolveRelayBases = (origin: string, discovered: string[]) => {
-  const configured = appConfig.p2pRelayBases ?? []
-  const all = normalizeRelayList([...configured, ...discovered]).filter((entry) => {
-    if (isWakuMultiaddr(entry) || entry.startsWith(wakuPrefix) || entry.startsWith(multiaddrPrefix)) return false
-    if (entry.startsWith('ws://') || entry.startsWith('wss://')) return false
-    return isHttpRelayEntry(entry)
-  })
-  const resolved = all.map((entry) => normalizeBase(entry, origin)).filter(Boolean)
-  return resolved.map((base) => {
-    const apiFallback = buildApiUrl('', origin)
-    if (base === origin && apiFallback !== origin) return apiFallback
-    return base
-  })
-}
-
 const resolveNostrRelays = (discovered: string[]) => {
   const configured = appConfig.p2pNostrRelays ?? []
   return normalizeRelayList([...configured, ...discovered]).filter(isValidWebSocketUrl)
@@ -172,62 +145,6 @@ const resolveWakuRelays = (discovered: string[]) => {
     .map((entry) => normalizeWakuPeer(entry))
     .filter((entry) => isWakuMultiaddr(entry))
   return Array.from(new Set(peers))
-}
-
-const buildRelayUrl = (baseUrl: string, path: string) => {
-  const relative = path.replace(/^\/+/, '')
-  const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-  return new URL(relative, base).toString()
-}
-
-const isSameOrigin = (baseUrl: string, origin: string) => {
-  try {
-    return new URL(baseUrl).origin === new URL(origin).origin
-  } catch {
-    return false
-  }
-}
-
-const parseSendResult = (payload: unknown): RelaySendResult | null => {
-  if (!isRecord(payload)) return null
-  const id = typeof payload.id === 'string' ? payload.id : ''
-  if (!id) return null
-  const delivered = typeof payload.delivered === 'number' ? payload.delivered : 0
-  return { id, delivered }
-}
-
-const parseMessages = (payload: unknown, relayBase: string) => {
-  if (!isRecord(payload)) return []
-  const raw = payload.messages
-  if (!Array.isArray(raw)) return []
-  const messages: RelayMessage[] = []
-  for (const entry of raw) {
-    if (!isRecord(entry)) continue
-    const id = typeof entry.id === 'string' ? entry.id : ''
-    const from = typeof entry.from === 'string' ? entry.from : ''
-    const to = typeof entry.to === 'string' ? entry.to : ''
-    const deviceId = typeof entry.deviceId === 'string' ? entry.deviceId : ''
-    const createdAt = typeof entry.createdAt === 'string' ? entry.createdAt : ''
-    if (!id || !from || !to || !deviceId || !createdAt) continue
-    messages.push({
-      id,
-      from,
-      to,
-      deviceId,
-      sessionId: typeof entry.sessionId === 'string' ? entry.sessionId : undefined,
-      payload: entry.payload,
-      createdAt,
-      relayBase,
-      relayKind: 'http'
-    })
-  }
-  return messages
-}
-
-const parseAckResult = (payload: unknown) => {
-  if (!isRecord(payload)) return 0
-  const removed = payload.removed
-  return typeof removed === 'number' ? removed : 0
 }
 
 const hexToBytes = (value: string) => {
@@ -344,67 +261,6 @@ const getWakuNode = async (peers: string[]) => {
     wakuNodes.delete(key)
     throw error
   }
-}
-
-const createHttpRelayClients = (origin: string, discovered: string[]): RelayClient[] => {
-  const bases = resolveRelayBases(origin, discovered)
-
-  return bases.map((baseUrl) => {
-    const credentials = isSameOrigin(baseUrl, origin) ? 'include' : 'omit'
-    const send = async (request: RelaySendRequest) => {
-      try {
-        const response = await fetch(buildRelayUrl(baseUrl, '/chat/p2p/mailbox/send'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials,
-          body: JSON.stringify(request)
-        })
-        if (!response.ok) return null
-        return parseSendResult(await response.json())
-      } catch {
-        return null
-      }
-    }
-
-    const pull = async (request: RelayPullRequest) => {
-      try {
-        const response = await fetch(buildRelayUrl(baseUrl, '/chat/p2p/mailbox/pull'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials,
-          body: JSON.stringify(request)
-        })
-        if (!response.ok) return []
-        return parseMessages(await response.json(), baseUrl)
-      } catch {
-        return []
-      }
-    }
-
-    const ack = async (deviceId: string, messageIds: string[]) => {
-      if (!messageIds.length) return 0
-      try {
-        const response = await fetch(buildRelayUrl(baseUrl, '/chat/p2p/mailbox/ack'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials,
-          body: JSON.stringify({ deviceId, messageIds })
-        })
-        if (!response.ok) return 0
-        return parseAckResult(await response.json())
-      } catch {
-        return 0
-      }
-    }
-
-    return {
-      baseUrl,
-      kind: 'http',
-      send,
-      pull,
-      ack
-    } satisfies RelayClient
-  })
 }
 
 const createNostrRelayClient = (
@@ -687,7 +543,7 @@ const createWakuRelayClient = (peers: string[]): RelayClient | null => {
 }
 
 export const createRelayClients = (
-  origin: string,
+  _origin: string,
   options?: {
     discoveredRelays?: string[]
     relayIdentity?: RelayIdentity
@@ -695,12 +551,11 @@ export const createRelayClients = (
   }
 ): RelayClient[] => {
   const discovered = options?.discoveredRelays ?? []
-  const httpClients = createHttpRelayClients(origin, discovered)
   const nostrRelays = resolveNostrRelays(discovered)
   const nostrClient = createNostrRelayClient(nostrRelays, options?.relayIdentity, options?.recipientRelayKey)
   const wakuRelays = resolveWakuRelays(discovered)
   const wakuClient = createWakuRelayClient(wakuRelays)
-  return [...httpClients, ...(nostrClient ? [nostrClient] : []), ...(wakuClient ? [wakuClient] : [])]
+  return [...(nostrClient ? [nostrClient] : []), ...(wakuClient ? [wakuClient] : [])]
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -715,8 +570,27 @@ export const createRelayManager = (
 ): RelayManager => {
   const clients = createRelayClients(origin, options)
 
+  const resolveDeviceId = (request?: RelaySendRequest, fallback?: RelayPullRequest) => {
+    if (request?.senderDeviceId) return request.senderDeviceId
+    if (fallback?.deviceId) return fallback.deviceId
+    return ''
+  }
+
+  const scheduleNextAttempt = (attempts: number) => {
+    const capped = Math.min(attempts, 4)
+    return Math.min(relayBackoffBaseMs * 2 ** capped, relayBackoffMaxMs)
+  }
+
   const send = async (request: RelaySendRequest) => {
     if (!clients.length) return null
+    const deviceId = resolveDeviceId(request)
+    if (deviceId) {
+      try {
+        await enqueueMailboxOutgoing(deviceId, request)
+      } catch {
+        // ignore mailbox persistence failures
+      }
+    }
     let attempt = 0
     let delivered = 0
     while (attempt < relaySendAttempts) {
@@ -727,10 +601,35 @@ export const createRelayManager = (
         return sum + result.value.delivered
       }, 0)
       if (delivered > 0) {
+        if (deviceId) {
+          try {
+            await updateMailboxOutgoing(deviceId, request.messageId, {
+              deliveredAt: new Date().toISOString(),
+              deliveredCount: delivered,
+              attempts: attempt,
+              lastAttemptAt: new Date().toISOString(),
+              nextAttemptAt: undefined
+            })
+          } catch {
+            // ignore mailbox persistence failures
+          }
+        }
         return { id: request.messageId, delivered }
       }
       if (attempt < relaySendAttempts) {
         await sleep(relayRetryDelayMs)
+      }
+    }
+    if (deviceId) {
+      try {
+        const nextAttempt = scheduleNextAttempt(attempt)
+        await updateMailboxOutgoing(deviceId, request.messageId, {
+          attempts: attempt,
+          lastAttemptAt: new Date().toISOString(),
+          nextAttemptAt: new Date(Date.now() + nextAttempt).toISOString()
+        })
+      } catch {
+        // ignore mailbox persistence failures
       }
     }
     return { id: request.messageId, delivered }
@@ -739,14 +638,81 @@ export const createRelayManager = (
   const pull = async (request: RelayPullRequest) => {
     if (!clients.length) return []
     const results = await Promise.all(clients.map((client) => client.pull(request)))
-    return results.flat()
+    const messages = results.flat()
+    const deviceId = resolveDeviceId(undefined, request)
+    if (!deviceId) return messages
+    try {
+      const unique = await recordMailboxIncoming(deviceId, messages)
+      return unique
+    } catch {
+      return messages
+    }
   }
 
   const ack = async (deviceId: string, messageIds: string[]) => {
     if (!clients.length || !messageIds.length) return 0
     const results = await Promise.all(clients.map((client) => client.ack(deviceId, messageIds)))
-    return results.reduce((sum, count) => sum + count, 0)
+    const total = results.reduce((sum, count) => sum + count, 0)
+    try {
+      await markMailboxIncomingAcked(deviceId, messageIds)
+    } catch {
+      // ignore mailbox persistence failures
+    }
+    return total
   }
 
-  return { clients, send, pull, ack }
+  const flushOutgoing = async (deviceId: string) => {
+    if (!clients.length) return 0
+    let queued: Awaited<ReturnType<typeof loadMailboxOutgoing>> = []
+    try {
+      queued = await loadMailboxOutgoing(deviceId)
+    } catch {
+      return 0
+    }
+    const now = Date.now()
+    const pending = queued.filter((entry) => {
+      if (entry.deliveredAt) return false
+      if (!entry.nextAttemptAt) return true
+      const nextAt = Date.parse(entry.nextAttemptAt)
+      return !Number.isFinite(nextAt) || nextAt <= now
+    })
+    if (!pending.length) return 0
+    let deliveredTotal = 0
+    for (const entry of pending) {
+      const attempts = (entry.attempts ?? 0) + 1
+      const results = await Promise.allSettled(clients.map((client) => client.send(entry.request)))
+      const delivered = results.reduce((sum, result) => {
+        if (result.status !== 'fulfilled' || !result.value) return sum
+        return sum + result.value.delivered
+      }, 0)
+      deliveredTotal += delivered
+      if (delivered > 0) {
+        try {
+          await updateMailboxOutgoing(deviceId, entry.id, {
+            deliveredAt: new Date().toISOString(),
+            deliveredCount: delivered,
+            attempts,
+            lastAttemptAt: new Date().toISOString(),
+            nextAttemptAt: undefined
+          })
+        } catch {
+          // ignore mailbox persistence failures
+        }
+        continue
+      }
+      try {
+        const backoff = scheduleNextAttempt(attempts)
+        await updateMailboxOutgoing(deviceId, entry.id, {
+          attempts,
+          lastAttemptAt: new Date().toISOString(),
+          nextAttemptAt: new Date(Date.now() + backoff).toISOString()
+        })
+      } catch {
+        // ignore mailbox persistence failures
+      }
+    }
+    return deliveredTotal
+  }
+
+  return { clients, send, pull, ack, flushOutgoing }
 }
