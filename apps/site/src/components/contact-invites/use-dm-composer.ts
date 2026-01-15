@@ -1,6 +1,5 @@
 import { $, type NoSerialize, type Signal } from '@builder.io/qwik'
 import type { ChatSettings } from '../../shared/chat-settings'
-import { appConfig } from '../../app-config'
 import {
   decodeBase64,
   deriveSessionKey,
@@ -12,13 +11,10 @@ import {
 } from '../../shared/p2p-crypto'
 import { zstdCompress } from '../../shared/zstd-codec'
 import { enqueueOutboxItem, markOutboxItemSent } from './outbox'
-import { persistHistory } from './history'
 import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
-import { buildApiUrl, resolveApiHost } from './api'
 import { encryptSignalPayload } from './signal'
-import { fetchRelayDevices } from './relay-directory'
-import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
+import { createLocalChatTransport, type LocalChatTransport } from './local-transport'
 import type { ActiveContact, ContactDevice, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -192,46 +188,19 @@ const getRelayManager = (runtime: DmComposerRuntime, options: DmComposerOptions)
   return runtime.relayManager
 }
 
-const fetchSelfDevices = async (runtime: DmComposerRuntime, options: DmComposerOptions) => {
+const fetchSelfDevices = async (
+  runtime: DmComposerRuntime,
+  options: DmComposerOptions,
+  transport: LocalChatTransport
+) => {
   const selfUserId = options.selfUserId.value
   if (!selfUserId || typeof window === 'undefined') return []
   const now = Date.now()
   if (runtime.selfDevices.length && now - runtime.selfDevicesFetchedAt < selfDevicesCacheMs) {
     return runtime.selfDevices
   }
-  const serverKey = resolveApiHost(window.location.origin)
-  const relayUrls = [
-    ...(appConfig.p2pRelayBases ?? []),
-    ...(appConfig.p2pNostrRelays ?? []),
-    ...(appConfig.p2pWakuRelays ?? [])
-  ].filter(Boolean)
-  let relayDevices: ContactDevice[] = []
-  try {
-    relayDevices = await fetchRelayDevices({ userId: selfUserId, relayUrls })
-  } catch {
-    relayDevices = []
-  }
-  let apiDevices: ContactDevice[] = []
-  if (!relayDevices.length && shouldAttemptServer(serverKey)) {
-    try {
-      const response = await fetch(
-        buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
-        { credentials: 'include' }
-      )
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        return runtime.selfDevices
-      }
-      const payload = (await response.json()) as { devices?: ContactDevice[] }
-      apiDevices = Array.isArray(payload.devices) ? payload.devices.filter((device) => device.deviceId) : []
-      markServerSuccess(serverKey)
-    } catch {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-    }
-  }
-  const next = mergeDeviceLists(relayDevices, apiDevices)
+  const relayDevices = await transport.fetchDevices(selfUserId)
+  const next = mergeDeviceLists(relayDevices)
   if (next.length) {
     runtime.selfDevices = next
     runtime.selfDevicesFetchedAt = now
@@ -239,11 +208,15 @@ const fetchSelfDevices = async (runtime: DmComposerRuntime, options: DmComposerO
   return runtime.selfDevices
 }
 
-const getSelfRelayManager = async (runtime: DmComposerRuntime, options: DmComposerOptions) => {
+const getSelfRelayManager = async (
+  runtime: DmComposerRuntime,
+  options: DmComposerOptions,
+  transport: LocalChatTransport
+) => {
   if (typeof window === 'undefined') return null
   const identity = options.identityRef.value
   if (!identity) return null
-  const devices = await fetchSelfDevices(runtime, options)
+  const devices = await fetchSelfDevices(runtime, options, transport)
   const discovered = Array.from(
     new Set(
       devices
@@ -293,6 +266,7 @@ const sendRelayPayload = async (
 const sendSelfSyncPayload = async (
   runtime: DmComposerRuntime,
   options: DmComposerOptions,
+  transport: LocalChatTransport,
   contactId: string,
   payload: Record<string, unknown>,
   messageId: string,
@@ -301,10 +275,10 @@ const sendSelfSyncPayload = async (
   const identity = options.identityRef.value
   const selfUserId = options.selfUserId.value
   if (!identity || !selfUserId || !contactId) return
-  const devices = await fetchSelfDevices(runtime, options)
+  const devices = await fetchSelfDevices(runtime, options, transport)
   const targets = devices.filter((device) => device.deviceId !== identity.deviceId)
   if (!targets.length) return
-  const manager = await getSelfRelayManager(runtime, options)
+  const manager = await getSelfRelayManager(runtime, options, transport)
   if (!manager || !manager.clients.length) return
   await Promise.all(
     targets.map(async (device) => {
@@ -384,6 +358,7 @@ const sendEncryptedPayload = async (
 
 export const useDmComposer = (options: DmComposerOptions) => {
   const runtime = createDmComposerRuntime()
+  const transport = createLocalChatTransport()
 
   const sendTyping = $(async (state: 'start' | 'stop') => {
     if (typeof window === 'undefined') return
@@ -471,7 +446,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       { id: messageId, text, author: 'self', createdAt, status: 'pending' }
     ]
     if (identity) {
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
     }
 
     if (!identity) {
@@ -495,7 +470,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       )
       options.dmError.value =
         options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       return
     }
 
@@ -515,9 +490,9 @@ export const useDmComposer = (options: DmComposerOptions) => {
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
-        void persistHistory(contact.id, identity, options.dmMessages.value)
+        void transport.persistMessages(contact.id, identity, options.dmMessages.value)
         const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
-        void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
+        void sendSelfSyncPayload(runtime, options, transport, contact.id, syncPayload, messageId, 'self')
         return
       }
 
@@ -540,14 +515,14 @@ export const useDmComposer = (options: DmComposerOptions) => {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       const syncPayload: Record<string, unknown> = { kind: 'message', id: messageId, text, createdAt }
-      void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
+      void sendSelfSyncPayload(runtime, options, transport, contact.id, syncPayload, messageId, 'self')
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       options.dmError.value =
         error instanceof Error
           ? error.message
@@ -649,7 +624,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'failed' } : message
       )
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       options.dmError.value =
         options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
       return
@@ -687,7 +662,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
         options.dmMessages.value = options.dmMessages.value.map((message) =>
           message.id === messageId ? { ...message, status: 'sent' } : message
         )
-        void persistHistory(contact.id, identity, options.dmMessages.value)
+        void transport.persistMessages(contact.id, identity, options.dmMessages.value)
         if (payloadBytes.length <= relayInlineLimitBytes) {
           const syncPayload: Record<string, unknown> = {
             kind: 'image-inline',
@@ -701,7 +676,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
             width: width || undefined,
             height: height || undefined
           }
-          void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
+          void sendSelfSyncPayload(runtime, options, transport, contact.id, syncPayload, messageId, 'self')
         }
         return
       }
@@ -736,7 +711,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       if (payloadBytes.length <= relayInlineLimitBytes) {
         const syncPayload: Record<string, unknown> = {
           kind: 'image-inline',
@@ -750,13 +725,13 @@ export const useDmComposer = (options: DmComposerOptions) => {
           width: width || undefined,
           height: height || undefined
         }
-        void sendSelfSyncPayload(runtime, options, contact.id, syncPayload, messageId, 'self')
+        void sendSelfSyncPayload(runtime, options, transport, contact.id, syncPayload, messageId, 'self')
       }
     } catch (error) {
       options.dmMessages.value = options.dmMessages.value.map((message) =>
         message.id === messageId ? { ...message, status: 'queued' } : message
       )
-      void persistHistory(contact.id, identity, options.dmMessages.value)
+      void transport.persistMessages(contact.id, identity, options.dmMessages.value)
       options.dmError.value =
         error instanceof Error
           ? error.message

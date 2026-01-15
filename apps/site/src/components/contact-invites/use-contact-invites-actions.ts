@@ -1,14 +1,12 @@
 import { $, noSerialize, useVisibleTask$, type NoSerialize, type Signal } from '@builder.io/qwik'
 import { saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
 import {
-  createStoredIdentity,
   ensureStoredIdentity,
   importStoredIdentity,
   loadStoredIdentity,
   saveStoredIdentity,
   type DeviceIdentity
 } from '../../shared/p2p-crypto'
-import { buildApiUrl, resolveApiHost } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
 import { registerPushSubscription } from './push'
@@ -21,17 +19,16 @@ import {
 } from './relay-directory'
 import { createRelayManager } from './relay'
 import { publishSignalPrekeys } from './signal'
-import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
-import { resolveRelayUrls, resolveWakuRelays, shouldSkipMessagingServer } from './relay-mode'
+import { resolveRelayUrls, resolveWakuRelays } from './relay-mode'
 import {
   applyContactEntry,
   loadContactsMaps,
-  mergeContactsPayload,
   observeContacts,
   readContactEntry,
   serializeContactsPayload
 } from './contacts-crdt'
 import { buildContactInviteEvent, eventToContactEntry, parseContactInviteEvent } from './contacts-relay'
+import { createLocalChatTransport } from './local-transport'
 import { createMessageId } from './utils'
 import type {
   ActiveContact,
@@ -39,7 +36,6 @@ import type {
   ContactInviteView,
   ContactInvitesPayload,
   ContactSearchItem,
-  ContactSearchPayload,
   ContactSearchResult,
   DmMessage,
   DmOrigin,
@@ -192,10 +188,6 @@ const requestInviteQueueSync = async (reason: string) => {
 const resolveFragmentCopy = (copy: Record<string, string> | undefined, value: string) => copy?.[value] ?? value
 
 const isNetworkOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
-const resolveServerKey = () => {
-  if (typeof window === 'undefined') return 'default'
-  return resolveApiHost(window.location.origin)
-}
 
 const restorePopoverFocus = (
   popover: HTMLDivElement | undefined,
@@ -241,6 +233,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   const contactsUnsubscribeRef = { value: null as (() => void) | null }
   const relayPullTimerRef = { value: null as number | null }
   const relayPullInFlightRef = { value: false }
+  const transport = createLocalChatTransport()
 
   const ensureContactsMaps = $(async () => {
     const userId = options.chatSettingsUserId.value
@@ -480,64 +473,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     }
   })
 
-  const sendInviteViaServer = $(async (email: string) => {
-    const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return null
-    try {
-      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email })
-      })
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        return null
-      }
-      const payload = (await response.json()) as { id?: string }
-      markServerSuccess(serverKey)
-      return payload.id ?? null
-    } catch {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      return null
-    }
-  })
-
-  const sendInviteActionViaServer = $(async (
-    action: 'accept' | 'decline' | 'remove',
-    inviteId: string
-  ) => {
-    const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return false
-    const encoded = encodeURIComponent(inviteId)
-    const path =
-      action === 'accept'
-        ? `/chat/contacts/invites/${encoded}/accept`
-        : action === 'decline'
-          ? `/chat/contacts/invites/${encoded}/decline`
-          : `/chat/contacts/invites/${encoded}`
-    const method = action === 'remove' ? 'DELETE' : 'POST'
-    try {
-      const response = await fetch(buildApiUrl(path, window.location.origin), {
-        method,
-        credentials: 'include'
-      })
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        return false
-      }
-      markServerSuccess(serverKey)
-      return true
-    } catch {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      return false
-    }
-  })
-
   const flushQueuedActions = $(async () => {
     if (typeof window === 'undefined') return
     if (flushInFlight.value) return
@@ -560,22 +495,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         try {
           if (action.type === 'invite') {
             if (!action.userId) {
-              const serverInviteId = await sendInviteViaServer(action.email)
-              if (!serverInviteId) {
-                remaining.push(action)
-                continue
-              }
-              const entry = {
-                inviteId: serverInviteId,
-                status: 'outgoing' as const,
-                user: { id: action.userId ?? action.email, email: action.email },
-                updatedAt: new Date().toISOString(),
-                source: 'server' as const
-              }
-              maps.doc.transact(() => {
-                applyContactEntry(maps.contacts, entry)
-              })
-              refreshed = true
+              remaining.push(action)
               continue
             }
             const relayDelivered = await sendContactAction({
@@ -590,21 +510,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
               contact: { id: action.userId, email: action.email }
             })
             if (!relayDelivered) {
-              const serverInviteId = await sendInviteViaServer(action.email)
-              if (!serverInviteId) {
-                remaining.push(action)
-                continue
-              }
-              const entry = {
-                inviteId: serverInviteId,
-                status: 'outgoing' as const,
-                user: { id: action.userId, email: action.email },
-                updatedAt: new Date().toISOString(),
-                source: 'server' as const
-              }
-              maps.doc.transact(() => {
-                applyContactEntry(maps.contacts, entry)
-              })
+              remaining.push(action)
+              continue
             }
             options.statusTone.value = 'success'
             options.statusMessage.value = resolveLocal('Invite sent.')
@@ -629,11 +536,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
               contact
             })
             if (!relayDelivered) {
-              const serverOk = await sendInviteActionViaServer('accept', action.inviteId)
-              if (!serverOk) {
-                remaining.push(action)
-                continue
-              }
+              remaining.push(action)
+              continue
             }
             options.statusTone.value = 'success'
             options.statusMessage.value = resolveLocal('Invite accepted.')
@@ -658,11 +562,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
               contact
             })
             if (!relayDelivered) {
-              const serverOk = await sendInviteActionViaServer('decline', action.inviteId)
-              if (!serverOk) {
-                remaining.push(action)
-                continue
-              }
+              remaining.push(action)
+              continue
             }
             options.statusTone.value = 'success'
             options.statusMessage.value = resolveLocal('Invite declined.')
@@ -687,11 +588,8 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
               contact
             })
             if (!relayDelivered) {
-              const serverOk = await sendInviteActionViaServer('remove', action.inviteId)
-              if (!serverOk) {
-                remaining.push(action)
-                continue
-              }
+              remaining.push(action)
+              continue
             }
             options.statusTone.value = 'success'
             options.statusMessage.value = resolveLocal('Invite removed.')
@@ -720,9 +618,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (typeof window === 'undefined') return
     void requestStoragePersistence()
     const updateOfflineState = () => {
-      const serverKey = resolveServerKey()
-      const relayPreferred = shouldSkipMessagingServer()
-      const offline = isNetworkOffline() || (!relayPreferred && !shouldAttemptServer(serverKey))
+      const offline = isNetworkOffline()
       options.offline.value = offline
       return offline
     }
@@ -838,69 +734,13 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   })
 
   const registerIdentity = $(async () => {
-    let stored = await ensureStoredIdentity(loadStoredIdentity())
+    const stored = await ensureStoredIdentity(loadStoredIdentity())
     saveStoredIdentity(stored)
-    let identity = await importStoredIdentity(stored)
-    let registered = false
-    try {
-      const serverKey = resolveApiHost(window.location.origin)
-      if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) {
-        options.identityRef.value = noSerialize(identity)
-        void publishRelayIdentity(identity)
-        return identity
-      }
-      const label = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 64) : 'browser'
-      const relayUrls = resolveRelayUrls()
-      const registerDevice = async () => {
-        const response = await fetch(buildApiUrl('/chat/p2p/device', window.location.origin), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            deviceId: identity.deviceId,
-            publicKey: identity.publicKeyJwk,
-            relayPublicKey: identity.relayPublicKey,
-            relayUrls,
-            label
-          })
-        })
-        if (response.status < 500) {
-          markServerSuccess(serverKey)
-        } else {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        if (response.status === 409) {
-          return { ok: false, conflict: true }
-        }
-        if (!response.ok) {
-          return { ok: false }
-        }
-        const payload = (await response.json()) as { deviceId?: string }
-        if (payload.deviceId && payload.deviceId !== identity.deviceId) {
-          stored = { ...stored, deviceId: payload.deviceId }
-          saveStoredIdentity(stored)
-          identity = await importStoredIdentity(stored)
-        }
-        return { ok: true }
-      }
-      let result = await registerDevice()
-      if (!result.ok && result.conflict) {
-        stored = await createStoredIdentity()
-        saveStoredIdentity(stored)
-        identity = await importStoredIdentity(stored)
-        result = await registerDevice()
-      }
-      registered = result.ok
-      if (registered) {
-        void publishSignalPrekeys(identity, options.chatSettingsUserId.value, relayUrls)
-        void registerPushSubscription(identity)
-      }
-    } catch {
-      markServerFailure(resolveApiHost(window.location.origin), { baseDelayMs: 3000, maxDelayMs: 120000 })
-      // ignore registration failures; retry later
-    }
+    const identity = await importStoredIdentity(stored)
     options.identityRef.value = noSerialize(identity)
     void publishRelayIdentity(identity)
+    void publishSignalPrekeys(identity, options.chatSettingsUserId.value, resolveRelayUrls())
+    void registerPushSubscription(identity)
     return identity
   })
 
@@ -950,6 +790,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   const refreshInvites = $(async (resetStatus = true) => {
     if (typeof window === 'undefined') return
     const maps = await ensureContactsMaps()
+    const userId = options.chatSettingsUserId.value
     if (resetStatus) {
       options.statusMessage.value = null
       options.statusTone.value = 'neutral'
@@ -962,40 +803,22 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       return
     }
     options.invitesState.value = 'loading'
-    if (maps) {
-      const payload = serializeContactsPayload(maps.contacts)
+    if (userId) {
+      const payload = await transport.readContacts(userId)
       await applyInvitesPayload(payload)
     }
 
-    const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return
-
-    try {
-      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        credentials: 'include',
-        headers: { Accept: 'application/json' }
-      })
-
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        return
-      }
-
-      const payload = (await response.json()) as ContactInvitesPayload
-      maps.doc.transact(() => {
-        mergeContactsPayload(maps.contacts, payload, 'server')
-      })
-      if (maps) {
+    const identity = options.identityRef.value
+    if (identity && userId && !isNetworkOffline()) {
+      try {
+        await pullRelayInbox(identity, userId)
         const payload = serializeContactsPayload(maps.contacts)
         await applyInvitesPayload(payload)
+      } catch (error) {
+        options.statusTone.value = 'error'
+        options.statusMessage.value =
+          error instanceof Error ? error.message : resolveFragmentCopy(options.fragmentCopy.value, 'Unable to load invites.')
       }
-      markServerSuccess(serverKey)
-    } catch (error) {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      options.statusTone.value = 'error'
-      options.statusMessage.value = error instanceof Error ? error.message : resolveFragmentCopy(options.fragmentCopy.value, 'Unable to load invites.')
     }
   })
 
@@ -1035,64 +858,26 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.searchState.value = 'loading'
     options.searchError.value = null
 
-    try {
-      const serverKey = resolveServerKey()
-      if (shouldSkipMessagingServer()) {
-        options.searchState.value = 'idle'
-        options.searchResults.value = []
-        if (looksLikeUserId(trimmed)) {
-          options.searchResults.value = [
-            {
-              id: trimmed,
-              name: null,
-              email: trimmed,
-              status: 'none',
-              inviteId: undefined
-            }
-          ]
-          options.searchError.value = null
-        } else {
-          options.searchError.value = resolveLocal('Relay-only mode - search by user ID.')
+    const knownIds = new Set(
+      [...options.contacts.value, ...options.incoming.value, ...options.outgoing.value].map((invite) => invite.user.id)
+    )
+    if (looksLikeUserId(trimmed) && !knownIds.has(trimmed)) {
+      options.searchResults.value = [
+        {
+          id: trimmed,
+          name: null,
+          email: trimmed,
+          status: 'none',
+          inviteId: undefined
         }
-        return
-      }
-      if (isNetworkOffline() || !shouldAttemptServer(serverKey)) {
-        options.searchState.value = 'idle'
-        options.searchError.value = null
-        return
-      }
-      const response = await fetch(
-        buildApiUrl(`/chat/contacts/search?email=${encodeURIComponent(trimmed)}`, window.location.origin),
-        { credentials: 'include', headers: { Accept: 'application/json' } }
-      )
-
-      if (!response.ok) {
-        if (response.status >= 500) {
-          markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-        }
-        let errorMessage = resolveLocal('Unable to search.')
-        try {
-          const payload = (await response.json()) as { error?: string }
-          if (payload?.error) errorMessage = payload.error
-        } catch {
-          // ignore parsing failures
-        }
-        options.searchState.value = 'error'
-        options.searchError.value = errorMessage
-        return
-      }
-
-      const payload = (await response.json()) as ContactSearchPayload
-      const contactIds = new Set(options.contacts.value.map((invite) => invite.user.id))
-      const results = Array.isArray(payload.results) ? payload.results : []
-      options.searchResults.value = results.filter((result) => !contactIds.has(result.id))
+      ]
+      options.searchError.value = null
       options.searchState.value = 'idle'
-      markServerSuccess(serverKey)
-    } catch (error) {
-      markServerFailure(resolveServerKey(), { baseDelayMs: 3000, maxDelayMs: 120000 })
-      options.searchState.value = 'error'
-      options.searchError.value = error instanceof Error ? error.message : resolveLocal('Unable to search.')
+      return
     }
+    options.searchResults.value = []
+    options.searchState.value = 'idle'
+    options.searchError.value = resolveLocal('Local search only - enter a user ID to invite.')
   })
 
   const handleInvite = $(async (email: string, userId?: string) => {
@@ -1174,36 +959,18 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       }
 
       if (!delivered) {
-        const serverInviteId = await sendInviteViaServer(email)
-        if (!serverInviteId) {
-          enqueueQueuedAction(storageKey, {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            type: 'invite',
-            inviteId,
-            email,
-            userId,
-            createdAt: new Date().toISOString()
-          })
-          void requestInviteQueueSync('invite')
-          options.statusTone.value = 'neutral'
-          options.statusMessage.value = resolveLocal('Invite queued.')
-          return
-        }
-        if (maps) {
-          maps.doc.transact(() => {
-            applyContactEntry(maps.contacts, {
-              inviteId: serverInviteId,
-              status: 'outgoing',
-              user: contact,
-              updatedAt: new Date().toISOString(),
-              source: 'server'
-            })
-          })
-          const payload = serializeContactsPayload(maps.contacts)
-          await applyInvitesPayload(payload)
-        } else {
-          upsertPendingFallback(serverInviteId)
-        }
+        enqueueQueuedAction(storageKey, {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'invite',
+          inviteId,
+          email,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        void requestInviteQueueSync('invite')
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Invite queued.')
+        return
       }
 
       options.statusTone.value = 'success'
@@ -1273,20 +1040,17 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       void sendContactSync({ status: 'accepted', inviteId, contact })
 
       if (!relayDelivered) {
-        const serverOk = await sendInviteActionViaServer('accept', inviteId)
-        if (!serverOk) {
-          enqueueQueuedAction(storageKey, {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            type: 'accept',
-            inviteId,
-            userId,
-            createdAt: new Date().toISOString()
-          })
-          void requestInviteQueueSync('accept')
-          options.statusTone.value = 'neutral'
-          options.statusMessage.value = resolveLocal('Invite queued.')
-          return
-        }
+        enqueueQueuedAction(storageKey, {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'accept',
+          inviteId,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        void requestInviteQueueSync('accept')
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Invite queued.')
+        return
       }
 
       options.statusTone.value = 'success'
@@ -1356,20 +1120,17 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       void sendContactSync({ status: 'removed', inviteId, contact })
 
       if (!relayDelivered) {
-        const serverOk = await sendInviteActionViaServer('decline', inviteId)
-        if (!serverOk) {
-          enqueueQueuedAction(storageKey, {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            type: 'decline',
-            inviteId,
-            userId,
-            createdAt: new Date().toISOString()
-          })
-          void requestInviteQueueSync('decline')
-          options.statusTone.value = 'neutral'
-          options.statusMessage.value = resolveLocal('Invite queued.')
-          return
-        }
+        enqueueQueuedAction(storageKey, {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'decline',
+          inviteId,
+          userId,
+          createdAt: new Date().toISOString()
+        })
+        void requestInviteQueueSync('decline')
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Invite queued.')
+        return
       }
 
       options.statusTone.value = 'success'
@@ -1440,21 +1201,18 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       void sendContactSync({ status: 'removed', inviteId, contact })
 
       if (!relayDelivered) {
-        const serverOk = await sendInviteActionViaServer('remove', inviteId)
-        if (!serverOk) {
-          enqueueQueuedAction(storageKey, {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            type: 'remove',
-            inviteId,
-            userId,
-            email,
-            createdAt: new Date().toISOString()
-          })
-          void requestInviteQueueSync('remove')
-          options.statusTone.value = 'neutral'
-          options.statusMessage.value = resolveLocal('Invite queued.')
-          return
-        }
+        enqueueQueuedAction(storageKey, {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'remove',
+          inviteId,
+          userId,
+          email,
+          createdAt: new Date().toISOString()
+        })
+        void requestInviteQueueSync('remove')
+        options.statusTone.value = 'neutral'
+        options.statusMessage.value = resolveLocal('Invite queued.')
+        return
       }
 
       options.statusTone.value = 'success'

@@ -8,10 +8,7 @@ import {
   type StorageType
 } from '@privacyresearch/libsignal-protocol-typescript'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
-import { buildApiUrl, resolveApiHost } from './api'
-import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import { fetchRelayPrekeys, publishRelayPrekeys } from './relay-directory'
-import { shouldSkipMessagingServer } from './relay-mode'
 import { isRecord } from './utils'
 
 type SignalEnvelope = {
@@ -407,28 +404,7 @@ const mergeBundles = (bundles: RemotePrekeyBundle[]) => {
 const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
   if (typeof window === 'undefined') return []
   const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
-  let apiBundles: RemotePrekeyBundle[] = []
-  const serverKey = resolveApiHost(window.location.origin)
-  if (!relayBundles.length && !shouldSkipMessagingServer() && shouldAttemptServer(serverKey)) {
-    try {
-      const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const payload = (await response.json()) as unknown
-        if (isRecord(payload) && Array.isArray(payload.bundles)) {
-          apiBundles = payload.bundles.map(resolveRemoteBundle).filter((bundle): bundle is RemotePrekeyBundle => Boolean(bundle))
-        }
-        markServerSuccess(serverKey)
-      } else if (response.status >= 500) {
-        markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      }
-    } catch {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-      // ignore API failures
-    }
-  }
-  return mergeBundles([...relayBundles, ...apiBundles])
+  return mergeBundles(relayBundles)
 }
 
 export const resolveSignalEnvelope = (payload: unknown): SignalEnvelope | null => {
@@ -445,32 +421,12 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: st
   if (typeof window === 'undefined') return false
   try {
     const { bundle } = await buildLocalBundle(identity)
-  const relayOk =
-    userId && userId.trim()
-      ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
-      : false
-  const serverKey = resolveApiHost(window.location.origin)
-  if (!shouldAttemptServer(serverKey) || relayOk || shouldSkipMessagingServer()) return relayOk
-    const response = await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        deviceId: identity.deviceId,
-        registrationId: bundle.registrationId,
-        identityKey: bundle.identityKey,
-        signedPreKey: bundle.signedPreKey,
-        oneTimePreKeys: bundle.oneTimePreKeys
-      })
-    })
-    if (response.ok) {
-      markServerSuccess(serverKey)
-    } else if (response.status >= 500) {
-      markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
-    }
-    return response.ok || relayOk
+    const relayOk =
+      userId && userId.trim()
+        ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
+        : false
+    return relayOk
   } catch {
-    markServerFailure(resolveApiHost(window.location.origin), { baseDelayMs: 3000, maxDelayMs: 120000 })
     return false
   }
 }
