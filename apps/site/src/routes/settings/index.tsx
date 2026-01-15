@@ -21,7 +21,11 @@ import {
 
 type ProtectedRouteData = {
   lang: Lang
-  userId?: string
+  user?: {
+    id?: string
+    name?: string
+    email?: string
+  }
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
@@ -66,17 +70,22 @@ type FriendCodeUser = {
   name?: string | null
 }
 
-const resolveFriendCodeUser = (userId?: string): FriendCodeUser | null => {
-  if (!userId) return null
-  const fallback = { id: userId, email: userId }
+const resolveFriendCodeUser = (user?: ProtectedRouteData['user']): FriendCodeUser | null => {
+  if (!user?.id) return null
+  const fallback: FriendCodeUser = {
+    id: user.id,
+    email: user.email?.trim() ? user.email : user.id,
+    name: user.name?.trim() ? user.name : undefined
+  }
   if (typeof window === 'undefined') return fallback
   try {
     const raw = window.localStorage.getItem('auth:bootstrap:user')
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as { id?: string; email?: string; name?: string | null } | null
-    if (!parsed?.id || parsed.id !== userId) return fallback
-    const email = parsed.email?.trim() ? parsed.email : userId
-    return { id: parsed.id, email, name: parsed.name ?? undefined }
+    if (!parsed?.id || parsed.id !== user.id) return fallback
+    const email = parsed.email?.trim() ? parsed.email : fallback.email ?? user.id
+    const name = parsed.name?.trim() ? parsed.name : fallback.name
+    return { id: parsed.id, email, name }
   } catch {
     return fallback
   }
@@ -88,7 +97,7 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { lang, userId: session.user.id }
+  return { lang, user: session.user }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -125,7 +134,8 @@ export default component$(() => {
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
-  const userId = data.value.userId
+  const user = data.value.user
+  const userId = user?.id
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
@@ -141,9 +151,9 @@ export default component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
-    const user = resolveFriendCodeUser(userId)
-    if (!user) return
-    friendCode.value = ensureFriendCode(user)
+    const friendUser = resolveFriendCodeUser(user)
+    if (!friendUser) return
+    friendCode.value = ensureFriendCode(friendUser)
   })
 
   useVisibleTask$((ctx) => {
@@ -261,12 +271,12 @@ export default component$(() => {
   })
 
   const handleRotateFriendCode = $(() => {
-    const user = resolveFriendCodeUser(userId)
-    if (!user) {
+    const friendUser = resolveFriendCodeUser(user)
+    if (!friendUser) {
       friendCodeStatus.value = { tone: 'error', message: copy.value.settingsInviteUnavailable }
       return
     }
-    friendCode.value = rotateFriendCode(user)
+    friendCode.value = rotateFriendCode(friendUser)
     friendCodeStatus.value = { tone: 'success', message: copy.value.settingsInviteRotated }
   })
 

@@ -1,5 +1,5 @@
 import type { ContactInviteRelayEvent } from './contacts-relay'
-import { encodeInviteToken } from './invite-token'
+import { decodeInviteToken, encodeInviteToken } from './invite-token'
 import { createMessageId } from './utils'
 
 const friendCodeStoragePrefix = 'chat:friend-code:'
@@ -7,11 +7,15 @@ const friendCodeStoragePrefix = 'chat:friend-code:'
 const buildFriendCodeKey = (userId?: string) =>
   `${friendCodeStoragePrefix}${userId ? encodeURIComponent(userId) : 'default'}`
 
-const normalizeUser = (user: { id: string; email?: string | null; name?: string | null }) => ({
-  id: user.id,
-  email: user.email?.trim() ? user.email : user.id,
-  name: user.name ?? undefined
-})
+const normalizeUser = (user: { id: string; email?: string | null; name?: string | null }) => {
+  const email = user.email?.trim() ? user.email.trim() : user.id
+  const name = user.name?.trim() ? user.name.trim() : undefined
+  return {
+    id: user.id,
+    email,
+    name
+  }
+}
 
 const buildFriendCodeEvent = (user: { id: string; email?: string | null; name?: string | null }): ContactInviteRelayEvent => {
   const normalized = normalizeUser(user)
@@ -48,14 +52,28 @@ export const saveFriendCode = (userId: string | undefined, code: string) => {
 
 export const ensureFriendCode = (user: { id: string; email?: string | null; name?: string | null }) => {
   const existing = loadFriendCode(user.id)
-  if (existing) return existing
-  const code = encodeInviteToken(buildFriendCodeEvent(user))
-  saveFriendCode(user.id, code)
+  const normalized = normalizeUser(user)
+  if (existing) {
+    const parsed = decodeInviteToken(existing)
+    if (parsed?.user?.id === normalized.id) {
+      const hasName = (parsed.user.name ?? '').trim() !== ''
+      const hasEmail = (parsed.user.email ?? '').trim() !== '' && parsed.user.email !== parsed.user.id
+      if ((normalized.name && !hasName) || (normalized.email && !hasEmail && normalized.email !== normalized.id)) {
+        const refreshed = encodeInviteToken(buildFriendCodeEvent(normalized))
+        saveFriendCode(normalized.id, refreshed)
+        return refreshed
+      }
+      return existing
+    }
+  }
+  const code = encodeInviteToken(buildFriendCodeEvent(normalized))
+  saveFriendCode(normalized.id, code)
   return code
 }
 
 export const rotateFriendCode = (user: { id: string; email?: string | null; name?: string | null }) => {
-  const code = encodeInviteToken(buildFriendCodeEvent(user))
-  saveFriendCode(user.id, code)
+  const normalized = normalizeUser(user)
+  const code = encodeInviteToken(buildFriendCodeEvent(normalized))
+  saveFriendCode(normalized.id, code)
   return code
 }
