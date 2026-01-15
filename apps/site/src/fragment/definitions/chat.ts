@@ -1182,9 +1182,9 @@ const contactInvites: FragmentDefinition = {
     h('contact-invites', {
       class: 'chat-invites',
       'data-title': t('Contact invites'),
-      'data-helper': t('Search by email to connect.'),
-      'data-search-label': t('Search by email'),
-      'data-search-placeholder': t('name@domain.com'),
+      'data-helper': t('Search by user ID to connect.'),
+      'data-search-label': t('Search by user ID'),
+      'data-search-placeholder': t('user-id'),
       'data-search-action': t('Search'),
       'data-invite-action': t('Invite'),
       'data-accept-action': t('Accept'),
