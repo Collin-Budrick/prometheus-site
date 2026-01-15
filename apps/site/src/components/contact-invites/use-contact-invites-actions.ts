@@ -35,8 +35,7 @@ import {
 } from './contacts-store'
 import { createLocalChatTransport } from './local-transport'
 import { resolveChatSettingsUserId } from './api'
-import { decodeInviteToken } from './invite-token'
-import { ensureFriendCode } from './friend-code'
+import { ensureFriendCode, isCurrentFriendCodeInvite, parseFriendCodeToken } from './friend-code'
 import { createMessageId, isRecord } from './utils'
 import type {
   ActiveContact,
@@ -508,6 +507,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         messages.forEach((message) => {
           const event = parseContactInviteEvent(message.payload)
           if (!event || event.toUserId !== userId) return
+          if (event.action === 'invite' && !isCurrentFriendCodeInvite(userId, event.inviteId)) return
           const entry = eventToContactEntry(event)
           if (!entry) return
           applyContactEntry(maps.contacts, entry)
@@ -1046,43 +1046,98 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (typeof window === 'undefined') return
     const copy = options.fragmentCopy.value
     const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
-    const parsed = decodeInviteToken(token)
+    const parsed = parseFriendCodeToken(token)
     if (!parsed) {
       options.statusTone.value = 'error'
       options.statusMessage.value = resolveLocal('Invalid invite code.')
       return
     }
-    const entry = eventToContactEntry(parsed)
-    if (!entry) {
+    if (!looksLikeUserId(parsed.user.id)) {
       options.statusTone.value = 'error'
-      options.statusMessage.value = resolveLocal('Invite unavailable.')
+      options.statusMessage.value = resolveLocal('Invalid invite code.')
       return
-    }
-    if (parsed.action === 'invite') {
-      entry.status = 'accepted'
-      entry.updatedAt = new Date().toISOString()
     }
     const maps = await ensureContactsMaps()
-    if (!maps) {
+    const selfUserId = await ensureUserId()
+    const selfUser = resolveSelfUser(selfUserId)
+    if (!maps || !selfUser) {
       options.statusTone.value = 'error'
       options.statusMessage.value = resolveLocal('Invite unavailable.')
       return
+    }
+    if (parsed.user.id === selfUser.id) {
+      options.statusTone.value = 'error'
+      options.statusMessage.value = resolveLocal('You cannot add yourself.')
+      return
+    }
+    const existing = readContactEntry(maps.contacts, parsed.user.id)
+    if (existing?.status === 'accepted') {
+      options.statusTone.value = 'neutral'
+      options.statusMessage.value = resolveLocal('You are already connected.')
+      return
+    }
+    const entry = {
+      inviteId: parsed.inviteId,
+      status: 'outgoing' as const,
+      user: {
+        id: parsed.user.id,
+        name: parsed.user.name ?? undefined,
+        email: parsed.user.email
+      },
+      updatedAt: new Date().toISOString(),
+      source: 'local' as const
     }
     maps.doc.transact(() => {
       applyContactEntry(maps.contacts, entry, { force: true })
     })
     const payload = serializeContactsPayload(maps.contacts)
     await applyInvitesPayload(payload)
+
+    const storageKey = queueStorageKey(selfUser.id)
+    if (isNetworkOffline()) {
+      enqueueQueuedAction(storageKey, {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        type: 'invite',
+        inviteId: parsed.inviteId,
+        email: parsed.user.email,
+        userId: parsed.user.id,
+        createdAt: new Date().toISOString()
+      })
+      void requestInviteQueueSync('invite')
+      options.statusTone.value = 'neutral'
+      options.statusMessage.value = resolveLocal('Offline - invite queued.')
+      return
+    }
+
+    const relayDelivered = await sendContactAction({
+      action: 'invite',
+      inviteId: parsed.inviteId,
+      targetUserId: parsed.user.id,
+      actor: selfUser
+    })
+    void sendContactSync({
+      status: 'outgoing',
+      inviteId: parsed.inviteId,
+      contact: { id: parsed.user.id, email: parsed.user.email, name: parsed.user.name }
+    })
+
+    if (!relayDelivered) {
+      enqueueQueuedAction(storageKey, {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        type: 'invite',
+        inviteId: parsed.inviteId,
+        email: parsed.user.email,
+        userId: parsed.user.id,
+        createdAt: new Date().toISOString()
+      })
+      void requestInviteQueueSync('invite')
+      options.statusTone.value = 'neutral'
+      options.statusMessage.value = resolveLocal('Invite queued.')
+      return
+    }
+
     options.statusTone.value = 'success'
-    const message =
-      parsed.action === 'invite' || parsed.action === 'accept'
-        ? 'Invite accepted.'
-        : parsed.action === 'decline'
-          ? 'Invite declined.'
-            : parsed.action === 'remove'
-              ? 'Invite removed.'
-              : 'Invite updated.'
-    options.statusMessage.value = resolveLocal(message)
+    options.statusMessage.value = resolveLocal('Invite sent.')
   })
 
   const handleAccept = $(async (inviteId: string, userId: string) => {

@@ -21,7 +21,7 @@ const buildFriendCodeEvent = (user: { id: string; email?: string | null; name?: 
   const normalized = normalizeUser(user)
   return {
     kind: 'contact-invite',
-    action: 'accept',
+    action: 'invite',
     inviteId: createMessageId(),
     fromUserId: normalized.id,
     toUserId: normalized.id,
@@ -29,6 +29,9 @@ const buildFriendCodeEvent = (user: { id: string; email?: string | null; name?: 
     updatedAt: new Date().toISOString()
   }
 }
+
+const isFriendCodeEvent = (event: ContactInviteRelayEvent) =>
+  event.fromUserId === event.toUserId && event.user.id === event.fromUserId
 
 export const loadFriendCode = (userId?: string) => {
   if (typeof window === 'undefined') return null
@@ -56,14 +59,13 @@ export const ensureFriendCode = (user: { id: string; email?: string | null; name
   if (existing) {
     const parsed = decodeInviteToken(existing)
     if (parsed?.user?.id === normalized.id) {
-      const hasName = (parsed.user.name ?? '').trim() !== ''
-      const hasEmail = (parsed.user.email ?? '').trim() !== '' && parsed.user.email !== parsed.user.id
-      if ((normalized.name && !hasName) || (normalized.email && !hasEmail && normalized.email !== normalized.id)) {
-        const refreshed = encodeInviteToken(buildFriendCodeEvent(normalized))
-        saveFriendCode(normalized.id, refreshed)
-        return refreshed
+      const existingName = (parsed.user.name ?? '').trim()
+      const existingEmail = (parsed.user.email ?? '').trim()
+      const nextName = (normalized.name ?? '').trim()
+      const nextEmail = (normalized.email ?? '').trim()
+      if (existingName === nextName && existingEmail === nextEmail) {
+        return existing
       }
-      return existing
     }
   }
   const code = encodeInviteToken(buildFriendCodeEvent(normalized))
@@ -76,4 +78,25 @@ export const rotateFriendCode = (user: { id: string; email?: string | null; name
   const code = encodeInviteToken(buildFriendCodeEvent(normalized))
   saveFriendCode(normalized.id, code)
   return code
+}
+
+export const parseFriendCodeToken = (token: string) => {
+  const parsed = decodeInviteToken(token)
+  if (!parsed) return null
+  if (!isFriendCodeEvent(parsed)) return null
+  return parsed
+}
+
+export const getFriendCodeInviteId = (userId?: string) => {
+  const token = loadFriendCode(userId)
+  if (!token) return null
+  const parsed = decodeInviteToken(token)
+  if (!parsed || !isFriendCodeEvent(parsed)) return null
+  return parsed.inviteId
+}
+
+export const isCurrentFriendCodeInvite = (userId: string, inviteId: string) => {
+  const current = getFriendCodeInviteId(userId)
+  if (!current) return true
+  return current === inviteId
 }
