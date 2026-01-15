@@ -13,9 +13,7 @@ import { registerPushSubscription } from './push'
 import {
   publishRelayDevice,
   buildRelayDirectoryLabels,
-  fetchContactInvites,
-  fetchRelayDevices,
-  publishContactInvite
+  fetchRelayDevices
 } from './relay-directory'
 import { createRelayManager } from './relay'
 import { publishSignalPrekeys } from './signal'
@@ -28,8 +26,15 @@ import {
   serializeContactsPayload
 } from './contacts-crdt'
 import { buildContactInviteEvent, eventToContactEntry, parseContactInviteEvent } from './contacts-relay'
+import {
+  defaultPresenceTtlMs,
+  loadContactsStore,
+  resolveOnlineContactIds,
+  syncContactsStoreFromInvitesPayload,
+  updateContactPresence
+} from './contacts-store'
 import { createLocalChatTransport } from './local-transport'
-import { createMessageId } from './utils'
+import { createMessageId, isRecord } from './utils'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -226,6 +231,46 @@ const resolveRelayIdentity = (identity?: DeviceIdentity) => {
 const userIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const looksLikeUserId = (value: string) => userIdPattern.test(value)
 
+type ContactPresenceRelayEvent = {
+  kind: 'contact-presence'
+  fromUserId: string
+  toUserId: string
+  updatedAt: string
+  status: 'online'
+  deviceId?: string
+}
+
+const presenceBroadcastIntervalMs = 20_000
+const presenceRefreshIntervalMs = 5_000
+
+const parseContactPresenceEvent = (payload: unknown): ContactPresenceRelayEvent | null => {
+  if (!isRecord(payload)) return null
+  if (payload.kind !== 'contact-presence') return null
+  const fromUserId = typeof payload.fromUserId === 'string' ? payload.fromUserId : ''
+  const toUserId = typeof payload.toUserId === 'string' ? payload.toUserId : ''
+  const updatedAt = typeof payload.updatedAt === 'string' ? payload.updatedAt : ''
+  const status = payload.status === 'online' ? 'online' : null
+  if (!fromUserId || !toUserId || !updatedAt || !status) return null
+  const deviceId = typeof payload.deviceId === 'string' ? payload.deviceId : undefined
+  return {
+    kind: 'contact-presence',
+    fromUserId,
+    toUserId,
+    updatedAt,
+    status,
+    deviceId
+  }
+}
+
+const buildContactPresenceEvent = (options: { fromUserId: string; toUserId: string; deviceId?: string }) => ({
+  kind: 'contact-presence' as const,
+  fromUserId: options.fromUserId,
+  toUserId: options.toUserId,
+  updatedAt: new Date().toISOString(),
+  status: 'online' as const,
+  deviceId: options.deviceId
+})
+
 export const useContactInvitesActions = (options: ContactInvitesActionsOptions) => {
   const flushInFlight = { value: false }
   const contactsMapsRef = { value: null as ContactsMaps | null }
@@ -257,9 +302,14 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       options.incoming.value = Array.isArray(payload.incoming) ? payload.incoming : []
       options.outgoing.value = Array.isArray(payload.outgoing) ? payload.outgoing : []
       options.contacts.value = Array.isArray(payload.contacts) ? payload.contacts : []
-      options.onlineIds.value = options.onlineIds.value.filter((id) =>
-        options.contacts.value.some((invite) => invite.user.id === id)
-      )
+      const userId = options.chatSettingsUserId.value
+      if (userId) {
+        const storeSnapshot = syncContactsStoreFromInvitesPayload(userId, payload)
+        const contactIds = options.contacts.value.map((invite) => invite.user.id)
+        options.onlineIds.value = resolveOnlineContactIds(storeSnapshot, contactIds, defaultPresenceTtlMs)
+      } else {
+        options.onlineIds.value = []
+      }
       if (options.activeContact.value) {
         const stillConnected = options.contacts.value.some(
           (invite) => invite.user.id === options.activeContact.value?.id
@@ -336,7 +386,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     }
   )
 
-  const sendRelayEvent = $(async (targetUserId: string, event: ReturnType<typeof buildContactInviteEvent>) => {
+  const sendRelayPayload = $(async (targetUserId: string, payload: unknown) => {
     if (typeof window === 'undefined') return false
     if (isNetworkOffline()) return false
     const identity = options.identityRef.value
@@ -344,30 +394,23 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (!identity || !selfUserId) return false
     const relayUrls = resolveRelayUrls()
     const devices = await fetchRelayDevices({ userId: targetUserId, relayUrls })
+    const relayIdentity = resolveRelayIdentity(identity)
     if (!devices.length) {
       const wakuRelays = resolveWakuRelays()
-      let delivered = false
-      if (wakuRelays.length) {
-        const manager = createRelayManager(window.location.origin, {
-          relayIdentity: resolveRelayIdentity(identity),
-          discoveredRelays: wakuRelays
-        })
-        const messageId = `contact:${event.inviteId}:${createMessageId()}`
-        const result = await manager.send({
-          recipientId: targetUserId,
-          messageId,
-          payload: event,
-          senderId: selfUserId,
-          senderDeviceId: identity.deviceId
-        })
-        delivered = (result?.delivered ?? 0) > 0
-      }
-      if (!delivered) {
-        delivered = await publishContactInvite({ identity, event, relayUrls })
-      }
-      return delivered
+      const manager = createRelayManager(window.location.origin, {
+        relayIdentity,
+        discoveredRelays: [...relayUrls, ...wakuRelays]
+      })
+      const messageId = `contact:${createMessageId()}`
+      const result = await manager.send({
+        recipientId: targetUserId,
+        messageId,
+        payload,
+        senderId: selfUserId,
+        senderDeviceId: identity.deviceId
+      })
+      return (result?.delivered ?? 0) > 0
     }
-    const relayIdentity = resolveRelayIdentity(identity)
     const results = await Promise.allSettled(
       devices.map(async (device) => {
         const manager = createRelayManager(window.location.origin, {
@@ -375,11 +418,11 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           recipientRelayKey: device.relayPublicKey,
           discoveredRelays: device.relayUrls?.length ? device.relayUrls : relayUrls
         })
-        const messageId = `contact:${event.inviteId}:${device.deviceId}:${createMessageId()}`
+        const messageId = `contact:${device.deviceId}:${createMessageId()}`
         const result = await manager.send({
           recipientId: targetUserId,
           messageId,
-          payload: event,
+          payload,
           deviceIds: [device.deviceId],
           senderId: selfUserId,
           senderDeviceId: identity.deviceId,
@@ -406,7 +449,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       toUserId: optionsAction.targetUserId,
       user: optionsAction.actor
     })
-    return sendRelayEvent(optionsAction.targetUserId, event)
+    return sendRelayPayload(optionsAction.targetUserId, event)
   })
 
   const sendContactSync = $(async (optionsSync: {
@@ -424,7 +467,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       toUserId: selfUserId,
       user: optionsSync.contact
     })
-    return sendRelayEvent(selfUserId, event)
+    return sendRelayPayload(selfUserId, event)
   })
 
   const pullRelayInbox = $(async (identity: DeviceIdentity, userId: string) => {
@@ -439,17 +482,15 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         relayIdentity: resolveRelayIdentity(identity),
         discoveredRelays: relayUrls
       })
-      const [messages, invites] = await Promise.all([
-        manager.pull({
-          deviceId: identity.deviceId,
-          relayPublicKey: identity.relayPublicKey,
-          userId,
-          limit: 80
-        }),
-        fetchContactInvites({ userId, relayUrls, limit: 80 })
-      ])
-      if (!messages.length && !invites.length) return
+      const messages = await manager.pull({
+        deviceId: identity.deviceId,
+        relayPublicKey: identity.relayPublicKey,
+        userId,
+        limit: 80
+      })
+      if (!messages.length) return
       const ackIds: string[] = []
+      let presenceSnapshot = loadContactsStore(userId)
       maps.doc.transact(() => {
         messages.forEach((message) => {
           const event = parseContactInviteEvent(message.payload)
@@ -459,12 +500,15 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           applyContactEntry(maps.contacts, entry)
           ackIds.push(message.id)
         })
-        invites.forEach((event) => {
-          const entry = eventToContactEntry(event)
-          if (!entry) return
-          applyContactEntry(maps.contacts, entry)
-        })
       })
+      messages.forEach((message) => {
+        const presence = parseContactPresenceEvent(message.payload)
+        if (!presence || presence.toUserId !== userId) return
+        presenceSnapshot = updateContactPresence(userId, presence.fromUserId, { lastSeenAt: presence.updatedAt })
+        ackIds.push(message.id)
+      })
+      const contactIds = options.contacts.value.map((invite) => invite.user.id)
+      options.onlineIds.value = resolveOnlineContactIds(presenceSnapshot, contactIds, defaultPresenceTtlMs)
       if (ackIds.length) {
         await manager.ack(identity.deviceId, ackIds)
       }
@@ -714,6 +758,57 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         relayPullTimerRef.value = null
       }
       window.removeEventListener('online', handleOnline)
+    })
+  })
+
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    const userId = ctx.track(() => options.chatSettingsUserId.value)
+    ctx.track(() => options.contacts.value.length)
+    if (!userId) return
+    let active = true
+    const refreshOnlineIds = () => {
+      if (!active) return
+      const contactIds = options.contacts.value.map((invite) => invite.user.id)
+      const snapshot = loadContactsStore(userId)
+      options.onlineIds.value = resolveOnlineContactIds(snapshot, contactIds, defaultPresenceTtlMs)
+    }
+    const timer = window.setInterval(refreshOnlineIds, presenceRefreshIntervalMs)
+    refreshOnlineIds()
+    ctx.cleanup(() => {
+      active = false
+      window.clearInterval(timer)
+    })
+  })
+
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    const identity = ctx.track(() => options.identityRef.value)
+    const userId = ctx.track(() => options.chatSettingsUserId.value)
+    ctx.track(() => options.contacts.value.length)
+    if (!identity || !userId) return
+    let active = true
+    const broadcastPresence = async () => {
+      if (!active) return
+      if (isNetworkOffline()) return
+      const contactIds = options.contacts.value.map((invite) => invite.user.id)
+      if (!contactIds.length) return
+      await Promise.all(
+        contactIds.map(async (contactId) => {
+          const event = buildContactPresenceEvent({
+            fromUserId: userId,
+            toUserId: contactId,
+            deviceId: identity.deviceId
+          })
+          await sendRelayPayload(contactId, event)
+        })
+      )
+    }
+    const timer = window.setInterval(broadcastPresence, presenceBroadcastIntervalMs)
+    void broadcastPresence()
+    ctx.cleanup(() => {
+      active = false
+      window.clearInterval(timer)
     })
   })
 

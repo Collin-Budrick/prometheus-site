@@ -11,6 +11,7 @@ import { resolveChatSettingsUserId } from './api'
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
 import { loadContactsMaps, mergeContactsPayload } from './contacts-crdt'
+import { defaultPresenceTtlMs, resolveOnlineContactIds, syncContactsStoreFromInvitesPayload } from './contacts-store'
 import { createLocalChatTransport } from './local-transport'
 import type {
   ActiveContact,
@@ -198,8 +199,19 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
               )
             })
           }
+          const storeSnapshot = syncContactsStoreFromInvitesPayload(userId, {
+            incoming: nextIncoming,
+            outgoing: nextOutgoing,
+            contacts: nextContacts
+          })
+          options.onlineIds.value = resolveOnlineContactIds(
+            storeSnapshot,
+            nextContacts.map((invite) => invite.user.id),
+            defaultPresenceTtlMs
+          )
+        } else {
+          options.onlineIds.value = []
         }
-        options.onlineIds.value = []
         options.invitesState.value = 'idle'
         options.realtimeState.value = 'live'
       }
