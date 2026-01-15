@@ -340,6 +340,12 @@ export default component$(() => {
             <strong>{emailValue}</strong>
           </div>
         ) : null}
+        {user.id ? (
+          <div class="profile-row">
+            <span>User ID</span>
+            <strong>{user.id}</strong>
+          </div>
+        ) : null}
       </div>
       {statusMessage.value ? (
         <div class="auth-status" role="status" aria-live="polite" data-tone={statusTone.value}>

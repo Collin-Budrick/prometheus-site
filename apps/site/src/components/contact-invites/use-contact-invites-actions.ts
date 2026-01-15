@@ -12,11 +12,17 @@ import { buildApiUrl, resolveApiHost } from './api'
 import { dmCloseDelayMs, dmMinScale, dmOriginRadius } from './constants'
 import { archiveHistory } from './history'
 import { registerPushSubscription } from './push'
-import { publishRelayDevice, buildRelayDirectoryLabels, fetchRelayDevices } from './relay-directory'
+import {
+  publishRelayDevice,
+  buildRelayDirectoryLabels,
+  fetchContactInvites,
+  fetchRelayDevices,
+  publishContactInvite
+} from './relay-directory'
 import { createRelayManager } from './relay'
 import { publishSignalPrekeys } from './signal'
 import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
-import { resolveRelayUrls, shouldSkipMessagingServer } from './relay-mode'
+import { resolveRelayUrls, resolveWakuRelays, shouldSkipMessagingServer } from './relay-mode'
 import {
   applyContactEntry,
   loadContactsMaps,
@@ -345,7 +351,29 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     if (!identity || !selfUserId) return false
     const relayUrls = resolveRelayUrls()
     const devices = await fetchRelayDevices({ userId: targetUserId, relayUrls })
-    if (!devices.length) return false
+    if (!devices.length) {
+      const wakuRelays = resolveWakuRelays()
+      let delivered = false
+      if (wakuRelays.length) {
+        const manager = createRelayManager(window.location.origin, {
+          relayIdentity: resolveRelayIdentity(identity),
+          discoveredRelays: wakuRelays
+        })
+        const messageId = `contact:${event.inviteId}:${createMessageId()}`
+        const result = await manager.send({
+          recipientId: targetUserId,
+          messageId,
+          payload: event,
+          senderId: selfUserId,
+          senderDeviceId: identity.deviceId
+        })
+        delivered = (result?.delivered ?? 0) > 0
+      }
+      if (!delivered) {
+        delivered = await publishContactInvite({ identity, event, relayUrls })
+      }
+      return delivered
+    }
     const relayIdentity = resolveRelayIdentity(identity)
     const results = await Promise.allSettled(
       devices.map(async (device) => {
@@ -418,13 +446,16 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         relayIdentity: resolveRelayIdentity(identity),
         discoveredRelays: relayUrls
       })
-      const messages = await manager.pull({
-        deviceId: identity.deviceId,
-        relayPublicKey: identity.relayPublicKey,
-        userId,
-        limit: 80
-      })
-      if (!messages.length) return
+      const [messages, invites] = await Promise.all([
+        manager.pull({
+          deviceId: identity.deviceId,
+          relayPublicKey: identity.relayPublicKey,
+          userId,
+          limit: 80
+        }),
+        fetchContactInvites({ userId, relayUrls, limit: 80 })
+      ])
+      if (!messages.length && !invites.length) return
       const ackIds: string[] = []
       maps.doc.transact(() => {
         messages.forEach((message) => {
@@ -434,6 +465,11 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
           if (!entry) return
           applyContactEntry(maps.contacts, entry)
           ackIds.push(message.id)
+        })
+        invites.forEach((event) => {
+          const entry = eventToContactEntry(event)
+          if (!entry) return
+          applyContactEntry(maps.contacts, entry)
         })
       })
       if (ackIds.length) {

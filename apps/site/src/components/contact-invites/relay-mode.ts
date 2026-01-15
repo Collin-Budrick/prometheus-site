@@ -15,3 +15,14 @@ export const hasCrdtSignaling = () => resolveCrdtSignaling().length > 0
 
 export const shouldSkipMessagingServer = () =>
   hasRelayDirectory() || hasCrdtSignaling() || Boolean(appConfig.p2pPeerjsServer)
+
+const isWakuRelay = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('waku:') || trimmed.startsWith('multiaddr:')) return true
+  return trimmed.startsWith('/')
+}
+
+export const resolveWakuRelays = () => resolveRelayUrls().filter(isWakuRelay)
+
+export const hasWakuRelays = () => resolveWakuRelays().length > 0

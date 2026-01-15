@@ -38,6 +38,15 @@ const previewCrdtSignaling =
   process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
   '/yjs,wss://signaling.yjs.dev'
+const defaultP2pNostrRelays = 'wss://relay.damus.io,wss://nos.lol,wss://relay.snort.social'
+const previewP2pRelayBases =
+  process.env.VITE_P2P_RELAY_BASES?.trim() || process.env.PROMETHEUS_VITE_P2P_RELAY_BASES?.trim() || ''
+const previewP2pWakuRelays =
+  process.env.VITE_P2P_WAKU_RELAYS?.trim() || process.env.PROMETHEUS_VITE_P2P_WAKU_RELAYS?.trim() || ''
+const previewP2pNostrRelays =
+  process.env.VITE_P2P_NOSTR_RELAYS?.trim() ||
+  process.env.PROMETHEUS_VITE_P2P_NOSTR_RELAYS?.trim() ||
+  (previewP2pWakuRelays ? '' : defaultP2pNostrRelays)
 const previewPeerjsServer =
   process.env.VITE_P2P_PEERJS_SERVER?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||
@@ -92,6 +101,9 @@ const composeEnv = {
   VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
   VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
   VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
+  VITE_P2P_RELAY_BASES: previewP2pRelayBases,
+  VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,
+  VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
   VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
   VITE_DISABLE_SW: previewDisableSw,
   RUN_MIGRATIONS: previewRunMigrations,
@@ -173,6 +185,9 @@ const buildTargets: BuildTarget[] = [
       VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
       VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
       VITE_P2P_CRDT_SIGNALING: composeEnv.VITE_P2P_CRDT_SIGNALING,
+      VITE_P2P_RELAY_BASES: composeEnv.VITE_P2P_RELAY_BASES,
+      VITE_P2P_NOSTR_RELAYS: composeEnv.VITE_P2P_NOSTR_RELAYS,
+      VITE_P2P_WAKU_RELAYS: composeEnv.VITE_P2P_WAKU_RELAYS,
       VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
       VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW
     }

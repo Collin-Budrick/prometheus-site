@@ -85,6 +85,34 @@ const normalizeBase = (value: string, origin: string) => {
   }
 }
 
+const isLikelyHostname = (hostname: string) => {
+  if (!hostname) return false
+  if (hostname === 'localhost') return true
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) return true
+  if (hostname.includes(':')) return true
+  const parts = hostname.split('.').filter(Boolean)
+  if (parts.length < 2) return false
+  const tld = parts[parts.length - 1]
+  if (!tld || tld.length < 2) return false
+  return true
+}
+
+const isValidWebSocketUrl = (value: string) => {
+  if (!value.startsWith('wss://') && !value.startsWith('ws://')) return false
+  try {
+    const url = new URL(value)
+    return isLikelyHostname(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+const isHttpRelayEntry = (value: string) => {
+  if (!value) return false
+  if (value.startsWith('/')) return true
+  return value.startsWith('https://') || value.startsWith('http://')
+}
+
 const normalizeRelayList = (relays: string[]) =>
   Array.from(new Set(relays.map((entry) => entry.trim()).filter(Boolean)))
 
@@ -119,9 +147,11 @@ const isWakuMultiaddr = (value: string) => {
 
 const resolveRelayBases = (origin: string, discovered: string[]) => {
   const configured = appConfig.p2pRelayBases ?? []
-  const all = normalizeRelayList([...configured, ...discovered]).filter(
-    (entry) => !isWakuMultiaddr(entry) && !entry.startsWith(wakuPrefix) && !entry.startsWith(multiaddrPrefix)
-  )
+  const all = normalizeRelayList([...configured, ...discovered]).filter((entry) => {
+    if (isWakuMultiaddr(entry) || entry.startsWith(wakuPrefix) || entry.startsWith(multiaddrPrefix)) return false
+    if (entry.startsWith('ws://') || entry.startsWith('wss://')) return false
+    return isHttpRelayEntry(entry)
+  })
   const resolved = all.map((entry) => normalizeBase(entry, origin)).filter(Boolean)
   return resolved.map((base) => {
     const apiFallback = buildApiUrl('', origin)
@@ -132,9 +162,7 @@ const resolveRelayBases = (origin: string, discovered: string[]) => {
 
 const resolveNostrRelays = (discovered: string[]) => {
   const configured = appConfig.p2pNostrRelays ?? []
-  return normalizeRelayList([...configured, ...discovered]).filter(
-    (entry) => entry.startsWith('wss://') || entry.startsWith('ws://')
-  )
+  return normalizeRelayList([...configured, ...discovered]).filter(isValidWebSocketUrl)
 }
 
 const resolveWakuRelays = (discovered: string[]) => {
@@ -434,7 +462,7 @@ const createNostrRelayClient = (
     let resolved = false
 
     await new Promise<void>((resolve) => {
-      const subscription = pool.subscribeManyEose(relays, filters, {
+      const subscription = pool.subscribeManyEose(relays, [filters], {
         onevent(event) {
           if (!event || typeof event.id !== 'string' || typeof event.content !== 'string') return
           events.push({ id: event.id, content: event.content, created_at: event.created_at })

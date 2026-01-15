@@ -200,6 +200,18 @@ const splitList = (raw: string) =>
     .map((entry) => entry.trim())
     .filter(Boolean)
 
+const isLikelyHostname = (hostname: string) => {
+  if (!hostname) return false
+  if (hostname === 'localhost') return true
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) return true
+  if (hostname.includes(':')) return true
+  const parts = hostname.split('.').filter(Boolean)
+  if (parts.length < 2) return false
+  const tld = parts[parts.length - 1]
+  if (!tld || tld.length < 2) return false
+  return true
+}
+
 export const normalizeApiBase = (raw?: string | null) => {
   if (raw === undefined || raw === null) return ''
   const value = raw.trim()
@@ -356,7 +368,15 @@ const resolveP2pNostrRelays = (env: AppEnv) => {
   if (raw === '') return []
   return splitList(raw)
     .map((entry) => entry.trim())
-    .filter((entry) => entry.startsWith('wss://') || entry.startsWith('ws://'))
+    .filter((entry) => {
+      if (!entry.startsWith('wss://') && !entry.startsWith('ws://')) return false
+      try {
+        const url = new URL(entry)
+        return isLikelyHostname(url.hostname)
+      } catch {
+        return false
+      }
+    })
 }
 
 const resolveP2pWakuRelays = (env: AppEnv) => {

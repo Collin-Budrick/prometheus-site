@@ -4,6 +4,7 @@ import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import type { ContactDevice } from './types'
 import { isRecord } from './utils'
 import type { LocalPrekeyBundle, RemotePrekeyBundle } from './signal'
+import { parseContactInviteEvent, type ContactInviteRelayEvent } from './contacts-relay'
 
 type DirectoryDevicePayload = {
   v: 1
@@ -35,22 +36,45 @@ type DirectoryPrekeyPayload = {
   updatedAt?: string
 }
 
+type DirectoryInvitePayload = {
+  v: 1
+  event: ContactInviteRelayEvent
+}
+
 const pool = new SimplePool()
 const nostrDeviceKind = 30078
 const nostrPrekeyKind = 30079
+const nostrInviteKind = 30080
 const directoryTag = 'prometheus-directory'
 const deviceTag = 'prometheus-device'
 const prekeyTag = 'prometheus-prekey'
+const inviteTag = 'prometheus-contact-invite'
 const nostrTimeoutMs = 2200
 
+const isLikelyHostname = (hostname: string) => {
+  if (!hostname) return false
+  if (hostname === 'localhost') return true
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) return true
+  if (hostname.includes(':')) return true
+  const parts = hostname.split('.').filter(Boolean)
+  if (parts.length < 2) return false
+  const tld = parts[parts.length - 1]
+  if (!tld || tld.length < 2) return false
+  return true
+}
+
+const isValidWebSocketUrl = (entry: string) => {
+  if (!entry.startsWith('wss://') && !entry.startsWith('ws://')) return false
+  try {
+    const url = new URL(entry)
+    return isLikelyHostname(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 const normalizeRelays = (relays: string[]) =>
-  Array.from(
-    new Set(
-      relays
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.startsWith('wss://') || entry.startsWith('ws://'))
-    )
-  )
+  Array.from(new Set(relays.map((entry) => entry.trim()).filter(isValidWebSocketUrl)))
 
 const resolveNostrRelays = (discovered?: string[]) => {
   const configured = appConfig.p2pNostrRelays ?? []
@@ -71,9 +95,10 @@ const hexToBytes = (value: string) => {
   return bytes
 }
 
-const nostrCursorKey = (kind: 'devices' | 'prekeys', userId: string) => `chat:p2p:nostr:directory:${kind}:${userId}`
+const nostrCursorKey = (kind: 'devices' | 'prekeys' | 'invites', userId: string) =>
+  `chat:p2p:nostr:directory:${kind}:${userId}`
 
-const readNostrCursor = (kind: 'devices' | 'prekeys', userId: string) => {
+const readNostrCursor = (kind: 'devices' | 'prekeys' | 'invites', userId: string) => {
   if (typeof window === 'undefined') return undefined
   const raw = window.localStorage.getItem(nostrCursorKey(kind, userId))
   if (!raw) return undefined
@@ -81,7 +106,7 @@ const readNostrCursor = (kind: 'devices' | 'prekeys', userId: string) => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-const writeNostrCursor = (kind: 'devices' | 'prekeys', userId: string, createdAt: number) => {
+const writeNostrCursor = (kind: 'devices' | 'prekeys' | 'invites', userId: string, createdAt: number) => {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(nostrCursorKey(kind, userId), String(createdAt))
@@ -353,6 +378,79 @@ export const fetchRelayPrekeys = async (options: {
     writeNostrCursor('prekeys', userId, newest)
   }
   return Array.from(byDevice.values()).map((entry) => entry.bundle)
+}
+
+const parseInvitePayload = (value: unknown): DirectoryInvitePayload | null => {
+  if (!isRecord(value) || value.v !== 1) return null
+  return value as DirectoryInvitePayload
+}
+
+export const publishContactInvite = async (options: {
+  identity: DeviceIdentity
+  event: ContactInviteRelayEvent
+  relayUrls?: string[]
+}) => {
+  if (typeof window === 'undefined') return false
+  if (!options.identity.relaySecretKey) return false
+  const relays = resolveNostrRelays(options.relayUrls)
+  if (!relays.length) return false
+  const payload: DirectoryInvitePayload = { v: 1, event: options.event }
+  const event = finalizeEvent(
+    {
+      kind: nostrInviteKind,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [
+        ['t', inviteTag],
+        ['u', options.event.toUserId],
+        ['d', options.event.inviteId]
+      ],
+      content: JSON.stringify(payload)
+    },
+    hexToBytes(options.identity.relaySecretKey)
+  )
+  const results = await Promise.allSettled(pool.publish(relays, event))
+  return results.some((result) => result.status === 'fulfilled')
+}
+
+export const fetchContactInvites = async (options: {
+  userId: string
+  relayUrls?: string[]
+  limit?: number
+}): Promise<ContactInviteRelayEvent[]> => {
+  if (typeof window === 'undefined') return []
+  const userId = options.userId.trim()
+  if (!userId) return []
+  const relays = resolveNostrRelays(options.relayUrls)
+  if (!relays.length) return []
+  const since = readNostrCursor('invites', userId)
+  const filters: Filter[] = [
+    {
+      kinds: [nostrInviteKind],
+      '#u': [userId],
+      '#t': [inviteTag],
+      ...(since ? { since } : {}),
+      ...(options.limit ? { limit: options.limit } : {})
+    }
+  ]
+  const events = await collectNostrEvents(relays, filters)
+  let newest = since ?? 0
+  const invites: ContactInviteRelayEvent[] = []
+  for (const event of events) {
+    try {
+      const parsed = parseInvitePayload(JSON.parse(event.content))
+      if (!parsed) continue
+      const invite = parseContactInviteEvent(parsed.event)
+      if (!invite || invite.toUserId !== userId) continue
+      invites.push(invite)
+      if (event.created_at > newest) newest = event.created_at
+    } catch {
+      // ignore malformed events
+    }
+  }
+  if (newest) {
+    writeNostrCursor('invites', userId, newest)
+  }
+  return invites
 }
 
 export const buildRelayDirectoryLabels = (identity: DeviceIdentity) => {
