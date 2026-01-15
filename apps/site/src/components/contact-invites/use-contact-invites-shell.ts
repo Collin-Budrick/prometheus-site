@@ -12,7 +12,7 @@ import { getServerBackoffMs, markServerFailure, markServerSuccess } from '../../
 import { countStorageKey } from './constants'
 import { clearInvitesCache } from './invites-cache'
 import { loadContactsMaps, mergeContactsPayload } from './contacts-crdt'
-import { hasRelayDirectory } from './relay-mode'
+import { shouldSkipMessagingServer } from './relay-mode'
 import type {
   ActiveContact,
   BaselineInviteCounts,
@@ -59,7 +59,7 @@ export const useContactInvitesShell = (options: ContactInvitesShellOptions) => {
       let hasSnapshot = false
       let reconnectTimer: number | null = null
       let previousUserId = options.chatSettingsUserId.value
-      const relayPreferred = hasRelayDirectory()
+      const relayPreferred = shouldSkipMessagingServer()
 
       if (!options.identityReady.value) {
         options.identityReady.value = true

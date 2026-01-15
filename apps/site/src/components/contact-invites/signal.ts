@@ -11,6 +11,7 @@ import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import { buildApiUrl, resolveApiHost } from './api'
 import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
 import { fetchRelayPrekeys, publishRelayPrekeys } from './relay-directory'
+import { shouldSkipMessagingServer } from './relay-mode'
 import { isRecord } from './utils'
 
 type SignalEnvelope = {
@@ -408,7 +409,7 @@ const fetchRemoteBundles = async (userId: string, relayUrls?: string[]) => {
   const relayBundles = await fetchRelayPrekeys({ userId, relayUrls })
   let apiBundles: RemotePrekeyBundle[] = []
   const serverKey = resolveApiHost(window.location.origin)
-  if (!relayBundles.length && shouldAttemptServer(serverKey)) {
+  if (!relayBundles.length && !shouldSkipMessagingServer() && shouldAttemptServer(serverKey)) {
     try {
       const response = await fetch(buildApiUrl(`/chat/p2p/prekeys/${userId}`, window.location.origin), {
         credentials: 'include'
@@ -444,12 +445,12 @@ export const publishSignalPrekeys = async (identity: DeviceIdentity, userId?: st
   if (typeof window === 'undefined') return false
   try {
     const { bundle } = await buildLocalBundle(identity)
-    const relayOk =
-      userId && userId.trim()
-        ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
-        : false
-    const serverKey = resolveApiHost(window.location.origin)
-    if (!shouldAttemptServer(serverKey) || relayOk) return relayOk
+  const relayOk =
+    userId && userId.trim()
+      ? await publishRelayPrekeys({ identity, userId: userId.trim(), bundle, relayUrls })
+      : false
+  const serverKey = resolveApiHost(window.location.origin)
+  if (!shouldAttemptServer(serverKey) || relayOk || shouldSkipMessagingServer()) return relayOk
     const response = await fetch(buildApiUrl('/chat/p2p/prekeys', window.location.origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

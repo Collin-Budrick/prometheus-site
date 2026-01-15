@@ -52,6 +52,7 @@ import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload
 import { fetchRelayDevices } from './relay-directory'
 import { createRelayManager, type RelayMessage } from './relay'
 import { getServerBackoffMs, markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
+import { shouldSkipMessagingServer } from './relay-mode'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -221,6 +222,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       return window.location.host
     }
     const serverKey = resolveServerKey()
+    const skipServer = shouldSkipMessagingServer()
     const buildDeviceCacheKey = (contactId: string) => `p2pDevices:${contactId}`
     const loadDeviceCache = (contactId: string) => {
       try {
@@ -335,7 +337,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         relayDevices = []
       }
       let apiDevices: ContactDevice[] = []
-      if (!relayDevices.length && shouldAttemptServer(serverKey)) {
+      if (!relayDevices.length && !skipServer && shouldAttemptServer(serverKey)) {
         try {
           const response = await fetch(
             buildApiUrl(`/chat/p2p/devices/${encodeURIComponent(selfUserId)}`, window.location.origin),
@@ -471,6 +473,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const scheduleWsReconnect = (identity: DeviceIdentity, reason: string) => {
       if (!active) return
+      if (skipServer) return
       if (wsReconnectTimer !== null || wsReconnectPending) return
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         options.dmStatus.value = 'offline'
@@ -599,7 +602,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       let apiDevices: ContactDevice[] = []
       let apiAttempted = false
       let apiFailed = false
-      if (!relayDevices.length && shouldAttemptServer(serverKey)) {
+      if (!relayDevices.length && !skipServer && shouldAttemptServer(serverKey)) {
         apiAttempted = true
         try {
           const response = await fetch(
@@ -2884,6 +2887,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     }
 
     const connectWs = (identity: DeviceIdentity) => {
+      if (skipServer) return
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         options.dmStatus.value = 'offline'
         wsReconnectPending = true

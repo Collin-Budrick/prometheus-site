@@ -1,6 +1,7 @@
 import { WebrtcProvider } from 'y-webrtc'
 import { WebsocketClient } from 'lib0/websocket'
 import { appConfig } from '../../app-config'
+import { resolveCrdtSignaling } from './relay-mode'
 import type { DeviceIdentity } from '../../shared/p2p-crypto'
 import {
   getServerBackoffMs,
@@ -231,12 +232,13 @@ const watchProviderBackoff = (provider: WebrtcProvider, signaling: string[] | un
 }
 
 const resolveSignaling = () => {
-  const configured = appConfig.p2pCrdtSignaling ?? []
+  const configured = resolveCrdtSignaling()
+  if (!configured.length) return []
   if (typeof window === 'undefined') {
-    return configured.length ? configured : undefined
+    return configured
   }
   const origin = window.location.origin.replace(/^http/, 'ws')
-  const resolved = Array.from(
+  return Array.from(
     new Set(
       configured
         .map((entry) => {
@@ -254,8 +256,6 @@ const resolveSignaling = () => {
         .filter(Boolean)
     )
   )
-  if (resolved.length) return resolved
-  return [`${origin}/yjs`]
 }
 
 const resolveHost = (value: string) => {

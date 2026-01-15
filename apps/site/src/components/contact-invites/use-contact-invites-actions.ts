@@ -16,7 +16,7 @@ import { publishRelayDevice, buildRelayDirectoryLabels, fetchRelayDevices } from
 import { createRelayManager } from './relay'
 import { publishSignalPrekeys } from './signal'
 import { markServerFailure, markServerSuccess, shouldAttemptServer } from '../../shared/server-backoff'
-import { hasRelayDirectory, resolveRelayUrls } from './relay-mode'
+import { resolveRelayUrls, shouldSkipMessagingServer } from './relay-mode'
 import {
   applyContactEntry,
   loadContactsMaps,
@@ -446,7 +446,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
   const sendInviteViaServer = $(async (email: string) => {
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return null
+    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return null
     try {
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
         method: 'POST',
@@ -474,7 +474,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     inviteId: string
   ) => {
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return false
+    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return false
     const encoded = encodeURIComponent(inviteId)
     const path =
       action === 'accept'
@@ -685,7 +685,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     void requestStoragePersistence()
     const updateOfflineState = () => {
       const serverKey = resolveServerKey()
-      const relayPreferred = hasRelayDirectory()
+      const relayPreferred = shouldSkipMessagingServer()
       const offline = isNetworkOffline() || (!relayPreferred && !shouldAttemptServer(serverKey))
       options.offline.value = offline
       return offline
@@ -808,7 +808,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     let registered = false
     try {
       const serverKey = resolveApiHost(window.location.origin)
-      if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) {
+      if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) {
         options.identityRef.value = noSerialize(identity)
         void publishRelayIdentity(identity)
         return identity
@@ -932,7 +932,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     }
 
     const serverKey = resolveServerKey()
-    if (!shouldAttemptServer(serverKey) || hasRelayDirectory()) return
+    if (!shouldAttemptServer(serverKey) || shouldSkipMessagingServer()) return
 
     try {
       const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
@@ -1001,7 +1001,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     try {
       const serverKey = resolveServerKey()
-      if (hasRelayDirectory()) {
+      if (shouldSkipMessagingServer()) {
         options.searchState.value = 'idle'
         options.searchResults.value = []
         if (looksLikeUserId(trimmed)) {
