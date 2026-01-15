@@ -278,7 +278,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
   const contactsUnsubscribeRef = { value: null as (() => void) | null }
   const relayPullTimerRef = { value: null as number | null }
   const relayPullInFlightRef = { value: false }
-  const transport = createLocalChatTransport()
 
   const ensureContactsMaps = $(async () => {
     const userId = options.chatSettingsUserId.value
@@ -911,6 +910,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     }
     options.invitesState.value = 'loading'
     if (userId) {
+      const transport = createLocalChatTransport()
       const payload = await transport.readContacts(userId)
       await applyInvitesPayload(payload)
     }

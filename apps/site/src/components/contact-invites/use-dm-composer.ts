@@ -376,7 +376,6 @@ const sendEncryptedPayload = async (
 
 export const useDmComposer = (options: DmComposerOptions) => {
   const runtime = createDmComposerRuntime()
-  const transport = createLocalChatTransport()
 
   const sendTyping = $(async (state: 'start' | 'stop') => {
     if (typeof window === 'undefined') return
@@ -445,6 +444,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
     const contact = options.activeContact.value
     const text = options.dmInput.value.trim()
     if (!contact || !text) return
+    const transport = createLocalChatTransport()
     const messageId = createMessageId()
     const createdAt = new Date().toISOString()
     const identity = options.identityRef.value
@@ -567,6 +567,7 @@ export const useDmComposer = (options: DmComposerOptions) => {
         options.fragmentCopy.value?.['Unable to deliver message.'] ?? 'Unable to deliver message.'
       return
     }
+    const transport = createLocalChatTransport()
     options.dmError.value = null
     const messageId = createMessageId()
     const createdAt = new Date().toISOString()
