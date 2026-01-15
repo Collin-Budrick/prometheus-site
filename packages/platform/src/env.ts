@@ -360,7 +360,8 @@ const resolveAuthBootstrapPublicKey = (env: AppEnv) =>
 const resolveP2pRelayBases = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_RELAY_BASES, env.VITE_P2P_RELAY_BASES))?.trim() ?? ''
   if (raw === '') return []
-  return splitList(raw).map(normalizeApiBase).filter(Boolean)
+  const normalized = splitList(raw).map(normalizeApiBase).filter(Boolean)
+  return Array.from(new Set(normalized))
 }
 
 const resolveP2pNostrRelays = (env: AppEnv) => {
