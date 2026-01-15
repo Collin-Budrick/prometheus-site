@@ -114,11 +114,11 @@ export const ContactInvites = component$<ContactInvitesProps>(
       : 'chat-invites'
 
     const resolvedTitle = normalizeLabel(title ? resolve(title) : undefined, resolve('Contact invites'))
-    const resolvedHelper = normalizeLabel(helper ? resolve(helper) : undefined, resolve('Search by email to connect.'))
-    const resolvedSearchLabel = normalizeLabel(searchLabel ? resolve(searchLabel) : undefined, resolve('Search by email'))
+    const resolvedHelper = normalizeLabel(helper ? resolve(helper) : undefined, resolve('Search by user ID to connect.'))
+    const resolvedSearchLabel = normalizeLabel(searchLabel ? resolve(searchLabel) : undefined, resolve('Search by user ID'))
     const resolvedSearchPlaceholder = normalizeLabel(
       searchPlaceholder ? resolve(searchPlaceholder) : undefined,
-      resolve('name@domain.com')
+      resolve('user-id')
     )
     const resolvedSearchAction = normalizeLabel(
       searchActionLabel ? resolve(searchActionLabel) : undefined,

@@ -1,6 +1,6 @@
 import { appConfig } from '../../app-config'
 import { loadBootstrapSession } from '../../shared/auth-bootstrap'
-import { isRecord } from './utils'
+import { ensureStoredIdentity, loadStoredIdentity, saveStoredIdentity } from '../../shared/p2p-crypto'
 
 const isLocalHost = (hostname: string) =>
   hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '::1'
@@ -84,25 +84,13 @@ export const resolveChatSettingsUserId = async () => {
     writeCachedUserId(bootstrap.user.id)
     return bootstrap.user.id
   }
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return cached
+  if (cached) return cached
   try {
-    const response = await fetch(buildApiUrl('/auth/session', window.location.origin), {
-      credentials: 'include'
-    })
-    if (!response.ok) return cached
-    const payload: unknown = await response.json()
-    if (!isRecord(payload)) return cached
-    const userRecord = isRecord(payload.user) ? payload.user : {}
-    const sessionRecord = isRecord(payload.session) ? payload.session : {}
-    const id =
-      typeof userRecord.id === 'string'
-        ? userRecord.id
-        : typeof sessionRecord.userId === 'string'
-          ? sessionRecord.userId
-          : undefined
-    if (id) writeCachedUserId(id)
-    return id
+    const stored = await ensureStoredIdentity(loadStoredIdentity())
+    saveStoredIdentity(stored)
+    writeCachedUserId(stored.deviceId)
+    return stored.deviceId
   } catch {
-    return cached
+    return undefined
   }
 }

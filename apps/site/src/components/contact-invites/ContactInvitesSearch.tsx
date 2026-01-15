@@ -155,7 +155,7 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
           <span>{props.resolvedSearchLabel}</span>
           <input
             type="text"
-            inputMode="email"
+            inputMode="text"
             placeholder={props.resolvedSearchPlaceholder}
             value={props.searchQuery}
             onInput$={props.onSearchInput$}
