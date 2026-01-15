@@ -1,3 +1,6 @@
+/**
+ * @deprecated Messaging WebSocket handlers are legacy-only in serverless mode.
+ */
 import { and, eq, inArray, or } from 'drizzle-orm'
 import type { AnyElysia, Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'

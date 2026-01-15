@@ -23,11 +23,6 @@ const scopedPathname = (url: URL) => {
   return `/${url.pathname.slice(scopePath.length)}`
 }
 
-const isChatCachePath = (url: URL) => {
-  const pathname = scopedPathname(url)
-  return pathname.startsWith('/chat/contacts/') || pathname.startsWith('/chat/p2p/')
-}
-
 const isStoreCachePath = (url: URL) => {
   const pathname = scopedPathname(url)
   const normalized = pathname.startsWith('/api/') ? pathname.slice(4) : pathname
@@ -52,7 +47,6 @@ const isJsonRequest = (request: Request, url: URL) => {
   if (request.method !== 'GET') return false
   if (url.origin !== self.location.origin) return false
   if (isFragmentStreamPath(url)) return false
-  if (isChatCachePath(url)) return true
   if (isStoreCachePath(url)) return true
   const accept = request.headers.get('accept') ?? ''
   return accept.includes('application/json') || url.pathname.endsWith('.json')
@@ -214,11 +208,6 @@ const serwist = new Serwist({
       matcher: ({ request, url }) =>
         url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
       handler: handleShell
-    },
-    {
-      matcher: ({ request, url }) =>
-        request.method === 'GET' && url.origin === self.location.origin && isChatCachePath(url),
-      handler: handleJson
     },
     {
       matcher: ({ request, url }) => isJsonRequest(request, url),
