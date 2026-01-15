@@ -329,6 +329,54 @@ const chatInvitesCss = `
   gap: 10px;
 }
 
+.chat-invites-manual {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed rgb(var(--stroke));
+  background:
+    linear-gradient(160deg, rgb(var(--surface-soft) / 0.65), rgb(var(--surface) / 0.85)),
+    rgb(var(--surface));
+}
+
+.chat-invites-manual-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgb(var(--muted));
+}
+
+.chat-invites-manual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-invites-manual-code {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--stroke));
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  padding: 10px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.chat-invites-manual-code:focus {
+  outline: none;
+  border-color: rgb(var(--stroke-strong));
+}
+
 .chat-invites-item {
   --stagger-index: 0;
   display: flex;
