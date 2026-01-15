@@ -48,6 +48,7 @@ import {
 import { ensureReplicationKey, loadReplicationKey, setReplicationKey } from './crdt-store'
 import { createMessageId, isRecord, pickPreferredDevice, resolveEncryptedPayload } from './utils'
 import { createRelayManager, type RelayMessage } from './relay'
+import { loadMailboxOutgoing } from './mailbox-store'
 import type { ActiveContact, ContactDevice, DmConnectionState, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmConnectionOptions = {
@@ -149,6 +150,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     let historyRequested = false
     let historyNeeded = false
     let mailboxPulling = false
+    let mailboxFlushTimer: number | null = null
     let relayManager: ReturnType<typeof createRelayManager> | null = null
     let relayManagerKey = ''
     let selfRelayManager: ReturnType<typeof createRelayManager> | null = null
@@ -1903,11 +1905,52 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       }
     }
 
+    const syncMailboxStatuses = async (deviceId: string) => {
+      let outgoing: Awaited<ReturnType<typeof loadMailboxOutgoing>> = []
+      try {
+        outgoing = await loadMailboxOutgoing(deviceId)
+      } catch {
+        return
+      }
+      if (!outgoing.length) return
+      const deliveredIds = new Set(outgoing.filter((entry) => entry.deliveredAt).map((entry) => entry.id))
+      if (!deliveredIds.size) return
+      let changed = false
+      const next = options.dmMessages.value.map((message) => {
+        if (message.author !== 'self') return message
+        if (message.status === 'read') return message
+        if (!deliveredIds.has(message.id)) return message
+        if (message.status === 'sent') return message
+        changed = true
+        return { ...message, status: 'sent' }
+      })
+      if (!changed) return
+      options.dmMessages.value = next
+      const identity = options.identityRef.value
+      if (identity) {
+        void transport.persistMessages(contact.id, identity, next)
+      }
+    }
+
+    const flushMailboxOutbox = async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      const identity = options.identityRef.value
+      if (!identity) return
+      const manager = getRelayManager()
+      const selfManager = await getSelfRelayManager()
+      await Promise.all([
+        manager?.flushOutgoing(identity.deviceId) ?? Promise.resolve(0),
+        selfManager?.flushOutgoing(identity.deviceId) ?? Promise.resolve(0)
+      ])
+      await syncMailboxStatuses(identity.deviceId)
+    }
+
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       const payload = event.data
       if (!isRecord(payload)) return
       if (payload.type !== 'p2p:flush-outbox') return
       void flushOutbox()
+      void flushMailboxOutbox()
       void pullMailbox()
     }
 
@@ -1917,6 +1960,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
 
     const handleOnline = () => {
       void flushOutbox()
+      void flushMailboxOutbox()
       void pullMailbox()
       if (!active) return
     }
@@ -1945,12 +1989,25 @@ export const useDmConnection = (options: DmConnectionOptions) => {
     window.addEventListener('offline', handleOffline)
     window.addEventListener('prom:network-status', handleNetworkStatus)
 
+    const scheduleMailboxFlush = () => {
+      if (mailboxFlushTimer !== null) {
+        window.clearInterval(mailboxFlushTimer)
+      }
+      mailboxFlushTimer = window.setInterval(() => {
+        if (!active) return
+        void flushMailboxOutbox()
+      }, 18_000)
+    }
+
+    scheduleMailboxFlush()
+
     const handleVisibilityResume = () => {
       if (!active) return
       if (options.dmStatus.value !== 'offline' && options.dmStatus.value !== 'connecting') return
       const identity = options.identityRef.value
       if (!identity) return
       connectWs(identity)
+      void flushMailboxOutbox()
       void pullMailbox()
       void scheduleReconnect('visibility-resume')
     }
@@ -2836,6 +2893,7 @@ export const useDmConnection = (options: DmConnectionOptions) => {
         if (cached.length) {
           options.dmMessages.value = cached
         }
+        await syncMailboxStatuses(identity.deviceId)
         void ensureCrdtReplication(identity)
         const attemptBootstrap = async (targets: ContactDevice[]) => {
           const target = pickPreferredDevice(targets)
@@ -2911,6 +2969,10 @@ export const useDmConnection = (options: DmConnectionOptions) => {
       window.removeEventListener('focus', handleWindowFocus)
       if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+      }
+      if (mailboxFlushTimer !== null) {
+        window.clearInterval(mailboxFlushTimer)
+        mailboxFlushTimer = null
       }
       if (deviceRetryTimer !== null) {
         window.clearTimeout(deviceRetryTimer)
