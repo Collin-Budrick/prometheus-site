@@ -15,6 +15,8 @@ import { createMessageId } from './utils'
 import { createRelayManager } from './relay'
 import { encryptSignalPayload } from './signal'
 import { createLocalChatTransport, type LocalChatTransport } from './local-transport'
+import { buildLocalDeviceEntry, loadDeviceRegistry, saveDeviceRegistry } from './device-registry'
+import { resolveRelayUrls } from './relay-mode'
 import type { ActiveContact, ContactDevice, DmDataChannel, DmMessage, P2pSession } from './types'
 
 type DmComposerOptions = {
@@ -199,11 +201,27 @@ const fetchSelfDevices = async (
   if (runtime.selfDevices.length && now - runtime.selfDevicesFetchedAt < selfDevicesCacheMs) {
     return runtime.selfDevices
   }
-  const relayDevices = await transport.fetchDevices(selfUserId)
-  const next = mergeDeviceLists(relayDevices)
+  const cachedDevices = await loadDeviceRegistry(selfUserId)
+  const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+  let relayFailed = false
+  let relayDevices: ContactDevice[] = []
+  try {
+    relayDevices = await transport.fetchDevices(selfUserId)
+  } catch {
+    relayFailed = true
+    relayDevices = []
+  }
+  const identity = options.identityRef.value
+  const localEntry = identity ? buildLocalDeviceEntry(identity, resolveRelayUrls()) : null
+  const shouldUseCache = isOffline || relayFailed
+  const cacheList = shouldUseCache && cachedDevices ? cachedDevices.devices : []
+  const next = mergeDeviceLists(relayDevices, cacheList, localEntry ? [localEntry] : [])
   if (next.length) {
     runtime.selfDevices = next
     runtime.selfDevicesFetchedAt = now
+    if (!shouldUseCache) {
+      void saveDeviceRegistry(selfUserId, next)
+    }
   }
   return runtime.selfDevices
 }
