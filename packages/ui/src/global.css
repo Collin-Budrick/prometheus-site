@@ -1606,6 +1606,45 @@
     transform: translateY(-1px);
   }
 
+  .settings-invite-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0 0;
+    border-top: 1px solid rgb(var(--stroke) / 0.6);
+  }
+
+  .settings-invite-label {
+    display: grid;
+    gap: 4px;
+  }
+
+  .settings-invite-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .settings-invite-code {
+    width: 100%;
+    min-height: 88px;
+    resize: vertical;
+    border-radius: 14px;
+    border: 1px solid rgb(var(--stroke));
+    background: rgb(var(--surface));
+    color: rgb(var(--ink));
+    padding: 12px 14px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+
+  .settings-invite-code:focus {
+    outline: none;
+    border-color: rgb(var(--stroke-strong));
+  }
+
   .chat-settings-toggle {
     --chat-toggle-shift: 26px;
     width: 52px;

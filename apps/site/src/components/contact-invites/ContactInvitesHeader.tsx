@@ -35,22 +35,27 @@ type ContactInvitesHeaderProps = {
 export const ContactInvitesHeader = component$<ContactInvitesHeaderProps>((props) => {
   const resolve = (value: string) => props.copy?.[value] ?? value
   const totalInvites = props.incomingCount + props.outgoingCount
+  const resolveActionTarget = (event: Event, selector: string) => {
+    const target = event.target as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    return (target?.closest?.(selector) as HTMLElement | null) ?? current
+  }
   const handleAcceptClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset.inviteId
     const userId = target?.dataset.userId
     if (!inviteId || !userId) return
     void props.onAccept$(inviteId, userId)
   })
   const handleDeclineClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset.inviteId
     const userId = target?.dataset.userId
     if (!inviteId || !userId) return
     void props.onDecline$(inviteId, userId)
   })
   const handleRemoveClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset.inviteId
     const userId = target?.dataset.userId
     const email = target?.dataset.email

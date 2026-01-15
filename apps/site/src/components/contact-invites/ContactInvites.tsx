@@ -104,8 +104,6 @@ export const ContactInvites = component$<ContactInvitesProps>(
     const historySuppressed = useSignal(false)
     const incomingImageCount = useSignal(0)
     const offline = useSignal(false)
-    const manualExchangeToken = useSignal<string | null>(null)
-    const manualExchangeHint = useSignal<string | null>(null)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
@@ -199,8 +197,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       toggleBell,
       handleContactClick,
       handleContactKeyDown,
-      closeContact,
-      clearManualExchange
+      closeContact
     } = useContactInvitesActions({
       fragmentCopy,
       invitesState,
@@ -233,9 +230,7 @@ export const ContactInvites = component$<ContactInvitesProps>(
       identityRef,
       remoteTyping,
       remoteTypingTimer,
-      offline,
-      manualExchangeToken,
-      manualExchangeHint
+      offline
     })
     const isAlertCount = (key: keyof BaselineInviteCounts, value: number) => {
       const baseline = baselineCounts.value
@@ -494,14 +489,11 @@ export const ContactInvites = component$<ContactInvitesProps>(
           resolvedAcceptAction={resolvedAcceptAction}
           resolvedDeclineAction={resolvedDeclineAction}
           resolvedRemoveAction={resolvedRemoveAction}
-          manualExchangeToken={manualExchangeToken.value}
-          manualExchangeHint={manualExchangeHint.value}
           busyKeys={busyKeys.value}
           onSearchSubmit$={handleSearchSubmit}
           onSearchInput$={handleSearchInput}
           onInvite$={handleInvite}
           onImportInvite$={handleImportInviteToken}
-          onClearInviteCode$={clearManualExchange}
           onAccept$={handleAccept}
           onDecline$={handleDecline}
           onRemove$={handleRemove}

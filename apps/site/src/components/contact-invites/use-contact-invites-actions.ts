@@ -35,7 +35,8 @@ import {
 } from './contacts-store'
 import { createLocalChatTransport } from './local-transport'
 import { resolveChatSettingsUserId } from './api'
-import { decodeInviteToken, encodeInviteToken } from './invite-token'
+import { decodeInviteToken } from './invite-token'
+import { ensureFriendCode } from './friend-code'
 import { createMessageId, isRecord } from './utils'
 import type {
   ActiveContact,
@@ -82,8 +83,6 @@ type ContactInvitesActionsOptions = {
   remoteTyping: Signal<boolean>
   remoteTypingTimer: Signal<number | null>
   offline: Signal<boolean>
-  manualExchangeToken: Signal<string | null>
-  manualExchangeHint: Signal<string | null>
 }
 
 type QueuedContactAction =
@@ -303,11 +302,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     contactsMapsRef.value = maps
     contactsMapsUserIdRef.value = userId
     return maps
-  })
-
-  const clearManualExchange = $(() => {
-    options.manualExchangeToken.value = null
-    options.manualExchangeHint.value = null
   })
 
   const applyInvitesPayload = $(
@@ -1007,134 +1001,39 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     options.searchError.value = resolveLocal('Local search only - enter a user ID to invite.')
   })
 
-  const handleInvite = $(async (email: string, userId?: string) => {
+  const handleInvite = $(async (email: string, _userId?: string) => {
     if (typeof window === 'undefined') return
     const copy = options.fragmentCopy.value
     const resolveLocal = (value: string) => resolveFragmentCopy(copy, value)
     const normalizedEmail = email.trim()
-    const normalizedUserId = userId?.trim() || undefined
     const key = `invite:${normalizedEmail}`
     if (options.busyKeys.value.includes(key)) return
 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
-    options.manualExchangeToken.value = null
-    options.manualExchangeHint.value = null
 
     try {
       const selfUserId = await ensureUserId()
-      const storageKey = queueStorageKey(selfUserId)
       const selfUser = resolveSelfUser(selfUserId)
-      const inviteId = createMessageId()
-      const matching = options.searchResults.value.find(
-        (entry) => entry.email === normalizedEmail || (normalizedUserId ? entry.id === normalizedUserId : false)
-      )
-      const contactId = normalizedUserId ?? normalizedEmail
-      const contact = {
-        id: contactId,
-        email: normalizedEmail,
-        name: matching?.name ?? undefined
+      if (!selfUser) {
+        options.statusTone.value = 'error'
+        options.statusMessage.value = resolveLocal('Invite unavailable.')
+        return
       }
-      if (selfUserId && selfUser) {
-        const token = encodeInviteToken(
-          buildContactInviteEvent({
-            action: 'invite',
-            inviteId,
-            fromUserId: selfUserId,
-            toUserId: contactId,
-            user: selfUser
-          })
-        )
-        options.manualExchangeToken.value = token
-        options.manualExchangeHint.value = resolveLocal('Invite code ready - share it to connect.')
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(token).catch(() => undefined)
+      const code = ensureFriendCode(selfUser)
+      let copied = false
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(code)
+          copied = true
+        } catch {
+          copied = false
         }
       }
-      const mapsPromise = ensureContactsMaps()
-      const upsertPendingFallback = (nextInviteId: string) => {
-        options.incoming.value = options.incoming.value.filter((invite) => invite.user.id !== contactId)
-        options.contacts.value = options.contacts.value.filter((invite) => invite.user.id !== contactId)
-        options.outgoing.value = [
-          ...options.outgoing.value.filter((invite) => invite.user.id !== contactId),
-          { id: nextInviteId, status: 'outgoing', user: contact }
-        ]
-        options.searchResults.value = options.searchResults.value.length
-          ? options.searchResults.value.map((entry) =>
-              entry.id === contactId || entry.email === normalizedEmail
-                ? { ...entry, status: 'outgoing', inviteId: nextInviteId }
-                : entry
-            )
-          : [
-              {
-                id: contactId,
-                email: normalizedEmail,
-                name: contact.name ?? null,
-                status: 'outgoing',
-                inviteId: nextInviteId
-              }
-            ]
-      }
-      upsertPendingFallback(inviteId)
-      const maps = await mapsPromise
-      if (maps) {
-        maps.doc.transact(() => {
-          applyContactEntry(maps.contacts, {
-            inviteId,
-            status: 'outgoing',
-            user: contact,
-            updatedAt: new Date().toISOString(),
-            source: 'local'
-          }, { force: true })
-        })
-        const payload = serializeContactsPayload(maps.contacts)
-        await applyInvitesPayload(payload)
-      }
-
-      if (isNetworkOffline()) {
-        enqueueQueuedAction(storageKey, {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          type: 'invite',
-          inviteId,
-          email: normalizedEmail,
-          userId: normalizedUserId,
-          createdAt: new Date().toISOString()
-        })
-        void requestInviteQueueSync('invite')
-        options.statusTone.value = 'neutral'
-        options.statusMessage.value =
-          options.manualExchangeHint.value ?? resolveLocal('Offline - invite queued.')
-        return
-      }
-
-      let delivered = false
-      if (normalizedUserId && selfUser) {
-        delivered = await sendContactAction({
-          action: 'invite',
-          inviteId,
-          targetUserId: normalizedUserId,
-          actor: selfUser
-        })
-        void sendContactSync({ status: 'outgoing', inviteId, contact })
-      }
-
-      if (!delivered) {
-        enqueueQueuedAction(storageKey, {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          type: 'invite',
-          inviteId,
-          email: normalizedEmail,
-          userId: normalizedUserId,
-          createdAt: new Date().toISOString()
-        })
-        void requestInviteQueueSync('invite')
-        options.statusTone.value = 'neutral'
-        options.statusMessage.value = options.manualExchangeHint.value ?? resolveLocal('Invite queued.')
-        return
-      }
-
       options.statusTone.value = 'success'
-      options.statusMessage.value = resolveLocal('Invite sent.')
+      options.statusMessage.value = copied
+        ? resolveLocal('Friend code copied. Share it to connect.')
+        : resolveLocal('Friend code ready. Share it from Settings.')
     } catch (error) {
       options.statusTone.value = 'error'
       options.statusMessage.value = error instanceof Error ? error.message : resolveLocal('Invite unavailable.')
@@ -1153,17 +1052,15 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
       options.statusMessage.value = resolveLocal('Invalid invite code.')
       return
     }
-    const selfUserId = await ensureUserId()
-    if (selfUserId && parsed.toUserId !== selfUserId) {
-      options.statusTone.value = 'error'
-      options.statusMessage.value = resolveLocal('Invite code is for another user.')
-      return
-    }
     const entry = eventToContactEntry(parsed)
     if (!entry) {
       options.statusTone.value = 'error'
       options.statusMessage.value = resolveLocal('Invite unavailable.')
       return
+    }
+    if (parsed.action === 'invite') {
+      entry.status = 'accepted'
+      entry.updatedAt = new Date().toISOString()
     }
     const maps = await ensureContactsMaps()
     if (!maps) {
@@ -1178,12 +1075,10 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     await applyInvitesPayload(payload)
     options.statusTone.value = 'success'
     const message =
-      parsed.action === 'invite'
-        ? 'Invite imported.'
-        : parsed.action === 'accept'
-          ? 'Invite accepted.'
-          : parsed.action === 'decline'
-            ? 'Invite declined.'
+      parsed.action === 'invite' || parsed.action === 'accept'
+        ? 'Invite accepted.'
+        : parsed.action === 'decline'
+          ? 'Invite declined.'
             : parsed.action === 'remove'
               ? 'Invite removed.'
               : 'Invite updated.'
@@ -1199,8 +1094,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
-    options.manualExchangeToken.value = null
-    options.manualExchangeHint.value = null
 
     try {
       const selfUserId = await ensureUserId()
@@ -1213,22 +1106,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         return
       }
       const contact = readContactEntry(maps.contacts, userId)?.user ?? { id: userId, email: userId }
-      if (selfUserId) {
-        const token = encodeInviteToken(
-          buildContactInviteEvent({
-            action: 'accept',
-            inviteId,
-            fromUserId: selfUserId,
-            toUserId: userId,
-            user: selfUser
-          })
-        )
-        options.manualExchangeToken.value = token
-        options.manualExchangeHint.value = resolveLocal('Acceptance code ready - share it back.')
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(token).catch(() => undefined)
-        }
-      }
       maps.doc.transact(() => {
         applyContactEntry(maps.contacts, {
           inviteId,
@@ -1253,8 +1130,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('accept')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value =
-          options.manualExchangeHint.value ?? resolveLocal('Offline - accept queued.')
+        options.statusMessage.value = resolveLocal('Offline - accept queued.')
         return
       }
 
@@ -1276,7 +1152,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('accept')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value = options.manualExchangeHint.value ?? resolveLocal('Invite queued.')
+        options.statusMessage.value = resolveLocal('Invite queued.')
         return
       }
 
@@ -1299,8 +1175,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
-    options.manualExchangeToken.value = null
-    options.manualExchangeHint.value = null
 
     try {
       const selfUserId = await ensureUserId()
@@ -1311,22 +1185,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         options.statusTone.value = 'error'
         options.statusMessage.value = resolveLocal('Invite unavailable.')
         return
-      }
-      if (selfUserId) {
-        const token = encodeInviteToken(
-          buildContactInviteEvent({
-            action: 'decline',
-            inviteId,
-            fromUserId: selfUserId,
-            toUserId: userId,
-            user: selfUser
-          })
-        )
-        options.manualExchangeToken.value = token
-        options.manualExchangeHint.value = resolveLocal('Decline code ready - share it back.')
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(token).catch(() => undefined)
-        }
       }
       const contact = readContactEntry(maps.contacts, userId)?.user ?? { id: userId, email: userId }
       maps.doc.transact(() => {
@@ -1353,8 +1211,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('decline')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value =
-          options.manualExchangeHint.value ?? resolveLocal('Offline - decline queued.')
+        options.statusMessage.value = resolveLocal('Offline - decline queued.')
         return
       }
 
@@ -1376,7 +1233,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('decline')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value = options.manualExchangeHint.value ?? resolveLocal('Invite queued.')
+        options.statusMessage.value = resolveLocal('Invite queued.')
         return
       }
 
@@ -1399,8 +1256,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
 
     options.busyKeys.value = [...options.busyKeys.value, key]
     options.statusMessage.value = null
-    options.manualExchangeToken.value = null
-    options.manualExchangeHint.value = null
 
     try {
       const selfUserId = await ensureUserId()
@@ -1411,22 +1266,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         options.statusTone.value = 'error'
         options.statusMessage.value = resolveLocal('Invite unavailable.')
         return
-      }
-      if (selfUserId) {
-        const token = encodeInviteToken(
-          buildContactInviteEvent({
-            action: 'remove',
-            inviteId,
-            fromUserId: selfUserId,
-            toUserId: userId,
-            user: selfUser
-          })
-        )
-        options.manualExchangeToken.value = token
-        options.manualExchangeHint.value = resolveLocal('Removal code ready - share it back.')
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(token).catch(() => undefined)
-        }
       }
       const contact = readContactEntry(maps.contacts, userId)?.user ?? { id: userId, email }
       maps.doc.transact(() => {
@@ -1454,8 +1293,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('remove')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value =
-          options.manualExchangeHint.value ?? resolveLocal('Offline - removal queued.')
+        options.statusMessage.value = resolveLocal('Offline - removal queued.')
         return
       }
 
@@ -1478,7 +1316,7 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
         })
         void requestInviteQueueSync('remove')
         options.statusTone.value = 'neutral'
-        options.statusMessage.value = options.manualExchangeHint.value ?? resolveLocal('Invite queued.')
+        options.statusMessage.value = resolveLocal('Invite queued.')
         return
       }
 
@@ -1599,7 +1437,6 @@ export const useContactInvitesActions = (options: ContactInvitesActionsOptions) 
     toggleBell,
     handleContactClick,
     handleContactKeyDown,
-    closeContact,
-    clearManualExchange
+    closeContact
   }
 }

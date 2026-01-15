@@ -47,6 +47,14 @@ export type UiCopy = {
   settingsChatReadReceiptsHint: string
   settingsChatTypingIndicators: string
   settingsChatTypingIndicatorsHint: string
+  settingsInviteTitle: string
+  settingsInviteDescription: string
+  settingsInviteCodeLabel: string
+  settingsInviteCopyAction: string
+  settingsInviteRotateAction: string
+  settingsInviteCopied: string
+  settingsInviteRotated: string
+  settingsInviteUnavailable: string
   settingsOfflineTitle: string
   settingsOfflineDescription: string
   settingsOfflineToggleLabel: string

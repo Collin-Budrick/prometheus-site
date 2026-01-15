@@ -22,14 +22,11 @@ type ContactInvitesSearchProps = {
   resolvedAcceptAction: string
   resolvedDeclineAction: string
   resolvedRemoveAction: string
-  manualExchangeToken: string | null
-  manualExchangeHint: string | null
   busyKeys: string[]
   onSearchSubmit$: PropFunction<() => void | Promise<void>>
   onSearchInput$: PropFunction<(event: Event) => void>
   onInvite$: PropFunction<(email: string, userId?: string) => void | Promise<void>>
   onImportInvite$: PropFunction<(token: string) => void | Promise<void>>
-  onClearInviteCode$: PropFunction<() => void>
   onAccept$: PropFunction<(inviteId: string, userId: string) => void | Promise<void>>
   onDecline$: PropFunction<(inviteId: string, userId: string) => void | Promise<void>>
   onRemove$: PropFunction<(inviteId: string, userId: string, email: string) => void | Promise<void>>
@@ -123,26 +120,17 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
     event.stopPropagation()
     void props.onAvatarClick$(event, contact)
   })
+  const resolveActionTarget = (event: Event, selector: string) => {
+    const target = event.target as HTMLElement | null
+    const current = event.currentTarget as HTMLElement | null
+    return (target?.closest?.(selector) as HTMLElement | null) ?? current
+  }
   const handleInviteClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-contact-email]')
     const email = target?.dataset?.contactEmail
     const userId = target?.dataset?.contactId
     if (!email) return
     void props.onInvite$(email, userId)
-  })
-  const handleManualCopy = $(async () => {
-    const token = props.manualExchangeToken
-    if (!token) return
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(token)
-      } catch {
-        // ignore clipboard errors
-      }
-    }
-  })
-  const handleManualClear = $(() => {
-    void props.onClearInviteCode$()
   })
   const handleManualInput = $((event: Event) => {
     manualInviteInput.value = (event.target as HTMLTextAreaElement).value
@@ -154,21 +142,21 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
     manualInviteInput.value = ''
   })
   const handleAcceptClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset?.inviteId
     const userId = target?.dataset?.contactId
     if (!inviteId || !userId) return
     void props.onAccept$(inviteId, userId)
   })
   const handleDeclineClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset?.inviteId
     const userId = target?.dataset?.contactId
     if (!inviteId || !userId) return
     void props.onDecline$(inviteId, userId)
   })
   const handleRemoveClick = $((event: Event) => {
-    const target = event.currentTarget as HTMLButtonElement | null
+    const target = resolveActionTarget(event, 'button[data-invite-id]')
     const inviteId = target?.dataset?.inviteId
     const userId = target?.dataset?.contactId
     const email = target?.dataset?.contactEmail
@@ -344,27 +332,6 @@ export const ContactInvitesSearch = component$<ContactInvitesSearchProps>((props
             )
           })}
         </div>
-        {props.manualExchangeToken ? (
-          <div class="chat-invites-manual">
-            <div class="chat-invites-manual-header">
-              <span>{props.manualExchangeHint ?? resolve('Invite code ready.')}</span>
-              <div class="chat-invites-manual-actions">
-                <button type="button" class="chat-invites-action" onClick$={handleManualCopy}>
-                  {resolve('Copy')}
-                </button>
-                <button type="button" class="chat-invites-action ghost" onClick$={handleManualClear}>
-                  {resolve('Clear')}
-                </button>
-              </div>
-            </div>
-            <textarea
-              class="chat-invites-manual-code"
-              readOnly
-              value={props.manualExchangeToken}
-              aria-label={resolve('Invite code')}
-            />
-          </div>
-        ) : null}
         <div class="chat-invites-manual">
           <div class="chat-invites-manual-header">
             <span>{resolve('Paste invite code')}</span>

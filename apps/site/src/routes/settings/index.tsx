@@ -10,6 +10,7 @@ import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import { clearBootstrapSession } from '../../shared/auth-bootstrap'
+import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
 import {
   buildChatSettingsKey,
   defaultChatSettings,
@@ -59,6 +60,28 @@ const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
   return `${base}${path}`
 }
 
+type FriendCodeUser = {
+  id: string
+  email?: string | null
+  name?: string | null
+}
+
+const resolveFriendCodeUser = (userId?: string): FriendCodeUser | null => {
+  if (!userId) return null
+  const fallback = { id: userId, email: userId }
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem('auth:bootstrap:user')
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as { id?: string; email?: string; name?: string | null } | null
+    if (!parsed?.id || parsed.id !== userId) return fallback
+    const email = parsed.email?.trim() ? parsed.email : userId
+    return { id: parsed.id, email, name: parsed.name ?? undefined }
+  } catch {
+    return fallback
+  }
+}
+
 export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
   const lang = resolveRequestLang(request)
   const session = await loadAuthSession(request)
@@ -98,6 +121,8 @@ export default component$(() => {
   const chatSettings = useSignal<ChatSettings>({ ...defaultChatSettings })
   const swOptOut = useSignal(false)
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const friendCode = useSignal('')
+  const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
   const userId = data.value.userId
@@ -112,6 +137,13 @@ export default component$(() => {
       return
     }
     chatSettings.value = { ...defaultChatSettings, ...stored }
+  })
+
+  useVisibleTask$(() => {
+    if (typeof window === 'undefined') return
+    const user = resolveFriendCodeUser(userId)
+    if (!user) return
+    friendCode.value = ensureFriendCode(user)
   })
 
   useVisibleTask$((ctx) => {
@@ -210,6 +242,34 @@ export default component$(() => {
     swStatus.value = { tone: 'info', message: copy.value.settingsOfflineCleanupPending }
   })
 
+  const handleCopyFriendCode = $(async () => {
+    const value = friendCode.value.trim()
+    if (!value) {
+      friendCodeStatus.value = { tone: 'error', message: copy.value.settingsInviteUnavailable }
+      return
+    }
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      friendCodeStatus.value = { tone: 'error', message: copy.value.settingsInviteUnavailable }
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(value)
+      friendCodeStatus.value = { tone: 'success', message: copy.value.settingsInviteCopied }
+    } catch {
+      friendCodeStatus.value = { tone: 'error', message: copy.value.settingsInviteUnavailable }
+    }
+  })
+
+  const handleRotateFriendCode = $(() => {
+    const user = resolveFriendCodeUser(userId)
+    if (!user) {
+      friendCodeStatus.value = { tone: 'error', message: copy.value.settingsInviteUnavailable }
+      return
+    }
+    friendCode.value = rotateFriendCode(user)
+    friendCodeStatus.value = { tone: 'success', message: copy.value.settingsInviteRotated }
+  })
+
   return (
     <StaticRouteTemplate
       metaLine={copy.value.protectedMetaLine}
@@ -261,6 +321,41 @@ export default component$(() => {
             </span>
           </button>
         </div>
+      </section>
+      <section class="settings-panel">
+        <div class="settings-panel-header">
+          <span class="settings-panel-title">{copy.value.settingsInviteTitle}</span>
+          <p class="settings-panel-description">{copy.value.settingsInviteDescription}</p>
+        </div>
+        <div class="settings-invite-row">
+          <div class="settings-invite-label">
+            <span class="settings-toggle-title">{copy.value.settingsInviteCodeLabel}</span>
+          </div>
+          <div class="settings-invite-actions">
+            <button
+              type="button"
+              class="settings-action-button"
+              disabled={!friendCode.value}
+              onClick$={handleCopyFriendCode}
+            >
+              {copy.value.settingsInviteCopyAction}
+            </button>
+            <button type="button" class="settings-action-button" onClick$={handleRotateFriendCode}>
+              {copy.value.settingsInviteRotateAction}
+            </button>
+          </div>
+        </div>
+        <textarea
+          class="settings-invite-code"
+          readOnly
+          value={friendCode.value}
+          aria-label={copy.value.settingsInviteCodeLabel}
+        />
+        {friendCodeStatus.value ? (
+          <div class="auth-status" role="status" aria-live="polite" data-tone={friendCodeStatus.value.tone}>
+            {friendCodeStatus.value.message}
+          </div>
+        ) : null}
       </section>
       <section class="settings-panel">
         <div class="settings-panel-header">
