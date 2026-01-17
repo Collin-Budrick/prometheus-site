@@ -1,4 +1,4 @@
-import arkenv, { type as arkenvType } from 'arkenv'
+import { parse as arkenvParse, type as arkenvType } from 'arkenv/arktype'
 
 export type AppEnv = Record<string, string | boolean | undefined>
 
@@ -145,7 +145,7 @@ const normalizeEnvInput = (env: AppEnv) =>
   ) as Record<string, string | undefined>
 
 const parseEnv = (schema: typeof runtimeEnvSchema | typeof publicEnvSchema, env: AppEnv) =>
-  arkenv(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' })
+  arkenvParse(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' })
 
 const buildMergedEnv = (env?: AppEnv): AppEnv => {
   const runtimeEnv = getRuntimeEnv()

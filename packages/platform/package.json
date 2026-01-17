@@ -23,18 +23,18 @@
     "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
-    "@logtape/logtape": "^2.0.0-dev.474",
+    "@logtape/logtape": "^2.0.0-dev.479",
     "@prometheus/core": "workspace:*",
     "@prometheus/features-auth": "workspace:*",
     "@prometheus/features-messaging": "workspace:*",
     "@prometheus/features-store": "workspace:*",
     "@unkey/ratelimit": "2.1.4",
     "@valkey/client": "1.0.0",
-    "arkenv": "0.8.3",
+    "arkenv": "0.9.0",
     "arktype": "2.1.29",
     "drizzle-orm": "1.0.0-beta.9-e89174b",
     "drizzle-zod": "1.0.0-beta.9-e89174b",
-    "elysia": "1.4.21",
+    "elysia": "1.4.22",
     "highlight.run": "9.25.0",
     "postgres": "3.4.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
@@ -42,13 +42,13 @@
     "zod": "4.4.0-canary.20251231T230035"
   },
   "devDependencies": {
-    "@types/node": "25.0.8",
+    "@types/node": "25.0.9",
     "@types/react": "^19.2.8",
-    "bun-types": "1.3.6-canary.20260113T140851",
+    "bun-types": "1.3.7-canary.20260117T140656",
     "drizzle-kit": "1.0.0-beta.9-e89174b",
     "oxfmt": "0.24.0",
     "oxlint": "1.39.0",
-    "typescript": "6.0.0-dev.20260113"
+    "typescript": "6.0.0-dev.20260117"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "^1.39.0"

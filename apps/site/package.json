@@ -20,7 +20,7 @@
     "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "^0.0.13",
     "@waku/sdk": "^0.0.36",
-    "arkenv": "0.8.3",
+    "arkenv": "0.9.0",
     "arktype": "2.1.29",
     "nostr-tools": "^2.19.4",
     "peerjs": "^1.5.5",
@@ -28,20 +28,19 @@
     "react": "19.3.0-canary-fd524fe0-20251121",
     "y-indexeddb": "^9.0.12",
     "y-webrtc": "^10.3.0",
-    "yjs": "^13.6.20"
+    "yjs": "^13.6.29"
   },
   "devDependencies": {
-    "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.9-commit.d91dfb5",
-    "@rolldown/binding-win32-x64-msvc": "1.0.0-beta.9-commit.d91dfb5",
+    "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.60",
     "@serwist/vite": "^9.5.0",
     "@tailwindcss/vite": "^4.1.18",
-    "@types/node": "25.0.8",
+    "@types/node": "25.0.9",
     "lightningcss": "^1.30.2",
     "oxlint": "1.39.0",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260113",
-    "vite": "8.0.0-beta.7",
+    "typescript": "6.0.0-dev.20260117",
+    "vite": "8.0.0-beta.8",
     "vite-plugin-compression2": "^2.4.0"
   },
   "optionalDependencies": {

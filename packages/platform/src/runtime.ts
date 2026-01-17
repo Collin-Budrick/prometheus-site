@@ -1,4 +1,4 @@
-import arkenv, { type as arkenvType } from 'arkenv'
+import { parse as arkenvParse, type as arkenvType } from 'arkenv/arktype'
 
 export type Env = Record<string, string | undefined>
 
@@ -9,7 +9,7 @@ const runtimeEnvSchema = arkenvType({
 })
 
 const parseRuntimeEnv = (env: Env) =>
-  arkenv(runtimeEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
+  arkenvParse(runtimeEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
 
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
 const falsyValues = new Set(['0', 'false', 'no', 'off'])

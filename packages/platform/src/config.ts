@@ -1,4 +1,4 @@
-import arkenv, { type as arkenvType } from 'arkenv'
+import { parse as arkenvParse, type as arkenvType } from 'arkenv/arktype'
 import type { LogLevel } from '@logtape/logtape'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
@@ -125,7 +125,7 @@ const platformEnvSchema = arkenvType({
 })
 
 const parsePlatformEnv = (env: Env) =>
-  arkenv(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
+  arkenvParse(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
 
 const parsePort = (value: string | undefined, defaultValue: number, name: string) => {
   const raw = (value ?? String(defaultValue)).trim()
