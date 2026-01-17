@@ -985,15 +985,19 @@
   }
 
   .fragment-grid > .fragment-card.is-inline {
-    flex: 0 0 auto;
     align-self: flex-start;
-    justify-self: start;
-    width: auto;
     max-width: 100%;
   }
 
   .fragment-grid.is-stacked > .fragment-card.is-inline {
-    width: auto;
+    width: 100%;
+  }
+
+  @media (min-width: 900px) {
+    .fragment-grid > .fragment-card.is-inline {
+      justify-self: stretch;
+      width: 100%;
+    }
   }
 
   .fragment-card {

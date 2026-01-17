@@ -406,11 +406,17 @@ export const FragmentCard = component$<FragmentCardProps>(
       { strategy: 'document-ready' }
     )
 
-    const lockedHeight = maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined
+    const sizeHeight =
+      resolvedSize === 'small'
+        ? 'var(--fragment-card-small-height)'
+        : resolvedSize === 'big'
+          ? 'var(--fragment-card-big-height)'
+          : undefined
+    const lockedHeight = sizeHeight ?? (maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined)
     const cardStyle = {
       gridColumn: resolvedColumn,
       '--motion-delay': `${motionDelay}ms`,
-      minHeight: lockedHeight
+      minHeight: sizeHeight ? undefined : lockedHeight
     } as Record<string, string>
 
     const placeholderStyle = {

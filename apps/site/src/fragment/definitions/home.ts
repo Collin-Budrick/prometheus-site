@@ -354,7 +354,7 @@ export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/planner@v1',
     critical: true,
-    layout: { column: 'span 5' }
+    layout: { column: 'span 5', size: 'big' }
   },
   {
     id: 'fragment://page/home/ledger@v1',
