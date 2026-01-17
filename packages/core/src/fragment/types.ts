@@ -63,6 +63,7 @@ export type FragmentPlanEntry = {
     column: string
   }
   expandable?: boolean
+  fullWidth?: boolean
   dependsOn?: string[]
   runtime?: 'edge' | 'node'
   cache?: FragmentCacheStatus

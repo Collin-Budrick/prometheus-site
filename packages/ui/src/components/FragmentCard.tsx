@@ -18,11 +18,13 @@ type FragmentCardProps = {
   layoutTick: Signal<number>
   closeLabel: string
   expandable?: boolean
+  fullWidth?: boolean
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
-  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel, expandable }) => {
+  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel, expandable, fullWidth }) => {
     const canExpand = expandable === true
+    const isFullWidth = fullWidth === true
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
     const lastExpanded = useSignal(canExpand && expandedId.value === id)
@@ -338,7 +340,7 @@ export const FragmentCard = component$<FragmentCardProps>(
         <div ref={placeholderRef} class="fragment-card-placeholder" style={placeholderStyle} aria-hidden="true" />
         <article
           ref={cardRef}
-          class={{ 'fragment-card': true, 'is-expanded': isExpanded }}
+          class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': !isFullWidth }}
           style={cardStyle}
           data-motion
           data-motion-skip-visible

@@ -982,6 +982,18 @@
     width: 100%;
   }
 
+  .fragment-grid > .fragment-card.is-inline {
+    flex: 0 0 auto;
+    align-self: flex-start;
+    justify-self: start;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .fragment-grid.is-stacked > .fragment-card.is-inline {
+    width: auto;
+  }
+
   .fragment-card {
     @apply relative overflow-hidden rounded-(--radius) border border-amber-100/80 bg-white/80 p-6;
     --motion-fade-duration: 900ms;

@@ -383,6 +383,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
               layoutTick={layoutTick}
               closeLabel={copy.value.fragmentClose}
               expandable={entry.expandable}
+              fullWidth={entry.fullWidth}
             >
               {fragment ? (
                 <FragmentRenderer node={renderNode ?? fragment.tree} />
