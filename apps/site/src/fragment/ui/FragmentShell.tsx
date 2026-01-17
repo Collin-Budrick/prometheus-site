@@ -200,6 +200,9 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let lastY = 0
       let draggingId: string | null = null
       let draggingEl: HTMLElement | null = null
+      let pendingTargetId: string | null = null
+      let pendingInsertAfter = false
+      let dropIndicator: HTMLElement | null = null
       let previousUserSelect = ''
 
       const getOrderIds = () => buildOrderedIds(planValue.fragments, orderIds.value)
@@ -217,6 +220,12 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         draggingEl.style.zIndex = ''
         draggingEl.style.pointerEvents = ''
         draggingEl.style.willChange = ''
+      }
+
+      const clearDropIndicator = () => {
+        if (!dropIndicator) return
+        dropIndicator.classList.remove('is-drop-before', 'is-drop-after')
+        dropIndicator = null
       }
 
       const stopAutoScroll = () => {
@@ -263,6 +272,9 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         draggingEl.classList.add('is-dragging')
         draggingEl.style.pointerEvents = 'none'
         draggingEl.style.willChange = 'transform'
+        pendingTargetId = null
+        pendingInsertAfter = false
+        clearDropIndicator()
         scheduleAutoScroll()
       }
 
@@ -276,6 +288,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (dragging) {
           resetDraggingStyles()
         }
+        clearDropIndicator()
         dragging = false
         grid.classList.remove('is-dragging')
         document.body.style.userSelect = previousUserSelect
@@ -284,9 +297,17 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           suppressUntil: Date.now() + 300,
           draggingId: null
         }
+        if (draggingId && pendingTargetId && pendingTargetId !== draggingId) {
+          const nextOrder = moveOrder(draggingId, pendingTargetId, pendingInsertAfter)
+          if (nextOrder.join('|') !== orderIds.value.join('|')) {
+            orderIds.value = nextOrder
+          }
+        }
         draggingId = null
         draggingEl = null
         pointerId = null
+        pendingTargetId = null
+        pendingInsertAfter = false
       }
 
       const moveOrder = (id: string, targetId: string, insertAfter: boolean) => {
@@ -329,9 +350,12 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           lastY > closest.rect.top + closest.rect.height / 2 ||
           (Math.abs(lastY - (closest.rect.top + closest.rect.height / 2)) < 6 &&
             lastX > closest.rect.left + closest.rect.width / 2)
-        const nextOrder = moveOrder(draggingId, targetId, insertAfter)
-        if (nextOrder.join('|') !== orderIds.value.join('|')) {
-          orderIds.value = nextOrder
+        if (pendingTargetId !== targetId || pendingInsertAfter !== insertAfter) {
+          pendingTargetId = targetId
+          pendingInsertAfter = insertAfter
+          clearDropIndicator()
+          dropIndicator = closest.el
+          dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
         }
       }
 

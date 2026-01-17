@@ -1080,6 +1080,14 @@
     box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
   }
 
+  .fragment-card.is-drop-before {
+    box-shadow: 0 -3px 0 0 rgb(var(--accent) / 0.7), 0 24px 48px rgba(15, 23, 42, 0.14);
+  }
+
+  .fragment-card.is-drop-after {
+    box-shadow: 0 3px 0 0 rgb(var(--accent) / 0.7), 0 24px 48px rgba(15, 23, 42, 0.14);
+  }
+
   .fragment-grid.is-stacked > .fragment-card.is-inline {
     width: 100%;
   }
