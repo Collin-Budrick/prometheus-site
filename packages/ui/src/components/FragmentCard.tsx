@@ -17,13 +17,15 @@ type FragmentCardProps = {
   expandedId: Signal<string | null>
   layoutTick: Signal<number>
   closeLabel: string
+  expandable?: boolean
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
-  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel }) => {
+  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel, expandable }) => {
+    const canExpand = expandable === true
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
-    const lastExpanded = useSignal(expandedId.value === id)
+    const lastExpanded = useSignal(canExpand && expandedId.value === id)
     const lastLayoutTick = useSignal(layoutTick.value)
     const lastInView = useSignal(true)
     const maxHeight = useSignal<number | null>(null)
@@ -32,6 +34,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     const visibilityTick = useSignal(0)
 
     const handleToggle = $((event: MouseEvent) => {
+      if (!canExpand) return
       if (!(event.target instanceof HTMLElement)) return
       if (event.target.closest(INTERACTIVE_SELECTOR)) return
       if (expandedId.value === id) return
@@ -44,6 +47,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     })
 
     const handleClose = $(() => {
+      if (!canExpand) return
       const card = cardRef.value
       if (card) {
         pendingRects.set(card, card.getBoundingClientRect())
@@ -54,7 +58,8 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       (ctx) => {
-        const expanded = ctx.track(() => expandedId.value === id)
+        const expandedValue = ctx.track(() => expandedId.value === id)
+        const expanded = canExpand && expandedValue
         const tick = ctx.track(() => layoutTick.value)
         const inView = ctx.track(() => isInView.value)
         const visibilityChanged = inView !== lastInView.value
@@ -326,7 +331,7 @@ export const FragmentCard = component$<FragmentCardProps>(
       minHeight: lockedHeight
     } as Record<string, string>
 
-    const isExpanded = expandedId.value === id
+    const isExpanded = canExpand && expandedId.value === id
 
     return (
       <>

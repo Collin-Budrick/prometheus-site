@@ -9,10 +9,11 @@ type StaticRouteTemplateProps = {
   metaLine: string
   onAction$?: PropFunction<() => void | Promise<void>>
   title: string
+  expandable?: boolean
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
-  ({ actionLabel, actionDisabled, closeLabel, description, metaLine, onAction$, title }) => {
+  ({ actionLabel, actionDisabled, closeLabel, description, metaLine, onAction$, title, expandable }) => {
     const expandedId = useSignal<string | null>(null)
     const layoutTick = useSignal(0)
     const gridRef = useSignal<HTMLDivElement>()
@@ -81,6 +82,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             expandedId={expandedId}
             layoutTick={layoutTick}
             closeLabel={closeLabel}
+            expandable={expandable}
           >
             <div class="meta-line">{metaLine}</div>
             <h1>{title}</h1>
