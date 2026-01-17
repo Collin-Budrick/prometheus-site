@@ -20,7 +20,7 @@ type FragmentCardProps = {
   expandable?: boolean
   fullWidth?: boolean
   inlineSpan?: number
-  size?: 'small' | 'big'
+  size?: 'small' | 'big' | 'tall'
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
@@ -39,7 +39,7 @@ export const FragmentCard = component$<FragmentCardProps>(
   }) => {
     const isFullWidth = fullWidth === true
     const resolvedSize = size ?? 'small'
-    const sizeSpan = resolvedSize === 'small' ? 6 : resolvedSize === 'big' ? 12 : null
+    const sizeSpan = resolvedSize === 'big' ? 12 : 6
     const resolvedInlineSpan =
       typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
         ? Math.min(12, Math.floor(inlineSpan))
@@ -413,16 +413,20 @@ export const FragmentCard = component$<FragmentCardProps>(
         ? 'var(--fragment-card-small-height)'
         : resolvedSize === 'big'
           ? 'var(--fragment-card-big-height)'
-          : undefined
+          : resolvedSize === 'tall'
+            ? 'var(--fragment-card-tall-height)'
+            : undefined
     const lockedHeight = sizeHeight ?? (maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined)
     const cardStyle = {
       gridColumn: resolvedColumn,
+      gridRow: resolvedSize === 'tall' ? 'span 2' : undefined,
       '--motion-delay': `${motionDelay}ms`,
       minHeight: sizeHeight ? undefined : lockedHeight
     } as Record<string, string>
 
     const placeholderStyle = {
       gridColumn: resolvedColumn,
+      gridRow: resolvedSize === 'tall' ? 'span 2' : undefined,
       display: 'none',
       minHeight: lockedHeight
     } as Record<string, string>

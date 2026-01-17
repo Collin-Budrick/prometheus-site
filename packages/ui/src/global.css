@@ -25,6 +25,7 @@
     --radius: 26px;
     --fragment-card-small-height: 440px;
     --fragment-card-big-height: 640px;
+    --fragment-card-tall-height: calc(var(--fragment-card-small-height) * 2 + 24px);
     --motion-distance: 12px;
     --motion-fade-distance: calc(var(--motion-distance) * 0.75);
     --motion-fade-duration: 720ms;
@@ -1095,6 +1096,11 @@
   .fragment-card[data-size="big"] {
     height: var(--fragment-card-big-height);
     max-height: var(--fragment-card-big-height);
+  }
+
+  .fragment-card[data-size="tall"] {
+    height: var(--fragment-card-tall-height);
+    max-height: var(--fragment-card-tall-height);
   }
 
   .fragment-card.is-expanded {

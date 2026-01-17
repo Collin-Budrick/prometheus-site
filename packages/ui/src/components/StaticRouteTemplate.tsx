@@ -12,7 +12,7 @@ type StaticRouteTemplateProps = {
   expandable?: boolean
   fullWidth?: boolean
   inlineSpan?: number
-  size?: 'small' | 'big'
+  size?: 'small' | 'big' | 'tall'
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(

@@ -203,7 +203,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         planValue.fragments.some((entry) => {
           if (entry.fullWidth === true) return false
           if (typeof entry.layout.inlineSpan === 'number') return entry.layout.inlineSpan < 12
-          if (entry.layout.size === undefined || entry.layout.size === 'small') return true
+          if (entry.layout.size === undefined || entry.layout.size === 'small' || entry.layout.size === 'tall')
+            return true
           if (entry.layout.size === 'big') return false
           const span = parseSpan(entry.layout.column)
           return span !== null ? span < 12 : false
@@ -364,7 +365,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         planValue.fragments.some((entry) => {
           if (entry.fullWidth === true) return false
           if (typeof entry.layout.inlineSpan === 'number') return entry.layout.inlineSpan < 12
-          if (entry.layout.size === undefined || entry.layout.size === 'small') return true
+          if (entry.layout.size === undefined || entry.layout.size === 'small' || entry.layout.size === 'tall')
+            return true
           if (entry.layout.size === 'big') return false
           const span = parseSpan(entry.layout.column)
           return span !== null ? span < 12 : false

@@ -62,7 +62,7 @@ export type FragmentPlanEntry = {
   layout: {
     column: string
     inlineSpan?: number
-    size?: 'small' | 'big'
+    size?: 'small' | 'big' | 'tall'
   }
   expandable?: boolean
   fullWidth?: boolean
