@@ -73,6 +73,17 @@ const normalizeSearchStatus = (value: unknown): ContactSearchStatus => {
   return 'none'
 }
 
+const normalizeSearchResult = (value: unknown): ContactSearchResult | null => {
+  if (!isRecord(value)) return null
+  const id = typeof value.id === 'string' ? value.id : ''
+  const email = typeof value.email === 'string' ? value.email : ''
+  if (!id || !email) return null
+  const name = typeof value.name === 'string' ? value.name : null
+  const status = normalizeSearchStatus(value.status)
+  const inviteId = typeof value.inviteId === 'string' ? value.inviteId : undefined
+  return { id, email, name, status, inviteId }
+}
+
 const normalizeInviteUser = (value: unknown): ContactInviteUser | null => {
   if (!isRecord(value)) return null
   const id = typeof value.id === 'string' ? value.id : ''
@@ -108,16 +119,7 @@ const normalizeInviteGroups = (value: unknown): ContactInviteGroups => {
 const normalizeSearchResults = (value: unknown) => {
   if (!isRecord(value) || !Array.isArray(value.results)) return [] as ContactSearchResult[]
   return value.results
-    .map((entry) => {
-      if (!isRecord(entry)) return null
-      const id = typeof entry.id === 'string' ? entry.id : ''
-      const email = typeof entry.email === 'string' ? entry.email : ''
-      if (!id || !email) return null
-      const name = typeof entry.name === 'string' ? entry.name : null
-      const status = normalizeSearchStatus(entry.status)
-      const inviteId = typeof entry.inviteId === 'string' ? entry.inviteId : undefined
-      return { id, email, name, status, inviteId } satisfies ContactSearchResult
-    })
+    .map(normalizeSearchResult)
     .filter((entry): entry is ContactSearchResult => entry !== null)
 }
 
