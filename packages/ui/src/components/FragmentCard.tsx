@@ -45,7 +45,8 @@ export const FragmentCard = component$<FragmentCardProps>(
         ? Math.min(12, Math.floor(inlineSpan))
         : null
     const resolvedSpan = resolvedInlineSpan ?? sizeSpan
-    const resolvedColumn = !isFullWidth && resolvedSpan ? `span ${resolvedSpan}` : column
+    const resolvedColumn =
+      !isFullWidth && resolvedSpan ? (resolvedSpan === 12 ? '1 / -1' : `span ${resolvedSpan}`) : column
     const isInline = !isFullWidth && typeof resolvedSpan === 'number' && resolvedSpan < 12
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()

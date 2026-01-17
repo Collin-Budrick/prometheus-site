@@ -1062,6 +1062,11 @@
     max-width: 100%;
   }
 
+  .fragment-grid > .fragment-card[data-size='big'] {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
   .fragment-grid.is-stacked > .fragment-card.is-inline {
     width: 100%;
   }

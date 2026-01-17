@@ -9,7 +9,7 @@ type StoredPlanCacheEntry = {
   savedAt: number
 }
 
-const STORAGE_KEY = 'fragment:plan-cache:v1'
+const STORAGE_KEY = 'fragment:plan-cache:v2'
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24
 const DEFAULT_LIMIT = 20
 
