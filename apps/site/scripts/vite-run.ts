@@ -17,20 +17,33 @@ const resolveNodeRuntime = () => {
   return null
 }
 
-const resolveRolldownBindingPath = (rootDir: string, arch: string) => {
-  if (process.platform !== 'win32') return null
-  if (process.env.NAPI_RS_NATIVE_LIBRARY_PATH) return null
-  const bindingPackage =
-    arch === 'x64'
-      ? '@rolldown/binding-win32-x64-msvc'
-      : arch === 'arm64'
-        ? '@rolldown/binding-win32-arm64-msvc'
-        : null
-  if (!bindingPackage) return null
-  const bindingFile =
-    arch === 'x64' ? 'rolldown-binding.win32-x64-msvc.node' : 'rolldown-binding.win32-arm64-msvc.node'
-  const candidate = path.resolve(rootDir, 'node_modules', bindingPackage, bindingFile)
-  return existsSync(candidate) ? candidate : null
+const hasWinBinding = (rootDir: string, packageName: string, bindingFile: string) =>
+  existsSync(path.resolve(rootDir, 'node_modules', packageName, bindingFile))
+
+const warnMissingBindings = (rootDir: string, arch: string) => {
+  if (process.platform !== 'win32') return
+  const targetArch = arch === 'x64' || arch === 'arm64' ? arch : 'arm64'
+  const rolldownPackage =
+    targetArch === 'x64' ? '@rolldown/binding-win32-x64-msvc' : '@rolldown/binding-win32-arm64-msvc'
+  const rolldownFile =
+    targetArch === 'x64' ? 'rolldown-binding.win32-x64-msvc.node' : 'rolldown-binding.win32-arm64-msvc.node'
+  const oxidePackage =
+    targetArch === 'x64' ? '@tailwindcss/oxide-win32-x64-msvc' : '@tailwindcss/oxide-win32-arm64-msvc'
+  const oxideFile =
+    targetArch === 'x64' ? 'tailwindcss-oxide.win32-x64-msvc.node' : 'tailwindcss-oxide.win32-arm64-msvc.node'
+
+  const missingRolldown = !hasWinBinding(rootDir, rolldownPackage, rolldownFile)
+  const missingOxide = !hasWinBinding(rootDir, oxidePackage, oxideFile)
+  if (!missingRolldown && !missingOxide) return
+
+  const hintCpu = targetArch === 'x64' ? 'x64' : 'arm64'
+  const parts = []
+  if (missingRolldown) parts.push('rolldown')
+  if (missingOxide) parts.push('tailwind oxide')
+  console.warn(
+    `[native] Missing ${parts.join(' + ')} binding(s) for ${targetArch}. ` +
+      `Run: bun install --cpu ${hintCpu} --os win32 --filter site`
+  )
 }
 
 const patchRolldownIndex = () => {
@@ -53,24 +66,13 @@ const nodeRuntime = resolveNodeRuntime()
 const runtime = nodeRuntime ?? { bin: process.execPath, arch: process.arch }
 const env = { ...process.env }
 
-const bindingPath = resolveRolldownBindingPath(workspaceRoot, runtime.arch)
-if (bindingPath) {
-  env.NAPI_RS_NATIVE_LIBRARY_PATH = bindingPath
-} else if (process.platform === 'win32' && !env.NAPI_RS_NATIVE_LIBRARY_PATH) {
-  const hintArch = runtime.arch === 'arm64' || runtime.arch === 'x64' ? runtime.arch : 'arm64'
-  const hintCpu = hintArch === 'x64' ? 'x64' : 'arm64'
-  console.warn(
-    `[rolldown] Native binding not found for ${hintArch}. ` +
-      `Run: bun install --cpu ${hintCpu} --os win32 --filter site`
-  )
-}
-
 if (!existsSync(viteBin)) {
   console.error('[vite] CLI not found. Run bun install before starting dev or preview.')
   process.exit(1)
 }
 
 patchRolldownIndex()
+warnMissingBindings(workspaceRoot, runtime.arch)
 
 const args = process.argv.slice(2)
 const child = spawn(runtime.bin, [viteBin, ...args], {
