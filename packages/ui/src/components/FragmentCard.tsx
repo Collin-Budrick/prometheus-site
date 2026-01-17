@@ -58,9 +58,9 @@ export const FragmentCard = component$<FragmentCardProps>(
     const isInView = useSignal(typeof IntersectionObserver === 'undefined')
     const visibilityTick = useSignal(0)
     const isExpanded = expandedId.value === id
-    const canExpand = expandable === true || autoExpandable.value || isExpanded
 
     const handleToggle = $((event: MouseEvent) => {
+      const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
       if (!canExpand) return
       if (!(event.target instanceof HTMLElement)) return
       if (event.target.closest(INTERACTIVE_SELECTOR)) return
@@ -74,6 +74,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     })
 
     const handleClose = $(() => {
+      const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
       if (!canExpand) return
       const card = cardRef.value
       if (card) {
