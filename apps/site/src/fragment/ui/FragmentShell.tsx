@@ -193,6 +193,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let updateFrame = 0
       let scrollFrame = 0
       let dragging = false
+      let dragActivated = false
       let pointerId: number | null = null
       let startX = 0
       let startY = 0
@@ -265,6 +266,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const startDrag = () => {
         if (!draggingEl || !draggingId || dragging) return
         dragging = true
+        dragActivated = true
         dragState.value = { active: true, suppressUntil: 0, draggingId }
         grid.classList.add('is-dragging')
         previousUserSelect = document.body.style.userSelect
@@ -294,15 +296,16 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         document.body.style.userSelect = previousUserSelect
         dragState.value = {
           active: false,
-          suppressUntil: Date.now() + 300,
+          suppressUntil: dragActivated ? Date.now() + 300 : 0,
           draggingId: null
         }
-        if (draggingId && pendingTargetId && pendingTargetId !== draggingId) {
+        if (dragActivated && draggingId && pendingTargetId && pendingTargetId !== draggingId) {
           const nextOrder = moveOrder(draggingId, pendingTargetId, pendingInsertAfter)
           if (nextOrder.join('|') !== orderIds.value.join('|')) {
             orderIds.value = nextOrder
           }
         }
+        dragActivated = false
         draggingId = null
         draggingEl = null
         pointerId = null
@@ -383,6 +386,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         const rect = card.getBoundingClientRect()
         draggingId = cardId
         draggingEl = card
+        dragActivated = false
         pointerId = event.pointerId
         holdTimer = window.setTimeout(startDrag, DRAG_HOLD_MS)
         card.setPointerCapture(pointerId)
