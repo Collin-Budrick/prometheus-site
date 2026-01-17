@@ -1068,6 +1068,18 @@
     width: 100%;
   }
 
+  .fragment-grid.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .fragment-card.is-dragging {
+    opacity: 0.85;
+    cursor: grabbing;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+  }
+
   .fragment-grid.is-stacked > .fragment-card.is-inline {
     width: 100%;
   }

@@ -24,6 +24,63 @@ type FragmentClientEffectsProps = {
 }
 
 const DESKTOP_MIN_WIDTH = 1025
+const ORDER_STORAGE_PREFIX = 'fragment:card-order:v1'
+const DRAG_HOLD_MS = 240
+const DRAG_MOVE_THRESHOLD = 6
+const DRAG_SCROLL_EDGE_PX = 90
+const DRAG_SCROLL_MAX_PX = 20
+const INTERACTIVE_SELECTOR =
+  'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
+
+type FragmentPlanEntry = FragmentPlan['fragments'][number]
+
+type FragmentDragState = {
+  active: boolean
+  suppressUntil: number
+  draggingId: string | null
+}
+
+const parseStoredOrder = (raw: string | null) => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string') ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const buildOrderedIds = (entries: FragmentPlanEntry[], stored: string[]) => {
+  const ids = entries.map((entry) => entry.id)
+  const idSet = new Set(ids)
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  stored.forEach((id) => {
+    if (!idSet.has(id) || seen.has(id)) return
+    seen.add(id)
+    ordered.push(id)
+  })
+  ids.forEach((id) => {
+    if (seen.has(id)) return
+    seen.add(id)
+    ordered.push(id)
+  })
+  return ordered
+}
+
+const buildOrderedEntries = (entries: FragmentPlanEntry[], orderIds: string[]) => {
+  if (!orderIds.length) return entries
+  const entryMap = new Map(entries.map((entry) => [entry.id, entry]))
+  const ordered: FragmentPlanEntry[] = []
+  orderIds.forEach((id) => {
+    const entry = entryMap.get(id)
+    if (!entry) return
+    ordered.push(entry)
+    entryMap.delete(id)
+  })
+  entryMap.forEach((entry) => ordered.push(entry))
+  return ordered
+}
 
 const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
   useVisibleTask$(
@@ -63,6 +120,13 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const stackScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
+  const orderIds = useSignal<string[]>([])
+  const dragState = useSignal<FragmentDragState>({
+    active: false,
+    suppressUntil: 0,
+    draggingId: null
+  })
+  const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
   const initialReady =
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
@@ -84,6 +148,31 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     })
   )
 
+  useVisibleTask$(
+    () => {
+      if (typeof window === 'undefined') return
+      const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
+      const stored = parseStoredOrder(window.localStorage.getItem(storageKey))
+      const nextOrder = buildOrderedIds(planValue.fragments, stored)
+      orderIds.value = nextOrder
+      if (stored.length === 0 || stored.join('|') !== nextOrder.join('|')) {
+        window.localStorage.setItem(storageKey, JSON.stringify(nextOrder))
+      }
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      ctx.track(() => orderIds.value)
+      if (typeof window === 'undefined') return
+      if (!orderIds.value.length) return
+      const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
+      window.localStorage.setItem(storageKey, JSON.stringify(orderIds.value))
+    },
+    { strategy: 'document-ready' }
+  )
+
   useVisibleTask$((ctx) => {
     ctx.track(() => expandedId.value)
     if (typeof document === 'undefined') return
@@ -93,6 +182,233 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       document.body.classList.remove('card-expanded')
     }
   })
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      if (!grid) return
+
+      let holdTimer = 0
+      let updateFrame = 0
+      let scrollFrame = 0
+      let dragging = false
+      let pointerId: number | null = null
+      let startX = 0
+      let startY = 0
+      let lastX = 0
+      let lastY = 0
+      let draggingId: string | null = null
+      let draggingEl: HTMLElement | null = null
+      let previousUserSelect = ''
+
+      const getOrderIds = () => buildOrderedIds(planValue.fragments, orderIds.value)
+
+      const clearHold = () => {
+        if (!holdTimer) return
+        window.clearTimeout(holdTimer)
+        holdTimer = 0
+      }
+
+      const resetDraggingStyles = () => {
+        if (!draggingEl) return
+        draggingEl.classList.remove('is-dragging')
+        draggingEl.style.transform = ''
+        draggingEl.style.zIndex = ''
+        draggingEl.style.pointerEvents = ''
+        draggingEl.style.willChange = ''
+      }
+
+      const stopAutoScroll = () => {
+        if (!scrollFrame) return
+        cancelAnimationFrame(scrollFrame)
+        scrollFrame = 0
+      }
+
+      const autoScroll = () => {
+        scrollFrame = 0
+        if (!dragging) return
+        const viewportHeight = window.innerHeight
+        const edge = DRAG_SCROLL_EDGE_PX
+        let velocity = 0
+        if (lastY < edge) {
+          const intensity = Math.min(1, (edge - lastY) / edge)
+          velocity = -Math.max(1, DRAG_SCROLL_MAX_PX * intensity)
+        } else if (lastY > viewportHeight - edge) {
+          const intensity = Math.min(1, (lastY - (viewportHeight - edge)) / edge)
+          velocity = Math.max(1, DRAG_SCROLL_MAX_PX * intensity)
+        }
+        if (velocity !== 0) {
+          const before = window.scrollY
+          window.scrollBy(0, velocity)
+          const after = window.scrollY
+          startY += after - before
+          scheduleUpdate()
+          scrollFrame = requestAnimationFrame(autoScroll)
+        }
+      }
+
+      const scheduleAutoScroll = () => {
+        if (scrollFrame || !dragging) return
+        scrollFrame = requestAnimationFrame(autoScroll)
+      }
+
+      const startDrag = () => {
+        if (!draggingEl || !draggingId || dragging) return
+        dragging = true
+        dragState.value = { active: true, suppressUntil: 0, draggingId }
+        grid.classList.add('is-dragging')
+        previousUserSelect = document.body.style.userSelect
+        document.body.style.userSelect = 'none'
+        draggingEl.classList.add('is-dragging')
+        draggingEl.style.pointerEvents = 'none'
+        draggingEl.style.willChange = 'transform'
+        scheduleAutoScroll()
+      }
+
+      const finishDrag = () => {
+        clearHold()
+        stopAutoScroll()
+        if (updateFrame) {
+          cancelAnimationFrame(updateFrame)
+          updateFrame = 0
+        }
+        if (dragging) {
+          resetDraggingStyles()
+        }
+        dragging = false
+        grid.classList.remove('is-dragging')
+        document.body.style.userSelect = previousUserSelect
+        dragState.value = {
+          active: false,
+          suppressUntil: Date.now() + 300,
+          draggingId: null
+        }
+        draggingId = null
+        draggingEl = null
+        pointerId = null
+      }
+
+      const moveOrder = (id: string, targetId: string, insertAfter: boolean) => {
+        const current = getOrderIds()
+        const next = current.filter((entry) => entry !== id)
+        const targetIndex = next.indexOf(targetId)
+        if (targetIndex === -1) return current
+        const insertIndex = insertAfter ? targetIndex + 1 : targetIndex
+        next.splice(insertIndex, 0, id)
+        return next
+      }
+
+      const updatePosition = () => {
+        updateFrame = 0
+        if (!dragging || !draggingEl || !draggingId) return
+        const dx = lastX - startX
+        const dy = lastY - startY
+        draggingEl.style.transform = `translate(${dx}px, ${dy}px)`
+
+        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
+          (card) => card !== draggingEl
+        )
+        if (!cards.length) return
+        let closest: { el: HTMLElement; rect: DOMRect; distance: number } | null = null
+        cards.forEach((card) => {
+          const rect = card.getBoundingClientRect()
+          const cx = rect.left + rect.width / 2
+          const cy = rect.top + rect.height / 2
+          const dx = lastX - cx
+          const dy = lastY - cy
+          const distance = dx * dx + dy * dy
+          if (!closest || distance < closest.distance) {
+            closest = { el: card, rect, distance }
+          }
+        })
+        if (!closest) return
+        const targetId = closest.el.dataset.fragmentId ?? null
+        if (!targetId || targetId === draggingId) return
+        const insertAfter =
+          lastY > closest.rect.top + closest.rect.height / 2 ||
+          (Math.abs(lastY - (closest.rect.top + closest.rect.height / 2)) < 6 &&
+            lastX > closest.rect.left + closest.rect.width / 2)
+        const nextOrder = moveOrder(draggingId, targetId, insertAfter)
+        if (nextOrder.join('|') !== orderIds.value.join('|')) {
+          orderIds.value = nextOrder
+        }
+      }
+
+      const scheduleUpdate = () => {
+        if (updateFrame) return
+        updateFrame = requestAnimationFrame(updatePosition)
+      }
+
+      const handlePointerDown = (event: PointerEvent) => {
+        if (event.button !== 0) return
+        if (!event.isPrimary) return
+        const target = event.target instanceof HTMLElement ? event.target : null
+        if (!target) return
+        if (target.closest(INTERACTIVE_SELECTOR)) return
+        const card = target.closest<HTMLElement>('.fragment-card')
+        if (!card || !grid.contains(card)) return
+        if (card.classList.contains('is-expanded')) return
+        const cardId = card.dataset.fragmentId ?? null
+        if (!cardId) return
+
+        startX = event.clientX
+        startY = event.clientY
+        lastX = startX
+        lastY = startY
+        const rect = card.getBoundingClientRect()
+        draggingId = cardId
+        draggingEl = card
+        pointerId = event.pointerId
+        holdTimer = window.setTimeout(startDrag, DRAG_HOLD_MS)
+        card.setPointerCapture(pointerId)
+      }
+
+      const handlePointerMove = (event: PointerEvent) => {
+        if (!pointerId || event.pointerId !== pointerId) return
+        lastX = event.clientX
+        lastY = event.clientY
+        if (!dragging) {
+          const dx = lastX - startX
+          const dy = lastY - startY
+          if (Math.hypot(dx, dy) > DRAG_MOVE_THRESHOLD) {
+            clearHold()
+          }
+          return
+        }
+        event.preventDefault()
+        scheduleUpdate()
+        scheduleAutoScroll()
+      }
+
+      const handlePointerUp = (event: PointerEvent) => {
+        if (!pointerId || event.pointerId !== pointerId) return
+        if (draggingEl) {
+          draggingEl.releasePointerCapture(pointerId)
+        }
+        finishDrag()
+      }
+
+      const handlePointerCancel = (event: PointerEvent) => {
+        if (!pointerId || event.pointerId !== pointerId) return
+        finishDrag()
+      }
+
+      grid.addEventListener('pointerdown', handlePointerDown)
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerCancel)
+
+      ctx.cleanup(() => {
+        grid.removeEventListener('pointerdown', handlePointerDown)
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerCancel)
+        finishDrag()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
 
   useVisibleTask$(
     (ctx) => {
@@ -409,7 +725,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   return (
     <section class="fragment-shell">
       <div ref={gridRef} class="fragment-grid">
-        {planValue.fragments.map((entry, index) => {
+        {orderedEntries.value.map((entry, index) => {
           const fragment = fragments.value[entry.id]
           const headerCopy = fragmentHeaders.value[entry.id]
           const renderNode =
@@ -428,6 +744,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
               fullWidth={entry.fullWidth}
               inlineSpan={entry.layout.inlineSpan}
               size={entry.layout.size}
+              dragState={dragState}
             >
               {fragment ? (
                 <FragmentRenderer node={renderNode ?? fragment.tree} />

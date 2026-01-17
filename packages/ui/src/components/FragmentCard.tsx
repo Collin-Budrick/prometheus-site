@@ -21,6 +21,11 @@ type FragmentCardProps = {
   fullWidth?: boolean
   inlineSpan?: number
   size?: 'small' | 'big' | 'tall'
+  dragState?: Signal<{
+    active: boolean
+    suppressUntil: number
+    draggingId?: string | null
+  } | null>
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
@@ -35,7 +40,8 @@ export const FragmentCard = component$<FragmentCardProps>(
     expandable,
     fullWidth,
     inlineSpan,
-    size
+    size,
+    dragState
   }) => {
     const isFullWidth = fullWidth === true
     const resolvedSize = size ?? 'small'
@@ -61,6 +67,9 @@ export const FragmentCard = component$<FragmentCardProps>(
     const isExpanded = expandedId.value === id
 
     const handleToggle = $((event: MouseEvent) => {
+      const dragInfo = dragState?.value
+      if (dragInfo?.active) return
+      if (dragInfo && dragInfo.suppressUntil > Date.now()) return
       const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
       if (!canExpand) return
       if (!(event.target instanceof HTMLElement)) return
@@ -75,6 +84,9 @@ export const FragmentCard = component$<FragmentCardProps>(
     })
 
     const handleClose = $(() => {
+      const dragInfo = dragState?.value
+      if (dragInfo?.active) return
+      if (dragInfo && dragInfo.suppressUntil > Date.now()) return
       const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
       if (!canExpand) return
       const card = cardRef.value
