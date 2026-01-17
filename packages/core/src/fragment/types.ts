@@ -61,6 +61,8 @@ export type FragmentPlanEntry = {
   critical: boolean
   layout: {
     column: string
+    inlineSpan?: number
+    size?: 'small' | 'big'
   }
   expandable?: boolean
   fullWidth?: boolean

@@ -1249,7 +1249,7 @@ export const chatFragments: FragmentPlanEntry[] = [
   {
     id: contactInvites.id,
     critical: true,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   }
 ]
 

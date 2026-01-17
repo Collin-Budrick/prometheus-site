@@ -23,6 +23,8 @@
     --stroke-strong: 203 213 225;
     --shadow: 0 30px 60px rgba(15, 23, 42, 0.14);
     --radius: 26px;
+    --fragment-card-small-height: 320px;
+    --fragment-card-big-height: 440px;
     --motion-distance: 12px;
     --motion-fade-distance: calc(var(--motion-distance) * 0.75);
     --motion-fade-duration: 720ms;
@@ -1003,11 +1005,22 @@
     border-color: rgb(var(--accent) / 0.2);
   }
 
+  .fragment-card[data-size='small'] {
+    height: var(--fragment-card-small-height);
+    max-height: var(--fragment-card-small-height);
+  }
+
+  .fragment-card[data-size='big'] {
+    height: var(--fragment-card-big-height);
+    max-height: var(--fragment-card-big-height);
+  }
+
   .fragment-card.is-expanded {
     position: fixed;
     inset: 0;
     width: 100vw;
     height: 100vh;
+    max-height: none;
     z-index: 60;
     border-radius: 0;
     overflow: auto;

@@ -19,21 +19,46 @@ type FragmentCardProps = {
   closeLabel: string
   expandable?: boolean
   fullWidth?: boolean
+  inlineSpan?: number
+  size?: 'small' | 'big'
 }
 
 export const FragmentCard = component$<FragmentCardProps>(
-  ({ id, fragmentId, column, motionDelay, expandedId, layoutTick, closeLabel, expandable, fullWidth }) => {
-    const canExpand = expandable === true
+  ({
+    id,
+    fragmentId,
+    column,
+    motionDelay,
+    expandedId,
+    layoutTick,
+    closeLabel,
+    expandable,
+    fullWidth,
+    inlineSpan,
+    size
+  }) => {
     const isFullWidth = fullWidth === true
+    const resolvedSize = size ?? 'small'
+    const sizeSpan = resolvedSize === 'small' ? 6 : resolvedSize === 'big' ? 12 : null
+    const resolvedInlineSpan =
+      typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
+        ? Math.min(12, Math.floor(inlineSpan))
+        : null
+    const resolvedSpan = resolvedInlineSpan ?? sizeSpan
+    const resolvedColumn = !isFullWidth && resolvedSpan ? `span ${resolvedSpan}` : column
+    const isInline = !isFullWidth && typeof resolvedSpan === 'number' && resolvedSpan < 12
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
-    const lastExpanded = useSignal(canExpand && expandedId.value === id)
+    const autoExpandable = useSignal(false)
+    const lastExpanded = useSignal(expandedId.value === id)
     const lastLayoutTick = useSignal(layoutTick.value)
     const lastInView = useSignal(true)
     const maxHeight = useSignal<number | null>(null)
     const lastWidth = useSignal<number | null>(null)
     const isInView = useSignal(typeof IntersectionObserver === 'undefined')
     const visibilityTick = useSignal(0)
+    const isExpanded = expandedId.value === id
+    const canExpand = expandable === true || autoExpandable.value || isExpanded
 
     const handleToggle = $((event: MouseEvent) => {
       if (!canExpand) return
@@ -60,8 +85,7 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       (ctx) => {
-        const expandedValue = ctx.track(() => expandedId.value === id)
-        const expanded = canExpand && expandedValue
+        const expanded = ctx.track(() => expandedId.value === id)
         const tick = ctx.track(() => layoutTick.value)
         const inView = ctx.track(() => isInView.value)
         const visibilityChanged = inView !== lastInView.value
@@ -224,6 +248,68 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     useVisibleTask$(
       (ctx) => {
+        ctx.track(() => layoutTick.value)
+        ctx.track(() => expandedId.value)
+        const card = cardRef.value
+        if (!card) return
+
+        let frame = 0
+        const updateOverflow = () => {
+          frame = 0
+          if (!resolvedSize || expandedId.value === id) {
+            autoExpandable.value = expandedId.value === id
+            return
+          }
+          const heightOverflow = card.scrollHeight - card.clientHeight
+          const widthOverflow = card.scrollWidth - card.clientWidth
+          autoExpandable.value = heightOverflow > 1 || widthOverflow > 1
+        }
+
+        const schedule = () => {
+          if (frame) return
+          frame = requestAnimationFrame(updateOverflow)
+        }
+
+        updateOverflow()
+
+        const mutationObserver =
+          typeof MutationObserver !== 'undefined'
+            ? new MutationObserver(() => {
+                schedule()
+              })
+            : null
+
+        if (mutationObserver) {
+          mutationObserver.observe(card, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true
+          })
+        }
+
+        const resizeObserver =
+          typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(() => {
+                schedule()
+              })
+            : null
+
+        if (resizeObserver) {
+          resizeObserver.observe(card)
+        }
+
+        ctx.cleanup(() => {
+          if (frame) cancelAnimationFrame(frame)
+          mutationObserver?.disconnect()
+          resizeObserver?.disconnect()
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
         const inView = ctx.track(() => isInView.value)
         if (!inView || typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
@@ -322,26 +408,25 @@ export const FragmentCard = component$<FragmentCardProps>(
 
     const lockedHeight = maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined
     const cardStyle = {
-      gridColumn: column,
+      gridColumn: resolvedColumn,
       '--motion-delay': `${motionDelay}ms`,
       minHeight: lockedHeight
     } as Record<string, string>
 
     const placeholderStyle = {
-      gridColumn: column,
+      gridColumn: resolvedColumn,
       display: 'none',
       minHeight: lockedHeight
     } as Record<string, string>
-
-    const isExpanded = canExpand && expandedId.value === id
 
     return (
       <>
         <div ref={placeholderRef} class="fragment-card-placeholder" style={placeholderStyle} aria-hidden="true" />
         <article
           ref={cardRef}
-          class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': !isFullWidth }}
+          class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': isInline }}
           style={cardStyle}
+          data-size={resolvedSize}
           data-motion
           data-motion-skip-visible
           data-fragment-id={fragmentId}

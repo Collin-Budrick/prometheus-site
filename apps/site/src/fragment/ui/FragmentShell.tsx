@@ -192,12 +192,35 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let frame = 0
       let enabled = false
 
-      const meetsLayoutConditions = () => window.innerWidth >= DESKTOP_MIN_WIDTH && planValue.fragments.length > 1
+      const parseSpan = (value: string) => {
+        const normalized = value.trim().replace(/\s+/g, ' ')
+        if (!normalized.startsWith('span ')) return null
+        const parsed = Number.parseInt(normalized.slice(5), 10)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+
+      const hasInlineCards = () =>
+        planValue.fragments.some((entry) => {
+          if (entry.fullWidth === true) return false
+          if (typeof entry.layout.inlineSpan === 'number') return entry.layout.inlineSpan < 12
+          if (entry.layout.size === undefined || entry.layout.size === 'small') return true
+          if (entry.layout.size === 'big') return false
+          const span = parseSpan(entry.layout.column)
+          return span !== null ? span < 12 : false
+        })
+
+      const meetsLayoutConditions = () =>
+        window.innerWidth >= DESKTOP_MIN_WIDTH && planValue.fragments.length > 1 && !hasInlineCards()
 
       const schedule = () => {
         if (frame || !enabled) return
         frame = requestAnimationFrame(() => {
           frame = 0
+          if (!meetsLayoutConditions()) {
+            grid.classList.remove('is-stacked')
+            return
+          }
+
           const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
             (element) => !element.classList.contains('is-expanded')
           )
@@ -330,9 +353,26 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver !== 'undefined' || planValue.fragments.length < 2) return
 
+      const parseSpan = (value: string) => {
+        const normalized = value.trim().replace(/\s+/g, ' ')
+        if (!normalized.startsWith('span ')) return null
+        const parsed = Number.parseInt(normalized.slice(5), 10)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+
+      const hasInlineCards = () =>
+        planValue.fragments.some((entry) => {
+          if (entry.fullWidth === true) return false
+          if (typeof entry.layout.inlineSpan === 'number') return entry.layout.inlineSpan < 12
+          if (entry.layout.size === undefined || entry.layout.size === 'small') return true
+          if (entry.layout.size === 'big') return false
+          const span = parseSpan(entry.layout.column)
+          return span !== null ? span < 12 : false
+        })
+
       let frame = requestAnimationFrame(() => {
         frame = 0
-        if (window.innerWidth < DESKTOP_MIN_WIDTH) {
+        if (window.innerWidth < DESKTOP_MIN_WIDTH || hasInlineCards()) {
           grid.classList.remove('is-stacked')
           return
         }
@@ -384,6 +424,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
               closeLabel={copy.value.fragmentClose}
               expandable={entry.expandable}
               fullWidth={entry.fullWidth}
+              inlineSpan={entry.layout.inlineSpan}
+              size={entry.layout.size}
             >
               {fragment ? (
                 <FragmentRenderer node={renderNode ?? fragment.tree} />

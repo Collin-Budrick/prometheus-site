@@ -829,17 +829,17 @@ export const storeFragments: FragmentPlanEntry[] = [
   {
     id: storeStream.id,
     critical: true,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   },
   {
     id: storeCart.id,
     critical: true,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   },
   {
     id: storeCreate.id,
     critical: true,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   }
 ]
 

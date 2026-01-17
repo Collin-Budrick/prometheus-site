@@ -109,6 +109,8 @@ const isFragmentPlanEntry = (value: unknown): value is FragmentPlanEntry => {
   if (typeof value.id !== 'string') return false
   if (typeof value.critical !== 'boolean') return false
   if (!isRecord(value.layout) || typeof value.layout.column !== 'string') return false
+  if (value.layout.inlineSpan !== undefined && typeof value.layout.inlineSpan !== 'number') return false
+  if (value.layout.size !== undefined && value.layout.size !== 'small' && value.layout.size !== 'big') return false
   if (value.dependsOn !== undefined && !isStringArray(value.dependsOn)) return false
   if (value.runtime !== undefined && value.runtime !== 'edge' && value.runtime !== 'node') return false
   if (value.cache !== undefined && !isFragmentCacheStatus(value.cache)) return false

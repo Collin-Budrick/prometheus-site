@@ -369,12 +369,12 @@ export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/react@v1',
     critical: false,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   },
   {
     id: 'fragment://page/home/dock@v1',
     critical: false,
-    layout: { column: 'span 12' }
+    layout: { column: 'span 12', size: 'small' }
   }
 ] satisfies FragmentPlanEntry[]
 

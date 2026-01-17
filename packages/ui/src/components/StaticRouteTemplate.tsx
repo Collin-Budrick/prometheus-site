@@ -11,10 +11,24 @@ type StaticRouteTemplateProps = {
   title: string
   expandable?: boolean
   fullWidth?: boolean
+  inlineSpan?: number
+  size?: 'small' | 'big'
 }
 
 export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
-  ({ actionLabel, actionDisabled, closeLabel, description, metaLine, onAction$, title, expandable, fullWidth }) => {
+  ({
+    actionLabel,
+    actionDisabled,
+    closeLabel,
+    description,
+    metaLine,
+    onAction$,
+    title,
+    expandable,
+    fullWidth,
+    inlineSpan,
+    size
+  }) => {
     const expandedId = useSignal<string | null>(null)
     const layoutTick = useSignal(0)
     const gridRef = useSignal<HTMLDivElement>()
@@ -85,6 +99,8 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             closeLabel={closeLabel}
             expandable={expandable}
             fullWidth={fullWidth}
+            inlineSpan={inlineSpan}
+            size={size}
           >
             <div class="meta-line">{metaLine}</div>
             <h1>{title}</h1>
