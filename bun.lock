@@ -45,6 +45,7 @@
       },
       "devDependencies": {
         "@rolldown/binding-win32-arm64-msvc": "1.0.0-beta.60",
+        "@rolldown/binding-win32-x64-msvc": "1.0.0-beta.60",
         "@serwist/vite": "^9.5.0",
         "@tailwindcss/vite": "^4.1.18",
         "@types/node": "25.0.9",
