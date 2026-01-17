@@ -26,3 +26,4 @@ infra/caddy/certs/
 apps/web/public/models/*
 Trace-*
 infra/caddy/Caddyfile
+tmp
