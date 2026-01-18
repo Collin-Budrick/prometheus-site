@@ -597,6 +597,8 @@
   }
 
   .connection-banner {
+    position: relative;
+    z-index: 90;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -667,7 +669,7 @@
   .topbar {
     @apply flex flex-row items-center justify-between gap-6;
     position: relative;
-    z-index: 55;
+    z-index: 90;
     isolation: isolate;
   }
 
