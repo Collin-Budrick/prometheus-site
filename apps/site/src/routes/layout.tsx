@@ -104,6 +104,14 @@ const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navDashboard: InDashboard
 }
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어'
+}
+
+const getLangLabel = (value: string) => LANGUAGE_LABELS[value.toLowerCase()] ?? value.toUpperCase()
+
 export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request }) => loadAuthSession(request))
 
 export const onRequest: RequestHandler = ({ headers, method }) => {
@@ -453,7 +461,7 @@ export default component$(() => {
                               langMenuOpen.value = false
                             })}
                           >
-                            <span class="settings-lang-code">{langOption.toUpperCase()}</span>
+                            <span class="settings-lang-code">{getLangLabel(langOption)}</span>
                           </button>
                         )
                       })}
