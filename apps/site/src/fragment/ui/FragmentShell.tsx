@@ -91,6 +91,17 @@ const buildOrderedEntries = (entries: FragmentPlanEntry[], orderIds: string[]) =
 const BENTO_SLOTS_PER_CYCLE = 6
 const BENTO_ROWS_PER_CYCLE = 4
 
+const parseSlotRows = (row: string) => {
+  const startMatch = row.match(/^\s*(\d+)/)
+  if (!startMatch) return []
+  const start = Number.parseInt(startMatch[1] ?? '', 10)
+  if (!Number.isFinite(start)) return []
+  const spanMatch = row.match(/span\s+(\d+)/i)
+  const span = spanMatch ? Number.parseInt(spanMatch[1] ?? '', 10) : 1
+  const safeSpan = Number.isFinite(span) && span > 0 ? span : 1
+  return Array.from({ length: safeSpan }, (_, index) => start + index)
+}
+
 const buildBentoSlots = (count: number) => {
   const slots: BentoSlot[] = []
   let cycle = 0
@@ -161,7 +172,22 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const slottedEntries = useComputed$(() => {
     const entries = orderedEntries.value
     const slots = buildBentoSlots(entries.length)
-    return slots.map((slot, index) => ({ entry: entries[index], slot }))
+    const rowCounts = new Map<number, number>()
+    const slotRows = slots.map((slot, index) => {
+      const entry = entries[index]
+      if (!entry) return []
+      const rows = parseSlotRows(slot.row)
+      rows.forEach((row) => {
+        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
+      })
+      return rows
+    })
+    return slots.map((slot, index) => {
+      const entry = entries[index]
+      const rows = slotRows[index] ?? []
+      const isSolo = Boolean(entry) && rows.length > 0 && rows.every((row) => rowCounts.get(row) === 1)
+      return { entry, slot, isSolo }
+    })
   })
   const initialReady =
     typeof window !== 'undefined' &&
@@ -903,7 +929,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   return (
     <section class="fragment-shell">
       <div ref={gridRef} class="fragment-grid">
-        {slottedEntries.value.map(({ entry, slot }, index) => {
+        {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null
           const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
           const renderNode =
@@ -913,6 +939,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
               key={slot.id}
               class={{
                 'fragment-slot': true,
+                'is-solo': isSolo,
                 'is-inline': !slot.column.includes('/ -1') && !slot.column.includes('/-1')
               }}
               data-size={slot.size}

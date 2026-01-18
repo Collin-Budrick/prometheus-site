@@ -1224,17 +1224,17 @@
     animation: card-glass-bloom 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .fragment-card[data-size="small"] {
+  .fragment-grid > .fragment-card[data-size="small"] {
     height: var(--fragment-card-small-height);
     max-height: var(--fragment-card-small-height);
   }
 
-  .fragment-card[data-size="big"] {
+  .fragment-grid > .fragment-card[data-size="big"] {
     height: var(--fragment-card-big-height);
     max-height: var(--fragment-card-big-height);
   }
 
-  .fragment-card[data-size="tall"] {
+  .fragment-grid > .fragment-card[data-size="tall"] {
     height: var(--fragment-card-tall-height);
     max-height: var(--fragment-card-tall-height);
   }
@@ -1257,6 +1257,20 @@
   .fragment-slot > .fragment-card-wrap > .fragment-card {
     height: 100%;
     max-height: 100%;
+  }
+
+  .fragment-slot.is-solo {
+    height: auto;
+    min-height: 0;
+  }
+
+  .fragment-slot.is-solo > .fragment-card-wrap {
+    height: auto;
+  }
+
+  .fragment-slot.is-solo > .fragment-card-wrap > .fragment-card {
+    height: auto;
+    max-height: none;
   }
 
 
