@@ -674,6 +674,9 @@
 
   .topbar {
     @apply flex sm:flex-row flex-col sm:justify-between sm:items-center gap-6;
+    position: relative;
+    z-index: 55;
+    isolation: isolate;
   }
 
   .topbar-actions {
@@ -736,7 +739,7 @@
     padding: 12px;
     border-radius: 18px;
     border: 1px solid rgb(var(--stroke));
-    background: rgb(var(--surface) / 0.92);
+    background: rgb(var(--surface) / 0.98);
     box-shadow: var(--shadow);
     opacity: 0;
     transform: translateY(-8px) scale(0.98);
