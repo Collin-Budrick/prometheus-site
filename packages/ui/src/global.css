@@ -1278,6 +1278,41 @@
     max-height: none;
   }
 
+  .fragment-grid.is-stacked .fragment-slot {
+    height: auto;
+    min-height: 0;
+  }
+
+  .fragment-grid.is-stacked .fragment-slot > .fragment-card-wrap {
+    height: auto;
+  }
+
+  .fragment-grid.is-stacked .fragment-slot > .fragment-card-wrap > .fragment-card {
+    height: auto;
+    max-height: none;
+  }
+
+  @media (max-width: 1024px) {
+    .fragment-grid > .fragment-slot {
+      height: auto;
+      min-height: 0;
+    }
+
+    .fragment-grid > .fragment-slot > .fragment-card-wrap {
+      height: auto;
+    }
+
+    .fragment-grid > .fragment-slot > .fragment-card-wrap > .fragment-card {
+      height: auto;
+      max-height: none;
+    }
+
+    .fragment-grid > .fragment-card {
+      height: auto;
+      max-height: none;
+    }
+  }
+
 
   @keyframes card-glass-bloom {
     0% {
