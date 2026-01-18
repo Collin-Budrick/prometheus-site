@@ -673,7 +673,7 @@
   }
 
   .topbar {
-    @apply flex sm:flex-row flex-col sm:justify-between sm:items-center gap-6;
+    @apply flex flex-row items-center justify-between gap-6;
     position: relative;
     z-index: 55;
     isolation: isolate;
@@ -681,7 +681,7 @@
 
   .topbar-actions {
     @apply flex flex-wrap items-center gap-4;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
   }
 
