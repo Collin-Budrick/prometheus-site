@@ -1143,11 +1143,6 @@
     width: 100%;
   }
 
-  .fragment-grid > .fragment-card.is-row-solo {
-    flex-basis: 100%;
-    width: 100%;
-    grid-column: 1 / -1 !important;
-  }
 
   .fragment-grid.is-dragging {
     cursor: grabbing;
@@ -1234,10 +1229,6 @@
     max-height: var(--fragment-card-tall-height);
   }
 
-  .fragment-card.is-row-solo {
-    height: var(--fragment-card-big-height);
-    max-height: var(--fragment-card-big-height);
-  }
 
   @keyframes card-glass-bloom {
     0% {

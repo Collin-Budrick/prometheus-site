@@ -21,6 +21,7 @@ type FragmentCardProps = {
   fullWidth?: boolean
   inlineSpan?: number
   size?: 'small' | 'big' | 'tall'
+  row?: string
   dragState?: Signal<{
     active: boolean
     suppressUntil: number
@@ -41,19 +42,28 @@ export const FragmentCard = component$<FragmentCardProps>(
     fullWidth,
     inlineSpan,
     size,
+    row,
     dragState
   }) => {
     const isFullWidth = fullWidth === true
     const resolvedSize = size ?? 'small'
-    const sizeSpan = resolvedSize === 'big' ? 12 : 6
     const resolvedInlineSpan =
       typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
         ? Math.min(12, Math.floor(inlineSpan))
         : null
-    const resolvedSpan = resolvedInlineSpan ?? sizeSpan
-    const resolvedColumn =
-      !isFullWidth && resolvedSpan ? (resolvedSpan === 12 ? '1 / -1' : `span ${resolvedSpan}`) : column
-    const isInline = !isFullWidth && typeof resolvedSpan === 'number' && resolvedSpan < 12
+    const columnValue =
+      resolvedInlineSpan !== null ? (resolvedInlineSpan === 12 ? '1 / -1' : `span ${resolvedInlineSpan}`) : column
+    const resolvedColumn = isFullWidth ? '1 / -1' : columnValue
+    const parseSpan = (value: string | undefined) => {
+      if (!value) return null
+      if (value.includes('/ -1') || value.includes('/-1')) return 12
+      const match = value.match(/span\s+(\d+)/)
+      if (!match) return null
+      const parsed = Number.parseInt(match[1] ?? '', 10)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+    const columnSpan = parseSpan(resolvedColumn)
+    const isInline = !isFullWidth && (columnSpan === null ? true : columnSpan < 12)
     const cardRef = useSignal<HTMLElement>()
     const placeholderRef = useSignal<HTMLDivElement>()
     const autoExpandable = useSignal(false)
@@ -429,16 +439,17 @@ export const FragmentCard = component$<FragmentCardProps>(
             ? 'var(--fragment-card-tall-height)'
             : undefined
     const lockedHeight = sizeHeight ?? (maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined)
+    const resolvedRow = row ?? (resolvedSize === 'tall' ? 'span 2' : undefined)
     const cardStyle = {
       gridColumn: resolvedColumn,
-      gridRow: resolvedSize === 'tall' ? 'span 2' : undefined,
+      gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
       minHeight: sizeHeight ? undefined : lockedHeight
     } as Record<string, string>
 
     const placeholderStyle = {
       gridColumn: resolvedColumn,
-      gridRow: resolvedSize === 'tall' ? 'span 2' : undefined,
+      gridRow: resolvedRow,
       display: 'none',
       minHeight: lockedHeight
     } as Record<string, string>

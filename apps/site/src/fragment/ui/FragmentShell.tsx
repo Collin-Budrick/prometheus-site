@@ -24,7 +24,6 @@ type FragmentClientEffectsProps = {
 }
 
 const DESKTOP_MIN_WIDTH = 1025
-const GRID_MIN_WIDTH = 900
 const ORDER_STORAGE_PREFIX = 'fragment:card-order:v1'
 const DRAG_HOLD_MS = 240
 const DRAG_MOVE_THRESHOLD = 6
@@ -34,6 +33,12 @@ const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
 
 type FragmentPlanEntry = FragmentPlan['fragments'][number]
+type BentoSlot = {
+  id: string
+  size: 'small' | 'big' | 'tall'
+  column: string
+  row: string
+}
 
 type FragmentDragState = {
   active: boolean
@@ -83,6 +88,31 @@ const buildOrderedEntries = (entries: FragmentPlanEntry[], orderIds: string[]) =
   return ordered
 }
 
+const BENTO_SLOTS_PER_CYCLE = 6
+const BENTO_ROWS_PER_CYCLE = 4
+
+const buildBentoSlots = (count: number) => {
+  const slots: BentoSlot[] = []
+  let cycle = 0
+  while (slots.length < count) {
+    const rowStart = cycle * BENTO_ROWS_PER_CYCLE + 1
+    const tallLeft = cycle % 2 === 0
+    const leftCol = tallLeft ? '1 / span 6' : '7 / span 6'
+    const rightCol = tallLeft ? '7 / span 6' : '1 / span 6'
+    const baseId = cycle * BENTO_SLOTS_PER_CYCLE
+    slots.push(
+      { id: `slot-${baseId + 1}`, size: 'small', column: leftCol, row: `${rowStart}` },
+      { id: `slot-${baseId + 2}`, size: 'small', column: rightCol, row: `${rowStart}` },
+      { id: `slot-${baseId + 3}`, size: 'big', column: '1 / -1', row: `${rowStart + 1}` },
+      { id: `slot-${baseId + 4}`, size: 'tall', column: leftCol, row: `${rowStart + 2} / span 2` },
+      { id: `slot-${baseId + 5}`, size: 'small', column: rightCol, row: `${rowStart + 2}` },
+      { id: `slot-${baseId + 6}`, size: 'small', column: rightCol, row: `${rowStart + 3}` }
+    )
+    cycle += 1
+  }
+  return slots.slice(0, count)
+}
+
 const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: FragmentClientEffectsProps) => {
   useVisibleTask$(
     (ctx) => {
@@ -119,7 +149,6 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const expandedId = useSignal<string | null>(null)
   const layoutTick = useSignal(0)
   const stackScheduler = useSignal<(() => void) | null>(null)
-  const soloScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const orderIds = useSignal<string[]>([])
@@ -129,6 +158,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     draggingId: null
   })
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
+  const slottedEntries = useComputed$(() => {
+    const entries = orderedEntries.value
+    const slots = buildBentoSlots(entries.length)
+    return entries.map((entry, index) => ({ entry, slot: slots[index] }))
+  })
   const initialReady =
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
@@ -289,6 +323,21 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           cancelAnimationFrame(updateFrame)
           updateFrame = 0
         }
+        let dropTargetId: string | null = null
+        if (dragActivated && draggingId) {
+          dropTargetId = pendingTargetId
+          if (!dropTargetId) {
+            const elementAtPoint =
+              typeof document !== 'undefined' ? document.elementFromPoint(lastX, lastY) : null
+            const cardAtPoint = elementAtPoint?.closest<HTMLElement>('.fragment-card') ?? null
+            const cardId = cardAtPoint?.dataset.fragmentId ?? null
+            dropTargetId = cardId && cardId !== draggingId ? cardId : null
+          }
+          if (!dropTargetId) {
+            const closest = pickClosestTarget()
+            dropTargetId = closest?.el.dataset.fragmentId ?? null
+          }
+        }
         if (dragging) {
           resetDraggingStyles()
         }
@@ -301,10 +350,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           suppressUntil: dragActivated ? Date.now() + 300 : 0,
           draggingId: null
         }
-        if (dragActivated && draggingId && pendingTargetId && pendingTargetId !== draggingId) {
-          const nextOrder = moveOrder(draggingId, pendingTargetId, pendingInsertAfter)
+        if (dragActivated && draggingId && dropTargetId && dropTargetId !== draggingId) {
+          const nextOrder = swapOrder(draggingId, dropTargetId)
           if (nextOrder.join('|') !== orderIds.value.join('|')) {
             orderIds.value = nextOrder
+            layoutTick.value += 1
           }
         }
         dragActivated = false
@@ -315,13 +365,14 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         pendingInsertAfter = false
       }
 
-      const moveOrder = (id: string, targetId: string, insertAfter: boolean) => {
+      const swapOrder = (id: string, targetId: string) => {
         const current = getOrderIds()
-        const next = current.filter((entry) => entry !== id)
-        const targetIndex = next.indexOf(targetId)
-        if (targetIndex === -1) return current
-        const insertIndex = insertAfter ? targetIndex + 1 : targetIndex
-        next.splice(insertIndex, 0, id)
+        const fromIndex = current.indexOf(id)
+        const toIndex = current.indexOf(targetId)
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return current
+        const next = current.slice()
+        next[fromIndex] = current[toIndex] ?? current[fromIndex]
+        next[toIndex] = current[fromIndex] ?? current[toIndex]
         return next
       }
 
@@ -332,6 +383,25 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         const dy = lastY - startY
         draggingEl.style.transform = `translate(${dx}px, ${dy}px)`
 
+        const closest = pickClosestTarget()
+        if (!closest) return
+        const targetId = closest.el.dataset.fragmentId ?? null
+        if (!targetId || targetId === draggingId) return
+        const insertAfter =
+          lastY > closest.rect.top + closest.rect.height / 2 ||
+          (Math.abs(lastY - (closest.rect.top + closest.rect.height / 2)) < 6 &&
+            lastX > closest.rect.left + closest.rect.width / 2)
+        if (pendingTargetId !== targetId || pendingInsertAfter !== insertAfter) {
+          pendingTargetId = targetId
+          pendingInsertAfter = insertAfter
+          clearDropIndicator()
+          dropIndicator = closest.el
+          dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
+        }
+      }
+
+      const pickClosestTarget = () => {
+        if (!draggingEl) return null
         const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
           (card) => card !== draggingEl
         )
@@ -348,20 +418,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             closest = { el: card, rect, distance }
           }
         })
-        if (!closest) return
-        const targetId = closest.el.dataset.fragmentId ?? null
-        if (!targetId || targetId === draggingId) return
-        const insertAfter =
-          lastY > closest.rect.top + closest.rect.height / 2 ||
-          (Math.abs(lastY - (closest.rect.top + closest.rect.height / 2)) < 6 &&
-            lastX > closest.rect.left + closest.rect.width / 2)
-        if (pendingTargetId !== targetId || pendingInsertAfter !== insertAfter) {
-          pendingTargetId = targetId
-          pendingInsertAfter = insertAfter
-          clearDropIndicator()
-          dropIndicator = closest.el
-          dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
-        }
+        return closest
       }
 
       const scheduleUpdate = () => {
@@ -413,6 +470,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
       const handlePointerUp = (event: PointerEvent) => {
         if (!pointerId || event.pointerId !== pointerId) return
+        lastX = event.clientX
+        lastY = event.clientY
         if (draggingEl) {
           draggingEl.releasePointerCapture(pointerId)
         }
@@ -694,98 +753,6 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
   useVisibleTask$(
     (ctx) => {
-      if (typeof window === 'undefined') return
-      const grid = gridRef.value
-      if (!grid || typeof ResizeObserver === 'undefined') return
-
-      let frame = 0
-      const rowClass = 'is-row-solo'
-
-      const shouldEnable = () => window.innerWidth >= GRID_MIN_WIDTH && !grid.classList.contains('is-stacked')
-
-      const clearSolo = () => {
-        grid.querySelectorAll<HTMLElement>(`.fragment-card.${rowClass}`).forEach((card) => {
-          card.classList.remove(rowClass)
-        })
-      }
-
-      const schedule = () => {
-        if (frame) return
-        frame = requestAnimationFrame(() => {
-          frame = 0
-          if (!shouldEnable() || dragState.value.active) {
-            clearSolo()
-            return
-          }
-
-          const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
-            (card) => !card.classList.contains('is-expanded') && !card.classList.contains('is-dragging')
-          )
-          if (!cards.length) {
-            clearSolo()
-            return
-          }
-
-          const rects = cards.map((card) => ({
-            card,
-            rect: card.getBoundingClientRect()
-          }))
-          const overlapThreshold = 6
-
-          rects.forEach(({ card, rect }, index) => {
-            const isEligible = card.dataset.size === 'small'
-            if (!isEligible) {
-              card.classList.remove(rowClass)
-              return
-            }
-
-            const hasRowMate = rects.some((other, otherIndex) => {
-              if (otherIndex === index) return false
-              const overlap = Math.min(rect.bottom, other.rect.bottom) - Math.max(rect.top, other.rect.top)
-              return overlap > overlapThreshold
-            })
-
-            card.classList.toggle(rowClass, !hasRowMate)
-          })
-        })
-      }
-
-      soloScheduler.value = schedule
-
-      const resizeObserver = new ResizeObserver(() => schedule())
-      resizeObserver.observe(grid)
-      const mutationObserver = new MutationObserver(() => schedule())
-      mutationObserver.observe(grid, { childList: true })
-      const classObserver = new MutationObserver(() => schedule())
-      classObserver.observe(grid, { attributes: true, attributeFilter: ['class'] })
-      window.addEventListener('resize', schedule)
-      schedule()
-
-      ctx.cleanup(() => {
-        soloScheduler.value = null
-        resizeObserver.disconnect()
-        mutationObserver.disconnect()
-        classObserver.disconnect()
-        window.removeEventListener('resize', schedule)
-        if (frame) cancelAnimationFrame(frame)
-      })
-    },
-    { strategy: 'document-ready' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
-      ctx.track(() => layoutTick.value)
-      ctx.track(() => expandedId.value)
-      ctx.track(() => orderIds.value)
-      ctx.track(() => dragState.value.active)
-      soloScheduler.value?.()
-    },
-    { strategy: 'document-ready' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
       ctx.track(() => layoutTick.value)
       ctx.track(() => expandedId.value)
       if (typeof window === 'undefined') return
@@ -847,25 +814,25 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   return (
     <section class="fragment-shell">
       <div ref={gridRef} class="fragment-grid">
-        {orderedEntries.value.map((entry, index) => {
+        {slottedEntries.value.map(({ entry, slot }, index) => {
           const fragment = fragments.value[entry.id]
           const headerCopy = fragmentHeaders.value[entry.id]
           const renderNode =
             fragment && headerCopy ? applyHeaderOverride(fragment.tree, headerCopy) : fragment?.tree
           return (
             <FragmentCard
-              key={entry.id}
+              key={`${entry.id}:${slot.id}`}
               id={entry.id}
               fragmentId={entry.id}
-              column={entry.layout.column}
+              column={slot.column}
+              row={slot.row}
               motionDelay={index * 120}
               expandedId={expandedId}
               layoutTick={layoutTick}
               closeLabel={copy.value.fragmentClose}
               expandable={entry.expandable}
               fullWidth={entry.fullWidth}
-              inlineSpan={entry.layout.inlineSpan}
-              size={entry.layout.size}
+              size={slot.size}
               dragState={dragState}
             >
               {fragment ? (
