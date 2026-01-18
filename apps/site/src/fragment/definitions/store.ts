@@ -338,6 +338,7 @@ const storeFragmentCss = `
 .store-create {
   display: grid;
   gap: 16px;
+  container-type: inline-size;
 }
 
 .store-create-form {
@@ -436,6 +437,27 @@ const storeFragmentCss = `
   letter-spacing: 0.3em;
   cursor: pointer;
   min-height: 42px;
+}
+
+@container (max-width: 720px) {
+  .store-create-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .store-create-grid > .store-create-input:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .store-create-submit {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@container (max-width: 520px) {
+  .store-create-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .store-create-submit:disabled {
