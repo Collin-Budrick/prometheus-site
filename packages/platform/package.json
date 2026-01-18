@@ -44,11 +44,11 @@
   "devDependencies": {
     "@types/node": "25.0.9",
     "@types/react": "^19.2.8",
-    "bun-types": "1.3.7-canary.20260117T140656",
+    "bun-types": "1.3.7-canary.20260118T140646",
     "drizzle-kit": "1.0.0-beta.9-e89174b",
     "oxfmt": "0.24.0",
     "oxlint": "1.39.0",
-    "typescript": "6.0.0-dev.20260117"
+    "typescript": "6.0.0-dev.20260118"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "^1.39.0"
