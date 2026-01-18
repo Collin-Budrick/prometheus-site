@@ -1,4 +1,4 @@
-import { $, component$, HTMLFragment, Slot, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
@@ -163,6 +163,8 @@ export default component$(() => {
   const isAuthenticated = authSession.value.status === 'authenticated'
   const bannerMode = useSignal<'offline' | 'online' | 'sync' | 'cache-refreshed' | 'cache-cleared' | null>(null)
   const bannerTimeoutId = useSignal<number | null>(null)
+  const settingsOpen = useSignal(false)
+  const settingsRef = useSignal<HTMLDivElement>()
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
@@ -193,6 +195,28 @@ export default component$(() => {
       }
     )
   })
+
+  useOnDocument(
+    'click',
+    $((event: MouseEvent) => {
+      if (!settingsOpen.value) return
+      const target = event.target as Node | null
+      const root = settingsRef.value
+      if (!root || !target) return
+      if (!root.contains(target)) {
+        settingsOpen.value = false
+      }
+    })
+  )
+
+  useOnDocument(
+    'keydown',
+    $((event: KeyboardEvent) => {
+      if (event.key === 'Escape' && settingsOpen.value) {
+        settingsOpen.value = false
+      }
+    })
+  )
 
   const setBanner = $((mode: typeof bannerMode.value, durationMs?: number) => {
     if (typeof window === 'undefined') return
@@ -367,13 +391,38 @@ export default component$(() => {
         </div>
         <div class="topbar-actions">
           <div class="topbar-controls">
-            <div class="fragment-status" data-state={fragmentStatus.value} role="status" aria-live="polite" aria-label={statusLabel}>
-              <span class="dot" aria-hidden="true" />
+            <div class="topbar-settings" ref={settingsRef} data-open={settingsOpen.value ? 'true' : 'false'}>
+              <button
+                class="settings-trigger"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={settingsOpen.value ? 'true' : 'false'}
+                aria-label={copy.value.navSettings}
+                aria-controls="topbar-settings-menu"
+                onClick$={() => {
+                  settingsOpen.value = !settingsOpen.value
+                }}
+              >
+                <InSettings class="settings-trigger-icon" aria-hidden="true" />
+              </button>
+              <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
+                <div class="settings-controls">
+                  <div
+                    class="fragment-status"
+                    data-state={fragmentStatus.value}
+                    role="status"
+                    aria-live="polite"
+                    aria-label={statusLabel}
+                  >
+                    <span class="dot" aria-hidden="true" />
+                  </div>
+                  {hasMultipleLangs ? (
+                    <LanguageToggle lang={langSignal} ariaLabel={copy.value.languageToggleLabel} onToggle$={toggleLang} />
+                  ) : null}
+                  <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
+                </div>
+              </div>
             </div>
-            {hasMultipleLangs ? (
-              <LanguageToggle lang={langSignal} ariaLabel={copy.value.languageToggleLabel} onToggle$={toggleLang} />
-            ) : null}
-            <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
           </div>
         </div>
       </header>
