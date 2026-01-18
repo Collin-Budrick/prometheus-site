@@ -735,7 +735,7 @@
     top: calc(100% + 12px);
     z-index: 50;
     display: grid;
-    gap: 12px;
+    gap: 0;
     padding: 12px;
     border-radius: 18px;
     border: 1px solid rgb(var(--stroke));
@@ -766,6 +766,89 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  .settings-lang-trigger {
+    position: relative;
+  }
+
+  .settings-lang-drawer {
+    display: grid;
+    gap: 8px;
+    overflow: hidden;
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      max-height 200ms ease,
+      opacity 200ms ease,
+      transform 200ms ease,
+      margin-top 200ms ease,
+      visibility 0ms linear 200ms;
+  }
+
+  .settings-lang-drawer[data-open="true"] {
+    max-height: 240px;
+    margin-top: 12px;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    visibility: visible;
+    transition:
+      max-height 200ms ease,
+      opacity 200ms ease,
+      transform 200ms ease,
+      margin-top 200ms ease;
+  }
+
+  .settings-lang-list {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 14px;
+    border: 1px solid rgb(var(--stroke));
+    background: rgb(var(--surface) / 0.9);
+  }
+
+  .settings-lang-option {
+    @apply inline-flex items-center justify-between rounded-full border px-3 py-2;
+    border-color: transparent;
+    background: rgb(var(--surface) / 0.6);
+    color: rgb(var(--muted));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    transition:
+      border-color 160ms ease,
+      color 160ms ease,
+      background-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .settings-lang-option:hover {
+    border-color: rgb(var(--accent) / 0.4);
+    color: rgb(var(--ink));
+    transform: translateY(-1px);
+    box-shadow: 0 10px 18px rgb(var(--accent) / 0.12);
+  }
+
+  .settings-lang-option[data-active="true"] {
+    border-color: rgb(var(--accent) / 0.6);
+    color: rgb(var(--ink));
+    background: rgb(var(--surface) / 0.92);
+    box-shadow: 0 12px 20px rgb(var(--accent) / 0.16);
+  }
+
+  .settings-lang-code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
   }
 
   .brand {
@@ -1115,6 +1198,10 @@
     }
 
     .settings-dropdown {
+      transition: none;
+    }
+
+    .settings-lang-drawer {
       transition: none;
     }
 

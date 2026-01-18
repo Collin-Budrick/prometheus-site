@@ -165,6 +165,7 @@ export default component$(() => {
   const bannerTimeoutId = useSignal<number | null>(null)
   const settingsOpen = useSignal(false)
   const settingsRef = useSignal<HTMLDivElement>()
+  const langMenuOpen = useSignal(false)
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
@@ -177,11 +178,8 @@ export default component$(() => {
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
   const hasMultipleLangs = supportedLangs.length > 1
-  const toggleLang = $((current: string) => {
-    if (supportedLangs.length < 2) return
-    const currentIndex = supportedLangs.indexOf(current)
-    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % supportedLangs.length : 0
-    const next = supportedLangs[nextIndex] as Lang
+  const applyLangChoice = $((next: Lang) => {
+    if (langSignal.value === next) return
     const root = document.querySelector('.layout-shell') ?? document.body
     void runLangViewTransition(
       () => {
@@ -196,6 +194,7 @@ export default component$(() => {
     )
   })
 
+
   useOnDocument(
     'click',
     $((event: MouseEvent) => {
@@ -205,6 +204,7 @@ export default component$(() => {
       if (!root || !target) return
       if (!root.contains(target)) {
         settingsOpen.value = false
+        langMenuOpen.value = false
       }
     })
   )
@@ -214,6 +214,7 @@ export default component$(() => {
     $((event: KeyboardEvent) => {
       if (event.key === 'Escape' && settingsOpen.value) {
         settingsOpen.value = false
+        langMenuOpen.value = false
       }
     })
   )
@@ -400,7 +401,11 @@ export default component$(() => {
                 aria-label={copy.value.navSettings}
                 aria-controls="topbar-settings-menu"
                 onClick$={() => {
-                  settingsOpen.value = !settingsOpen.value
+                  const next = !settingsOpen.value
+                  settingsOpen.value = next
+                  if (!next) {
+                    langMenuOpen.value = false
+                  }
                 }}
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
@@ -417,10 +422,44 @@ export default component$(() => {
                     <span class="dot" aria-hidden="true" />
                   </div>
                   {hasMultipleLangs ? (
-                    <LanguageToggle lang={langSignal} ariaLabel={copy.value.languageToggleLabel} onToggle$={toggleLang} />
+                    <LanguageToggle
+                      class="settings-lang-trigger"
+                      lang={langSignal}
+                      ariaLabel={copy.value.languageToggleLabel}
+                      pressed={langMenuOpen.value}
+                      onToggle$={$(() => {
+                        langMenuOpen.value = !langMenuOpen.value
+                      })}
+                    />
                   ) : null}
                   <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
                 </div>
+                {hasMultipleLangs ? (
+                  <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
+                    <div class="settings-lang-list" role="menu">
+                      {supportedLangs.map((langOption) => {
+                        const langValue = langOption as Lang
+                        const isActive = langSignal.value === langValue
+                        return (
+                          <button
+                            key={langOption}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={isActive}
+                            class="settings-lang-option"
+                            data-active={isActive ? 'true' : 'false'}
+                            onClick$={$(() => {
+                              applyLangChoice(langValue)
+                              langMenuOpen.value = false
+                            })}
+                          >
+                            <span class="settings-lang-code">{langOption.toUpperCase()}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
