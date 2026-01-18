@@ -206,11 +206,18 @@ export const RouteMotion = component$(() => {
               })
             })
 
+            let mutationLocked = false
             const mutationObserver = new MutationObserver((records) => {
-              records.forEach((record) => {
-                record.removedNodes.forEach(unobserveNode)
-              })
-              scheduleObserveTargets()
+              if (mutationLocked) return
+              mutationLocked = true
+              try {
+                records.forEach((record) => {
+                  record.removedNodes.forEach(unobserveNode)
+                })
+                scheduleObserveTargets()
+              } finally {
+                mutationLocked = false
+              }
             })
 
             mutationObserver.observe(root, { childList: true, subtree: true })
