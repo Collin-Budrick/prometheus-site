@@ -11,8 +11,8 @@
     --surface: 255 255 255;
     --surface-strong: 255 255 255;
     --surface-soft: 248 250 252;
-    --surface-warm: 248 242 231;
-    --surface-cool: 234 242 241;
+    --surface-warm: 255 246 220;
+    --surface-cool: 238 230 255;
     --accent: 249 115 22;
     --accent-strong: 194 65 12;
     --accent-ink: 15 23 42;
@@ -38,6 +38,8 @@
     --theme-transition-ease: cubic-bezier(0.42, 0, 0.58, 1);
     --skeleton-base: 226 232 240;
     --skeleton-highlight: 248 250 252;
+    --lava-blob-a: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27960%27%20height%3D%27960%27%20viewBox%3D%270%200%20960%20960%27%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g1%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23f3dcff%27%20stop-opacity%3D%270.85%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23f3dcff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g2%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23fff2b6%27%20stop-opacity%3D%270.75%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23fff2b6%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g3%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23f8d4ff%27%20stop-opacity%3D%270.65%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23f8d4ff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%27260%27%20cy%3D%27300%27%20r%3D%27360%27%20fill%3D%27url%28%23g1%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27700%27%20cy%3D%27320%27%20r%3D%27320%27%20fill%3D%27url%28%23g2%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27520%27%20cy%3D%27740%27%20r%3D%27380%27%20fill%3D%27url%28%23g3%29%27/%3E%0A%3C/svg%3E");
+    --lava-blob-b: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27960%27%20height%3D%27960%27%20viewBox%3D%270%200%20960%20960%27%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g4%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23f0cfff%27%20stop-opacity%3D%270.78%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23f0cfff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g5%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23ffeaa8%27%20stop-opacity%3D%270.7%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23ffeaa8%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g6%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23fbe1ff%27%20stop-opacity%3D%270.62%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23fbe1ff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%27200%27%20cy%3D%27660%27%20r%3D%27360%27%20fill%3D%27url%28%23g4%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27700%27%20cy%3D%27620%27%20r%3D%27340%27%20fill%3D%27url%28%23g5%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27520%27%20cy%3D%27240%27%20r%3D%27320%27%20fill%3D%27url%28%23g6%29%27/%3E%0A%3C/svg%3E");
     --font-mono:
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
       "Courier New", monospace;
@@ -83,22 +85,11 @@
       Arial,
       sans-serif;
     background-color: rgb(var(--surface-warm));
-    background-image:
-      radial-gradient(
-        circle at 12% 8%,
-        rgb(var(--accent) / 0.18),
-        transparent 52%
-      ),
-      radial-gradient(
-        circle at 86% 12%,
-        rgb(var(--signal) / 0.16),
-        transparent 48%
-      ),
-      linear-gradient(
-        140deg,
-        rgb(var(--surface-warm)),
-        rgb(var(--surface-cool))
-      );
+    background-image: linear-gradient(
+      155deg,
+      rgb(var(--surface-warm)),
+      rgb(var(--surface-cool))
+    );
     position: relative;
     isolation: isolate;
   }
@@ -250,17 +241,29 @@
     }
   }
 
-  body::before {
+  body::before,
+  body::after {
     content: "";
     position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(90deg, rgb(var(--ink) / 0.05) 1px, transparent 1px),
-      linear-gradient(0deg, rgb(var(--ink) / 0.05) 1px, transparent 1px);
-    background-size: 120px 120px;
-    opacity: 0.4;
+    inset: -12%;
+    background-repeat: repeat;
     pointer-events: none;
     z-index: 0;
+    will-change: opacity, transform;
+  }
+
+  body::before {
+    background-image: var(--lava-blob-a);
+    background-size: 1200px 1200px;
+    background-position: 0 0;
+    animation: lava-fade-a 38s ease-in-out infinite;
+  }
+
+  body::after {
+    background-image: var(--lava-blob-b);
+    background-size: 1400px 1400px;
+    background-position: 240px 200px;
+    animation: lava-fade-b 46s ease-in-out infinite;
   }
 
   :root[data-theme="dark"] body::before {
@@ -273,7 +276,19 @@
     filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.9));
   }
 
+  :root[data-theme="dark"] body::after {
+    content: none;
+    animation: none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    body::before,
+    body::after {
+      animation: none;
+      transform: none;
+      opacity: 0.55;
+    }
+
     :root[data-theme="dark"] body::before {
       animation: none;
       opacity: 0.22;
@@ -321,6 +336,30 @@
     }
     74% {
       opacity: 0.95;
+    }
+  }
+
+  @keyframes lava-fade-a {
+    0%,
+    100% {
+      opacity: 0.72;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: translate3d(-2%, -3%, 0) scale(1.05);
+    }
+  }
+
+  @keyframes lava-fade-b {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      opacity: 0.78;
+      transform: translate3d(3%, 2%, 0) scale(1.08);
     }
   }
 
