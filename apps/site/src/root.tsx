@@ -95,6 +95,7 @@ export default component$(() => {
             <RouterOutlet />
           </FragmentStatusProvider>
         </LangProvider>
+        <div class="viewport-fade" aria-hidden="true" />
       </body>
     </QwikCityProvider>
   )

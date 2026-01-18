@@ -41,6 +41,8 @@
     --parallax-stars-twinkle-y: 0px;
     --parallax-blob-a-y: 0px;
     --parallax-blob-b-y: 0px;
+    --viewport-fade-color: 255 255 255;
+    --viewport-fade-size: clamp(80px, 14vh, 160px);
     --skeleton-base: 226 232 240;
     --skeleton-highlight: 248 250 252;
     --lava-blob-a: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27960%27%20height%3D%27960%27%20viewBox%3D%270%200%20960%20960%27%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g1%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23f3dcff%27%20stop-opacity%3D%270.85%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23f3dcff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g2%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23fff2b6%27%20stop-opacity%3D%270.75%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23fff2b6%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%20%20%3CradialGradient%20id%3D%27g3%27%20cx%3D%2750%25%27%20cy%3D%2750%25%27%20r%3D%2750%25%27%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%270%25%27%20stop-color%3D%27%23f8d4ff%27%20stop-opacity%3D%270.65%27/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2770%25%27%20stop-color%3D%27%23f8d4ff%27%20stop-opacity%3D%270%27/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%27260%27%20cy%3D%27300%27%20r%3D%27360%27%20fill%3D%27url%28%23g1%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27700%27%20cy%3D%27320%27%20r%3D%27320%27%20fill%3D%27url%28%23g2%29%27/%3E%0A%20%20%3Ccircle%20cx%3D%27520%27%20cy%3D%27740%27%20r%3D%27380%27%20fill%3D%27url%28%23g3%29%27/%3E%0A%3C/svg%3E");
@@ -52,6 +54,7 @@
 
   :root[data-theme="dark"] {
     color-scheme: dark;
+    --viewport-fade-color: 0 0 0;
     --ink: 226 232 240;
     --ink-soft: 203 213 225;
     --muted: 148 163 184;
@@ -457,6 +460,37 @@
   .app-shell {
     @apply relative flex flex-col min-h-screen;
     z-index: 1;
+  }
+
+  .viewport-fade {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 62;
+  }
+
+  .viewport-fade::before,
+  .viewport-fade::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: var(--viewport-fade-size);
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--viewport-fade-color) / 0.95),
+      rgb(var(--viewport-fade-color) / 0)
+    );
+  }
+
+  .viewport-fade::after {
+    top: auto;
+    bottom: 0;
+    background: linear-gradient(
+      to top,
+      rgb(var(--viewport-fade-color) / 0.9),
+      rgb(var(--viewport-fade-color) / 0)
+    );
   }
 
   html:not([data-motion-ready="true"]) [data-motion] {
@@ -900,7 +934,7 @@
     left: 50%;
     bottom: calc(18px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    z-index: 45;
+    z-index: 80;
     pointer-events: none;
     transition:
       opacity 200ms ease,
