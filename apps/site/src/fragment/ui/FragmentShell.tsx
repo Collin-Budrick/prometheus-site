@@ -40,10 +40,73 @@ type BentoSlot = {
   row: string
 }
 
+type FieldSnapshot = {
+  key: string
+  value?: string
+  checked?: boolean
+}
+
+type FragmentShellCacheEntry = {
+  fragments: FragmentPayloadMap
+  orderIds: string[]
+  expandedId: string | null
+  scrollY: number
+  fields: Record<string, FieldSnapshot>
+}
+
 type FragmentDragState = {
   active: boolean
   suppressUntil: number
   draggingId: string | null
+}
+
+const fragmentShellCache = new Map<string, FragmentShellCacheEntry>()
+
+const getFieldKey = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, index: number) => {
+  const fragmentId = (field.closest('[data-fragment-id]') as HTMLElement | null)?.dataset.fragmentId ?? 'shell'
+  const name = field.getAttribute('name') ?? field.getAttribute('id')
+  const base = name && name.trim().length ? name.trim() : `field-${index}`
+  if (field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio')) {
+    const valueToken = field.value && field.value.length ? field.value : 'on'
+    return `${fragmentId}::${base}::${valueToken}`
+  }
+  return `${fragmentId}::${base}`
+}
+
+const collectFieldSnapshots = (root: HTMLElement) => {
+  const snapshots: Record<string, FieldSnapshot> = {}
+  const fields = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input, textarea, select'
+  )
+  fields.forEach((field, index) => {
+    const key = getFieldKey(field, index)
+    if (field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio')) {
+      snapshots[key] = { key, checked: field.checked }
+      return
+    }
+    snapshots[key] = { key, value: field.value }
+  })
+  return snapshots
+}
+
+const applyFieldSnapshots = (root: HTMLElement, snapshots: Record<string, FieldSnapshot>) => {
+  const fields = root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input, textarea, select'
+  )
+  fields.forEach((field, index) => {
+    const key = getFieldKey(field, index)
+    const snapshot = snapshots[key]
+    if (!snapshot) return
+    if (field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio')) {
+      if (typeof snapshot.checked === 'boolean') {
+        field.checked = snapshot.checked
+      }
+      return
+    }
+    if (snapshot.value !== undefined) {
+      field.value = snapshot.value
+    }
+  })
 }
 
 const parseStoredOrder = (raw: string | null) => {
@@ -154,20 +217,32 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   })
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
+  const cachedEntry = typeof window !== 'undefined' ? fragmentShellCache.get(path) : undefined
   const initialFragmentMap = resolveFragments(initialFragments)
-  const fragments = useSignal<FragmentPayloadMap>(initialFragmentMap)
+  const cachedFragments = cachedEntry?.fragments
+  const fragments = useSignal<FragmentPayloadMap>(
+    cachedFragments ? { ...initialFragmentMap, ...cachedFragments } : initialFragmentMap
+  )
   const status = useSharedFragmentStatusSignal()
-  const expandedId = useSignal<string | null>(null)
+  const cachedExpanded =
+    cachedEntry?.expandedId && planValue.fragments.some((entry) => entry.id === cachedEntry.expandedId)
+      ? cachedEntry.expandedId
+      : null
+  const expandedId = useSignal<string | null>(cachedExpanded)
   const layoutTick = useSignal(0)
   const stackScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
-  const orderIds = useSignal<string[]>([])
+  const cachedOrder = cachedEntry?.orderIds ?? []
+  const orderIds = useSignal<string[]>(cachedOrder.length ? buildOrderedIds(planValue.fragments, cachedOrder) : [])
   const dragState = useSignal<FragmentDragState>({
     active: false,
     suppressUntil: 0,
     draggingId: null
   })
+  const lastScrollY = useSignal(cachedEntry?.scrollY ?? 0)
+  const restoredState = useSignal(false)
+  const streamPaused = useSignal(Boolean(cachedEntry))
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
   const slottedEntries = useComputed$(() => {
     const entries = orderedEntries.value
@@ -213,6 +288,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   useVisibleTask$(
     () => {
       if (typeof window === 'undefined') return
+      if (cachedOrder.length) return
       const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
       const stored = parseStoredOrder(window.localStorage.getItem(storageKey))
       const nextOrder = buildOrderedIds(planValue.fragments, stored)
@@ -246,6 +322,96 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       document.body.classList.remove('card-expanded')
     }
   })
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      let frame = 0
+
+      const update = () => {
+        frame = 0
+        lastScrollY.value = window.scrollY
+      }
+
+      const handleScroll = () => {
+        if (frame) return
+        frame = window.requestAnimationFrame(update)
+      }
+
+      handleScroll()
+      window.addEventListener('scroll', handleScroll, { passive: true })
+
+      ctx.cleanup(() => {
+        window.removeEventListener('scroll', handleScroll)
+        if (frame) {
+          window.cancelAnimationFrame(frame)
+        }
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      ctx.track(() => streamPaused.value)
+      if (typeof window === 'undefined') return
+      if (!streamPaused.value) return
+      let timeoutId = window.setTimeout(() => {
+        streamPaused.value = false
+      }, 1200)
+      const resume = () => {
+        if (!streamPaused.value) return
+        streamPaused.value = false
+      }
+      window.addEventListener('pointerdown', resume, { once: true })
+      window.addEventListener('keydown', resume, { once: true })
+      ctx.cleanup(() => {
+        window.clearTimeout(timeoutId)
+        window.removeEventListener('pointerdown', resume)
+        window.removeEventListener('keydown', resume)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    () => {
+      if (typeof window === 'undefined') return
+      if (!cachedEntry || restoredState.value) return
+      const grid = gridRef.value
+      if (!grid) return
+      restoredState.value = true
+      if (typeof cachedEntry.scrollY === 'number') {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: cachedEntry.scrollY, left: 0, behavior: 'auto' })
+          lastScrollY.value = cachedEntry.scrollY
+        })
+      }
+      if (cachedEntry.fields && Object.keys(cachedEntry.fields).length) {
+        window.requestAnimationFrame(() => {
+          applyFieldSnapshots(grid, cachedEntry.fields)
+        })
+      }
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      ctx.cleanup(() => {
+        const grid = gridRef.value
+        fragmentShellCache.set(path, {
+          fragments: fragments.value,
+          orderIds: orderIds.value,
+          expandedId: expandedId.value,
+          scrollY: lastScrollY.value,
+          fields: grid ? collectFieldSnapshots(grid) : {}
+        })
+      })
+    },
+    { strategy: 'document-ready' }
+  )
 
   useVisibleTask$(
     (ctx) => {
@@ -984,6 +1150,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         path={path}
         fragments={fragments}
         status={status}
+        paused={streamPaused}
       />
       {clientReady.value ? (
         <FragmentClientEffects planValue={planValue} initialFragmentMap={initialFragmentMap} />

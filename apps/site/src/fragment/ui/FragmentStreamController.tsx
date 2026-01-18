@@ -29,16 +29,20 @@ type FragmentStreamControllerProps = {
   path: string
   fragments: Signal<FragmentPayloadMap>
   status: Signal<'idle' | 'streaming' | 'error'>
+  paused?: Signal<boolean> | boolean
 }
 
 export const FragmentStreamController = component$(
-  ({ plan, initialFragments, path, fragments, status }: FragmentStreamControllerProps) => {
+  ({ plan, initialFragments, path, fragments, status, paused }: FragmentStreamControllerProps) => {
     const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(null)
 
     useVisibleTask$(
       (ctx) => {
         let active = true
+        const isPaused = ctx.track(() =>
+          typeof paused === 'boolean' ? paused : paused ? paused.value : false
+        )
         const streamController = new AbortController()
         const fetchControllers = new Set<AbortController>()
         const inFlight = new Set<string>()
@@ -81,6 +85,14 @@ export const FragmentStreamController = component$(
 
         Object.keys(fragments.value).forEach((id) => needed.add(id))
         Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
+
+        if (isPaused) {
+          status.value = 'idle'
+          ctx.cleanup(() => {
+            active = false
+          })
+          return
+        }
 
         const planValue = resolvePlan(plan)
         const refreshAllIds = langChanged ? planValue.fragments.map((entry) => entry.id) : []
