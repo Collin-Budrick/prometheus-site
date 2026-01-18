@@ -66,6 +66,9 @@
     --shadow: 0 32px 68px rgba(2, 6, 23, 0.62);
     --skeleton-base: 51 65 85;
     --skeleton-highlight: 71 85 105;
+    --starfield-layer-1: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27160%27%20height%3D%27160%27%20viewBox%3D%270%200%20160%20160%27%3E%0A%20%20%3Ccircle%20cx%3D%2718%27%20cy%3D%2722%27%20r%3D%270.35%27%20fill%3D%27white%27%20fill-opacity%3D%270.35%27/%3E%0A%20%20%3Ccircle%20cx%3D%2752%27%20cy%3D%2790%27%20r%3D%270.45%27%20fill%3D%27white%27%20fill-opacity%3D%270.45%27/%3E%0A%20%20%3Ccircle%20cx%3D%27118%27%20cy%3D%2734%27%20r%3D%270.4%27%20fill%3D%27white%27%20fill-opacity%3D%270.5%27/%3E%0A%20%20%3Ccircle%20cx%3D%27138%27%20cy%3D%27118%27%20r%3D%270.35%27%20fill%3D%27white%27%20fill-opacity%3D%270.3%27/%3E%0A%20%20%3Ccircle%20cx%3D%2796%27%20cy%3D%27138%27%20r%3D%270.4%27%20fill%3D%27white%27%20fill-opacity%3D%270.4%27/%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%27132%27%20r%3D%270.3%27%20fill%3D%27white%27%20fill-opacity%3D%270.28%27/%3E%0A%20%20%3Ccircle%20cx%3D%2776%27%20cy%3D%2718%27%20r%3D%270.28%27%20fill%3D%27white%27%20fill-opacity%3D%270.25%27/%3E%0A%20%20%3Ccircle%20cx%3D%27110%27%20cy%3D%2786%27%20r%3D%270.35%27%20fill%3D%27white%27%20fill-opacity%3D%270.38%27/%3E%0A%3C/svg%3E");
+    --starfield-layer-2: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27240%27%20height%3D%27240%27%20viewBox%3D%270%200%20240%20240%27%3E%0A%20%20%3Ccircle%20cx%3D%2736%27%20cy%3D%2758%27%20r%3D%270.35%27%20fill%3D%27white%27%20fill-opacity%3D%270.35%27/%3E%0A%20%20%3Ccircle%20cx%3D%27116%27%20cy%3D%2722%27%20r%3D%270.5%27%20fill%3D%27white%27%20fill-opacity%3D%270.5%27/%3E%0A%20%20%3Ccircle%20cx%3D%27188%27%20cy%3D%2778%27%20r%3D%270.4%27%20fill%3D%27white%27%20fill-opacity%3D%270.4%27/%3E%0A%20%20%3Ccircle%20cx%3D%27206%27%20cy%3D%27176%27%20r%3D%270.55%27%20fill%3D%27white%27%20fill-opacity%3D%270.55%27/%3E%0A%20%20%3Ccircle%20cx%3D%2770%27%20cy%3D%27198%27%20r%3D%270.45%27%20fill%3D%27white%27%20fill-opacity%3D%270.45%27/%3E%0A%20%20%3Ccircle%20cx%3D%27138%27%20cy%3D%27132%27%20r%3D%270.35%27%20fill%3D%27white%27%20fill-opacity%3D%270.35%27/%3E%0A%3C/svg%3E");
+    --starfield-twinkle: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27320%27%20height%3D%27320%27%20viewBox%3D%270%200%20320%20320%27%3E%0A%20%20%3Ccircle%20cx%3D%2766%27%20cy%3D%2792%27%20r%3D%270.6%27%20fill%3D%27white%27%20fill-opacity%3D%271%27/%3E%0A%20%20%3Ccircle%20cx%3D%27210%27%20cy%3D%2756%27%20r%3D%270.55%27%20fill%3D%27white%27%20fill-opacity%3D%270.95%27/%3E%0A%20%20%3Ccircle%20cx%3D%27244%27%20cy%3D%27214%27%20r%3D%270.7%27%20fill%3D%27white%27%20fill-opacity%3D%271%27/%3E%0A%20%20%3Ccircle%20cx%3D%2794%27%20cy%3D%27226%27%20r%3D%270.6%27%20fill%3D%27white%27%20fill-opacity%3D%270.9%27/%3E%0A%3C/svg%3E");
   }
 
   body {
@@ -101,8 +104,12 @@
   }
 
   :root[data-theme="dark"] body {
-    background-color: rgb(var(--surface-warm));
-    background-image: none;
+    background-color: rgb(0 0 0);
+    background-image: var(--starfield-layer-1), var(--starfield-layer-2);
+    background-size: 520px 520px, 760px 760px;
+    background-position: 0 0, 240px 320px;
+    background-repeat: repeat;
+    background-attachment: scroll;
   }
 
   html {
@@ -257,7 +264,20 @@
   }
 
   :root[data-theme="dark"] body::before {
-    opacity: 0.22;
+    background-image: var(--starfield-twinkle);
+    background-size: 980px 980px;
+    background-position: 300px 380px;
+    opacity: 0.5;
+    animation: starfield-twinkle 5.8s ease-in-out infinite;
+    mix-blend-mode: screen;
+    filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.9));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-theme="dark"] body::before {
+      animation: none;
+      opacity: 0.22;
+    }
   }
 
   a {
@@ -285,6 +305,22 @@
     100% {
       opacity: 1;
       transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes starfield-twinkle {
+    0%,
+    100% {
+      opacity: 0.02;
+    }
+    22% {
+      opacity: 1;
+    }
+    48% {
+      opacity: 0.1;
+    }
+    74% {
+      opacity: 0.95;
     }
   }
 
