@@ -1239,6 +1239,11 @@
     max-height: var(--fragment-card-tall-height);
   }
 
+  .fragment-grid > .fragment-card:only-of-type {
+    height: auto;
+    max-height: none;
+  }
+
   .fragment-slot[data-size="small"] {
     height: var(--fragment-card-small-height);
     min-height: var(--fragment-card-small-height);
