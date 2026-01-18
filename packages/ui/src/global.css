@@ -256,14 +256,14 @@
     background-image: var(--lava-blob-a);
     background-size: 1200px 1200px;
     background-position: 0 0;
-    animation: lava-fade-a 38s ease-in-out infinite;
+    animation: lava-fade-a 26s ease-in-out infinite;
   }
 
   body::after {
     background-image: var(--lava-blob-b);
     background-size: 1400px 1400px;
     background-position: 240px 200px;
-    animation: lava-fade-b 46s ease-in-out infinite;
+    animation: lava-fade-b 32s ease-in-out infinite;
   }
 
   :root[data-theme="dark"] body::before {
@@ -1366,6 +1366,10 @@
     isolation: isolate;
   }
 
+  :root:not([data-theme="dark"]) .fragment-card {
+    background-color: rgb(var(--surface) / 0.96);
+  }
+
   .fragment-card::before {
     content: "";
     position: absolute;
@@ -1618,6 +1622,11 @@
       backdrop-filter: blur(8px);
       box-shadow: var(--shadow);
       background-color: rgb(var(--surface) / 0.82);
+    }
+
+    :root:not([data-theme="dark"]) .fragment-card {
+      backdrop-filter: blur(16px) saturate(1.05);
+      background-color: rgb(var(--surface) / 0.9);
     }
 
     /* Add the .reduced-effects class on a parent or the card itself to disable blur for low-power scenarios. */
