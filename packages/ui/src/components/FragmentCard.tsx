@@ -112,6 +112,8 @@ export const FragmentCard = component$<FragmentCardProps>(
         const expanded = ctx.track(() => expandedId.value === id)
         const tick = ctx.track(() => layoutTick.value)
         const inView = ctx.track(() => isInView.value)
+        const dragInfo = dragState ? ctx.track(() => dragState.value) : null
+        const isDragging = dragInfo?.active && dragInfo?.draggingId === id
         const visibilityChanged = inView !== lastInView.value
         const expandedChanged = expanded !== lastExpanded.value
         const resizeChanged = tick !== lastLayoutTick.value
@@ -122,6 +124,18 @@ export const FragmentCard = component$<FragmentCardProps>(
 
         const card = cardRef.value
         if (!card) return
+        const placeholder = placeholderRef.value
+
+        if (isDragging) {
+          previousRects.set(card, card.getBoundingClientRect())
+          previousRadii.set(card, window.getComputedStyle(card).borderRadius)
+          if (placeholder) {
+            placeholder.style.display = 'none'
+            placeholder.style.height = ''
+            placeholder.style.width = ''
+          }
+          return
+        }
 
         if (!inView) {
           const current = activeAnimations.get(card)
@@ -132,10 +146,10 @@ export const FragmentCard = component$<FragmentCardProps>(
           return
         }
 
-        const placeholder = placeholderRef.value
         const pendingRect = pendingRects.get(card)
         const hasPreviousRect = previousRects.has(card)
-        const shouldMeasure = expandedChanged || Boolean(pendingRect) || !hasPreviousRect || visibilityChanged
+        const shouldMeasure =
+          expandedChanged || Boolean(pendingRect) || !hasPreviousRect || visibilityChanged || resizeChanged
 
         if (!shouldMeasure) return
 

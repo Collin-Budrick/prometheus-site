@@ -201,8 +201,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   useVisibleTask$(
     (ctx) => {
       ctx.track(() => orderIds.value)
+      ctx.track(() => dragState.value.active)
       if (typeof window === 'undefined') return
       if (!orderIds.value.length) return
+      if (dragState.value.active) return
       const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
       window.localStorage.setItem(storageKey, JSON.stringify(orderIds.value))
     },
@@ -230,6 +232,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let scrollFrame = 0
       let dragging = false
       let dragActivated = false
+      let liveReorder = false
+      let swapAdjustFrame = 0
       let pointerId: number | null = null
       let startX = 0
       let startY = 0
@@ -303,6 +307,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (!draggingEl || !draggingId || dragging) return
         dragging = true
         dragActivated = true
+        liveReorder = false
         dragState.value = { active: true, suppressUntil: 0, draggingId }
         grid.classList.add('is-dragging')
         previousUserSelect = document.body.style.userSelect
@@ -323,7 +328,12 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           cancelAnimationFrame(updateFrame)
           updateFrame = 0
         }
+        if (swapAdjustFrame) {
+          cancelAnimationFrame(swapAdjustFrame)
+          swapAdjustFrame = 0
+        }
         let dropTargetId: string | null = null
+        let dropInsertAfter = false
         if (dragActivated && draggingId) {
           dropTargetId = pendingTargetId
           if (!dropTargetId) {
@@ -332,10 +342,19 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             const cardAtPoint = elementAtPoint?.closest<HTMLElement>('.fragment-card') ?? null
             const cardId = cardAtPoint?.dataset.fragmentId ?? null
             dropTargetId = cardId && cardId !== draggingId ? cardId : null
+            if (dropTargetId && cardAtPoint) {
+              const rect = cardAtPoint.getBoundingClientRect()
+              dropInsertAfter = getInsertAfter(rect)
+            }
           }
           if (!dropTargetId) {
             const closest = pickClosestTarget()
             dropTargetId = closest?.el.dataset.fragmentId ?? null
+            if (closest) {
+              dropInsertAfter = getInsertAfter(closest.rect)
+            }
+          } else {
+            dropInsertAfter = pendingInsertAfter
           }
         }
         if (dragging) {
@@ -350,8 +369,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           suppressUntil: dragActivated ? Date.now() + 300 : 0,
           draggingId: null
         }
-        if (dragActivated && draggingId && dropTargetId && dropTargetId !== draggingId) {
-          const nextOrder = swapOrder(draggingId, dropTargetId)
+        if (!liveReorder && dragActivated && draggingId && dropTargetId && dropTargetId !== draggingId) {
+          const nextOrder = moveOrder(draggingId, dropTargetId, dropInsertAfter)
           if (nextOrder.join('|') !== orderIds.value.join('|')) {
             orderIds.value = nextOrder
             layoutTick.value += 1
@@ -363,17 +382,40 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         pointerId = null
         pendingTargetId = null
         pendingInsertAfter = false
+        liveReorder = false
       }
 
-      const swapOrder = (id: string, targetId: string) => {
+      const moveOrder = (id: string, targetId: string, insertAfter: boolean) => {
         const current = getOrderIds()
-        const fromIndex = current.indexOf(id)
-        const toIndex = current.indexOf(targetId)
-        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return current
-        const next = current.slice()
-        next[fromIndex] = current[toIndex] ?? current[fromIndex]
-        next[toIndex] = current[fromIndex] ?? current[toIndex]
-        return next
+        if (!current.length) return current
+        const without = current.filter((entryId) => entryId !== id)
+        const targetIndex = without.indexOf(targetId)
+        if (targetIndex === -1) return current
+        const insertIndex = insertAfter ? targetIndex + 1 : targetIndex
+        without.splice(insertIndex, 0, id)
+        return without
+      }
+
+      const getInsertAfter = (rect: DOMRect) =>
+        lastY > rect.top + rect.height / 2 ||
+        (Math.abs(lastY - (rect.top + rect.height / 2)) < 6 && lastX > rect.left + rect.width / 2)
+
+      const applyLiveInsert = (targetId: string, insertAfter: boolean) => {
+        if (!draggingEl || !draggingId) return
+        const beforeRect = draggingEl.getBoundingClientRect()
+        const nextOrder = moveOrder(draggingId, targetId, insertAfter)
+        if (nextOrder.join('|') === orderIds.value.join('|')) return
+        orderIds.value = nextOrder
+        layoutTick.value += 1
+        liveReorder = true
+        if (swapAdjustFrame) cancelAnimationFrame(swapAdjustFrame)
+        swapAdjustFrame = requestAnimationFrame(() => {
+          swapAdjustFrame = 0
+          if (!draggingEl) return
+          const afterRect = draggingEl.getBoundingClientRect()
+          startX += afterRect.left - beforeRect.left
+          startY += afterRect.top - beforeRect.top
+        })
       }
 
       const updatePosition = () => {
@@ -387,16 +429,19 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (!closest) return
         const targetId = closest.el.dataset.fragmentId ?? null
         if (!targetId || targetId === draggingId) return
-        const insertAfter =
-          lastY > closest.rect.top + closest.rect.height / 2 ||
-          (Math.abs(lastY - (closest.rect.top + closest.rect.height / 2)) < 6 &&
-            lastX > closest.rect.left + closest.rect.width / 2)
-        if (pendingTargetId !== targetId || pendingInsertAfter !== insertAfter) {
+        const insertAfter = getInsertAfter(closest.rect)
+        const targetChanged = pendingTargetId !== targetId
+        if (targetChanged || pendingInsertAfter !== insertAfter) {
           pendingTargetId = targetId
           pendingInsertAfter = insertAfter
           clearDropIndicator()
           dropIndicator = closest.el
           dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
+          if (targetChanged) {
+            applyLiveInsert(targetId, insertAfter)
+          } else if (draggingId) {
+            applyLiveInsert(targetId, insertAfter)
+          }
         }
       }
 
@@ -821,7 +866,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             fragment && headerCopy ? applyHeaderOverride(fragment.tree, headerCopy) : fragment?.tree
           return (
             <FragmentCard
-              key={`${entry.id}:${slot.id}`}
+              key={entry.id}
               id={entry.id}
               fragmentId={entry.id}
               column={slot.column}
