@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
-import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
+import { type DocumentHead, type DocumentHeadProps, routeLoader$, useLocation } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { FragmentShell } from '../fragment/ui'
+import { FragmentShell, getFragmentShellCacheEntry } from '../fragment/ui'
 import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { appConfig } from '../app-config'
@@ -109,8 +109,14 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
 })
 
 export default component$(() => {
+  const location = useLocation()
   const fragmentResource = useFragmentResource()
-  const data = fragmentResource.value
+  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
+  const cachedData = cachedEntry
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    : null
+  const data = fragmentResource.value ?? cachedData
+  if (!data) return null
 
   return (
     <FragmentShell

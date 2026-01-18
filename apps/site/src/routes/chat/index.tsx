@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
@@ -8,7 +8,7 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
-import { FragmentShell } from '../../fragment/ui'
+import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 
@@ -73,9 +73,14 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
+  const location = useLocation()
   const data = useChatData()
   const fragmentResource = useFragmentResource()
-  const fragmentData = fragmentResource.value
+  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
+  const cachedData = cachedEntry
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    : null
+  const fragmentData = fragmentResource.value ?? cachedData
   const copy = useLangCopy()
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navChat)

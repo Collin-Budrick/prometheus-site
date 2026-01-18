@@ -10,6 +10,7 @@ import { FragmentStreamController } from './FragmentStreamController'
 import { applyHeaderOverride } from './header-overrides'
 import { resolveFragments, resolvePlan } from './utils'
 import { appConfig } from '../../app-config'
+import { getFragmentShellCacheEntry, setFragmentShellCacheEntry, type FieldSnapshot } from './shell-cache'
 
 type FragmentShellProps = {
   plan: FragmentPlanValue
@@ -40,27 +41,11 @@ type BentoSlot = {
   row: string
 }
 
-type FieldSnapshot = {
-  key: string
-  value?: string
-  checked?: boolean
-}
-
-type FragmentShellCacheEntry = {
-  fragments: FragmentPayloadMap
-  orderIds: string[]
-  expandedId: string | null
-  scrollY: number
-  fields: Record<string, FieldSnapshot>
-}
-
 type FragmentDragState = {
   active: boolean
   suppressUntil: number
   draggingId: string | null
 }
-
-const fragmentShellCache = new Map<string, FragmentShellCacheEntry>()
 
 const getFieldKey = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, index: number) => {
   const fragmentId = (field.closest('[data-fragment-id]') as HTMLElement | null)?.dataset.fragmentId ?? 'shell'
@@ -217,7 +202,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   })
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
-  const cachedEntry = typeof window !== 'undefined' ? fragmentShellCache.get(path) : undefined
+  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
   const initialFragmentMap = resolveFragments(initialFragments)
   const cachedFragments = cachedEntry?.fragments
   const fragments = useSignal<FragmentPayloadMap>(
@@ -268,6 +253,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     typeof window !== 'undefined' &&
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
   const clientReady = useSignal(initialReady)
+  const hasCache = Boolean(cachedEntry)
 
   useOnDocument(
     'client-ready',
@@ -401,7 +387,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       if (typeof window === 'undefined') return
       ctx.cleanup(() => {
         const grid = gridRef.value
-        fragmentShellCache.set(path, {
+        setFragmentShellCacheEntry(path, {
+          plan: planValue as FragmentPlanValue,
+          path,
+          lang: initialLang,
           fragments: fragments.value,
           orderIds: orderIds.value,
           expandedId: expandedId.value,
@@ -1113,19 +1102,20 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             >
               {entry ? (
                 <div class="fragment-card-wrap">
-                  <FragmentCard
-                    key={entry.id}
-                    id={entry.id}
-                    fragmentId={entry.id}
-                    column="1 / -1"
-                    motionDelay={index * 120}
-                    expandedId={expandedId}
-                    layoutTick={layoutTick}
-                    closeLabel={copy.value.fragmentClose}
-                    expandable={entry.expandable}
-                    fullWidth={entry.fullWidth}
-                    size={slot.size}
-                    dragState={dragState}
+                    <FragmentCard
+                      key={entry.id}
+                      id={entry.id}
+                      fragmentId={entry.id}
+                      column="1 / -1"
+                      motionDelay={hasCache ? 0 : index * 120}
+                      expandedId={expandedId}
+                      layoutTick={layoutTick}
+                      closeLabel={copy.value.fragmentClose}
+                      disableMotion={hasCache}
+                      expandable={entry.expandable}
+                      fullWidth={entry.fullWidth}
+                      size={slot.size}
+                      dragState={dragState}
                   >
                     {fragment ? (
                       <FragmentRenderer node={renderNode ?? fragment.tree} />

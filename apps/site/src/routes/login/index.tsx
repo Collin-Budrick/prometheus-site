@@ -1,12 +1,12 @@
 import { component$ } from '@builder.io/qwik'
-import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/pages/Login'
-import { FragmentShell } from '../../fragment/ui'
+import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
@@ -108,8 +108,13 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute
 
 export default component$(() => {
+  const location = useLocation()
   const fragmentResource = useFragmentResource()
-  const data = fragmentResource.value
+  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
+  const cachedData = cachedEntry
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    : null
+  const data = fragmentResource.value ?? cachedData
   if (data?.plan?.fragments?.length) {
     return (
       <FragmentShell
