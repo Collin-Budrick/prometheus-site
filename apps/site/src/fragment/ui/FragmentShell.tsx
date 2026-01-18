@@ -161,7 +161,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const slottedEntries = useComputed$(() => {
     const entries = orderedEntries.value
     const slots = buildBentoSlots(entries.length)
-    return entries.map((entry, index) => ({ entry, slot: slots[index] }))
+    return slots.map((slot, index) => ({ entry: entries[index], slot }))
   })
   const initialReady =
     typeof window !== 'undefined' &&
@@ -370,9 +370,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           draggingId: null
         }
         if (!liveReorder && dragActivated && draggingId && dropTargetId && dropTargetId !== draggingId) {
-          const nextOrder = moveOrder(draggingId, dropTargetId, dropInsertAfter)
-          if (nextOrder.join('|') !== orderIds.value.join('|')) {
-            orderIds.value = nextOrder
+          const resolved = resolveOrder(draggingId, dropTargetId, dropInsertAfter)
+          if (resolved.order.join('|') !== orderIds.value.join('|')) {
+            orderIds.value = resolved.order
+            applyOrderToDom(resolved.order)
             layoutTick.value += 1
           }
         }
@@ -385,8 +386,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         liveReorder = false
       }
 
-      const moveOrder = (id: string, targetId: string, insertAfter: boolean) => {
-        const current = getOrderIds()
+      const moveOrder = (current: string[], id: string, targetId: string, insertAfter: boolean) => {
         if (!current.length) return current
         const without = current.filter((entryId) => entryId !== id)
         const targetIndex = without.indexOf(targetId)
@@ -396,6 +396,38 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         return without
       }
 
+      const resolveOrder = (id: string, targetId: string, insertAfter: boolean) => {
+        const current = getOrderIds()
+        const preferred = moveOrder(current, id, targetId, insertAfter)
+        if (preferred.join('|') !== current.join('|')) {
+          return { order: preferred, insertAfter }
+        }
+        const flipped = moveOrder(current, id, targetId, !insertAfter)
+        if (flipped.join('|') !== current.join('|')) {
+          return { order: flipped, insertAfter: !insertAfter }
+        }
+        return { order: current, insertAfter }
+      }
+
+      const applyOrderToDom = (order: string[]) => {
+        const slotEls = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-slot'))
+        order.forEach((id, index) => {
+          const slotEl = slotEls[index]
+          if (!slotEl) return
+          const card = grid.querySelector<HTMLElement>(`.fragment-card[data-fragment-id="${id}"]`)
+          if (!card) return
+          const wrapper = card.closest<HTMLElement>('.fragment-card-wrap')
+          if (!wrapper) return
+          if (wrapper.parentElement !== slotEl) {
+            slotEl.appendChild(wrapper)
+          }
+          const slotSize = slotEl.dataset.size
+          if (slotSize) {
+            card.dataset.size = slotSize
+          }
+        })
+      }
+
       const getInsertAfter = (rect: DOMRect) =>
         lastY > rect.top + rect.height / 2 ||
         (Math.abs(lastY - (rect.top + rect.height / 2)) < 6 && lastX > rect.left + rect.width / 2)
@@ -403,9 +435,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const applyLiveInsert = (targetId: string, insertAfter: boolean) => {
         if (!draggingEl || !draggingId) return
         const beforeRect = draggingEl.getBoundingClientRect()
-        const nextOrder = moveOrder(draggingId, targetId, insertAfter)
-        if (nextOrder.join('|') === orderIds.value.join('|')) return
-        orderIds.value = nextOrder
+        const resolved = resolveOrder(draggingId, targetId, insertAfter)
+        if (resolved.order.join('|') === orderIds.value.join('|')) return resolved.insertAfter
+        orderIds.value = resolved.order
+        applyOrderToDom(resolved.order)
         layoutTick.value += 1
         liveReorder = true
         if (swapAdjustFrame) cancelAnimationFrame(swapAdjustFrame)
@@ -416,6 +449,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           startX += afterRect.left - beforeRect.left
           startY += afterRect.top - beforeRect.top
         })
+        return resolved.insertAfter
       }
 
       const updatePosition = () => {
@@ -438,9 +472,19 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           dropIndicator = closest.el
           dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
           if (targetChanged) {
-            applyLiveInsert(targetId, insertAfter)
+            const resolvedInsert = applyLiveInsert(targetId, insertAfter)
+            if (resolvedInsert !== undefined && resolvedInsert !== insertAfter) {
+              pendingInsertAfter = resolvedInsert
+              dropIndicator.classList.remove('is-drop-before', 'is-drop-after')
+              dropIndicator.classList.add(resolvedInsert ? 'is-drop-after' : 'is-drop-before')
+            }
           } else if (draggingId) {
-            applyLiveInsert(targetId, insertAfter)
+            const resolvedInsert = applyLiveInsert(targetId, insertAfter)
+            if (resolvedInsert !== undefined && resolvedInsert !== insertAfter) {
+              pendingInsertAfter = resolvedInsert
+              dropIndicator.classList.remove('is-drop-before', 'is-drop-after')
+              dropIndicator.classList.add(resolvedInsert ? 'is-drop-after' : 'is-drop-before')
+            }
           }
         }
       }
@@ -860,35 +904,50 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     <section class="fragment-shell">
       <div ref={gridRef} class="fragment-grid">
         {slottedEntries.value.map(({ entry, slot }, index) => {
-          const fragment = fragments.value[entry.id]
-          const headerCopy = fragmentHeaders.value[entry.id]
+          const fragment = entry ? fragments.value[entry.id] : null
+          const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
           const renderNode =
             fragment && headerCopy ? applyHeaderOverride(fragment.tree, headerCopy) : fragment?.tree
           return (
-            <FragmentCard
-              key={entry.id}
-              id={entry.id}
-              fragmentId={entry.id}
-              column={slot.column}
-              row={slot.row}
-              motionDelay={index * 120}
-              expandedId={expandedId}
-              layoutTick={layoutTick}
-              closeLabel={copy.value.fragmentClose}
-              expandable={entry.expandable}
-              fullWidth={entry.fullWidth}
-              size={slot.size}
-              dragState={dragState}
+            <div
+              key={slot.id}
+              class={{
+                'fragment-slot': true,
+                'is-inline': !slot.column.includes('/ -1') && !slot.column.includes('/-1')
+              }}
+              data-size={slot.size}
+              style={{ gridColumn: slot.column, gridRow: slot.row }}
             >
-              {fragment ? (
-                <FragmentRenderer node={renderNode ?? fragment.tree} />
-              ) : (
-                <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
-                  <div class="loader" aria-hidden="true" />
-                  <span class="sr-only">{copy.value.fragmentLoading.replace('{id}', entry.id)}</span>
+              {entry ? (
+                <div class="fragment-card-wrap">
+                  <FragmentCard
+                    key={entry.id}
+                    id={entry.id}
+                    fragmentId={entry.id}
+                    column="1 / -1"
+                    motionDelay={index * 120}
+                    expandedId={expandedId}
+                    layoutTick={layoutTick}
+                    closeLabel={copy.value.fragmentClose}
+                    expandable={entry.expandable}
+                    fullWidth={entry.fullWidth}
+                    size={slot.size}
+                    dragState={dragState}
+                  >
+                    {fragment ? (
+                      <FragmentRenderer node={renderNode ?? fragment.tree} />
+                    ) : (
+                      <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
+                        <div class="loader" aria-hidden="true" />
+                        <span class="sr-only">
+                          {copy.value.fragmentLoading.replace('{id}', entry.id)}
+                        </span>
+                      </div>
+                    )}
+                  </FragmentCard>
                 </div>
-              )}
-            </FragmentCard>
+              ) : null}
+            </div>
           )
         })}
       </div>

@@ -75,6 +75,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     const isInView = useSignal(typeof IntersectionObserver === 'undefined')
     const visibilityTick = useSignal(0)
     const isExpanded = expandedId.value === id
+    const layoutVersion = layoutTick.value
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
@@ -458,6 +459,7 @@ export const FragmentCard = component$<FragmentCardProps>(
       gridColumn: resolvedColumn,
       gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
+      '--layout-version': `${layoutVersion}`,
       minHeight: sizeHeight ? undefined : lockedHeight
     } as Record<string, string>
 
