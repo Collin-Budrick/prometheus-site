@@ -24,6 +24,7 @@ type FragmentClientEffectsProps = {
 }
 
 const DESKTOP_MIN_WIDTH = 1025
+const GRID_MIN_WIDTH = 900
 const ORDER_STORAGE_PREFIX = 'fragment:card-order:v1'
 const DRAG_HOLD_MS = 240
 const DRAG_MOVE_THRESHOLD = 6
@@ -118,6 +119,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const expandedId = useSignal<string | null>(null)
   const layoutTick = useSignal(0)
   const stackScheduler = useSignal<(() => void) | null>(null)
+  const soloScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const orderIds = useSignal<string[]>([])
@@ -686,6 +688,98 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     (ctx) => {
       ctx.track(() => expandedId.value)
       stackScheduler.value?.()
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      if (!grid || typeof ResizeObserver === 'undefined') return
+
+      let frame = 0
+      const rowClass = 'is-row-solo'
+
+      const shouldEnable = () => window.innerWidth >= GRID_MIN_WIDTH && !grid.classList.contains('is-stacked')
+
+      const clearSolo = () => {
+        grid.querySelectorAll<HTMLElement>(`.fragment-card.${rowClass}`).forEach((card) => {
+          card.classList.remove(rowClass)
+        })
+      }
+
+      const schedule = () => {
+        if (frame) return
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          if (!shouldEnable() || dragState.value.active) {
+            clearSolo()
+            return
+          }
+
+          const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
+            (card) => !card.classList.contains('is-expanded') && !card.classList.contains('is-dragging')
+          )
+          if (!cards.length) {
+            clearSolo()
+            return
+          }
+
+          const rects = cards.map((card) => ({
+            card,
+            rect: card.getBoundingClientRect()
+          }))
+          const overlapThreshold = 6
+
+          rects.forEach(({ card, rect }, index) => {
+            const isEligible = card.dataset.size === 'small'
+            if (!isEligible) {
+              card.classList.remove(rowClass)
+              return
+            }
+
+            const hasRowMate = rects.some((other, otherIndex) => {
+              if (otherIndex === index) return false
+              const overlap = Math.min(rect.bottom, other.rect.bottom) - Math.max(rect.top, other.rect.top)
+              return overlap > overlapThreshold
+            })
+
+            card.classList.toggle(rowClass, !hasRowMate)
+          })
+        })
+      }
+
+      soloScheduler.value = schedule
+
+      const resizeObserver = new ResizeObserver(() => schedule())
+      resizeObserver.observe(grid)
+      const mutationObserver = new MutationObserver(() => schedule())
+      mutationObserver.observe(grid, { childList: true })
+      const classObserver = new MutationObserver(() => schedule())
+      classObserver.observe(grid, { attributes: true, attributeFilter: ['class'] })
+      window.addEventListener('resize', schedule)
+      schedule()
+
+      ctx.cleanup(() => {
+        soloScheduler.value = null
+        resizeObserver.disconnect()
+        mutationObserver.disconnect()
+        classObserver.disconnect()
+        window.removeEventListener('resize', schedule)
+        if (frame) cancelAnimationFrame(frame)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      ctx.track(() => layoutTick.value)
+      ctx.track(() => expandedId.value)
+      ctx.track(() => orderIds.value)
+      ctx.track(() => dragState.value.active)
+      soloScheduler.value?.()
     },
     { strategy: 'document-ready' }
   )
