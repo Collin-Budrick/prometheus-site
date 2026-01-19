@@ -12,7 +12,8 @@ export default function (opts: RenderToStreamOptions) {
   const containerAttributes: Record<string, string> = {
     ...opts.containerAttributes,
     lang,
-    'data-initial-fade': 'pending'
+    'data-initial-fade': 'pending',
+    'data-card-stagger': 'pending'
   }
   if (theme) {
     containerAttributes['data-theme'] = theme

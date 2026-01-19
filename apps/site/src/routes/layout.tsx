@@ -19,6 +19,7 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
+const initialCardStaggerDurationMs = 2600
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -38,6 +39,18 @@ const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
 const initialFadeScript = `(function () {
   var root = document.documentElement;
   if (!root) return;
+  var staggerKey = '__PROM_CARD_STAGGER__';
+  if (!window[staggerKey]) {
+    window[staggerKey] = Date.now();
+    var staggerAttr = 'data-card-stagger';
+    var staggerState = root.getAttribute(staggerAttr);
+    if (staggerState !== 'ready') {
+      root.setAttribute(staggerAttr, 'ready');
+    }
+    window.setTimeout(function () {
+      root.removeAttribute(staggerAttr);
+    }, ${initialCardStaggerDurationMs});
+  }
   var storageKey = 'prom-initial-fade';
   try {
     if (window.sessionStorage && window.sessionStorage.getItem(storageKey) === '1') {

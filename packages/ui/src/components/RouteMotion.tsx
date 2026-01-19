@@ -141,6 +141,13 @@ export const RouteMotion = component$(() => {
             }
 
             enableViewTransitions()
+            const cardStaggerState = document.documentElement.dataset.cardStagger
+            const staggerStartedAt =
+              (window as typeof window & { __PROM_CARD_STAGGER__?: number }).__PROM_CARD_STAGGER__
+            const skipInitialCardStagger =
+              cardStaggerState === 'ready' ||
+              cardStaggerState === 'pending' ||
+              (typeof staggerStartedAt === 'number' && Date.now() - staggerStartedAt < 6000)
 
             const seedInitialTargets = () => {
               elements.forEach((element) => {
@@ -228,6 +235,17 @@ export const RouteMotion = component$(() => {
             const elementsToObserve = getMotionElements()
             elementsToObserve.forEach((element) => {
               if (observedElements.has(element)) return
+              if (
+                skipInitialCardStagger &&
+                element.classList.contains('fragment-card') &&
+                element.getAttribute('data-variant') !== 'text' &&
+                isInView(element)
+              ) {
+                element.dataset.motionState = 'in'
+                targets.set(element, 'in')
+                seenElements.add(element)
+                return
+              }
               if (element.hasAttribute('data-motion-skip-visible') && isInView(element)) {
                 element.dataset.motionState = 'in'
                 targets.set(element, 'in')
