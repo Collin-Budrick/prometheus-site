@@ -18,6 +18,7 @@ type FragmentCardProps = {
   layoutTick: Signal<number>
   closeLabel: string
   disableMotion?: boolean
+  fragmentLoaded?: boolean
   expandable?: boolean
   fullWidth?: boolean
   inlineSpan?: number
@@ -40,6 +41,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     layoutTick,
     closeLabel,
     disableMotion,
+    fragmentLoaded,
     expandable,
     fullWidth,
     inlineSpan,
@@ -483,17 +485,25 @@ export const FragmentCard = component$<FragmentCardProps>(
           data-motion={disableMotion ? undefined : ''}
           data-motion-skip-visible={disableMotion ? undefined : ''}
           data-fragment-id={fragmentId}
+          data-fragment-loaded={fragmentLoaded ? 'true' : undefined}
           onClick$={handleToggle}
         >
-          <Slot />
-          {isExpanded ? (
-            <button
-              class="fragment-card-close"
-              type="button"
-              aria-label={closeLabel}
-              title={closeLabel}
-              onClick$={handleClose}
-            />
+          <div class="fragment-card-body">
+            <Slot />
+            {isExpanded ? (
+              <button
+                class="fragment-card-close"
+                type="button"
+                aria-label={closeLabel}
+                title={closeLabel}
+                onClick$={handleClose}
+              />
+            ) : null}
+          </div>
+          {fragmentId ? (
+            <div class="fragment-card-loader" aria-hidden="true">
+              <div class="loader" />
+            </div>
           ) : null}
         </article>
       </>

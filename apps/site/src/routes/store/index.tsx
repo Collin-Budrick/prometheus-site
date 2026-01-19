@@ -7,7 +7,7 @@ import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
+import type { FragmentPayload, FragmentPayloadValue, FragmentPlan, FragmentPlanValue, RenderNode } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -20,7 +20,54 @@ type FragmentResource = {
   lang: Lang
 }
 
+const textNode = (text: string): RenderNode => ({ type: 'text', text })
+
+const elementNode = (tag: string, attrs?: Record<string, string>, children: RenderNode[] = []): RenderNode => ({
+  type: 'element',
+  tag,
+  attrs,
+  children
+})
+
+export const offlineShellFragmentId = 'fragment://fallback/offline-shell@v1'
+
+export const buildOfflineShellFragment = (id: string, path: string): FragmentPayload => {
+  return {
+    id,
+    css: '',
+    head: [{ op: 'title', value: `${siteBrand.name} | Offline` }],
+    meta: {
+      cacheKey: id,
+      ttl: 30,
+      staleTtl: 300,
+      tags: ['fallback', 'offline', 'shell'],
+      runtime: 'node'
+    },
+    tree: elementNode('section', { class: 'offline-shell' }, [
+      elementNode('div', { class: 'meta-line' }, [textNode('offline mode')]),
+      elementNode('h1', undefined, [textNode('You are offline')]),
+      elementNode('p', undefined, [textNode('The shell is available, but live fragments need connectivity.')]),
+      elementNode('div', { class: 'matrix' }, [
+        elementNode('div', { class: 'cell' }, [
+          textNode('Route'),
+          elementNode('strong', undefined, [textNode(path || '/store')])
+        ]),
+        elementNode('div', { class: 'cell' }, [
+          textNode('Status'),
+          elementNode('strong', undefined, [textNode('Offline')])
+        ])
+      ]),
+      elementNode('ul', { class: 'inline-list' }, [
+        elementNode('li', undefined, [elementNode('span'), textNode('Check your connection')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Refresh once you are back online')]),
+        elementNode('li', undefined, [elementNode('span'), textNode('Cached content will load where available')])
+      ])
+    ])
+  }
+}
+
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
+  if (!storeEnabled) return null
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
 
@@ -34,7 +81,27 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for store', error)
-    return null
+    const fallbackId = offlineShellFragmentId
+    const plan: FragmentPlan = {
+      path,
+      createdAt: Date.now(),
+      fragments: [
+        {
+          id: fallbackId,
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    }
+
+    return {
+      plan: plan as FragmentPlanValue,
+      fragments: {
+        [fallbackId]: buildOfflineShellFragment(fallbackId, path)
+      } as FragmentPayloadValue,
+      path,
+      lang
+    }
   }
 })
 
@@ -91,9 +158,10 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   }
 }
 
-const RouteComponent = storeEnabled ? EnabledStoreRoute : DisabledStoreRoute
-
 export default component$(() => {
+  if (!storeEnabled) {
+    return <DisabledStoreRoute />
+  }
   const location = useLocation()
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
@@ -111,5 +179,5 @@ export default component$(() => {
       />
     )
   }
-  return <RouteComponent />
+  return <EnabledStoreRoute />
 })

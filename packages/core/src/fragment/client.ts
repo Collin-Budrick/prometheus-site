@@ -67,6 +67,21 @@ const buildFragmentVersion = (payload: FragmentPayload) => {
   return cacheKey
 }
 
+const escapeFragmentId = (value: string) => {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value)
+  }
+  return value.replace(/["\\]/g, '\\$&')
+}
+
+const markFragmentReady = (id: string) => {
+  if (typeof document === 'undefined') return
+  const selector = `[data-fragment-id="${escapeFragmentId(id)}"]`
+  document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+    element.dataset.fragmentReady = 'true'
+  })
+}
+
 export type FragmentClient = ReturnType<typeof createFragmentClient>
 
 export const createFragmentClient = (
@@ -89,11 +104,16 @@ export const createFragmentClient = (
     appliedFragmentVersions.set(payload.id, version)
 
     if (payload.css && !appliedCss.has(payload.id)) {
-      const style = document.createElement('style')
-      style.dataset.fragmentCss = payload.id
-      style.textContent = payload.css
-      document.head.appendChild(style)
-      appliedCss.set(payload.id, style)
+      const existing = document.querySelector<HTMLStyleElement>(`style[data-fragment-css="${payload.id}"]`)
+      if (existing) {
+        appliedCss.set(payload.id, existing)
+      } else {
+        const style = document.createElement('style')
+        style.dataset.fragmentCss = payload.id
+        style.textContent = payload.css
+        document.head.appendChild(style)
+        appliedCss.set(payload.id, style)
+      }
     }
 
     payload.head.forEach((op) => {
@@ -106,6 +126,8 @@ export const createFragmentClient = (
       const element = applyHeadOp(op)
       if (element) appliedHeadElements.set(key, element)
     })
+
+    markFragmentReady(payload.id)
   }
 
   const applyHeadOp = (op: HeadOp) => {

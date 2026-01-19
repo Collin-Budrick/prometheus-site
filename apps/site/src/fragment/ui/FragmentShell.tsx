@@ -1198,6 +1198,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
                       layoutTick={layoutTick}
                       closeLabel={copy.value.fragmentClose}
                       disableMotion={hasCache}
+                      fragmentLoaded={Boolean(fragment)}
                       expandable={entry.expandable}
                       fullWidth={entry.fullWidth}
                       size={slot.size}

@@ -1327,6 +1327,40 @@
     background-color: rgb(var(--surface) / 0.96);
   }
 
+  .fragment-card-body {
+    position: relative;
+    z-index: 2;
+    transition: opacity 200ms ease;
+  }
+
+  .fragment-card-loader {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border-radius: inherit;
+    background:
+      radial-gradient(
+        circle at 20% 18%,
+        rgb(var(--accent) / 0.12),
+        transparent 55%
+      ),
+      linear-gradient(140deg, rgb(var(--surface) / 0.95), rgb(var(--surface) / 0.78));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+    z-index: 3;
+  }
+
+  .fragment-card[data-fragment-id][data-fragment-loaded='true']:not([data-fragment-ready='true']) .fragment-card-body {
+    opacity: 0;
+  }
+
+  .fragment-card[data-fragment-id][data-fragment-loaded='true']:not([data-fragment-ready='true'])
+    .fragment-card-loader {
+    opacity: 1;
+  }
+
   .fragment-card::before {
     content: "";
     position: absolute;
