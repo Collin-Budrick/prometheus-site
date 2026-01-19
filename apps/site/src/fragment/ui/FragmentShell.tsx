@@ -434,6 +434,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let swapTimer = 0
       let swapTargetId: string | null = null
       let swapInsertAfter = false
+      let finalizePending = false
 
       const getOrderIds = () => buildOrderedIds(planValue.fragments, orderIds.value)
       const getWrapperFragmentId = (wrapper: HTMLElement) =>
@@ -506,6 +507,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         dragging = true
         dragActivated = true
         liveReorder = false
+        finalizePending = false
         dragState.value = { active: true, suppressUntil: 0, draggingId }
         grid.classList.add('is-dragging')
         previousUserSelect = document.body.style.userSelect
@@ -520,6 +522,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       }
 
       const finishDrag = () => {
+        finalizePending = false
         clearHold()
         clearSwapTimer()
         stopAutoScroll()
@@ -533,28 +536,9 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         }
         let dropTargetId: string | null = null
         let dropInsertAfter = false
-        if (dragActivated && draggingId) {
+        if (dragActivated && draggingId && pendingTargetId) {
           dropTargetId = pendingTargetId
-          if (!dropTargetId) {
-            const elementAtPoint =
-              typeof document !== 'undefined' ? document.elementFromPoint(lastX, lastY) : null
-            const cardAtPoint = elementAtPoint?.closest<HTMLElement>('.fragment-card') ?? null
-            const cardId = cardAtPoint?.dataset.fragmentId ?? null
-            dropTargetId = cardId && cardId !== draggingId ? cardId : null
-            if (dropTargetId && cardAtPoint) {
-              const rect = cardAtPoint.getBoundingClientRect()
-              dropInsertAfter = getInsertAfter(rect)
-            }
-          }
-          if (!dropTargetId) {
-            const closest = pickClosestTarget()
-            dropTargetId = closest?.el.dataset.fragmentId ?? null
-            if (closest) {
-              dropInsertAfter = getInsertAfter(closest.rect)
-            }
-          } else {
-            dropInsertAfter = pendingInsertAfter
-          }
+          dropInsertAfter = pendingInsertAfter
         }
         if (dragging) {
           resetDraggingStyles()
@@ -712,7 +696,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
       const updatePosition = () => {
         updateFrame = 0
-        if (!dragging || !draggingEl || !draggingId) return
+        if (!dragging || !draggingEl || !draggingId) {
+          finalizePending = false
+          return
+        }
         const dx = lastX - startX
         const dy = lastY - startY
         const closest = pickClosestTarget()
@@ -733,6 +720,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         }
 
         draggingEl.style.transform = `translate(${dx}px, ${dy}px)`
+
+        if (finalizePending) {
+          finalizePending = false
+          finishDrag()
+        }
       }
 
       const pickClosestTarget = (): {
@@ -829,11 +821,26 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (draggingEl) {
           draggingEl.releasePointerCapture(pointerId)
         }
+        if (dragging) {
+          finalizePending = true
+          scheduleUpdate()
+          return
+        }
         finishDrag()
       }
 
       const handlePointerCancel = (event: PointerEvent) => {
         if (!pointerId || event.pointerId !== pointerId) return
+        lastX = event.clientX
+        lastY = event.clientY
+        if (draggingEl) {
+          draggingEl.releasePointerCapture(pointerId)
+        }
+        if (dragging) {
+          finalizePending = true
+          scheduleUpdate()
+          return
+        }
         finishDrag()
       }
 

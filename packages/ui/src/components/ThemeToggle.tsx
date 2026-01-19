@@ -76,30 +76,40 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       return
     }
 
-    root.dataset.themeDirection = nextTheme
-    root.getBoundingClientRect()
-
-    try {
-      const transition = doc.startViewTransition(() => {
-        applyNextTheme()
-      })
-
-      void transition.finished.finally(() => {
-        delete root.dataset.themeDirection
-        if (previousViewTransitionName) {
-          root.style.setProperty('view-transition-name', previousViewTransitionName)
-        } else {
-          root.style.removeProperty('view-transition-name')
-        }
-      })
-    } catch {
-      applyNextTheme()
+    const finalizeTransition = () => {
       delete root.dataset.themeDirection
       if (previousViewTransitionName) {
         root.style.setProperty('view-transition-name', previousViewTransitionName)
       } else {
         root.style.removeProperty('view-transition-name')
       }
+    }
+
+    const startTransition = () => {
+      try {
+        const transition = doc.startViewTransition(() => {
+          applyNextTheme()
+        })
+
+        void transition.finished.finally(finalizeTransition)
+      } catch {
+        applyNextTheme()
+        finalizeTransition()
+      }
+    }
+
+    if (document.visibilityState !== 'visible') {
+      applyNextTheme()
+      finalizeTransition()
+      return
+    }
+
+    root.dataset.themeDirection = nextTheme
+
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(startTransition)
+    } else {
+      startTransition()
     }
   })
 
