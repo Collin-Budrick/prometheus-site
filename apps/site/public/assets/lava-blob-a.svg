@@ -1,0 +1,19 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='960' height='960' viewBox='0 0 960 960'>
+  <defs>
+    <radialGradient id='g1' cx='50%' cy='50%' r='50%'>
+      <stop offset='0%' stop-color='#f3dcff' stop-opacity='0.85'/>
+      <stop offset='70%' stop-color='#f3dcff' stop-opacity='0'/>
+    </radialGradient>
+    <radialGradient id='g2' cx='50%' cy='50%' r='50%'>
+      <stop offset='0%' stop-color='#fff2b6' stop-opacity='0.75'/>
+      <stop offset='70%' stop-color='#fff2b6' stop-opacity='0'/>
+    </radialGradient>
+    <radialGradient id='g3' cx='50%' cy='50%' r='50%'>
+      <stop offset='0%' stop-color='#f8d4ff' stop-opacity='0.65'/>
+      <stop offset='70%' stop-color='#f8d4ff' stop-opacity='0'/>
+    </radialGradient>
+  </defs>
+  <circle cx='260' cy='300' r='360' fill='url(#g1)'/>
+  <circle cx='700' cy='320' r='320' fill='url(#g2)'/>
+  <circle cx='520' cy='740' r='380' fill='url(#g3)'/>
+</svg>
