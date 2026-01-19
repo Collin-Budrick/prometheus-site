@@ -1,4 +1,4 @@
-import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { useLocation } from '@builder.io/qwik-city'
 
 import { scheduleIdleTask } from './motion-idle'
@@ -37,16 +37,10 @@ const nextMotionRunId = () => {
 
 export const RouteMotion = component$(() => {
   const location = useLocation()
-  const skipInitial = useSignal(true)
 
   useVisibleTask$(
     (ctx) => {
       ctx.track(() => location.url.pathname + location.url.search)
-
-      if (skipInitial.value) {
-        skipInitial.value = false
-        return
-      }
 
       const motionRunId = nextMotionRunId()
       if (!acquireMotionPipeline(motionRunId)) {
@@ -109,7 +103,6 @@ export const RouteMotion = component$(() => {
 
           const getMotionElements = () => Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
           const observedElements = new WeakSet<HTMLElement>()
-          const seenElements = new WeakSet<HTMLElement>()
           const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
           const animations = new WeakMap<HTMLElement, Animation>()
           const activeAnimations = new Set<Animation>()
@@ -217,11 +210,6 @@ export const RouteMotion = component$(() => {
                   const target = entry.target as HTMLElement
                   if (entry.isIntersecting) {
                     setTarget(target, 'in')
-                    if (!seenElements.has(target)) {
-                      seenElements.add(target)
-                      observer.unobserve(target)
-                      observedElements.delete(target)
-                    }
                   } else {
                     setTarget(target, 'out')
                   }
@@ -243,14 +231,10 @@ export const RouteMotion = component$(() => {
               ) {
                 element.dataset.motionState = 'in'
                 targets.set(element, 'in')
-                seenElements.add(element)
-                return
               }
               if (element.hasAttribute('data-motion-skip-visible') && isInView(element)) {
                 element.dataset.motionState = 'in'
                 targets.set(element, 'in')
-                seenElements.add(element)
-                return
               }
               if (!element.dataset.motionState) element.dataset.motionState = 'out'
               observer.observe(element)
