@@ -1327,6 +1327,9 @@
     box-shadow: none;
     overflow: auto;
     z-index: 2;
+    height: auto;
+    max-height: none;
+    min-height: 0;
   }
 
   :root:not([data-theme="dark"]) .fragment-card[data-variant='text'] {
@@ -1436,6 +1439,20 @@
   .fragment-slot > .fragment-card-wrap > .fragment-card {
     height: 100%;
     max-height: 100%;
+  }
+
+  .fragment-slot[data-variant='text'] {
+    height: auto;
+    min-height: 0;
+  }
+
+  .fragment-slot[data-variant='text'] > .fragment-card-wrap {
+    height: auto;
+  }
+
+  .fragment-slot[data-variant='text'] > .fragment-card-wrap > .fragment-card {
+    height: auto;
+    max-height: none;
   }
 
   .fragment-slot.is-solo {

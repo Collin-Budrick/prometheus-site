@@ -1248,7 +1248,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
     <section class="fragment-shell">
       {hasIntro ? (
         <div class="fragment-grid">
-          <div class="fragment-slot" data-size="big" style={{ gridColumn: '1 / -1' }}>
+          <div class="fragment-slot" data-size="big" data-variant="text" style={{ gridColumn: '1 / -1' }}>
             <div class="fragment-card-wrap">
               <FragmentMarkdownBlock
                 id="shell-intro"
