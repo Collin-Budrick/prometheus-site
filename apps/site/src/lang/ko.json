@@ -19,6 +19,7 @@
     "fragmentStatusIdle": "대기",
     "fragmentLoading": "프래그먼트 {id} 로딩 중",
     "fragmentClose": "닫기",
+    "homeIntroMarkdown": "## 브리프\n프래그먼트는 결정적인 바이너리 트리로 스트리밍됩니다. 셸은 고정된 채로, 캐시를 고려한 업데이트가 즉시 반영됩니다.\n\n- 엣지 우선 플래닝\n- 하이드레이션 없는 DOM\n- WebTransport 대응 스트림",
     "storeMetaLine": "스토어",
     "storeTitle": "스토어",
     "storeDescription": "빠른 바이너리 전달을 위해 큐레이션된 모듈, 프래그먼트, 템플릿을 살펴보세요.",

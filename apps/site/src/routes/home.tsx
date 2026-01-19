@@ -4,6 +4,7 @@ import { siteBrand } from '../config'
 import { FragmentShell, getFragmentShellCacheEntry } from '../fragment/ui'
 import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
+import { useLangCopy } from '../shared/lang-bridge'
 import { appConfig } from '../app-config'
 import type {
   FragmentPayload,
@@ -111,6 +112,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
 export default component$(() => {
   const location = useLocation()
   const fragmentResource = useFragmentResource()
+  const copy = useLangCopy()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
     ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
@@ -124,6 +126,7 @@ export default component$(() => {
       initialFragments={data.fragments}
       path={data.path}
       initialLang={normalizeLang(data.lang)}
+      introMarkdown={copy.value.homeIntroMarkdown}
     />
   )
 })

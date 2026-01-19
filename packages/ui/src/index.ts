@@ -1,6 +1,7 @@
 export { Dock, DockIcon } from './components/Dock'
 export { DockBar, type DockBarProps } from './components/DockBar'
 export { FragmentCard } from './components/FragmentCard'
+export { FragmentMarkdownBlock } from './components/FragmentMarkdownBlock'
 export { LanguageToggle } from './components/LanguageToggle'
 export { RouteMotion } from './components/RouteMotion'
 export { StaticRouteSkeleton, StaticRouteTemplate } from './components/StaticRouteTemplate'

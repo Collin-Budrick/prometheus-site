@@ -19,6 +19,7 @@
     "fragmentStatusIdle": "待機中",
     "fragmentLoading": "フラグメント {id} を読み込み中",
     "fragmentClose": "閉じる",
+    "homeIntroMarkdown": "## ブリーフィング\nフラグメントは決定的なバイナリツリーとしてストリーミングされます。シェルは固定されたまま、キャッシュを考慮した更新がその場で適用されます。\n\n- エッジ優先のプランニング\n- ハイドレーション不要のDOM\n- WebTransport対応ストリーム",
     "storeMetaLine": "ストア",
     "storeTitle": "ストア",
     "storeDescription": "高速なバイナリ配信のために厳選されたモジュール、フラグメント、テンプレートを閲覧できます。",

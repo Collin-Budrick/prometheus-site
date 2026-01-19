@@ -1,5 +1,5 @@
 import { $, component$, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
-import { FragmentCard } from '@prometheus/ui'
+import { FragmentCard, FragmentMarkdownBlock } from '@prometheus/ui'
 import type { FragmentPayloadMap, FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../types'
 import { applySpeculationRules, buildSpeculationRulesForPlan, useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
@@ -17,6 +17,7 @@ type FragmentShellProps = {
   initialFragments: FragmentPayloadValue
   path: string
   initialLang: Lang
+  introMarkdown?: string
 }
 
 type FragmentClientEffectsProps = {
@@ -195,7 +196,7 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
   return null
 })
 
-export const FragmentShell = component$(({ plan, initialFragments, path, initialLang }: FragmentShellProps) => {
+export const FragmentShell = component$(({ plan, initialFragments, path, initialLang, introMarkdown }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
   useTask$((ctx) => {
     ctx.track(() => initialLang)
@@ -206,6 +207,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
+  const hasIntro = Boolean(introMarkdown?.trim())
   const initialFragmentMap = resolveFragments(initialFragments)
   const cachedFragments = cachedEntry?.fragments
   const fragments = useSignal<FragmentPayloadMap>(
@@ -439,6 +441,40 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const getOrderIds = () => buildOrderedIds(planValue.fragments, orderIds.value)
       const getWrapperFragmentId = (wrapper: HTMLElement) =>
         wrapper.querySelector<HTMLElement>('.fragment-card')?.dataset.fragmentId ?? null
+      const isCardDraggable = (card: HTMLElement | null) => card?.dataset.draggable !== 'false'
+      const isIdDraggable = (id: string) => {
+        const card = grid.querySelector<HTMLElement>(`.fragment-card[data-fragment-id="${id}"]`)
+        return isCardDraggable(card)
+      }
+      const splitOrder = (current: string[]) => {
+        const locked = new Map<number, string>()
+        const draggable: string[] = []
+        current.forEach((entryId, index) => {
+          if (isIdDraggable(entryId)) {
+            draggable.push(entryId)
+          } else {
+            locked.set(index, entryId)
+          }
+        })
+        return { draggable, locked }
+      }
+      const mergeOrder = (draggable: string[], locked: Map<number, string>, total: number) => {
+        const merged: string[] = []
+        let dragIndex = 0
+        for (let index = 0; index < total; index += 1) {
+          const lockedId = locked.get(index)
+          if (lockedId) {
+            merged.push(lockedId)
+            continue
+          }
+          const next = draggable[dragIndex]
+          if (next) {
+            merged.push(next)
+            dragIndex += 1
+          }
+        }
+        return merged
+      }
 
       const clearHold = () => {
         if (!holdTimer) return
@@ -571,12 +607,15 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
       const moveOrder = (current: string[], id: string, targetId: string, insertAfter: boolean) => {
         if (!current.length) return current
-        const without = current.filter((entryId) => entryId !== id)
+        const { draggable, locked } = splitOrder(current)
+        if (!draggable.length) return current
+        if (!draggable.includes(id) || !draggable.includes(targetId)) return current
+        const without = draggable.filter((entryId) => entryId !== id)
         const targetIndex = without.indexOf(targetId)
         if (targetIndex === -1) return current
         const insertIndex = insertAfter ? targetIndex + 1 : targetIndex
         without.splice(insertIndex, 0, id)
-        return without
+        return mergeOrder(without, locked, current.length)
       }
 
       const resolveOrder = (id: string, targetId: string, insertAfter: boolean) => {
@@ -737,11 +776,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         const elementAtPoint =
           typeof document !== 'undefined' ? document.elementFromPoint(lastX, lastY) : null
         const directTarget = elementAtPoint?.closest<HTMLElement>('.fragment-card') ?? null
-        if (directTarget && directTarget !== draggingEl) {
+        if (directTarget && directTarget !== draggingEl && isCardDraggable(directTarget)) {
           return { el: directTarget, rect: directTarget.getBoundingClientRect(), distance: 0, threshold: 0 }
         }
         const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
-          (card) => card !== draggingEl
+          (card) => card !== draggingEl && isCardDraggable(card)
         )
         if (!cards.length) return null
         let closestEl: HTMLElement | null = null
@@ -781,6 +820,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (target.closest(INTERACTIVE_SELECTOR)) return
         const card = target.closest<HTMLElement>('.fragment-card')
         if (!card || !grid.contains(card)) return
+        if (!isCardDraggable(card)) return
         if (card.classList.contains('is-expanded')) return
         const cardId = card.dataset.fragmentId ?? null
         if (!cardId) return
@@ -1206,6 +1246,25 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
 
   return (
     <section class="fragment-shell">
+      {hasIntro ? (
+        <div class="fragment-grid">
+          <div class="fragment-slot" data-size="big" style={{ gridColumn: '1 / -1' }}>
+            <div class="fragment-card-wrap">
+              <FragmentMarkdownBlock
+                id="shell-intro"
+                column="1 / -1"
+                motionDelay={0}
+                expandedId={expandedId}
+                layoutTick={layoutTick}
+                closeLabel={copy.value.fragmentClose}
+                markdown={introMarkdown ?? ''}
+                size="big"
+                disableMotion={hasCache}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div ref={gridRef} class="fragment-grid">
         {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null

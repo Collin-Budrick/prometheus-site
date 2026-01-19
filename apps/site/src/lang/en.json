@@ -19,6 +19,7 @@
     "fragmentStatusIdle": "Idle",
     "fragmentLoading": "Loading fragment {id}",
     "fragmentClose": "Close",
+    "homeIntroMarkdown": "## Field brief\nFragments stream as deterministic binary trees. The shell stays fixed while payloads patch in-place with cache-aware updates.\n\n- Edge-first planning\n- Hydration-free client DOM\n- WebTransport-ready streams",
     "storeMetaLine": "Store",
     "storeTitle": "Store",
     "storeDescription": "Browse curated modules, fragments, and templates designed for fast binary delivery.",

@@ -9,7 +9,7 @@ const activeAnimations = new WeakMap<HTMLElement, Animation>()
 const pendingRects = new WeakMap<HTMLElement, DOMRect>()
 const pendingRadii = new WeakMap<HTMLElement, string>()
 
-type FragmentCardProps = {
+export type FragmentCardProps = {
   id: string
   fragmentId?: string
   column: string
@@ -21,9 +21,11 @@ type FragmentCardProps = {
   fragmentLoaded?: boolean
   fragmentHasCss?: boolean
   expandable?: boolean
+  draggable?: boolean
   fullWidth?: boolean
   inlineSpan?: number
   size?: 'small' | 'big' | 'tall'
+  variant?: 'card' | 'text'
   row?: string
   dragState?: Signal<{
     active: boolean
@@ -43,13 +45,17 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     closeLabel,
     disableMotion,
     expandable,
+    draggable,
     fullWidth,
     inlineSpan,
     size,
+    variant,
     row,
     dragState
   } = props
     const isFullWidth = fullWidth === true
+    const resolvedVariant = variant ?? 'card'
+    const isDraggable = draggable !== false
     const resolvedSize = size ?? 'small'
     const resolvedInlineSpan =
       typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
@@ -86,7 +92,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       const dragInfo = dragState?.value
       if (dragInfo?.active) return
       if (dragInfo && dragInfo.suppressUntil > Date.now()) return
-      const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
+      const canExpand =
+        expandable === true || (expandable !== false && autoExpandable.value) || expandedId.value === id
       if (!canExpand) return
       if (!(event.target instanceof HTMLElement)) return
       if (event.target.closest(INTERACTIVE_SELECTOR)) return
@@ -103,7 +110,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       const dragInfo = dragState?.value
       if (dragInfo?.active) return
       if (dragInfo && dragInfo.suppressUntil > Date.now()) return
-      const canExpand = expandable === true || autoExpandable.value || expandedId.value === id
+      const canExpand =
+        expandable === true || (expandable !== false && autoExpandable.value) || expandedId.value === id
       if (!canExpand) return
       const card = cardRef.value
       if (card) {
@@ -300,7 +308,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         let frame = 0
         const updateOverflow = () => {
           frame = 0
-          if (!resolvedSize || expandedId.value === id) {
+          if (!resolvedSize || expandedId.value === id || expandable === false) {
             autoExpandable.value = expandedId.value === id
             return
           }
@@ -522,6 +530,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-size={resolvedSize}
           data-motion={disableMotion ? undefined : ''}
           data-motion-skip-visible={disableMotion ? undefined : ''}
+          data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}
+          data-draggable={isDraggable ? undefined : 'false'}
           data-fragment-id={fragmentId}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
