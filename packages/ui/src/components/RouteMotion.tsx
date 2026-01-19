@@ -7,8 +7,16 @@ let motionInstanceId = 0
 let motionOwnerId: number | null = null
 let motionTeardown: (() => void) | null = null
 
+const resetMotionPipeline = () => {
+  motionTeardown?.()
+  motionTeardown = null
+  motionOwnerId = null
+}
+
 const acquireMotionPipeline = (id: number) => {
-  if (motionOwnerId !== null) return false
+  if (motionOwnerId !== null) {
+    resetMotionPipeline()
+  }
   motionOwnerId = id
   return true
 }
@@ -25,9 +33,7 @@ const setMotionPipelineTeardown = (id: number, teardown?: () => void) => {
 
 const releaseMotionPipeline = (id: number) => {
   if (motionOwnerId !== id) return
-  motionTeardown?.()
-  motionTeardown = null
-  motionOwnerId = null
+  resetMotionPipeline()
 }
 
 const nextMotionRunId = () => {
@@ -37,43 +43,34 @@ const nextMotionRunId = () => {
 
 export const RouteMotion = component$(() => {
   const location = useLocation()
-
   useVisibleTask$(
     (ctx) => {
       ctx.track(() => location.url.pathname + location.url.search)
-
+      const navKey = `${location.url.pathname}${location.url.search}`
       const motionRunId = nextMotionRunId()
       if (!acquireMotionPipeline(motionRunId)) {
         return
       }
 
-      let disposeMotion: (() => void) | undefined
       let cancelled = false
       let released = false
       let stopIdle = () => {}
 
-      const handlePageHide = () => {
-        release()
+      const handlePageHide = (event: PageTransitionEvent) => {
+        if (event.persisted) return
+        release('pagehide')
       }
 
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === 'hidden') {
-          release()
-        }
-      }
-
-      const release = () => {
+      const release = (reason: string) => {
         if (released) return
         released = true
         cancelled = true
         stopIdle()
         releaseMotionPipeline(motionRunId)
         window.removeEventListener('pagehide', handlePageHide)
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
 
       window.addEventListener('pagehide', handlePageHide)
-      document.addEventListener('visibilitychange', handleVisibilityChange)
 
       stopIdle = scheduleIdleTask(
         () => {
@@ -84,11 +81,12 @@ export const RouteMotion = component$(() => {
           if (prefersReducedMotion) {
             delete document.documentElement.dataset.motionReady
             delete document.documentElement.dataset.viewTransitions
-            release()
+            release('reduced-motion')
             return
           }
 
-          const root = document.querySelector('[data-motion-root]') ?? document.body
+          const motionRoot = () => document.querySelector('[data-motion-root]') ?? document.body
+          const mutationRoot = document.body ?? document.documentElement
           const viewTransitionsReady =
             'startViewTransition' in document &&
             window.matchMedia('(prefers-reduced-motion: no-preference)').matches
@@ -101,7 +99,7 @@ export const RouteMotion = component$(() => {
             }
           }
 
-          const getMotionElements = () => Array.from(root.querySelectorAll<HTMLElement>('[data-motion]'))
+          const getMotionElements = () => Array.from(motionRoot().querySelectorAll<HTMLElement>('[data-motion]'))
           const observedElements = new WeakSet<HTMLElement>()
           const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
           const animations = new WeakMap<HTMLElement, Animation>()
@@ -203,20 +201,20 @@ export const RouteMotion = component$(() => {
               animation.addEventListener('cancel', finalize, { once: true })
             }
 
-            const observerOptions = { threshold: 0, rootMargin: '-12% 0px -12% 0px' }
-            const observer = new IntersectionObserver(
-              (entries) => {
-                entries.forEach((entry) => {
-                  const target = entry.target as HTMLElement
+          const observerOptions = { threshold: 0, rootMargin: '-12% 0px -12% 0px' }
+          const observer = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((entry) => {
+                const target = entry.target as HTMLElement
                   if (entry.isIntersecting) {
                     setTarget(target, 'in')
                   } else {
                     setTarget(target, 'out')
                   }
-                })
-              },
-              observerOptions
-            )
+              })
+            },
+            observerOptions
+          )
 
           const observeTargets = () => {
             if (disposed) return
@@ -242,11 +240,26 @@ export const RouteMotion = component$(() => {
             })
           }
 
-            const unobserveNode = (node: Node) => {
-              if (!(node instanceof HTMLElement)) return
+          const refreshTargets = () => {
+            if (disposed) return
+            observeTargets()
+            requestAnimationFrame(() => {
+              const elementsToAnimate = getMotionElements()
+              elementsToAnimate.forEach((element) => {
+                if (isInView(element)) {
+                  setTarget(element, 'in')
+                } else {
+                  setTarget(element, 'out')
+                }
+              })
+            })
+          }
 
-              const elementsToRemove = node.matches('[data-motion]')
-                ? [node, ...Array.from(node.querySelectorAll<HTMLElement>('[data-motion]'))]
+          const unobserveNode = (node: Node) => {
+            if (!(node instanceof HTMLElement)) return
+
+            const elementsToRemove = node.matches('[data-motion]')
+              ? [node, ...Array.from(node.querySelectorAll<HTMLElement>('[data-motion]'))]
                 : Array.from(node.querySelectorAll<HTMLElement>('[data-motion]'))
 
               elementsToRemove.forEach((element) => {
@@ -260,20 +273,33 @@ export const RouteMotion = component$(() => {
               pendingIdle = scheduleIdleTask(() => {
                 pendingIdle = null
                 observeTargets()
-              })
-            }
-
-            observeTargets()
-            requestAnimationFrame(() => {
-              const elementsToAnimate = getMotionElements()
-              elementsToAnimate.forEach((element) => {
-                if (isInView(element)) setTarget(element, 'in')
-              })
             })
+          }
 
-            let mutationLocked = false
-            const mutationObserver = new MutationObserver((records) => {
-              if (mutationLocked) return
+          observeTargets()
+          requestAnimationFrame(() => {
+            const elementsToAnimate = getMotionElements()
+            elementsToAnimate.forEach((element) => {
+              if (isInView(element)) setTarget(element, 'in')
+            })
+          })
+
+          const handlePopState = () => {
+            refreshTargets()
+          }
+
+          const handlePageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) {
+              refreshTargets()
+            }
+          }
+
+          window.addEventListener('popstate', handlePopState)
+          window.addEventListener('pageshow', handlePageShow)
+
+          let mutationLocked = false
+          const mutationObserver = new MutationObserver((records) => {
+            if (mutationLocked) return
               mutationLocked = true
               try {
                 records.forEach((record) => {
@@ -285,13 +311,15 @@ export const RouteMotion = component$(() => {
               }
             })
 
-            mutationObserver.observe(root, { childList: true, subtree: true })
+            mutationObserver.observe(mutationRoot, { childList: true, subtree: true })
 
             return () => {
               disposed = true
               observer.disconnect()
               mutationObserver.disconnect()
               if (pendingIdle) pendingIdle()
+              window.removeEventListener('popstate', handlePopState)
+              window.removeEventListener('pageshow', handlePageShow)
               activeAnimations.forEach((animation) => animation.cancel())
             }
           }
@@ -301,6 +329,7 @@ export const RouteMotion = component$(() => {
             delete document.documentElement.dataset.motionReady
             delete document.documentElement.dataset.viewTransitions
 
+            let pipelineTeardown: (() => void) | undefined
             const waitForMotion = new MutationObserver((records) => {
               const hasMotion = records.some((record) =>
                 Array.from(record.addedNodes).some(
@@ -312,15 +341,15 @@ export const RouteMotion = component$(() => {
               if (!hasMotion || cancelled) return
               const teardown = startMotionPipeline()
               if (teardown) {
-                disposeMotion = teardown
+                pipelineTeardown = teardown
               }
               waitForMotion.disconnect()
             })
 
-            waitForMotion.observe(root, { childList: true, subtree: true })
+            waitForMotion.observe(mutationRoot, { childList: true, subtree: true })
             return () => {
               waitForMotion.disconnect()
-              disposeMotion?.()
+              pipelineTeardown?.()
             }
           }
 
@@ -334,7 +363,6 @@ export const RouteMotion = component$(() => {
               return
             }
             if (teardown) {
-              disposeMotion = teardown
               setMotionPipelineTeardown(motionRunId, teardown)
             }
           })
@@ -345,7 +373,7 @@ export const RouteMotion = component$(() => {
       )
 
       ctx.cleanup(() => {
-        release()
+        release('cleanup')
       })
     },
     { strategy: 'document-idle' }

@@ -1253,17 +1253,16 @@ export const FragmentShell = component$(
         <div class="fragment-grid">
           <div class="fragment-slot" data-size="big" data-variant="text" style={{ gridColumn: '1 / -1' }}>
             <div class="fragment-card-wrap">
-              <FragmentMarkdownBlock
-                id="shell-intro"
-                column="1 / -1"
-                motionDelay={0}
-                expandedId={expandedId}
-                layoutTick={layoutTick}
-                closeLabel={copy.value.fragmentClose}
-                markdown={introMarkdown ?? ''}
-                size="big"
-                disableMotion={hasCache}
-              />
+                <FragmentMarkdownBlock
+                  id="shell-intro"
+                  column="1 / -1"
+                  motionDelay={0}
+                  expandedId={expandedId}
+                  layoutTick={layoutTick}
+                  closeLabel={copy.value.fragmentClose}
+                  markdown={introMarkdown ?? ''}
+                  size="big"
+                />
             </div>
           </div>
         </div>
@@ -1296,7 +1295,6 @@ export const FragmentShell = component$(
                     expandedId={expandedId}
                     layoutTick={layoutTick}
                     closeLabel={copy.value.fragmentClose}
-                    disableMotion={hasCache}
                     fragmentLoaded={Boolean(fragment)}
                     fragmentHasCss={skipCssGuard ? false : Boolean(fragment?.css)}
                     expandable={entry.expandable}
