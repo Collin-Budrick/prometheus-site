@@ -4,6 +4,7 @@ import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
 import { serwist } from '@serwist/vite'
 import { compression, defineAlgorithm } from 'vite-plugin-compression2'
+import { visualizer } from 'rollup-plugin-visualizer'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -334,7 +335,16 @@ export default defineConfig(
       secure: false,
       rewrite: (pathValue) => pathValue.replace(/^\/api/, '')
     }
+    const shouldVisualizeBundle =
+      process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const binding = await loadQwikBinding()
+    const bundleVisualizer = shouldVisualizeBundle
+      ? visualizer({
+        filename: 'dist/bundle-report.html',
+        open: false,
+        template: 'treemap'
+      })
+      : null
 
     return {
       base: publicBase,
@@ -343,6 +353,7 @@ export default defineConfig(
         earlyHintsPlugin(),
         fragmentHmrPlugin(),
         tailwindcss(),
+        ...(bundleVisualizer ? [bundleVisualizer] : []),
         qwikCity(),
         qwikVite({
           optimizerOptions: {
