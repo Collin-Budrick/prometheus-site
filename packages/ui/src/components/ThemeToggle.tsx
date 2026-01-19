@@ -54,7 +54,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
     const applyNextTheme = () => {
       hasStoredPreference.value = true
       applyTheme(nextTheme)
-      onToggle$?.(nextTheme)
+      void onToggle$?.(nextTheme)
     }
 
     const doc = document as DocumentWithViewTransition
@@ -84,7 +84,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
         applyNextTheme()
       })
 
-      transition.finished.finally(() => {
+      void transition.finished.finally(() => {
         delete root.dataset.themeDirection
         if (previousViewTransitionName) {
           root.style.setProperty('view-transition-name', previousViewTransitionName)
@@ -111,7 +111,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       aria-pressed={themeSignal.value === 'dark'}
       aria-label={themeSignal.value === 'dark' ? labels.ariaToLight : labels.ariaToDark}
       onClick$={() => {
-        toggleTheme()
+        void toggleTheme()
       }}
     >
       {themeSignal.value === 'dark' ? (
