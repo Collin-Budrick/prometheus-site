@@ -46,7 +46,6 @@ export const RouteMotion = component$(() => {
   useVisibleTask$(
     (ctx) => {
       ctx.track(() => location.url.pathname + location.url.search)
-      const navKey = `${location.url.pathname}${location.url.search}`
       const motionRunId = nextMotionRunId()
       if (!acquireMotionPipeline(motionRunId)) {
         return
@@ -58,10 +57,10 @@ export const RouteMotion = component$(() => {
 
       const handlePageHide = (event: PageTransitionEvent) => {
         if (event.persisted) return
-        release('pagehide')
+        release()
       }
 
-      const release = (reason: string) => {
+      const release = () => {
         if (released) return
         released = true
         cancelled = true
@@ -81,7 +80,7 @@ export const RouteMotion = component$(() => {
           if (prefersReducedMotion) {
             delete document.documentElement.dataset.motionReady
             delete document.documentElement.dataset.viewTransitions
-            release('reduced-motion')
+            release()
             return
           }
 
@@ -373,7 +372,7 @@ export const RouteMotion = component$(() => {
       )
 
       ctx.cleanup(() => {
-        release('cleanup')
+        release()
       })
     },
     { strategy: 'document-idle' }
