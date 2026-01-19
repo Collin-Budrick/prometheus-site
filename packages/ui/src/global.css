@@ -540,7 +540,20 @@
       view-transition-name: shell-main;
     }
 
+    .dock-shell {
+      view-transition-name: dock-shell;
+    }
+
+    .viewport-fade {
+      view-transition-name: viewport-fade;
+    }
+
     :root[data-theme-direction] [data-view-transition] {
+      view-transition-name: none !important;
+    }
+
+    :root[data-theme-direction] .dock-shell,
+    :root[data-theme-direction] .viewport-fade {
       view-transition-name: none !important;
     }
 
@@ -590,6 +603,11 @@
   @media (prefers-reduced-motion: reduce) {
     @supports (view-transition-name: root) {
       [data-view-transition] {
+        view-transition-name: none !important;
+      }
+
+      .dock-shell,
+      .viewport-fade {
         view-transition-name: none !important;
       }
 
