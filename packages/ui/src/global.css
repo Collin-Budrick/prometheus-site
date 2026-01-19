@@ -1331,11 +1331,12 @@
     height: auto;
     max-height: none;
     min-height: 0;
+    --text-wave-duration: 2000ms;
   }
 
   .fragment-card[data-variant='text'][data-wave-in] {
-    animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease))
-      both;
+    animation: wipe-up var(--text-wave-duration, var(--theme-transition-duration))
+      var(--theme-transition-ease, var(--view-transition-ease)) both;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
     -webkit-mask-size: 100% 300%;
