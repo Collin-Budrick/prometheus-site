@@ -3,6 +3,38 @@ import { useLocation } from '@builder.io/qwik-city'
 
 import { scheduleIdleTask } from './motion-idle'
 
+let motionInstanceId = 0
+let motionOwnerId: number | null = null
+let motionTeardown: (() => void) | null = null
+
+const acquireMotionPipeline = (id: number) => {
+  if (motionOwnerId !== null) return false
+  motionOwnerId = id
+  return true
+}
+
+const isMotionOwner = (id: number) => motionOwnerId === id
+
+const setMotionPipelineTeardown = (id: number, teardown?: () => void) => {
+  if (motionOwnerId !== id) {
+    teardown?.()
+    return
+  }
+  motionTeardown = teardown ?? null
+}
+
+const releaseMotionPipeline = (id: number) => {
+  if (motionOwnerId !== id) return
+  motionTeardown?.()
+  motionTeardown = null
+  motionOwnerId = null
+}
+
+const nextMotionRunId = () => {
+  motionInstanceId += 1
+  return motionInstanceId
+}
+
 export const RouteMotion = component$(() => {
   const location = useLocation()
   const skipInitial = useSignal(true)
@@ -16,10 +48,40 @@ export const RouteMotion = component$(() => {
         return
       }
 
+      const motionRunId = nextMotionRunId()
+      if (!acquireMotionPipeline(motionRunId)) {
+        return
+      }
+
       let disposeMotion: (() => void) | undefined
       let cancelled = false
+      let released = false
+      let stopIdle = () => {}
 
-      const stopIdle = scheduleIdleTask(
+      const handlePageHide = () => {
+        release()
+      }
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+          release()
+        }
+      }
+
+      const release = () => {
+        if (released) return
+        released = true
+        cancelled = true
+        stopIdle()
+        releaseMotionPipeline(motionRunId)
+        window.removeEventListener('pagehide', handlePageHide)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+
+      window.addEventListener('pagehide', handlePageHide)
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+
+      stopIdle = scheduleIdleTask(
         () => {
         if (cancelled) return
 
@@ -28,6 +90,7 @@ export const RouteMotion = component$(() => {
           if (prefersReducedMotion) {
             delete document.documentElement.dataset.motionReady
             delete document.documentElement.dataset.viewTransitions
+            release()
             return
           }
 
@@ -262,24 +325,25 @@ export const RouteMotion = component$(() => {
           return startMotionPipeline()
         }
 
-        setup().then((teardown) => {
-          if (cancelled) {
-            teardown?.()
-            return
-          }
-          if (teardown) {
-            disposeMotion = teardown
-          }
-        })
+        void setup()
+          .then((teardown) => {
+            if (cancelled || !isMotionOwner(motionRunId)) {
+              teardown?.()
+              return
+            }
+            if (teardown) {
+              disposeMotion = teardown
+              setMotionPipelineTeardown(motionRunId, teardown)
+            }
+          })
+          .catch(() => {})
       },
       120,
       'user-visible'
       )
 
       ctx.cleanup(() => {
-        cancelled = true
-        stopIdle()
-        disposeMotion?.()
+        release()
       })
     },
     { strategy: 'document-idle' }
