@@ -24,7 +24,7 @@
     "arkenv": "0.9.0",
     "arktype": "2.1.29",
     "nostr-tools": "^2.19.4",
-    "peerjs": "^1.5.5",
+    "peerjs": "^2.0.0-beta.3",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121",
     "y-indexeddb": "^9.0.12",
@@ -38,15 +38,15 @@
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "25.0.9",
     "lightningcss": "^1.30.2",
-    "oxlint": "1.39.0",
-    "rollup-plugin-visualizer": "^5.15.0",
+    "oxlint": "1.40.0",
+    "rollup-plugin-visualizer": "^6.0.5",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260118",
+    "typescript": "6.0.0-dev.20260119",
     "vite": "8.0.0-beta.8",
     "vite-plugin-compression2": "^2.4.0"
   },
   "optionalDependencies": {
-    "@oxlint/win32-arm64": "^1.39.0"
+    "@oxlint/win32-arm64": "^1.40.0"
   }
 }

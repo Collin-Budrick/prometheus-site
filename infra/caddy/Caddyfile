@@ -17,22 +17,7 @@ https://prometheus.dev {
 		alt-svc "h3=\":443\"; ma=2592000"
 	}
 
-	handle /yjs {
-		reverse_proxy http://yjs-signaling:4444
-	}
-
-	handle_path /yjs/* {
-		reverse_proxy http://yjs-signaling:4444
-	}
-
-	handle_path /api/* {
-		reverse_proxy http://api:4000 {
-			lb_try_duration 5s
-			lb_try_interval 100ms
-		}
-	}
-
-	@static_cache path_regexp static_cache ^/(?:build|assets|icons)/|^/favicon\\.[^/]+$|^/manifest\\.webmanifest$
+	@static_cache path_regexp static_cache ^/(?:build|assets|icons)/|^/favicon\.[^/]+$|^/manifest\.webmanifest$
 	handle @static_cache {
 		header Cache-Control "public, max-age=31536000, immutable"
 		reverse_proxy http://192.168.1.138:4173 {
@@ -45,6 +30,21 @@ https://prometheus.dev {
 				respond 103
 				copy_response
 			}
+		}
+	}
+
+	handle /yjs {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /yjs/* {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /api/* {
+		reverse_proxy http://api:4000 {
+			lb_try_duration 5s
+			lb_try_interval 100ms
 		}
 	}
 
@@ -89,23 +89,7 @@ https://prometheus.prod {
 	}
 
 	encode br gzip
-	handle /yjs {
-		reverse_proxy http://yjs-signaling:4444
-	}
-
-	handle_path /yjs/* {
-		reverse_proxy http://yjs-signaling:4444
-	}
-
-	handle_path /api/* {
-		reverse_proxy http://api:4000 {
-			header_up -Accept-Encoding
-			lb_try_duration 5s
-			lb_try_interval 100ms
-		}
-	}
-
-	@static_cache path_regexp static_cache ^/(?:build|assets|icons)/|^/favicon\\.[^/]+$|^/manifest\\.webmanifest$
+	@static_cache path_regexp static_cache ^/(?:build|assets|icons)/|^/favicon\.[^/]+$|^/manifest\.webmanifest$
 	handle @static_cache {
 		header Cache-Control "public, max-age=31536000, immutable"
 		reverse_proxy http://web:4173 {
@@ -119,6 +103,22 @@ https://prometheus.prod {
 				respond 103
 				copy_response
 			}
+		}
+	}
+
+	handle /yjs {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /yjs/* {
+		reverse_proxy http://yjs-signaling:4444
+	}
+
+	handle_path /api/* {
+		reverse_proxy http://api:4000 {
+			header_up -Accept-Encoding
+			lb_try_duration 5s
+			lb_try_interval 100ms
 		}
 	}
 
