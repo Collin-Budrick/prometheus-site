@@ -7,6 +7,23 @@ const normalizeApiHref = (apiBase: string) => {
 const hasFragmentLinkAnchors = () =>
   typeof document !== 'undefined' && document.querySelector('a[data-fragment-link]') !== null
 
+const canPrefetch = () => {
+  if (typeof navigator === 'undefined') return false
+  const connection = navigator.connection as
+    | {
+        effectiveType?: string
+        saveData?: boolean
+        downlink?: number
+      }
+    | undefined
+
+  if (connection?.saveData) return false
+  const effectiveType = connection?.effectiveType ?? ''
+  if (effectiveType && ['slow-2g', '2g', '3g'].includes(effectiveType)) return false
+  if (typeof connection?.downlink === 'number' && connection.downlink < 1.5) return false
+  return true
+}
+
 const shouldIgnoreTarget = (apiBase: string) => {
   const normalizedApiHref = normalizeApiHref(apiBase)
 
@@ -33,21 +50,51 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
   if (!hasFragmentLinkAnchors()) {
     return () => {}
   }
+  if (!canPrefetch()) {
+    return () => {}
+  }
 
   const apiBase = config.apiBase
-  const { listen } = await import('quicklink')
+  let stopListening: (() => void) | undefined
+  let started = false
+  let cancelled = false
 
-  const stopListening = listen({
-    el: document.body,
-    origins: [window.location.hostname],
-    ignores: [shouldIgnoreTarget(apiBase)],
-    hrefFn: (anchor: HTMLAnchorElement) => {
-      return anchor.href
-    },
-    onError: () => {},
-    priority: false,
-    timeout: 2000
-  })
+  const start = async () => {
+    if (started || cancelled) return
+    started = true
+    const { listen } = await import('quicklink')
+    if (cancelled) return
+    stopListening = listen({
+      el: document.body,
+      origins: [window.location.hostname],
+      ignores: [shouldIgnoreTarget(apiBase)],
+      hrefFn: (anchor: HTMLAnchorElement) => {
+        return anchor.href
+      },
+      onError: () => {},
+      priority: false,
+      timeout: 2000
+    })
+  }
 
-  return stopListening
+  const handleIntent = () => {
+    void start()
+    detachIntentListeners()
+  }
+
+  const detachIntentListeners = () => {
+    window.removeEventListener('pointerdown', handleIntent)
+    window.removeEventListener('keydown', handleIntent)
+    window.removeEventListener('scroll', handleIntent)
+  }
+
+  window.addEventListener('pointerdown', handleIntent, { once: true })
+  window.addEventListener('keydown', handleIntent, { once: true })
+  window.addEventListener('scroll', handleIntent, { passive: true, once: true })
+
+  return () => {
+    cancelled = true
+    detachIntentListeners()
+    stopListening?.()
+  }
 }

@@ -541,35 +541,42 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       ctx.track(() => items.value.map((item) => item.id).join(','))
       const panel = panelRef.value
       if (!panel) return
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const elements = Array.from(panel.querySelectorAll<HTMLElement>('.store-stream-row'))
-      const nextPositions = new Map<number, DOMRect>()
+      let frame = requestAnimationFrame(() => {
+        frame = 0
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const elements = Array.from(panel.querySelectorAll<HTMLElement>('.store-stream-row'))
+        const nextPositions = new Map<number, DOMRect>()
 
-      elements.forEach((element) => {
-        const id = Number(element.dataset.itemId)
-        if (!Number.isFinite(id)) return
-        nextPositions.set(id, element.getBoundingClientRect())
-      })
-
-      const previousPositions = layoutPositions.value
-      if (previousPositions && previousPositions.size && !prefersReducedMotion) {
         elements.forEach((element) => {
           const id = Number(element.dataset.itemId)
-          const first = previousPositions.get(id)
-          const last = nextPositions.get(id)
-          if (!first || !last) return
-          const dx = first.left - last.left
-          const dy = first.top - last.top
-          if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
-          element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], {
-            duration: 360,
-            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-            fill: 'both'
-          })
+          if (!Number.isFinite(id)) return
+          nextPositions.set(id, element.getBoundingClientRect())
         })
-      }
 
-      layoutPositions.value = noSerialize(nextPositions)
+        const previousPositions = layoutPositions.value
+        if (previousPositions && previousPositions.size && !prefersReducedMotion) {
+          elements.forEach((element) => {
+            const id = Number(element.dataset.itemId)
+            const first = previousPositions.get(id)
+            const last = nextPositions.get(id)
+            if (!first || !last) return
+            const dx = first.left - last.left
+            const dy = first.top - last.top
+            if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+            element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], {
+              duration: 360,
+              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              fill: 'both'
+            })
+          })
+        }
+
+        layoutPositions.value = noSerialize(nextPositions)
+      })
+
+      ctx.cleanup(() => {
+        if (frame) cancelAnimationFrame(frame)
+      })
     },
     { strategy: 'document-ready' }
   )

@@ -165,35 +165,42 @@ export const StoreCart = component$<StoreCartProps>(
         ctx.track(() => cartItems.value.map((item) => `${item.id}:${item.qty}`).join(','))
         const list = listRef.value
         if (!list) return
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        const elements = Array.from(list.querySelectorAll<HTMLElement>('.store-cart-item'))
-        const nextPositions = new Map<number, DOMRect>()
+        let frame = requestAnimationFrame(() => {
+          frame = 0
+          const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          const elements = Array.from(list.querySelectorAll<HTMLElement>('.store-cart-item'))
+          const nextPositions = new Map<number, DOMRect>()
 
-        elements.forEach((element) => {
-          const id = Number(element.dataset.cartId)
-          if (!Number.isFinite(id)) return
-          nextPositions.set(id, element.getBoundingClientRect())
-        })
-
-        const previousPositions = listPositions.value
-        if (previousPositions && previousPositions.size && !prefersReducedMotion) {
           elements.forEach((element) => {
             const id = Number(element.dataset.cartId)
-            const first = previousPositions.get(id)
-            const last = nextPositions.get(id)
-            if (!first || !last) return
-            const dx = first.left - last.left
-            const dy = first.top - last.top
-            if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
-            element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], {
-              duration: 320,
-              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-              fill: 'both'
-            })
+            if (!Number.isFinite(id)) return
+            nextPositions.set(id, element.getBoundingClientRect())
           })
-        }
 
-        listPositions.value = noSerialize(nextPositions)
+          const previousPositions = listPositions.value
+          if (previousPositions && previousPositions.size && !prefersReducedMotion) {
+            elements.forEach((element) => {
+              const id = Number(element.dataset.cartId)
+              const first = previousPositions.get(id)
+              const last = nextPositions.get(id)
+              if (!first || !last) return
+              const dx = first.left - last.left
+              const dy = first.top - last.top
+              if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+              element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], {
+                duration: 320,
+                easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                fill: 'both'
+              })
+            })
+          }
+
+          listPositions.value = noSerialize(nextPositions)
+        })
+
+        ctx.cleanup(() => {
+          if (frame) cancelAnimationFrame(frame)
+        })
       },
       { strategy: 'document-ready' }
     )

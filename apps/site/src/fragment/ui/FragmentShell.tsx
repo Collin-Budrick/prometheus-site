@@ -418,6 +418,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       let dragActivated = false
       let liveReorder = false
       let swapAdjustFrame = 0
+      let reorderFrame = 0
+      let reorderTransitionFrame = 0
       let pointerId: number | null = null
       let startX = 0
       let startY = 0
@@ -632,29 +634,35 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             card.dataset.size = slotSize
           }
         })
-        if (!animate || !beforeRects) return
-        const moved: HTMLElement[] = []
-        wrappers.forEach((wrapper) => {
-          if (draggingFragmentId && getWrapperFragmentId(wrapper) === draggingFragmentId) return
-          const before = beforeRects.get(wrapper)
-          if (!before) return
-          const after = wrapper.getBoundingClientRect()
-          const dx = before.left - after.left
-          const dy = before.top - after.top
-          if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
-          wrapper.style.transition = 'transform 0s'
-          wrapper.style.transform = `translate(${dx}px, ${dy}px)`
-          moved.push(wrapper)
-        })
-        if (!moved.length) return
-        requestAnimationFrame(() => {
-          moved.forEach((wrapper) => {
-            wrapper.style.transition = `transform ${DRAG_REORDER_DURATION_MS}ms ${DRAG_REORDER_EASE}`
-            wrapper.style.transform = ''
-            const cleanup = () => {
-              wrapper.style.transition = ''
-            }
-            wrapper.addEventListener('transitionend', cleanup, { once: true })
+        if (!animate || !beforeRects || !wrappers.length) return
+        if (reorderFrame) cancelAnimationFrame(reorderFrame)
+        if (reorderTransitionFrame) cancelAnimationFrame(reorderTransitionFrame)
+        reorderFrame = requestAnimationFrame(() => {
+          reorderFrame = 0
+          const moved: HTMLElement[] = []
+          wrappers.forEach((wrapper) => {
+            if (draggingFragmentId && getWrapperFragmentId(wrapper) === draggingFragmentId) return
+            const before = beforeRects.get(wrapper)
+            if (!before) return
+            const after = wrapper.getBoundingClientRect()
+            const dx = before.left - after.left
+            const dy = before.top - after.top
+            if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+            wrapper.style.transition = 'transform 0s'
+            wrapper.style.transform = `translate(${dx}px, ${dy}px)`
+            moved.push(wrapper)
+          })
+          if (!moved.length) return
+          reorderTransitionFrame = requestAnimationFrame(() => {
+            reorderTransitionFrame = 0
+            moved.forEach((wrapper) => {
+              wrapper.style.transition = `transform ${DRAG_REORDER_DURATION_MS}ms ${DRAG_REORDER_EASE}`
+              wrapper.style.transform = ''
+              const cleanup = () => {
+                wrapper.style.transition = ''
+              }
+              wrapper.addEventListener('transitionend', cleanup, { once: true })
+            })
           })
         })
       }
@@ -707,22 +715,24 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         if (!dragging || !draggingEl || !draggingId) return
         const dx = lastX - startX
         const dy = lastY - startY
-        draggingEl.style.transform = `translate(${dx}px, ${dy}px)`
-
         const closest = pickClosestTarget()
-        if (!closest) return
-        const targetId = closest.el.dataset.fragmentId ?? null
-        if (!targetId || targetId === draggingId) return
-        const insertAfter = getInsertAfter(closest.rect)
-        const targetChanged = pendingTargetId !== targetId
-        if (targetChanged || pendingInsertAfter !== insertAfter) {
-          pendingTargetId = targetId
-          pendingInsertAfter = insertAfter
-          clearDropIndicator()
-          dropIndicator = closest.el
-          dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
-          scheduleSwap()
+        if (closest) {
+          const targetId = closest.el.dataset.fragmentId ?? null
+          if (targetId && targetId !== draggingId) {
+            const insertAfter = getInsertAfter(closest.rect)
+            const targetChanged = pendingTargetId !== targetId
+            if (targetChanged || pendingInsertAfter !== insertAfter) {
+              pendingTargetId = targetId
+              pendingInsertAfter = insertAfter
+              clearDropIndicator()
+              dropIndicator = closest.el
+              dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
+              scheduleSwap()
+            }
+          }
         }
+
+        draggingEl.style.transform = `translate(${dx}px, ${dy}px)`
       }
 
       const pickClosestTarget = (): {
@@ -837,6 +847,8 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         window.removeEventListener('pointermove', handlePointerMove)
         window.removeEventListener('pointerup', handlePointerUp)
         window.removeEventListener('pointercancel', handlePointerCancel)
+        if (reorderFrame) cancelAnimationFrame(reorderFrame)
+        if (reorderTransitionFrame) cancelAnimationFrame(reorderTransitionFrame)
         finishDrag()
       })
     },
