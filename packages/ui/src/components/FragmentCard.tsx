@@ -56,6 +56,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const isFullWidth = fullWidth === true
     const resolvedVariant = variant ?? 'card'
     const isDraggable = draggable !== false
+    const waveIn = resolvedVariant === 'text' && !disableMotion
     const resolvedSize = size ?? 'small'
     const resolvedInlineSpan =
       typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
@@ -532,6 +533,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-motion-skip-visible={disableMotion ? undefined : ''}
           data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}
           data-draggable={isDraggable ? undefined : 'false'}
+          data-wave-in={waveIn ? '' : undefined}
           data-fragment-id={fragmentId}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}

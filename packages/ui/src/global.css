@@ -1332,6 +1332,41 @@
     min-height: 0;
   }
 
+  .fragment-card[data-variant='text'][data-wave-in] {
+    animation: wipe-up var(--theme-transition-duration) var(--theme-transition-ease, var(--view-transition-ease))
+      both;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 300%;
+    mask-size: 100% 300%;
+    -webkit-mask-position: 0 0%;
+    mask-position: 0 0%;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 1) 0%,
+      rgba(0, 0, 0, 1) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 0) 65%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 1) 0%,
+      rgba(0, 0, 0, 1) 35%,
+      rgba(0, 0, 0, 0.85) 55%,
+      rgba(0, 0, 0, 0) 65%,
+      rgba(0, 0, 0, 0) 100%
+    );
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fragment-card[data-variant='text'][data-wave-in] {
+      animation: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+  }
+
   :root:not([data-theme="dark"]) .fragment-card[data-variant='text'] {
     background-color: transparent;
   }
