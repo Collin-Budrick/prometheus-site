@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run scripts/vite-run.ts -- --mode ssr --port 4173",
     "build": "vite build",
+    "analyze": "VISUALIZE_BUNDLE=1 vite build",
     "preview": "bun run scripts/vite-run.ts -- preview --port 4173",
     "lint": "oxlint ."
   },
@@ -38,6 +39,7 @@
     "@types/node": "25.0.9",
     "lightningcss": "^1.30.2",
     "oxlint": "1.39.0",
+    "rollup-plugin-visualizer": "^5.15.0",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
     "typescript": "6.0.0-dev.20260118",
