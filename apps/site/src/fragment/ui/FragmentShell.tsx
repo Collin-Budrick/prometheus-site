@@ -948,10 +948,12 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver === 'undefined' || planValue.fragments.length < 2) return
 
-      let cardHeights = new WeakMap<HTMLElement, number>()
-      let observedCards = new WeakSet<HTMLElement>()
+      let cardHeights = new Map<HTMLElement, number>()
+      let observedCards = new Set<HTMLElement>()
       let frame = 0
       let enabled = false
+      let maxHeight = 0
+      let maxHeightDirty = true
 
       const parseSpan = (value: string) => {
         const normalized = value.trim().replace(/\s+/g, ' ')
@@ -974,6 +976,19 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const meetsLayoutConditions = () =>
         window.innerWidth >= DESKTOP_MIN_WIDTH && planValue.fragments.length > 1 && !hasInlineCards()
 
+      const recomputeMaxHeight = () => {
+        let next = 0
+        observedCards.forEach((card) => {
+          if (card.classList.contains('is-expanded')) return
+          const height = cardHeights.get(card) ?? 0
+          if (height > next) {
+            next = height
+          }
+        })
+        maxHeight = next
+        maxHeightDirty = false
+      }
+
       const schedule = () => {
         if (frame || !enabled) return
         frame = requestAnimationFrame(() => {
@@ -982,15 +997,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             grid.classList.remove('is-stacked')
             return
           }
-
-          const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
-            (element) => !element.classList.contains('is-expanded')
-          )
-          if (!cards.length) return
-          const heights = cards.map((card) => cardHeights.get(card) ?? 0).filter((height) => height > 0)
-          if (!heights.length) return
-
-          const maxHeight = Math.max(...heights)
+          if (maxHeightDirty) {
+            recomputeMaxHeight()
+          }
+          if (maxHeight <= 0) return
           const baseThreshold = Math.max(520, window.innerHeight * 0.65)
           const isStacked = grid.classList.contains('is-stacked')
           const threshold = isStacked ? baseThreshold * 0.85 : baseThreshold
@@ -1013,6 +1023,13 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           const previous = cardHeights.get(entry.target)
           if (previous === undefined || Math.abs(previous - height) > 0.5) {
             cardHeights.set(entry.target, height)
+            if (entry.target.classList.contains('is-expanded')) {
+              maxHeightDirty = true
+            } else if (height >= maxHeight) {
+              maxHeight = height
+            } else if (previous === maxHeight) {
+              maxHeightDirty = true
+            }
             changed = true
           }
         })
@@ -1029,6 +1046,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
           if (observedCards.has(card)) return
           observedCards.add(card)
           cardObserver.observe(card)
+          maxHeightDirty = true
         })
       }
 
@@ -1036,6 +1054,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         collectCards(root).forEach((card) => {
           cardObserver.unobserve(card)
           observedCards.delete(card)
+          const previous = cardHeights.get(card)
+          cardHeights.delete(card)
+          if (previous === maxHeight) {
+            maxHeightDirty = true
+          }
         })
       }
 
@@ -1049,6 +1072,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             if (node instanceof HTMLElement) unobserveCards(node)
           })
         })
+        maxHeightDirty = true
         schedule()
       })
 
@@ -1058,8 +1082,10 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         stackScheduler.value = null
         mutationObserver.disconnect()
         cardObserver.disconnect()
-        observedCards = new WeakSet<HTMLElement>()
-        cardHeights = new WeakMap<HTMLElement, number>()
+        observedCards = new Set<HTMLElement>()
+        cardHeights = new Map<HTMLElement, number>()
+        maxHeight = 0
+        maxHeightDirty = true
         grid.classList.remove('is-stacked')
         if (frame) {
           cancelAnimationFrame(frame)
@@ -1070,7 +1096,11 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
       const start = () => {
         if (enabled || !meetsLayoutConditions()) return
         enabled = true
-        stackScheduler.value = schedule
+        maxHeightDirty = true
+        stackScheduler.value = () => {
+          maxHeightDirty = true
+          schedule()
+        }
         observeCards(grid)
         schedule()
         mutationObserver.observe(grid, { childList: true, subtree: true })

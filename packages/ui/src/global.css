@@ -3,6 +3,7 @@
 @layer base {
   :root {
     color-scheme: light;
+    scrollbar-gutter: stable;
     --ink: 15 23 42;
     --ink-soft: 30 41 59;
     --muted: 71 85 105;
@@ -477,6 +478,19 @@
     pointer-events: none;
     z-index: 62;
     contain: paint;
+    background:
+      linear-gradient(
+        to bottom,
+        rgb(var(--viewport-fade-color) / 0.95),
+        rgb(var(--viewport-fade-color) / 0)
+      )
+        top / 100% var(--viewport-fade-size) no-repeat,
+      linear-gradient(
+        to top,
+        rgb(var(--viewport-fade-color) / 0.9),
+        rgb(var(--viewport-fade-color) / 0)
+      )
+        bottom / 100% var(--viewport-fade-size) no-repeat;
   }
 
   @supports (height: 1svh) {
@@ -487,27 +501,7 @@
 
   .viewport-fade::before,
   .viewport-fade::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: var(--viewport-fade-size);
-    background: linear-gradient(
-      to bottom,
-      rgb(var(--viewport-fade-color) / 0.95),
-      rgb(var(--viewport-fade-color) / 0)
-    );
-  }
-
-  .viewport-fade::after {
-    top: auto;
-    bottom: 0;
-    background: linear-gradient(
-      to top,
-      rgb(var(--viewport-fade-color) / 0.9),
-      rgb(var(--viewport-fade-color) / 0)
-    );
+    content: none;
   }
 
   html:not([data-motion-ready="true"]) [data-motion] {
