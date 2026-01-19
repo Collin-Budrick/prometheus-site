@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { createElement, forwardRef, memo } from 'react'
-import { reactToRenderNode } from '@site/fragment/definitions/react'
+import { reactToRenderNode } from '@site/fragment/definitions/react.server'
 
 describe('reactToRenderNode', () => {
   it('renders forwardRef components', () => {

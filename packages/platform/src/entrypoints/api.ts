@@ -1,4 +1,4 @@
-import '@site/fragment/definitions/home'
+import '@site/fragment/definitions/home.server'
 import '@site/fragment/definitions/store'
 import '@site/fragment/definitions/chat'
 import { createFragmentTranslator } from '@site/fragment/definitions/i18n'
