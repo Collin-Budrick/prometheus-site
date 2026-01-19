@@ -1188,21 +1188,22 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
             >
               {entry ? (
                 <div class="fragment-card-wrap">
-                    <FragmentCard
-                      key={entry.id}
-                      id={entry.id}
-                      fragmentId={entry.id}
-                      column="1 / -1"
-                      motionDelay={hasCache ? 0 : index * 120}
-                      expandedId={expandedId}
-                      layoutTick={layoutTick}
-                      closeLabel={copy.value.fragmentClose}
-                      disableMotion={hasCache}
-                      fragmentLoaded={Boolean(fragment)}
-                      expandable={entry.expandable}
-                      fullWidth={entry.fullWidth}
-                      size={slot.size}
-                      dragState={dragState}
+                  <FragmentCard
+                    key={entry.id}
+                    id={entry.id}
+                    fragmentId={entry.id}
+                    column="1 / -1"
+                    motionDelay={hasCache ? 0 : index * 120}
+                    expandedId={expandedId}
+                    layoutTick={layoutTick}
+                    closeLabel={copy.value.fragmentClose}
+                    disableMotion={hasCache}
+                    fragmentLoaded={Boolean(fragment)}
+                    fragmentHasCss={Boolean(fragment?.css)}
+                    expandable={entry.expandable}
+                    fullWidth={entry.fullWidth}
+                    size={slot.size}
+                    dragState={dragState}
                   >
                     {fragment ? (
                       <FragmentRenderer node={renderNode ?? fragment.tree} />

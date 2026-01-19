@@ -373,7 +373,9 @@ const storeFragmentCss = `
 }
 
 .store-create-input input {
-  padding: 10px 12px;
+  padding: 12px 14px;
+  min-height: 44px;
+  line-height: 1.2;
   border-radius: 12px;
   border: 1px solid rgb(var(--stroke));
   background: rgb(var(--surface));
@@ -382,7 +384,7 @@ const storeFragmentCss = `
 }
 
 .store-create-input-quantity input {
-  padding-right: 118px;
+  padding-right: 170px;
 }
 
 .store-create-input-quantity[data-digital='true'] input {
@@ -403,8 +405,9 @@ const storeFragmentCss = `
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 6px 12px;
+  min-height: 44px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
   background: rgb(var(--surface-soft));
@@ -414,15 +417,59 @@ const storeFragmentCss = `
   letter-spacing: 0.12em;
   color: rgb(var(--muted));
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
 }
 
 .store-create-digital input {
+  position: absolute;
+  inset: 0;
   margin: 0;
-  accent-color: rgb(var(--accent));
+  opacity: 0;
+  cursor: pointer;
 }
 
-.store-create-digital label {
-  cursor: pointer;
+.store-create-digital-indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--stroke-strong));
+  background: rgb(var(--surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--surface) / 0.6);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.store-create-digital-indicator::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid rgb(var(--accent-ink));
+  border-bottom: 2px solid rgb(var(--accent-ink));
+  transform: rotate(-45deg);
+  opacity: 0;
+}
+
+.store-create-digital-text {
+  position: relative;
+  z-index: 1;
+}
+
+.store-create-digital input:checked + .store-create-digital-indicator {
+  border-color: rgb(var(--accent));
+  background: rgb(var(--accent) / 0.2);
+}
+
+.store-create-digital input:checked + .store-create-digital-indicator::after {
+  opacity: 1;
+}
+
+.store-create-digital input:focus-visible + .store-create-digital-indicator {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
 }
 
 .store-create-submit {

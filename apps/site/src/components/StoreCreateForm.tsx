@@ -242,15 +242,16 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   readOnly={digitalProduct.value}
                   onInput$={handleQuantityInput}
                 />
-                <div class="store-create-digital">
+                <label class="store-create-digital">
                   <input
                     id="store-create-digital"
                     type="checkbox"
                     checked={digitalProduct.value}
                     onChange$={handleDigitalToggle}
                   />
-                  <label for="store-create-digital">{resolvedDigitalLabel}</label>
-                </div>
+                  <span class="store-create-digital-indicator" aria-hidden="true" />
+                  <span class="store-create-digital-text">{resolvedDigitalLabel}</span>
+                </label>
               </div>
             </div>
             <button class="store-create-submit" type="submit" disabled={!canSubmit.value}>

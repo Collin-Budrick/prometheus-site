@@ -98,7 +98,10 @@ export const createFragmentClient = (
     if (typeof document === 'undefined') return
 
     const version = buildFragmentVersion(payload)
-    if (appliedFragmentVersions.get(payload.id) === version) return
+    if (appliedFragmentVersions.get(payload.id) === version) {
+      markFragmentReady(payload.id)
+      return
+    }
 
     teardownFragmentEffects([payload.id])
     appliedFragmentVersions.set(payload.id, version)

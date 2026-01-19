@@ -19,6 +19,7 @@ type FragmentCardProps = {
   closeLabel: string
   disableMotion?: boolean
   fragmentLoaded?: boolean
+  fragmentHasCss?: boolean
   expandable?: boolean
   fullWidth?: boolean
   inlineSpan?: number
@@ -31,8 +32,8 @@ type FragmentCardProps = {
   } | null>
 }
 
-export const FragmentCard = component$<FragmentCardProps>(
-  ({
+export const FragmentCard = component$<FragmentCardProps>((props) => {
+  const {
     id,
     fragmentId,
     column,
@@ -41,14 +42,13 @@ export const FragmentCard = component$<FragmentCardProps>(
     layoutTick,
     closeLabel,
     disableMotion,
-    fragmentLoaded,
     expandable,
     fullWidth,
     inlineSpan,
     size,
     row,
     dragState
-  }) => {
+  } = props
     const isFullWidth = fullWidth === true
     const resolvedSize = size ?? 'small'
     const resolvedInlineSpan =
@@ -80,6 +80,7 @@ export const FragmentCard = component$<FragmentCardProps>(
     const visibilityTick = useSignal(0)
     const isExpanded = expandedId.value === id
     const layoutVersion = layoutTick.value
+    const fragmentReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
@@ -449,6 +450,43 @@ export const FragmentCard = component$<FragmentCardProps>(
       { strategy: 'document-ready' }
     )
 
+    useVisibleTask$(
+      (ctx) => {
+        const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
+        const hasCss = ctx.track(() => props.fragmentHasCss !== false)
+        const activeId = ctx.track(() => props.fragmentId)
+        if (!activeId) return
+        if (!loaded) {
+          fragmentReady.value = false
+          return
+        }
+        if (!hasCss) {
+          fragmentReady.value = true
+          return
+        }
+        if (fragmentReady.value) return
+        if (typeof document === 'undefined') return
+        const escapeId =
+          typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+            ? CSS.escape(activeId)
+            : activeId.replace(/["\\]/g, '\\$&')
+        const selector = `style[data-fragment-css="${escapeId}"]`
+        if (document.querySelector(selector)) {
+          fragmentReady.value = true
+          return
+        }
+        const observer = new MutationObserver(() => {
+          if (document.querySelector(selector)) {
+            fragmentReady.value = true
+            observer.disconnect()
+          }
+        })
+        observer.observe(document.head, { childList: true })
+        ctx.cleanup(() => observer.disconnect())
+      },
+      { strategy: 'document-ready' }
+    )
+
     const sizeHeight =
       resolvedSize === 'small'
         ? 'var(--fragment-card-small-height)'
@@ -485,7 +523,8 @@ export const FragmentCard = component$<FragmentCardProps>(
           data-motion={disableMotion ? undefined : ''}
           data-motion-skip-visible={disableMotion ? undefined : ''}
           data-fragment-id={fragmentId}
-          data-fragment-loaded={fragmentLoaded ? 'true' : undefined}
+          data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
+          data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           onClick$={handleToggle}
         >
           <div class="fragment-card-body">
@@ -508,5 +547,4 @@ export const FragmentCard = component$<FragmentCardProps>(
         </article>
       </>
     )
-  }
-)
+})
