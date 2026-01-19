@@ -489,7 +489,11 @@ export default component$(() => {
       <main data-motion-root data-view-transition="shell-main">
         <Slot />
       </main>
-      <DockBar ariaLabel={copy.value.dockAriaLabel} dockMode={isAuthenticated ? 'auth' : 'public'}>
+      <DockBar
+        ariaLabel={copy.value.dockAriaLabel}
+        dockMode={isAuthenticated ? 'auth' : 'public'}
+        dockCount={dockItems.length}
+      >
         {dockItems.map(({ href, label, icon: Icon }, index) => (
           <DockIcon key={href} label={label}>
             <Link

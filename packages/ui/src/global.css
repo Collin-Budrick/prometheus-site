@@ -944,7 +944,7 @@
 
   .dock-shell {
     position: fixed;
-    left: 50%;
+    left: 50vw;
     bottom: calc(18px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     z-index: 80;
@@ -962,15 +962,24 @@
   .dock {
     --dock-bg-scale: 1;
     --dock-bg-shift: 0px;
+    --dock-gap: 10px;
+    --dock-padding-x: 12px;
+    --dock-padding-y: 10px;
+    --dock-icon-size: 48px;
     display: inline-flex;
     align-items: flex-end;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: var(--dock-gap);
+    padding: var(--dock-padding-y) var(--dock-padding-x);
     border-radius: 22px;
     pointer-events: auto;
     position: relative;
     isolation: isolate;
-    --dock-icon-size: 48px;
+    min-width: calc(
+      (var(--dock-icon-size) * var(--dock-count, 4)) +
+        (var(--dock-gap) * (var(--dock-count, 4) - 1)) +
+        (var(--dock-padding-x) * 2)
+    );
+    min-height: calc(var(--dock-icon-size) + var(--dock-padding-y) + var(--dock-padding-y));
   }
 
   .dock::before {
@@ -1051,11 +1060,9 @@
   @keyframes dock-link-reveal {
     from {
       opacity: 0;
-      transform: translateY(10px) scale(0.92);
     }
     to {
       opacity: 1;
-      transform: translateY(0) scale(1);
     }
   }
 
@@ -1078,8 +1085,9 @@
 
   @media (max-width: 640px) {
     .dock {
-      gap: 8px;
-      padding: 8px 10px;
+      --dock-gap: 8px;
+      --dock-padding-x: 10px;
+      --dock-padding-y: 8px;
       --dock-icon-size: 40px;
     }
 
