@@ -261,6 +261,7 @@ export const FragmentShell = component$(
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
   const clientReady = useSignal(initialReady)
   const hasCache = Boolean(cachedEntry)
+  const skipCssGuard = Boolean(cachedEntry && preserveFragmentEffects)
 
   useOnDocument(
     'client-ready',
@@ -1297,7 +1298,7 @@ export const FragmentShell = component$(
                     closeLabel={copy.value.fragmentClose}
                     disableMotion={hasCache}
                     fragmentLoaded={Boolean(fragment)}
-                    fragmentHasCss={Boolean(fragment?.css)}
+                    fragmentHasCss={skipCssGuard ? false : Boolean(fragment?.css)}
                     expandable={entry.expandable}
                     fullWidth={entry.fullWidth}
                     size={slot.size}
