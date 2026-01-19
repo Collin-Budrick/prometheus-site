@@ -18,6 +18,7 @@ type FragmentShellProps = {
   path: string
   initialLang: Lang
   introMarkdown?: string
+  preserveFragmentEffects?: boolean
 }
 
 type FragmentClientEffectsProps = {
@@ -196,7 +197,8 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
   return null
 })
 
-export const FragmentShell = component$(({ plan, initialFragments, path, initialLang, introMarkdown }: FragmentShellProps) => {
+export const FragmentShell = component$(
+  ({ plan, initialFragments, path, initialLang, introMarkdown, preserveFragmentEffects }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
   useTask$((ctx) => {
     ctx.track(() => initialLang)
@@ -1325,6 +1327,7 @@ export const FragmentShell = component$(({ plan, initialFragments, path, initial
         fragments={fragments}
         status={status}
         paused={streamPaused}
+        preserveFragmentEffects={preserveFragmentEffects}
       />
       {clientReady.value ? (
         <FragmentClientEffects planValue={planValue} initialFragmentMap={initialFragmentMap} />

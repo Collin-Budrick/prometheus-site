@@ -30,10 +30,11 @@ type FragmentStreamControllerProps = {
   fragments: Signal<FragmentPayloadMap>
   status: Signal<'idle' | 'streaming' | 'error'>
   paused?: Signal<boolean> | boolean
+  preserveFragmentEffects?: boolean
 }
 
 export const FragmentStreamController = component$(
-  ({ plan, initialFragments, path, fragments, status, paused }: FragmentStreamControllerProps) => {
+  ({ plan, initialFragments, path, fragments, status, paused, preserveFragmentEffects }: FragmentStreamControllerProps) => {
     const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(null)
 
@@ -451,7 +452,9 @@ export const FragmentStreamController = component$(
           requestFragments(refreshAllIds.length ? refreshAllIds : fallbackIds)
           ctx.cleanup(() => {
             active = false
-            teardownFragmentEffects(Object.keys(fragments.value))
+            if (!preserveFragmentEffects) {
+              teardownFragmentEffects(Object.keys(fragments.value))
+            }
           })
           return
         }
@@ -520,7 +523,9 @@ export const FragmentStreamController = component$(
           if (import.meta.hot) {
             import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
           }
-          teardownFragmentEffects(Object.keys(fragments.value))
+          if (!preserveFragmentEffects) {
+            teardownFragmentEffects(Object.keys(fragments.value))
+          }
         })
       },
       { strategy: 'document-ready' }

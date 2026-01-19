@@ -176,6 +176,7 @@ export default component$(() => {
         initialFragments={data.fragments}
         path={data.path}
         initialLang={data.lang}
+        preserveFragmentEffects
       />
     )
   }
