@@ -1,5 +1,4 @@
-import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type { NoSerialize } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import {
@@ -25,6 +24,8 @@ type CartLine = StoreCartItem & { qty: number }
 
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
 
+const cartLayoutCache = new WeakMap<HTMLElement, Map<number, DOMRect>>()
+
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? fallback : trimmed
@@ -38,7 +39,6 @@ export const StoreCart = component$<StoreCartProps>(
     const dragActive = useSignal(false)
     const listRef = useSignal<HTMLElement>()
     const totalRef = useSignal<HTMLElement>()
-    const listPositions = useSignal<NoSerialize<Map<number, DOMRect>> | undefined>(undefined)
     const lastTotal = useSignal<number | null>(null)
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
@@ -177,7 +177,7 @@ export const StoreCart = component$<StoreCartProps>(
             nextPositions.set(id, element.getBoundingClientRect())
           })
 
-          const previousPositions = listPositions.value
+          const previousPositions = cartLayoutCache.get(list)
           if (previousPositions && previousPositions.size && !prefersReducedMotion) {
             elements.forEach((element) => {
               const id = Number(element.dataset.cartId)
@@ -195,11 +195,12 @@ export const StoreCart = component$<StoreCartProps>(
             })
           }
 
-          listPositions.value = noSerialize(nextPositions)
+          cartLayoutCache.set(list, nextPositions)
         })
 
         ctx.cleanup(() => {
           if (frame) cancelAnimationFrame(frame)
+          cartLayoutCache.delete(list)
         })
       },
       { strategy: 'document-ready' }

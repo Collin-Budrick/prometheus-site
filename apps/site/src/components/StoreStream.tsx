@@ -28,6 +28,8 @@ type StoreItem = {
   score?: number
 }
 
+const streamLayoutCache = new WeakMap<HTMLElement, Map<number, DOMRect>>()
+
 const parsePrice = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string') {
@@ -111,7 +113,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const panelRef = useSignal<HTMLElement>()
-  const layoutPositions = useSignal<NoSerialize<Map<number, DOMRect>> | undefined>(undefined)
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
   const copy = fragmentCopy.value
@@ -553,7 +554,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           nextPositions.set(id, element.getBoundingClientRect())
         })
 
-        const previousPositions = layoutPositions.value
+        const previousPositions = streamLayoutCache.get(panel)
         if (previousPositions && previousPositions.size && !prefersReducedMotion) {
           elements.forEach((element) => {
             const id = Number(element.dataset.itemId)
@@ -571,11 +572,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           })
         }
 
-        layoutPositions.value = noSerialize(nextPositions)
+        streamLayoutCache.set(panel, nextPositions)
       })
 
       ctx.cleanup(() => {
         if (frame) cancelAnimationFrame(frame)
+        streamLayoutCache.delete(panel)
       })
     },
     { strategy: 'document-ready' }
