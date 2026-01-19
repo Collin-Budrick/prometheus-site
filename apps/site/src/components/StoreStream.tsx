@@ -604,7 +604,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         </form>
         <div class="store-stream-status" aria-live="polite">
           <span class="store-stream-status-dot" aria-hidden="true" />
-          <span>{statusLabel.value}</span>
+          <span class="sr-only">{statusLabel.value}</span>
         </div>
         {queuedCount.value > 0 ? (
           <div class="store-stream-queue" aria-live="polite">
