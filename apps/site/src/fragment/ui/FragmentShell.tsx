@@ -10,6 +10,7 @@ import { FragmentStreamController } from './FragmentStreamController'
 import { applyHeaderOverride } from './header-overrides'
 import { resolveFragments, resolvePlan } from './utils'
 import { appConfig } from '../../app-config'
+import { createFragmentPlanCachePayload, FRAGMENT_PLAN_CACHE_PAYLOAD_ID } from '../plan-cache'
 import {
   getFragmentShellCacheEntry,
   normalizeFragmentShellPath,
@@ -225,6 +226,14 @@ export const FragmentShell = component$(
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
   const hasIntro = Boolean(introMarkdown?.trim())
   const initialFragmentMap = resolveFragments(initialFragments)
+  const planCachePayload =
+    typeof window === 'undefined'
+      ? createFragmentPlanCachePayload(path, initialLang, {
+          etag: '',
+          plan: planValue,
+          initialFragments: initialFragmentMap
+        })
+      : null
   const cachedFragments = cachedEntry?.fragments
   const fragments = useSignal<FragmentPayloadMap>(
     cachedFragments ? { ...initialFragmentMap, ...cachedFragments } : initialFragmentMap
@@ -1358,6 +1367,13 @@ export const FragmentShell = component$(
         preserveFragmentEffects={preserveFragmentEffects}
         initialLang={initialLang}
       />
+      {planCachePayload ? (
+        <script
+          id={FRAGMENT_PLAN_CACHE_PAYLOAD_ID}
+          type="application/json"
+          dangerouslySetInnerHTML={planCachePayload}
+        />
+      ) : null}
       {clientReady.value ? (
         <FragmentClientEffects planValue={planValue} initialFragmentMap={initialFragmentMap} />
       ) : null}
