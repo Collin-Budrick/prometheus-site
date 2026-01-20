@@ -1,5 +1,5 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useNavigate, useRequestEvent } from '@builder.io/qwik-city'
+import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 
 export type AuthCopy = {
@@ -253,9 +253,7 @@ export const LoginRoute = component$<{
   apiBase?: string
 }>(({ copy, apiBase }) => {
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
-  const requestEvent = useRequestEvent()
-  const initialMode = readAuthModeCookie(requestEvent?.request.headers.get('cookie') ?? null) ?? 'login'
-  const mode = useSignal<AuthMode>(initialMode)
+  const mode = useSignal<AuthMode>('login')
   const state = useSignal<AuthState>('idle')
   const passkeyState = useSignal<PasskeyState>('idle')
   const statusTone = useSignal<StatusTone>('neutral')
@@ -265,6 +263,13 @@ export const LoginRoute = component$<{
   const gridRef = useSignal<HTMLDivElement>()
   const cardId = 'auth:access'
   const navigate = useNavigate()
+
+  useVisibleTask$(() => {
+    const cookieMode = readAuthModeCookie(document.cookie || null)
+    if (cookieMode && cookieMode !== mode.value) {
+      mode.value = cookieMode
+    }
+  })
 
   const setMode = $((next: AuthMode) => {
     if (mode.value === next) return
