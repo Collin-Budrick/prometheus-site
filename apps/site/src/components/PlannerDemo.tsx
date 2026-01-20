@@ -140,8 +140,7 @@ export const PlannerDemo = component$(() => {
             }}
             role="listitem"
           >
-            <span class="planner-demo-step-dot" aria-hidden="true" />
-            <span>{step.label}</span>
+            {step.label}
           </div>
         ))}
       </div>
@@ -205,7 +204,6 @@ export const PlannerDemo = component$(() => {
                     : revalidateState === 'fresh'
                       ? copy.freshRender
                       : copy.awaitRevalidate}
-                  <span class="planner-demo-spinner" aria-hidden="true" />
                 </div>
               </div>
             </div>
