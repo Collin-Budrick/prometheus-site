@@ -2,8 +2,8 @@ import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, routeLoader$, useLocation } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
 import { FragmentShell, getFragmentShellCacheEntry, readFragmentShellStateFromCookie, type FragmentShellState } from '../fragment/ui'
-import { loadHybridFragmentResource } from './fragment-resource'
-import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
+import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
+import { defaultLang, type Lang } from '../shared/lang-store'
 import { useLangCopy } from '../shared/lang-bridge'
 import { appConfig } from '../app-config'
 import type {
@@ -71,9 +71,7 @@ type FragmentResource = {
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const path = url.pathname || '/'
-  const cookieLang = readLangFromCookie(request.headers.get('cookie'))
-  const acceptLang = request.headers.get('accept-language')
-  const lang = cookieLang ?? (acceptLang ? normalizeLang(acceptLang.split(',')[0]) : defaultLang)
+  const lang = resolveRequestLang(request)
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
@@ -128,7 +126,7 @@ export default component$(() => {
       plan={data.plan}
       initialFragments={data.fragments}
       path={data.path}
-      initialLang={normalizeLang(data.lang)}
+      initialLang={data.lang}
       initialShellState={data.shellState ?? undefined}
       introMarkdown={copy.value.homeIntroMarkdown}
     />

@@ -89,7 +89,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
 
     return (
       <section class="fragment-shell">
-        <div ref={gridRef} class="fragment-grid">
+        <div ref={gridRef} class="fragment-grid" data-fragment-grid="main">
           <FragmentCard
             id={cardId}
             column="span 12"
@@ -118,7 +118,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
 
 export const StaticRouteSkeleton = component$(() => (
   <section class="fragment-shell" aria-hidden="true">
-    <div class="fragment-grid">
+    <div class="fragment-grid" data-fragment-grid="main">
       <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
         <span class="skeleton-line is-short" />
         <span class="skeleton-line is-medium" />

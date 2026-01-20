@@ -22,6 +22,10 @@ const parseLang = (value?: string | null): Lang | null => {
 
 export const normalizeLang = (value?: string | null): Lang => parseLang(value) ?? defaultLanguage
 
+export const resolveLangParam = (value?: string | null): Lang | null => parseLang(value)
+
+export const LANG_COOKIE_KEY = COOKIE_KEY
+
 export const readLangFromCookie = (cookieHeader?: string | null): Lang | null => {
   if (!cookieHeader) return null
   const parts = cookieHeader.split(';')

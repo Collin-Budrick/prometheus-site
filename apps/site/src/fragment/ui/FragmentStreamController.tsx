@@ -16,6 +16,7 @@ import type {
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
 import { resolveFragments, resolvePlan } from './utils'
+import type { Lang } from '../../shared/lang-store'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
 const FRAGMENT_ROOT_MARGIN = '60% 0px'
@@ -31,12 +32,13 @@ type FragmentStreamControllerProps = {
   status: Signal<'idle' | 'streaming' | 'error'>
   paused?: Signal<boolean> | boolean
   preserveFragmentEffects?: boolean
+  initialLang?: Lang
 }
 
 export const FragmentStreamController = component$(
-  ({ plan, initialFragments, path, fragments, status, paused, preserveFragmentEffects }: FragmentStreamControllerProps) => {
+  ({ plan, initialFragments, path, fragments, status, paused, preserveFragmentEffects, initialLang }: FragmentStreamControllerProps) => {
     const langSignal = useSharedLangSignal()
-    const lastLang = useSignal<string | null>(null)
+    const lastLang = useSignal<string | null>(initialLang ?? null)
 
     useVisibleTask$(
       (ctx) => {
@@ -154,7 +156,7 @@ export const FragmentStreamController = component$(
                   fragments.value = nextValue
                 },
                 {
-                  mutationRoot: document.querySelector('.fragment-grid') ?? document.body,
+                  mutationRoot: document.querySelector('[data-fragment-grid="main"]') ?? document.body,
                   timeoutMs: 320,
                   variant: 'fragments'
                 }

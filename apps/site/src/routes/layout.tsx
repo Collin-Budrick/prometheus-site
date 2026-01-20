@@ -1,5 +1,5 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, routeLoader$, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
+import { Link, routeLoader$, useDocumentHead, useLocation, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
@@ -7,7 +7,7 @@ import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
-import { applyLang, supportedLangs, type Lang } from '../shared/lang-store'
+import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
@@ -21,6 +21,7 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCardStaggerDurationMs = 2600
+const LANG_PREFETCH_PARAM = 'lang'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -107,6 +108,18 @@ const initialFadeScript = `(function () {
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
 
+const withLangParam = (href: string, langValue: Lang) => {
+  if (!href || !href.startsWith('/')) return href
+  const base = typeof window === 'undefined' ? 'http://localhost' : window.location.origin
+  try {
+    const url = new URL(href, base)
+    url.searchParams.set(LANG_PREFETCH_PARAM, langValue)
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return href
+  }
+}
+
 const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navHome: InHomeSimple,
   navStore: InShop,
@@ -185,6 +198,7 @@ export const RouterHead = component$(() => {
 
 export default component$(() => {
   const shellPreferences = useShellPreferences()
+  const location = useLocation()
   const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
@@ -222,6 +236,28 @@ export default component$(() => {
       }
     )
   })
+
+  useVisibleTask$(
+    (ctx) => {
+      const search = ctx.track(() => location.url.search)
+      if (!search) return
+      const next = resolveLangParam(new URLSearchParams(search).get(LANG_PREFETCH_PARAM))
+      if (!next || next === langSignal.value) return
+      const root = document.querySelector('.layout-shell') ?? document.body
+      void runLangViewTransition(
+        () => {
+          langSignal.value = next
+          applyLang(next)
+        },
+        {
+          mutationRoot: root,
+          timeoutMs: 420,
+          variant: 'ui'
+        }
+      )
+    },
+    { strategy: 'document-ready' }
+  )
 
 
   useOnDocument(
@@ -505,20 +541,23 @@ export default component$(() => {
         dockMode={isAuthenticated ? 'auth' : 'public'}
         dockCount={dockItems.length}
       >
-        {dockItems.map(({ href, label, icon: Icon }, index) => (
-          <DockIcon key={href} label={label}>
-            <Link
-              class="dock-link"
-              href={href}
-              data-fragment-link
-              aria-label={label}
-              title={label}
-              style={{ '--dock-index': `${index}` }}
-            >
-              <Icon class="dock-icon-svg" aria-hidden="true" />
-            </Link>
-          </DockIcon>
-        ))}
+        {dockItems.map(({ href, label, icon: Icon }, index) => {
+          const langHref = withLangParam(href, langSignal.value)
+          return (
+            <DockIcon key={href} label={label}>
+              <Link
+                class="dock-link"
+                href={langHref}
+                data-fragment-link
+                aria-label={label}
+                title={label}
+                style={{ '--dock-index': `${index}` }}
+              >
+                <Icon class="dock-icon-svg" aria-hidden="true" />
+              </Link>
+            </DockIcon>
+          )
+        })}
       </DockBar>
     </div>
   )

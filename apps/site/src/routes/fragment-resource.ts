@@ -2,7 +2,7 @@ import { type AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { fragmentPlanCache } from '../fragment/plan-cache'
-import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
+import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type Lang } from '../shared/lang-store'
 import { resolveServerApiBase } from '../shared/api-base'
 
 export type HybridFragmentResource = {
@@ -88,6 +88,8 @@ export const loadHybridFragmentResource = async (
 }
 
 export const resolveRequestLang = (request: Request): Lang => {
+  const queryLang = resolveLangParam(new URL(request.url).searchParams.get('lang'))
+  if (queryLang) return queryLang
   const cookieLang = readLangFromCookie(request.headers.get('cookie'))
   const acceptLang = request.headers.get('accept-language')
   if (cookieLang) return cookieLang

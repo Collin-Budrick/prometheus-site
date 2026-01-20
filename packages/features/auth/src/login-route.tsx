@@ -501,7 +501,7 @@ export const LoginRoute = component$<{
 
   return (
     <section class="fragment-shell auth-shell">
-      <div ref={gridRef} class="fragment-grid auth-grid">
+      <div ref={gridRef} class="fragment-grid auth-grid" data-fragment-grid="main">
         <FragmentCard
           id={cardId}
           column="span 12"
@@ -658,7 +658,7 @@ export const LoginRoute = component$<{
 
 export const LoginSkeleton = () => (
   <section class="fragment-shell" aria-hidden="true">
-    <div class="fragment-grid">
+    <div class="fragment-grid" data-fragment-grid="main">
       <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
         <span class="skeleton-line is-short" />
         <span class="skeleton-line is-medium" />

@@ -210,6 +210,7 @@ export const FragmentShell = component$(
   const langSignal = useSharedLangSignal()
   useTask$((ctx) => {
     ctx.track(() => initialLang)
+    if (typeof window !== 'undefined') return
     if (langSignal.value !== initialLang) {
       langSignal.value = initialLang
     }
@@ -425,7 +426,7 @@ export const FragmentShell = component$(
         setFragmentShellCacheEntry(path, {
           plan: planValue as FragmentPlanValue,
           path,
-          lang: initialLang,
+          lang: langSignal.value,
           fragments: fragments.value,
           orderIds: orderIds.value,
           expandedId: expandedId.value,
@@ -1278,7 +1279,7 @@ export const FragmentShell = component$(
   return (
     <section class="fragment-shell">
       {hasIntro ? (
-        <div class="fragment-grid">
+        <div class="fragment-grid" data-fragment-grid="intro">
           <div class="fragment-slot" data-size="big" data-variant="text" style={{ gridColumn: '1 / -1' }}>
             <div class="fragment-card-wrap">
                 <FragmentMarkdownBlock
@@ -1295,7 +1296,7 @@ export const FragmentShell = component$(
           </div>
         </div>
       ) : null}
-      <div ref={gridRef} class="fragment-grid">
+      <div ref={gridRef} class="fragment-grid" data-fragment-grid="main">
         {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null
           const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
@@ -1355,6 +1356,7 @@ export const FragmentShell = component$(
         status={status}
         paused={streamPaused}
         preserveFragmentEffects={preserveFragmentEffects}
+        initialLang={initialLang}
       />
       {clientReady.value ? (
         <FragmentClientEffects planValue={planValue} initialFragmentMap={initialFragmentMap} />

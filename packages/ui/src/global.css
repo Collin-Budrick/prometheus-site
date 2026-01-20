@@ -593,8 +593,12 @@
       view-transition-name: none !important;
     }
 
-    :root[data-lang-transition="fragments"] .fragment-grid {
+    :root[data-lang-transition="fragments"] .fragment-grid[data-fragment-grid="main"] {
       view-transition-name: lang-fragments;
+    }
+
+    :root[data-lang-transition="fragments"] .fragment-grid:not([data-fragment-grid="main"]) {
+      view-transition-name: none !important;
     }
   }
 
