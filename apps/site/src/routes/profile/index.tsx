@@ -16,8 +16,10 @@ import {
   emitProfileUpdate,
   loadLocalProfile,
   PROFILE_AVATAR_MAX_BYTES,
+  readLocalProfileFromCookie,
   saveLocalProfile,
-  type ProfileColor
+  type ProfileColor,
+  type ProfilePayload
 } from '../../shared/profile-storage'
 
 type ProfileData = {
@@ -28,6 +30,7 @@ type ProfileData = {
     image?: string
   }
   lang: Lang
+  localProfile: ProfilePayload | null
 }
 
 const rgbToHex = (color: ProfileColor) => {
@@ -95,7 +98,8 @@ export const useProfileData = routeLoader$<ProfileData>(async ({ request, redire
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { user: session.user, lang }
+  const localProfile = readLocalProfileFromCookie(request.headers.get('cookie'))
+  return { user: session.user, lang, localProfile }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -124,14 +128,17 @@ export default component$(() => {
   const data = useProfileData()
   const copy = useLangCopy()
   const user = data.value.user
+  const localProfile = data.value.localProfile
   const savedName = useSignal(user.name ?? '')
   const nameInput = useSignal(user.name ?? '')
   const saving = useSignal(false)
   const statusMessage = useSignal<string | null>(null)
   const statusTone = useSignal<'success' | 'error'>('success')
-  const localBio = useSignal('')
-  const localAvatar = useSignal<string | null>(null)
-  const localColor = useSignal<ProfileColor>({ ...DEFAULT_PROFILE_COLOR })
+  const localBio = useSignal(localProfile?.bio ?? '')
+  const localAvatar = useSignal<string | null>(localProfile?.avatar ?? null)
+  const localColor = useSignal<ProfileColor>(
+    localProfile?.color ? { ...localProfile.color } : { ...DEFAULT_PROFILE_COLOR }
+  )
   const localStatus = useSignal<string | null>(null)
   const localStatusTone = useSignal<'success' | 'error'>('success')
   const bioCount = useComputed$(() => localBio.value.length)
@@ -152,11 +159,13 @@ export default component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
+    if (localProfile) return
     const stored = loadLocalProfile()
     if (!stored) return
     localBio.value = stored.bio ?? ''
     localAvatar.value = stored.avatar ?? null
     localColor.value = stored.color ?? { ...DEFAULT_PROFILE_COLOR }
+    saveLocalProfile(stored)
   })
 
   const handleNameInput = $((event: Event) => {

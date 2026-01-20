@@ -24,6 +24,7 @@ type ProfileCacheEntry = {
 
 export const PROFILE_STORAGE_KEY = 'prometheus.profile.local'
 const PROFILE_STORAGE_BACKUP_KEY = 'prometheus.profile.local.backup'
+const PROFILE_COOKIE_KEY = 'prom-profile-local'
 export const PROFILE_CACHE_KEY = 'prometheus.profile.cache'
 export const PROFILE_UPDATED_EVENT = 'prometheus:profile-updated'
 export const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
@@ -79,6 +80,67 @@ const normalizeProfilePayload = (payload: ProfilePayload): ProfilePayload => ({
   updatedAt: payload.updatedAt,
   hash: payload.hash
 })
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+const buildCookieProfilePayload = (payload: ProfilePayload): ProfilePayload => {
+  const normalized = normalizeProfilePayload(payload)
+  return {
+    bio: normalized.bio,
+    color: normalized.color,
+    updatedAt: normalized.updatedAt,
+    hash: normalized.hash
+  }
+}
+
+export const readLocalProfileFromCookie = (cookieHeader: string | null): ProfilePayload | null => {
+  const raw = readCookieValue(cookieHeader, PROFILE_COOKIE_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    const payload = parseProfilePayload(parsed)
+    if (!payload) return null
+    if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
+    return payload
+  } catch {
+    return null
+  }
+}
+
+const writeLocalProfileCookie = (payload: ProfilePayload | null) => {
+  if (typeof document === 'undefined') return
+  if (!payload) {
+    document.cookie = `${PROFILE_COOKIE_KEY}=; path=/; max-age=0; samesite=lax`
+    return
+  }
+  const cookiePayload = buildCookieProfilePayload(payload)
+  const hasData = Boolean(cookiePayload.bio || cookiePayload.color)
+  if (!hasData) {
+    document.cookie = `${PROFILE_COOKIE_KEY}=; path=/; max-age=0; samesite=lax`
+    return
+  }
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(cookiePayload))
+    document.cookie = `${PROFILE_COOKIE_KEY}=${serialized}; path=/; max-age=2592000; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
 
 export const computeProfileHash = (payload: ProfilePayload) => {
   const normalized = normalizeProfilePayload(payload)
@@ -164,9 +226,19 @@ export const loadLocalProfile = (): ProfilePayload | null => {
   if (typeof window === 'undefined') return null
   const payload =
     loadProfileFromStorage(PROFILE_STORAGE_KEY) ?? loadProfileFromStorage(PROFILE_STORAGE_BACKUP_KEY)
-  if (!payload) return null
-  if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
-  return payload
+  if (payload) {
+    if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
+    return payload
+  }
+  const cookiePayload = readLocalProfileFromCookie(typeof document === 'undefined' ? null : document.cookie)
+  if (!cookiePayload) return null
+  try {
+    persistLocalProfile(PROFILE_STORAGE_KEY, cookiePayload)
+    persistLocalProfile(PROFILE_STORAGE_BACKUP_KEY, cookiePayload)
+  } catch {
+    // ignore storage failures
+  }
+  return cookiePayload
 }
 
 const persistLocalProfile = (key: string, payload: ProfilePayload) => {
@@ -188,10 +260,12 @@ export const saveLocalProfile = (payload: ProfilePayload) => {
     if (!hasData) {
       removeLocalProfile(PROFILE_STORAGE_KEY)
       removeLocalProfile(PROFILE_STORAGE_BACKUP_KEY)
+      writeLocalProfileCookie(null)
       return true
     }
     persistLocalProfile(PROFILE_STORAGE_KEY, normalized)
     persistLocalProfile(PROFILE_STORAGE_BACKUP_KEY, normalized)
+    writeLocalProfileCookie(normalized)
     return true
   } catch {
     return false
