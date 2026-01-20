@@ -19,7 +19,6 @@
     --accent-ink: 15 23 42;
     --signal: 20 184 166;
     --signal-strong: 13 148 136;
-    --signal-ink: 15 23 42;
     --stroke: 226 232 240;
     --stroke-strong: 203 213 225;
     --shadow: 0 30px 60px rgba(15, 23, 42, 0.14);
@@ -71,7 +70,6 @@
     --accent-ink: 15 23 42;
     --signal: 45 212 191;
     --signal-strong: 94 234 212;
-    --signal-ink: 15 23 42;
     --stroke: 51 65 85;
     --stroke-strong: 71 85 105;
     --shadow: 0 32px 68px rgba(2, 6, 23, 0.62);
