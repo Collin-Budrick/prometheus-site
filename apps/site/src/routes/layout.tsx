@@ -1,5 +1,5 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { Link, routeLoader$, useDocumentHead, useLocation, type RequestHandler } from '@builder.io/qwik-city'
+import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
@@ -22,6 +22,8 @@ const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCardStaggerDurationMs = 2600
 const LANG_PREFETCH_PARAM = 'lang'
+const INITIAL_FADE_COOKIE_KEY = 'prom-initial-fade'
+const CARD_STAGGER_COOKIE_KEY = 'prom-card-stagger'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -41,36 +43,13 @@ const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
 const initialFadeScript = `(function () {
   var root = document.documentElement;
   if (!root) return;
-  var staggerKey = '__PROM_CARD_STAGGER__';
-  if (!window[staggerKey]) {
-    window[staggerKey] = Date.now();
-    var staggerAttr = 'data-card-stagger';
-    var staggerState = root.getAttribute(staggerAttr);
-    if (staggerState !== 'ready') {
-      root.setAttribute(staggerAttr, 'ready');
-    }
+  var staggerAttr = 'data-card-stagger';
+  if (root.getAttribute(staggerAttr) === 'ready') {
     window.setTimeout(function () {
       root.removeAttribute(staggerAttr);
     }, ${initialCardStaggerDurationMs});
   }
-  var storageKey = 'prom-initial-fade';
-  try {
-    if (window.sessionStorage && window.sessionStorage.getItem(storageKey) === '1') {
-      root.removeAttribute('data-initial-fade');
-      return;
-    }
-  } catch (err) {}
-  if (window.__PROM_INITIAL_FADE_DONE__) {
-    root.removeAttribute('data-initial-fade');
-    return;
-  }
-  if (!root.hasAttribute('data-initial-fade')) return;
-  window.__PROM_INITIAL_FADE_DONE__ = true;
-  try {
-    if (window.sessionStorage) {
-      window.sessionStorage.setItem(storageKey, '1');
-    }
-  } catch (err) {}
+  if (root.getAttribute('data-initial-fade') !== 'ready') return;
   var cleared = false;
   var shell = null;
   var clear = function () {
@@ -94,7 +73,6 @@ const initialFadeScript = `(function () {
   };
   var start = function () {
     if (cleared) return;
-    root.setAttribute('data-initial-fade', 'ready');
     attachEnd();
     window.setTimeout(clear, ${initialFadeClearDelayMs});
   };
@@ -147,6 +125,22 @@ export const useShellPreferences = routeLoader$((event) => {
   return { lang, theme }
 })
 
+export const useInitialFadeState = routeLoader$((event) => {
+  const initialFadeSeen = event.cookie.get(INITIAL_FADE_COOKIE_KEY)?.value === '1'
+  const cardStaggerSeen = event.cookie.get(CARD_STAGGER_COOKIE_KEY)?.value === '1'
+  const initialFade = initialFadeSeen ? null : 'ready'
+  const cardStagger = cardStaggerSeen ? null : 'ready'
+
+  if (initialFade) {
+    event.cookie.set(INITIAL_FADE_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
+  }
+  if (cardStagger) {
+    event.cookie.set(CARD_STAGGER_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
+  }
+
+  return { initialFade, cardStagger }
+})
+
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
@@ -195,6 +189,20 @@ export const RouterHead = component$(() => {
     </>
   )
 })
+
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
+  const fadeState = resolveValue(useInitialFadeState)
+  const htmlAttributes: Record<string, string> = {}
+  if (fadeState.initialFade) {
+    htmlAttributes['data-initial-fade'] = fadeState.initialFade
+  }
+  if (fadeState.cardStagger) {
+    htmlAttributes['data-card-stagger'] = fadeState.cardStagger
+  }
+  return {
+    htmlAttributes
+  }
+}
 
 export default component$(() => {
   const shellPreferences = useShellPreferences()
