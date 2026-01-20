@@ -1,35 +1,83 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
+import { useRequestEvent } from '@builder.io/qwik-city'
 import { getLanguagePack } from '../lang'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const randomCache = (fragments: ReadonlyArray<{ id: string }>) =>
   Object.fromEntries(fragments.map((fragment) => [fragment.id, Math.random() > 0.45])) as Record<string, boolean>
 
+const STAGE_COOKIE = 'planner-demo-stage'
+const CACHE_COOKIE = 'planner-demo-cache'
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+
+const setCookie = (name: string, value: string) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`
+}
+
+const getCookieValue = (name: string, requestEvent?: ReturnType<typeof useRequestEvent>) => {
+  const serverValue = requestEvent?.cookie.get(name)?.value
+  if (serverValue) return serverValue
+  if (typeof document === 'undefined') return null
+  const entry = document.cookie.split('; ').find((cookie) => cookie.startsWith(`${name}=`))
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null
+}
+
 export const PlannerDemo = component$(() => {
   const langSignal = useLangSignal()
   const copy = getLanguagePack(langSignal.value).demos.planner
   const steps = copy.steps
   const fragments = copy.fragments
-  const stageIndex = useSignal(-1)
+  const requestEvent = useRequestEvent()
+  const initialStageIndex = (() => {
+    const raw = getCookieValue(STAGE_COOKIE, requestEvent)
+    if (!raw) return -1
+    const parsed = Number.parseInt(raw, 10)
+    return Number.isFinite(parsed) ? parsed : -1
+  })()
+  const initialCacheState = (() => {
+    const raw = getCookieValue(CACHE_COOKIE, requestEvent)
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw) as Record<string, boolean>
+      const hydrated: Record<string, boolean> = {}
+      let hasData = false
+      for (const fragment of fragments) {
+        if (typeof parsed?.[fragment.id] === 'boolean') {
+          hydrated[fragment.id] = parsed[fragment.id]
+          hasData = true
+        }
+      }
+      return hasData ? hydrated : null
+    } catch (error) {
+      return null
+    }
+  })()
+  const stageIndex = useSignal(initialStageIndex)
   const isRunning = useSignal(false)
-  const cacheState = useSignal<Record<string, boolean>>(randomCache(fragments))
+  const cacheState = useSignal<Record<string, boolean>>(initialCacheState ?? randomCache(fragments))
 
   const runPlanner = $(async () => {
     if (isRunning.value) return
     isRunning.value = true
     for (let i = 0; i < steps.length; i += 1) {
       stageIndex.value = i
+      setCookie(STAGE_COOKIE, String(i))
       await new Promise((resolve) => window.setTimeout(resolve, 720))
     }
     isRunning.value = false
   })
 
   const shuffleCache = $(() => {
-    cacheState.value = randomCache(fragments)
+    const nextCache = randomCache(fragments)
+    cacheState.value = nextCache
+    setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
   })
 
   const toggleCache = $((id: string) => {
-    cacheState.value = { ...cacheState.value, [id]: !cacheState.value[id] }
+    const nextCache = { ...cacheState.value, [id]: !cacheState.value[id] }
+    cacheState.value = nextCache
+    setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
   })
 
   const stage = stageIndex.value >= 0 ? steps[stageIndex.value] : null
