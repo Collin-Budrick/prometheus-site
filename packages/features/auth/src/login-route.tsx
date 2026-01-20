@@ -1,5 +1,5 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useNavigate } from '@builder.io/qwik-city'
+import { useNavigate, useRequestEvent } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 
 export type AuthCopy = {
@@ -93,6 +93,31 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const bootstrapTokenKey = 'auth:bootstrap:token'
 const bootstrapUserKey = 'auth:bootstrap:user'
+const authModeCookieKey = 'auth:mode'
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, ...rest] = part.split('=')
+    if (!name) continue
+    if (name.trim() === key) {
+      return rest.join('=').trim()
+    }
+  }
+  return null
+}
+
+const readAuthModeCookie = (cookieHeader: string | null): AuthMode | null => {
+  const value = readCookieValue(cookieHeader, authModeCookieKey)
+  if (value === 'login' || value === 'signup') return value
+  return null
+}
+
+const writeAuthModeCookie = (mode: AuthMode) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${authModeCookieKey}=${mode}; path=/; max-age=2592000; samesite=lax`
+}
 
 const storeBootstrapSession = (token: string, user: { id: string; email?: string | null; name?: string | null }) => {
   if (typeof window === 'undefined') return false
@@ -228,7 +253,9 @@ export const LoginRoute = component$<{
   apiBase?: string
 }>(({ copy, apiBase }) => {
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
-  const mode = useSignal<AuthMode>('login')
+  const requestEvent = useRequestEvent()
+  const initialMode = readAuthModeCookie(requestEvent?.request.headers.get('cookie') ?? null) ?? 'login'
+  const mode = useSignal<AuthMode>(initialMode)
   const state = useSignal<AuthState>('idle')
   const passkeyState = useSignal<PasskeyState>('idle')
   const statusTone = useSignal<StatusTone>('neutral')
@@ -242,6 +269,7 @@ export const LoginRoute = component$<{
   const setMode = $((next: AuthMode) => {
     if (mode.value === next) return
     mode.value = next
+    writeAuthModeCookie(next)
     state.value = 'idle'
     passkeyState.value = 'idle'
     statusTone.value = 'neutral'
