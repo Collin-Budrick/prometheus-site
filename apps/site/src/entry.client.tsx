@@ -1,6 +1,14 @@
 import { render } from '@builder.io/qwik'
 import { buildApiUrl, resolveApiHost } from './components/contact-invites/api'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
+import {
+  CLEANUP_VERSION_KEY,
+  FORCE_CLEANUP_KEY,
+  OPT_OUT_KEY,
+  readServiceWorkerSeedFromDocument,
+  writeServiceWorkerCleanupVersionCookie,
+  writeServiceWorkerOptOutCookie
+} from './shared/service-worker-seed'
 import Root from './root'
 
 declare global {
@@ -10,11 +18,9 @@ declare global {
   }
 }
 
-const CLEANUP_VERSION_KEY = 'fragment:sw-cleanup-version'
-const OPT_OUT_KEY = 'fragment:sw-opt-out'
-const FORCE_CLEANUP_KEY = 'fragment:sw-force-cleanup'
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
+const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
 
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
   if (typeof window === 'undefined') return
@@ -349,11 +355,15 @@ function getBuildVersion() {
 }
 
 function isServiceWorkerDisabled() {
+  if (serviceWorkerSeed.disabled !== undefined) {
+    return serviceWorkerSeed.disabled
+  }
   return import.meta.env.VITE_DISABLE_SW === '1' || import.meta.env.VITE_DISABLE_SW === 'true'
 }
 
 function isServiceWorkerOptedOut() {
   if (window.__FRAGMENT_PRIME_DISABLE_SW__) return true
+  if (serviceWorkerSeed.optOut !== undefined) return serviceWorkerSeed.optOut
   try {
     return window.localStorage.getItem(OPT_OUT_KEY) === '1'
   } catch (error) {
@@ -364,10 +374,9 @@ function isServiceWorkerOptedOut() {
 
 function shouldForceServiceWorkerCleanup() {
   try {
-    return (
-      window.__FRAGMENT_PRIME_FORCE_SW_CLEANUP__ === true ||
-      window.localStorage.getItem(FORCE_CLEANUP_KEY) === '1'
-    )
+    if (window.__FRAGMENT_PRIME_FORCE_SW_CLEANUP__ === true) return true
+    if (serviceWorkerSeed.forceCleanup !== undefined) return serviceWorkerSeed.forceCleanup
+    return window.localStorage.getItem(FORCE_CLEANUP_KEY) === '1'
   } catch {
     return false
   }
@@ -375,6 +384,9 @@ function shouldForceServiceWorkerCleanup() {
 
 function hasRunCleanupForVersion() {
   try {
+    if (serviceWorkerSeed.cleanupVersion) {
+      return serviceWorkerSeed.cleanupVersion === getBuildVersion()
+    }
     return window.localStorage.getItem(CLEANUP_VERSION_KEY) === getBuildVersion()
   } catch {
     return false
@@ -387,6 +399,7 @@ function markCleanupComplete() {
   } catch (error) {
     console.warn('Service worker cleanup flag write failed:', error)
   }
+  writeServiceWorkerCleanupVersionCookie(getBuildVersion())
 }
 
 async function setServiceWorkerOptOut(optOut: boolean) {
@@ -395,6 +408,7 @@ async function setServiceWorkerOptOut(optOut: boolean) {
   } catch (error) {
     console.warn('Service worker opt-out update failed:', error)
   }
+  writeServiceWorkerOptOutCookie(optOut)
 
   if (optOut) {
     await clearServiceWorkerCacheAndUnregister()
