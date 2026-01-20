@@ -38,7 +38,7 @@
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "25.0.9",
     "lightningcss": "^1.30.2",
-    "oxlint": "1.40.0",
+    "oxlint": "1.41.0",
     "rollup-plugin-visualizer": "^6.0.5",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
