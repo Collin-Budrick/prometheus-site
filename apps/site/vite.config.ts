@@ -11,6 +11,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
+import { resolveAppConfig } from '@platform/env'
 
 const require = createRequire(import.meta.url)
 
@@ -345,6 +346,7 @@ export default defineConfig(
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
+    const publicAppConfig = resolveAppConfig(process.env)
     const binding = await loadQwikBinding()
     const bundleVisualizer = shouldVisualizeBundle
       ? visualizer({
@@ -357,7 +359,8 @@ export default defineConfig(
     return {
       base: publicBase,
       define: {
-        __HIGHLIGHT_BUILD_ENABLED__: JSON.stringify(highlightBuildEnabled)
+        __HIGHLIGHT_BUILD_ENABLED__: JSON.stringify(highlightBuildEnabled),
+        __PUBLIC_APP_CONFIG__: JSON.stringify(publicAppConfig)
       },
       plugins: [
         sanitizeOutputOptionsPlugin(),
