@@ -1,5 +1,4 @@
-import { $, component$, useComputed$, useSignal } from '@builder.io/qwik'
-import { useRequestEvent } from '@builder.io/qwik-city'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
@@ -76,6 +75,23 @@ const isValidQuantity = (value: string) => {
   return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)
 }
 
+const resolveCookieState = (cookieHeader: string | null) => {
+  const initialName = readCookieValue(cookieHeader, STORE_CREATE_NAME_COOKIE) ?? ''
+  const initialPrice = readCookieValue(cookieHeader, STORE_CREATE_PRICE_COOKIE) ?? ''
+  const initialQuantityRaw = readCookieValue(cookieHeader, STORE_CREATE_QUANTITY_COOKIE)
+  const initialDigital = parseDigitalCookie(readCookieValue(cookieHeader, STORE_CREATE_DIGITAL_COOKIE))
+  const initialQuantity = initialQuantityRaw ?? '1'
+  const resolvedQuantity = initialDigital ? '-1' : initialQuantity
+  const resolvedLastQuantity = isValidQuantity(initialQuantity) ? String(Math.trunc(Number(initialQuantity))) : '1'
+  return {
+    name: initialName,
+    price: initialPrice,
+    quantity: resolvedQuantity,
+    lastQuantity: resolvedLastQuantity,
+    digital: initialDigital
+  }
+}
+
 export const StoreCreateForm = component$<StoreCreateFormProps>(
   ({
     class: className,
@@ -89,24 +105,45 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     quantityPlaceholder
   }) => {
     const langSignal = useSharedLangSignal()
-    const requestEvent = useRequestEvent()
-    const cookieHeader =
-      requestEvent?.request.headers.get('cookie') ?? (typeof document === 'undefined' ? null : document.cookie)
-    const initialName = readCookieValue(cookieHeader, STORE_CREATE_NAME_COOKIE) ?? ''
-    const initialPrice = readCookieValue(cookieHeader, STORE_CREATE_PRICE_COOKIE) ?? ''
-    const initialQuantityRaw = readCookieValue(cookieHeader, STORE_CREATE_QUANTITY_COOKIE)
-    const initialDigital = parseDigitalCookie(readCookieValue(cookieHeader, STORE_CREATE_DIGITAL_COOKIE))
-    const initialQuantity = initialQuantityRaw ?? '1'
-    const resolvedQuantity = initialDigital ? '-1' : initialQuantity
-    const resolvedLastQuantity = isValidQuantity(initialQuantity) ? String(Math.trunc(Number(initialQuantity))) : '1'
+    const cookieHeader = typeof document === 'undefined' ? null : document.cookie
+    const initialState = resolveCookieState(cookieHeader)
 
-    const name = useSignal(initialName)
-    const price = useSignal(initialPrice)
-    const quantity = useSignal(resolvedQuantity)
-    const lastQuantity = useSignal(resolvedLastQuantity)
-    const digitalProduct = useSignal(initialDigital)
+    const name = useSignal(initialState.name)
+    const price = useSignal(initialState.price)
+    const quantity = useSignal(initialState.quantity)
+    const lastQuantity = useSignal(initialState.lastQuantity)
+    const digitalProduct = useSignal(initialState.digital)
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
+
+    useVisibleTask$(() => {
+      const browserCookies = document.cookie || null
+      if (!browserCookies) return
+      if (
+        name.value !== initialState.name ||
+        price.value !== initialState.price ||
+        quantity.value !== initialState.quantity ||
+        lastQuantity.value !== initialState.lastQuantity ||
+        digitalProduct.value !== initialState.digital
+      ) {
+        return
+      }
+      const nextState = resolveCookieState(browserCookies)
+      if (
+        nextState.name === initialState.name &&
+        nextState.price === initialState.price &&
+        nextState.quantity === initialState.quantity &&
+        nextState.lastQuantity === initialState.lastQuantity &&
+        nextState.digital === initialState.digital
+      ) {
+        return
+      }
+      name.value = nextState.name
+      price.value = nextState.price
+      quantity.value = nextState.quantity
+      lastQuantity.value = nextState.lastQuantity
+      digitalProduct.value = nextState.digital
+    })
 
     const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
     const copy = fragmentCopy.value

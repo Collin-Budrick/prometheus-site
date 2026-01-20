@@ -1,5 +1,4 @@
-import { $, component$, useSignal } from '@builder.io/qwik'
-import { useRequestEvent } from '@builder.io/qwik-city'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getLanguagePack } from '../lang'
 import { useLangSignal } from '../shared/lang-bridge'
 
@@ -15,12 +14,48 @@ const setCookie = (name: string, value: string) => {
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`
 }
 
-const getCookieValue = (name: string, requestEvent?: ReturnType<typeof useRequestEvent>) => {
-  const serverValue = requestEvent?.cookie.get(name)?.value
-  if (serverValue) return serverValue
-  if (typeof document === 'undefined') return null
-  const entry = document.cookie.split('; ').find((cookie) => cookie.startsWith(`${name}=`))
-  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null
+const readCookieValue = (cookieHeader: string | null, name: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [key, ...rest] = part.trim().split('=')
+    if (key === name) {
+      const raw = rest.join('=')
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+const resolveStageIndex = (cookieHeader: string | null) => {
+  const raw = readCookieValue(cookieHeader, STAGE_COOKIE)
+  if (!raw) return -1
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) ? parsed : -1
+}
+
+const resolveCacheState = (cookieHeader: string | null, fragments: ReadonlyArray<{ id: string }>) => {
+  const raw = readCookieValue(cookieHeader, CACHE_COOKIE)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Record<string, boolean>
+    const hydrated: Record<string, boolean> = {}
+    let hasData = false
+    for (const fragment of fragments) {
+      if (typeof parsed?.[fragment.id] === 'boolean') {
+        hydrated[fragment.id] = parsed[fragment.id]
+        hasData = true
+      }
+    }
+    return hasData ? hydrated : null
+  } catch (error) {
+    return null
+  }
 }
 
 export const PlannerDemo = component$(() => {
@@ -28,34 +63,26 @@ export const PlannerDemo = component$(() => {
   const copy = getLanguagePack(langSignal.value).demos.planner
   const steps = copy.steps
   const fragments = copy.fragments
-  const requestEvent = useRequestEvent()
-  const initialStageIndex = (() => {
-    const raw = getCookieValue(STAGE_COOKIE, requestEvent)
-    if (!raw) return -1
-    const parsed = Number.parseInt(raw, 10)
-    return Number.isFinite(parsed) ? parsed : -1
-  })()
-  const initialCacheState = (() => {
-    const raw = getCookieValue(CACHE_COOKIE, requestEvent)
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw) as Record<string, boolean>
-      const hydrated: Record<string, boolean> = {}
-      let hasData = false
-      for (const fragment of fragments) {
-        if (typeof parsed?.[fragment.id] === 'boolean') {
-          hydrated[fragment.id] = parsed[fragment.id]
-          hasData = true
-        }
-      }
-      return hasData ? hydrated : null
-    } catch (error) {
-      return null
-    }
-  })()
+  const cookieHeader = typeof document === 'undefined' ? null : document.cookie
+  const initialStageIndex = resolveStageIndex(cookieHeader)
+  const initialCacheState = resolveCacheState(cookieHeader, fragments)
   const stageIndex = useSignal(initialStageIndex)
   const isRunning = useSignal(false)
-  const cacheState = useSignal<Record<string, boolean>>(initialCacheState ?? randomCache(fragments))
+  const seedCacheState = initialCacheState ?? randomCache(fragments)
+  const cacheState = useSignal<Record<string, boolean>>(seedCacheState)
+
+  useVisibleTask$(() => {
+    const browserCookies = document.cookie || null
+    if (!browserCookies) return
+    const nextStageIndex = resolveStageIndex(browserCookies)
+    if (nextStageIndex >= 0 && stageIndex.value < 0) {
+      stageIndex.value = nextStageIndex
+    }
+    const nextCacheState = resolveCacheState(browserCookies, fragments)
+    if (nextCacheState && cacheState.value === seedCacheState) {
+      cacheState.value = nextCacheState
+    }
+  })
 
   const runPlanner = $(async () => {
     if (isRunning.value) return
