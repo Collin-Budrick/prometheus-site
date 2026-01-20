@@ -318,7 +318,7 @@ const buildContactsSnapshot = async (
     return { incoming: [], outgoing: [], contacts: [], onlineIds: [] }
   }
 
-  let users: Array<{ id: string; name?: string | null; email: string }> = []
+  let users: Array<Record<string, unknown>> = []
   try {
     users = await options.db
       .select({ id: options.usersTable.id, name: options.usersTable.name, email: options.usersTable.email })
@@ -431,7 +431,7 @@ const markPresenceOnline = async (valkey: ValkeyClient, userId: string) => {
 const touchPresence = async (valkey: ValkeyClient, userId: string) => {
   const key = buildPresenceKey(userId)
   const updated = await valkey.expire(key, presenceTtlSeconds)
-  if (updated > 0) return false
+  if (updated) return false
   const count = await valkey.incr(key)
   await valkey.expire(key, presenceTtlSeconds)
   return count === 1

@@ -1,9 +1,8 @@
-import { Elysia, t } from 'elysia'
+import { Elysia, t, type HTTPHeaders } from 'elysia'
 import { and, eq, gt, gte, inArray, sql } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
-import { createInsertSchema } from 'drizzle-zod'
 import { z } from 'zod'
 import { buildStoreItemsCacheKey, invalidateStoreItemsCache } from './cache'
 import type { StoreItemsTable } from './realtime'
@@ -67,10 +66,10 @@ const parseQuantity = (value: unknown) => {
   return 0
 }
 
-const applyRateLimitHeaders = (set: { headers?: HeadersInit }, headers: Headers) => {
-  const resolved = new Headers(set.headers ?? undefined)
+const applyRateLimitHeaders = (set: { headers?: HTTPHeaders }, headers: Headers) => {
+  const resolved: HTTPHeaders = set.headers ?? {}
   headers.forEach((value, key) => {
-    resolved.set(key, value)
+    resolved[key] = value
   })
   set.headers = resolved
 }
@@ -129,11 +128,11 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     }
   }
 
-  const storeItemInsertSchema = createInsertSchema(options.storeItemsTable, {
-    name: (schema) => schema.trim().min(2).max(120),
-    price: () => z.coerce.number().min(0).max(100000),
-    quantity: () => z.coerce.number().int().min(-1).max(100000)
-  }).pick({ name: true, price: true, quantity: true })
+  const storeItemInsertSchema = z.object({
+    name: z.string().trim().min(2).max(120),
+    price: z.coerce.number().min(0).max(100000),
+    quantity: z.coerce.number().int().min(-1).max(100000).default(1)
+  })
 
   return new Elysia()
     .get(
@@ -252,14 +251,15 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         const normalizedName = parsed.data.name.trim()
-        const normalizedPrice = parsed.data.price.toFixed(2)
-        const normalizedQuantity = parsed.data.quantity < 0 ? -1 : parsed.data.quantity
+        const normalizedPrice = parsePrice(parsed.data.price).toFixed(2)
+        const normalizedQuantity = parseQuantity(parsed.data.quantity ?? 1)
+        const resolvedQuantity = normalizedQuantity < 0 ? -1 : normalizedQuantity
 
         let created
         try {
           const [row] = await options.db
             .insert(options.storeItemsTable)
-            .values({ name: normalizedName, price: normalizedPrice, quantity: normalizedQuantity })
+            .values({ name: normalizedName, price: normalizedPrice, quantity: resolvedQuantity })
             .returning()
           created = row
         } catch (error) {
@@ -715,7 +715,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             }
           })
           .filter(
-            (item): item is { id: number; name: string; price: number; quantity: number; score?: number } =>
+            (item): item is { id: number; name: string; price: number; quantity: number; score: number | undefined } =>
               item !== null
           )
 

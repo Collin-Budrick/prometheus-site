@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
-import type { StoreItemPayload, StoreItemsTable } from './realtime'
+import type { StoreItemPayload, StoreItemRowSnapshot, StoreItemsTable } from './realtime'
 
 export type StoreSearchHit = {
   id: number
@@ -225,9 +225,9 @@ export const rebuildStoreSearchIndex = async (options: {
 
   let tableExists = true
   try {
-    const tableCheck = await options.db.select({
-      exists: sql<string | null>`to_regclass('store_items')`
-    })
+    const tableCheck = await options.db
+      .execute<{ exists: string | null }>(sql`select to_regclass('store_items') as exists`)
+      .execute()
     tableExists = Boolean(tableCheck[0]?.exists)
   } catch (error) {
     if (isMissingTableError(error)) {
@@ -241,9 +241,9 @@ export const rebuildStoreSearchIndex = async (options: {
     return false
   }
 
-  let rows
+  let rows: StoreItemRowSnapshot[]
   try {
-    rows = await options.db.select().from(options.storeItemsTable)
+    rows = (await options.db.select().from(options.storeItemsTable)) as StoreItemRowSnapshot[]
   } catch (error) {
     if (isMissingTableError(error)) {
       console.warn('Store search rebuild skipped: store_items table missing')
@@ -255,11 +255,12 @@ export const rebuildStoreSearchIndex = async (options: {
 
   const pipeline = options.valkey.multi()
   rows.forEach((row) => {
-    const nameValue = String(row.name ?? '')
+    const nameValue = row.name ?? ''
+    const priceValue = typeof row.price === 'number' || typeof row.price === 'string' ? String(row.price) : ''
     pipeline.hSet(buildStoreSearchKey(row.id), {
       id: String(row.id),
       name: serializeTags(nameValue),
-      price: String(row.price ?? ''),
+      price: priceValue,
       [storeSearchVectorField]: buildEmbedding(nameValue)
     })
   })

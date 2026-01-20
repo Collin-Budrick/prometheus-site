@@ -2,28 +2,36 @@ import { unified } from 'unified'
 import rehypeParse from 'rehype-parse'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import rehypeStringify from 'rehype-stringify'
+import type { Schema } from 'hast-util-sanitize'
 
 import {
   allowedAttributes,
-  ariaAttributePattern,
+  ariaAttributes,
   customElementTags,
-  dataAttributePattern,
+  dataAttributeWildcard,
   htmlAttributeAliases,
   mathTags,
   svgAttributeAliases,
   svgTags
 } from './sanitize.shared'
 
+type AttributeDefinition = NonNullable<Schema['attributes']>[string][number]
+
 const mergeAttributes = (
-  base: Array<string | RegExp> | undefined,
-  extra: Array<string | RegExp>
-): Array<string | RegExp> => {
-  const merged = new Set<string | RegExp>(base ?? [])
-  extra.forEach((entry) => merged.add(entry))
-  return Array.from(merged)
+  base: Array<AttributeDefinition> | undefined,
+  extra: Array<AttributeDefinition>
+): Array<AttributeDefinition> => {
+  const merged = new Map<string, AttributeDefinition>()
+  ;(base ?? []).forEach((entry) => {
+    merged.set(typeof entry === 'string' ? entry : entry[0], entry)
+  })
+  extra.forEach((entry) => {
+    merged.set(typeof entry === 'string' ? entry : entry[0], entry)
+  })
+  return Array.from(merged.values())
 }
 
-const sanitizeSchema = {
+const sanitizeSchema: Schema = {
   ...defaultSchema,
   tagNames: Array.from(
     new Set([...(defaultSchema.tagNames ?? []), ...customElementTags, ...svgTags, ...mathTags])
@@ -34,8 +42,8 @@ const sanitizeSchema = {
       ...allowedAttributes,
       ...svgAttributeAliases,
       ...htmlAttributeAliases,
-      dataAttributePattern,
-      ariaAttributePattern
+      dataAttributeWildcard,
+      ...ariaAttributes
     ])
   },
   protocols: {

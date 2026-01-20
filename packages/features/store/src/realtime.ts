@@ -1,18 +1,11 @@
 import { eq } from 'drizzle-orm'
-import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
-import { createSelectSchema } from 'drizzle-zod'
 import type { DatabaseClient } from '@platform/db'
+import type { storeItems } from '@platform/db/schema'
 import { z } from 'zod'
 
-type StoreItemRowSnapshot = { id: number; name: string; price: unknown; quantity: unknown }
+export type StoreItemsTable = typeof storeItems
 
-export type StoreItemsTable = AnyPgTable & {
-  id: AnyPgColumn
-  name: AnyPgColumn
-  price: AnyPgColumn
-  quantity: AnyPgColumn
-  $inferSelect: StoreItemRowSnapshot
-}
+export type StoreItemRowSnapshot = { id: number; name: string; price: unknown; quantity: unknown }
 
 export type StoreItemPayload = {
   id: StoreItemRowSnapshot['id']
@@ -71,12 +64,12 @@ export const createStoreRealtime = (options: StoreRealtimeOptions) => {
     id: z.coerce.number().int().nonnegative()
   })
 
-  const storeItemSchema = createSelectSchema(options.storeItemsTable).pick({
-    id: true,
-    name: true,
-    price: true,
-    quantity: true
-  })
+  const storeItemSchema = z.object({
+    id: z.number(),
+    name: z.string(),
+    price: z.unknown(),
+    quantity: z.unknown()
+  }) as z.ZodType<StoreItemRowSnapshot>
 
   let listener: Awaited<ReturnType<typeof options.pgClient.listen>> | null = null
   let retryTimer: NodeJS.Timeout | null = null
@@ -143,7 +136,7 @@ export const createStoreRealtime = (options: StoreRealtimeOptions) => {
         .where(eq(options.storeItemsTable.id, id))
         .limit(1)
       if (row === undefined) return
-      const parsedRow = storeItemSchema.safeParse(row as StoreItemRowSnapshot)
+      const parsedRow = storeItemSchema.safeParse(row)
       if (!parsedRow.success) {
         console.warn('Store item failed validation for realtime event', z.treeifyError(parsedRow.error))
         return

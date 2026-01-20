@@ -379,22 +379,33 @@ export const createFragmentClient = (
     }
   }
 
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message
+    if (typeof error === 'string') return error
+    if (
+      typeof error === 'number' ||
+      typeof error === 'boolean' ||
+      typeof error === 'bigint'
+    )
+      return String(error)
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      const message = (error as { message?: unknown }).message
+      if (typeof message === 'string') return message
+    }
+    if (typeof error === 'object' && error !== null) {
+      try {
+        return JSON.stringify(error) ?? ''
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  }
+
   const isWebTransportReset = (error: unknown) => {
-    if (!error) return false
-    if (error instanceof Error) {
-      const message = error.message.toLowerCase()
-      return message.includes('reset_stream') || message.includes('reset stream')
-    }
-    if (typeof error === 'string') {
-      const message = error.toLowerCase()
-      return message.includes('reset_stream') || message.includes('reset stream')
-    }
-    if (typeof error === 'object' && 'message' in error && typeof (error as { message?: string }).message === 'string') {
-      const message = (error as { message: string }).message.toLowerCase()
-      return message.includes('reset_stream') || message.includes('reset stream')
-    }
-    const fallback = String(error).toLowerCase()
-    return fallback.includes('reset_stream') || fallback.includes('reset stream')
+    const message = getErrorMessage(error).toLowerCase()
+    if (!message) return false
+    return message.includes('reset_stream') || message.includes('reset stream')
   }
 
   const logStreamMetrics = (
