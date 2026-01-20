@@ -35,6 +35,20 @@ export const createCacheClient = (
 
   let cacheReady = false
 
+  client.on('ready', () => {
+    cacheReady = true
+  })
+  client.on('end', () => {
+    cacheReady = false
+  })
+  client.on('reconnecting', () => {
+    cacheReady = false
+  })
+  client.on('error', (error) => {
+    cacheReady = false
+    logger.warn('Valkey client error', { error })
+  })
+
   const connect = async () => {
     if (client.isOpen) {
       cacheReady = true
@@ -45,7 +59,7 @@ export const createCacheClient = (
     for (let attempt = 1; attempt <= maxConnectAttempts; attempt += 1) {
       try {
         await client.connect()
-        cacheReady = client.isOpen
+        cacheReady = client.isReady
         logger.info('Valkey connected')
         return
       } catch (error) {
@@ -71,7 +85,7 @@ export const createCacheClient = (
     }
   }
 
-  const isReady = () => cacheReady && client.isOpen
+  const isReady = () => cacheReady && client.isReady
 
   return {
     client,

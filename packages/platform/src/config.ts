@@ -1,5 +1,4 @@
-import { createEnv } from 'arkenv'
-import { type as arkenvType } from 'arkenv/arktype'
+import { parse as arkenvParse } from 'arkenv/arktype'
 import type { LogLevel } from '@logtape/logtape'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
@@ -74,7 +73,7 @@ export type LogConfig = {
   format: LogFormat
 }
 
-const platformEnvSchema = arkenvType({
+const platformEnvSchema: Record<string, string> = {
   NODE_ENV: 'string?',
   API_PORT: 'string?',
   API_HOST: 'string?',
@@ -123,10 +122,10 @@ const platformEnvSchema = arkenvType({
   PUSH_VAPID_SUBJECT: 'string?',
   LOG_LEVEL: 'string?',
   LOG_FORMAT: 'string?'
-})
+}
 
 const parsePlatformEnv = (env: Env): Env =>
-  createEnv(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
+  arkenvParse(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' }) as Env
 
 const parsePort = (value: string | undefined, defaultValue: number, name: string) => {
   const raw = (value ?? String(defaultValue)).trim()

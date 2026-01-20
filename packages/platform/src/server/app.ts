@@ -82,14 +82,30 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
   let authFeature: ReturnType<typeof createAuthFeature> | null = null
   let storeValkeyClient: CacheClient['client'] | null = null
   let storeValkeyReady = false
+  let storeValkeyListenersAttached = false
 
   const resolveStoreValkey = (cache: CacheClient) => {
     if (featureFlags.store && storeValkeyClient === null) {
-      storeValkeyClient = cache.client.duplicate()
+      storeValkeyClient = cache.client.duplicate({ disableOfflineQueue: true })
+    }
+    if (storeValkeyClient && !storeValkeyListenersAttached) {
+      storeValkeyListenersAttached = true
+      storeValkeyClient.on('ready', () => {
+        storeValkeyReady = true
+      })
+      storeValkeyClient.on('end', () => {
+        storeValkeyReady = false
+      })
+      storeValkeyClient.on('reconnecting', () => {
+        storeValkeyReady = false
+      })
+      storeValkeyClient.on('error', () => {
+        storeValkeyReady = false
+      })
     }
     const storeValkey = storeValkeyClient ?? cache.client
     const isStoreValkeyReady = () =>
-      storeValkeyClient ? storeValkeyReady && storeValkeyClient.isOpen : cache.isReady()
+      storeValkeyClient ? storeValkeyReady && storeValkeyClient.isReady : cache.isReady()
     return { storeValkey, isStoreValkeyReady }
   }
 
@@ -266,7 +282,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
           if (!storeValkeyClient.isOpen) {
             await storeValkeyClient.connect()
           }
-          storeValkeyReady = storeValkeyClient.isOpen
+          storeValkeyReady = storeValkeyClient.isReady
           if (storeValkeyReady) {
             logger.info('Store Valkey connected')
           }
