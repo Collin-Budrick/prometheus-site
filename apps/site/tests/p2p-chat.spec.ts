@@ -1,4 +1,4 @@
-import { expect, request, test, type APIRequestContext, type Browser, type Page } from '@playwright/test'
+import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test'
 
 const profileStorageKey = 'prometheus.profile.local'
 const profileUpdatedEvent = 'prometheus:profile-updated'
