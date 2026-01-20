@@ -14,8 +14,8 @@ import { initLang, lang, subscribeLang, type Lang } from './lang-store'
 
 const LangSignalContext = createContextId<Signal<Lang>>('lang-signal')
 
-export const useLangSignal = () => {
-  const current = useSignal(lang.value)
+export const useLangSignal = (initialLang?: Lang) => {
+  const current = useSignal<Lang>(initialLang ?? lang.value)
 
   useVisibleTask$(
     (ctx) => {
@@ -38,9 +38,18 @@ export const useLangSignal = () => {
   return current
 }
 
-export const LangProvider = component$(() => {
-  const langSignal = useLangSignal()
+export const useProvideLangSignal = (initialLang?: Lang) => {
+  const langSignal = useLangSignal(initialLang)
   useContextProvider(LangSignalContext, langSignal)
+  return langSignal
+}
+
+type LangProviderProps = {
+  initialLang?: Lang
+}
+
+export const LangProvider = component$<LangProviderProps>(({ initialLang }) => {
+  useProvideLangSignal(initialLang)
   return <Slot />
 })
 

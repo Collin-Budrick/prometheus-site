@@ -2,7 +2,12 @@ import { component$, useComputed$ } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import LabRoute, { LabSkeleton as FeatureLabSkeleton, type LabCopy } from '@features/lab/pages/Lab'
-import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
+import {
+  FragmentShell,
+  getFragmentShellCacheEntry,
+  readFragmentShellStateFromCookie,
+  type FragmentShellState
+} from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
@@ -17,6 +22,7 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
+  shellState: FragmentShellState | null
 }
 
 const labEnabled = siteFeatures.lab !== false
@@ -30,7 +36,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for lab', error)
@@ -96,7 +103,7 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
     : null
   const data = fragmentResource.value ?? cachedData
   if (data?.plan?.fragments?.length) {
@@ -106,6 +113,7 @@ export default component$(() => {
         initialFragments={data.fragments}
         path={data.path}
         initialLang={data.lang}
+        initialShellState={data.shellState ?? undefined}
       />
     )
   }

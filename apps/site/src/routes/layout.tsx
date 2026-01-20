@@ -1,15 +1,16 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, type RequestHandler } from '@builder.io/qwik-city'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
-import { useLangCopy, useSharedLangSignal } from '../shared/lang-bridge'
+import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
+import { resolveRequestLang } from './fragment-resource'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -127,6 +128,12 @@ const getLangLabel = (value: string) => LANGUAGE_LABELS[value.toLowerCase()] ?? 
 
 export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request }) => loadAuthSession(request))
 
+export const useShellPreferences = routeLoader$((event) => {
+  const lang = resolveRequestLang(event.request)
+  const theme = readThemeFromCookie(event.request.headers.get('cookie')) ?? defaultTheme
+  return { lang, theme }
+})
+
 export const onRequest: RequestHandler = ({ headers, method }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
@@ -177,7 +184,8 @@ export const RouterHead = component$(() => {
 })
 
 export default component$(() => {
-  const langSignal = useSharedLangSignal()
+  const shellPreferences = useShellPreferences()
+  const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
   const authSession = useAuthSession()
@@ -453,7 +461,10 @@ export default component$(() => {
                       })}
                     />
                   ) : null}
-                  <ThemeToggle labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }} />
+                  <ThemeToggle
+                    initialTheme={shellPreferences.value.theme}
+                    labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
+                  />
                 </div>
                 {hasMultipleLangs ? (
                   <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>

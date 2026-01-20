@@ -6,7 +6,12 @@ import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
-import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
+import {
+  FragmentShell,
+  getFragmentShellCacheEntry,
+  readFragmentShellStateFromCookie,
+  type FragmentShellState
+} from '../../fragment/ui'
 import type { FragmentPayload, FragmentPayloadValue, FragmentPlan, FragmentPlanValue, RenderNode } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
@@ -18,6 +23,7 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
+  shellState: FragmentShellState | null
 }
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
@@ -77,7 +83,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for store', error)
@@ -100,7 +107,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
         [fallbackId]: buildOfflineShellFragment(fallbackId, path)
       } as FragmentPayloadValue,
       path,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path)
     }
   }
 })
@@ -166,7 +174,7 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
     : null
   const data = fragmentResource.value ?? cachedData
   if (data?.plan?.fragments?.length) {
@@ -176,6 +184,7 @@ export default component$(() => {
         initialFragments={data.fragments}
         path={data.path}
         initialLang={data.lang}
+        initialShellState={data.shellState ?? undefined}
         preserveFragmentEffects
       />
     )

@@ -6,7 +6,12 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/pages/Login'
-import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
+import {
+  FragmentShell,
+  getFragmentShellCacheEntry,
+  readFragmentShellStateFromCookie,
+  type FragmentShellState
+} from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
@@ -18,6 +23,7 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
+  shellState: FragmentShellState | null
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
@@ -30,7 +36,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for login', error)
@@ -112,7 +119,7 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
     : null
   const data = fragmentResource.value ?? cachedData
   if (data?.plan?.fragments?.length) {
@@ -122,6 +129,7 @@ export default component$(() => {
         initialFragments={data.fragments}
         path={data.path}
         initialLang={data.lang}
+        initialShellState={data.shellState ?? undefined}
       />
     )
   }

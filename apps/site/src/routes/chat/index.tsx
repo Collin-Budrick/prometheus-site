@@ -8,7 +8,12 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
-import { FragmentShell, getFragmentShellCacheEntry } from '../../fragment/ui'
+import {
+  FragmentShell,
+  getFragmentShellCacheEntry,
+  readFragmentShellStateFromCookie,
+  type FragmentShellState
+} from '../../fragment/ui'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../app-config'
 
@@ -30,6 +35,7 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
+  shellState: FragmentShellState | null
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
@@ -42,7 +48,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for chat', error)
@@ -78,7 +85,7 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
     : null
   const fragmentData = fragmentResource.value ?? cachedData
   const copy = useLangCopy()
@@ -92,6 +99,7 @@ export default component$(() => {
         initialFragments={fragmentData.fragments}
         path={fragmentData.path}
         initialLang={fragmentData.lang}
+        initialShellState={fragmentData.shellState ?? undefined}
       />
     )
   }

@@ -10,7 +10,14 @@ import { FragmentStreamController } from './FragmentStreamController'
 import { applyHeaderOverride } from './header-overrides'
 import { resolveFragments, resolvePlan } from './utils'
 import { appConfig } from '../../app-config'
-import { getFragmentShellCacheEntry, setFragmentShellCacheEntry, type FieldSnapshot } from './shell-cache'
+import {
+  getFragmentShellCacheEntry,
+  normalizeFragmentShellPath,
+  setFragmentShellCacheEntry,
+  writeFragmentShellStateToCookie,
+  type FieldSnapshot,
+  type FragmentShellState
+} from './shell-cache'
 
 type FragmentShellProps = {
   plan: FragmentPlanValue
@@ -19,6 +26,7 @@ type FragmentShellProps = {
   initialLang: Lang
   introMarkdown?: string
   preserveFragmentEffects?: boolean
+  initialShellState?: FragmentShellState
 }
 
 type FragmentClientEffectsProps = {
@@ -198,7 +206,7 @@ const FragmentClientEffects = component$(({ planValue, initialFragmentMap }: Fra
 })
 
 export const FragmentShell = component$(
-  ({ plan, initialFragments, path, initialLang, introMarkdown, preserveFragmentEffects }: FragmentShellProps) => {
+  ({ plan, initialFragments, path, initialLang, introMarkdown, preserveFragmentEffects, initialShellState }: FragmentShellProps) => {
   const langSignal = useSharedLangSignal()
   useTask$((ctx) => {
     ctx.track(() => initialLang)
@@ -208,6 +216,11 @@ export const FragmentShell = component$(
   })
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
+  const normalizedPath = normalizeFragmentShellPath(path)
+  const seedState =
+    initialShellState && normalizeFragmentShellPath(initialShellState.path) === normalizedPath
+      ? initialShellState
+      : null
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
   const hasIntro = Boolean(introMarkdown?.trim())
   const initialFragmentMap = resolveFragments(initialFragments)
@@ -216,23 +229,22 @@ export const FragmentShell = component$(
     cachedFragments ? { ...initialFragmentMap, ...cachedFragments } : initialFragmentMap
   )
   const status = useSharedFragmentStatusSignal()
+  const seedExpandedId = seedState?.expandedId ?? cachedEntry?.expandedId ?? null
   const cachedExpanded =
-    cachedEntry?.expandedId && planValue.fragments.some((entry) => entry.id === cachedEntry.expandedId)
-      ? cachedEntry.expandedId
-      : null
+    seedExpandedId && planValue.fragments.some((entry) => entry.id === seedExpandedId) ? seedExpandedId : null
   const expandedId = useSignal<string | null>(cachedExpanded)
   const layoutTick = useSignal(0)
   const stackScheduler = useSignal<(() => void) | null>(null)
   const gridRef = useSignal<HTMLDivElement>()
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
-  const cachedOrder = cachedEntry?.orderIds ?? []
+  const cachedOrder = seedState?.orderIds?.length ? seedState.orderIds : cachedEntry?.orderIds ?? []
   const orderIds = useSignal<string[]>(cachedOrder.length ? buildOrderedIds(planValue.fragments, cachedOrder) : [])
   const dragState = useSignal<FragmentDragState>({
     active: false,
     suppressUntil: 0,
     draggingId: null
   })
-  const lastScrollY = useSignal(cachedEntry?.scrollY ?? 0)
+  const lastScrollY = useSignal(seedState?.scrollY ?? cachedEntry?.scrollY ?? 0)
   const restoredState = useSignal(false)
   const streamPaused = useSignal(Boolean(cachedEntry))
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
@@ -371,17 +383,18 @@ export const FragmentShell = component$(
   useVisibleTask$(
     () => {
       if (typeof window === 'undefined') return
-      if (!cachedEntry || restoredState.value) return
+      const restoreState = cachedEntry ?? seedState
+      if (!restoreState || restoredState.value) return
       const grid = gridRef.value
       if (!grid) return
       restoredState.value = true
-      if (typeof cachedEntry.scrollY === 'number') {
+      if (typeof restoreState.scrollY === 'number') {
         window.requestAnimationFrame(() => {
-          window.scrollTo({ top: cachedEntry.scrollY, left: 0, behavior: 'auto' })
-          lastScrollY.value = cachedEntry.scrollY
+          window.scrollTo({ top: restoreState.scrollY, left: 0, behavior: 'auto' })
+          lastScrollY.value = restoreState.scrollY
         })
       }
-      if (cachedEntry.fields && Object.keys(cachedEntry.fields).length) {
+      if (cachedEntry?.fields && Object.keys(cachedEntry.fields).length) {
         window.requestAnimationFrame(() => {
           applyFieldSnapshots(grid, cachedEntry.fields)
         })
@@ -393,7 +406,21 @@ export const FragmentShell = component$(
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      const persistShellState = () => {
+        writeFragmentShellStateToCookie({
+          path: normalizedPath,
+          orderIds: orderIds.value,
+          expandedId: expandedId.value,
+          scrollY: lastScrollY.value
+        })
+      }
+      const handlePageHide = () => {
+        persistShellState()
+      }
+
+      window.addEventListener('pagehide', handlePageHide)
       ctx.cleanup(() => {
+        window.removeEventListener('pagehide', handlePageHide)
         const grid = gridRef.value
         setFragmentShellCacheEntry(path, {
           plan: planValue as FragmentPlanValue,
@@ -405,6 +432,7 @@ export const FragmentShell = component$(
           scrollY: lastScrollY.value,
           fields: grid ? collectFieldSnapshots(grid) : {}
         })
+        persistShellState()
       })
     },
     { strategy: 'document-ready' }

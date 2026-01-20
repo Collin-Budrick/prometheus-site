@@ -9,6 +9,7 @@ type ThemeToggleLabels = {
 type ThemeToggleProps = {
   class?: string
   labels: ThemeToggleLabels
+  initialTheme?: Theme
   onToggle$?: PropFunction<(nextTheme: Theme) => void | Promise<void>>
 }
 
@@ -63,8 +64,8 @@ type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle
 }
 
-export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, labels, onToggle$ }) => {
-  const themeSignal = useSignal<Theme>(themeStore.value)
+export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, labels, initialTheme, onToggle$ }) => {
+  const themeSignal = useSignal<Theme>(initialTheme ?? themeStore.value)
   const hasStoredPreference = useSignal(false)
 
   useVisibleTask$((ctx) => {

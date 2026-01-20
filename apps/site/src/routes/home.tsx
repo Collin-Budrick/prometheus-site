@@ -1,7 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, routeLoader$, useLocation } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { FragmentShell, getFragmentShellCacheEntry } from '../fragment/ui'
+import { FragmentShell, getFragmentShellCacheEntry, readFragmentShellStateFromCookie, type FragmentShellState } from '../fragment/ui'
 import { loadHybridFragmentResource } from './fragment-resource'
 import { defaultLang, normalizeLang, readLangFromCookie, type Lang } from '../shared/lang-store'
 import { useLangCopy } from '../shared/lang-bridge'
@@ -66,6 +66,7 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
+  shellState: FragmentShellState | null
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
@@ -81,7 +82,8 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
     }
   } catch (error) {
     console.error('Fragment plan fetch failed', error)
@@ -104,7 +106,8 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
         [fallbackId]: buildOfflineShellFragment(fallbackId, path)
       } as FragmentPayloadValue,
       path,
-      lang
+      lang,
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path)
     }
   }
 })
@@ -115,7 +118,7 @@ export default component$(() => {
   const copy = useLangCopy()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang }
+    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
     : null
   const data = fragmentResource.value ?? cachedData
   if (!data) return null
@@ -126,6 +129,7 @@ export default component$(() => {
       initialFragments={data.fragments}
       path={data.path}
       initialLang={normalizeLang(data.lang)}
+      initialShellState={data.shellState ?? undefined}
       introMarkdown={copy.value.homeIntroMarkdown}
     />
   )

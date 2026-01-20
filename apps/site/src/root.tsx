@@ -6,7 +6,6 @@ import { RouteMotion } from '@prometheus/ui'
 import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
-import { LangProvider } from './shared/lang-bridge'
 import { appConfig } from './app-config'
 
 export default component$(() => {
@@ -90,11 +89,9 @@ export default component$(() => {
             <RouteMotion />
           </>
         ) : null}
-        <LangProvider>
-          <FragmentStatusProvider>
-            <RouterOutlet />
-          </FragmentStatusProvider>
-        </LangProvider>
+        <FragmentStatusProvider>
+          <RouterOutlet />
+        </FragmentStatusProvider>
         <div class="viewport-fade" aria-hidden="true" />
       </body>
     </QwikCityProvider>
