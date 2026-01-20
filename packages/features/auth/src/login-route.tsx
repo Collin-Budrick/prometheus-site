@@ -1,7 +1,6 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
-import { z } from 'zod'
 
 export type AuthCopy = {
   metaLine: string
@@ -45,19 +44,6 @@ const defaultAuthCopy: AuthCopy = {
   passkeyHint: 'Keypass signs in with your device credential.',
   closeLabel: 'Close'
 }
-
-const loginSchema = z.object({
-  email: z.string().trim().email('Enter a valid email.'),
-  password: z.string().min(1, 'Enter your password.'),
-  rememberMe: z.boolean().optional()
-})
-
-const signupSchema = z.object({
-  name: z.string().trim().min(2, 'Enter a name.'),
-  email: z.string().trim().email('Enter a valid email.'),
-  password: z.string().min(6, 'Password must be at least 6 characters.'),
-  rememberMe: z.boolean().optional()
-})
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
 
@@ -338,6 +324,12 @@ export const LoginRoute = component$<{
     event.preventDefault()
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
+    const { z } = await import('zod')
+    const loginSchema = z.object({
+      email: z.string().trim().email('Enter a valid email.'),
+      password: z.string().min(1, 'Enter your password.'),
+      rememberMe: z.boolean().optional()
+    })
     const parsed = loginSchema.safeParse({
       email: readFormValue(data, 'email'),
       password: readFormValue(data, 'password'),
@@ -386,6 +378,13 @@ export const LoginRoute = component$<{
     event.preventDefault()
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
+    const { z } = await import('zod')
+    const signupSchema = z.object({
+      name: z.string().trim().min(2, 'Enter a name.'),
+      email: z.string().trim().email('Enter a valid email.'),
+      password: z.string().min(6, 'Password must be at least 6 characters.'),
+      rememberMe: z.boolean().optional()
+    })
     const parsed = signupSchema.safeParse({
       name: readFormValue(data, 'name'),
       email: readFormValue(data, 'email'),
