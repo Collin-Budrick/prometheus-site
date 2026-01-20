@@ -11,6 +11,7 @@ import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import { clearBootstrapSession } from '../../shared/auth-bootstrap'
 import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
+import { readServiceWorkerSeedFromCookie, writeServiceWorkerOptOutCookie } from '../../shared/service-worker-seed'
 import {
   defaultChatSettings,
   readChatSettingsFromCookie,
@@ -30,35 +31,6 @@ type ProtectedRouteData = {
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-const SW_OPT_OUT_COOKIE_KEY = 'prom-sw-opt-out'
-
-const readCookieValue = (cookieHeader: string | null, key: string) => {
-  if (!cookieHeader) return null
-  const parts = cookieHeader.split(';')
-  for (const part of parts) {
-    const [name, raw] = part.trim().split('=')
-    if (name === key) {
-      if (!raw) return ''
-      try {
-        return decodeURIComponent(raw)
-      } catch {
-        return null
-      }
-    }
-  }
-  return null
-}
-
-const readSwOptOutFromCookie = (cookieHeader: string | null) => {
-  const raw = readCookieValue(cookieHeader, SW_OPT_OUT_COOKIE_KEY)
-  return raw === '1' || raw === 'true'
-}
-
-const writeSwOptOutCookie = (optOut: boolean) => {
-  if (typeof document === 'undefined') return
-  document.cookie = `${SW_OPT_OUT_COOKIE_KEY}=${optOut ? '1' : '0'}; path=/; max-age=2592000; samesite=lax`
-}
-
 const resolveAuthBase = (origin: string, apiBase?: string) => {
   if (!apiBase) return ''
   if (apiBase.startsWith('/')) return apiBase
@@ -128,7 +100,8 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   }
   const cookieHeader = request.headers.get('cookie')
   const chatSettings = readChatSettingsFromCookie(cookieHeader) ?? { ...defaultChatSettings }
-  const swOptOut = readSwOptOutFromCookie(cookieHeader)
+  const swSeed = readServiceWorkerSeedFromCookie(cookieHeader)
+  const swOptOut = Boolean(swSeed.optOut)
   return { lang, user: session.user, chatSettings, swOptOut }
 })
 
@@ -252,7 +225,7 @@ export default component$(() => {
       swStatus.value = { tone: 'error', message: copy.value.settingsOfflineStorageError }
       return
     }
-    writeSwOptOutCookie(next)
+    writeServiceWorkerOptOutCookie(next)
     window.dispatchEvent(new CustomEvent('prom:sw-toggle-cache', { detail: { optOut: next } }))
     swStatus.value = {
       tone: 'info',
