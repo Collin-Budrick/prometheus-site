@@ -14,6 +14,12 @@ import { constants } from 'node:zlib'
 
 const require = createRequire(import.meta.url)
 
+const truthyEnvValues = new Set(['1', 'true', 'yes', 'on'])
+const isTruthyEnv = (value?: string) => {
+  if (!value) return false
+  return truthyEnvValues.has(value.trim().toLowerCase())
+}
+
 const nativeBindingMap: Record<string, string> = {
   'linux-x64': 'qwik.linux-x64-gnu.node',
   'darwin-x64': 'qwik.darwin-x64.node',
@@ -337,6 +343,8 @@ export default defineConfig(
     }
     const shouldVisualizeBundle =
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
+    const highlightBuildEnabled =
+      isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
     const binding = await loadQwikBinding()
     const bundleVisualizer = shouldVisualizeBundle
       ? visualizer({
@@ -348,6 +356,9 @@ export default defineConfig(
 
     return {
       base: publicBase,
+      define: {
+        __HIGHLIGHT_BUILD_ENABLED__: JSON.stringify(highlightBuildEnabled)
+      },
       plugins: [
         sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),

@@ -3,6 +3,10 @@ import type { HighlightConfig } from './env'
 
 type ErrorMetadata = Record<string, unknown>
 type HighlightModule = typeof import('highlight.run')
+declare const __HIGHLIGHT_BUILD_ENABLED__: boolean | undefined
+const HIGHLIGHT_BUILD_ENABLED =
+  typeof __HIGHLIGHT_BUILD_ENABLED__ === 'boolean' ? __HIGHLIGHT_BUILD_ENABLED__ : false
+const highlightImporter = HIGHLIGHT_BUILD_ENABLED ? () => import('highlight.run') : null
 let highlightInitialized = false
 let highlightDecision: boolean | null = null
 let highlightModulePromise: Promise<HighlightModule> | null = null
@@ -51,8 +55,11 @@ const buildHighlightOptions = (config: HighlightConfig, apiBase?: string): Highl
 }
 
 const loadHighlight = () => {
+  if (!highlightImporter) {
+    return Promise.reject(new Error('Highlight disabled at build time.'))
+  }
   if (!highlightModulePromise) {
-    highlightModulePromise = import('highlight.run')
+    highlightModulePromise = highlightImporter()
   }
   return highlightModulePromise
 }
@@ -65,6 +72,7 @@ const resolveSampleRate = (value: number) => {
 }
 
 const shouldEnableHighlight = (config: HighlightConfig) => {
+  if (!HIGHLIGHT_BUILD_ENABLED) return false
   if (!config.enabled) return false
   if (typeof window === 'undefined') return false
   if (highlightDecision !== null) return highlightDecision
