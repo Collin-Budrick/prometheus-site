@@ -1,5 +1,5 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useNavigate } from '@builder.io/qwik-city'
+import { useNavigate, useRequestEvent } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 
 export type AuthCopy = {
@@ -94,8 +94,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const bootstrapTokenKey = 'auth:bootstrap:token'
 const bootstrapUserKey = 'auth:bootstrap:user'
 const authModeCookieKey = 'auth:mode'
+const authRememberCookieKey = 'auth:remember'
+const authEmailCookieKey = 'auth:email'
+const authNameCookieKey = 'auth:name'
+const authFormCookieMaxAge = 2592000
 
-const readCookieValue = (cookieHeader: string | null, key: string) => {
+const readCookieValueRaw = (cookieHeader: string | null, key: string) => {
   if (!cookieHeader) return null
   const parts = cookieHeader.split(';')
   for (const part of parts) {
@@ -108,8 +112,18 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
   return null
 }
 
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  const raw = readCookieValueRaw(cookieHeader, key)
+  if (raw === null) return null
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+}
+
 const readAuthModeCookie = (cookieHeader: string | null): AuthMode | null => {
-  const value = readCookieValue(cookieHeader, authModeCookieKey)
+  const value = readCookieValueRaw(cookieHeader, authModeCookieKey)
   if (value === 'login' || value === 'signup') return value
   return null
 }
@@ -117,6 +131,51 @@ const readAuthModeCookie = (cookieHeader: string | null): AuthMode | null => {
 const writeAuthModeCookie = (mode: AuthMode) => {
   if (typeof document === 'undefined') return
   document.cookie = `${authModeCookieKey}=${mode}; path=/; max-age=2592000; samesite=lax`
+}
+
+const parseRememberCookie = (value: string | null) => value === '1' || value === 'true'
+
+const resolveAuthFormState = (cookieHeader: string | null) => ({
+  email: readCookieValue(cookieHeader, authEmailCookieKey) ?? '',
+  name: readCookieValue(cookieHeader, authNameCookieKey) ?? '',
+  remember: parseRememberCookie(readCookieValue(cookieHeader, authRememberCookieKey))
+})
+
+const writeAuthFormCookie = (key: string, value: string) => {
+  if (typeof document === 'undefined') return
+  try {
+    const encoded = encodeURIComponent(value)
+    document.cookie = `${key}=${encoded}; path=/; max-age=${authFormCookieMaxAge}; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
+const clearAuthFormCookie = (key: string) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${key}=; path=/; max-age=0; samesite=lax`
+}
+
+const persistAuthFormCookies = (payload: { email?: string; name?: string; rememberMe?: boolean }) => {
+  if (payload.email !== undefined) {
+    const nextEmail = payload.email.trim()
+    if (nextEmail) {
+      writeAuthFormCookie(authEmailCookieKey, nextEmail)
+    } else {
+      clearAuthFormCookie(authEmailCookieKey)
+    }
+  }
+  if (payload.name !== undefined) {
+    const nextName = payload.name.trim()
+    if (nextName) {
+      writeAuthFormCookie(authNameCookieKey, nextName)
+    } else {
+      clearAuthFormCookie(authNameCookieKey)
+    }
+  }
+  if (payload.rememberMe !== undefined) {
+    writeAuthFormCookie(authRememberCookieKey, payload.rememberMe ? '1' : '0')
+  }
 }
 
 const storeBootstrapSession = (token: string, user: { id: string; email?: string | null; name?: string | null }) => {
@@ -253,7 +312,14 @@ export const LoginRoute = component$<{
   apiBase?: string
 }>(({ copy, apiBase }) => {
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
+  const requestEvent = useRequestEvent()
+  const cookieHeader =
+    requestEvent?.request.headers.get('cookie') ?? (typeof document === 'undefined' ? null : document.cookie)
+  const initialFormState = resolveAuthFormState(cookieHeader)
   const mode = useSignal<AuthMode>('login')
+  const email = useSignal(initialFormState.email)
+  const name = useSignal(initialFormState.name)
+  const remember = useSignal(initialFormState.remember)
   const state = useSignal<AuthState>('idle')
   const passkeyState = useSignal<PasskeyState>('idle')
   const statusTone = useSignal<StatusTone>('neutral')
@@ -269,6 +335,29 @@ export const LoginRoute = component$<{
     if (cookieMode && cookieMode !== mode.value) {
       mode.value = cookieMode
     }
+  })
+
+  useVisibleTask$(() => {
+    const browserCookies = document.cookie || null
+    if (!browserCookies) return
+    if (
+      email.value !== initialFormState.email ||
+      name.value !== initialFormState.name ||
+      remember.value !== initialFormState.remember
+    ) {
+      return
+    }
+    const nextState = resolveAuthFormState(browserCookies)
+    if (
+      nextState.email === initialFormState.email &&
+      nextState.name === initialFormState.name &&
+      nextState.remember === initialFormState.remember
+    ) {
+      return
+    }
+    email.value = nextState.email
+    name.value = nextState.name
+    remember.value = nextState.remember
   })
 
   const setMode = $((next: AuthMode) => {
@@ -375,6 +464,7 @@ export const LoginRoute = component$<{
       return
     }
 
+    persistAuthFormCookies(parsed.data)
     state.value = 'submitting'
     passkeyState.value = 'idle'
     await clearStatus()
@@ -432,6 +522,7 @@ export const LoginRoute = component$<{
       return
     }
 
+    persistAuthFormCookies(parsed.data)
     state.value = 'submitting'
     passkeyState.value = 'idle'
     await clearStatus()
@@ -530,6 +621,24 @@ export const LoginRoute = component$<{
     }
   })
 
+  const handleEmailInput = $((event: Event) => {
+    const value = (event.target as HTMLInputElement).value
+    email.value = value
+    persistAuthFormCookies({ email: value })
+  })
+
+  const handleNameInput = $((event: Event) => {
+    const value = (event.target as HTMLInputElement).value
+    name.value = value
+    persistAuthFormCookies({ name: value })
+  })
+
+  const handleRememberChange = $((event: Event) => {
+    const checked = (event.target as HTMLInputElement).checked
+    remember.value = checked
+    persistAuthFormCookies({ rememberMe: checked })
+  })
+
   const busy = state.value === 'submitting' || passkeyState.value === 'requesting' || passkeyState.value === 'verifying'
 
   return (
@@ -591,6 +700,8 @@ export const LoginRoute = component$<{
                     name="email"
                     autoComplete="email"
                     placeholder="name@domain.com"
+                    value={email.value}
+                    onInput$={handleEmailInput}
                     required
                     disabled={busy}
                   />
@@ -608,7 +719,14 @@ export const LoginRoute = component$<{
                   />
                 </label>
                 <label class="auth-check">
-                  <input class="auth-check-input" type="checkbox" name="remember" disabled={busy} />
+                  <input
+                    class="auth-check-input"
+                    type="checkbox"
+                    name="remember"
+                    checked={remember.value}
+                    onChange$={handleRememberChange}
+                    disabled={busy}
+                  />
                   <span>{resolvedCopy.rememberLabel}</span>
                 </label>
                 <div class="auth-actions">
@@ -638,6 +756,8 @@ export const LoginRoute = component$<{
                     name="name"
                     autoComplete="name"
                     placeholder="Nova Lane"
+                    value={name.value}
+                    onInput$={handleNameInput}
                     required
                     disabled={busy}
                   />
@@ -650,6 +770,8 @@ export const LoginRoute = component$<{
                     name="email"
                     autoComplete="email"
                     placeholder="name@domain.com"
+                    value={email.value}
+                    onInput$={handleEmailInput}
                     required
                     disabled={busy}
                   />
@@ -667,7 +789,14 @@ export const LoginRoute = component$<{
                   />
                 </label>
                 <label class="auth-check">
-                  <input class="auth-check-input" type="checkbox" name="remember" disabled={busy} />
+                  <input
+                    class="auth-check-input"
+                    type="checkbox"
+                    name="remember"
+                    checked={remember.value}
+                    onChange$={handleRememberChange}
+                    disabled={busy}
+                  />
                   <span>{resolvedCopy.rememberLabel}</span>
                 </label>
                 <div class="auth-actions">
