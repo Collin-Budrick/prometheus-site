@@ -5,7 +5,12 @@ import { siteBrand, siteFeatures } from '../../config'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
-import { LoginRoute as FeatureLoginRoute, LoginSkeleton as FeatureLoginSkeleton } from '@features/auth/pages/Login'
+import {
+  LoginRoute as FeatureLoginRoute,
+  LoginSkeleton as FeatureLoginSkeleton,
+  resolveAuthFormState,
+  type AuthFormState
+} from '@features/auth/pages/Login'
 import {
   FragmentShell,
   getFragmentShellCacheEntry,
@@ -25,6 +30,10 @@ type FragmentResource = {
   lang: Lang
   shellState: FragmentShellState | null
 }
+
+export const useAuthFormState = routeLoader$<AuthFormState>(({ request }) =>
+  resolveAuthFormState(request.headers.get('cookie'))
+)
 
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
   const path = url.pathname || '/login'
@@ -60,9 +69,11 @@ const DisabledLoginRoute = component$(() => {
 
 const EnabledLoginRoute = component$(() => {
   const copy = useLangCopy()
+  const authFormState = useAuthFormState()
   return (
     <FeatureLoginRoute
       apiBase={appConfig.apiBase}
+      initialFormState={authFormState.value}
       copy={{
         metaLine: copy.value.loginMetaLine,
         title: copy.value.loginTitle,

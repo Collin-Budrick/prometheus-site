@@ -1,8 +1,8 @@
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { LoginRoute, LoginSkeleton, type AuthCopy } from '../login-route'
+import { LoginRoute, LoginSkeleton, resolveAuthFormState, type AuthCopy, type AuthFormState } from '../login-route'
 
-export type { AuthCopy }
-export { LoginRoute, LoginSkeleton }
+export type { AuthCopy, AuthFormState }
+export { LoginRoute, LoginSkeleton, resolveAuthFormState }
 
 export const head: DocumentHead = {
   title: 'Login',

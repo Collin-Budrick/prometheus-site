@@ -1,5 +1,5 @@
 import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { useNavigate, useRequestEvent } from '@builder.io/qwik-city'
+import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 
 export type AuthCopy = {
@@ -19,6 +19,12 @@ export type AuthCopy = {
   passkeyLabel: string
   passkeyHint: string
   closeLabel: string
+}
+
+export type AuthFormState = {
+  email: string
+  name: string
+  remember: boolean
 }
 
 type AuthMode = 'login' | 'signup'
@@ -135,7 +141,7 @@ const writeAuthModeCookie = (mode: AuthMode) => {
 
 const parseRememberCookie = (value: string | null) => value === '1' || value === 'true'
 
-const resolveAuthFormState = (cookieHeader: string | null) => ({
+export const resolveAuthFormState = (cookieHeader: string | null): AuthFormState => ({
   email: readCookieValue(cookieHeader, authEmailCookieKey) ?? '',
   name: readCookieValue(cookieHeader, authNameCookieKey) ?? '',
   remember: parseRememberCookie(readCookieValue(cookieHeader, authRememberCookieKey))
@@ -310,12 +316,11 @@ const serializeCredential = (credential: PublicKeyCredential) => {
 export const LoginRoute = component$<{
   copy?: Partial<AuthCopy>
   apiBase?: string
-}>(({ copy, apiBase }) => {
+  initialFormState?: AuthFormState
+}>(({ copy, apiBase, initialFormState: initialFormStateProp }) => {
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
-  const requestEvent = useRequestEvent()
-  const cookieHeader =
-    requestEvent?.request.headers.get('cookie') ?? (typeof document === 'undefined' ? null : document.cookie)
-  const initialFormState = resolveAuthFormState(cookieHeader)
+  const initialFormState =
+    initialFormStateProp ?? resolveAuthFormState(typeof document === 'undefined' ? null : document.cookie)
   const mode = useSignal<AuthMode>('login')
   const email = useSignal(initialFormState.email)
   const name = useSignal(initialFormState.name)
