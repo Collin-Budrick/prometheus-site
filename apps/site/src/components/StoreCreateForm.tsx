@@ -1,4 +1,5 @@
 import { $, component$, useComputed$, useSignal } from '@builder.io/qwik'
+import { useRequestEvent } from '@builder.io/qwik-city'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
@@ -30,6 +31,50 @@ const normalizeLabel = (value: string | undefined, fallback: string) => {
 }
 
 const infinitySymbol = '\u221e'
+const STORE_CREATE_NAME_COOKIE = 'prom-store-create-name'
+const STORE_CREATE_PRICE_COOKIE = 'prom-store-create-price'
+const STORE_CREATE_QUANTITY_COOKIE = 'prom-store-create-quantity'
+const STORE_CREATE_DIGITAL_COOKIE = 'prom-store-create-digital'
+const STORE_CREATE_COOKIE_MAX_AGE = 2592000
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+const writeCookieValue = (key: string, value: string) => {
+  if (typeof document === 'undefined') return
+  try {
+    const encoded = encodeURIComponent(value)
+    document.cookie = `${key}=${encoded}; path=/; max-age=${STORE_CREATE_COOKIE_MAX_AGE}; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
+const clearCookieValue = (key: string) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${key}=; path=/; max-age=0; samesite=lax`
+}
+
+const parseDigitalCookie = (raw: string | null) => raw === '1' || raw === 'true'
+
+const isValidQuantity = (value: string) => {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)
+}
 
 export const StoreCreateForm = component$<StoreCreateFormProps>(
   ({
@@ -44,11 +89,22 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     quantityPlaceholder
   }) => {
     const langSignal = useSharedLangSignal()
-    const name = useSignal('')
-    const price = useSignal('')
-    const quantity = useSignal('1')
-    const lastQuantity = useSignal('1')
-    const digitalProduct = useSignal(false)
+    const requestEvent = useRequestEvent()
+    const cookieHeader =
+      requestEvent?.request.headers.get('cookie') ?? (typeof document === 'undefined' ? null : document.cookie)
+    const initialName = readCookieValue(cookieHeader, STORE_CREATE_NAME_COOKIE) ?? ''
+    const initialPrice = readCookieValue(cookieHeader, STORE_CREATE_PRICE_COOKIE) ?? ''
+    const initialQuantityRaw = readCookieValue(cookieHeader, STORE_CREATE_QUANTITY_COOKIE)
+    const initialDigital = parseDigitalCookie(readCookieValue(cookieHeader, STORE_CREATE_DIGITAL_COOKIE))
+    const initialQuantity = initialQuantityRaw ?? '1'
+    const resolvedQuantity = initialDigital ? '-1' : initialQuantity
+    const resolvedLastQuantity = isValidQuantity(initialQuantity) ? String(Math.trunc(Number(initialQuantity))) : '1'
+
+    const name = useSignal(initialName)
+    const price = useSignal(initialPrice)
+    const quantity = useSignal(resolvedQuantity)
+    const lastQuantity = useSignal(resolvedLastQuantity)
+    const digitalProduct = useSignal(initialDigital)
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
 
@@ -142,6 +198,10 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         quantity.value = '1'
         lastQuantity.value = '1'
         digitalProduct.value = false
+        clearCookieValue(STORE_CREATE_NAME_COOKIE)
+        clearCookieValue(STORE_CREATE_PRICE_COOKIE)
+        clearCookieValue(STORE_CREATE_QUANTITY_COOKIE)
+        clearCookieValue(STORE_CREATE_DIGITAL_COOKIE)
       } catch (error) {
         state.value = 'error'
         statusMessage.value = error instanceof Error ? error.message : resolveLocal('Unable to create item.')
@@ -151,6 +211,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     const handleQuantityInput = $((event: Event) => {
       const value = (event.target as HTMLInputElement).value
       quantity.value = value
+      writeCookieValue(STORE_CREATE_QUANTITY_COOKIE, value)
       const parsed = Number.parseFloat(value)
       if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
         lastQuantity.value = String(Math.trunc(parsed))
@@ -158,6 +219,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       if (Number.isFinite(parsed) && parsed <= 0) {
         digitalProduct.value = true
         quantity.value = '-1'
+        writeCookieValue(STORE_CREATE_DIGITAL_COOKIE, '1')
+        writeCookieValue(STORE_CREATE_QUANTITY_COOKIE, '-1')
       }
     })
 
@@ -169,10 +232,13 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
           lastQuantity.value = String(Math.trunc(parsed))
         }
         quantity.value = '-1'
+        writeCookieValue(STORE_CREATE_QUANTITY_COOKIE, '-1')
       } else {
         quantity.value = lastQuantity.value || '1'
+        writeCookieValue(STORE_CREATE_QUANTITY_COOKIE, quantity.value)
       }
       digitalProduct.value = next
+      writeCookieValue(STORE_CREATE_DIGITAL_COOKIE, next ? '1' : '0')
     })
 
     const resolvedNameLabel = normalizeLabel(nameLabel ? resolve(nameLabel) : undefined, resolve('Item name'))
@@ -205,7 +271,9 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   placeholder={resolvedNamePlaceholder}
                   value={name.value}
                   onInput$={(event) => {
-                    name.value = (event.target as HTMLInputElement).value
+                    const value = (event.target as HTMLInputElement).value
+                    name.value = value
+                    writeCookieValue(STORE_CREATE_NAME_COOKIE, value)
                   }}
                 />
             </label>
@@ -220,7 +288,9 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   placeholder={resolvedPricePlaceholder}
                   value={price.value}
                   onInput$={(event) => {
-                    price.value = (event.target as HTMLInputElement).value
+                    const value = (event.target as HTMLInputElement).value
+                    price.value = value
+                    writeCookieValue(STORE_CREATE_PRICE_COOKIE, value)
                   }}
                 />
             </label>
