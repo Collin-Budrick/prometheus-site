@@ -82,6 +82,23 @@ const attachRateLimitHeaders = (response: Response, headers: Headers) => {
   return response
 }
 
+const withTimeout = <T>(promise: Promise<T>, ms: number) =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timeout after ${ms}ms`))
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+
 export const createStoreRoutes = <StoreItem extends { id: number } = { id: number }>(
   options: StoreRouteOptions
 ) => {
@@ -90,6 +107,26 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     cacheMisses: 0,
     cacheGetErrors: 0,
     cacheSetErrors: 0
+  }
+  const valkeyTimeoutMs = 2000
+  const valkeyBackoffMs = 15000
+  let valkeyBackoffUntil = 0
+
+  const isValkeyUsable = () => options.isValkeyReady() && Date.now() >= valkeyBackoffUntil
+
+  const markValkeyFailure = (label: string, error: unknown) => {
+    valkeyBackoffUntil = Date.now() + valkeyBackoffMs
+    console.warn('Store Valkey operation failed', { label, error })
+  }
+
+  const checkEarlyLimitSafe = async (key: string, max: number, windowMs: number) => {
+    if (!isValkeyUsable()) return { allowed: true, remaining: max }
+    try {
+      return await withTimeout(options.checkEarlyLimit(key, max, windowMs), valkeyTimeoutMs)
+    } catch (error) {
+      markValkeyFailure('early-limit', error)
+      return { allowed: true, remaining: max }
+    }
   }
 
   const storeItemInsertSchema = createInsertSchema(options.storeItemsTable, {
@@ -114,9 +151,9 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         const limit = Math.min(limitRaw, 50)
         const cacheKey = buildStoreItemsCacheKey(lastId, limit)
 
-        if (options.isValkeyReady()) {
+        if (isValkeyUsable()) {
           try {
-            const cached = await options.valkey.get(cacheKey)
+            const cached = await withTimeout(options.valkey.get(cacheKey), valkeyTimeoutMs)
             if (cached !== null) {
               const parsed: unknown = JSON.parse(cached)
               if (isStoreItemsPayload<StoreItem>(parsed)) {
@@ -127,6 +164,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             telemetry.cacheMisses += 1
           } catch (error) {
             telemetry.cacheGetErrors += 1
+            markValkeyFailure('cache.get', error)
             console.warn('Cache read failed; serving fresh data', { cacheKey, error })
           }
         }
@@ -142,7 +180,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/items:${clientIp}`, 10, 5000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/items:${clientIp}`, 10, 5000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
@@ -165,11 +203,12 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         const nextCursor = items.length === limit ? items[items.length - 1].id : null
         const payload = { items, cursor: nextCursor }
 
-        if (options.isValkeyReady()) {
+        if (isValkeyUsable()) {
           try {
-            await options.valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 })
+            await withTimeout(options.valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 }), valkeyTimeoutMs)
           } catch (error) {
             telemetry.cacheSetErrors += 1
+            markValkeyFailure('cache.set', error)
             console.warn('Cache write failed; response not cached', { cacheKey, error })
           }
         }
@@ -197,7 +236,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/items:write:${clientIp}`, 6, 10000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/items:write:${clientIp}`, 6, 10000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
@@ -228,11 +267,11 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           return attachRateLimitHeaders(options.jsonError(500, 'Unable to create item'), rateLimit.headers)
         }
 
-        if (options.isValkeyReady()) {
-          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+        if (isValkeyUsable()) {
+          void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await ensureStoreSearchIndex(options.valkey)
+              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, {
                 id: created.id,
@@ -241,6 +280,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
                 quantity: parseQuantity(created.quantity)
               })
             } catch (error) {
+              markValkeyFailure('search.create', error)
               console.warn('Store search update failed after create', error)
             }
           })()
@@ -291,7 +331,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/items:consume:${clientIp}`, 12, 5000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/items:consume:${clientIp}`, 12, 5000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
@@ -358,14 +398,15 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           quantity: parseQuantity(updated.quantity)
         }
 
-        if (options.isValkeyReady()) {
-          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+        if (isValkeyUsable()) {
+          void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await ensureStoreSearchIndex(options.valkey)
+              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, responseItem)
             } catch (error) {
+              markValkeyFailure('search.consume', error)
               console.warn('Store search update failed after consume', error)
             }
           })()
@@ -412,7 +453,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/items:restore:${clientIp}`, 12, 5000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/items:restore:${clientIp}`, 12, 5000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
@@ -479,14 +520,15 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           quantity: parseQuantity(updated.quantity)
         }
 
-        if (options.isValkeyReady()) {
-          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+        if (isValkeyUsable()) {
+          void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await ensureStoreSearchIndex(options.valkey)
+              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, responseItem)
             } catch (error) {
+              markValkeyFailure('search.restore', error)
               console.warn('Store search update failed after restore', error)
             }
           })()
@@ -526,7 +568,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/items:delete:${clientIp}`, 6, 10000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/items:delete:${clientIp}`, 6, 10000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
@@ -547,14 +589,15 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           return attachRateLimitHeaders(options.jsonError(404, 'Item not found'), rateLimit.headers)
         }
 
-        if (options.isValkeyReady()) {
-          void invalidateStoreItemsCache(options.valkey, options.isValkeyReady)
+        if (isValkeyUsable()) {
+          void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await ensureStoreSearchIndex(options.valkey)
+              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
               if (!ready) return
               await removeStoreSearchDocument(options.valkey, deleted.id)
             } catch (error) {
+              markValkeyFailure('search.delete', error)
               console.warn('Store search update failed after delete', error)
             }
           })()
@@ -604,16 +647,21 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         }
 
-        const earlyLimit = await options.checkEarlyLimit(`/store/search:${clientIp}`, 10, 5000)
+        const earlyLimit = await checkEarlyLimitSafe(`/store/search:${clientIp}`, 10, 5000)
         if (!earlyLimit.allowed) {
           return attachRateLimitHeaders(options.jsonError(429, 'Try again soon'), rateLimit.headers)
         }
 
-        if (!options.isValkeyReady()) {
+        if (!isValkeyUsable()) {
           return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
 
-        const searchReady = await ensureStoreSearchIndex(options.valkey)
+        let searchReady = false
+        try {
+          searchReady = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
+        } catch (error) {
+          markValkeyFailure('search.ensure', error)
+        }
         if (!searchReady) {
           return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
@@ -621,8 +669,12 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         const start = performance.now()
         let searchResult
         try {
-          searchResult = await searchStoreIndex(options.valkey, queryValue, { limit, offset })
+          searchResult = await withTimeout(
+            searchStoreIndex(options.valkey, queryValue, { limit, offset }),
+            valkeyTimeoutMs
+          )
         } catch (error) {
+          markValkeyFailure('search.query', error)
           console.error('Store search failed', error)
           return attachRateLimitHeaders(options.jsonError(500, 'Search failed'), rateLimit.headers)
         }

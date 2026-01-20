@@ -1,4 +1,4 @@
-import { parse as arkenvParse, type as arkenvType } from 'arkenv/arktype'
+import { parse as arkenvParse } from 'arkenv/arktype'
 
 export type AppEnv = Record<string, string | boolean | undefined>
 
@@ -52,7 +52,7 @@ const falsyValues = new Set(['0', 'false', 'no', 'off'])
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
-const runtimeEnvSchema = arkenvType({
+const runtimeEnvSchema = {
   API_BASE: 'string?',
   VITE_API_BASE: 'string?',
   WEBTRANSPORT_BASE: 'string?',
@@ -90,9 +90,9 @@ const runtimeEnvSchema = arkenvType({
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
-})
+}
 
-const publicEnvSchema = arkenvType({
+const publicEnvSchema = {
   VITE_API_BASE: 'string?',
   VITE_WEBTRANSPORT_BASE: 'string?',
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
@@ -118,7 +118,7 @@ const publicEnvSchema = arkenvType({
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
-})
+}
 
 const getRuntimeEnv = (): AppEnv => {
   if (typeof import.meta !== 'undefined') {
@@ -144,8 +144,8 @@ const normalizeEnvInput = (env: AppEnv) =>
     Object.entries(env).map(([key, value]) => [key, toStringValue(value)])
   ) as Record<string, string | undefined>
 
-const parseEnv = (schema: typeof runtimeEnvSchema | typeof publicEnvSchema, env: AppEnv) =>
-  arkenvParse(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' })
+const parseEnv = (schema: Record<string, string>, env: AppEnv): AppEnv =>
+  arkenvParse(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' }) as AppEnv
 
 const buildMergedEnv = (env?: AppEnv): AppEnv => {
   const runtimeEnv = getRuntimeEnv()

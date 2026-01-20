@@ -43,7 +43,12 @@ export const createDatabase = (
         await wait(config.backoffMs * Math.max(1, attempt + 1))
       }
     }
-    if (lastError) throw lastError
+    if (lastError !== undefined && lastError !== null) {
+      if (lastError instanceof Error) {
+        throw lastError
+      }
+      throw new Error('Database connection failed', { cause: lastError })
+    }
   }
 
   const disconnect = async () => {

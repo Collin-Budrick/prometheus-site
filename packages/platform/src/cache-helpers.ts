@@ -106,11 +106,11 @@ export const invalidatePlanCache = async (cache: CacheClient, path?: string, lan
     }
     if (hasPath) {
       const keys = await cache.client.keys(`${fragmentPlanCachePrefix}*:${path}`)
-      if (keys.length > 0) await cache.client.del(...keys)
+      if (keys.length > 0) await cache.client.del(keys)
       return
     }
     const keys = await cache.client.keys(`${fragmentPlanCachePrefix}*`)
-    if (keys.length > 0) await cache.client.del(...keys)
+    if (keys.length > 0) await cache.client.del(keys)
   } catch (error) {
     console.warn('Failed to invalidate fragment plan cache', error)
   }

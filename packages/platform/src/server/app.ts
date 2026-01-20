@@ -80,11 +80,24 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
   let storeRealtime: ReturnType<typeof createStoreRealtime> | null = null
   let storeRealtimeHandler: ((event: StoreRealtimeEvent) => void) | null = null
   let authFeature: ReturnType<typeof createAuthFeature> | null = null
+  let storeValkeyClient: CacheClient['client'] | null = null
+  let storeValkeyReady = false
+
+  const resolveStoreValkey = (cache: CacheClient) => {
+    if (featureFlags.store && storeValkeyClient === null) {
+      storeValkeyClient = cache.client.duplicate()
+    }
+    const storeValkey = storeValkeyClient ?? cache.client
+    const isStoreValkeyReady = () =>
+      storeValkeyClient ? storeValkeyReady && storeValkeyClient.isOpen : cache.isReady()
+    return { storeValkey, isStoreValkeyReady }
+  }
 
   const buildApp = (context: PlatformServerContext) => {
     const { cache, database, rateLimiter } = context
     const valkey = cache.client
     const isValkeyReady = cache.isReady
+    const { storeValkey, isStoreValkeyReady } = resolveStoreValkey(cache)
     const db = database.db
     const pgClient = database.pgClient
 
@@ -129,17 +142,17 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       })
       storeRealtimeHandler = (event: StoreRealtimeEvent) => {
         const payload = JSON.stringify(event)
-        void invalidateStoreItemsCache(valkey, isValkeyReady)
-        if (!isValkeyReady()) return
+        void invalidateStoreItemsCache(storeValkey, isStoreValkeyReady)
+        if (!isStoreValkeyReady()) return
         void (async () => {
           try {
             if (event.type === 'store:upsert') {
-              await upsertStoreSearchDocument(valkey, event.item)
+              await upsertStoreSearchDocument(storeValkey, event.item)
             }
             if (event.type === 'store:delete') {
-              await removeStoreSearchDocument(valkey, event.id)
+              await removeStoreSearchDocument(storeValkey, event.id)
             }
-            await valkey.publish(storeChannel, payload)
+            await storeValkey.publish(storeChannel, payload)
           } catch (error) {
             logger.warn('Failed to publish store realtime event', { error })
           }
@@ -149,8 +162,8 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       app.use(
         createStoreRoutes({
           db,
-          valkey,
-          isValkeyReady,
+          valkey: storeValkey,
+          isValkeyReady: isStoreValkeyReady,
           storeItemsTable: storeItems,
           getClientIp,
           checkRateLimit,
@@ -213,8 +226,8 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
     if (featureFlags.store && authFeature) {
       registerStoreWs(app, {
-        valkey,
-        isValkeyReady,
+        valkey: storeValkey,
+        isValkeyReady: isStoreValkeyReady,
         validateSession: authFeature.validateSession,
         allowAnonymous: true,
         checkWsOpenQuota,
@@ -248,13 +261,29 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         logger.info('RUN_MIGRATIONS not set; skipping migrations and seed step')
       }
 
+      if (featureFlags.store && storeValkeyClient) {
+        try {
+          if (!storeValkeyClient.isOpen) {
+            await storeValkeyClient.connect()
+          }
+          storeValkeyReady = storeValkeyClient.isOpen
+          if (storeValkeyReady) {
+            logger.info('Store Valkey connected')
+          }
+        } catch (error) {
+          storeValkeyReady = false
+          logger.warn('Store Valkey connection failed', { error })
+        }
+      }
+
       if (featureFlags.store) {
+        const { storeValkey, isStoreValkeyReady } = resolveStoreValkey(context.cache)
         try {
           await rebuildStoreSearchIndex({
             db: context.database.db,
             storeItemsTable: storeItems,
-            valkey: context.cache.client,
-            isValkeyReady: context.cache.isReady
+            valkey: storeValkey,
+            isValkeyReady: isStoreValkeyReady
           })
         } catch (error) {
           logger.warn('Store search index rebuild failed', { error })
@@ -274,7 +303,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
           valkey: context.cache.client,
           isValkeyReady: context.cache.isReady,
           push: platformConfig.push
-        }).catch((error) => {
+        }).catch((error: unknown) => {
           logger.warn('Server online push failed', { error })
         })
       }
@@ -282,6 +311,14 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     onShutdown: async () => {
       if (storeRealtime) {
         await storeRealtime.stop()
+      }
+      if (storeValkeyClient && storeValkeyClient.isOpen) {
+        storeValkeyReady = false
+        try {
+          await storeValkeyClient.quit()
+        } catch (error) {
+          logger.warn('Store Valkey disconnect failed', { error })
+        }
       }
     }
   })

@@ -7,6 +7,8 @@ type CacheOptions = {
   baseBackoffMs?: number
 }
 
+type EmptyValkeyExtensions = Record<string, never>
+
 export type CacheClient = {
   client: ValkeyClientType
   connect: () => Promise<void>
@@ -24,7 +26,7 @@ export const createCacheClient = (
   const maxConnectAttempts = options.maxConnectAttempts ?? 5
   const baseBackoffMs = options.baseBackoffMs ?? 200
 
-  const client = createClient({
+  const client = createClient<EmptyValkeyExtensions, EmptyValkeyExtensions, EmptyValkeyExtensions>({
     socket: {
       host: config.host,
       port: config.port

@@ -31,9 +31,12 @@ type RateLimiterOptions = {
 
 export const createRateLimiter = (options: RateLimiterOptions = {}): RateLimiter => {
   const logger = options.logger ?? createLogger('rate-limit')
-  const rootKey = options.unkey?.rootKey?.trim() ?? ''
-  const namespace = options.unkey?.namespace?.trim() || 'prometheus-api'
-  const baseUrl = options.unkey?.baseUrl?.trim() || undefined
+  const trimmedRootKey = options.unkey?.rootKey?.trim()
+  const rootKey = trimmedRootKey !== undefined && trimmedRootKey !== '' ? trimmedRootKey : ''
+  const trimmedNamespace = options.unkey?.namespace?.trim()
+  const namespace = trimmedNamespace !== undefined && trimmedNamespace !== '' ? trimmedNamespace : 'prometheus-api'
+  const trimmedBaseUrl = options.unkey?.baseUrl?.trim()
+  const baseUrl = trimmedBaseUrl !== undefined && trimmedBaseUrl !== '' ? trimmedBaseUrl : undefined
 
   const inMemoryCounters = new Map<string, Counter>()
 

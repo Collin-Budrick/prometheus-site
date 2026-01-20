@@ -9,7 +9,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "../..",
     "types": ["bun-types", "node"],
     "verbatimModuleSyntax": true,
     "skipLibCheck": true

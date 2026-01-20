@@ -1,4 +1,5 @@
-import { parse as arkenvParse, type as arkenvType } from 'arkenv/arktype'
+import { createEnv } from 'arkenv'
+import { type as arkenvType } from 'arkenv/arktype'
 import type { LogLevel } from '@logtape/logtape'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
@@ -124,8 +125,8 @@ const platformEnvSchema = arkenvType({
   LOG_FORMAT: 'string?'
 })
 
-const parsePlatformEnv = (env: Env) =>
-  arkenvParse(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
+const parsePlatformEnv = (env: Env): Env =>
+  createEnv(platformEnvSchema, { env, coerce: false, onUndeclaredKey: 'delete' })
 
 const parsePort = (value: string | undefined, defaultValue: number, name: string) => {
   const raw = (value ?? String(defaultValue)).trim()
@@ -188,24 +189,13 @@ const normalizeOptionalString = (value: string | undefined) => {
 
 const resolveLogLevel = (value: string | undefined): LogLevel => {
   const normalized = value?.trim().toLowerCase()
-  switch (normalized) {
-    case 'trace':
-      return 'trace'
-    case 'debug':
-      return 'debug'
-    case 'info':
-      return 'info'
-    case 'warn':
-    case 'warning':
-      return 'warning'
-    case 'error':
-      return 'error'
-    case 'fatal':
-      return 'fatal'
-    default:
-      return 'info'
-  }
-  throw new Error(`Unsupported log level: ${normalized ?? ''}`)
+  if (normalized === 'trace') return 'trace'
+  if (normalized === 'debug') return 'debug'
+  if (normalized === 'info') return 'info'
+  if (normalized === 'warn' || normalized === 'warning') return 'warning'
+  if (normalized === 'error') return 'error'
+  if (normalized === 'fatal') return 'fatal'
+  return 'info'
 }
 
 const resolveLogFormat = (value: string | undefined): LogFormat => {

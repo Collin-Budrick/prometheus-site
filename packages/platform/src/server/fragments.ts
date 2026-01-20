@@ -44,12 +44,20 @@ const releaseLockScript = `
   return 0
 `
 
+const normalizeCacheValue = (value: unknown): string | Buffer | null | undefined => {
+  if (typeof value === 'string') return value
+  if (Buffer.isBuffer(value)) return value
+  if (value === null || value === undefined) return value
+  return null
+}
+
 export const createFragmentStore = (cache: CacheClient): FragmentStore => {
   const adapter = {
     mget: async (keys: string[]) => {
       if (!cache.isReady()) return keys.map(() => null)
-      const [rawValues = []] = await cache.client.multi().mGet(keys).execAsPipeline()
-      return rawValues as Array<string | Buffer | null | undefined>
+      const [rawValues] = await cache.client.multi().mGet(keys).execAsPipeline()
+      if (!Array.isArray(rawValues)) return keys.map(() => null)
+      return rawValues.map(normalizeCacheValue)
     },
     set: async (key: string, value: string, ttlSeconds: number) => {
       if (!cache.isReady()) return
@@ -176,21 +184,91 @@ const resolveStreamEncoding = (request: Request): CompressionEncoding | null =>
 const getCompressionStreamCtor = () =>
   typeof CompressionStream === 'function' ? CompressionStream : null
 
-const compressFragmentStream = (stream: ReadableStream<Uint8Array>, encoding: CompressionEncoding) => {
+type FragmentStreamBody = ReadableStream<Uint8Array>
+
+const streamToAsyncIterable = (stream: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> => ({
+  async *[Symbol.asyncIterator]() {
+    const reader = stream.getReader()
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) return
+        if (value !== undefined) {
+          yield value
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+})
+
+const hasArrayBuffer = (chunk: Uint8Array): chunk is Uint8Array<ArrayBuffer> =>
+  chunk.buffer instanceof ArrayBuffer
+
+const normalizeBufferSource = (chunk: Uint8Array): BufferSource => {
+  if (hasArrayBuffer(chunk)) return chunk
+  const copy = new Uint8Array(chunk.byteLength)
+  copy.set(chunk)
+  return copy
+}
+
+const normalizeNodeChunk = (chunk: string | Buffer): Uint8Array =>
+  typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk
+
+const nodeStreamToReadableStream = (
+  nodeStream: NodeJS.ReadableStream & { destroy?: () => void }
+): ReadableStream<Uint8Array> => {
+  const iterator = nodeStream[Symbol.asyncIterator]() as AsyncIterator<Buffer | string, void>
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const result = await iterator.next()
+      if (result.done === true) {
+        controller.close()
+        return
+      }
+      const value = result.value
+      if (value !== undefined) {
+        controller.enqueue(normalizeNodeChunk(value))
+      }
+    },
+    async cancel() {
+      if (typeof iterator.return === 'function') {
+        await iterator.return()
+        return
+      }
+      if (typeof nodeStream.destroy === 'function') {
+        nodeStream.destroy()
+      }
+    }
+  })
+}
+
+const compressFragmentStream = (
+  stream: ReadableStream<Uint8Array>,
+  encoding: CompressionEncoding
+): { stream: FragmentStreamBody; encoding: CompressionEncoding | null } => {
   const ctor = getCompressionStreamCtor()
   if (ctor !== null && encoding !== 'br') {
     try {
-      return { stream: stream.pipeThrough(new ctor(encoding)), encoding }
+      const bufferStream = stream.pipeThrough(
+        new TransformStream<Uint8Array, BufferSource>({
+          transform(chunk, controller) {
+            controller.enqueue(normalizeBufferSource(chunk))
+          }
+        })
+      )
+      return { stream: bufferStream.pipeThrough(new ctor(encoding)), encoding }
     } catch {
       // fall through to zlib
     }
   }
 
   try {
-    const readable = Readable.fromWeb(stream)
+    const readable = Readable.from(streamToAsyncIterable(stream), { objectMode: false })
     const compressor =
       encoding === 'gzip' ? createGzip() : encoding === 'deflate' ? createDeflate() : createBrotliCompress(brotliOptions)
-    return { stream: Readable.toWeb(readable.pipe(compressor)), encoding }
+    return { stream: nodeStreamToReadableStream(readable.pipe(compressor)), encoding }
   } catch {
     return { stream, encoding: null }
   }
@@ -458,7 +536,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         'cache-control': buildCacheControlHeader(0, 0),
         vary: 'x-fragment-accept-encoding'
       })
-      let body = stream
+      let body: FragmentStreamBody = stream
       let responseEncoding: CompressionEncoding | null = null
       if (encoding !== null) {
         const compressed = compressFragmentStream(stream, encoding)

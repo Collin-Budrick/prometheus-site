@@ -20,7 +20,8 @@ const normalizeMetadata = (metadata: ErrorMetadata) => {
 }
 
 const buildHighlightOptions = (config: HighlightConfig, apiBase?: string): HighlightOptions => {
-  const tracingOrigins = apiBase ? [apiBase] : true
+  const normalizedApiBase = typeof apiBase === 'string' ? apiBase.trim() : ''
+  const tracingOrigins = normalizedApiBase !== '' ? [normalizedApiBase] : true
   const options: HighlightOptions = {
     serviceName: config.serviceName,
     environment: config.environment,
@@ -37,7 +38,7 @@ const buildHighlightOptions = (config: HighlightConfig, apiBase?: string): Highl
     tracingOrigins
   }
 
-  if (config.canvasSampling) {
+  if (config.canvasSampling !== undefined) {
     options.samplingStrategy = { canvas: config.canvasSampling }
   }
 

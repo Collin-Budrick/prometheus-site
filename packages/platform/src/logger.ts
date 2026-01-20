@@ -13,38 +13,41 @@ export type PlatformLogger = Logger
 
 type LogFormat = 'json' | 'pretty'
 
-const getRuntimeEnv = () => {
+const getRuntimeEnv = (): Record<string, string | undefined> => {
   if (typeof process !== 'undefined' && typeof process.env === 'object') {
-    return process.env as Record<string, string | undefined>
+    return process.env
   }
 
-  if (typeof import.meta !== 'undefined') {
-    const metaEnv = (import.meta as ImportMeta & { env?: Record<string, string> }).env
-    if (metaEnv) return metaEnv
+  const metaEnv = typeof import.meta !== 'undefined' ? Reflect.get(import.meta, 'env') : undefined
+  if (metaEnv !== undefined && metaEnv !== null && typeof metaEnv === 'object') {
+    const normalized: Record<string, string | undefined> = {}
+    for (const key of Object.keys(metaEnv)) {
+      const value = Reflect.get(metaEnv, key)
+      if (typeof value === 'string') {
+        normalized[key] = value
+      } else if (typeof value === 'boolean') {
+        normalized[key] = value ? 'true' : 'false'
+      }
+    }
+    return normalized
   }
 
-  return {} as Record<string, string | undefined>
+  return {}
 }
 
 const resolveLogLevel = (value: string | undefined): LogLevel => {
   const normalized = value?.trim().toLowerCase()
-  switch (normalized) {
-    case 'trace':
-      return 'trace'
-    case 'debug':
-      return 'debug'
-    case 'info':
-      return 'info'
-    case 'warn':
-    case 'warning':
-      return 'warning'
-    case 'error':
-      return 'error'
-    case 'fatal':
-      return 'fatal'
-    default:
-      return 'info'
+  if (normalized === undefined || normalized === '') return 'info'
+  const levels: Partial<Record<string, LogLevel>> = {
+    trace: 'trace',
+    debug: 'debug',
+    info: 'info',
+    warn: 'warning',
+    warning: 'warning',
+    error: 'error',
+    fatal: 'fatal'
   }
+  return levels[normalized] ?? 'info'
 }
 
 const resolveLogFormat = (value: string | undefined, isBrowser: boolean): LogFormat => {
