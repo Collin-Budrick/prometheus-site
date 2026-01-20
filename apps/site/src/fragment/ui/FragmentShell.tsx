@@ -1335,6 +1335,7 @@ export const FragmentShell = component$(
                     closeLabel={copy.value.fragmentClose}
                     fragmentLoaded={Boolean(fragment)}
                     fragmentHasCss={skipCssGuard ? false : Boolean(fragment?.css)}
+                    disableMotion={entry.critical === true}
                     expandable={entry.expandable}
                     fullWidth={entry.fullWidth}
                     size={slot.size}
