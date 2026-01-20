@@ -640,8 +640,12 @@
   }
 
   .connection-banner {
-    position: relative;
-    z-index: 90;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(92vw, 680px);
+    z-index: 120;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -652,7 +656,8 @@
     border: 1px solid rgb(var(--stroke) / 0.7);
     background: rgb(var(--surface) / 0.85);
     color: rgb(var(--ink));
-    margin-bottom: 18px;
+    margin: 0;
+    box-shadow: 0 18px 40px rgb(15 23 42 / 0.16);
   }
 
   .connection-banner[data-tone="offline"] {
@@ -1245,6 +1250,13 @@
     min-height: var(--fragment-slot-height);
   }
 
+  @media (min-width: 1025px) {
+    .fragment-slot:not([data-critical]):not([data-variant='text']) .fragment-card-body {
+      content-visibility: auto;
+      contain-intrinsic-size: 1px var(--fragment-slot-height);
+    }
+  }
+
   .fragment-slot > .fragment-card-wrap {
     width: 100%;
     height: 100%;
@@ -1420,6 +1432,10 @@
     transition: opacity 200ms ease;
   }
 
+  .fragment-card[data-critical='true'] .fragment-card-body {
+    transition: none;
+  }
+
   .fragment-card-loader {
     position: absolute;
     inset: 0;
@@ -1437,6 +1453,10 @@
     pointer-events: none;
     transition: opacity 220ms ease;
     z-index: 3;
+  }
+
+  .fragment-card[data-critical='true'] .fragment-card-loader {
+    transition: none;
   }
 
   .fragment-card[data-fragment-id][data-fragment-loaded='true']:not([data-fragment-ready='true']) .fragment-card-body {

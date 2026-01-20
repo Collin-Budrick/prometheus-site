@@ -27,6 +27,7 @@ export type FragmentCardProps = {
   size?: 'small' | 'big' | 'tall'
   variant?: 'card' | 'text'
   row?: string
+  critical?: boolean
   dragState?: Signal<{
     active: boolean
     suppressUntil: number
@@ -51,6 +52,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     size,
     variant,
     row,
+    critical,
     dragState
   } = props
     const isFullWidth = fullWidth === true
@@ -534,6 +536,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}
           data-draggable={isDraggable ? undefined : 'false'}
           data-wave-in={waveIn ? '' : undefined}
+          data-critical={critical ? 'true' : undefined}
           data-fragment-id={fragmentId}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}

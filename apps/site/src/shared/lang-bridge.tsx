@@ -19,12 +19,17 @@ export const useLangSignal = (initialLang?: Lang) => {
 
   useVisibleTask$(
     (ctx) => {
-      current.value = initLang()
+      const resolved = initLang()
+      if (current.value !== resolved) {
+        current.value = resolved
+      }
       let ready = false
       const dispose = subscribeLang((value) => {
         if (!ready) {
           ready = true
-          current.value = value
+          if (current.value !== value) {
+            current.value = value
+          }
           return
         }
         if (current.value === value) return

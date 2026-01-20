@@ -22,7 +22,6 @@ const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCardStaggerDurationMs = 2600
 const LANG_PREFETCH_PARAM = 'lang'
-const INITIAL_FADE_COOKIE_KEY = 'prom-initial-fade'
 const CARD_STAGGER_COOKIE_KEY = 'prom-card-stagger'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
@@ -126,14 +125,10 @@ export const useShellPreferences = routeLoader$((event) => {
 })
 
 export const useInitialFadeState = routeLoader$((event) => {
-  const initialFadeSeen = event.cookie.get(INITIAL_FADE_COOKIE_KEY)?.value === '1'
   const cardStaggerSeen = event.cookie.get(CARD_STAGGER_COOKIE_KEY)?.value === '1'
-  const initialFade = initialFadeSeen ? null : 'ready'
   const cardStagger = cardStaggerSeen ? null : 'ready'
+  const initialFade = null
 
-  if (initialFade) {
-    event.cookie.set(INITIAL_FADE_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
-  }
   if (cardStagger) {
     event.cookie.set(CARD_STAGGER_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
   }
@@ -537,7 +532,7 @@ export default component$(() => {
                             class="settings-lang-option"
                             data-active={isActive ? 'true' : 'false'}
                             onClick$={$(() => {
-                              applyLangChoice(langValue)
+                              void applyLangChoice(langValue)
                               langMenuOpen.value = false
                             })}
                           >

@@ -1289,7 +1289,13 @@ export const FragmentShell = component$(
     <section class="fragment-shell">
       {hasIntro ? (
         <div class="fragment-grid" data-fragment-grid="intro">
-          <div class="fragment-slot" data-size="big" data-variant="text" style={{ gridColumn: '1 / -1' }}>
+          <div
+            class="fragment-slot"
+            data-size="big"
+            data-variant="text"
+            data-critical="true"
+            style={{ gridColumn: '1 / -1' }}
+          >
             <div class="fragment-card-wrap">
                 <FragmentMarkdownBlock
                   id="shell-intro"
@@ -1309,8 +1315,11 @@ export const FragmentShell = component$(
         {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null
           const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
-          const renderNode =
-            fragment && headerCopy ? applyHeaderOverride(fragment.tree, headerCopy) : fragment?.tree
+          const shouldOverrideHeaders =
+            Boolean(fragment && headerCopy) && langSignal.value !== initialLang
+          const renderNode = shouldOverrideHeaders
+            ? applyHeaderOverride(fragment!.tree, headerCopy!)
+            : fragment?.tree
           return (
             <div
               key={slot.id}
@@ -1320,6 +1329,7 @@ export const FragmentShell = component$(
                 'is-inline': !slot.column.includes('/ -1') && !slot.column.includes('/-1')
               }}
               data-size={slot.size}
+              data-critical={entry?.critical ? 'true' : undefined}
               style={{ gridColumn: slot.column, gridRow: slot.row }}
             >
               {entry ? (
@@ -1336,6 +1346,7 @@ export const FragmentShell = component$(
                     fragmentLoaded={Boolean(fragment)}
                     fragmentHasCss={skipCssGuard ? false : Boolean(fragment?.css)}
                     disableMotion={entry.critical === true}
+                    critical={entry.critical === true}
                     expandable={entry.expandable}
                     fullWidth={entry.fullWidth}
                     size={slot.size}
