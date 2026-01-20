@@ -34,7 +34,7 @@ const previewHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 's
 const previewHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
 const previewHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const previewHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || ''
-const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
+const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '0'
 const previewCrdtSignaling =
   process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
