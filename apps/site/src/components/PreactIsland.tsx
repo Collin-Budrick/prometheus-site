@@ -15,10 +15,9 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
     let dispose: (() => void) | null = null
 
     const mount = async () => {
-      const [{ h, render }, { useState, useEffect, useRef }] = await Promise.all([
-        import('preact'),
-        import('preact/hooks')
-      ])
+      const [preact, hooks] = await Promise.all([import('preact'), import('preact/hooks')])
+      const { h, render } = preact
+      const { useState, useEffect, useRef } = hooks as typeof import('preact/hooks')
 
       const target = host.value
       if (!target || !active) return

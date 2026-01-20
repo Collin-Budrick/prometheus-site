@@ -209,9 +209,9 @@ describe('SSR fragment cache metadata', () => {
           }
         }),
         { headers: { 'content-type': 'application/json' } }
-      )) as typeof fetch
+      )) as unknown as typeof fetch
 
-    const result = await loadFragmentPlan('/plan-cache', { VITE_API_BASE: 'http://api.test' }, 'en')
+    const result = await loadFragmentPlan('/plan-cache', { apiBase: 'http://api.test' }, 'en')
     expect(result.initialFragments?.[id]?.cacheUpdatedAt).toBe(updatedAt)
   })
 
@@ -223,9 +223,9 @@ describe('SSR fragment cache metadata', () => {
     globalThis.fetch = (async () =>
       new Response(bytes, {
         headers: { 'x-fragment-cache-updated': String(updatedAt) }
-      })) as typeof fetch
+      })) as unknown as typeof fetch
 
-    const result = await loadFragments([id], { VITE_API_BASE: 'http://api.test' }, 'en')
+    const result = await loadFragments([id], { apiBase: 'http://api.test' }, 'en')
     expect(result[id]?.cacheUpdatedAt).toBe(updatedAt)
   })
 })

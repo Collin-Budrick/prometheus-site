@@ -107,7 +107,7 @@ const schedulePriorityTask = (
   const postTask = scheduler?.postTask?.bind(scheduler)
   const yieldTask = scheduler?.yield?.bind(scheduler)
   let fired = false
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  let timeoutHandle: number | null = null
 
   const run = () => {
     if (fired) return

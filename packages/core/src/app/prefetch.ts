@@ -1,3 +1,5 @@
+import type { QuicklinkOptions } from 'quicklink'
+
 const normalizeApiHref = (apiBase: string) => {
   if (!apiBase) return ''
   if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
@@ -9,13 +11,15 @@ const hasFragmentLinkAnchors = () =>
 
 const canPrefetch = () => {
   if (typeof navigator === 'undefined') return false
-  const connection = navigator.connection as
-    | {
+  const connection = (
+    navigator as Navigator & {
+      connection?: {
         effectiveType?: string
         saveData?: boolean
         downlink?: number
       }
-    | undefined
+    }
+  ).connection
 
   if (connection?.saveData) return false
   const effectiveType = connection?.effectiveType ?? ''
@@ -64,7 +68,7 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
     started = true
     const { listen } = await import('quicklink')
     if (cancelled) return
-    stopListening = listen({
+    const options: QuicklinkOptions = {
       el: document.body,
       origins: [window.location.hostname],
       ignores: [shouldIgnoreTarget(apiBase)],
@@ -74,7 +78,8 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
       onError: () => {},
       priority: false,
       timeout: 2000
-    })
+    }
+    stopListening = listen(options)
   }
 
   const handleIntent = () => {

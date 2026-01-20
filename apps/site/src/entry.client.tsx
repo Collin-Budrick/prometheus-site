@@ -107,45 +107,43 @@ function setupOfflineErrorFilters() {
       event.preventDefault()
     }
   })
-  window.addEventListener(
-    'error',
-    (event) => {
-      if (event instanceof ErrorEvent) {
-        const message = event.message
-        if (!message) return
-        if (message.includes('WebSocket connection to')) {
-          const wsHost = resolveKnownHost(resolveHostFromMessage(message))
-          if (wsHost) {
-            markServerFailure(wsHost, { baseDelayMs: 3000, maxDelayMs: 120000 })
-          }
+  const handleWindowError = (event: Event) => {
+    if (event instanceof ErrorEvent) {
+      const message = event.message
+      if (!message) return
+      if (message.includes('WebSocket connection to')) {
+        const wsHost = resolveKnownHost(resolveHostFromMessage(message))
+        if (wsHost) {
+          markServerFailure(wsHost, { baseDelayMs: 3000, maxDelayMs: 120000 })
         }
-        if (message.includes('Failed to fetch dynamically imported module')) {
-          const host = resolveKnownHost(resolveHostFromMessage(message)) || windowHost
-          markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
-          if (isServerOffline()) {
-            event.preventDefault()
-          }
+      }
+      if (message.includes('Failed to fetch dynamically imported module')) {
+        const host = resolveKnownHost(resolveHostFromMessage(message)) || windowHost
+        markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
+        if (isServerOffline()) {
+          event.preventDefault()
         }
-        return
       }
-      const target = event.target as (HTMLElement & { src?: string; href?: string }) | null
-      const resourceUrl = target?.src || target?.href
-      if (!resourceUrl) return
-      const host = resolveKnownHost(resolveHostFromResource(resourceUrl)) || windowHost
-      markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
-      if (isServerOffline()) {
-        event.preventDefault()
-      }
-    },
-    { capture: true }
-  )
+      return
+    }
+    const target = event.target as (HTMLElement & { src?: string; href?: string }) | null
+    const resourceUrl = target?.src || target?.href
+    if (!resourceUrl) return
+    const host = resolveKnownHost(resolveHostFromResource(resourceUrl)) || windowHost
+    markServerFailure(host, { baseDelayMs: 1000, maxDelayMs: 8000 })
+    if (isServerOffline()) {
+      event.preventDefault()
+    }
+  }
+  window.addEventListener('error', handleWindowError as EventListener, { capture: true })
 }
 
 function setupWebSocketBackoffMonitor() {
   if (typeof window === 'undefined') return
   const marker = '__FRAGMENT_PRIME_WS_BACKOFF__'
-  if ((window as Record<string, unknown>)[marker]) return
-  ;(window as Record<string, unknown>)[marker] = true
+  const windowFlags = window as unknown as Record<string, unknown>
+  if (windowFlags[marker]) return
+  windowFlags[marker] = true
   if (typeof window.WebSocket !== 'function') return
   const windowHost = window.location.host
   const apiHost = resolveApiHost(window.location.origin)

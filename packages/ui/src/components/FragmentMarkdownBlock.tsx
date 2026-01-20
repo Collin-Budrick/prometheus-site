@@ -1,4 +1,4 @@
-import { component$ } from '@builder.io/qwik'
+import { component$, type JSX } from '@builder.io/qwik'
 import { FragmentCard, type FragmentCardProps } from './FragmentCard'
 
 type MarkdownNode = JSX.Element | string
@@ -160,10 +160,21 @@ const renderMarkdown = (source: string): MarkdownNode[] => {
     if (heading) {
       const level = Math.min(4, heading[1]?.length ?? 1)
       const content = heading[2] ?? ''
-      const Heading = (`h${level}` as keyof JSX.IntrinsicElements)
-      nodes.push(
-        <Heading key={`heading-${nodes.length}`}>{renderInline(content)}</Heading>
-      )
+      const headingNodes = renderInline(content)
+      switch (level) {
+        case 1:
+          nodes.push(<h1 key={`heading-${nodes.length}`}>{headingNodes}</h1>)
+          break
+        case 2:
+          nodes.push(<h2 key={`heading-${nodes.length}`}>{headingNodes}</h2>)
+          break
+        case 3:
+          nodes.push(<h3 key={`heading-${nodes.length}`}>{headingNodes}</h3>)
+          break
+        default:
+          nodes.push(<h4 key={`heading-${nodes.length}`}>{headingNodes}</h4>)
+          break
+      }
       index += 1
       continue
     }

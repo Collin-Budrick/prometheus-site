@@ -105,8 +105,11 @@ const loadStoreCartQueue = () => {
         const queuedAt = typeof record.queuedAt === 'string' ? record.queuedAt : ''
         const amount = record.amount !== undefined ? parseQuantity(record.amount) : undefined
         if (!type || !Number.isFinite(id) || id <= 0 || !queuedAt) return null
-        if (type === 'restore' && (!Number.isFinite(amount) || amount <= 0)) return null
-        return { type, id, amount, queuedAt } satisfies StoreCartQueuedAction
+        if (type === 'restore') {
+          if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null
+          return { type, id, amount, queuedAt }
+        }
+        return { type, id, queuedAt }
       })
       .filter((entry): entry is StoreCartQueuedAction => entry !== null)
   } catch {

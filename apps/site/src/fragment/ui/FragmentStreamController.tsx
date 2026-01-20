@@ -146,11 +146,12 @@ export const FragmentStreamController = component$(
           queued.clear()
 
           if (next) {
+            const nextValue = next
             if (shouldAnimateLangSwap && hasLangRefresh && !langTransitionInFlight) {
               langTransitionInFlight = true
               void runLangViewTransition(
                 () => {
-                  fragments.value = next
+                  fragments.value = nextValue
                 },
                 {
                   mutationRoot: document.querySelector('.fragment-grid') ?? document.body,
@@ -161,7 +162,7 @@ export const FragmentStreamController = component$(
                 langTransitionInFlight = false
               })
             } else {
-              fragments.value = next
+              fragments.value = nextValue
             }
           }
         }
