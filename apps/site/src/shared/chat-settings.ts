@@ -9,6 +9,7 @@ export const defaultChatSettings: ChatSettings = {
 }
 
 const settingsStoragePrefix = 'chat:settings:'
+const settingsCookieKey = 'prom-chat-settings'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -32,11 +33,43 @@ export const parseChatSettings = (raw: string | null): ChatSettings | null => {
   }
 }
 
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+export const readChatSettingsFromCookie = (cookieHeader: string | null): ChatSettings | null =>
+  parseChatSettings(readCookieValue(cookieHeader, settingsCookieKey))
+
+export const writeChatSettingsToCookie = (settings: ChatSettings) => {
+  if (typeof document === 'undefined') return
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(settings))
+    document.cookie = `${settingsCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
 export const loadChatSettings = (userId?: string): ChatSettings => {
   if (typeof window === 'undefined') return { ...defaultChatSettings }
   const raw = window.localStorage.getItem(buildChatSettingsKey(userId))
   const parsed = parseChatSettings(raw)
-  return parsed ? { ...defaultChatSettings, ...parsed } : { ...defaultChatSettings }
+  if (parsed) return { ...defaultChatSettings, ...parsed }
+  const cookieParsed = readChatSettingsFromCookie(typeof document === 'undefined' ? null : document.cookie)
+  return cookieParsed ? { ...defaultChatSettings, ...cookieParsed } : { ...defaultChatSettings }
 }
 
 export const saveChatSettings = (userId: string | undefined, settings: ChatSettings) => {
@@ -46,4 +79,5 @@ export const saveChatSettings = (userId: string | undefined, settings: ChatSetti
   } catch {
     // ignore storage failures
   }
+  writeChatSettingsToCookie(settings)
 }

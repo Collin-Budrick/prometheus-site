@@ -6,6 +6,10 @@ export type StoreCartItem = {
   price: number
 }
 
+export type StoreCartSnapshotItem = StoreCartItem & {
+  qty: number
+}
+
 export type StoreConsumeItem = {
   id: number
   quantity: number
@@ -30,6 +34,26 @@ type StoreCartQueuedAction = {
 
 let lastDraggedItem: StoreCartItem | null = null
 const storeCartQueueKey = 'store-cart-queue'
+const storeCartSnapshotKey = 'store-cart-snapshot'
+const storeCartQueueCookieKey = 'prom-store-cart-queue'
+const storeCartSnapshotCookieKey = 'prom-store-cart'
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
 
 export const setStoreCartDragItem = (item: StoreCartItem | null) => {
   lastDraggedItem = item
@@ -89,10 +113,18 @@ export const normalizeStoreCartItem = (value: unknown): StoreCartItem | null => 
   return { id, name, price }
 }
 
-const loadStoreCartQueue = () => {
-  if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
-  const raw = window.localStorage.getItem(storeCartQueueKey)
-  if (!raw) return []
+export const normalizeStoreCartSnapshotItem = (value: unknown): StoreCartSnapshotItem | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const base = normalizeStoreCartItem(record)
+  if (!base) return null
+  const qty = parseQuantity(record.qty)
+  if (!Number.isFinite(qty) || qty <= 0) return null
+  return { ...base, qty }
+}
+
+const parseStoreCartQueue = (raw: string | null) => {
+  if (!raw) return [] as StoreCartQueuedAction[]
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -117,6 +149,64 @@ const loadStoreCartQueue = () => {
   }
 }
 
+const parseStoreCartSnapshot = (raw: string | null) => {
+  if (!raw) return [] as StoreCartSnapshotItem[]
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((entry) => normalizeStoreCartSnapshotItem(entry))
+      .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
+  } catch {
+    return []
+  }
+}
+
+const loadStoreCartQueue = () => {
+  if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
+  const raw = window.localStorage.getItem(storeCartQueueKey)
+  const parsed = parseStoreCartQueue(raw)
+  if (parsed.length) return parsed
+  const cookieValue = typeof document === 'undefined' ? null : readCookieValue(document.cookie, storeCartQueueCookieKey)
+  const cookieParsed = parseStoreCartQueue(cookieValue)
+  if (cookieParsed.length) {
+    try {
+      window.localStorage.setItem(storeCartQueueKey, JSON.stringify(cookieParsed))
+    } catch {
+      // ignore storage failures
+    }
+  }
+  return cookieParsed
+}
+
+const writeStoreCartQueueCookie = (queue: StoreCartQueuedAction[]) => {
+  if (typeof document === 'undefined') return
+  if (!queue.length) {
+    document.cookie = `${storeCartQueueCookieKey}=; path=/; max-age=0; samesite=lax`
+    return
+  }
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(queue.slice(0, 240)))
+    document.cookie = `${storeCartQueueCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
+const writeStoreCartSnapshotCookie = (items: StoreCartSnapshotItem[]) => {
+  if (typeof document === 'undefined') return
+  if (!items.length) {
+    document.cookie = `${storeCartSnapshotCookieKey}=; path=/; max-age=0; samesite=lax`
+    return
+  }
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(items.slice(0, 60)))
+    document.cookie = `${storeCartSnapshotCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
 const saveStoreCartQueue = (queue: StoreCartQueuedAction[]) => {
   if (typeof window === 'undefined') return
   if (queue.length) {
@@ -124,6 +214,7 @@ const saveStoreCartQueue = (queue: StoreCartQueuedAction[]) => {
   } else {
     window.localStorage.removeItem(storeCartQueueKey)
   }
+  writeStoreCartQueueCookie(queue)
   window.dispatchEvent(new CustomEvent(storeCartQueueEvent, { detail: { size: queue.length } }))
 }
 
@@ -239,6 +330,29 @@ const performRestoreStoreItem = async (
 }
 
 export const getStoreCartQueueSize = () => loadStoreCartQueue().length
+
+export const readStoreCartQueueFromCookie = (cookieHeader: string | null) =>
+  parseStoreCartQueue(readCookieValue(cookieHeader, storeCartQueueCookieKey))
+
+export const readStoreCartSnapshotFromCookie = (cookieHeader: string | null) =>
+  parseStoreCartSnapshot(readCookieValue(cookieHeader, storeCartSnapshotCookieKey))
+
+export const persistStoreCartSnapshot = (items: StoreCartSnapshotItem[]) => {
+  if (typeof window === 'undefined') return
+  const normalized = items
+    .map((item) => normalizeStoreCartSnapshotItem(item))
+    .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
+  if (normalized.length) {
+    try {
+      window.localStorage.setItem(storeCartSnapshotKey, JSON.stringify(normalized))
+    } catch {
+      // ignore storage failures
+    }
+  } else {
+    window.localStorage.removeItem(storeCartSnapshotKey)
+  }
+  writeStoreCartSnapshotCookie(normalized)
+}
 
 export const flushStoreCartQueue = async (origin: string) => {
   if (typeof window === 'undefined') return { processed: 0, remaining: 0 }

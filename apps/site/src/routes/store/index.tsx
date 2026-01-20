@@ -1,4 +1,4 @@
-import { component$ } from '@builder.io/qwik'
+import { component$, useContextProvider } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store/pages/Store'
@@ -6,6 +6,7 @@ import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
+import { resolveRequestOrigin, resolveServerApiBase } from '../../shared/api-base'
 import {
   FragmentShell,
   getFragmentShellCacheEntry,
@@ -16,6 +17,8 @@ import type { FragmentPayload, FragmentPayloadValue, FragmentPlan, FragmentPlanV
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
+import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
+import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
@@ -24,6 +27,7 @@ type FragmentResource = {
   path: string
   lang: Lang
   shellState: FragmentShellState | null
+  storeSeed: StoreSeed
 }
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
@@ -36,6 +40,7 @@ const elementNode = (tag: string, attrs?: Record<string, string>, children: Rend
 })
 
 export const offlineShellFragmentId = 'fragment://fallback/offline-shell@v1'
+const STORE_STREAM_LIMIT = 12
 
 export const buildOfflineShellFragment = (id: string, path: string): FragmentPayload => {
   return {
@@ -72,10 +77,58 @@ export const buildOfflineShellFragment = (id: string, path: string): FragmentPay
   }
 }
 
+const resolveStoreApiBase = (request: Request) => {
+  const apiBase = resolveServerApiBase(appConfig.apiBase, request)
+  if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
+  const origin = resolveRequestOrigin(request)
+  if (!origin) return ''
+  if (apiBase.startsWith('/')) return `${origin}${apiBase}`
+  return `${origin}/${apiBase}`
+}
+
+const buildStoreApiUrl = (apiBase: string, path: string) => {
+  if (!apiBase) return ''
+  const trimmed = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase
+  const suffix = path.startsWith('/') ? path : `/${path}`
+  return `${trimmed}${suffix}`
+}
+
+const loadStoreSeed = async (request: Request): Promise<StoreSeed> => {
+  const cookieHeader = request.headers.get('cookie')
+  const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
+  const queued = readStoreCartQueueFromCookie(cookieHeader)
+  let streamItems: unknown[] = []
+
+  try {
+    const apiBase = resolveStoreApiBase(request)
+    const url = buildStoreApiUrl(apiBase, `/store/items?limit=${STORE_STREAM_LIMIT}`)
+    if (url) {
+      const response = await fetch(url, {
+        headers: { accept: 'application/json' },
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const payload = (await response.json()) as { items?: unknown }
+        if (Array.isArray(payload.items)) {
+          streamItems = payload.items
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to seed store stream items', error)
+  }
+
+  return {
+    stream: { items: streamItems },
+    cart: { items: cartItems, queuedCount: queued.length }
+  }
+}
+
 export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
   if (!storeEnabled) return null
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
+  const storeSeed = await loadStoreSeed(request)
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
@@ -84,7 +137,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
+      storeSeed
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for store', error)
@@ -108,7 +162,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       } as FragmentPayloadValue,
       path,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path)
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path),
+      storeSeed
     }
   }
 })
@@ -174,9 +229,17 @@ export default component$(() => {
   const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
+    ? {
+        plan: cachedEntry.plan,
+        fragments: cachedEntry.fragments,
+        path: cachedEntry.path,
+        lang: cachedEntry.lang,
+        shellState: null,
+        storeSeed: {}
+      }
     : null
   const data = fragmentResource.value ?? cachedData
+  useContextProvider(StoreSeedContext, data?.storeSeed ?? null)
   if (data?.plan?.fragments?.length) {
     return (
       <FragmentShell

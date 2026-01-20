@@ -3,6 +3,7 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import { useStoreSeed } from '../shared/store-seed'
 import {
   consumeStoreItem,
   flushStoreCartQueue,
@@ -99,17 +100,33 @@ const buildWsUrl = (path: string, origin: string) => {
 export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, class: className }) => {
   const maxItems = clampLimit(limit)
   const langSignal = useSharedLangSignal()
-  const query = useSignal('')
-  const items = useSignal<StoreItem[]>([])
+  const storeSeed = useStoreSeed()
+  const seedStream = storeSeed?.stream ?? null
+  const seedCart = storeSeed?.cart ?? null
+  const seedItems = (seedStream?.items ?? [])
+    .map((entry) => normalizeItem(entry))
+    .filter((entry): entry is StoreItem => entry !== null)
+  const seedMeta =
+    seedStream?.searchMeta &&
+    typeof seedStream.searchMeta === 'object' &&
+    typeof seedStream.searchMeta.total === 'number' &&
+    typeof seedStream.searchMeta.query === 'string'
+      ? { total: seedStream.searchMeta.total, query: seedStream.searchMeta.query }
+      : null
+  const seedQuery = typeof seedStream?.query === 'string' ? seedStream.query : seedMeta?.query ?? ''
+  const seedQueryValue = seedMeta?.query ?? seedQuery
+  const shouldSkipInitialFetch = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
+  const query = useSignal(seedQuery)
+  const items = useSignal<StoreItem[]>(seedItems)
   const removingIds = useSignal<number[]>([])
   const deletingIds = useSignal<number[]>([])
   const draggingId = useSignal<number | null>(null)
-  const queuedCount = useSignal(0)
+  const queuedCount = useSignal(typeof seedCart?.queuedCount === 'number' ? seedCart.queuedCount : 0)
   const streamState = useSignal<StreamState>('idle')
   const streamError = useSignal<string | null>(null)
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
   const searchError = useSignal<string | null>(null)
-  const searchMeta = useSignal<{ total: number; query: string } | null>(null)
+  const searchMeta = useSignal<{ total: number; query: string } | null>(seedMeta)
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const panelRef = useSignal<HTMLElement>()
@@ -485,7 +502,14 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       if (typeof window === 'undefined') return
       const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       const activeQuery = ctx.track(() => query.value).trim()
-      ctx.track(() => refreshTick.value)
+      const refresh = ctx.track(() => refreshTick.value)
+      if (shouldSkipInitialFetch.value && refresh === 0 && activeQuery === seedQueryValue) {
+        shouldSkipInitialFetch.value = false
+        return
+      }
+      if (shouldSkipInitialFetch.value) {
+        shouldSkipInitialFetch.value = false
+      }
       const controller = new AbortController()
       const delay = activeQuery ? 250 : 0
       const timeout = window.setTimeout(async () => {

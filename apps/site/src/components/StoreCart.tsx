@@ -1,10 +1,13 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import { useStoreSeed } from '../shared/store-seed'
 import {
   consumeStoreCartDragItem,
   consumeStoreItem,
   normalizeStoreCartItem,
+  normalizeStoreCartSnapshotItem,
+  persistStoreCartSnapshot,
   restoreStoreItem,
   storeCartAddEvent,
   type StoreCartItem
@@ -34,7 +37,11 @@ const normalizeLabel = (value: string | undefined, fallback: string) => {
 export const StoreCart = component$<StoreCartProps>(
   ({ class: className, title, helper, empty, totalLabel, dropLabel, removeLabel }) => {
     const langSignal = useSharedLangSignal()
-    const cartItems = useSignal<CartLine[]>([])
+    const storeSeed = useStoreSeed()
+    const seedItems = (storeSeed?.cart?.items ?? [])
+      .map((entry) => normalizeStoreCartSnapshotItem(entry))
+      .filter((entry): entry is CartLine => entry !== null)
+    const cartItems = useSignal<CartLine[]>(seedItems)
     const removingIds = useSignal<number[]>([])
     const dragActive = useSignal(false)
     const listRef = useSignal<HTMLElement>()
@@ -155,6 +162,15 @@ export const StoreCart = component$<StoreCartProps>(
         }
         window.addEventListener(storeCartAddEvent, handler)
         ctx.cleanup(() => window.removeEventListener(storeCartAddEvent, handler))
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        if (typeof window === 'undefined') return
+        ctx.track(() => cartItems.value.map((item) => `${item.id}:${item.qty}`).join(','))
+        persistStoreCartSnapshot(cartItems.value)
       },
       { strategy: 'document-ready' }
     )

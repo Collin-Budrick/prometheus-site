@@ -12,9 +12,8 @@ import { loadAuthSession } from '../../shared/auth-session'
 import { clearBootstrapSession } from '../../shared/auth-bootstrap'
 import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
 import {
-  buildChatSettingsKey,
   defaultChatSettings,
-  parseChatSettings,
+  readChatSettingsFromCookie,
   saveChatSettings,
   type ChatSettings
 } from '../../shared/chat-settings'
@@ -26,9 +25,39 @@ type ProtectedRouteData = {
     name?: string
     email?: string
   }
+  chatSettings: ChatSettings
+  swOptOut: boolean
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
+const SW_OPT_OUT_COOKIE_KEY = 'prom-sw-opt-out'
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+const readSwOptOutFromCookie = (cookieHeader: string | null) => {
+  const raw = readCookieValue(cookieHeader, SW_OPT_OUT_COOKIE_KEY)
+  return raw === '1' || raw === 'true'
+}
+
+const writeSwOptOutCookie = (optOut: boolean) => {
+  if (typeof document === 'undefined') return
+  document.cookie = `${SW_OPT_OUT_COOKIE_KEY}=${optOut ? '1' : '0'}; path=/; max-age=2592000; samesite=lax`
+}
 
 const resolveAuthBase = (origin: string, apiBase?: string) => {
   if (!apiBase) return ''
@@ -97,7 +126,10 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { lang, user: session.user }
+  const cookieHeader = request.headers.get('cookie')
+  const chatSettings = readChatSettingsFromCookie(cookieHeader) ?? { ...defaultChatSettings }
+  const swOptOut = readSwOptOutFromCookie(cookieHeader)
+  return { lang, user: session.user, chatSettings, swOptOut }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -127,8 +159,8 @@ export default component$(() => {
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
-  const chatSettings = useSignal<ChatSettings>({ ...defaultChatSettings })
-  const swOptOut = useSignal(false)
+  const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })
+  const swOptOut = useSignal(Boolean(data.value.swOptOut))
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const friendCode = useSignal('')
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -139,14 +171,7 @@ export default component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
-    const key = buildChatSettingsKey(userId)
-    const stored = parseChatSettings(window.localStorage.getItem(key))
-    if (!stored) {
-      saveChatSettings(userId, defaultChatSettings)
-      chatSettings.value = { ...defaultChatSettings }
-      return
-    }
-    chatSettings.value = { ...defaultChatSettings, ...stored }
+    saveChatSettings(userId, chatSettings.value)
   })
 
   useVisibleTask$(() => {
@@ -158,12 +183,6 @@ export default component$(() => {
 
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
-    try {
-      swOptOut.value = window.localStorage.getItem('fragment:sw-opt-out') === '1'
-    } catch {
-      swOptOut.value = false
-    }
-
     const handleCacheRefreshed = () => {
       swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
     }
@@ -233,6 +252,7 @@ export default component$(() => {
       swStatus.value = { tone: 'error', message: copy.value.settingsOfflineStorageError }
       return
     }
+    writeSwOptOutCookie(next)
     window.dispatchEvent(new CustomEvent('prom:sw-toggle-cache', { detail: { optOut: next } }))
     swStatus.value = {
       tone: 'info',
