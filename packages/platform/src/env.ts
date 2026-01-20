@@ -144,8 +144,21 @@ const normalizeEnvInput = (env: AppEnv) =>
     Object.entries(env).map(([key, value]) => [key, toStringValue(value)])
   ) as Record<string, string | undefined>
 
-const parseEnv = (schema: Record<string, string>, env: AppEnv): AppEnv =>
-  arkenvParse(schema, { env: normalizeEnvInput(env), coerce: false, onUndeclaredKey: 'delete' }) as AppEnv
+const parseEnv = (schema: Record<string, string>, env: AppEnv): AppEnv => {
+  const parsed = arkenvParse(schema, {
+    env: normalizeEnvInput(env),
+    coerce: false,
+    onUndeclaredKey: 'delete'
+  })
+  if (!isRecord(parsed)) return {}
+  const output: AppEnv = {}
+  Object.entries(parsed).forEach(([key, value]) => {
+    if (typeof value === 'string' || typeof value === 'boolean' || value === undefined) {
+      output[key] = value
+    }
+  })
+  return output
+}
 
 const buildMergedEnv = (env?: AppEnv): AppEnv => {
   const runtimeEnv = getRuntimeEnv()
