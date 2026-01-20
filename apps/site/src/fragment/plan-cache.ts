@@ -9,9 +9,15 @@ type StoredPlanCacheEntry = {
   savedAt: number
 }
 
+type FragmentPlanCachePayload = {
+  version: 1
+  entries: Record<string, StoredPlanCacheEntry>
+}
+
 const STORAGE_KEY = 'fragment:plan-cache:v2'
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24
 const DEFAULT_LIMIT = 20
+const FRAGMENT_PLAN_CACHE_PAYLOAD_ID = 'fragment-plan-cache'
 
 const buildPlanCacheKey = (path: string, lang?: string) => `${lang ?? 'default'}|${path}`
 
@@ -39,6 +45,60 @@ const writeStorage = (entries: Record<string, StoredPlanCacheEntry>) => {
   }
 }
 
+const escapeJsonForScript = (value: string) => value.replace(/</g, '\\u003c')
+
+const buildCacheEntries = (
+  path: string,
+  lang: string | undefined,
+  entry: FragmentPlanCacheEntry,
+  savedAt: number
+) => {
+  const entries: Record<string, StoredPlanCacheEntry> = {}
+  const requestKey = buildPlanCacheKey(path, lang)
+  entries[requestKey] = { entry, savedAt }
+  const normalizedKey = buildPlanCacheKey(entry.plan.path, lang)
+  if (normalizedKey !== requestKey) {
+    entries[normalizedKey] = { entry, savedAt }
+  }
+  return entries
+}
+
+export const createFragmentPlanCachePayload = (
+  path: string,
+  lang: string | undefined,
+  entry: FragmentPlanCacheEntry,
+  savedAt: number = Date.now()
+) => {
+  const payload: FragmentPlanCachePayload = {
+    version: 1,
+    entries: buildCacheEntries(path, lang, entry, savedAt)
+  }
+
+  try {
+    return escapeJsonForScript(JSON.stringify(payload))
+  } catch (error) {
+    console.warn('Failed to serialize fragment plan cache payload', error)
+    return null
+  }
+}
+
+const readServerPayload = (): Record<string, StoredPlanCacheEntry> => {
+  if (typeof document === 'undefined') return {}
+  const element = document.getElementById(FRAGMENT_PLAN_CACHE_PAYLOAD_ID)
+  if (!element) return {}
+  const raw = element.textContent
+  element.remove()
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as FragmentPlanCachePayload
+    if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== 'object') return {}
+    return parsed.entries
+  } catch (error) {
+    console.warn('Failed to parse fragment plan cache payload', error)
+    return {}
+  }
+}
+
 const createPersistentFragmentPlanCache = (
   limit: number = DEFAULT_LIMIT,
   ttlMs: number = DEFAULT_TTL_MS
@@ -46,23 +106,17 @@ const createPersistentFragmentPlanCache = (
   const memoryCache = createFragmentPlanCache(limit)
   let storedEntries: Record<string, StoredPlanCacheEntry> | null = null
 
-  const getStoredEntries = () => {
-    if (!storedEntries) {
-      storedEntries = readStorage()
-    }
-    return storedEntries
-  }
-
   const isExpired = (savedAt: number) => Date.now() - savedAt > ttlMs
 
-  const pruneStorage = () => {
-    const entries = getStoredEntries()
+  const pruneEntries = (entries: Record<string, StoredPlanCacheEntry>) => {
     const keys = Object.keys(entries)
-    if (!keys.length) return
+    if (!keys.length) return false
 
+    let changed = false
     keys.forEach((key) => {
       if (isExpired(entries[key].savedAt)) {
         delete entries[key]
+        changed = true
       }
     })
 
@@ -73,10 +127,47 @@ const createPersistentFragmentPlanCache = (
         .sort((a, b) => a.savedAt - b.savedAt)
       sorted.slice(0, remainingKeys.length - limit).forEach(({ key }) => {
         delete entries[key]
+        changed = true
       })
     }
+    return changed
+  }
 
-    writeStorage(entries)
+  const mergeStoredEntries = (
+    primary: Record<string, StoredPlanCacheEntry>,
+    secondary: Record<string, StoredPlanCacheEntry>
+  ) => {
+    const merged: Record<string, StoredPlanCacheEntry> = {}
+    const assignEntries = (entries: Record<string, StoredPlanCacheEntry>) => {
+      Object.keys(entries).forEach((key) => {
+        const existing = merged[key]
+        if (!existing || entries[key].savedAt > existing.savedAt) {
+          merged[key] = entries[key]
+        }
+      })
+    }
+    assignEntries(secondary)
+    assignEntries(primary)
+    return merged
+  }
+
+  const getStoredEntries = () => {
+    if (!storedEntries) {
+      const serverEntries = readServerPayload()
+      const storageEntries = readStorage()
+      storedEntries = mergeStoredEntries(serverEntries, storageEntries)
+      if (pruneEntries(storedEntries) && canUseStorage()) {
+        writeStorage(storedEntries)
+      }
+    }
+    return storedEntries
+  }
+
+  const pruneStorage = () => {
+    const entries = getStoredEntries()
+    if (pruneEntries(entries)) {
+      writeStorage(entries)
+    }
   }
 
   const readStoredEntry = (key: string) => {
@@ -91,9 +182,9 @@ const createPersistentFragmentPlanCache = (
     return stored.entry
   }
 
-  const persistEntry = (key: string, entry: FragmentPlanCacheEntry) => {
+  const persistEntry = (key: string, entry: FragmentPlanCacheEntry, savedAt: number = Date.now()) => {
     const entries = getStoredEntries()
-    entries[key] = { entry, savedAt: Date.now() }
+    entries[key] = { entry, savedAt }
     writeStorage(entries)
   }
 
@@ -113,15 +204,13 @@ const createPersistentFragmentPlanCache = (
       memoryCache.set(path, lang, entry)
       if (!canUseStorage()) return
       pruneStorage()
-      const requestKey = buildPlanCacheKey(path, lang)
-      persistEntry(requestKey, entry)
-      const normalizedKey = buildPlanCacheKey(entry.plan.path, lang)
-      if (normalizedKey !== requestKey) {
-        persistEntry(normalizedKey, entry)
-      }
+      const savedAt = Date.now()
+      Object.keys(buildCacheEntries(path, lang, entry, savedAt)).forEach((key) => {
+        persistEntry(key, entry, savedAt)
+      })
     }
   }
 }
 
 export const fragmentPlanCache = createPersistentFragmentPlanCache()
-export { createPersistentFragmentPlanCache }
+export { createPersistentFragmentPlanCache, FRAGMENT_PLAN_CACHE_PAYLOAD_ID }
