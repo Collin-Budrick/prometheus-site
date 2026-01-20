@@ -9,9 +9,84 @@ type BackoffOptions = {
   maxDelayMs?: number
 }
 
+type BackoffCookiePayload = Record<string, BackoffState>
+
 const states = new Map<string, BackoffState>()
 
+const backoffCookieKey = 'prom-server-backoff'
+const backoffCookieMaxAgeSeconds = 2592000
+
 const resolveKey = (key: string) => key.trim() || 'default'
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+const readCookieValue = (cookieHeader: string | null, key: string) => {
+  if (!cookieHeader) return null
+  const parts = cookieHeader.split(';')
+  for (const part of parts) {
+    const [name, raw] = part.trim().split('=')
+    if (name === key) {
+      if (!raw) return ''
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+const parseBackoffCookie = (raw: string | null) => {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!isRecord(parsed)) return null
+    const entries = Object.entries(parsed)
+    if (!entries.length) return null
+    const next = new Map<string, BackoffState>()
+    for (const [key, value] of entries) {
+      if (!isRecord(value)) continue
+      const attempts = typeof value.attempts === 'number' && Number.isFinite(value.attempts) ? value.attempts : 0
+      const until = typeof value.until === 'number' && Number.isFinite(value.until) ? value.until : 0
+      const online = typeof value.online === 'boolean' ? value.online : true
+      next.set(resolveKey(key), { attempts, until, online })
+    }
+    return next
+  } catch {
+    return null
+  }
+}
+
+const hydrateStatesFromCookie = () => {
+  if (typeof document === 'undefined') return
+  const parsed = parseBackoffCookie(readCookieValue(document.cookie, backoffCookieKey))
+  if (!parsed) return
+  for (const [key, state] of parsed) {
+    states.set(key, state)
+  }
+}
+
+const persistStatesToCookie = () => {
+  if (typeof document === 'undefined') return
+  const payload: BackoffCookiePayload = {}
+  for (const [key, state] of states) {
+    payload[key] = {
+      attempts: state.attempts,
+      until: state.until,
+      online: state.online
+    }
+  }
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(payload))
+    document.cookie = `${backoffCookieKey}=${serialized}; path=/; max-age=${backoffCookieMaxAgeSeconds}; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
+hydrateStatesFromCookie()
 
 const getState = (key: string) => {
   const resolved = resolveKey(key)
@@ -51,6 +126,7 @@ export const markServerFailure = (key: string, options?: BackoffOptions) => {
   const delay = computeDelay(state.attempts, options)
   state.until = Date.now() + delay
   setOnlineState(resolvedKey, state, false)
+  persistStatesToCookie()
   return state.until
 }
 
@@ -60,6 +136,7 @@ export const markServerSuccess = (key: string) => {
   state.attempts = 0
   state.until = 0
   setOnlineState(resolvedKey, state, true)
+  persistStatesToCookie()
 }
 
 export const getServerBackoffMs = (key: string) => {
