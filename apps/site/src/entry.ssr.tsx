@@ -15,9 +15,7 @@ export default function (opts: RenderToStreamOptions) {
   const disableSw = import.meta.env.VITE_DISABLE_SW === '1' || import.meta.env.VITE_DISABLE_SW === 'true'
   const containerAttributes: Record<string, string> = {
     ...opts.containerAttributes,
-    lang,
-    'data-initial-fade': 'pending',
-    'data-card-stagger': 'pending'
+    lang
   }
   if (theme) {
     containerAttributes['data-theme'] = theme
