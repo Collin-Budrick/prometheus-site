@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
-import { resolveAppConfig } from '@platform/env'
+import { resolveAppConfig } from '../../packages/platform/src/env.ts'
 
 const require = createRequire(import.meta.url)
 

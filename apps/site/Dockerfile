@@ -84,6 +84,7 @@ COPY --from=builder /app/apps/site/server ./server
 COPY --from=builder /app/apps/site/public ./public
 COPY --from=builder /app/apps/site/src ./src
 COPY --from=builder /app/apps/site/scripts ./scripts
+COPY --from=builder /app/packages/platform/src/env.ts /app/packages/platform/src/env.ts
 
 EXPOSE 4173
 CMD ["bun", "run", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]
