@@ -28,11 +28,12 @@ const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
 const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
-const previewEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '1'
+const previewEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0'
 const previewHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
 const previewHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
 const previewHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
 const previewHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
+const previewHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || ''
 const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '1'
 const previewCrdtSignaling =
   process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
@@ -100,6 +101,7 @@ const composeEnv = {
   VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
   VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
   VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
+  VITE_HIGHLIGHT_SAMPLE_RATE: previewHighlightSampleRate,
   VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
   VITE_P2P_RELAY_BASES: previewP2pRelayBases,
   VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,

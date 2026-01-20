@@ -16,6 +16,7 @@ export type HighlightConfig = {
   enableSessionRecording: boolean
   enableCanvasRecording: boolean
   canvasSampling?: number | 'all'
+  sampleRate: number
   environment: string
   serviceName: string
 }
@@ -73,6 +74,7 @@ const runtimeEnvSchema = {
   VITE_HIGHLIGHT_PRIVACY: 'string?',
   VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
+  VITE_HIGHLIGHT_SAMPLE_RATE: 'string?',
   P2P_RELAY_BASES: 'string?',
   VITE_P2P_RELAY_BASES: 'string?',
   P2P_NOSTR_RELAYS: 'string?',
@@ -107,6 +109,7 @@ const publicEnvSchema = {
   VITE_HIGHLIGHT_PRIVACY: 'string?',
   VITE_HIGHLIGHT_SESSION_RECORDING: 'string?',
   VITE_HIGHLIGHT_CANVAS_SAMPLING: 'string?',
+  VITE_HIGHLIGHT_SAMPLE_RATE: 'string?',
   VITE_P2P_RELAY_BASES: 'string?',
   VITE_P2P_NOSTR_RELAYS: 'string?',
   VITE_P2P_WAKU_RELAYS: 'string?',
@@ -342,6 +345,16 @@ const resolveHighlightCanvasSampling = (env: AppEnv): number | 'all' | undefined
   return parsed
 }
 
+const resolveHighlightSampleRate = (env: AppEnv): number => {
+  const raw = toStringValue(env.VITE_HIGHLIGHT_SAMPLE_RATE)?.trim()
+  if (raw === undefined || raw === '') return 0.1
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return 0.1
+  if (parsed <= 0) return 0
+  if (parsed >= 1) return 1
+  return parsed
+}
+
 const resolveHighlightEnvironment = (env: AppEnv) => {
   const mode = toStringValue(env.MODE)?.trim()
   if (mode !== undefined && mode !== '') return mode
@@ -354,6 +367,7 @@ export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): Highl
   const projectId = resolveHighlightProjectId(env)
   const enabled = isTruthyFlag(env.VITE_ENABLE_HIGHLIGHT) && Boolean(projectId)
   const canvasSampling = resolveHighlightCanvasSampling(env)
+  const sampleRate = resolveHighlightSampleRate(env)
 
   return {
     enabled,
@@ -362,6 +376,7 @@ export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): Highl
     enableSessionRecording: resolveHighlightSessionRecording(env),
     enableCanvasRecording: Boolean(canvasSampling),
     canvasSampling,
+    sampleRate,
     environment: resolveHighlightEnvironment(env),
     serviceName: 'site'
   }

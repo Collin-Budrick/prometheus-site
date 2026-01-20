@@ -60,6 +60,7 @@ describe('resolveAppConfig', () => {
       VITE_HIGHLIGHT_PRIVACY: 'strict',
       VITE_HIGHLIGHT_SESSION_RECORDING: '1',
       VITE_HIGHLIGHT_CANVAS_SAMPLING: '2',
+      VITE_HIGHLIGHT_SAMPLE_RATE: '0.2',
       MODE: 'production'
     })
 
@@ -80,6 +81,7 @@ describe('resolveAppConfig', () => {
       enableSessionRecording: true,
       enableCanvasRecording: true,
       canvasSampling: 2,
+      sampleRate: 0.2,
       environment: 'production',
       serviceName: 'site'
     })
