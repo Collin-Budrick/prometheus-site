@@ -223,6 +223,18 @@ export default component$(() => {
   const hasMultipleLangs = supportedLangs.length > 1
   const applyLangChoice = $((next: Lang) => {
     if (langSignal.value === next) return
+    if (typeof window !== 'undefined') {
+      const currentParam = resolveLangParam(new URLSearchParams(window.location.search).get(LANG_PREFETCH_PARAM))
+      if (currentParam !== next) {
+        const url = new URL(window.location.href)
+        url.searchParams.set(LANG_PREFETCH_PARAM, next)
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`
+        const state = window.history.state
+        const nextState =
+          state && typeof state === 'object' ? { ...state } : state == null ? {} : { _data: state }
+        window.history.replaceState(nextState, '', nextUrl)
+      }
+    }
     const root = document.querySelector('.layout-shell') ?? document.body
     void runLangViewTransition(
       () => {
