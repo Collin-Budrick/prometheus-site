@@ -32,7 +32,7 @@ export const useLangSignal = () => {
       })
       ctx.cleanup(() => dispose())
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   return current

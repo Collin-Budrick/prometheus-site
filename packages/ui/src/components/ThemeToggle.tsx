@@ -1,5 +1,4 @@
 import { $, component$, useSignal, useVisibleTask$, type PropFunction } from '@builder.io/qwik'
-import { InHalfMoon, InSunLight } from '@qwikest/icons/iconoir'
 import { applyTheme, initTheme, readStoredTheme, subscribeTheme, theme as themeStore, type Theme } from '../theme-store'
 
 type ThemeToggleLabels = {
@@ -12,6 +11,48 @@ type ThemeToggleProps = {
   labels: ThemeToggleLabels
   onToggle$?: PropFunction<(nextTheme: Theme) => void | Promise<void>>
 }
+
+const SunIcon = () => (
+  <svg
+    class="theme-toggle-icon"
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v3" />
+    <path d="M12 19v3" />
+    <path d="M4.22 4.22l2.12 2.12" />
+    <path d="M17.66 17.66l2.12 2.12" />
+    <path d="M2 12h3" />
+    <path d="M19 12h3" />
+    <path d="M4.22 19.78l2.12-2.12" />
+    <path d="M17.66 6.34l2.12-2.12" />
+  </svg>
+)
+
+const MoonIcon = () => (
+  <svg
+    class="theme-toggle-icon"
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z" />
+  </svg>
+)
 
 type ViewTransitionHandle = {
   ready?: Promise<void>
@@ -46,7 +87,7 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       media.removeEventListener('change', handleChange)
       dispose()
     })
-  })
+  }, { strategy: 'document-idle' })
 
   const toggleTheme = $(() => {
     if (typeof document === 'undefined') return
@@ -125,9 +166,9 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       }}
     >
       {themeSignal.value === 'dark' ? (
-        <InSunLight class="theme-toggle-icon" aria-hidden="true" />
+        <SunIcon />
       ) : (
-        <InHalfMoon class="theme-toggle-icon" aria-hidden="true" />
+        <MoonIcon />
       )}
     </button>
   )
