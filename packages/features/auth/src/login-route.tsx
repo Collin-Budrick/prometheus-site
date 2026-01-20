@@ -324,11 +324,12 @@ export const LoginRoute = component$<{
     event.preventDefault()
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
-    const { object, string, boolean: zBoolean } = await import('zod/v4-mini')
+    const { object, string, boolean: zBoolean, email, minLength, optional } =
+      await import('zod/v4-mini')
     const loginSchema = object({
-      email: string().trim().email('Enter a valid email.'),
-      password: string().min(1, 'Enter your password.'),
-      rememberMe: zBoolean().optional()
+      email: email('Enter a valid email.'),
+      password: string().check(minLength(1, 'Enter your password.')),
+      rememberMe: optional(zBoolean())
     })
     const parsed = loginSchema.safeParse({
       email: readFormValue(data, 'email'),
@@ -378,12 +379,13 @@ export const LoginRoute = component$<{
     event.preventDefault()
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
-    const { object, string, boolean: zBoolean } = await import('zod/v4-mini')
+    const { object, string, boolean: zBoolean, email, minLength, optional } =
+      await import('zod/v4-mini')
     const signupSchema = object({
-      name: string().trim().min(2, 'Enter a name.'),
-      email: string().trim().email('Enter a valid email.'),
-      password: string().min(6, 'Password must be at least 6 characters.'),
-      rememberMe: zBoolean().optional()
+      name: string().check(minLength(2, 'Enter a name.')),
+      email: email('Enter a valid email.'),
+      password: string().check(minLength(6, 'Password must be at least 6 characters.')),
+      rememberMe: optional(zBoolean())
     })
     const parsed = signupSchema.safeParse({
       name: readFormValue(data, 'name'),
