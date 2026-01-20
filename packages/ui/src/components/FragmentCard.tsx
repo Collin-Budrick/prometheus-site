@@ -305,8 +305,9 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       (ctx) => {
         ctx.track(() => layoutTick.value)
         ctx.track(() => expandedId.value)
+        const inView = ctx.track(() => isInView.value)
         const card = cardRef.value
-        if (!card) return
+        if (!card || !inView) return
 
         let frame = 0
         const updateOverflow = () => {
