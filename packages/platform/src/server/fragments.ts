@@ -15,6 +15,7 @@ import { buildFragmentCacheKey, createMemoryFragmentStore } from '@core/fragment
 import { normalizePlanPath } from '@core/fragment/planner'
 import type { CacheClient } from '../cache'
 import {
+  buildFragmentInitialCacheKey,
   buildFragmentPlanCacheKey,
   buildCacheControlHeader,
   bumpPlanEtagVersion,
@@ -147,6 +148,11 @@ const isFragmentPlanResponse = (value: unknown): value is FragmentPlanResponse =
     if (!Object.values(value.initialFragments).every((entry) => typeof entry === 'string')) return false
   }
   return true
+}
+
+const isFragmentInitialPayloads = (value: unknown): value is FragmentPlanInitialPayloads => {
+  if (!isRecord(value)) return false
+  return Object.values(value).every((entry) => typeof entry === 'string')
 }
 
 const buildCacheHeaders = (entry: StoredFragment) => {
@@ -507,7 +513,15 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
           headers: buildPlanHeaders(etag)
         })
       }
-      const initialFragments = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
+      const initialCacheKey = buildFragmentInitialCacheKey(path, lang, etag)
+      const cachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
+      const initialFragments =
+        cachedInitial !== null && isFragmentInitialPayloads(cachedInitial)
+          ? cachedInitial
+          : await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
+      if (cachedInitial === null || !isFragmentInitialPayloads(cachedInitial)) {
+        await writeCache(cache, initialCacheKey, initialFragments, 30)
+      }
       const payload: FragmentPlanResponse = { ...basePlan, initialFragments }
       return new Response(JSON.stringify(payload), {
         status: 200,

@@ -44,7 +44,7 @@ export const loadHybridFragmentResource = async (
   let initialFragments: FragmentPayloadMap | undefined
 
   try {
-    const result = await loadFragmentPlan(path, { apiBase: resolvedApiBase }, lang, { includeInitial: false })
+    const result = await loadFragmentPlan(path, { apiBase: resolvedApiBase }, lang)
     plan = result.plan
     initialFragments = result.initialFragments
   } catch (error) {

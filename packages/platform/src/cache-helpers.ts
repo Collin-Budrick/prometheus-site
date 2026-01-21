@@ -3,10 +3,13 @@ import type { FragmentLang } from '@core/fragment/i18n'
 import type { CacheClient } from './cache'
 
 const fragmentPlanCachePrefix = 'fragments:plan:'
+const fragmentInitialCachePrefix = 'fragments:initial:'
 const latencyHashKey = 'latency:stats'
 const earlyLimitPrefix = 'early:limit:'
 
 export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
+export const buildFragmentInitialCacheKey = (path: string, lang: FragmentLang, etag: string) =>
+  `${fragmentInitialCachePrefix}${lang}:${normalizePlanPath(path)}:${etag}`
 
 export const buildCacheControlHeader = (ttl: number, staleTtl: number) =>
   `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${staleTtl}`
@@ -100,17 +103,27 @@ export const invalidatePlanCache = async (cache: CacheClient, path?: string, lan
   try {
     const hasPath = path !== undefined && path !== ''
     const hasLang = lang !== undefined
+    const normalizedPath = hasPath ? normalizePlanPath(path) : undefined
     if (hasPath && hasLang) {
-      await cache.client.del(buildFragmentPlanCacheKey(path, lang))
+      const planKey = buildFragmentPlanCacheKey(normalizedPath ?? path, lang)
+      const initialKeys = await cache.client.keys(`${fragmentInitialCachePrefix}${lang}:${normalizedPath}:*`)
+      if (initialKeys.length > 0) {
+        await cache.client.del(initialKeys)
+      }
+      await cache.client.del(planKey)
       return
     }
     if (hasPath) {
-      const keys = await cache.client.keys(`${fragmentPlanCachePrefix}*:${path}`)
-      if (keys.length > 0) await cache.client.del(keys)
+      const planKeys = await cache.client.keys(`${fragmentPlanCachePrefix}*:${normalizedPath}`)
+      const initialKeys = await cache.client.keys(`${fragmentInitialCachePrefix}*:${normalizedPath}:*`)
+      if (planKeys.length > 0) await cache.client.del(planKeys)
+      if (initialKeys.length > 0) await cache.client.del(initialKeys)
       return
     }
-    const keys = await cache.client.keys(`${fragmentPlanCachePrefix}*`)
-    if (keys.length > 0) await cache.client.del(keys)
+    const planKeys = await cache.client.keys(`${fragmentPlanCachePrefix}*`)
+    const initialKeys = await cache.client.keys(`${fragmentInitialCachePrefix}*`)
+    if (planKeys.length > 0) await cache.client.del(planKeys)
+    if (initialKeys.length > 0) await cache.client.del(initialKeys)
   } catch (error) {
     console.warn('Failed to invalidate fragment plan cache', error)
   }
