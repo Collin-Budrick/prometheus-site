@@ -27,3 +27,4 @@ apps/web/public/models/*
 Trace-*
 infra/caddy/Caddyfile
 tmp
+apps/site/server/*

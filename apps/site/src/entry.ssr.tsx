@@ -1,7 +1,6 @@
 import type { RequestEvent } from '@builder.io/qwik-city'
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
-import { PUBLIC_CACHE_CONTROL } from './cache-control'
 import Root from './root'
 import { readThemeFromCookie } from '@prometheus/ui'
 import { readServiceWorkerSeedFromCookie } from './shared/service-worker-seed'
@@ -32,17 +31,6 @@ export default function (opts: RenderToStreamOptions) {
   }
   const preloader = opts.preloader ?? { ssrPreloads: 2, maxIdlePreloads: 8 }
   const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
-
-  if (
-    requestEv &&
-    (requestEv.method === 'GET' || requestEv.method === 'HEAD') &&
-    !requestEv.headers.has('Cache-Control')
-  ) {
-    requestEv.headers.set(
-      'Cache-Control',
-      PUBLIC_CACHE_CONTROL // 0s freshness, 60s stale-while-revalidate for shared/public caches.
-    )
-  }
 
   return renderToStream(<Root />, {
     manifest,

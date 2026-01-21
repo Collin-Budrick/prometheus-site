@@ -1,5 +1,6 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { manifest } from '@qwik-client-manifest'
 import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
@@ -85,6 +86,96 @@ const initialFadeScript = `(function () {
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
 
+const normalizeBase = (base: string) => {
+  const trimmed = base.trim()
+  if (!trimmed) return '/'
+  if (trimmed === '.' || trimmed === './') return './'
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
+}
+
+const withBasePath = (base: string, path: string) => {
+  const normalizedBase = normalizeBase(base)
+  const trimmed = path.replace(/^\/+/, '')
+  if (normalizedBase === './') return `./${trimmed}`
+  return `${normalizedBase}${trimmed}`
+}
+
+type ClientManifest = {
+  core?: string
+  preloader?: string
+  bundles?: Record<string, { imports?: string[] }>
+}
+
+let clientManifestPromise: Promise<ClientManifest | null> | null = null
+
+const loadClientManifest = async (): Promise<ClientManifest | null> => {
+  if (!import.meta.env.SSR) return null
+  if (clientManifestPromise) return clientManifestPromise
+  clientManifestPromise = (async () => {
+    try {
+      const { readFileSync, existsSync } = await import('node:fs')
+      const path = await import('node:path')
+      const cwd = process.cwd()
+      const candidates = [
+        path.join(cwd, 'dist', 'q-manifest.json'),
+        path.join(cwd, 'apps/site/dist/q-manifest.json')
+      ]
+      const manifestPath = candidates.find((candidate) => existsSync(candidate))
+      if (!manifestPath) return null
+      const raw = readFileSync(manifestPath, 'utf8')
+      return JSON.parse(raw) as ClientManifest
+    } catch {
+      return null
+    }
+  })()
+  return clientManifestPromise
+}
+
+const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
+  const links: string[] = []
+  const seen = new Set<string>()
+  const maxLinks = 6
+  const resolvedManifest: ClientManifest = {
+    core: clientManifest.core ?? manifest.core,
+    preloader: clientManifest.preloader ?? manifest.preloader,
+    bundles: clientManifest.bundles ?? (manifest as ClientManifest).bundles
+  }
+
+  const pushLink = (bundle: string, crossorigin?: boolean) => {
+    if (!bundle || seen.has(bundle) || links.length >= maxLinks) return
+    const href = withBasePath(basePath, `build/${bundle}`)
+    let value = `<${href}>; rel=modulepreload`
+    if (crossorigin) value += '; crossorigin'
+    links.push(value)
+    seen.add(bundle)
+  }
+
+  const addBundle = (bundle: string | undefined, options?: { crossorigin?: boolean; includeImports?: boolean }) => {
+    if (!bundle) return
+    pushLink(bundle, options?.crossorigin)
+    if (options?.includeImports === false) return
+    const imports = resolvedManifest.bundles?.[bundle]?.imports ?? []
+    imports.forEach((importName) => pushLink(importName))
+  }
+
+  addBundle(resolvedManifest.core, { includeImports: true })
+  if (resolvedManifest.preloader && resolvedManifest.preloader !== resolvedManifest.core) {
+    addBundle(resolvedManifest.preloader, { includeImports: true, crossorigin: true })
+  }
+  return links
+}
+
+let cachedModulePreloads: string[] | null = null
+let cachedModulePreloadBase = ''
+
+const getModulePreloadLinks = async (basePath: string) => {
+  if (cachedModulePreloads && cachedModulePreloadBase === basePath) return cachedModulePreloads
+  cachedModulePreloadBase = basePath
+  const clientManifest = (await loadClientManifest()) ?? (manifest as ClientManifest)
+  cachedModulePreloads = buildModulePreloadLinks(basePath, clientManifest)
+  return cachedModulePreloads
+}
+
 const withLangParam = (href: string, langValue: Lang) => {
   if (!href || !href.startsWith('/')) return href
   const base = typeof window === 'undefined' ? 'http://localhost' : window.location.origin
@@ -136,12 +227,16 @@ export const useInitialFadeState = routeLoader$((event) => {
   return { initialFade, cardStagger }
 })
 
-export const onRequest: RequestHandler = ({ headers, method }) => {
+export const onRequest: RequestHandler = async ({ headers, method, basePathname }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
       'Cache-Control',
       PUBLIC_CACHE_CONTROL // 0s freshness, allow 60s stale-while-revalidate to keep streams aligned.
     )
+  }
+  if (method === 'GET' || method === 'HEAD') {
+    const preloadLinks = await getModulePreloadLinks(basePathname || '/')
+    preloadLinks.forEach((link) => headers.append('Link', link))
   }
 }
 
