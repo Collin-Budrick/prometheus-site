@@ -165,6 +165,9 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
         const pendingRect = pendingRects.get(card)
         const hasPreviousRect = previousRects.has(card)
+        const skipLayoutTick =
+          resizeChanged && !expandedChanged && !pendingRect && !visibilityChanged && hasPreviousRect
+        if (skipLayoutTick) return
         const shouldMeasure =
           expandedChanged || Boolean(pendingRect) || !hasPreviousRect || visibilityChanged || resizeChanged
 

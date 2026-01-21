@@ -1,7 +1,7 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { manifest } from '@qwik-client-manifest'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie, type Theme } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -98,24 +98,6 @@ const withBasePath = (base: string, path: string) => {
   const trimmed = path.replace(/^\/+/, '')
   if (normalizedBase === './') return `./${trimmed}`
   return `${normalizedBase}${trimmed}`
-}
-
-const LIGHT_THEME_PRELOADS = ['/assets/lava-blob-a.svg', '/assets/lava-blob-b.svg']
-const DARK_THEME_PRELOADS = [
-  '/assets/starfield-layer-1.svg',
-  '/assets/starfield-layer-2.svg',
-  '/assets/starfield-twinkle.svg'
-]
-
-const buildLcpPreloadLinks = (base: string, theme: Theme, themeFromCookie: boolean) => {
-  if (!themeFromCookie) return []
-  const assets = theme === 'dark' ? DARK_THEME_PRELOADS : LIGHT_THEME_PRELOADS
-  return assets.map((href) => ({
-    rel: 'preload',
-    as: 'image',
-    type: 'image/svg+xml',
-    href: withBasePath(base, href)
-  }))
 }
 
 type ClientManifest = {
@@ -229,9 +211,8 @@ export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request })
 
 export const useShellPreferences = routeLoader$((event) => {
   const lang = resolveRequestLang(event.request)
-  const cookieTheme = readThemeFromCookie(event.request.headers.get('cookie'))
-  const theme = cookieTheme ?? defaultTheme
-  return { lang, theme, themeFromCookie: Boolean(cookieTheme) }
+  const theme = readThemeFromCookie(event.request.headers.get('cookie')) ?? defaultTheme
+  return { lang, theme }
 })
 
 export const useInitialFadeState = routeLoader$((event) => {
@@ -309,10 +290,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   if (fadeState.cardStagger) {
     htmlAttributes['data-card-stagger'] = fadeState.cardStagger
   }
-  const base = import.meta.env.BASE_URL || '/'
   return {
-    htmlAttributes,
-    links: buildLcpPreloadLinks(base, shellPreferences.theme, shellPreferences.themeFromCookie)
+    htmlAttributes
   }
 }
 
