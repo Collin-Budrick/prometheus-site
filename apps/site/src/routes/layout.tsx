@@ -100,6 +100,23 @@ const withBasePath = (base: string, path: string) => {
   return `${normalizedBase}${trimmed}`
 }
 
+const LIGHT_THEME_PRELOADS = ['/assets/lava-blob-a.svg', '/assets/lava-blob-b.svg']
+const DARK_THEME_PRELOADS = [
+  '/assets/starfield-layer-1.svg',
+  '/assets/starfield-layer-2.svg',
+  '/assets/starfield-twinkle.svg'
+]
+
+const buildLcpPreloadLinks = (base: string, theme?: string) => {
+  const assets = theme === 'dark' ? DARK_THEME_PRELOADS : LIGHT_THEME_PRELOADS
+  return assets.map((href) => ({
+    rel: 'preload',
+    as: 'image',
+    type: 'image/svg+xml',
+    href: withBasePath(base, href)
+  }))
+}
+
 type ClientManifest = {
   core?: string
   preloader?: string
@@ -282,6 +299,7 @@ export const RouterHead = component$(() => {
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const fadeState = resolveValue(useInitialFadeState)
+  const shellPreferences = resolveValue(useShellPreferences)
   const htmlAttributes: Record<string, string> = {}
   if (fadeState.initialFade) {
     htmlAttributes['data-initial-fade'] = fadeState.initialFade
@@ -289,8 +307,10 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   if (fadeState.cardStagger) {
     htmlAttributes['data-card-stagger'] = fadeState.cardStagger
   }
+  const base = import.meta.env.BASE_URL || '/'
   return {
-    htmlAttributes
+    htmlAttributes,
+    links: buildLcpPreloadLinks(base, shellPreferences.theme)
   }
 }
 
