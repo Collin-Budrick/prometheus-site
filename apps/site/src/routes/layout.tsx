@@ -1,7 +1,7 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { manifest } from '@qwik-client-manifest'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie, type Theme } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -107,7 +107,8 @@ const DARK_THEME_PRELOADS = [
   '/assets/starfield-twinkle.svg'
 ]
 
-const buildLcpPreloadLinks = (base: string, theme?: string) => {
+const buildLcpPreloadLinks = (base: string, theme: Theme, themeFromCookie: boolean) => {
+  if (!themeFromCookie) return []
   const assets = theme === 'dark' ? DARK_THEME_PRELOADS : LIGHT_THEME_PRELOADS
   return assets.map((href) => ({
     rel: 'preload',
@@ -228,8 +229,9 @@ export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request })
 
 export const useShellPreferences = routeLoader$((event) => {
   const lang = resolveRequestLang(event.request)
-  const theme = readThemeFromCookie(event.request.headers.get('cookie')) ?? defaultTheme
-  return { lang, theme }
+  const cookieTheme = readThemeFromCookie(event.request.headers.get('cookie'))
+  const theme = cookieTheme ?? defaultTheme
+  return { lang, theme, themeFromCookie: Boolean(cookieTheme) }
 })
 
 export const useInitialFadeState = routeLoader$((event) => {
@@ -310,7 +312,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const base = import.meta.env.BASE_URL || '/'
   return {
     htmlAttributes,
-    links: buildLcpPreloadLinks(base, shellPreferences.theme)
+    links: buildLcpPreloadLinks(base, shellPreferences.theme, shellPreferences.themeFromCookie)
   }
 }
 
