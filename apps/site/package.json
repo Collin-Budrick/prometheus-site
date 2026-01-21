@@ -14,7 +14,7 @@
     "@bokuweb/zstd-wasm": "^0.0.27",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
-    "@preact/signals-core": "^1.12.1",
+    "@preact/signals-core": "^1.12.2",
     "@privacyresearch/libsignal-protocol-typescript": "^0.0.16",
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
@@ -37,16 +37,16 @@
     "@serwist/vite": "^9.5.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "25.0.9",
-    "lightningcss": "^1.30.2",
+    "lightningcss": "^1.31.0",
     "oxlint": "1.41.0",
     "rollup-plugin-visualizer": "^6.0.5",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260119",
+    "typescript": "6.0.0-dev.20260120",
     "vite": "8.0.0-beta.8",
     "vite-plugin-compression2": "^2.4.0"
   },
   "optionalDependencies": {
-    "@oxlint/win32-arm64": "^1.40.0"
+    "@oxlint/win32-arm64": "^1.41.0"
   }
 }
