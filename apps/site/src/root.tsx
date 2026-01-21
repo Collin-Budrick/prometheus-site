@@ -3,7 +3,8 @@ import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
 import { createClientErrorReporter, initHighlight } from '@platform/logging'
 import { RouteMotion } from '@prometheus/ui'
-import globalStyles from '@prometheus/ui/global.css?inline'
+import globalStyles from '@prometheus/ui/global-critical.css?inline'
+import deferredStylesHref from '@prometheus/ui/global.css?url'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
@@ -80,6 +81,18 @@ export default component$(() => {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link
+          rel="stylesheet"
+          href={deferredStylesHref}
+          media="print"
+          onLoad$={(event) => {
+            const link = event.target as HTMLLinkElement
+            link.media = 'all'
+          }}
+        />
+        <noscript>
+          <link rel="stylesheet" href={deferredStylesHref} />
+        </noscript>
         <RouterHead />
       </head>
       <body class="app-shell">
