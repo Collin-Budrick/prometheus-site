@@ -12,6 +12,7 @@ import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../share
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
+import { appConfig } from '../app-config'
 
 const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
   const escapedHref = href.replace(/&/g, '&amp;')
@@ -134,7 +135,7 @@ const loadClientManifest = async (): Promise<ClientManifest | null> => {
 const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
   const links: string[] = []
   const seen = new Set<string>()
-  const maxLinks = 6
+  const maxLinks = 4
   const resolvedManifest: ClientManifest = {
     core: clientManifest.core ?? manifest.core,
     preloader: clientManifest.preloader ?? manifest.preloader,
@@ -186,6 +187,40 @@ const withLangParam = (href: string, langValue: Lang) => {
   } catch {
     return href
   }
+}
+
+const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | null) => {
+  if (!href) return null
+  if (href.startsWith('http://') || href.startsWith('https://')) {
+    try {
+      return new URL(href).origin
+    } catch {
+      return null
+    }
+  }
+  return fallbackOrigin
+}
+
+const buildPreconnectOrigins = (currentOrigin: string | null) => {
+  const origins = new Set<string>()
+  const addOrigin = (href: string | undefined) => {
+    const origin = toPreconnectOrigin(href, currentOrigin)
+    if (!origin) return
+    origins.add(origin)
+  }
+
+  addOrigin(appConfig.apiBase)
+  addOrigin(appConfig.webTransportBase)
+
+  if (appConfig.analytics?.enabled) {
+    addOrigin(appConfig.analytics.beaconUrl)
+  }
+
+  if (appConfig.highlight?.enabled) {
+    addOrigin('https://app.highlight.io')
+  }
+
+  return Array.from(origins)
 }
 
 const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
@@ -242,6 +277,9 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname 
 
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
+  const location = useLocation()
+  const currentOrigin = location.url?.origin ?? null
+  const preconnectOrigins = buildPreconnectOrigins(currentOrigin)
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
@@ -266,6 +304,14 @@ export const RouterHead = component$(() => {
 
         return <link key={`${link.rel}-${link.href}`} {...link} />
       })}
+      {preconnectOrigins.map((origin) => (
+        <link
+          key={`preconnect-${origin}`}
+          rel="preconnect"
+          href={origin}
+          crossorigin={origin !== currentOrigin ? 'anonymous' : undefined}
+        />
+      ))}
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />

@@ -119,12 +119,15 @@ export const buildSpeculationRulesForPlan = (
     currentPath && plan.path === currentPath && (knownIds.size > 0 || options?.knownFragments)
   )
 
-  if (!shouldSkipCurrentRouteSpeculation) {
+  const criticalFragments = plan.fragments.filter((fragment) => fragment.critical)
+  const fragmentsToPrefetch = criticalFragments.length ? criticalFragments : []
+
+  if (!shouldSkipCurrentRouteSpeculation && fragmentsToPrefetch.length > 0) {
     urls.add(joinApiPath(absoluteApiBase, `/fragments/plan?path=${encodedPath}`))
     urls.add(joinApiPath(absoluteApiBase, `/fragments/stream?path=${encodedPath}`))
   }
 
-  plan.fragments.forEach(({ id }) => {
+  fragmentsToPrefetch.forEach(({ id }) => {
     if (knownIds.has(id)) return
     urls.add(joinApiPath(absoluteApiBase, `/fragments?id=${encodeURIComponent(id)}`))
   })

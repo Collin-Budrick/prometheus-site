@@ -28,12 +28,23 @@ const canPrefetch = () => {
   return true
 }
 
+const isInViewport = (element?: Element | null) => {
+  if (typeof window === 'undefined') return true
+  if (!(element instanceof Element)) return true
+  if (!('getBoundingClientRect' in element)) return true
+  const rect = element.getBoundingClientRect()
+  const viewportHeight = window.innerHeight || 0
+  const viewportWidth = window.innerWidth || 0
+  return rect.bottom >= 0 && rect.top <= viewportHeight && rect.right >= 0 && rect.left <= viewportWidth
+}
+
 const shouldIgnoreTarget = (apiBase: string) => {
   const normalizedApiHref = normalizeApiHref(apiBase)
 
   return (href: string, element?: Element) => {
     const anchor = element instanceof HTMLAnchorElement ? element : null
     if (!anchor?.hasAttribute('data-fragment-link')) return true
+    if (!isInViewport(anchor)) return true
 
     try {
       const target = new URL(href, window.location.href)
@@ -50,7 +61,7 @@ const shouldIgnoreTarget = (apiBase: string) => {
   }
 }
 
-export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
+export const initQuicklinkPrefetch = async (config: { apiBase: string; startOnIntent?: boolean }) => {
   if (!hasFragmentLinkAnchors()) {
     return () => {}
   }
@@ -59,6 +70,7 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
   }
 
   const apiBase = config.apiBase
+  const startOnIntent = config.startOnIntent ?? true
   let stopListening: (() => void) | undefined
   let started = false
   let cancelled = false
@@ -93,13 +105,19 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string }) => {
     window.removeEventListener('scroll', handleIntent)
   }
 
-  window.addEventListener('pointerdown', handleIntent, { once: true })
-  window.addEventListener('keydown', handleIntent, { once: true })
-  window.addEventListener('scroll', handleIntent, { passive: true, once: true })
+  if (startOnIntent) {
+    window.addEventListener('pointerdown', handleIntent, { once: true })
+    window.addEventListener('keydown', handleIntent, { once: true })
+    window.addEventListener('scroll', handleIntent, { passive: true, once: true })
+  } else {
+    void start()
+  }
 
   return () => {
     cancelled = true
-    detachIntentListeners()
+    if (startOnIntent) {
+      detachIntentListeners()
+    }
     stopListening?.()
   }
 }
