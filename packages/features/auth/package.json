@@ -11,6 +11,6 @@
     "@better-auth/oauth-provider": "^1.5.0-beta.9",
     "@better-auth/passkey": "^1.5.0-beta.9",
     "better-auth": "^1.5.0-beta.9",
-    "zod": "4.4.0-canary.20260121T023401"
+    "zod": "4.4.0-canary.20260122T192419"
   }
 }
