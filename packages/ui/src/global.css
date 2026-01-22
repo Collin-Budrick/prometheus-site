@@ -145,27 +145,28 @@
     position: fixed;
     inset: 0;
     background-repeat: repeat;
+    background-image: none;
     pointer-events: none;
     z-index: 0;
     will-change: opacity, transform;
     transform: translate3d(0, 0, 0);
   }
 
-  body::before {
+  :root[data-decor-ready="true"] body::before {
     background-image: var(--lava-blob-a);
     background-size: 1200px 1200px;
     background-position: 0 0;
     animation: lava-fade-a 26s ease-in-out infinite;
   }
 
-  body::after {
+  :root[data-decor-ready="true"] body::after {
     background-image: var(--lava-blob-b);
     background-size: 1400px 1400px;
     background-position: 240px 200px;
     animation: lava-fade-b 32s ease-in-out infinite;
   }
 
-  :root[data-theme="dark"] body::before {
+  :root[data-theme="dark"][data-decor-ready="true"] body::before {
     background-image: var(--starfield-twinkle);
     background-size: 980px 980px;
     background-position: 300px calc(380px + var(--parallax-stars-twinkle-y, 0px));

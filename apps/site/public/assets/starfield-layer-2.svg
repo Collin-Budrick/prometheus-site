@@ -1,8 +1,1 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'>
-  <circle cx='36' cy='58' r='0.35' fill='white' fill-opacity='0.35'/>
-  <circle cx='116' cy='22' r='0.5' fill='white' fill-opacity='0.5'/>
-  <circle cx='188' cy='78' r='0.4' fill='white' fill-opacity='0.4'/>
-  <circle cx='206' cy='176' r='0.55' fill='white' fill-opacity='0.55'/>
-  <circle cx='70' cy='198' r='0.45' fill='white' fill-opacity='0.45'/>
-  <circle cx='138' cy='132' r='0.35' fill='white' fill-opacity='0.35'/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><circle cx="36" cy="58" r="0.35" fill="white" fill-opacity="0.35"/><circle cx="116" cy="22" r="0.5" fill="white" fill-opacity="0.5"/><circle cx="188" cy="78" r="0.4" fill="white" fill-opacity="0.4"/><circle cx="206" cy="176" r="0.55" fill="white" fill-opacity="0.55"/><circle cx="70" cy="198" r="0.45" fill="white" fill-opacity="0.45"/><circle cx="138" cy="132" r="0.35" fill="white" fill-opacity="0.35"/></svg>

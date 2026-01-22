@@ -93,7 +93,11 @@ const pwaPrecacheEntries = [
   { url: withBase('/manifest.webmanifest'), revision: null },
   { url: withBase('/favicon.ico'), revision: null },
   { url: withBase('/favicon.svg'), revision: null },
+  { url: withBase('/icons/icon-192.avif'), revision: null },
+  { url: withBase('/icons/icon-192.webp'), revision: null },
   { url: withBase('/icons/icon-192.png'), revision: null },
+  { url: withBase('/icons/icon-512.avif'), revision: null },
+  { url: withBase('/icons/icon-512.webp'), revision: null },
   { url: withBase('/icons/icon-512.png'), revision: null }
 ]
 
@@ -388,7 +392,7 @@ export default defineConfig(
           swSrc: 'src/service-worker.ts',
           swDest: 'service-worker.js',
           globDirectory: 'dist',
-          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webmanifest,woff2,ttf,otf,json,txt}'],
+          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
           additionalPrecacheEntries: pwaPrecacheEntries,
           swUrl: withBase('/service-worker.js')
         })

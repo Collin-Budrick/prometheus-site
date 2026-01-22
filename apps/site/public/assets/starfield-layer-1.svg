@@ -1,10 +1,1 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>
-  <circle cx='18' cy='22' r='0.35' fill='white' fill-opacity='0.35'/>
-  <circle cx='52' cy='90' r='0.45' fill='white' fill-opacity='0.45'/>
-  <circle cx='118' cy='34' r='0.4' fill='white' fill-opacity='0.5'/>
-  <circle cx='138' cy='118' r='0.35' fill='white' fill-opacity='0.3'/>
-  <circle cx='96' cy='138' r='0.4' fill='white' fill-opacity='0.4'/>
-  <circle cx='28' cy='132' r='0.3' fill='white' fill-opacity='0.28'/>
-  <circle cx='76' cy='18' r='0.28' fill='white' fill-opacity='0.25'/>
-  <circle cx='110' cy='86' r='0.35' fill='white' fill-opacity='0.38'/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><circle cx="18" cy="22" r="0.35" fill="white" fill-opacity="0.35"/><circle cx="52" cy="90" r="0.45" fill="white" fill-opacity="0.45"/><circle cx="118" cy="34" r="0.4" fill="white" fill-opacity="0.5"/><circle cx="138" cy="118" r="0.35" fill="white" fill-opacity="0.3"/><circle cx="96" cy="138" r="0.4" fill="white" fill-opacity="0.4"/><circle cx="28" cy="132" r="0.3" fill="white" fill-opacity="0.28"/><circle cx="76" cy="18" r="0.28" fill="white" fill-opacity="0.25"/><circle cx="110" cy="86" r="0.35" fill="white" fill-opacity="0.38"/></svg>

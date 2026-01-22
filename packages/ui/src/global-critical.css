@@ -109,6 +109,10 @@ body {
 
 :root[data-theme="dark"] body {
   background-color: rgb(0 0 0);
+  background-image: none;
+}
+
+:root[data-theme="dark"][data-decor-ready="true"] body {
   background-image: var(--starfield-layer-1), var(--starfield-layer-2);
   background-size: 520px 520px, 760px 760px;
   background-position:

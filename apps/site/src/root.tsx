@@ -20,6 +20,16 @@ export default component$(() => {
     { strategy: 'document-idle' }
   )
   useVisibleTask$(
+    () => {
+      if (typeof window === 'undefined') return
+      const root = document.documentElement
+      window.requestAnimationFrame(() => {
+        root.dataset.decorReady = 'true'
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+  useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
