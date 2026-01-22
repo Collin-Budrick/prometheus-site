@@ -119,10 +119,10 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
 export const StaticRouteSkeleton = component$(() => (
   <section class="fragment-shell" aria-hidden="true">
     <div class="fragment-grid" data-fragment-grid="main">
-      <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
-        <span class="skeleton-line is-short" />
-        <span class="skeleton-line is-medium" />
-        <span class="skeleton-line is-long" />
+      <article class="fragment-card static-route-skeleton" style={{ gridColumn: 'span 12' }} data-motion>
+        <span class="skeleton-line is-meta" />
+        <span class="skeleton-line is-title" />
+        <span class="skeleton-line is-description" />
         <span class="skeleton-line is-button" />
       </article>
     </div>
