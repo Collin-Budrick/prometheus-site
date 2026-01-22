@@ -1,4 +1,4 @@
-import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
@@ -21,6 +21,7 @@ import {
   type ProfileColor,
   type ProfilePayload
 } from '../../shared/profile-storage'
+import profileStyles from './profile.css?inline'
 
 type ProfileData = {
   user: {
@@ -125,6 +126,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
+  useStyles$(profileStyles)
   const data = useProfileData()
   const copy = useLangCopy()
   const user = data.value.user

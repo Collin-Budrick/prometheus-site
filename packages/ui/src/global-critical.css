@@ -33,17 +33,10 @@
   --lang-transition-duration: 1720ms;
   --theme-transition-duration: 1400ms;
   --theme-transition-ease: cubic-bezier(0.42, 0, 0.58, 1);
-  --parallax-stars-1-y: 0px;
-  --parallax-stars-2-y: 0px;
-  --parallax-stars-twinkle-y: 0px;
-  --parallax-blob-a-y: 0px;
-  --parallax-blob-b-y: 0px;
   --viewport-fade-color: 255 255 255;
   --viewport-fade-size: clamp(80px, 12vmin, 160px);
   --skeleton-base: 226 232 240;
   --skeleton-highlight: 248 250 252;
-  --lava-blob-a: url("/assets/lava-blob-a.svg");
-  --lava-blob-b: url("/assets/lava-blob-b.svg");
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
@@ -72,9 +65,6 @@
   --shadow: 0 32px 68px rgba(2, 6, 23, 0.62);
   --skeleton-base: 51 65 85;
   --skeleton-highlight: 71 85 105;
-  --starfield-layer-1: url("/assets/starfield-layer-1.svg");
-  --starfield-layer-2: url("/assets/starfield-layer-2.svg");
-  --starfield-twinkle: url("/assets/starfield-twinkle.svg");
 }
 
 @supports (height: 1svh) {
@@ -110,16 +100,6 @@ body {
 :root[data-theme="dark"] body {
   background-color: rgb(0 0 0);
   background-image: none;
-}
-
-:root[data-theme="dark"][data-decor-ready="true"] body {
-  background-image: var(--starfield-layer-1), var(--starfield-layer-2);
-  background-size: 520px 520px, 760px 760px;
-  background-position:
-    0 calc(var(--parallax-stars-1-y, 0px)),
-    240px calc(320px + var(--parallax-stars-2-y, 0px));
-  background-repeat: repeat;
-  background-attachment: scroll;
 }
 
 .app-shell {

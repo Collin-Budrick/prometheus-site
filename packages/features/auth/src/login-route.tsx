@@ -1,6 +1,7 @@
-import { $, component$, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useOnDocument, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
+import authStyles from './auth.css?inline'
 
 export type AuthCopy = {
   metaLine: string
@@ -229,6 +230,7 @@ export const LoginRoute = component$<{
   apiBase?: string
   initialFormState?: AuthFormState
 }>(({ copy, apiBase, initialFormState: initialFormStateProp }) => {
+  useStyles$(authStyles)
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
   const initialFormState =
     initialFormStateProp ?? resolveAuthFormState(typeof document === 'undefined' ? null : document.cookie)

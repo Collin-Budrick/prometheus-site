@@ -1,4 +1,4 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
@@ -18,6 +18,7 @@ import {
   saveChatSettings,
   type ChatSettings
 } from '../../shared/chat-settings'
+import settingsStyles from './settings.css?inline'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -128,6 +129,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
+  useStyles$(settingsStyles)
   const data = useSettingsData()
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
