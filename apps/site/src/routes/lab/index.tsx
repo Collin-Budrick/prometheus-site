@@ -1,7 +1,6 @@
 import { component$, useComputed$ } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import LabRoute, { LabSkeleton as FeatureLabSkeleton, type LabCopy } from '@features/lab/pages/Lab'
 import {
   FragmentShell,
   getFragmentShellCacheEntry,
@@ -16,6 +15,10 @@ import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
 import { getLabCopy } from '../../shared/lab-copy'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
+
+const featureLabModule = await import('@features/lab/pages/Lab')
+const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
+type LabCopy = import('@features/lab/pages/Lab').LabCopy
 
 type FragmentResource = {
   plan: FragmentPlanValue
