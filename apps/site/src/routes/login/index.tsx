@@ -6,12 +6,6 @@ import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
 import {
-  LoginRoute as FeatureLoginRoute,
-  LoginSkeleton as FeatureLoginSkeleton,
-  resolveAuthFormState,
-  type AuthFormState
-} from '@features/auth/pages/Login'
-import {
   FragmentShell,
   getFragmentShellCacheEntry,
   readFragmentShellStateFromCookie,
@@ -21,6 +15,10 @@ import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/typ
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
+
+const featureLoginModule = await import('@features/auth/pages/Login')
+const { LoginRoute: FeatureLoginRoute, LoginSkeleton: FeatureLoginSkeleton, resolveAuthFormState } = featureLoginModule
+type AuthFormState = import('@features/auth/pages/Login').AuthFormState
 
 const loginEnabled = siteFeatures.login !== false
 type FragmentResource = {

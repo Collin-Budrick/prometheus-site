@@ -1,7 +1,6 @@
 import { component$, useContextProvider } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { StoreRoute as FeatureStoreRoute, StoreSkeleton as FeatureStoreSkeleton } from '@features/store/pages/Store'
 import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy } from '../../shared/lang-bridge'
 import { getUiCopy } from '../../shared/ui-copy'
@@ -19,6 +18,9 @@ import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-reso
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
+
+const featureStoreModule = await import('@features/store/pages/Store')
+const { StoreRoute: FeatureStoreRoute, StoreSkeleton: FeatureStoreSkeleton } = featureStoreModule
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
