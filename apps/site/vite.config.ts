@@ -87,6 +87,20 @@ const withBase = (value: string) => {
   const base = publicBase.endsWith('/') ? publicBase : `${publicBase}/`
   return `${base}${trimmed}`
 }
+const staticCacheControl = 'public, max-age=31536000, immutable'
+const stripPublicBase = (pathname: string) => {
+  if (publicBase === './' || publicBase === '/') return pathname
+  const base = publicBase.endsWith('/') ? publicBase.slice(0, -1) : publicBase
+  if (base && pathname.startsWith(base)) {
+    const trimmed = pathname.slice(base.length)
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
+  return pathname
+}
+const isStaticCachePath = (pathname: string) =>
+  /^\/(?:build|assets|icons)\//.test(pathname) ||
+  /^\/favicon\.[^/]+$/.test(pathname) ||
+  pathname === '/manifest.webmanifest'
 const pwaPrecacheEntries = [
   { url: withBase('/'), revision: null },
   { url: withBase('/offline/'), revision: null },
@@ -310,6 +324,39 @@ const fragmentHmrPlugin = (): Plugin => {
   }
 }
 
+const staticCacheHeadersPlugin = (): Plugin => {
+  const applyCacheHeaders = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const method = req.method?.toUpperCase()
+    if (method !== 'GET' && method !== 'HEAD') {
+      next()
+      return
+    }
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+    const pathName = stripPublicBase(url.pathname)
+    if (!isStaticCachePath(pathName)) {
+      next()
+      return
+    }
+    const originalWriteHead = res.writeHead.bind(res)
+    let headerSet = false
+    res.writeHead = ((...args: Parameters<typeof originalWriteHead>) => {
+      if (!headerSet) {
+        res.setHeader('Cache-Control', staticCacheControl)
+        headerSet = true
+      }
+      return originalWriteHead(...args)
+    }) as typeof res.writeHead
+    next()
+  }
+
+  return {
+    name: 'static-cache-headers',
+    configurePreviewServer(server) {
+      server.middlewares.use(applyCacheHeaders)
+    }
+  }
+}
+
 const sanitizeOutputOptionsPlugin = (): Plugin => ({
   name: 'sanitize-rollup-output-options',
   configResolved(config) {
@@ -379,6 +426,7 @@ export default defineConfig(
         sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),
         fragmentHmrPlugin(),
+        staticCacheHeadersPlugin(),
         tailwindcss(),
         ...(bundleVisualizer ? [bundleVisualizer] : []),
         qwikCity(),
