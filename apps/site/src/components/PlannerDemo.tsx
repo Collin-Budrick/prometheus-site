@@ -53,7 +53,7 @@ const resolveCacheState = (cookieHeader: string | null, fragments: ReadonlyArray
       }
     }
     return hasData ? hydrated : null
-  } catch (error) {
+  } catch {
     return null
   }
 }
