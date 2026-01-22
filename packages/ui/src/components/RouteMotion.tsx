@@ -41,6 +41,27 @@ const nextMotionRunId = () => {
   return motionInstanceId
 }
 
+const shouldEnableRouteMotion = () => {
+  if (typeof window === 'undefined') return false
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
+  const nav = navigator as Navigator & {
+    deviceMemory?: number
+    connection?: {
+      effectiveType?: string
+      saveData?: boolean
+      downlink?: number
+    }
+  }
+  const connection = nav.connection
+  if (connection?.saveData) return false
+  const effectiveType = connection?.effectiveType ?? ''
+  if (effectiveType && ['slow-2g', '2g', '3g'].includes(effectiveType)) return false
+  if (typeof connection?.downlink === 'number' && connection.downlink > 0 && connection.downlink < 1.5) return false
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 && nav.deviceMemory <= 4) return false
+  if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) return false
+  return true
+}
+
 export const RouteMotion = component$(() => {
   const location = useLocation()
   useVisibleTask$(
@@ -76,8 +97,7 @@ export const RouteMotion = component$(() => {
         if (cancelled) return
 
         const setup = async (): Promise<(() => void) | void> => {
-          const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-          if (prefersReducedMotion) {
+          if (!shouldEnableRouteMotion()) {
             delete document.documentElement.dataset.motionReady
             delete document.documentElement.dataset.viewTransitions
             release()

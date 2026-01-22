@@ -4,6 +4,7 @@ import { initQuicklinkPrefetch } from './prefetch'
 
 type IdleHandles = {
   timeout: number | null
+  idle: number | null
 }
 
 type ClientErrorReporter = (error: unknown, metadata?: Record<string, unknown>) => void
@@ -32,14 +33,6 @@ type SchedulerGlobals = typeof globalThis & {
   TaskController?: TaskControllerConstructor
 }
 
-let schedulerImport: Promise<void> | null = null
-
-const ensureSchedulerPolyfill = () => {
-  if (typeof window === 'undefined') return
-  if (schedulerImport) return
-  schedulerImport = import('scheduler-polyfill').then(() => {}).catch(() => {})
-}
-
 const getSchedulerGlobals = () => globalThis as SchedulerGlobals
 
 const scheduleIdleTask = (
@@ -47,14 +40,20 @@ const scheduleIdleTask = (
   timeout = 120,
   priority: TaskPriority = 'background'
 ) => {
-  ensureSchedulerPolyfill()
   const globals = getSchedulerGlobals()
   const scheduler = globals.scheduler
   const TaskControllerImpl = globals.TaskController ?? AbortController
   const postTask = scheduler?.postTask?.bind(scheduler)
   const yieldTask = scheduler?.yield?.bind(scheduler)
-  const handles: IdleHandles = { timeout: null }
+  const handles: IdleHandles = { timeout: null, idle: null }
   const controller = new TaskControllerImpl()
+  const idleApi =
+    typeof window !== 'undefined'
+      ? (window as {
+          requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+          cancelIdleCallback?: (handle: number) => void
+        })
+      : null
   let cancelled = false
   let fired = false
 
@@ -64,7 +63,11 @@ const scheduleIdleTask = (
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }
+    if (handles.idle !== null && idleApi?.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(handles.idle)
+    }
     handles.timeout = null
+    handles.idle = null
     callback()
   }
 
@@ -84,15 +87,22 @@ const scheduleIdleTask = (
     }
   }
 
-  handles.timeout = window.setTimeout(() => {
-    run()
-  }, timeout)
+  if (idleApi?.requestIdleCallback) {
+    handles.idle = idleApi.requestIdleCallback(run, { timeout })
+  } else {
+    handles.timeout = window.setTimeout(() => {
+      run()
+    }, timeout)
+  }
 
   return () => {
     cancelled = true
     controller.abort()
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
+    }
+    if (handles.idle !== null && idleApi?.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(handles.idle)
     }
   }
 }
@@ -101,19 +111,29 @@ const schedulePriorityTask = (
   task: () => void,
   { priority = 'background', timeout = 300 }: { priority?: TaskPriority; timeout?: number } = {}
 ) => {
-  ensureSchedulerPolyfill()
   const globals = getSchedulerGlobals()
   const scheduler = globals.scheduler
   const postTask = scheduler?.postTask?.bind(scheduler)
   const yieldTask = scheduler?.yield?.bind(scheduler)
   let fired = false
   let timeoutHandle: number | null = null
+  let idleHandle: number | null = null
+  const idleApi =
+    typeof window !== 'undefined'
+      ? (window as {
+          requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+          cancelIdleCallback?: (handle: number) => void
+        })
+      : null
 
   const run = () => {
     if (fired) return
     fired = true
     if (timeoutHandle) {
       clearTimeout(timeoutHandle)
+    }
+    if (idleHandle !== null && idleApi?.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(idleHandle)
     }
     task()
   }
@@ -123,7 +143,11 @@ const schedulePriorityTask = (
     return
   }
 
-  timeoutHandle = window.setTimeout(run, timeout)
+  if (idleApi?.requestIdleCallback) {
+    idleHandle = idleApi.requestIdleCallback(run, { timeout })
+  } else {
+    timeoutHandle = window.setTimeout(run, timeout)
+  }
 
   if (postTask) {
     postTask(run, { priority }).catch(() => {})
@@ -136,8 +160,6 @@ const schedulePriorityTask = (
       .catch(() => {})
     return
   }
-
-  setTimeout(run, 0)
 }
 
 const ClientSignals = component$(({ config }: { config: ClientExtrasConfig }) => {
@@ -229,7 +251,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
       const startPrefetch = () => {
         if (cancelled) return
         if (!hasFragmentLinks()) return
-        initQuicklinkPrefetch({ apiBase: config.apiBase, startOnIntent: false })
+        initQuicklinkPrefetch({ apiBase: config.apiBase, startOnIntent: true })
           .then((stop) => {
             if (cancelled) {
               stop?.()

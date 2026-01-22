@@ -1,3 +1,4 @@
+/// <reference path="../types/quicklink.d.ts" />
 import type { QuicklinkOptions } from 'quicklink'
 
 const normalizeApiHref = (apiBase: string) => {

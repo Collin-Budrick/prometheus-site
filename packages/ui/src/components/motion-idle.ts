@@ -1,5 +1,6 @@
 type IdleHandles = {
   timeout: number | null
+  idle: number | null
 }
 
 type TaskPriority = 'background' | 'user-visible' | 'user-blocking'
@@ -16,14 +17,6 @@ type SchedulerGlobals = typeof globalThis & {
   TaskController?: TaskControllerConstructor
 }
 
-let schedulerImport: Promise<void> | null = null
-
-const ensureSchedulerPolyfill = () => {
-  if (typeof window === 'undefined') return
-  if (schedulerImport) return
-  schedulerImport = import('scheduler-polyfill').then(() => {}).catch(() => {})
-}
-
 const getSchedulerGlobals = () => globalThis as SchedulerGlobals
 
 /**
@@ -35,14 +28,20 @@ export const scheduleIdleTask = (
   timeout = 120,
   priority: TaskPriority = 'background'
 ) => {
-  ensureSchedulerPolyfill()
   const globals = getSchedulerGlobals()
   const scheduler = globals.scheduler
   const TaskControllerImpl = globals.TaskController ?? AbortController
   const postTask = scheduler?.postTask?.bind(scheduler)
   const yieldTask = scheduler?.yield?.bind(scheduler)
-  const handles: IdleHandles = { timeout: null }
+  const handles: IdleHandles = { timeout: null, idle: null }
   const controller = new TaskControllerImpl()
+  const idleApi =
+    typeof window !== 'undefined'
+      ? (window as {
+          requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+          cancelIdleCallback?: (handle: number) => void
+        })
+      : null
   let cancelled = false
   let fired = false
 
@@ -52,7 +51,11 @@ export const scheduleIdleTask = (
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }
+    if (handles.idle !== null && idleApi?.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(handles.idle)
+    }
     handles.timeout = null
+    handles.idle = null
     callback()
   }
 
@@ -72,15 +75,22 @@ export const scheduleIdleTask = (
     }
   }
 
-  handles.timeout = window.setTimeout(() => {
-    run()
-  }, timeout)
+  if (idleApi?.requestIdleCallback) {
+    handles.idle = idleApi.requestIdleCallback(run, { timeout })
+  } else {
+    handles.timeout = window.setTimeout(() => {
+      run()
+    }, timeout)
+  }
 
   return () => {
     cancelled = true
     controller.abort()
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
+    }
+    if (handles.idle !== null && idleApi?.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(handles.idle)
     }
   }
 }

@@ -15,14 +15,18 @@ const scheduleIdleOrInteraction = (callback: () => void, options?: { timeoutMs?:
   let fired = false
   let timeoutHandle: number | null = null
   let idleHandle: number | null = null
+  const idleApi = window as {
+    requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+    cancelIdleCallback?: (handle: number) => void
+  }
 
   const cleanup = () => {
     if (timeoutHandle !== null) {
       window.clearTimeout(timeoutHandle)
       timeoutHandle = null
     }
-    if (idleHandle !== null && 'cancelIdleCallback' in window) {
-      window.cancelIdleCallback(idleHandle)
+    if (idleHandle !== null && idleApi.cancelIdleCallback) {
+      idleApi.cancelIdleCallback(idleHandle)
       idleHandle = null
     }
     window.removeEventListener('pointerdown', handleInteraction)
@@ -45,13 +49,34 @@ const scheduleIdleOrInteraction = (callback: () => void, options?: { timeoutMs?:
   window.addEventListener('keydown', handleInteraction, { once: true })
   window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
 
-  if ('requestIdleCallback' in window) {
-    idleHandle = window.requestIdleCallback(run, { timeout: timeoutMs })
+  if (idleApi.requestIdleCallback) {
+    idleHandle = idleApi.requestIdleCallback(run, { timeout: timeoutMs })
   } else {
     timeoutHandle = window.setTimeout(run, timeoutMs)
   }
 
   return cleanup
+}
+
+const shouldEnableAmbientMotion = () => {
+  if (typeof window === 'undefined') return false
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
+  const nav = navigator as Navigator & {
+    deviceMemory?: number
+    connection?: {
+      effectiveType?: string
+      saveData?: boolean
+      downlink?: number
+    }
+  }
+  const connection = nav.connection
+  if (connection?.saveData) return false
+  const effectiveType = connection?.effectiveType ?? ''
+  if (effectiveType && ['slow-2g', '2g', '3g'].includes(effectiveType)) return false
+  if (typeof connection?.downlink === 'number' && connection.downlink > 0 && connection.downlink < 1.5) return false
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 && nav.deviceMemory <= 4) return false
+  if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) return false
+  return true
 }
 
 export default component$(() => {
@@ -71,65 +96,85 @@ export default component$(() => {
     { strategy: 'document-idle' }
   )
   useVisibleTask$(
-    () => {
+    (ctx) => {
       if (typeof window === 'undefined') return
+      if (!shouldEnableAmbientMotion()) return
       const root = document.documentElement
-      window.requestAnimationFrame(() => {
-        root.dataset.decorReady = 'true'
-      })
+      const stopIdle = scheduleIdleOrInteraction(
+        () => {
+          window.requestAnimationFrame(() => {
+            root.dataset.decorReady = 'true'
+          })
+        },
+        { timeoutMs: 2000 }
+      )
+      ctx.cleanup(() => stopIdle())
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-      const root = document.documentElement
-      const ease = 0.08
-      let currentY = window.scrollY || 0
-      let targetY = currentY
-      let raf = 0
+      if (!shouldEnableAmbientMotion()) return
 
-      const applyOffsets = (value: number) => {
-        root.style.setProperty('--parallax-stars-1-y', `${Math.round(value * 0.08)}px`)
-        root.style.setProperty('--parallax-stars-2-y', `${Math.round(value * 0.14)}px`)
-        root.style.setProperty('--parallax-stars-twinkle-y', `${Math.round(value * 0.05)}px`)
-        root.style.setProperty('--parallax-blob-a-y', `${Math.round(value * 0.06)}px`)
-        root.style.setProperty('--parallax-blob-b-y', `${Math.round(value * 0.1)}px`)
+      let teardown: (() => void) | null = null
+
+      const start = () => {
+        if (teardown || !shouldEnableAmbientMotion()) return
+        const root = document.documentElement
+        const ease = 0.08
+        let currentY = window.scrollY || 0
+        let targetY = currentY
+        let raf = 0
+
+        const applyOffsets = (value: number) => {
+          root.style.setProperty('--parallax-stars-1-y', `${Math.round(value * 0.08)}px`)
+          root.style.setProperty('--parallax-stars-2-y', `${Math.round(value * 0.14)}px`)
+          root.style.setProperty('--parallax-stars-twinkle-y', `${Math.round(value * 0.05)}px`)
+          root.style.setProperty('--parallax-blob-a-y', `${Math.round(value * 0.06)}px`)
+          root.style.setProperty('--parallax-blob-b-y', `${Math.round(value * 0.1)}px`)
+        }
+
+        const tick = () => {
+          raf = 0
+          currentY += (targetY - currentY) * ease
+          if (Math.abs(targetY - currentY) < 0.5) {
+            currentY = targetY
+          }
+          applyOffsets(currentY)
+          if (currentY !== targetY) {
+            raf = window.requestAnimationFrame(tick)
+          }
+        }
+
+        const handleScroll = () => {
+          targetY = window.scrollY || 0
+          if (!raf) {
+            raf = window.requestAnimationFrame(tick)
+          }
+        }
+
+        handleScroll()
+        window.addEventListener('scroll', handleScroll, { passive: true })
+        window.addEventListener('resize', handleScroll)
+
+        teardown = () => {
+          window.removeEventListener('scroll', handleScroll)
+          window.removeEventListener('resize', handleScroll)
+          if (raf) {
+            window.cancelAnimationFrame(raf)
+          }
+        }
       }
 
-      const tick = () => {
-        raf = 0
-        currentY += (targetY - currentY) * ease
-        if (Math.abs(targetY - currentY) < 0.5) {
-          currentY = targetY
-        }
-        applyOffsets(currentY)
-        if (currentY !== targetY) {
-          raf = window.requestAnimationFrame(tick)
-        }
-      }
-
-      const handleScroll = () => {
-        targetY = window.scrollY || 0
-        if (!raf) {
-          raf = window.requestAnimationFrame(tick)
-        }
-      }
-
-      handleScroll()
-      window.addEventListener('scroll', handleScroll, { passive: true })
-      window.addEventListener('resize', handleScroll)
+      const stopIdle = scheduleIdleOrInteraction(start, { timeoutMs: 2500 })
 
       ctx.cleanup(() => {
-        window.removeEventListener('scroll', handleScroll)
-        window.removeEventListener('resize', handleScroll)
-        if (raf) {
-          window.cancelAnimationFrame(raf)
-        }
+        stopIdle()
+        teardown?.()
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
   const clientExtrasConfig: ClientExtrasConfig = {
     apiBase: appConfig.apiBase,

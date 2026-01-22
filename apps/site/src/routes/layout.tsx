@@ -309,7 +309,7 @@ export const RouterHead = component$(() => {
           key={`preconnect-${origin}`}
           rel="preconnect"
           href={origin}
-          crossorigin={origin !== currentOrigin ? 'anonymous' : undefined}
+          crossOrigin={origin !== currentOrigin ? 'anonymous' : undefined}
         />
       ))}
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
