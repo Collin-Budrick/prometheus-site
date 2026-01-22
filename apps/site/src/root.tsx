@@ -9,13 +9,64 @@ import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
 
+const scheduleIdleOrInteraction = (callback: () => void, options?: { timeoutMs?: number }) => {
+  if (typeof window === 'undefined') return () => {}
+  const timeoutMs = options?.timeoutMs ?? 3000
+  let fired = false
+  let timeoutHandle: number | null = null
+  let idleHandle: number | null = null
+
+  const cleanup = () => {
+    if (timeoutHandle !== null) {
+      window.clearTimeout(timeoutHandle)
+      timeoutHandle = null
+    }
+    if (idleHandle !== null && 'cancelIdleCallback' in window) {
+      window.cancelIdleCallback(idleHandle)
+      idleHandle = null
+    }
+    window.removeEventListener('pointerdown', handleInteraction)
+    window.removeEventListener('keydown', handleInteraction)
+    window.removeEventListener('touchstart', handleInteraction)
+  }
+
+  const run = () => {
+    if (fired) return
+    fired = true
+    cleanup()
+    callback()
+  }
+
+  const handleInteraction = () => {
+    run()
+  }
+
+  window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+  window.addEventListener('keydown', handleInteraction, { once: true })
+  window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+
+  if ('requestIdleCallback' in window) {
+    idleHandle = window.requestIdleCallback(run, { timeout: timeoutMs })
+  } else {
+    timeoutHandle = window.setTimeout(run, timeoutMs)
+  }
+
+  return cleanup
+}
+
 export default component$(() => {
   useStyles$(globalStyles)
   useStyles$(deferredStyles)
   const clientReady = useClientReady()
   useVisibleTask$(
-    () => {
-      initHighlight(appConfig.highlight, { apiBase: appConfig.apiBase })
+    (ctx) => {
+      const cleanup = scheduleIdleOrInteraction(
+        () => {
+          initHighlight(appConfig.highlight, { apiBase: appConfig.apiBase })
+        },
+        { timeoutMs: 3000 }
+      )
+      ctx.cleanup(() => cleanup())
     },
     { strategy: 'document-idle' }
   )

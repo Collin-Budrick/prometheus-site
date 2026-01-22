@@ -229,7 +229,7 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
       const startPrefetch = () => {
         if (cancelled) return
         if (!hasFragmentLinks()) return
-        initQuicklinkPrefetch({ apiBase: config.apiBase })
+        initQuicklinkPrefetch({ apiBase: config.apiBase, startOnIntent: false })
           .then((stop) => {
             if (cancelled) {
               stop?.()
