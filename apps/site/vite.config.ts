@@ -431,6 +431,7 @@ export default defineConfig(
         ...(bundleVisualizer ? [bundleVisualizer] : []),
         qwikCity(),
         qwikVite({
+          entryStrategy: { type: 'single' },
           optimizerOptions: {
             binding,
             inlineStylesUpToBytes: 60000
