@@ -462,87 +462,89 @@ export default component$(() => {
     void setBanner('sync', 3200)
   })
 
-  useVisibleTask$(
-    (ctx) => {
-      if (typeof window === 'undefined') return
-      const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
-      const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
+  useVisibleTask$((ctx) => {
+    const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
+    const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
 
-      const handleNavClick = (event: Event) => {
-        if (!(event.target instanceof Element)) return
-        const anchor = event.target.closest('a[data-fragment-link]')
-        if (!(anchor instanceof HTMLAnchorElement)) return
-        const href = anchor.getAttribute('href')
-        if (!href) return
+    const handleClick = (event: Event) => {
+      if (!(event.target instanceof Element)) return
+      const anchor = event.target.closest('a[data-fragment-link]')
+      if (!(anchor instanceof HTMLAnchorElement)) return
+      const href = anchor.getAttribute('href')
+      if (!href) return
 
-        let targetPath = href
-        try {
-          targetPath = new URL(href, window.location.href).pathname
-        } catch {
-          return
-        }
-
-        const currentPath = normalizePath(window.location.pathname)
-        const nextPath = normalizePath(targetPath)
-        const currentIndex = orderedRoutes.indexOf(currentPath)
-        const targetIndex = orderedRoutes.indexOf(nextPath)
-        const root = document.documentElement
-        if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
-          delete root.dataset.navDirection
-        } else {
-          root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
-        }
+      let targetPath = href
+      try {
+        targetPath = new URL(href, window.location.href).pathname
+      } catch {
+        return
       }
 
-      if (navigator.onLine === false) {
-        void setBanner('offline')
+      const currentPath = normalizePath(window.location.pathname)
+      const nextPath = normalizePath(targetPath)
+      const currentIndex = orderedRoutes.indexOf(currentPath)
+      const targetIndex = orderedRoutes.indexOf(nextPath)
+      const root = document.documentElement
+      if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
+        delete root.dataset.navDirection
+      } else {
+        root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
       }
+    }
 
-      const handleOnline = () => {
-        void setBanner('online', 4200)
-      }
-      const handleOffline = () => {
-        void setBanner('offline')
-      }
-      const handleNetworkStatus = (event: Event) => {
-        if (!(event instanceof CustomEvent)) return
-        const detail = event.detail as { online?: boolean } | undefined
-        if (detail?.online === false) {
-          handleOffline()
-        } else if (detail?.online === true) {
-          handleOnline()
-        }
-      }
-      const handleCacheRefreshed = () => {
-        void setBanner('cache-refreshed', 4200)
-      }
-      const handleCacheCleared = () => {
-        void setBanner('cache-cleared', 4200)
-      }
-      const handleSyncRequested = () => {
-        void setBanner('sync', 3200)
-      }
+    document.addEventListener('click', handleClick, { capture: true })
+    ctx.cleanup(() => {
+      document.removeEventListener('click', handleClick, { capture: true })
+    })
+  })
 
-      document.addEventListener('click', handleNavClick, { capture: true })
-      window.addEventListener('online', handleOnline)
-      window.addEventListener('offline', handleOffline)
-      window.addEventListener('prom:network-status', handleNetworkStatus)
-      window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-      window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
-      window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    if (navigator.onLine === false) {
+      void setBanner('offline')
+    }
 
-      ctx.cleanup(() => {
-        document.removeEventListener('click', handleNavClick, { capture: true })
-        window.removeEventListener('online', handleOnline)
-        window.removeEventListener('offline', handleOffline)
-        window.removeEventListener('prom:network-status', handleNetworkStatus)
-        window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-        window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
-        window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
-      })
-    },
-    { strategy: 'document-ready' }
-  )
+    const handleOnline = () => {
+      void setBanner('online', 4200)
+    }
+    const handleOffline = () => {
+      void setBanner('offline')
+    }
+    const handleNetworkStatus = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return
+      const detail = event.detail as { online?: boolean } | undefined
+      if (detail?.online === false) {
+        handleOffline()
+      } else if (detail?.online === true) {
+        handleOnline()
+      }
+    }
+    const handleCacheRefreshed = () => {
+      void setBanner('cache-refreshed', 4200)
+    }
+    const handleCacheCleared = () => {
+      void setBanner('cache-cleared', 4200)
+    }
+    const handleSyncRequested = () => {
+      void setBanner('sync', 3200)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('prom:network-status', handleNetworkStatus)
+    window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+    window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
+    window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
+
+    ctx.cleanup(() => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('prom:network-status', handleNetworkStatus)
+      window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
+      window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
+      window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
+    })
+  })
 
   const bannerConfig = (() => {
     if (!bannerMode.value) return null
