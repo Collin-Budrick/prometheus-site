@@ -152,6 +152,15 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   return hints
 }
 
+const filterPlanHints = (hints: EarlyHint[]) => {
+  return hints.filter((hint) => {
+    const href = hint.href?.trim()
+    if (!href) return false
+    if (href.includes('/build/') && /\.m?js([?#]|$)/.test(href)) return false
+    return true
+  })
+}
+
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
   if (warning.code !== 'EVAL') return false
   const file = warning.loc?.file ?? warning.id ?? ''
@@ -195,7 +204,7 @@ const getEarlyHints = async (pathName: string) => {
   if (!response.ok) return []
   const payload = (await response.json()) as { earlyHints?: EarlyHint[] }
   if (!Array.isArray(payload.earlyHints)) return []
-  return sanitizeHints(payload.earlyHints)
+  return sanitizeHints(filterPlanHints(payload.earlyHints))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {
