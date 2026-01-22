@@ -99,6 +99,8 @@ const buildWsUrl = (path: string, origin: string) => {
 
 export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, class: className }) => {
   const maxItems = clampLimit(limit)
+  const initialBatch = Math.min(12, maxItems)
+  const loadBatchSize = Math.min(8, maxItems)
   const langSignal = useSharedLangSignal()
   const storeSeed = useStoreSeed()
   const seedStream = storeSeed?.stream ?? null
@@ -118,6 +120,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const shouldSkipInitialFetch = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
   const query = useSignal(seedQuery)
   const items = useSignal<StoreItem[]>(seedItems)
+  const visibleCount = useSignal(Math.min(seedItems.length, initialBatch))
+  const lastQuery = useSignal(seedQueryValue)
   const removingIds = useSignal<number[]>([])
   const deletingIds = useSignal<number[]>([])
   const draggingId = useSignal<number | null>(null)
@@ -130,6 +134,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const panelRef = useSignal<HTMLElement>()
+  const loadMoreRef = useSignal<HTMLDivElement>()
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
   const copy = fragmentCopy.value
@@ -178,6 +183,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     }
     return null
   })
+
+  const visibleItems = useComputed$(() => items.value.slice(0, visibleCount.value))
 
   const handleInput = $((event: Event) => {
     const target = event.target as HTMLInputElement | null
@@ -607,6 +614,58 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     { strategy: 'document-ready' }
   )
 
+  useVisibleTask$(({ track }) => {
+    const length = track(() => items.value.length)
+    const queryValue = track(() => query.value)
+
+    if (queryValue !== lastQuery.value) {
+      lastQuery.value = queryValue
+      visibleCount.value = Math.min(length, initialBatch)
+      return
+    }
+
+    if (visibleCount.value === 0 && length > 0) {
+      visibleCount.value = Math.min(length, initialBatch)
+      return
+    }
+
+    if (visibleCount.value > length) {
+      visibleCount.value = length
+    }
+  })
+
+  useVisibleTask$(({ track, cleanup }) => {
+    const sentinel = loadMoreRef.value
+    const panel = panelRef.value
+    const length = track(() => items.value.length)
+    track(() => visibleCount.value)
+
+    if (!sentinel) return
+    if (typeof window === 'undefined') return
+    if (!('IntersectionObserver' in window)) {
+      visibleCount.value = length
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (!entry?.isIntersecting) return
+        visibleCount.value = Math.min(length, visibleCount.value + loadBatchSize)
+      },
+      {
+        root: panel ?? null,
+        rootMargin: '200px 0px'
+      }
+    )
+
+    observer.observe(sentinel)
+
+    cleanup(() => {
+      observer.disconnect()
+    })
+  })
+
   return (
     <div class={rootClass.value} data-state={streamState.value} data-mode={query.value.trim() ? 'search' : 'browse'}>
       <div class="store-stream-controls">
@@ -648,7 +707,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         {panelMessage.value ? (
           <div class="store-stream-empty">{panelMessage.value}</div>
         ) : (
-          items.value.map((item, index) => {
+          visibleItems.value.map((item, index) => {
             const isOutOfStock = item.quantity === 0
             const addButtonLabel = isOutOfStock ? outOfStockLabel : addLabel
 
@@ -708,6 +767,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             )
           })
         )}
+        {items.value.length > visibleCount.value ? (
+          <div class="store-stream-loader" ref={loadMoreRef} aria-hidden="true" />
+        ) : null}
       </div>
     </div>
   )

@@ -133,7 +133,12 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
 
   const tagName = (node.tag || 'div') as keyof HTMLElementTagNameMap
   const children = node.children?.map((child, index) => <FragmentRenderer key={index} node={child} />)
-  const props = sanitizeAttributes(node.attrs)
+  const props = { ...sanitizeAttributes(node.attrs) }
+  const isCriticalImage = node.attrs?.['data-critical'] === 'true'
+
+  if (tagName === 'img' && !props.loading && !isCriticalImage) {
+    props.loading = 'lazy'
+  }
 
   if (isVoidTag(tagName)) {
     const VoidTag = tagName as any
