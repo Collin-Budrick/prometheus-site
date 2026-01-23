@@ -93,12 +93,6 @@
     "featureUnavailableAction": "홈으로 돌아가기"
   },
   "fragmentHeaders": {
-    "fragment://page/home/hero@v1": {
-      "heading": "h1",
-      "metaLine": ["프래그먼트 주소 지정", "엣지 우선"],
-      "title": "바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.",
-      "description": "렌더 트리는 산출물입니다. HTML은 대체 수단입니다. 모든 표면은 재생, 캐싱, 즉시 패치를 위한 결정적 바이너리 프래그먼트로 컴파일됩니다."
-    },
     "fragment://page/home/planner@v1": {
       "heading": "h2",
       "metaLine": "프래그먼트 플래너",

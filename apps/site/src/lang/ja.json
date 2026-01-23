@@ -93,12 +93,6 @@
     "featureUnavailableAction": "ホームに戻る"
   },
   "fragmentHeaders": {
-    "fragment://page/home/hero@v1": {
-      "heading": "h1",
-      "metaLine": ["フラグメントアドレス指定", "エッジ優先"],
-      "title": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",
-      "description": "レンダーツリーが成果物です。HTMLはフォールバックです。すべての表面は再生、キャッシュ、即時パッチのために決定的なバイナリフラグメントにコンパイルされます。"
-    },
     "fragment://page/home/planner@v1": {
       "heading": "h2",
       "metaLine": "フラグメントプランナー",

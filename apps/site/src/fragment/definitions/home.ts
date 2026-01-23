@@ -127,6 +127,11 @@ const manifesto: FragmentDefinition = {
 
 export const homeFragments: FragmentPlanEntry[] = [
   {
+    id: 'fragment://page/home/manifest@v1',
+    critical: false,
+    layout: { column: 'span 12', size: 'small' }
+  },
+  {
     id: 'fragment://page/home/planner@v1',
     critical: true,
     layout: { column: 'span 5', size: 'big' }
@@ -148,11 +153,6 @@ export const homeFragments: FragmentPlanEntry[] = [
   },
   {
     id: 'fragment://page/home/dock@v1',
-    critical: false,
-    layout: { column: 'span 12', size: 'small' }
-  },
-  {
-    id: 'fragment://page/home/manifest@v1',
     critical: false,
     layout: { column: 'span 12', size: 'small' }
   }

@@ -93,12 +93,6 @@
     "featureUnavailableAction": "Return home"
   },
   "fragmentHeaders": {
-    "fragment://page/home/hero@v1": {
-      "heading": "h1",
-      "metaLine": ["fragment addressable", "edge-primary"],
-      "title": "Binary-first. Fragment-native. Zero hydration.",
-      "description": "The render tree is the artifact. HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching."
-    },
     "fragment://page/home/planner@v1": {
       "heading": "h2",
       "metaLine": "fragment planner",
