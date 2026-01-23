@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/vite-run.ts -- --mode ssr --port 4173",
-    "build": "vite build",
-    "analyze": "VISUALIZE_BUNDLE=1 vite build",
+    "build": "bun run scripts/vite-run.ts -- build",
+    "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
     "preview": "bun run scripts/vite-run.ts -- preview --port 4173",
     "lint": "oxlint ."
   },

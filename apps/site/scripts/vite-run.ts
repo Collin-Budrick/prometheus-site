@@ -75,6 +75,10 @@ patchRolldownIndex()
 warnMissingBindings(workspaceRoot, runtime.arch)
 
 const args = process.argv.slice(2)
+const hasConfigLoader = args.some((arg) => arg === '--configLoader' || arg.startsWith('--configLoader='))
+if (!hasConfigLoader) {
+  args.push('--configLoader', 'runner')
+}
 const child = spawn(runtime.bin, [viteBin, ...args], {
   stdio: 'inherit',
   env

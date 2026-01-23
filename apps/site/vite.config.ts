@@ -11,6 +11,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
+import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
 
 const require = createRequire(import.meta.url)
@@ -28,7 +29,8 @@ const nativeBindingMap: Record<string, string> = {
   'win32-x64': 'qwik.win32-x64-msvc.node'
 }
 const bindingsDir = path.resolve(path.dirname(require.resolve('@builder.io/qwik/optimizer')), '..', 'bindings')
-const workspaceRoot = path.resolve(__dirname, '../..')
+const configRoot = path.dirname(fileURLToPath(import.meta.url))
+const workspaceRoot = path.resolve(configRoot, '../..')
 const coreRoot = path.resolve(workspaceRoot, 'packages/core/src')
 const platformRoot = path.resolve(workspaceRoot, 'packages/platform/src')
 const uiRoot = path.resolve(workspaceRoot, 'packages/ui/src')
@@ -358,22 +360,42 @@ const staticCacheHeadersPlugin = (): Plugin => {
 }
 
 const sanitizeOutputOptionsPlugin = (): Plugin => ({
-  name: 'sanitize-rollup-output-options',
+  name: 'sanitize-output-options',
+  enforce: 'post',
   configResolved(config) {
-    const output = config.build?.rollupOptions?.output
-    if (!output) return
-
-    const strip = (entry: Record<string, unknown>) => {
+    const normalizeEntry = (entry: Record<string, unknown>, options?: { unsetInlineDynamicImports?: boolean }) => {
       if ('onlyExplicitManualChunks' in entry) {
         delete entry.onlyExplicitManualChunks
       }
+      if (options?.unsetInlineDynamicImports) {
+        const format = entry.format
+        const requiresInline = format === 'umd' || format === 'iife'
+        if (!requiresInline) {
+          entry.inlineDynamicImports = undefined
+        }
+      }
     }
 
-    if (Array.isArray(output)) {
-      output.forEach((entry) => strip(entry as Record<string, unknown>))
-    } else {
-      strip(output as Record<string, unknown>)
+    const normalizeOutput = (output: unknown, options?: { unsetInlineDynamicImports?: boolean }) => {
+      if (!output) return
+      if (Array.isArray(output)) {
+        output.forEach((entry) => normalizeEntry(entry as Record<string, unknown>, options))
+      } else {
+        normalizeEntry(output as Record<string, unknown>, options)
+      }
     }
+
+    const buildConfig = config.build as { rolldownOptions?: { output?: unknown }; rollupOptions?: { output?: unknown } }
+    const rolldownOptions = buildConfig?.rolldownOptions
+    const hasRolldown = Boolean(rolldownOptions)
+
+    if (hasRolldown) {
+      buildConfig.rollupOptions ??= {}
+      buildConfig.rollupOptions.output ??= { inlineDynamicImports: undefined }
+    }
+
+    normalizeOutput(buildConfig.rollupOptions?.output, { unsetInlineDynamicImports: hasRolldown })
+    normalizeOutput(rolldownOptions?.output)
   }
 })
 
@@ -461,7 +483,7 @@ export default defineConfig(
       oxc: false,
       resolve: {
         alias: [
-          { find: '@', replacement: path.resolve(__dirname, 'src') },
+          { find: '@', replacement: path.resolve(configRoot, 'src') },
           { find: /^@core$/, replacement: path.join(coreRoot, 'index.ts') },
           { find: /^@core\/(.*)$/, replacement: path.join(coreRoot, '$1') },
           { find: /^@platform$/, replacement: path.join(platformRoot, 'index.ts') },
