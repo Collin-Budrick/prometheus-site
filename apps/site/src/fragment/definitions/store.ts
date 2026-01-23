@@ -903,13 +903,13 @@ export const storeFragments: FragmentPlanEntry[] = [
   },
   {
     id: storeCart.id,
-    critical: true,
+    critical: false,
     layout: { column: 'span 12', size: 'small' },
     renderHtml: false
   },
   {
     id: storeCreate.id,
-    critical: true,
+    critical: false,
     layout: { column: 'span 12', size: 'small' },
     renderHtml: false
   }

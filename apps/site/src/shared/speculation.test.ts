@@ -59,9 +59,7 @@ describe('buildSpeculationRulesForPlan', () => {
       }
     )
 
-    expect(rules?.prefetchRules?.[0].urls).toEqual([
-      'https://prometheus.dev/api/fragments?id=fragment%3A%2F%2Fpage%2Fhome%2Fplanner%40v1'
-    ])
+    expect(rules).toBeNull()
   })
 
   it('filters out URLs already queued via link prefetch', () => {

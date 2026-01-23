@@ -33,6 +33,9 @@ export type AppConfig = {
   preferWebTransport: boolean
   preferWebTransportDatagrams: boolean
   preferFragmentCompression: boolean
+  enableFragmentStreaming: boolean
+  fragmentVisibilityMargin: string
+  fragmentVisibilityThreshold: number
   enablePrefetch: boolean
   analytics: AnalyticsConfig
   highlight: HighlightConfig
@@ -65,6 +68,12 @@ const runtimeEnvSchema = {
   VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'string?',
   ENABLE_FRAGMENT_COMPRESSION: 'string?',
   VITE_ENABLE_FRAGMENT_COMPRESSION: 'string?',
+  ENABLE_FRAGMENT_STREAMING: 'string?',
+  VITE_ENABLE_FRAGMENT_STREAMING: 'string?',
+  FRAGMENT_VISIBILITY_MARGIN: 'string?',
+  VITE_FRAGMENT_VISIBILITY_MARGIN: 'string?',
+  FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
+  VITE_FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   VITE_ENABLE_PREFETCH: 'string?',
   VITE_ENABLE_ANALYTICS: 'string?',
   ANALYTICS_BEACON_URL: 'string?',
@@ -101,6 +110,9 @@ const publicEnvSchema = {
   VITE_USE_WEBTRANSPORT_FRAGMENTS: 'string?',
   VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'string?',
   VITE_ENABLE_FRAGMENT_COMPRESSION: 'string?',
+  VITE_ENABLE_FRAGMENT_STREAMING: 'string?',
+  VITE_FRAGMENT_VISIBILITY_MARGIN: 'string?',
+  VITE_FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   VITE_ENABLE_PREFETCH: 'string?',
   VITE_ENABLE_ANALYTICS: 'string?',
   VITE_ANALYTICS_BEACON_URL: 'string?',
@@ -116,6 +128,9 @@ const publicEnvSchema = {
   VITE_P2P_CRDT_SIGNALING: 'string?',
   VITE_P2P_PEERJS_SERVER: 'string?',
   VITE_P2P_ICE_SERVERS: 'string?',
+  ENABLE_FRAGMENT_STREAMING: 'string?',
+  FRAGMENT_VISIBILITY_MARGIN: 'string?',
+  FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   VITE_AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   DEV: 'string?',
@@ -306,6 +321,30 @@ export const isFragmentCompressionPreferred = (env: AppEnv = resolveRuntimeEnv()
   return isTruthyFlag(flag)
 }
 
+const resolveFragmentStreamingFlag = (env: AppEnv) =>
+  firstDefined(env.ENABLE_FRAGMENT_STREAMING, env.VITE_ENABLE_FRAGMENT_STREAMING)
+
+export const isFragmentStreamingEnabled = (env: AppEnv = resolveRuntimeEnv()) =>
+  isTruthyFlag(resolveFragmentStreamingFlag(env))
+
+const resolveFragmentVisibilityMargin = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.FRAGMENT_VISIBILITY_MARGIN, env.VITE_FRAGMENT_VISIBILITY_MARGIN))?.trim()
+  if (raw === undefined || raw === '') return '0px'
+  return raw
+}
+
+const resolveFragmentVisibilityThreshold = (env: AppEnv) => {
+  const raw = toStringValue(
+    firstDefined(env.FRAGMENT_VISIBILITY_THRESHOLD, env.VITE_FRAGMENT_VISIBILITY_THRESHOLD)
+  )?.trim()
+  if (raw === undefined || raw === '') return 0
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return 0
+  if (parsed <= 0) return 0
+  if (parsed >= 1) return 1
+  return parsed
+}
+
 export const isPrefetchEnabled = (env: AppEnv = resolveRuntimeEnv()) =>
   isTruthyFlag(env.VITE_ENABLE_PREFETCH)
 
@@ -493,6 +532,9 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     preferWebTransport: isWebTransportPreferred(resolvedEnv),
     preferWebTransportDatagrams: isWebTransportDatagramsPreferred(resolvedEnv),
     preferFragmentCompression: isFragmentCompressionPreferred(resolvedEnv),
+    enableFragmentStreaming: isFragmentStreamingEnabled(resolvedEnv),
+    fragmentVisibilityMargin: resolveFragmentVisibilityMargin(resolvedEnv),
+    fragmentVisibilityThreshold: resolveFragmentVisibilityThreshold(resolvedEnv),
     enablePrefetch: isPrefetchEnabled(resolvedEnv),
     analytics: resolveAnalyticsConfig(resolvedEnv),
     highlight: resolveHighlightConfig(resolvedEnv),

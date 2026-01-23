@@ -127,10 +127,12 @@ export const buildSpeculationRulesForPlan = (
     urls.add(joinApiPath(absoluteApiBase, `/fragments/stream?path=${encodedPath}`))
   }
 
-  fragmentsToPrefetch.forEach(({ id }) => {
-    if (knownIds.has(id)) return
-    urls.add(joinApiPath(absoluteApiBase, `/fragments?id=${encodeURIComponent(id)}`))
-  })
+  if (!shouldSkipCurrentRouteSpeculation) {
+    fragmentsToPrefetch.forEach(({ id }) => {
+      if (knownIds.has(id)) return
+      urls.add(joinApiPath(absoluteApiBase, `/fragments?id=${encodeURIComponent(id)}`))
+    })
+  }
 
   const normalized = normalizeUrls(urls, origin, options?.documentRef)
   if (!normalized.length) return null

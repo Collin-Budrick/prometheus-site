@@ -52,6 +52,9 @@ describe('resolveAppConfig', () => {
       VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'true',
       VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'false',
       VITE_ENABLE_FRAGMENT_COMPRESSION: 'true',
+      VITE_ENABLE_FRAGMENT_STREAMING: 'true',
+      VITE_FRAGMENT_VISIBILITY_MARGIN: '40% 0px',
+      VITE_FRAGMENT_VISIBILITY_THRESHOLD: '0.25',
       VITE_ENABLE_PREFETCH: '1',
       VITE_ENABLE_ANALYTICS: '1',
       VITE_ANALYTICS_BEACON_URL: 'https://example.com/analytics',
@@ -69,6 +72,9 @@ describe('resolveAppConfig', () => {
     expect(config.preferWebTransport).toBe(true)
     expect(config.preferWebTransportDatagrams).toBe(false)
     expect(config.preferFragmentCompression).toBe(true)
+    expect(config.enableFragmentStreaming).toBe(true)
+    expect(config.fragmentVisibilityMargin).toBe('40% 0px')
+    expect(config.fragmentVisibilityThreshold).toBe(0.25)
     expect(config.enablePrefetch).toBe(true)
     expect(config.analytics).toEqual({
       enabled: true,
