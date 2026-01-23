@@ -62,6 +62,7 @@ export const FragmentShellView = component$(
                 id="shell-intro"
                 column="1 / -1"
                 motionDelay={0}
+                disableMotion={true}
                 expandedId={expandedId}
                 layoutTick={layoutTick}
                 closeLabel={copy.value.fragmentClose}

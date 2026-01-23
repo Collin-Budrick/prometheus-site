@@ -22,28 +22,12 @@ const hero: FragmentDefinition = {
   css: '',
   ...baseMeta,
   render: ({ t }) => {
-    const text = makeText(t)
-    return h('section', null, [
-      h('div', { class: 'meta-line' }, ['fragment addressable', 'edge-primary'].map((value) => h('span', null, text(value)))),
-      h('h1', null, text('Binary-first. Fragment-native. Zero hydration.')),
-      h(
-        'p',
-        null,
-        text(
-          'The render tree is the artifact. HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.'
-        )
-      ),
-      h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;' }, [
-        h('span', { class: 'badge accent' }, text('TTFB < 10ms target')),
-        h('span', { class: 'badge signal' }, text('KV as source of truth')),
-        h('span', { class: 'badge' }, text('Qwik-owned DOM'))
-      ]),
-      h('ul', { class: 'inline-list' }, [
-        h('li', null, [h('span'), text('Resumable by default: no hydration dependency.')]),
-        h('li', null, [h('span'), text('Fragment-level caching + async revalidation.')]),
-        h('li', null, [h('span'), text('Deterministic replay with binary DOM trees.')])
-      ])
-    ])
+    return h('home-hero', {
+      'data-meta': t('fragment addressable · edge-primary'),
+      'data-title': t('Binary-first. Fragment-native. Zero hydration.'),
+      'data-subtitle': t('Deterministic fragments streamed as binary for instant replay.'),
+      'data-detail': t('TTFB < 10ms target · KV as source of truth · Qwik-owned DOM')
+    })
   }
 }
 
@@ -132,6 +116,34 @@ const island: FragmentDefinition = {
   }
 }
 
+const manifesto: FragmentDefinition = {
+  id: 'fragment://page/home/manifest@v1',
+  tags: ['home', 'manifest'],
+  head: [],
+  css: '',
+  dependsOn: ['fragment://page/home/hero@v1'],
+  ...baseMeta,
+  render: ({ t }) => {
+    const text = makeText(t)
+    return h('section', null, [
+      h('div', { class: 'meta-line' }, [text('fragment manifesto')]),
+      h('h2', null, text('The render tree is the artifact.')),
+      h(
+        'p',
+        null,
+        text(
+          'HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.'
+        )
+      ),
+      h('p', { class: 'inline-list' }, [
+        text(
+          'Resumable by default: no hydration dependency. · Fragment-level caching + async revalidation. · Deterministic replay with binary DOM trees.'
+        )
+      ])
+    ])
+  }
+}
+
 export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/hero@v1',
@@ -162,10 +174,15 @@ export const homeFragments: FragmentPlanEntry[] = [
     id: 'fragment://page/home/dock@v1',
     critical: false,
     layout: { column: 'span 12', size: 'small' }
+  },
+  {
+    id: 'fragment://page/home/manifest@v1',
+    critical: false,
+    layout: { column: 'span 12', size: 'small' }
   }
 ] satisfies FragmentPlanEntry[]
 
-registerFragmentDefinitions([hero, planner, ledger, island])
+registerFragmentDefinitions([hero, planner, ledger, island, manifesto])
 
 setFragmentPlanBuilder((path, normalizedPath) => {
   if (normalizedPath === '/') {

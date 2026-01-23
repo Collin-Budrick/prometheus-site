@@ -136,7 +136,7 @@ const loadClientManifest = async (): Promise<ClientManifest | null> => {
 const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
   const links: string[] = []
   const seen = new Set<string>()
-  const maxLinks = 12
+  const maxLinks = 6
   const resolvedManifest: ClientManifest = {
     core: clientManifest.core ?? manifest.core,
     preloader: clientManifest.preloader ?? manifest.preloader,
@@ -160,9 +160,9 @@ const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifes
     imports.forEach((importName) => pushLink(importName, options?.crossorigin))
   }
 
-  addBundle(resolvedManifest.core, { includeImports: true })
+  addBundle(resolvedManifest.core)
   if (resolvedManifest.preloader && resolvedManifest.preloader !== resolvedManifest.core) {
-    addBundle(resolvedManifest.preloader, { includeImports: true, crossorigin: true })
+    addBundle(resolvedManifest.preloader, { crossorigin: true })
   }
   return links
 }

@@ -33,6 +33,8 @@ export const Dock = component$<DockProps>(
     useVisibleTask$((ctx) => {
       const dock = dockRef.value
       if (!dock) return
+      const hoverQuery = window.matchMedia('(hover: hover) and (pointer: fine)')
+      if (!hoverQuery.matches) return
 
       let pointerX: number | null = null
       let frame = 0

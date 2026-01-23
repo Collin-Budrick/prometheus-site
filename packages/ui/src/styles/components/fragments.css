@@ -45,11 +45,9 @@
     min-height: var(--fragment-slot-height);
   }
 
-  @media (min-width: 1025px) {
-    .fragment-slot:not([data-critical]):not([data-variant='text']) .fragment-card-body {
-      content-visibility: auto;
-      contain-intrinsic-size: 1px var(--fragment-slot-height);
-    }
+  .fragment-slot:not([data-critical]):not([data-variant='text']) .fragment-card-body {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px var(--fragment-slot-height);
   }
 
   .fragment-slot > .fragment-card-wrap {
@@ -235,13 +233,13 @@
     transition: none;
   }
 
-  :root[data-critical-lite='ready'] .fragment-card[data-critical='true'] {
+  .fragment-card[data-critical='true'] {
     box-shadow: none;
     background-color: rgb(var(--surface) / 0.98);
   }
 
-  :root[data-critical-lite='ready'] .fragment-card[data-critical='true']::before,
-  :root[data-critical-lite='ready'] .fragment-card[data-critical='true']::after {
+  .fragment-card[data-critical='true']::before,
+  .fragment-card[data-critical='true']::after {
     content: none;
   }
 
