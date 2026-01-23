@@ -235,6 +235,16 @@
     transition: none;
   }
 
+  :root[data-critical-lite='ready'] .fragment-card[data-critical='true'] {
+    box-shadow: none;
+    background-color: rgb(var(--surface) / 0.98);
+  }
+
+  :root[data-critical-lite='ready'] .fragment-card[data-critical='true']::before,
+  :root[data-critical-lite='ready'] .fragment-card[data-critical='true']::after {
+    content: none;
+  }
+
   .fragment-card-loader {
     position: absolute;
     inset: 0;

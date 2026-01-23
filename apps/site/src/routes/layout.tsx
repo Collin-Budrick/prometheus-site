@@ -22,9 +22,8 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null)
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
-const initialCardStaggerDurationMs = 2600
+const initialCriticalLiteClearDelayMs = 1200
 const LANG_PREFETCH_PARAM = 'lang'
-const CARD_STAGGER_COOKIE_KEY = 'prom-card-stagger'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -44,11 +43,13 @@ const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
 const initialFadeScript = `(function () {
   var root = document.documentElement;
   if (!root) return;
-  var staggerAttr = 'data-card-stagger';
-  if (root.getAttribute(staggerAttr) === 'ready') {
-    window.setTimeout(function () {
-      root.removeAttribute(staggerAttr);
-    }, ${initialCardStaggerDurationMs});
+  var clearCriticalLite = function () {
+    root.removeAttribute('data-critical-lite');
+  };
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(clearCriticalLite, { timeout: ${initialCriticalLiteClearDelayMs} });
+  } else {
+    window.setTimeout(clearCriticalLite, ${initialCriticalLiteClearDelayMs});
   }
   if (root.getAttribute('data-initial-fade') !== 'ready') return;
   var cleared = false;
@@ -253,15 +254,9 @@ export const useShellPreferences = routeLoader$((event) => {
 })
 
 export const useInitialFadeState = routeLoader$((event) => {
-  const cardStaggerSeen = event.cookie.get(CARD_STAGGER_COOKIE_KEY)?.value === '1'
-  const cardStagger = cardStaggerSeen ? 'ready' : null
   const initialFade = null
-
-  if (!cardStaggerSeen) {
-    event.cookie.set(CARD_STAGGER_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
-  }
-
-  return { initialFade, cardStagger }
+  const criticalLite = 'ready'
+  return { initialFade, criticalLite }
 })
 
 export const onRequest: RequestHandler = async ({ headers, method, basePathname }) => {
@@ -334,8 +329,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   if (fadeState.initialFade) {
     htmlAttributes['data-initial-fade'] = fadeState.initialFade
   }
-  if (fadeState.cardStagger) {
-    htmlAttributes['data-card-stagger'] = fadeState.cardStagger
+  if (fadeState.criticalLite) {
+    htmlAttributes['data-critical-lite'] = fadeState.criticalLite
   }
   return {
     htmlAttributes
