@@ -13,6 +13,7 @@ import type {
   FragmentPlanValue,
   RenderNode
 } from '../fragment/types'
+import { buildFragmentCssLinks } from '../fragment/fragment-css'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 
@@ -144,6 +145,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: siteBrand.metaDescription
       }
     ],
+    links: buildFragmentCssLinks(data?.plan),
     htmlAttributes: {
       lang
     }

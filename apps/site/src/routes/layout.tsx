@@ -14,10 +14,13 @@ import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../app-config'
 
-const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null) => {
-  const escapedHref = href.replace(/&/g, '&amp;')
-  const crossoriginAttr = crossorigin ? ` crossorigin="${crossorigin}"` : ''
-  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr} onload="this.onload=null;this.rel='stylesheet'">`
+const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+
+const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null, fragmentId?: string) => {
+  const escapedHref = escapeAttr(href)
+  const crossoriginAttr = crossorigin ? ` crossorigin="${escapeAttr(crossorigin)}"` : ''
+  const fragmentAttr = fragmentId ? ` data-fragment-css="${escapeAttr(fragmentId)}"` : ''
+  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr}${fragmentAttr} onload="this.onload=null;this.rel='stylesheet'">`
 }
 
 const initialFadeDurationMs = 920
@@ -288,10 +291,11 @@ export const RouterHead = component$(() => {
       ))}
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
+          const fragmentId = (link as Record<string, string>)['data-fragment-css']
           return [
             <HTMLFragment
               key={`preload-style-${link.href}`}
-              dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(link.href, link.crossorigin)}
+              dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(link.href, link.crossorigin, fragmentId)}
             />,
             <noscript key={`noscript-style-${link.href}`}>
               <link {...link} />

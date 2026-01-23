@@ -485,19 +485,50 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
             ? CSS.escape(activeId)
             : activeId.replace(/["\\]/g, '\\$&')
-        const selector = `style[data-fragment-css="${escapeId}"]`
-        if (document.querySelector(selector)) {
+        const selector = `[data-fragment-css~="${escapeId}"]`
+        const resolveCssNode = () =>
+          document.querySelector<HTMLStyleElement | HTMLLinkElement>(
+            `style${selector}, link${selector}`
+          )
+        let cleanupLink: (() => void) | null = null
+        const checkCss = () => {
+          const node = resolveCssNode()
+          if (!node) return false
+          if (node instanceof HTMLLinkElement) {
+            if (node.rel === 'stylesheet' || node.sheet) {
+              fragmentReady.value = true
+              return true
+            }
+            const handle = () => {
+              fragmentReady.value = true
+            }
+            node.addEventListener('load', handle, { once: true })
+            node.addEventListener('error', handle, { once: true })
+            cleanupLink = () => {
+              node.removeEventListener('load', handle)
+              node.removeEventListener('error', handle)
+            }
+            return true
+          }
           fragmentReady.value = true
+          return true
+        }
+        if (checkCss()) {
+          ctx.cleanup(() => {
+            cleanupLink?.()
+          })
           return
         }
         const observer = new MutationObserver(() => {
-          if (document.querySelector(selector)) {
-            fragmentReady.value = true
+          if (checkCss()) {
             observer.disconnect()
           }
         })
         observer.observe(document.head, { childList: true })
-        ctx.cleanup(() => observer.disconnect())
+        ctx.cleanup(() => {
+          observer.disconnect()
+          cleanupLink?.()
+        })
       },
       { strategy: 'document-ready' }
     )

@@ -5,6 +5,7 @@ import { type FragmentPlanValue, type FragmentPayloadValue } from '../../fragmen
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../home'
 import { siteBrand } from '../../config'
 import { defaultLang } from '../../shared/lang-store'
+import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 const offlinePath = '/offline/'
 const offlinePlan: FragmentPlanValue = {
@@ -35,6 +36,7 @@ export const head: DocumentHead = () => ({
       content: 'noindex'
     }
   ],
+  links: buildFragmentCssLinks(offlinePlan),
   htmlAttributes: {
     lang: defaultLang
   }

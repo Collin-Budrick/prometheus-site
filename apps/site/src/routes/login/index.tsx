@@ -15,6 +15,7 @@ import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/typ
 import { appConfig } from '../../app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
+import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 const featureLoginModule = await import('@features/auth/pages/Login')
 const { LoginRoute: FeatureLoginRoute, LoginSkeleton: FeatureLoginSkeleton, resolveAuthFormState } = featureLoginModule
@@ -115,6 +116,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildFragmentCssLinks(data?.plan),
     htmlAttributes: {
       lang
     }

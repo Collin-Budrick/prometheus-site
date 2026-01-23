@@ -36,7 +36,7 @@ type StreamMetrics = {
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
 
-const appliedCss = new Map<string, HTMLStyleElement>()
+const appliedCss = new Map<string, HTMLStyleElement | HTMLLinkElement>()
 const appliedHeadCounts = new Map<string, number>()
 const appliedHeadElements = new Map<string, HTMLElement>()
 const fragmentHeadKeys = new Map<string, Set<string>>()
@@ -107,7 +107,9 @@ export const createFragmentClient = (
     appliedFragmentVersions.set(payload.id, version)
 
     if (payload.css && !appliedCss.has(payload.id)) {
-      const existing = document.querySelector<HTMLStyleElement>(`style[data-fragment-css="${payload.id}"]`)
+      const existingStyle = document.querySelector<HTMLStyleElement>(`style[data-fragment-css~="${payload.id}"]`)
+      const existingLink = document.querySelector<HTMLLinkElement>(`link[data-fragment-css~="${payload.id}"]`)
+      const existing = existingStyle ?? existingLink
       if (existing) {
         appliedCss.set(payload.id, existing)
       } else {
@@ -182,9 +184,9 @@ export const createFragmentClient = (
         fragmentHeadKeys.delete(id)
       }
 
-      const styleElement = appliedCss.get(id)
-      if (styleElement?.parentNode) {
-        styleElement.parentNode.removeChild(styleElement)
+      const cssElement = appliedCss.get(id)
+      if (cssElement?.parentNode) {
+        cssElement.parentNode.removeChild(cssElement)
       }
       appliedCss.delete(id)
     })

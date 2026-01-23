@@ -7,6 +7,7 @@ import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { applyHeaderOverride } from './header-overrides'
 import { parseSlotRows } from './fragment-shell-utils'
+import { getFragmentCssHref } from '../fragment-css'
 
 type FragmentShellCopy = {
   fragmentClose: string
@@ -52,14 +53,13 @@ export const FragmentShellView = component$(
         const criticalStyles = new Map<string, string>()
         slottedEntries.value.forEach(({ entry }) => {
           if (!entry?.critical) return
+          if (getFragmentCssHref(entry.id)) return
           const css = fragments.value[entry.id]?.css
           if (css) criticalStyles.set(entry.id, css)
         })
         if (!criticalStyles.size) return null
         return Array.from(criticalStyles.entries()).map(([id, css]) => (
-          <style key={id} data-fragment-css={id}>
-            {css}
-          </style>
+          <style key={id} data-fragment-css={id} dangerouslySetInnerHTML={css} />
         ))
       })()}
       {hasIntro ? (
@@ -102,6 +102,7 @@ export const FragmentShellView = component$(
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
           const motionDelay = hasCache || entry?.critical || inInitialViewport ? 0 : index * 120
+          const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || getFragmentCssHref(entry.id))
           const slotMinHeight =
             typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
               ? `${entry.layout.minHeight}px`
@@ -135,7 +136,7 @@ export const FragmentShellView = component$(
                     layoutTick={layoutTick}
                     closeLabel={copy.value.fragmentClose}
                     fragmentLoaded={Boolean(fragment)}
-                    fragmentHasCss={skipCssGuard ? false : Boolean(fragment?.css)}
+                    fragmentHasCss={fragmentHasCss}
                     disableMotion={entry.critical === true}
                     critical={entry.critical === true}
                     expandable={entry.expandable}

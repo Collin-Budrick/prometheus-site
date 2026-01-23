@@ -18,6 +18,7 @@ import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-reso
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
+import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 const featureStoreModule = await import('@features/store/pages/Store')
 const { StoreRoute: FeatureStoreRoute, StoreSkeleton: FeatureStoreSkeleton } = featureStoreModule
@@ -217,6 +218,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildFragmentCssLinks(data?.plan),
     htmlAttributes: {
       lang
     }

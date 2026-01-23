@@ -15,6 +15,7 @@ import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
 import { getLabCopy } from '../../shared/lab-copy'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
+import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 const featureLabModule = await import('@features/lab/pages/Lab')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
@@ -91,6 +92,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildFragmentCssLinks(data?.plan),
     htmlAttributes: {
       lang
     }

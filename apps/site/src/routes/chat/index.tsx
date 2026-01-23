@@ -19,6 +19,7 @@ import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/typ
 import { ContactInvitesSeedContext, type ContactInvitesSeed } from '../../shared/contact-invites-seed'
 import { normalizeInviteGroups } from '../../components/contact-invites/data'
 import { appConfig } from '../../app-config'
+import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -102,6 +103,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useChatData)
+  const fragmentData = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
   const copy = getUiCopy(lang)
   const description = copy.protectedDescription.replace('{{label}}', copy.navChat)
@@ -114,6 +116,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildFragmentCssLinks(fragmentData?.plan),
     htmlAttributes: {
       lang
     }
