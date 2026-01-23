@@ -24,12 +24,24 @@ export type StoreConsumeResult = {
 
 export const storeCartAddEvent = 'store:cart:add'
 export const storeCartQueueEvent = 'store:cart:queue'
+const storeCartQueueVersion = 1
+const storeCartSnapshotVersion = 1
 
 type StoreCartQueuedAction = {
   type: 'consume' | 'restore'
   id: number
   amount?: number
   queuedAt: string
+}
+
+type StoreCartQueueEnvelope = {
+  version: typeof storeCartQueueVersion
+  queue: StoreCartQueuedAction[]
+}
+
+type StoreCartSnapshotEnvelope = {
+  version: typeof storeCartSnapshotVersion
+  items: StoreCartSnapshotItem[]
 }
 
 let lastDraggedItem: StoreCartItem | null = null
@@ -54,6 +66,9 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
   }
   return null
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
 
 export const setStoreCartDragItem = (item: StoreCartItem | null) => {
   lastDraggedItem = item
@@ -123,12 +138,35 @@ export const normalizeStoreCartSnapshotItem = (value: unknown): StoreCartSnapsho
   return { ...base, qty }
 }
 
+const resolveQueuePayload = (value: unknown) => {
+  if (Array.isArray(value)) return value
+  if (isRecord(value) && value.version === storeCartQueueVersion && Array.isArray(value.queue)) {
+    return value.queue
+  }
+  return null
+}
+
+const resolveSnapshotPayload = (value: unknown) => {
+  if (Array.isArray(value)) return value
+  if (isRecord(value) && value.version === storeCartSnapshotVersion && Array.isArray(value.items)) {
+    return value.items
+  }
+  return null
+}
+
+const serializeStoreCartQueue = (queue: StoreCartQueuedAction[]) =>
+  JSON.stringify({ version: storeCartQueueVersion, queue } satisfies StoreCartQueueEnvelope)
+
+const serializeStoreCartSnapshot = (items: StoreCartSnapshotItem[]) =>
+  JSON.stringify({ version: storeCartSnapshotVersion, items } satisfies StoreCartSnapshotEnvelope)
+
 const parseStoreCartQueue = (raw: string | null) => {
   if (!raw) return [] as StoreCartQueuedAction[]
   try {
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed
+    const payload = resolveQueuePayload(parsed)
+    if (!payload) return []
+    return payload
       .map((entry) => {
         if (!entry || typeof entry !== 'object') return null
         const record = entry as Record<string, unknown>
@@ -153,8 +191,9 @@ const parseStoreCartSnapshot = (raw: string | null) => {
   if (!raw) return [] as StoreCartSnapshotItem[]
   try {
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed
+    const payload = resolveSnapshotPayload(parsed)
+    if (!payload) return []
+    return payload
       .map((entry) => normalizeStoreCartSnapshotItem(entry))
       .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
   } catch {
@@ -171,7 +210,7 @@ const loadStoreCartQueue = () => {
   const cookieParsed = parseStoreCartQueue(cookieValue)
   if (cookieParsed.length) {
     try {
-      window.localStorage.setItem(storeCartQueueKey, JSON.stringify(cookieParsed))
+      window.localStorage.setItem(storeCartQueueKey, serializeStoreCartQueue(cookieParsed))
     } catch {
       // ignore storage failures
     }
@@ -186,7 +225,7 @@ const writeStoreCartQueueCookie = (queue: StoreCartQueuedAction[]) => {
     return
   }
   try {
-    const serialized = encodeURIComponent(JSON.stringify(queue.slice(0, 240)))
+    const serialized = encodeURIComponent(serializeStoreCartQueue(queue.slice(0, 240)))
     document.cookie = `${storeCartQueueCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
   } catch {
     // ignore cookie failures
@@ -200,7 +239,7 @@ const writeStoreCartSnapshotCookie = (items: StoreCartSnapshotItem[]) => {
     return
   }
   try {
-    const serialized = encodeURIComponent(JSON.stringify(items.slice(0, 60)))
+    const serialized = encodeURIComponent(serializeStoreCartSnapshot(items.slice(0, 60)))
     document.cookie = `${storeCartSnapshotCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
   } catch {
     // ignore cookie failures
@@ -210,7 +249,7 @@ const writeStoreCartSnapshotCookie = (items: StoreCartSnapshotItem[]) => {
 const saveStoreCartQueue = (queue: StoreCartQueuedAction[]) => {
   if (typeof window === 'undefined') return
   if (queue.length) {
-    window.localStorage.setItem(storeCartQueueKey, JSON.stringify(queue))
+    window.localStorage.setItem(storeCartQueueKey, serializeStoreCartQueue(queue))
   } else {
     window.localStorage.removeItem(storeCartQueueKey)
   }
@@ -344,7 +383,7 @@ export const persistStoreCartSnapshot = (items: StoreCartSnapshotItem[]) => {
     .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
   if (normalized.length) {
     try {
-      window.localStorage.setItem(storeCartSnapshotKey, JSON.stringify(normalized))
+      window.localStorage.setItem(storeCartSnapshotKey, serializeStoreCartSnapshot(normalized))
     } catch {
       // ignore storage failures
     }

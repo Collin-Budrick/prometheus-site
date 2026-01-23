@@ -47,6 +47,21 @@ const writeStorage = (entries: Record<string, StoredPlanCacheEntry>) => {
 
 const escapeJsonForScript = (value: string) => value.replace(/</g, '\\u003c')
 
+const serializeFragmentPlanCachePayload = (payload: FragmentPlanCachePayload) =>
+  escapeJsonForScript(JSON.stringify(payload))
+
+const parseFragmentPlanCachePayload = (raw: string): FragmentPlanCachePayload | null => {
+  try {
+    const parsed = JSON.parse(raw) as FragmentPlanCachePayload
+    if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== 'object') {
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 const buildCacheEntries = (
   path: string,
   lang: string | undefined,
@@ -75,7 +90,7 @@ export const createFragmentPlanCachePayload = (
   }
 
   try {
-    return escapeJsonForScript(JSON.stringify(payload))
+    return serializeFragmentPlanCachePayload(payload)
   } catch (error) {
     console.warn('Failed to serialize fragment plan cache payload', error)
     return null
@@ -89,14 +104,12 @@ const readServerPayload = (): Record<string, StoredPlanCacheEntry> => {
   const raw = element.textContent
   element.remove()
   if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw) as FragmentPlanCachePayload
-    if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== 'object') return {}
-    return parsed.entries
-  } catch (error) {
-    console.warn('Failed to parse fragment plan cache payload', error)
+  const parsed = parseFragmentPlanCachePayload(raw)
+  if (!parsed) {
+    console.warn('Failed to parse fragment plan cache payload')
     return {}
   }
+  return parsed.entries
 }
 
 const createPersistentFragmentPlanCache = (

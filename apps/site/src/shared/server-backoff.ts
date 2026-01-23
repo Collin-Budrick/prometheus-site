@@ -10,9 +10,14 @@ type BackoffOptions = {
 }
 
 type BackoffCookiePayload = Record<string, BackoffState>
+type BackoffCookieEnvelope = {
+  version: typeof backoffCookieVersion
+  entries: BackoffCookiePayload
+}
 
 const states = new Map<string, BackoffState>()
 
+const backoffCookieVersion = 1
 const backoffCookieKey = 'prom-server-backoff'
 const backoffCookieMaxAgeSeconds = 2592000
 
@@ -20,6 +25,17 @@ const resolveKey = (key: string) => key.trim() || 'default'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
+
+const resolveBackoffPayload = (value: unknown) => {
+  if (isRecord(value) && value.version === backoffCookieVersion && isRecord(value.entries)) {
+    return value.entries
+  }
+  if (isRecord(value)) return value
+  return null
+}
+
+const serializeBackoffPayload = (payload: BackoffCookiePayload) =>
+  JSON.stringify({ version: backoffCookieVersion, entries: payload } satisfies BackoffCookieEnvelope)
 
 const readCookieValue = (cookieHeader: string | null, key: string) => {
   if (!cookieHeader) return null
@@ -41,8 +57,8 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
 const parseBackoffCookie = (raw: string | null) => {
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw)
-    if (!isRecord(parsed)) return null
+    const parsed = resolveBackoffPayload(JSON.parse(raw))
+    if (!parsed) return null
     const entries = Object.entries(parsed)
     if (!entries.length) return null
     const next = new Map<string, BackoffState>()
@@ -79,7 +95,7 @@ const persistStatesToCookie = () => {
     }
   }
   try {
-    const serialized = encodeURIComponent(JSON.stringify(payload))
+    const serialized = encodeURIComponent(serializeBackoffPayload(payload))
     document.cookie = `${backoffCookieKey}=${serialized}; path=/; max-age=${backoffCookieMaxAgeSeconds}; samesite=lax`
   } catch {
     // ignore cookie failures

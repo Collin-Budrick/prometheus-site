@@ -33,6 +33,17 @@ export type FragmentStore = {
 
 export const buildFragmentCacheKey = (id: string, lang: FragmentLang) => `${id}::${lang}`
 export const fragmentLockTtlMs = 8_000
+const fragmentStoreVersion = 1
+
+type StoredFragmentEnvelope = {
+  version: typeof fragmentStoreVersion
+  payload: string
+  html?: string
+  meta: FragmentMeta
+  updatedAt: number
+  staleAt: number
+  expiresAt: number
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -55,18 +66,21 @@ const parseFragmentMeta = (value: unknown): FragmentMeta | null => {
 
 const encodeEntry = (entry: StoredFragment) =>
   JSON.stringify({
+    version: fragmentStoreVersion,
     payload: Buffer.from(entry.payload).toString('base64'),
     html: entry.html,
     meta: entry.meta,
     updatedAt: entry.updatedAt,
     staleAt: entry.staleAt,
     expiresAt: entry.expiresAt
-  })
+  } satisfies StoredFragmentEnvelope)
 
 const decodeEntry = (raw: string): StoredFragment | null => {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed)) return null
+    const version = parsed.version
+    if (version !== undefined && version !== fragmentStoreVersion) return null
     const payload = parsed.payload
     const meta = parseFragmentMeta(parsed.meta)
     if (typeof payload !== 'string' || meta === null) return null

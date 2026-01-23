@@ -29,6 +29,7 @@ export const PROFILE_CACHE_KEY = 'prometheus.profile.cache'
 export const PROFILE_UPDATED_EVENT = 'prometheus:profile-updated'
 export const DEFAULT_PROFILE_COLOR: ProfileColor = { r: 96, g: 156, b: 248 }
 export const PROFILE_AVATAR_MAX_BYTES = 1_200_000
+const PROFILE_COOKIE_VERSION = 1
 const PROFILE_STORAGE_VERSION = 2
 const PROFILE_CACHE_VERSION = 2
 
@@ -73,6 +74,9 @@ export const parseProfileMeta = (value: unknown): ProfileMeta | null => {
   return { hash: record.hash, updatedAt: record.updatedAt }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
 const normalizeProfilePayload = (payload: ProfilePayload): ProfilePayload => ({
   bio: payload.bio?.trim() ? payload.bio?.trim() : undefined,
   avatar: payload.avatar,
@@ -108,12 +112,30 @@ const buildCookieProfilePayload = (payload: ProfilePayload): ProfilePayload => {
   }
 }
 
+type ProfileCookieEnvelope = {
+  version: typeof PROFILE_COOKIE_VERSION
+  payload: ProfilePayload
+}
+
+const resolveCookieProfilePayload = (value: unknown) => {
+  if (!isRecord(value)) return null
+  if (value.version === PROFILE_COOKIE_VERSION && value.payload) {
+    return parseProfilePayload(value.payload)
+  }
+  return parseProfilePayload(value)
+}
+
+const serializeProfileCookiePayload = (payload: ProfilePayload) =>
+  JSON.stringify({
+    version: PROFILE_COOKIE_VERSION,
+    payload: buildCookieProfilePayload(payload)
+  } satisfies ProfileCookieEnvelope)
+
 export const readLocalProfileFromCookie = (cookieHeader: string | null): ProfilePayload | null => {
   const raw = readCookieValue(cookieHeader, PROFILE_COOKIE_KEY)
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as unknown
-    const payload = parseProfilePayload(parsed)
+    const payload = resolveCookieProfilePayload(JSON.parse(raw))
     if (!payload) return null
     if (!payload.color) payload.color = DEFAULT_PROFILE_COLOR
     return payload
@@ -135,7 +157,7 @@ const writeLocalProfileCookie = (payload: ProfilePayload | null) => {
     return
   }
   try {
-    const serialized = encodeURIComponent(JSON.stringify(cookiePayload))
+    const serialized = encodeURIComponent(serializeProfileCookiePayload(cookiePayload))
     document.cookie = `${PROFILE_COOKIE_KEY}=${serialized}; path=/; max-age=2592000; samesite=lax`
   } catch {
     // ignore cookie failures
@@ -189,6 +211,12 @@ type ProfileCacheEnvelope = {
   version: number
   entries: Record<string, ProfileCacheEntry>
 }
+
+const serializeProfileStorageEnvelope = (payload: ProfilePayload) =>
+  JSON.stringify({ version: PROFILE_STORAGE_VERSION, payload } satisfies ProfileStorageEnvelope)
+
+const serializeProfileCacheEnvelope = (entries: Record<string, ProfileCacheEntry>) =>
+  JSON.stringify({ version: PROFILE_CACHE_VERSION, entries } satisfies ProfileCacheEnvelope)
 
 const parseProfileStorageEnvelope = (value: unknown): ProfilePayload | null => {
   if (!value || typeof value !== 'object') return null
@@ -244,8 +272,7 @@ export const loadLocalProfile = (): ProfilePayload | null => {
 const persistLocalProfile = (key: string, payload: ProfilePayload) => {
   const meta = buildProfileMeta(payload)
   const stored = { ...payload, ...meta }
-  const envelope: ProfileStorageEnvelope = { version: PROFILE_STORAGE_VERSION, payload: stored }
-  window.localStorage.setItem(key, JSON.stringify(envelope))
+  window.localStorage.setItem(key, serializeProfileStorageEnvelope(stored))
 }
 
 const removeLocalProfile = (key: string) => {
@@ -309,8 +336,7 @@ const loadRemoteCache = (): Record<string, ProfileCacheEntry> => {
 const saveRemoteCache = (entries: Record<string, ProfileCacheEntry>) => {
   if (typeof window === 'undefined') return false
   try {
-    const envelope: ProfileCacheEnvelope = { version: PROFILE_CACHE_VERSION, entries }
-    window.localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(envelope))
+    window.localStorage.setItem(PROFILE_CACHE_KEY, serializeProfileCacheEnvelope(entries))
     return true
   } catch {
     return false

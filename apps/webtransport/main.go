@@ -196,7 +196,7 @@ func main() {
     CheckOrigin: func(r *http.Request) bool {
       return isOriginAllowed(r, cfg)
     },
-    H3: http3.Server{
+    H3: &http3.Server{
       Addr:       cfg.addr,
       Handler:    mux,
       QUICConfig: &quic.Config{EnableDatagrams: true},
@@ -241,10 +241,12 @@ func handleSession(session *webtransport.Session, r *http.Request, cfg config) {
     path = "/"
   }
   log.Printf("webtransport handling path=%q", path)
+  connState := session.SessionState().ConnectionState
+  supportsDatagrams := connState.SupportsDatagrams.Local && connState.SupportsDatagrams.Remote
   useDatagrams := cfg.enableDatagrams &&
     cfg.maxDatagramSize > 0 &&
     isTruthyFlag(r.URL.Query().Get("datagrams")) &&
-    session.ConnectionState().SupportsDatagrams
+    supportsDatagrams
 
   ctx := context.Background()
   if cfg.upstreamTimeout > 0 {

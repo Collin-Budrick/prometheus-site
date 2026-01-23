@@ -8,18 +8,39 @@ export const defaultChatSettings: ChatSettings = {
   typingIndicators: true
 }
 
+const chatSettingsVersion = 1
 const settingsStoragePrefix = 'chat:settings:'
 const settingsCookieKey = 'prom-chat-settings'
+
+type ChatSettingsEnvelope = {
+  version: typeof chatSettingsVersion
+  settings: ChatSettings
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
 export const buildChatSettingsKey = (userId?: string) => `${settingsStoragePrefix}${userId ?? 'default'}`
 
+const normalizeChatSettings = (settings: ChatSettings): ChatSettings => ({
+  readReceipts: Boolean(settings.readReceipts),
+  typingIndicators: Boolean(settings.typingIndicators)
+})
+
+const resolveChatSettingsPayload = (value: unknown) => {
+  if (isRecord(value) && value.version === chatSettingsVersion && isRecord(value.settings)) {
+    return value.settings
+  }
+  return value
+}
+
+const serializeChatSettings = (settings: ChatSettings) =>
+  JSON.stringify({ version: chatSettingsVersion, settings: normalizeChatSettings(settings) } satisfies ChatSettingsEnvelope)
+
 export const parseChatSettings = (raw: string | null): ChatSettings | null => {
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw)
+    const parsed = resolveChatSettingsPayload(JSON.parse(raw))
     if (!isRecord(parsed)) return null
     const readReceipts =
       typeof parsed.readReceipts === 'boolean' ? parsed.readReceipts : defaultChatSettings.readReceipts
@@ -56,7 +77,7 @@ export const readChatSettingsFromCookie = (cookieHeader: string | null): ChatSet
 export const writeChatSettingsToCookie = (settings: ChatSettings) => {
   if (typeof document === 'undefined') return
   try {
-    const serialized = encodeURIComponent(JSON.stringify(settings))
+    const serialized = encodeURIComponent(serializeChatSettings(settings))
     document.cookie = `${settingsCookieKey}=${serialized}; path=/; max-age=2592000; samesite=lax`
   } catch {
     // ignore cookie failures
@@ -75,7 +96,7 @@ export const loadChatSettings = (userId?: string): ChatSettings => {
 export const saveChatSettings = (userId: string | undefined, settings: ChatSettings) => {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(buildChatSettingsKey(userId), JSON.stringify(settings))
+    window.localStorage.setItem(buildChatSettingsKey(userId), serializeChatSettings(settings))
   } catch {
     // ignore storage failures
   }
