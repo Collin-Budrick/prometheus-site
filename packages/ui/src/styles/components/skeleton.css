@@ -1,0 +1,109 @@
+@layer components {
+  .skeleton {
+    @apply relative overflow-hidden;
+    background-color: rgb(var(--skeleton-base) / 0.6);
+    color: transparent;
+    border-radius: 14px;
+    isolation: isolate;
+  }
+
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--skeleton-highlight) / 0.95),
+      transparent
+    );
+    transform: translateX(-120%);
+    animation: skeleton-shimmer 1.4s var(--view-transition-ease) infinite;
+    will-change: transform, opacity;
+    opacity: 0.85;
+  }
+
+  .skeleton.inline {
+    height: 0.9em;
+    border-radius: 9999px;
+  }
+
+  .skeleton.block {
+    min-height: 120px;
+  }
+
+  .skeleton-line {
+    @apply block rounded-full bg-slate-200/70;
+    height: 14px;
+    animation: pulse 1.4s ease-in-out infinite;
+    background-color: rgb(var(--skeleton-base) / 0.7);
+  }
+
+  .static-route-skeleton {
+    display: grid;
+    gap: 14px;
+  }
+
+  .static-route-skeleton .skeleton-line {
+    width: 100%;
+  }
+
+  .static-route-skeleton .skeleton-line.is-meta {
+    height: 10px;
+    width: 32%;
+  }
+
+  .static-route-skeleton .skeleton-line.is-title {
+    height: 26px;
+    width: 52%;
+    border-radius: 16px;
+  }
+
+  .static-route-skeleton .skeleton-line.is-description {
+    height: 14px;
+    width: 86%;
+  }
+
+  .static-route-skeleton .skeleton-line.is-button {
+    width: 34%;
+    height: 44px;
+    margin-top: 2px;
+  }
+
+  .skeleton-line.is-short {
+    width: 20%;
+  }
+
+  .skeleton-line.is-medium {
+    width: 45%;
+  }
+
+  .skeleton-line.is-long {
+    width: 80%;
+  }
+
+  .skeleton-line.is-button {
+    width: 32%;
+    height: 42px;
+    border-radius: 9999px;
+  }
+
+  @keyframes pulse {
+    0% {
+      opacity: 0.65;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.65;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      animation-duration: 0.001ms;
+      opacity: 0.6;
+    }
+  }
+}

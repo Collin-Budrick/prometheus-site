@@ -1,0 +1,225 @@
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  html,
+  body {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  :root {
+    --parallax-stars-1-y: 0px;
+    --parallax-stars-2-y: 0px;
+    --parallax-stars-twinkle-y: 0px;
+    --parallax-blob-a-y: 0px;
+    --parallax-blob-b-y: 0px;
+    --lava-blob-a: url("/assets/lava-blob-a.svg");
+    --lava-blob-b: url("/assets/lava-blob-b.svg");
+  }
+
+  :root[data-theme="dark"] {
+    --starfield-layer-1: url("/assets/starfield-layer-1.svg");
+    --starfield-layer-2: url("/assets/starfield-layer-2.svg");
+    --starfield-twinkle: url("/assets/starfield-twinkle.svg");
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  @supports (view-transition-name: root) {
+    :root {
+      view-transition-name: none;
+    }
+
+    :root[data-theme-direction] {
+      view-transition-name: root;
+    }
+
+    ::view-transition-group(root) {
+      animation-duration: var(--view-transition-duration-long);
+      animation-timing-function: var(--view-transition-ease);
+    }
+
+    :root[data-theme-direction]::view-transition-old(root),
+    :root[data-theme-direction]::view-transition-new(root) {
+      animation: none;
+    }
+
+    :root[data-theme-direction]::view-transition-new(root) {
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      -webkit-mask-size: 100% 300%;
+      mask-size: 100% 300%;
+      -webkit-mask-mode: alpha;
+      mask-mode: alpha;
+    }
+
+    :root[data-theme-direction="dark"]::view-transition-new(root) {
+      animation: wipe-down var(--theme-transition-duration)
+        var(--theme-transition-ease, var(--view-transition-ease)) both;
+      -webkit-mask-position: 0 100%;
+      mask-position: 0 100%;
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 0) 35%,
+        rgba(0, 0, 0, 0.85) 55%,
+        rgba(0, 0, 0, 1) 65%,
+        rgba(0, 0, 0, 1) 100%
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 0) 35%,
+        rgba(0, 0, 0, 0.85) 55%,
+        rgba(0, 0, 0, 1) 65%,
+        rgba(0, 0, 0, 1) 100%
+      );
+    }
+
+    :root[data-theme-direction="light"]::view-transition-new(root) {
+      animation: wipe-up var(--theme-transition-duration)
+        var(--theme-transition-ease, var(--view-transition-ease)) both;
+      -webkit-mask-position: 0 0%;
+      mask-position: 0 0%;
+      -webkit-mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 0) 35%,
+        rgba(0, 0, 0, 0.85) 55%,
+        rgba(0, 0, 0, 1) 65%,
+        rgba(0, 0, 0, 1) 100%
+      );
+      mask-image: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 0) 35%,
+        rgba(0, 0, 0, 0.85) 55%,
+        rgba(0, 0, 0, 1) 65%,
+        rgba(0, 0, 0, 1) 100%
+      );
+    }
+
+    :root[data-theme-direction] ::view-transition-old(shell-main),
+    :root[data-theme-direction] ::view-transition-new(shell-main) {
+      animation: none;
+    }
+    :root[data-lang-transition="ui"]::view-transition-old(lang-ui) {
+      animation: lang-fade-out
+        var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition="ui"]::view-transition-new(lang-ui) {
+      animation: lang-fade-in
+        var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition="fragments"]::view-transition-old(lang-fragments) {
+      animation: lang-fade-out
+        var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
+    }
+
+    :root[data-lang-transition="fragments"]::view-transition-new(lang-fragments) {
+      animation: lang-fade-in
+        var(--lang-transition-duration, var(--view-transition-duration))
+        var(--view-transition-ease) both;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --view-transition-duration: 0ms;
+      --view-transition-duration-long: 0ms;
+    }
+
+    :root[data-theme-direction]::view-transition-new(root) {
+      animation: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+  }
+
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-repeat: repeat;
+    background-image: none;
+    pointer-events: none;
+    z-index: 0;
+    will-change: opacity, transform;
+    transform: translate3d(0, 0, 0);
+  }
+
+  :root[data-decor-ready="true"] body::before {
+    background-image: var(--lava-blob-a);
+    background-size: 1200px 1200px;
+    background-position: 0 0;
+    animation: lava-fade-a 26s ease-in-out infinite;
+  }
+
+  :root[data-decor-ready="true"] body::after {
+    background-image: var(--lava-blob-b);
+    background-size: 1400px 1400px;
+    background-position: 240px 200px;
+    animation: lava-fade-b 32s ease-in-out infinite;
+  }
+
+  :root[data-theme="dark"][data-decor-ready="true"] body {
+    background-image: var(--starfield-layer-1), var(--starfield-layer-2);
+    background-size: 520px 520px, 760px 760px;
+    background-position:
+      0 calc(var(--parallax-stars-1-y, 0px)),
+      240px calc(320px + var(--parallax-stars-2-y, 0px));
+    background-repeat: repeat;
+    background-attachment: scroll;
+  }
+
+  :root[data-theme="dark"][data-decor-ready="true"] body::before {
+    background-image: var(--starfield-twinkle);
+    background-size: 980px 980px;
+    background-position: 300px calc(380px + var(--parallax-stars-twinkle-y, 0px));
+    opacity: 0.5;
+    animation: starfield-twinkle 5.8s ease-in-out infinite;
+    mix-blend-mode: screen;
+    filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.9));
+  }
+
+  :root[data-theme="dark"] body::after {
+    content: none;
+    animation: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before,
+    body::after {
+      animation: none;
+      transform: none;
+      opacity: 0.55;
+    }
+
+    :root[data-theme="dark"] body::before {
+      animation: none;
+      opacity: 0.22;
+    }
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+}
