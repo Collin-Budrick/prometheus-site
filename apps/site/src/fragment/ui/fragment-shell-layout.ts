@@ -2,6 +2,8 @@ import { useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import type { FragmentPlan } from '../types'
 import { DESKTOP_MIN_WIDTH } from './fragment-shell-utils'
 
+const STACK_FREEZE_IDLE_MS = 1400
+
 type FragmentShellLayoutOptions = {
   planValue: FragmentPlan
   gridRef: Signal<HTMLDivElement | undefined>
@@ -105,6 +107,8 @@ export const useFragmentShellLayout = ({
       let observedCards = new Set<HTMLElement>()
       let frame = 0
       let enabled = false
+      let frozen = false
+      let freezeTimer = 0
       let maxHeight = 0
       let maxHeightDirty = true
 
@@ -142,6 +146,43 @@ export const useFragmentShellLayout = ({
         maxHeightDirty = false
       }
 
+      const clearFreezeTimer = () => {
+        if (!freezeTimer) return
+        window.clearTimeout(freezeTimer)
+        freezeTimer = 0
+      }
+
+      const freeze = () => {
+        if (!enabled || frozen) return
+        frozen = true
+        clearFreezeTimer()
+        if (frame) {
+          cancelAnimationFrame(frame)
+          frame = 0
+        }
+        mutationObserver.disconnect()
+        cardObserver.disconnect()
+        observedCards = new Set<HTMLElement>()
+        cardHeights = new Map<HTMLElement, number>()
+        maxHeightDirty = true
+      }
+
+      const scheduleFreeze = () => {
+        if (!enabled || frozen) return
+        clearFreezeTimer()
+        freezeTimer = window.setTimeout(() => {
+          freezeTimer = 0
+          freeze()
+        }, STACK_FREEZE_IDLE_MS)
+      }
+
+      const thaw = () => {
+        if (!frozen) return
+        frozen = false
+        enabled = false
+        start()
+      }
+
       const schedule = () => {
         if (frame || !enabled) return
         frame = requestAnimationFrame(() => {
@@ -164,6 +205,7 @@ export const useFragmentShellLayout = ({
           } else {
             grid.classList.remove('is-stacked')
           }
+          scheduleFreeze()
         })
       }
 
@@ -232,6 +274,8 @@ export const useFragmentShellLayout = ({
       const stop = () => {
         if (!enabled) return
         enabled = false
+        frozen = false
+        clearFreezeTimer()
         stackScheduler.value = null
         mutationObserver.disconnect()
         cardObserver.disconnect()
@@ -249,8 +293,14 @@ export const useFragmentShellLayout = ({
       const start = () => {
         if (enabled || !meetsLayoutConditions()) return
         enabled = true
+        frozen = false
+        clearFreezeTimer()
         maxHeightDirty = true
         stackScheduler.value = () => {
+          if (frozen) {
+            thaw()
+            return
+          }
           maxHeightDirty = true
           schedule()
         }
@@ -262,6 +312,10 @@ export const useFragmentShellLayout = ({
       const handleResize = () => {
         if (!meetsLayoutConditions()) {
           stop()
+          return
+        }
+        if (frozen) {
+          thaw()
           return
         }
         if (!enabled) {

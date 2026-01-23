@@ -129,6 +129,7 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
       const pending = new Set<HTMLElement>()
       const islandsByHost = new Map<HTMLElement, Set<HTMLElement>>()
       const observedHosts = new Set<HTMLElement>()
+      const idleMounts = new Map<HTMLElement, () => void>()
       const isHostInView = (host: HTMLElement) => {
         if (typeof window === 'undefined') return false
         const rect = host.getBoundingClientRect()
@@ -144,6 +145,11 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
         const islands = islandsByHost.get(host)
         if (!islands) return
         islandsByHost.delete(host)
+        const cancelIdle = idleMounts.get(host)
+        if (cancelIdle) {
+          cancelIdle()
+          idleMounts.delete(host)
+        }
         if (observedHosts.has(host)) {
           observer.unobserve(host)
           observedHosts.delete(host)
@@ -152,11 +158,38 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
           void mountIsland(element, mounted, pending)
         })
       }
+      const scheduleIdle = (callback: () => void) => {
+        if ('requestIdleCallback' in window) {
+          const handle = window.requestIdleCallback(callback, { timeout: 900 })
+          return () => window.cancelIdleCallback(handle)
+        }
+        const handle = window.setTimeout(callback, 140)
+        return () => window.clearTimeout(handle)
+      }
+      const scheduleHostMount = (host: HTMLElement) => {
+        if (!islandsByHost.has(host)) return
+        if (idleMounts.has(host)) return
+        const cancel = scheduleIdle(() => {
+          idleMounts.delete(host)
+          if (!host.isConnected) return
+          if (!isHostInView(host)) return
+          mountHostIslands(host)
+        })
+        idleMounts.set(host, cancel)
+      }
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (!entry.isIntersecting) return
-            mountHostIslands(entry.target as HTMLElement)
+            const target = entry.target as HTMLElement
+            if (!entry.isIntersecting) {
+              const cancelIdle = idleMounts.get(target)
+              if (cancelIdle) {
+                cancelIdle()
+                idleMounts.delete(target)
+              }
+              return
+            }
+            scheduleHostMount(target)
           })
         },
         { rootMargin: '200px 0px' }
@@ -171,7 +204,7 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
         }
         set.add(element)
         if (isHostInView(host)) {
-          mountHostIslands(host)
+          scheduleHostMount(host)
           return
         }
         if (!observedHosts.has(host)) {
@@ -246,6 +279,8 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         mutationObserver.disconnect()
         observer.disconnect()
+        idleMounts.forEach((cancel) => cancel())
+        idleMounts.clear()
         mounted.forEach((result) => result.cleanup())
         mounted.clear()
         pending.clear()

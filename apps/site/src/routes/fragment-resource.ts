@@ -14,7 +14,20 @@ export type HybridFragmentResource = {
 export const selectInitialFragmentIds = (plan: FragmentPlanValue | undefined) => {
   if (!plan) return []
   const critical = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
-  return Array.from(new Set(critical))
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const seedIds = critical.length ? critical : plan.fetchGroups?.[0] ?? plan.fragments.map((entry) => entry.id)
+  const required = new Set<string>()
+  const stack = [...seedIds]
+  while (stack.length) {
+    const id = stack.pop()
+    if (!id || required.has(id)) continue
+    required.add(id)
+    const deps = entryById.get(id)?.dependsOn ?? []
+    deps.forEach((dep) => {
+      if (!required.has(dep)) stack.push(dep)
+    })
+  }
+  return Array.from(required)
 }
 
 const pickFragments = (fragments: FragmentPayloadMap | undefined, ids: string[]) => {

@@ -48,6 +48,20 @@ export const FragmentShellView = component$(
     dragState
   }: FragmentShellViewProps) => (
     <>
+      {(() => {
+        const criticalStyles = new Map<string, string>()
+        slottedEntries.value.forEach(({ entry }) => {
+          if (!entry?.critical) return
+          const css = fragments.value[entry.id]?.css
+          if (css) criticalStyles.set(entry.id, css)
+        })
+        if (!criticalStyles.size) return null
+        return Array.from(criticalStyles.entries()).map(([id, css]) => (
+          <style key={id} data-fragment-css={id}>
+            {css}
+          </style>
+        ))
+      })()}
       {hasIntro ? (
         <div class="fragment-grid" data-fragment-grid="intro">
           <div
@@ -88,6 +102,15 @@ export const FragmentShellView = component$(
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
           const motionDelay = hasCache || entry?.critical || inInitialViewport ? 0 : index * 120
+          const slotMinHeight =
+            typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
+              ? `${entry.layout.minHeight}px`
+              : undefined
+          const slotStyle = {
+            gridColumn: slot.column,
+            gridRow: slot.row,
+            ...(slotMinHeight ? { '--fragment-slot-height': slotMinHeight } : {})
+          }
           return (
             <div
               key={slot.id}
@@ -98,7 +121,7 @@ export const FragmentShellView = component$(
               }}
               data-size={slot.size}
               data-critical={entry?.critical ? 'true' : undefined}
-              style={{ gridColumn: slot.column, gridRow: slot.row }}
+              style={slotStyle}
             >
               {entry ? (
                 <div class="fragment-card-wrap">

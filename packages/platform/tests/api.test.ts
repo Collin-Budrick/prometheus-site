@@ -31,9 +31,15 @@ describe('fragment plan includeInitial', () => {
     const initialIds = initialFragments ? Object.keys(initialFragments) : []
     expect(initialIds.length).toBeGreaterThan(0)
 
-    const primaryGroup = payload.fetchGroups?.[0] ?? payload.fragments.map((fragment: { id: string }) => fragment.id)
+    const planIds = payload.fragments.map((fragment: { id: string }) => fragment.id)
+    const criticalIds = payload.fragments
+      .filter((fragment: { id: string; critical?: boolean }) => fragment.critical)
+      .map((fragment: { id: string }) => fragment.id)
     initialIds.forEach((id) => {
-      expect(primaryGroup).toContain(id)
+      expect(planIds).toContain(id)
+    })
+    criticalIds.forEach((id) => {
+      expect(initialIds).toContain(id)
     })
 
     const sampleId = initialIds[0]

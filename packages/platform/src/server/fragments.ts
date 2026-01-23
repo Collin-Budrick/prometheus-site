@@ -371,7 +371,21 @@ const buildInitialFragments = async (
     plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
       ? plan.fetchGroups[0]
       : plan.fragments.map((entry) => entry.id)
-  const ids = Array.from(new Set(group))
+  const criticalIds = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
+  const seedIds = criticalIds.length ? criticalIds : group
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const required = new Set<string>()
+  const stack = [...seedIds]
+  while (stack.length) {
+    const id = stack.pop()
+    if (!id || required.has(id)) continue
+    required.add(id)
+    const deps = entryById.get(id)?.dependsOn ?? []
+    deps.forEach((dep) => {
+      if (!required.has(dep)) stack.push(dep)
+    })
+  }
+  const ids = Array.from(required)
   if (ids.length === 0) return {}
   const base64ByCacheKey = new Map<string, string>()
 
