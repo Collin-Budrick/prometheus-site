@@ -8,7 +8,7 @@
         "@oxlint-tsgolint/linux-arm64": "^0.11.1",
         "@oxlint-tsgolint/win32-arm64": "^0.11.1",
         "@oxlint/win32-arm64": "^1.41.0",
-        "@playwright/test": "^1.58.0-beta-1769095880000",
+        "@playwright/test": "^1.59.0-alpha-2026-01-23",
         "@types/web-push": "^3.6.4",
         "lefthook": "^2.0.15",
         "oxlint": "1.41.0",
@@ -31,7 +31,7 @@
         "@prometheus/platform": "workspace:*",
         "@prometheus/ui": "workspace:*",
         "@qwikest/icons": "^0.0.13",
-        "nostr-tools": "^2.19.4",
+        "nostr-tools": "^2.20.0",
         "preact": "11.0.0-experimental.1",
         "react": "19.3.0-canary-fd524fe0-20251121",
         "y-webrtc": "^10.3.0",
@@ -48,7 +48,7 @@
         "rollup-plugin-visualizer": "^6.0.5",
         "serwist": "^10.0.0-preview.14",
         "tailwindcss": "^4.1.18",
-        "typescript": "6.0.0-dev.20260122",
+        "typescript": "6.0.0-dev.20260123",
         "vite": "8.0.0-beta.9",
         "vite-plugin-compression2": "^2.4.0",
       },
@@ -118,7 +118,7 @@
         "drizzle-kit": "1.0.0-beta.9-e89174b",
         "oxfmt": "0.26.0",
         "oxlint": "1.41.0",
-        "typescript": "6.0.0-dev.20260122",
+        "typescript": "6.0.0-dev.20260123",
       },
       "optionalDependencies": {
         "@oxlint/win32-arm64": "^1.41.0",
@@ -444,7 +444,7 @@
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
-    "@playwright/test": ["@playwright/test@1.58.0-beta-1769095880000", "", { "dependencies": { "playwright": "1.58.0-beta-1769095880000" }, "bin": { "playwright": "cli.js" } }, "sha512-F0d80CluD+fH4f9aeVpL4H57Ct0cFBk5wQmtD6q1yWw2EpC1XnmzJUbOJCSPvCxFhZbixDfzWULbzhD2Eq8IEg=="],
+    "@playwright/test": ["@playwright/test@1.59.0-alpha-2026-01-23", "", { "dependencies": { "playwright": "1.59.0-alpha-2026-01-23" }, "bin": { "playwright": "cli.js" } }, "sha512-Bhe37xOoekbQNbd14vrfQUCk+KvyBbSrrVbcxNI0rVXrM6GUAlQ2hFQEncOoFisu6zf+dnI+aX5x4XhJS6mh+g=="],
 
     "@preact/signals-core": ["@preact/signals-core@1.12.2", "", {}, "sha512-5Yf8h1Ke3SMHr15xl630KtwPTW4sYDFkkxS0vQ8UiQLWwZQnrF9IKaVG1mN5VcJz52EcWs2acsc/Npjha/7ysA=="],
 
@@ -1172,7 +1172,7 @@
 
     "node-fetch-native": ["node-fetch-native@1.6.7", "", {}, "sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q=="],
 
-    "nostr-tools": ["nostr-tools@2.19.4", "", { "dependencies": { "@noble/ciphers": "^0.5.1", "@noble/curves": "1.2.0", "@noble/hashes": "1.3.1", "@scure/base": "1.1.1", "@scure/bip32": "1.3.1", "@scure/bip39": "1.2.1", "nostr-wasm": "0.1.0" }, "peerDependencies": { "typescript": ">=5.0.0" }, "optionalPeers": ["typescript"] }, "sha512-qVLfoTpZegNYRJo5j+Oi6RPu0AwLP6jcvzcB3ySMnIT5DrAGNXfs5HNBspB/2HiGfH3GY+v6yXkTtcKSBQZwSg=="],
+    "nostr-tools": ["nostr-tools@2.20.0", "", { "dependencies": { "@noble/ciphers": "^0.5.1", "@noble/curves": "1.2.0", "@noble/hashes": "1.3.1", "@scure/base": "1.1.1", "@scure/bip32": "1.3.1", "@scure/bip39": "1.2.1", "nostr-wasm": "0.1.0" }, "peerDependencies": { "typescript": ">=5.0.0" }, "optionalPeers": ["typescript"] }, "sha512-Kq/2lMyeOdGvpDsYH2an8HP4H0aFCqwKythhTzxfgZTVv4L3NOgrJw2SxH8jkWlH8xPhWxGfN6lFtC+EAa2qYQ=="],
 
     "nostr-wasm": ["nostr-wasm@0.1.0", "", {}, "sha512-78BTryCLcLYv96ONU8Ws3Q1JzjlAt+43pWQhIl86xZmWeegYCNLPml7yQ+gG3vR6V5h4XGj+TxO+SS5dsThQIA=="],
 
@@ -1214,9 +1214,9 @@
 
     "pkg-types": ["pkg-types@2.3.0", "", { "dependencies": { "confbox": "^0.2.2", "exsolve": "^1.0.7", "pathe": "^2.0.3" } }, "sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig=="],
 
-    "playwright": ["playwright@1.58.0-beta-1769095880000", "", { "dependencies": { "playwright-core": "1.58.0-beta-1769095880000" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-bNp4FYwPEMs6OguMcf6Rc+GZwwAqN565yQMYiahSUMS9NKXfQSVwQE05JmpTnu/shO2CtLdyTrrBNj6oZgPNVg=="],
+    "playwright": ["playwright@1.59.0-alpha-2026-01-23", "", { "dependencies": { "playwright-core": "1.59.0-alpha-2026-01-23" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-pvCAM7aSwxyWZDvrYB9BstTFkqv5gtkeExGn92PYqX9fSs710WmwYj5L8CAi5vXzXQmI9VVZWdaPn83OO68YDA=="],
 
-    "playwright-core": ["playwright-core@1.58.0-beta-1769095880000", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-LzvTF87LEaG/oGgWswA4MwE2qfFqnOwQvlVrB4oqrpeNetSKW5JSUnGRSXgLgQCRVLqkFMBCRkjtyrPLCfkElg=="],
+    "playwright-core": ["playwright-core@1.59.0-alpha-2026-01-23", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-nf8AJGxQ9Mw886N97lm9DbDY6mLgXZFbPl5HrJARewg250gWKouhC6VLWFfXZ9my1KtNdH7J08TH6XrDuOUcdg=="],
 
     "postcss": ["postcss@8.5.6", "", { "dependencies": { "nanoid": "^3.3.11", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg=="],
 
@@ -1408,7 +1408,7 @@
 
     "tsyringe": ["tsyringe@4.10.0", "", { "dependencies": { "tslib": "^1.9.3" } }, "sha512-axr3IdNuVIxnaK5XGEUFTu3YmAQ6lllgrvqfEoR16g/HGnYY/6We4oWENtAnzK6/LpJ2ur9PAb80RBt7/U4ugw=="],
 
-    "typescript": ["typescript@6.0.0-dev.20260122", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-WnKEBDTdvo/zvxcMZvpXFNuVPupiMcKOhX51jSdniyaTMNvGvbgOgJklq6hswmV2dKpCVndtTkBCUNOO/klujA=="],
+    "typescript": ["typescript@6.0.0-dev.20260123", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-ezIINdsHhLjdxPfsYcrL1A28USN+Bmto4a3THYel1bK9XidsMn+/a6JAbcmeQr/kwgyflhuyvEAWEQZJnzFVRw=="],
 
     "uint8array-extras": ["uint8array-extras@1.5.0", "", {}, "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="],
 
@@ -1579,8 +1579,6 @@
     "nostr-tools/@noble/ciphers": ["@noble/ciphers@0.5.3", "", {}, "sha512-B0+6IIHiqEs3BPMT0hcRmHvEj2QHOLu+uwt+tqDDeVd0oyVzh7BPrDcPjRnV1PV/5LaknXJJQvOuRGR0zQJz+w=="],
 
     "nostr-tools/@noble/hashes": ["@noble/hashes@1.3.1", "", {}, "sha512-EbqwksQwz9xDRGfDST86whPBgM65E0OH/pCgqW0GBVzO22bNE+NuIbeTb714+IfSjU3aRk47EUvXIb5bTsenKA=="],
-
-    "nostr-tools/typescript": ["typescript@6.0.0-dev.20260111", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-ZiFgkRSdELnndf0x90GboZQV1FdK4ZxOcXfsBtloaPToZxr4J0j7AyXGezHilHKpenQeGReYYyP9kaKB91zz8Q=="],
 
     "nypm/citty": ["citty@0.2.0", "", {}, "sha512-8csy5IBFI2ex2hTVpaHN2j+LNE199AgiI7y4dMintrr8i0lQiFn+0AWMZrWdHKIgMOer65f8IThysYhoReqjWA=="],
 
