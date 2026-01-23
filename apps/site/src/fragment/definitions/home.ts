@@ -129,32 +129,32 @@ export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/manifest@v1',
     critical: false,
-    layout: { column: 'span 12', size: 'small' }
+    layout: { column: 'span 12', size: 'small', minHeight: 489 }
   },
   {
     id: 'fragment://page/home/planner@v1',
     critical: true,
-    layout: { column: 'span 5', size: 'big' }
+    layout: { column: 'span 5', size: 'big', minHeight: 640 }
   },
   {
     id: 'fragment://page/home/ledger@v1',
     critical: true,
-    layout: { column: 'span 7', size: 'tall' }
+    layout: { column: 'span 7', size: 'tall', minHeight: 904 }
   },
   {
     id: 'fragment://page/home/island@v1',
     critical: false,
-    layout: { column: 'span 5' }
+    layout: { column: 'span 5', minHeight: 489 }
   },
   {
     id: 'fragment://page/home/react@v1',
     critical: false,
-    layout: { column: 'span 12', size: 'small' }
+    layout: { column: 'span 12', size: 'small', minHeight: 489 }
   },
   {
     id: 'fragment://page/home/dock@v1',
     critical: false,
-    layout: { column: 'span 12', size: 'small' }
+    layout: { column: 'span 12', size: 'small', minHeight: 489 }
   }
 ] satisfies FragmentPlanEntry[]
 

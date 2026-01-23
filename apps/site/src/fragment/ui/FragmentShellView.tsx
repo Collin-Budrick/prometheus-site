@@ -1,4 +1,4 @@
-import { component$, type Signal } from '@builder.io/qwik'
+import { component$, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import { FragmentCard, FragmentMarkdownBlock } from '@prometheus/ui'
 import type { FragmentPayloadMap } from '../types'
 import type { Lang } from '../../shared/lang-store'
@@ -31,8 +31,8 @@ type FragmentShellViewProps = {
   dragState: Signal<FragmentDragState>
 }
 
-export const FragmentShellView = component$(
-  ({
+export const FragmentShellView = component$((props: FragmentShellViewProps) => {
+  const {
     hasIntro,
     introMarkdown,
     gridRef,
@@ -47,7 +47,75 @@ export const FragmentShellView = component$(
     hasCache,
     skipCssGuard,
     dragState
-  }: FragmentShellViewProps) => (
+  } = props
+
+  useVisibleTask$(
+    (ctx) => {
+      if (!import.meta.env.DEV) return
+      if (typeof window === 'undefined' || typeof MutationObserver === 'undefined') return
+      const grid = gridRef.value
+      ctx.track(() => gridRef.value)
+      if (!grid) return
+
+      const logged = new Set<string>()
+      const selector = '.fragment-card[data-fragment-id]'
+
+      const logCard = (card: HTMLElement) => {
+        const id = card.dataset.fragmentId
+        if (!id || logged.has(id)) return
+        if (card.dataset.fragmentReady !== 'true') return
+        logged.add(id)
+        requestAnimationFrame(() => {
+          if (!card.isConnected) return
+          const height = Math.round(card.getBoundingClientRect().height)
+          const size = card.dataset.size ?? 'auto'
+          const critical = card.dataset.critical === 'true' ? 'critical' : 'non-critical'
+          console.info(`[fragment-height] ${id} size=${size} ${critical} height=${height}px`)
+        })
+      }
+
+      const scan = (root: ParentNode) => {
+        if (root instanceof HTMLElement && root.matches(selector)) {
+          logCard(root)
+        }
+        root.querySelectorAll?.(selector).forEach((element) => {
+          logCard(element as HTMLElement)
+        })
+      }
+
+      scan(grid)
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes') {
+            if (mutation.target instanceof HTMLElement) {
+              logCard(mutation.target)
+            }
+            return
+          }
+          mutation.addedNodes.forEach((node) => {
+            if (node instanceof HTMLElement) {
+              scan(node)
+            }
+          })
+        })
+      })
+
+      observer.observe(grid, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['data-fragment-ready']
+      })
+
+      ctx.cleanup(() => {
+        observer.disconnect()
+      })
+    },
+    { strategy: 'document-idle' }
+  )
+
+  return (
     <>
       {(() => {
         const criticalStyles = new Map<string, string>()
@@ -110,7 +178,7 @@ export const FragmentShellView = component$(
           const slotStyle = {
             gridColumn: slot.column,
             gridRow: slot.row,
-            ...(slotMinHeight ? { '--fragment-slot-height': slotMinHeight } : {})
+            ...(slotMinHeight ? { '--fragment-slot-min-height': slotMinHeight } : {})
           }
           return (
             <div
@@ -165,4 +233,4 @@ export const FragmentShellView = component$(
       </div>
     </>
   )
-)
+})

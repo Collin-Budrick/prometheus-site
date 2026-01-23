@@ -2,6 +2,7 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, registerFragmentPlanOverride } from '@core/fragment/registry'
 import { h } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry } from '@core/fragment/types'
+import { FRAGMENT_CARD_MIN_HEIGHTS } from './layout'
 
 const baseMeta = {
   ttl: 30,
@@ -1249,7 +1250,7 @@ export const chatFragments: FragmentPlanEntry[] = [
   {
     id: contactInvites.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small' }
+    layout: { column: 'span 12', size: 'small', minHeight: FRAGMENT_CARD_MIN_HEIGHTS.small }
   }
 ]
 
