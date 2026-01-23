@@ -28,16 +28,6 @@ const buildProps = (el: HTMLElement, mapping: Record<string, string>) => {
 }
 
 const islandRegistry: Record<string, IslandDefinition> = {
-  'home-hero': {
-    load: async () => (await import('../../components/HomeHero')).HomeHero,
-    readProps: (el) =>
-      buildProps(el, {
-        meta: 'data-meta',
-        title: 'data-title',
-        subtitle: 'data-subtitle',
-        detail: 'data-detail'
-      })
-  },
   'preact-island': {
     load: async () => (await import('../../components/PreactIsland')).PreactIsland,
     readProps: (el) => buildProps(el, { label: 'label' })

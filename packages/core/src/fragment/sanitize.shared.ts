@@ -90,7 +90,6 @@ export const svgAttributeAliases = [
 export const htmlAttributeAliases = ['className', 'tabIndex', 'htmlFor', 'srcSet']
 
 export const customElementTags = [
-  'home-hero',
   'preact-island',
   'react-binary-demo',
   'wasm-renderer-demo',

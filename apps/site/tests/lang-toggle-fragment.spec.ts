@@ -1,14 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { decodeFragmentPayload } from '@core/fragments'
 
-test('updates hero fragment copy when language toggles', async ({ page }) => {
+test('updates planner fragment copy when language toggles', async ({ page }) => {
   await page.goto('/')
-
-  const heading = page.getByRole('heading', { level: 1 })
-  await expect(heading).toHaveText('Binary-first. Fragment-native. Zero hydration.')
-
-  const metaLine = page.locator('.fragment-card .meta-line').first()
-  await expect(metaLine).toContainText('fragment addressable')
 
   const plannerTitle = page.locator('.planner-demo-title')
   const plannerRun = page.locator('.planner-demo-action')
@@ -41,7 +35,7 @@ test('updates hero fragment copy when language toggles', async ({ page }) => {
     return (
       url.pathname.endsWith('/fragments') &&
       url.searchParams.get('lang') === 'ko' &&
-      url.searchParams.get('id') === 'fragment://page/home/hero@v1'
+      url.searchParams.get('id') === 'fragment://page/home/planner@v1'
     )
   })
 
@@ -65,12 +59,10 @@ test('updates hero fragment copy when language toggles', async ({ page }) => {
       if (node?.children) node.children.forEach(walk)
     }
     walk(payload.tree)
-    expect(texts).toContain('바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.')
+    expect(texts).toContain('플래너는 렌더링 전에 실행됩니다.')
   }
 
   await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
-  await expect(heading).toHaveText('바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.')
-  await expect(metaLine).toContainText('프래그먼트 주소 지정')
   await expect(plannerTitle).toHaveText('플래너 시뮬레이션')
   await expect(plannerRun).toHaveText('플랜 실행')
   await expect(plannerShuffle).toHaveText('캐시 섞기')

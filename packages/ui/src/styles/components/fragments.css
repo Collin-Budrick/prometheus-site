@@ -362,21 +362,23 @@
 
   .fragment-slot.is-solo {
     height: auto;
-    min-height: 0;
+    min-height: var(--fragment-slot-height);
   }
 
   .fragment-slot.is-solo > .fragment-card-wrap {
     height: auto;
+    min-height: var(--fragment-slot-height);
   }
 
   .fragment-slot.is-solo > .fragment-card-wrap > .fragment-card {
     height: auto;
     max-height: none;
+    min-height: var(--fragment-slot-height);
   }
 
   .fragment-grid.is-stacked .fragment-slot {
     height: auto;
-    min-height: 0;
+    min-height: var(--fragment-slot-height);
   }
 
   .fragment-grid.is-stacked .fragment-slot > .fragment-card-wrap {

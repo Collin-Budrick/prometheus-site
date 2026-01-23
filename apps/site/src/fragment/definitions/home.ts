@@ -2,7 +2,6 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry } from '@core/fragment/types'
-import { siteBrand } from '../../config'
 import { loadWasmAdd } from './wasm'
 
 const baseMeta = {
@@ -13,22 +12,6 @@ const baseMeta = {
 
 const makeText = (translate: (value: string, params?: Record<string, string | number>) => string) => {
   return (value: string, params?: Record<string, string | number>) => textNode(translate(value, params))
-}
-
-const hero: FragmentDefinition = {
-  id: 'fragment://page/home/hero@v1',
-  tags: ['home', 'hero'],
-  head: [{ op: 'title', value: `${siteBrand.name} | ${siteBrand.product}` }],
-  css: '',
-  ...baseMeta,
-  render: ({ t }) => {
-    return h('home-hero', {
-      'data-meta': t('fragment addressable · edge-primary'),
-      'data-title': t('Binary-first. Fragment-native. Zero hydration.'),
-      'data-subtitle': t('Deterministic fragments streamed as binary for instant replay.'),
-      'data-detail': t('TTFB < 10ms target · KV as source of truth · Qwik-owned DOM')
-    })
-  }
 }
 
 const planner: FragmentDefinition = {
@@ -99,7 +82,6 @@ const island: FragmentDefinition = {
   tags: ['home', 'island'],
   head: [],
   css: '',
-  dependsOn: ['fragment://page/home/hero@v1'],
   ...baseMeta,
   render: ({ t }) => {
     const text = makeText(t)
@@ -121,7 +103,6 @@ const manifesto: FragmentDefinition = {
   tags: ['home', 'manifest'],
   head: [],
   css: '',
-  dependsOn: ['fragment://page/home/hero@v1'],
   ...baseMeta,
   render: ({ t }) => {
     const text = makeText(t)
@@ -145,11 +126,6 @@ const manifesto: FragmentDefinition = {
 }
 
 export const homeFragments: FragmentPlanEntry[] = [
-  {
-    id: 'fragment://page/home/hero@v1',
-    critical: true,
-    layout: { column: 'span 7' }
-  },
   {
     id: 'fragment://page/home/planner@v1',
     critical: true,
@@ -182,7 +158,7 @@ export const homeFragments: FragmentPlanEntry[] = [
   }
 ] satisfies FragmentPlanEntry[]
 
-registerFragmentDefinitions([hero, planner, ledger, island, manifesto])
+registerFragmentDefinitions([planner, ledger, island, manifesto])
 
 setFragmentPlanBuilder((path, normalizedPath) => {
   if (normalizedPath === '/') {
