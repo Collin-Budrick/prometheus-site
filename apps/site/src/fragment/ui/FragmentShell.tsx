@@ -27,6 +27,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         hasCache={shell.hasCache}
         skipCssGuard={shell.skipCssGuard}
         dragState={shell.dragState}
+        dynamicCriticalIds={shell.dynamicCriticalIds}
       />
       <FragmentStreamController
         plan={props.plan}
@@ -37,6 +38,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         paused={shell.streamPaused}
         preserveFragmentEffects={props.preserveFragmentEffects}
         initialLang={props.initialLang}
+        dynamicCriticalIds={shell.dynamicCriticalIds}
       />
       {shell.planCachePayload ? (
         <script

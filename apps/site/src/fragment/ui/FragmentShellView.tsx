@@ -29,6 +29,7 @@ type FragmentShellViewProps = {
   hasCache: boolean
   skipCssGuard: boolean
   dragState: Signal<FragmentDragState>
+  dynamicCriticalIds: Signal<string[]>
 }
 
 export const FragmentShellView = component$((props: FragmentShellViewProps) => {
@@ -46,7 +47,8 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     copy,
     hasCache,
     skipCssGuard,
-    dragState
+    dragState,
+    dynamicCriticalIds
   } = props
 
   useVisibleTask$(
@@ -169,8 +171,11 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders)
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
-          const motionDelay = hasCache || entry?.critical || inInitialViewport ? 0 : index * 120
-          const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || getFragmentCssHref(entry.id))
+          const isCritical =
+            Boolean(entry?.critical) || (entry ? dynamicCriticalIds.value.includes(entry.id) : false)
+          const motionDelay = hasCache || isCritical || inInitialViewport ? 0 : index * 120
+          const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
+          const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
           const slotMinHeight =
             typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
               ? `${entry.layout.minHeight}px`
@@ -189,7 +194,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                 'is-inline': !slot.column.includes('/ -1') && !slot.column.includes('/-1')
               }}
               data-size={slot.size}
-              data-critical={entry?.critical ? 'true' : undefined}
+              data-critical={isCritical ? 'true' : undefined}
               style={slotStyle}
             >
               {entry ? (
@@ -205,8 +210,8 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                     closeLabel={copy.value.fragmentClose}
                     fragmentLoaded={Boolean(fragment)}
                     fragmentHasCss={fragmentHasCss}
-                    disableMotion={entry.critical === true}
-                    critical={entry.critical === true}
+                    disableMotion={isCritical}
+                    critical={isCritical}
                     expandable={entry.expandable}
                     fullWidth={entry.fullWidth}
                     size={slot.size}

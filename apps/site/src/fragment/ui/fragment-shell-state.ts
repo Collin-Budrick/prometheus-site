@@ -20,6 +20,7 @@ import {
   buildOrderedEntries,
   buildOrderedIds,
   collectFieldSnapshots,
+  DESKTOP_MIN_WIDTH,
   parseSlotRows,
   parseStoredOrder,
   ORDER_STORAGE_PREFIX
@@ -71,6 +72,7 @@ export const useFragmentShellState = ({
   const expandedId = useSignal<string | null>(cachedExpanded)
   const layoutTick = useSignal(0)
   const gridRef = useSignal<HTMLDivElement>()
+  const dynamicCriticalIds = useSignal<string[]>([])
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const cachedOrder = seedState?.orderIds?.length ? seedState.orderIds : cachedEntry?.orderIds ?? []
   const orderIds = useSignal<string[]>(cachedOrder.length ? buildOrderedIds(planValue.fragments, cachedOrder) : [])
@@ -124,6 +126,84 @@ export const useFragmentShellState = ({
         expandedId.value = null
       }
     })
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const grid = gridRef.value
+      ctx.track(() => gridRef.value)
+      if (!grid) return
+      let firstFrame = 0
+      let secondFrame = 0
+      let lastSerialized = ''
+
+      const normalizedPath = normalizeFragmentShellPath(path)
+      const viewportKey = window.innerWidth >= DESKTOP_MIN_WIDTH ? 'desktop' : 'mobile'
+      const storageKey = `fragment-critical:${normalizedPath}:${viewportKey}`
+      const validIds = new Set(planValue.fragments.map((entry) => entry.id))
+
+      const readStored = () => {
+        try {
+          const raw = window.localStorage.getItem(storageKey)
+          if (!raw) return []
+          const parsed = JSON.parse(raw)
+          if (!Array.isArray(parsed)) return []
+          return parsed.filter((id) => typeof id === 'string' && validIds.has(id))
+        } catch {
+          return []
+        }
+      }
+
+      const writeStored = (ids: string[]) => {
+        if (!ids.length) return
+        const serialized = JSON.stringify(ids)
+        if (serialized === lastSerialized) return
+        lastSerialized = serialized
+        try {
+          window.localStorage.setItem(storageKey, serialized)
+        } catch {
+          // ignore storage errors
+        }
+      }
+
+      const stored = readStored()
+      if (stored.length) {
+        dynamicCriticalIds.value = stored
+        lastSerialized = JSON.stringify(stored)
+      }
+
+      const capture = () => {
+        const ids = new Set<string>()
+        const cards = grid.querySelectorAll<HTMLElement>('.fragment-card[data-fragment-id]')
+        const viewportHeight = window.innerHeight
+        const viewportWidth = window.innerWidth
+        cards.forEach((card) => {
+          const id = card.dataset.fragmentId
+          if (!id) return
+          const rect = card.getBoundingClientRect()
+          if (rect.width <= 0 || rect.height <= 0) return
+          if (rect.bottom <= 0 || rect.top >= viewportHeight) return
+          if (rect.right <= 0 || rect.left >= viewportWidth) return
+          ids.add(id)
+        })
+        if (ids.size) {
+          const list = Array.from(ids)
+          dynamicCriticalIds.value = list
+          writeStored(list)
+        }
+      }
+
+      firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(capture)
+      })
+
+      ctx.cleanup(() => {
+        if (firstFrame) window.cancelAnimationFrame(firstFrame)
+        if (secondFrame) window.cancelAnimationFrame(secondFrame)
+      })
+    },
+    { strategy: 'document-ready' }
   )
 
   useVisibleTask$(
@@ -299,6 +379,7 @@ export const useFragmentShellState = ({
     slottedEntries,
     clientReady,
     streamPaused,
+    dynamicCriticalIds,
     hasIntro,
     hasCache,
     skipCssGuard,

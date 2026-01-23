@@ -35,12 +35,24 @@ type FragmentStreamControllerProps = {
   paused?: Signal<boolean> | boolean
   preserveFragmentEffects?: boolean
   initialLang?: Lang
+  dynamicCriticalIds?: Signal<string[]>
 }
 
 export const FragmentStreamController = component$(
-  ({ plan, initialFragments, path, fragments, status, paused, preserveFragmentEffects, initialLang }: FragmentStreamControllerProps) => {
+  ({
+    plan,
+    initialFragments,
+    path,
+    fragments,
+    status,
+    paused,
+    preserveFragmentEffects,
+    initialLang,
+    dynamicCriticalIds
+  }: FragmentStreamControllerProps) => {
     const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(initialLang ?? null)
+    const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
 
     useVisibleTask$(
       (ctx) => {
@@ -98,23 +110,33 @@ export const FragmentStreamController = component$(
         }
         const entryById = new Map(planValue.fragments.map((entry) => [entry.id, entry]))
         const allIds = planValue.fragments.map((entry) => entry.id)
-        const criticalIds = new Set(planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id))
+        const staticCriticalIds = new Set(planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id))
+        const dynamicCriticalSeed = dynamicCriticalIds?.value ?? []
+        const dynamicCriticalSet = new Set<string>()
+        const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
         const shouldDeferOffscreen = FRAGMENT_STREAMING_ENABLED && canObserve
 
         if (!canObserve) {
           Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
         } else {
           Object.values(fragments.value).forEach((payload) => {
-            if (criticalIds.has(payload.id)) {
+            if (isCriticalId(payload.id)) {
               applyFragmentEffects(payload)
             }
           })
         }
 
         const scheduleIdle = (callback: () => void) => {
-          if ('requestIdleCallback' in window) {
-            const handle = window.requestIdleCallback(callback, { timeout: 1200 })
-            return () => window.cancelIdleCallback(handle)
+          const idleApi = window as {
+            requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+            cancelIdleCallback?: (handle: number) => void
+          }
+
+          if (idleApi.requestIdleCallback) {
+            const handle = idleApi.requestIdleCallback(callback, { timeout: 1200 })
+            return () => {
+              idleApi.cancelIdleCallback?.(handle)
+            }
           }
           const handle = window.setTimeout(callback, 180)
           return () => window.clearTimeout(handle)
@@ -148,7 +170,7 @@ export const FragmentStreamController = component$(
               return
             }
             const idleIds = allIds.filter((id) => {
-              if (criticalIds.has(id)) return false
+              if (isCriticalId(id)) return false
               if (visibleIds.has(id)) return false
               if (fragments.value[id] && !refreshIds.has(id)) return false
               if (inFlight.has(id) || pending.has(id) || deferred.has(id)) return false
@@ -166,7 +188,7 @@ export const FragmentStreamController = component$(
             refreshIds.delete(payload.id)
             refreshQueue.add(payload.id)
           }
-          if (shouldDeferOffscreen && !criticalIds.has(payload.id) && !visibleIds.has(payload.id)) {
+          if (shouldDeferOffscreen && !isCriticalId(payload.id) && !visibleIds.has(payload.id)) {
             deferred.set(payload.id, payload)
             scheduleIdleRelease()
             return
@@ -354,6 +376,28 @@ export const FragmentStreamController = component$(
           fetchMissing(Array.from(required))
         }
 
+        const promoteDynamicCritical = (ids: string[]) => {
+          if (!active || !ids.length) return
+          const newlyCritical = ids.filter((id) => entryById.has(id) && !dynamicCriticalSet.has(id))
+          if (!newlyCritical.length) return
+          newlyCritical.forEach((id) => {
+            dynamicCriticalSet.add(id)
+            const payload = fragments.value[id]
+            if (payload) {
+              applyFragmentEffects(payload)
+            }
+          })
+          releaseDeferred(newlyCritical)
+          if (!FRAGMENT_STREAMING_ENABLED) {
+            requestFragments(newlyCritical)
+          }
+        }
+
+        if (dynamicCriticalSeed.length) {
+          promoteDynamicCritical(dynamicCriticalSeed)
+        }
+        dynamicCriticalUpdater.value = promoteDynamicCritical
+
         if (FRAGMENT_STREAMING_ENABLED && streamController) {
           setStreaming()
           streamFragments(path, (payload) => queuePayload(payload), undefined, streamController.signal, activeLang)
@@ -391,7 +435,7 @@ export const FragmentStreamController = component$(
                 if (entry.isIntersecting) {
                   visibleIds.add(id)
                   const existing = fragments.value[id]
-                  if (existing && !criticalIds.has(id)) {
+                  if (existing && !isCriticalId(id)) {
                     applyFragmentEffects(existing)
                   }
                   ready.push(id)
@@ -436,7 +480,7 @@ export const FragmentStreamController = component$(
             })
             return
           }
-          requestFragments(Array.from(criticalIds))
+          requestFragments(Array.from(staticCriticalIds))
         }
 
         if (canObserve || shouldDeferOffscreen) {
@@ -445,6 +489,7 @@ export const FragmentStreamController = component$(
 
         ctx.cleanup(() => {
           active = false
+          dynamicCriticalUpdater.value = null
           streamController?.abort()
           fetchControllers.forEach((ctrl) => ctrl.abort())
           fetchControllers.clear()
@@ -474,6 +519,15 @@ export const FragmentStreamController = component$(
             teardownFragmentEffects(Object.keys(fragments.value))
           }
         })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        const ids = ctx.track(() => dynamicCriticalIds?.value ?? [])
+        if (!ids.length) return
+        dynamicCriticalUpdater.value?.(ids)
       },
       { strategy: 'document-ready' }
     )
