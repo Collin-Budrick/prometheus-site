@@ -210,7 +210,9 @@ const buildPreconnectOrigins = (currentOrigin: string | null) => {
   }
 
   addOrigin(appConfig.apiBase)
-  addOrigin(appConfig.webTransportBase)
+  if (appConfig.enableFragmentStreaming && (appConfig.preferWebTransport || appConfig.preferWebTransportDatagrams)) {
+    addOrigin(appConfig.webTransportBase)
+  }
 
   if (appConfig.analytics?.enabled) {
     addOrigin(appConfig.analytics.beaconUrl)
