@@ -238,7 +238,7 @@ export const Dock = component$<DockProps>(
         observer.disconnect()
         if (frame) cancelAnimationFrame(frame)
       })
-    })
+    }, { strategy: 'document-idle' })
 
     return (
       <div ref={dockRef} class={`dock${className ? ` ${className}` : ''}`} role="list" aria-label={ariaLabel}>

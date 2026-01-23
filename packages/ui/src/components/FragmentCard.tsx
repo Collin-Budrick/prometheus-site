@@ -301,7 +301,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           }
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -364,7 +364,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           resizeObserver?.disconnect()
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -385,7 +385,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           if (frame) cancelAnimationFrame(frame)
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -425,7 +425,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           observer.disconnect()
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -462,7 +462,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           observer.disconnect()
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(

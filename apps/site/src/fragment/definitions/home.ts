@@ -145,22 +145,22 @@ export const homeFragments: FragmentPlanEntry[] = [
   },
   {
     id: 'fragment://page/home/ledger@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 7', size: 'tall' }
   },
   {
     id: 'fragment://page/home/island@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 5' }
   },
   {
     id: 'fragment://page/home/react@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 12', size: 'small' }
   },
   {
     id: 'fragment://page/home/dock@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 12', size: 'small' }
   }
 ] satisfies FragmentPlanEntry[]
