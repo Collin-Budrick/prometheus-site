@@ -173,8 +173,8 @@ export const createFragmentService = ({
   ): Promise<StoredFragment> => {
     const cacheKey = buildFragmentCacheKey(definition.id, context.lang)
     const tree = await definition.render(context)
-    const payload = encodeFragmentPayloadFromTree(definition, tree, cacheKey)
     const html = sanitizeHtml(renderToHtml(tree))
+    const payload = encodeFragmentPayloadFromTree(definition, tree, cacheKey, html)
     return buildEntry(cacheKey, definition, payload, html)
   }
 

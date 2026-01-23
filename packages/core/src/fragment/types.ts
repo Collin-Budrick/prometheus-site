@@ -51,6 +51,7 @@ export type FragmentPayload = {
   tree: RenderNode
   head: HeadOp[]
   css: string
+  html?: string
   meta: FragmentMeta
 }
 
@@ -66,6 +67,7 @@ export type FragmentPlanEntry = {
   }
   expandable?: boolean
   fullWidth?: boolean
+  renderHtml?: boolean
   dependsOn?: string[]
   runtime?: 'edge' | 'node'
   cache?: FragmentCacheStatus

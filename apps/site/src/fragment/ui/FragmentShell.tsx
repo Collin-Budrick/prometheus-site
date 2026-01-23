@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { FRAGMENT_PLAN_CACHE_PAYLOAD_ID } from '../plan-cache'
 import type { FragmentShellProps } from './fragment-shell-types'
 import { FragmentShellClientEffects } from './FragmentShellClientEffects'
+import { FragmentShellIslands } from './FragmentShellIslands'
 import { FragmentShellView } from './FragmentShellView'
 import { FragmentStreamController } from './FragmentStreamController'
 import { useFragmentShellState } from './fragment-shell-state'
@@ -50,6 +51,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
           initialFragmentMap={shell.initialFragmentMap}
         />
       ) : null}
+      <FragmentShellIslands gridRef={shell.gridRef} />
     </section>
   )
 })

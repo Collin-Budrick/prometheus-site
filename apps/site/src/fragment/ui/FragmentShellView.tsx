@@ -80,6 +80,9 @@ export const FragmentShellView = component$(
           const renderNode = shouldOverrideHeaders
             ? applyHeaderOverride(fragment!.tree, headerCopy!)
             : fragment?.tree
+          const allowHtml = entry?.renderHtml !== false
+          const html = fragment?.html?.trim()
+          const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders)
           return (
             <div
               key={slot.id}
@@ -113,7 +116,11 @@ export const FragmentShellView = component$(
                     dragState={dragState}
                   >
                     {fragment ? (
-                      <FragmentRenderer node={renderNode ?? fragment.tree} />
+                      useHtml ? (
+                        <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
+                      ) : (
+                        <FragmentRenderer node={renderNode ?? fragment.tree} />
+                      )
                     ) : (
                       <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                         <div class="loader" aria-hidden="true" />

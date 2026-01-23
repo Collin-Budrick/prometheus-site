@@ -96,7 +96,8 @@ export const customElementTags = [
   'planner-demo',
   'store-stream',
   'store-create',
-  'store-cart'
+  'store-cart',
+  'contact-invites'
 ]
 
 export const svgTags = [

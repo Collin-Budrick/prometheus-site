@@ -1,6 +1,10 @@
 import type { FragmentMeta, FragmentDefinition, FragmentRenderContext, RenderNode, FragmentPayload, HeadOp } from './types'
 
 const FRAGMENT_MAGIC = 0x46524147
+const FRAGMENT_VERSION_V1 = 1
+const FRAGMENT_VERSION_V2 = 2
+const FRAGMENT_HEADER_SIZE_V1 = 24
+const FRAGMENT_HEADER_SIZE_V2 = 28
 const TREE_MAGIC = 0x54524545
 const TREE_NODE_SIZE = 24
 const ATTR_SIZE = 8
@@ -136,19 +140,25 @@ const encodeFragmentPayloadFromParts = (
   treeBytes: Uint8Array,
   headBytes: Uint8Array,
   cssBytes: Uint8Array,
-  metaBytes: Uint8Array
+  metaBytes: Uint8Array,
+  htmlBytes?: Uint8Array
 ) => {
-  const headerSize = 24
-  const total = headerSize + treeBytes.length + headBytes.length + cssBytes.length + metaBytes.length
+  const includeHtml = htmlBytes !== undefined
+  const htmlLength = htmlBytes?.length ?? 0
+  const headerSize = includeHtml ? FRAGMENT_HEADER_SIZE_V2 : FRAGMENT_HEADER_SIZE_V1
+  const total = headerSize + treeBytes.length + headBytes.length + cssBytes.length + metaBytes.length + htmlLength
   const buffer = new ArrayBuffer(total)
   const view = new DataView(buffer)
 
   view.setUint32(0, FRAGMENT_MAGIC, false)
-  view.setUint8(4, 1)
+  view.setUint8(4, includeHtml ? FRAGMENT_VERSION_V2 : FRAGMENT_VERSION_V1)
   view.setUint32(8, treeBytes.length, true)
   view.setUint32(12, headBytes.length, true)
   view.setUint32(16, cssBytes.length, true)
   view.setUint32(20, metaBytes.length, true)
+  if (includeHtml) {
+    view.setUint32(24, htmlLength, true)
+  }
 
   let cursor = headerSize
   new Uint8Array(buffer, cursor, treeBytes.length).set(treeBytes)
@@ -158,6 +168,10 @@ const encodeFragmentPayloadFromParts = (
   new Uint8Array(buffer, cursor, cssBytes.length).set(cssBytes)
   cursor += cssBytes.length
   new Uint8Array(buffer, cursor, metaBytes.length).set(metaBytes)
+  cursor += metaBytes.length
+  if (includeHtml && htmlBytes && htmlLength) {
+    new Uint8Array(buffer, cursor, htmlLength).set(htmlBytes)
+  }
 
   return new Uint8Array(buffer)
 }
@@ -165,14 +179,16 @@ const encodeFragmentPayloadFromParts = (
 export const encodeFragmentPayloadFromTree = (
   definition: FragmentDefinition,
   tree: RenderNode,
-  cacheKey: string = definition.id
+  cacheKey: string = definition.id,
+  html?: string
 ): Uint8Array => {
   const treeBytes = encodeTree(tree)
   const headBytes = definition.head.length ? encoder.encode(JSON.stringify(definition.head)) : new Uint8Array(0)
   const cssBytes = definition.css ? encoder.encode(definition.css) : new Uint8Array(0)
   const metaBytes = encoder.encode(JSON.stringify(buildFragmentMeta(definition, cacheKey)))
+  const htmlBytes = html !== undefined ? encoder.encode(html) : undefined
 
-  return encodeFragmentPayloadFromParts(treeBytes, headBytes, cssBytes, metaBytes)
+  return encodeFragmentPayloadFromParts(treeBytes, headBytes, cssBytes, metaBytes, htmlBytes)
 }
 
 export const encodeFragmentPayload = async (
@@ -277,12 +293,17 @@ export const decodeFragmentPayload = (bytes: Uint8Array): FragmentPayload => {
   if (readMagic(view, 0) !== FRAGMENT_MAGIC) {
     throw new Error('Invalid fragment magic')
   }
+  const version = view.getUint8(4)
+  if (version !== FRAGMENT_VERSION_V1 && version !== FRAGMENT_VERSION_V2) {
+    throw new Error('Invalid fragment version')
+  }
   const treeLength = view.getUint32(8, true)
   const headLength = view.getUint32(12, true)
   const cssLength = view.getUint32(16, true)
   const metaLength = view.getUint32(20, true)
+  const htmlLength = version === FRAGMENT_VERSION_V2 ? view.getUint32(24, true) : 0
 
-  let cursor = 24
+  let cursor = version === FRAGMENT_VERSION_V2 ? FRAGMENT_HEADER_SIZE_V2 : FRAGMENT_HEADER_SIZE_V1
   const treeBytes = bytes.slice(cursor, cursor + treeLength)
   cursor += treeLength
   const headBytes = bytes.slice(cursor, cursor + headLength)
@@ -290,6 +311,8 @@ export const decodeFragmentPayload = (bytes: Uint8Array): FragmentPayload => {
   const cssBytes = bytes.slice(cursor, cursor + cssLength)
   cursor += cssLength
   const metaBytes = bytes.slice(cursor, cursor + metaLength)
+  cursor += metaLength
+  const htmlBytes = htmlLength ? bytes.slice(cursor, cursor + htmlLength) : new Uint8Array(0)
 
   const head = decodeJson<HeadOp[]>(headBytes, [])
   const css = cssBytes.length ? decoder.decode(cssBytes) : ''
@@ -302,12 +325,14 @@ export const decodeFragmentPayload = (bytes: Uint8Array): FragmentPayload => {
   })
 
   const tree = decodeTree(treeBytes)
+  const html = htmlBytes.length ? decoder.decode(htmlBytes) : undefined
 
   return {
     id: meta.cacheKey,
     tree,
     head,
     css,
+    html,
     meta
   }
 }

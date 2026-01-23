@@ -227,6 +227,10 @@
     transition: opacity 200ms ease;
   }
 
+  .fragment-html {
+    display: contents;
+  }
+
   .fragment-card[data-critical='true'] .fragment-card-body {
     transition: none;
   }

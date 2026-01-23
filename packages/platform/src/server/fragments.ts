@@ -128,6 +128,7 @@ const isFragmentPlanEntry = (value: unknown): value is FragmentPlanEntry => {
     return false
   if (value.dependsOn !== undefined && !isStringArray(value.dependsOn)) return false
   if (value.runtime !== undefined && value.runtime !== 'edge' && value.runtime !== 'node') return false
+  if (value.renderHtml !== undefined && typeof value.renderHtml !== 'boolean') return false
   if (value.cache !== undefined && !isFragmentCacheStatus(value.cache)) return false
   return true
 }
@@ -313,6 +314,7 @@ const normalizePlanForEtag = (plan: FragmentPlan) => ({
     layout: entry.layout,
     dependsOn: entry.dependsOn ?? [],
     runtime: entry.runtime ?? null,
+    renderHtml: entry.renderHtml === false ? false : true,
     cache: normalizeCacheStatus(entry.cache ?? null)
   })),
   fetchGroups: plan.fetchGroups ?? [],

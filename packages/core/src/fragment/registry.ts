@@ -51,7 +51,11 @@ export const applyPlanOverrides = (plan: FragmentPlan): FragmentPlan =>
 
 export const normalizeAndApplyPlan = (plan: FragmentPlan): FragmentPlan => {
   const normalizedPath = normalizePlanPath(plan.path)
-  return applyPlanOverrides({ ...plan, path: normalizedPath })
+  const overridden = applyPlanOverrides({ ...plan, path: normalizedPath })
+  const fragments = overridden.fragments.map((entry) =>
+    entry.renderHtml === undefined ? { ...entry, renderHtml: true } : entry
+  )
+  return { ...overridden, fragments }
 }
 
 export const buildPlanFromBuilder = (path: string, fallback?: FragmentPlan): FragmentPlan => {
