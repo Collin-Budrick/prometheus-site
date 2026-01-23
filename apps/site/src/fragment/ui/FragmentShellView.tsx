@@ -6,6 +6,7 @@ import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { applyHeaderOverride } from './header-overrides'
+import { parseSlotRows } from './fragment-shell-utils'
 
 type FragmentShellCopy = {
   fragmentClose: string
@@ -83,6 +84,9 @@ export const FragmentShellView = component$(
           const allowHtml = entry?.renderHtml !== false
           const html = fragment?.html?.trim()
           const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders)
+          const slotRows = parseSlotRows(slot.row)
+          const inInitialViewport = slotRows.some((row) => row <= 1)
+          const motionDelay = hasCache || entry?.critical || inInitialViewport ? 0 : index * 120
           return (
             <div
               key={slot.id}
@@ -102,7 +106,7 @@ export const FragmentShellView = component$(
                     id={entry.id}
                     fragmentId={entry.id}
                     column="1 / -1"
-                    motionDelay={hasCache ? 0 : index * 120}
+                    motionDelay={motionDelay}
                     expandedId={expandedId}
                     layoutTick={layoutTick}
                     closeLabel={copy.value.fragmentClose}

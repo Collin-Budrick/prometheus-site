@@ -145,7 +145,7 @@ export const homeFragments: FragmentPlanEntry[] = [
   },
   {
     id: 'fragment://page/home/ledger@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 7', size: 'tall' }
   },
   {
