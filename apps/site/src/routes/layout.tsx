@@ -252,10 +252,10 @@ export const useShellPreferences = routeLoader$((event) => {
 
 export const useInitialFadeState = routeLoader$((event) => {
   const cardStaggerSeen = event.cookie.get(CARD_STAGGER_COOKIE_KEY)?.value === '1'
-  const cardStagger = cardStaggerSeen ? null : 'ready'
+  const cardStagger = cardStaggerSeen ? 'ready' : null
   const initialFade = null
 
-  if (cardStagger) {
+  if (!cardStaggerSeen) {
     event.cookie.set(CARD_STAGGER_COOKIE_KEY, '1', { path: '/', sameSite: 'lax' })
   }
 
@@ -269,7 +269,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname 
       PUBLIC_CACHE_CONTROL // 0s freshness, allow 60s stale-while-revalidate to keep streams aligned.
     )
   }
-  if (method === 'GET' || method === 'HEAD') {
+  if ((method === 'GET' || method === 'HEAD') && headers.get('Accept')?.includes('text/html')) {
     const preloadLinks = await getModulePreloadLinks(basePathname || '/')
     preloadLinks.forEach((link) => headers.append('Link', link))
   }
@@ -328,7 +328,6 @@ export const RouterHead = component$(() => {
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const fadeState = resolveValue(useInitialFadeState)
-  const shellPreferences = resolveValue(useShellPreferences)
   const htmlAttributes: Record<string, string> = {}
   if (fadeState.initialFade) {
     htmlAttributes['data-initial-fade'] = fadeState.initialFade
@@ -705,6 +704,7 @@ export default component$(() => {
               <Link
                 class="dock-link"
                 href={langHref}
+                prefetch={false}
                 data-fragment-link
                 aria-label={label}
                 title={label}

@@ -1,4 +1,3 @@
-/// <reference path="../types/quicklink.d.ts" />
 import type { QuicklinkOptions } from 'quicklink'
 
 const normalizeApiHref = (apiBase: string) => {
@@ -103,13 +102,11 @@ export const initQuicklinkPrefetch = async (config: { apiBase: string; startOnIn
   const detachIntentListeners = () => {
     window.removeEventListener('pointerdown', handleIntent)
     window.removeEventListener('keydown', handleIntent)
-    window.removeEventListener('scroll', handleIntent)
   }
 
   if (startOnIntent) {
     window.addEventListener('pointerdown', handleIntent, { once: true })
     window.addEventListener('keydown', handleIntent, { once: true })
-    window.addEventListener('scroll', handleIntent, { passive: true, once: true })
   } else {
     void start()
   }

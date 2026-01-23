@@ -33,7 +33,7 @@ export default createQwikCity({
     if (swSeed.optOut !== undefined) {
       containerAttributes['data-sw-opt-out'] = swSeed.optOut ? '1' : '0'
     }
-    const preloader = opts.preloader ?? { ssrPreloads: 1, maxIdlePreloads: 4 }
+    const preloader = import.meta.env.PROD ? false : opts.preloader ?? { ssrPreloads: 1, maxIdlePreloads: 4 }
     const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
     return renderToStream(<Root />, {
       manifest,
