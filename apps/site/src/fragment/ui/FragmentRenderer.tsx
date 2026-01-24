@@ -169,8 +169,16 @@ export const FragmentRenderer = component$(({ node }: NodeProps) => {
   const props = { ...sanitizeAttributes(node.attrs) }
   const isCriticalImage = node.attrs?.['data-critical'] === 'true'
 
-  if (tagName === 'img' && !props.loading && !isCriticalImage) {
-    props.loading = 'lazy'
+  if (tagName === 'img') {
+    if (!props.loading && !isCriticalImage) {
+      props.loading = 'lazy'
+    }
+    if (!props.decoding && !isCriticalImage) {
+      props.decoding = 'async'
+    }
+    if (isCriticalImage) {
+      props.fetchpriority = 'high'
+    }
   }
 
   if (isVoidTag(tagName)) {
