@@ -128,7 +128,7 @@ const manifesto: FragmentDefinition = {
 export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/manifest@v1',
-    critical: false,
+    critical: true,
     layout: { column: 'span 12', size: 'small', minHeight: 489 }
   },
   {
@@ -158,11 +158,19 @@ export const homeFragments: FragmentPlanEntry[] = [
   }
 ] satisfies FragmentPlanEntry[]
 
+const homeFetchGroups = [
+  ['fragment://page/home/manifest@v1'],
+  ['fragment://page/home/planner@v1'],
+  ['fragment://page/home/ledger@v1'],
+  ['fragment://page/home/island@v1', 'fragment://page/home/react@v1', 'fragment://page/home/dock@v1']
+] satisfies string[][]
+
 registerFragmentDefinitions([planner, ledger, island, manifesto])
 
 setFragmentPlanBuilder((path, normalizedPath) => {
   if (normalizedPath === '/') {
-    return buildFragmentPlan('/', homeFragments, [])
+    const plan = buildFragmentPlan('/', homeFragments, [])
+    return { ...plan, fetchGroups: homeFetchGroups }
   }
   return buildFragmentPlan(normalizedPath, [], [])
 })

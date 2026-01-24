@@ -19,10 +19,14 @@ export const selectInitialFragmentIds = (
   if (!plan) return []
   const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
   const critical = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
-  const dynamicCritical =
-    options.dynamicCriticalIds?.filter((id) => entryById.has(id)) ?? []
+  const dynamicCritical = options.dynamicCriticalIds?.filter((id) => entryById.has(id)) ?? []
   const combined = Array.from(new Set([...critical, ...dynamicCritical]))
-  const seedIds = combined.length ? combined : plan.fetchGroups?.[0] ?? plan.fragments.map((entry) => entry.id)
+  const fetchGroup = plan.fetchGroups?.[0]?.filter((id) => entryById.has(id)) ?? []
+  const seedIds = fetchGroup.length
+    ? fetchGroup
+    : combined.length
+      ? combined
+      : plan.fragments.map((entry) => entry.id)
   const required = new Set<string>()
   const stack = [...seedIds]
   while (stack.length) {
