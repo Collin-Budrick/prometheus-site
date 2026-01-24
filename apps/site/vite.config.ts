@@ -13,6 +13,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
+import { fragmentCssManifest } from './src/fragment/fragment-css.generated'
 
 const require = createRequire(import.meta.url)
 
@@ -73,7 +74,6 @@ type QwikManifest = {
   preloader?: string
 }
 
-const earlyHintLimit = 5
 const placeholderShellAssets = new Set(['/assets/app.css', '/assets/app.js'])
 const resolvePublicBase = () => {
   const raw = process.env.VITE_PUBLIC_BASE?.trim()
@@ -148,7 +148,7 @@ const sanitizeHints = (raw: EarlyHint[]) => {
     const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${hint.crossorigin ? '1' : '0'}`
     if (!unique.has(key)) unique.set(key, hint)
   })
-  return Array.from(unique.values()).slice(0, earlyHintLimit)
+  return Array.from(unique.values())
 }
 
 const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
@@ -171,6 +171,47 @@ const filterPlanHints = (hints: EarlyHint[]) => {
     if (href.includes('/build/') && /\.m?js([?#]|$)/.test(href)) return false
     return true
   })
+}
+
+type FragmentPlanPayload = {
+  path?: string
+  fragments?: Array<{ id: string; critical: boolean }>
+  earlyHints?: EarlyHint[]
+}
+
+const lcpAssetManifest: Array<{ path: string; type?: string }> = [
+  { path: 'assets/lava-blob-a.svg', type: 'image/svg+xml' },
+  { path: 'assets/lava-blob-b.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-layer-1.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-layer-2.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-twinkle.svg', type: 'image/svg+xml' }
+]
+
+const resolveFragmentCssHint = (id: string): EarlyHint | null => {
+  const entry = fragmentCssManifest[id as keyof typeof fragmentCssManifest]
+  if (!entry) return null
+  return { href: withBase(entry.path), as: 'style' }
+}
+
+const buildPlanLcpHints = (plan: FragmentPlanPayload) => {
+  const hints: EarlyHint[] = []
+  const criticalCss = (plan.fragments ?? [])
+    .filter((entry) => entry.critical)
+    .map((entry) => resolveFragmentCssHint(entry.id))
+    .filter((hint): hint is EarlyHint => Boolean(hint))
+  hints.push(...criticalCss)
+
+  if (plan.path === '/') {
+    hints.push(
+      ...lcpAssetManifest.map((entry) => ({
+        href: withBase(entry.path),
+        as: 'image',
+        type: entry.type
+      }))
+    )
+  }
+
+  return hints
 }
 
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
@@ -214,9 +255,11 @@ const getEarlyHints = async (pathName: string) => {
   url.searchParams.set('path', pathName)
   const response = await fetch(url.toString(), { headers: { accept: 'application/json' } })
   if (!response.ok) return []
-  const payload = (await response.json()) as { earlyHints?: EarlyHint[] }
-  if (!Array.isArray(payload.earlyHints)) return []
-  return sanitizeHints(filterPlanHints(payload.earlyHints))
+  const payload = (await response.json()) as FragmentPlanPayload
+  const planHints = Array.isArray(payload.earlyHints) ? payload.earlyHints : []
+  const lcpHints = buildPlanLcpHints(payload)
+  if (!planHints.length && !lcpHints.length) return []
+  return sanitizeHints(filterPlanHints([...planHints, ...lcpHints]))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {

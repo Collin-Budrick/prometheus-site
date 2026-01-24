@@ -6,6 +6,7 @@ import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, In
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
+import { loadFragmentPlan } from '@core/fragment/server'
 import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
@@ -13,6 +14,8 @@ import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../app-config'
+import { resolveServerApiBase } from '../shared/api-base'
+import { buildFragmentCssLinks } from '../fragment/fragment-css'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -111,6 +114,14 @@ type ClientManifest = {
   bundles?: Record<string, { imports?: string[] }>
 }
 
+type EarlyHint = {
+  href: string
+  as?: string
+  rel?: 'preload' | 'modulepreload'
+  type?: string
+  crossorigin?: boolean
+}
+
 let clientManifestPromise: Promise<ClientManifest | null> | null = null
 
 const loadClientManifest = async (): Promise<ClientManifest | null> => {
@@ -179,6 +190,73 @@ const getModulePreloadLinks = async (basePath: string) => {
   const clientManifest = (await loadClientManifest()) ?? (manifest as ClientManifest)
   cachedModulePreloads = buildModulePreloadLinks(basePath, clientManifest)
   return cachedModulePreloads
+}
+
+const lcpAssetManifest: Array<{ path: string; type?: string }> = [
+  { path: 'assets/lava-blob-a.svg', type: 'image/svg+xml' },
+  { path: 'assets/lava-blob-b.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-layer-1.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-layer-2.svg', type: 'image/svg+xml' },
+  { path: 'assets/starfield-twinkle.svg', type: 'image/svg+xml' }
+]
+
+const buildLcpAssetHints = (basePath: string) =>
+  lcpAssetManifest.map((entry) => ({
+    href: withBasePath(basePath, entry.path),
+    as: 'image',
+    type: entry.type
+  }))
+
+const shouldSkipEarlyHint = (hint: EarlyHint) => {
+  const href = hint.href?.trim()
+  if (!href) return true
+  if (href.includes('/fragments') || href.includes('webtransport')) return true
+  return false
+}
+
+const buildEarlyHintHeader = (hint: EarlyHint) => {
+  if (shouldSkipEarlyHint(hint)) return null
+  if (hint.rel === 'modulepreload') {
+    let value = `<${hint.href}>; rel=modulepreload`
+    if (hint.crossorigin) value += '; crossorigin'
+    return value
+  }
+  const asValue = hint.as?.trim()
+  if (!asValue) return null
+  let value = `<${hint.href}>; rel=preload; as=${asValue}`
+  if (hint.type) value += `; type=${hint.type}`
+  if (hint.crossorigin) value += '; crossorigin'
+  return value
+}
+
+const sanitizeHints = (raw: EarlyHint[]) => {
+  const unique = new Map<string, EarlyHint>()
+  raw.forEach((hint) => {
+    if (!hint?.href) return
+    if (!hint.as && hint.rel !== 'modulepreload') return
+    if (shouldSkipEarlyHint(hint)) return
+    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${hint.crossorigin ? '1' : '0'}`
+    if (!unique.has(key)) unique.set(key, hint)
+  })
+  return Array.from(unique.values())
+}
+
+const getPlanEarlyHints = async (pathName: string, request: Request | null, basePath: string) => {
+  if (!request) return []
+  try {
+    const apiBase = resolveServerApiBase(appConfig.apiBase, request)
+    if (!apiBase) return []
+    const lang = resolveRequestLang(request)
+    const { plan } = await loadFragmentPlan(pathName, { apiBase }, lang, { includeInitial: false })
+    const criticalCss = buildFragmentCssLinks(plan, { criticalOnly: true }).map((link) => ({
+      href: link.href,
+      as: 'style'
+    }))
+    const heroHints = plan.path === '/' ? buildLcpAssetHints(basePath) : []
+    return sanitizeHints([...(plan.earlyHints ?? []), ...criticalCss, ...heroHints])
+  } catch {
+    return []
+  }
 }
 
 const withLangParam = (href: string, langValue: Lang) => {
@@ -262,7 +340,7 @@ export const useInitialFadeState = routeLoader$((event) => {
   return { initialFade, criticalLite }
 })
 
-export const onRequest: RequestHandler = async ({ headers, method, basePathname }) => {
+export const onRequest: RequestHandler = async ({ headers, method, basePathname, request }) => {
   if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
     headers.set(
       'Cache-Control',
@@ -270,8 +348,14 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname 
     )
   }
   if ((method === 'GET' || method === 'HEAD') && headers.get('Accept')?.includes('text/html')) {
-    const preloadLinks = await getModulePreloadLinks(basePathname || '/')
+    const basePath = basePathname || '/'
+    const preloadLinks = await getModulePreloadLinks(basePath)
     preloadLinks.forEach((link) => headers.append('Link', link))
+    const pathName = request ? new URL(request.url).pathname : '/'
+    const planHints = await getPlanEarlyHints(pathName, request ?? null, basePath)
+    planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
+      headers.append('Link', link)
+    })
   }
 }
 
