@@ -5,9 +5,17 @@ import type { CacheClient } from './cache'
 
 const fragmentPlanCachePrefix = 'fragments:plan:'
 const fragmentInitialCachePrefix = 'fragments:initial:'
+const fragmentPlanLockPrefix = 'fragments:plan:lock:'
+const fragmentInitialLockPrefix = 'fragments:initial:lock:'
 const latencyHashKey = 'latency:stats'
 const earlyLimitPrefix = 'early:limit:'
 const cacheCommandTimeoutMs = 300
+const releaseLockScript = `
+  if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+  end
+  return 0
+`
 
 const withValkeyTimeout = async <T>(
   cache: CacheClient,
@@ -26,6 +34,10 @@ const withValkeyTimeout = async <T>(
 export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
 export const buildFragmentInitialCacheKey = (path: string, lang: FragmentLang, etag: string) =>
   `${fragmentInitialCachePrefix}${lang}:${normalizePlanPath(path)}:${etag}`
+export const buildFragmentPlanLockKey = (path: string, lang: FragmentLang) =>
+  `${fragmentPlanLockPrefix}${lang}:${normalizePlanPath(path)}`
+export const buildFragmentInitialLockKey = (path: string, lang: FragmentLang, etag: string) =>
+  `${fragmentInitialLockPrefix}${lang}:${normalizePlanPath(path)}:${etag}`
 
 export const buildCacheControlHeader = (ttl: number, staleTtl: number) =>
   `public, max-age=0, s-maxage=${ttl}, stale-while-revalidate=${staleTtl}`
@@ -112,6 +124,34 @@ export const writeCache = async (cache: CacheClient, key: string, value: unknown
     )
   } catch (error) {
     console.warn('Failed to write cache entry', { key, error })
+  }
+}
+
+export const acquireCacheLock = async (
+  cache: CacheClient,
+  key: string,
+  token: string,
+  ttlMs: number
+): Promise<boolean> => {
+  if (!cache.isReady()) return false
+  try {
+    const result = await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.set(commandOptions, key, token, { NX: true, PX: ttlMs })
+    )
+    return result !== null
+  } catch {
+    return false
+  }
+}
+
+export const releaseCacheLock = async (cache: CacheClient, key: string, token: string) => {
+  if (!cache.isReady()) return
+  try {
+    await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.eval(commandOptions, releaseLockScript, { keys: [key], arguments: [token] })
+    )
+  } catch {
+    // ignore lock release failures
   }
 }
 

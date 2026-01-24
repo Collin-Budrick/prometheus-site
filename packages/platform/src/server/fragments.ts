@@ -16,18 +16,22 @@ import { buildFragmentCacheKey, createMemoryFragmentStore } from '@core/fragment
 import { normalizePlanPath } from '@core/fragment/planner'
 import type { CacheClient } from '../cache'
 import {
+  acquireCacheLock,
   buildFragmentInitialCacheKey,
+  buildFragmentInitialLockKey,
   buildFragmentPlanCacheKey,
   buildCacheControlHeader,
+  buildFragmentPlanLockKey,
   bumpPlanEtagVersion,
   getPlanEtagVersion,
   readCache,
   recordLatencySample,
+  releaseCacheLock,
   writeCache
 } from '../cache-helpers'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 type FragmentService = ReturnType<typeof createFragmentService>
 
@@ -458,6 +462,13 @@ const buildPlanEtag = (plan: FragmentPlan, versionToken: string) => {
 
 const planCacheTtlSeconds = 30
 const planCacheStaleSeconds = 60
+const planLockTtlMs = 500
+const initialLockTtlMs = 500
+const lockWaitMs = 60
+
+const waitForLock = async () => {
+  await new Promise((resolve) => setTimeout(resolve, lockWaitMs))
+}
 
 const buildPlanHeaders = (etag: string) =>
   new Headers({
@@ -658,11 +669,37 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const memoPlan = refresh ? null : getMemoizedPlan(path, lang)
       const fragmentsByCacheKey = new Map<string, StoredFragment>()
       if (plan === null) {
-        const start = performance.now()
-        plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey, basePlan: memoPlan ?? undefined })
-        const elapsed = performance.now() - start
-        void recordLatencySample(cache, 'fragment-plan', elapsed)
-        await writeCache(cache, cacheKey, plan, 30)
+        const lockKey = buildFragmentPlanLockKey(path, lang)
+        const lockToken = randomUUID()
+        let hasLock = await acquireCacheLock(cache, lockKey, lockToken, planLockTtlMs)
+        if (!hasLock) {
+          await waitForLock()
+          const retryCachedValue = refresh ? null : await readCache(cache, cacheKey)
+          const retryCached =
+            retryCachedValue !== null && isFragmentPlanResponse(retryCachedValue)
+              ? stripInitialFragments(retryCachedValue)
+              : null
+          if (retryCached !== null) {
+            plan = retryCached
+          } else if (memoPlan !== null) {
+            plan = memoPlan
+          } else {
+            hasLock = await acquireCacheLock(cache, lockKey, lockToken, planLockTtlMs)
+          }
+        }
+        if (plan === null) {
+          const start = performance.now()
+          try {
+            plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey, basePlan: memoPlan ?? undefined })
+          } finally {
+            if (hasLock) {
+              await releaseCacheLock(cache, lockKey, lockToken)
+            }
+          }
+          const elapsed = performance.now() - start
+          void recordLatencySample(cache, 'fragment-plan', elapsed)
+          await writeCache(cache, cacheKey, plan, 30)
+        }
       }
       const basePlan = stripInitialFragments(plan)
       memoizeFragmentPlan(path, lang, basePlan)
@@ -682,20 +719,41 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       }
       const initialCacheKey = buildFragmentInitialCacheKey(path, lang, etag)
       const cachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
-      let initialFragments: FragmentPlanInitialPayloads | null = null
-      let initialHtml: FragmentPlanInitialHtml | undefined
-      if (cachedInitial !== null && isFragmentInitialPayloads(cachedInitial)) {
-        initialFragments = cachedInitial
-      } else if (cachedInitial !== null && isFragmentInitialCachePayload(cachedInitial)) {
-        initialFragments = cachedInitial.initialFragments
-        initialHtml = cachedInitial.initialHtml
+      const resolveInitialCache = (value: unknown) => {
+        if (value !== null && isFragmentInitialPayloads(value)) {
+          return { initialFragments: value, initialHtml: undefined }
+        }
+        if (value !== null && isFragmentInitialCachePayload(value)) {
+          return { initialFragments: value.initialFragments, initialHtml: value.initialHtml }
+        }
+        return { initialFragments: null, initialHtml: undefined }
       }
+      let { initialFragments, initialHtml } = resolveInitialCache(cachedInitial)
 
       if (initialFragments === null) {
-        const built = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
-        initialFragments = built.initialFragments
-        initialHtml = built.initialHtml
-        await writeCache(cache, initialCacheKey, { initialFragments, initialHtml }, 30)
+        const lockKey = buildFragmentInitialLockKey(path, lang, etag)
+        const lockToken = randomUUID()
+        let hasLock = await acquireCacheLock(cache, lockKey, lockToken, initialLockTtlMs)
+        if (!hasLock) {
+          await waitForLock()
+          const retryCachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
+          ;({ initialFragments, initialHtml } = resolveInitialCache(retryCachedInitial))
+          if (initialFragments === null) {
+            hasLock = await acquireCacheLock(cache, lockKey, lockToken, initialLockTtlMs)
+          }
+        }
+        if (initialFragments === null) {
+          try {
+            const built = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
+            initialFragments = built.initialFragments
+            initialHtml = built.initialHtml
+            await writeCache(cache, initialCacheKey, { initialFragments, initialHtml }, 30)
+          } finally {
+            if (hasLock) {
+              await releaseCacheLock(cache, lockKey, lockToken)
+            }
+          }
+        }
       }
 
       const payload: FragmentPlanResponse & { initialHtml?: FragmentPlanInitialHtml } = {
