@@ -1,5 +1,11 @@
 /// <reference lib="webworker" />
-import { CacheFirst, CacheableResponsePlugin, Serwist, StaleWhileRevalidate } from 'serwist'
+import {
+  CacheFirst,
+  CacheableResponsePlugin,
+  ExpirationPlugin,
+  Serwist,
+  StaleWhileRevalidate
+} from 'serwist'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
@@ -7,6 +13,9 @@ declare const self: ServiceWorkerGlobalScope & {
 
 const CACHE_NAME = 'fragment-prime-shell-v6'
 const DATA_CACHE_NAME = 'fragment-prime-data-v1'
+const FRAGMENT_PLAN_CACHE_NAME = 'fragment-prime-fragment-plan-v1'
+const FRAGMENT_BATCH_CACHE_NAME = 'fragment-prime-fragment-batch-v1'
+const FRAGMENT_BATCH_TTL_SECONDS = 30
 const scopeUrl = new URL(self.registration.scope)
 const scopePath = scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
 const SHELL_URL = new URL('./', scopeUrl).toString()
@@ -48,6 +57,10 @@ const isCacheableResponse = (response?: Response) =>
 
 const isFragmentStreamPath = (url: URL) =>
   url.pathname === `${scopePath}fragments/stream` || url.pathname.endsWith(FRAGMENT_STREAM_PATH)
+
+const isFragmentPlanPath = (url: URL) => scopedPathname(url) === '/fragments/plan'
+
+const isFragmentBatchPath = (url: URL) => scopedPathname(url) === '/fragments/batch'
 
 const isJsonRequest = (request: Request, url: URL) => {
   if (request.method !== 'GET') return false
@@ -122,6 +135,22 @@ const staticAssetStrategy = new StaleWhileRevalidate({
   plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
 })
 
+const fragmentPlanStrategy = new StaleWhileRevalidate({
+  cacheName: FRAGMENT_PLAN_CACHE_NAME,
+  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
+})
+
+const fragmentBatchStrategy = new StaleWhileRevalidate({
+  cacheName: FRAGMENT_BATCH_CACHE_NAME,
+  plugins: [
+    new CacheableResponsePlugin({ statuses: [0, 200] }),
+    new ExpirationPlugin({
+      maxAgeSeconds: FRAGMENT_BATCH_TTL_SECONDS,
+      maxEntries: 50
+    })
+  ]
+})
+
 const hashedBuildAssetStrategy = new CacheFirst({
   cacheName: CACHE_NAME,
   plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
@@ -166,6 +195,34 @@ const handleHashedBuildAsset = async ({
   return Response.error()
 }
 
+const handleFragmentPlan = async ({
+  event,
+  request,
+  url
+}: {
+  event: ExtendableEvent
+  request: Request
+  url: URL
+}) => {
+  const response = await fragmentPlanStrategy.handle({ event, request, url })
+  if (response) return response
+  return Response.error()
+}
+
+const handleFragmentBatch = async ({
+  event,
+  request,
+  url
+}: {
+  event: ExtendableEvent
+  request: Request
+  url: URL
+}) => {
+  const response = await fragmentBatchStrategy.handle({ event, request, url })
+  if (response) return response
+  return Response.error()
+}
+
 const broadcastMessage = async (message: Record<string, unknown>) => {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   await Promise.all(clients.map((client: Client) => client.postMessage(message)))
@@ -174,7 +231,11 @@ const broadcastMessage = async (message: Record<string, unknown>) => {
 const clearRuntimeCaches = async () => {
   const keys = await caches.keys()
   const targets = keys.filter(
-    (key) => key.startsWith('fragment-prime-shell') || key.startsWith('fragment-prime-data')
+    (key) =>
+      key.startsWith('fragment-prime-shell') ||
+      key.startsWith('fragment-prime-data') ||
+      key.startsWith('fragment-prime-fragment-plan') ||
+      key.startsWith('fragment-prime-fragment-batch')
   )
   await Promise.all(targets.map((key) => caches.delete(key)))
 }
@@ -232,6 +293,22 @@ const serwist = new Serwist({
       matcher: ({ request, url }) =>
         url.origin === self.location.origin && !isFragmentStreamPath(url) && isNavigationRequest(request),
       handler: handleShell
+    },
+    {
+      matcher: ({ request, url }) =>
+        request.method === 'GET' &&
+        url.origin === self.location.origin &&
+        !isFragmentStreamPath(url) &&
+        isFragmentPlanPath(url),
+      handler: handleFragmentPlan
+    },
+    {
+      matcher: ({ request, url }) =>
+        request.method === 'GET' &&
+        url.origin === self.location.origin &&
+        !isFragmentStreamPath(url) &&
+        isFragmentBatchPath(url),
+      handler: handleFragmentBatch
     },
     {
       matcher: ({ request, url }) => isJsonRequest(request, url),
