@@ -68,6 +68,7 @@ type FragmentResource = {
   path: string
   lang: Lang
   shellState: FragmentShellState | null
+  initialHtml?: Record<string, string>
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
@@ -75,14 +76,20 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const lang = resolveRequestLang(request)
 
   try {
-    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const {
+      plan,
+      fragments,
+      path: planPath,
+      initialHtml
+    } = await loadHybridFragmentResource(path, appConfig, lang, request)
 
     return {
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath)
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
+      initialHtml
     }
   } catch (error) {
     console.error('Fragment plan fetch failed', error)
@@ -106,10 +113,14 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       } as FragmentPayloadValue,
       path,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path)
+      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path),
+      initialHtml: undefined
     }
   }
 })
+
+const readInitialHtmlFromPlan = (plan: FragmentPlanValue | undefined) =>
+  (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
 
 export default component$(() => {
   const location = useLocation()
@@ -117,7 +128,14 @@ export default component$(() => {
   const copy = useLangCopy()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
-    ? { plan: cachedEntry.plan, fragments: cachedEntry.fragments, path: cachedEntry.path, lang: cachedEntry.lang, shellState: null }
+    ? {
+        plan: cachedEntry.plan,
+        fragments: cachedEntry.fragments,
+        path: cachedEntry.path,
+        lang: cachedEntry.lang,
+        shellState: null,
+        initialHtml: readInitialHtmlFromPlan(cachedEntry.plan)
+      }
     : null
   const data = fragmentResource.value ?? cachedData
   if (!data) return null
@@ -126,6 +144,7 @@ export default component$(() => {
     <FragmentShell
       plan={data.plan}
       initialFragments={data.fragments}
+      initialHtml={data.initialHtml}
       path={data.path}
       initialLang={data.lang}
       initialShellState={data.shellState ?? undefined}

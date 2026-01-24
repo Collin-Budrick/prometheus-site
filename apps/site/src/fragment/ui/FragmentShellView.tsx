@@ -20,6 +20,7 @@ type FragmentShellViewProps = {
   gridRef: Signal<HTMLDivElement | undefined>
   slottedEntries: Signal<SlottedEntry[]>
   fragments: Signal<FragmentPayloadMap>
+  initialHtml?: Record<string, string>
   fragmentHeaders: Signal<Record<string, FragmentHeaderCopy>>
   langSignal: Signal<Lang>
   initialLang: Lang
@@ -39,6 +40,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     gridRef,
     slottedEntries,
     fragments,
+    initialHtml,
     fragmentHeaders,
     langSignal,
     initialLang,
@@ -168,7 +170,11 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
             : fragment?.tree
           const allowHtml = entry?.renderHtml !== false
           const html = fragment?.html?.trim()
+          const fallbackHtml = entry ? initialHtml?.[entry.id]?.trim() : null
           const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders)
+          const useFallbackHtml = Boolean(
+            allowHtml && fallbackHtml && !fragment && !shouldOverrideHeaders
+          )
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
           const isCritical =
@@ -223,6 +229,8 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       ) : (
                         <FragmentRenderer node={renderNode ?? fragment.tree} />
                       )
+                    ) : useFallbackHtml ? (
+                      <div class="fragment-html" dangerouslySetInnerHTML={fallbackHtml ?? ''} />
                     ) : (
                       <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                         <div class="loader" aria-hidden="true" />

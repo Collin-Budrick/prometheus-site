@@ -7,6 +7,7 @@ export type FragmentShellProps = {
   initialFragments: FragmentPayloadValue
   path: string
   initialLang: Lang
+  initialHtml?: Record<string, string>
   introMarkdown?: string
   preserveFragmentEffects?: boolean
   initialShellState?: ShellState

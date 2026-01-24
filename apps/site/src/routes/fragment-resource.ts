@@ -10,7 +10,11 @@ export type HybridFragmentResource = {
   plan: FragmentPlanValue
   fragments: FragmentPayloadMap
   path: string
+  initialHtml?: Record<string, string>
 }
+
+const readPlanInitialHtml = (plan: FragmentPlanValue | undefined) =>
+  (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
 
 export const selectInitialFragmentIds = (
   plan: FragmentPlanValue | undefined,
@@ -76,6 +80,18 @@ export const loadHybridFragmentResource = async (
   const dynamicCriticalIds = request
     ? readFragmentCriticalFromCookie(request.headers.get('cookie'), path, viewport)
     : []
+  const cached = fragmentPlanCache.get(path, lang)
+  if (cached?.plan && (cached.initialFragments || cached.initialHtml)) {
+    const cachedPlan = cached.plan as FragmentPlanValue
+    const initialIds = selectInitialFragmentIds(cachedPlan, { dynamicCriticalIds })
+    const fallbackFragments = pickFragments(cached.initialFragments, initialIds)
+    return {
+      plan: cachedPlan,
+      fragments: fallbackFragments,
+      path: cachedPlan.path,
+      initialHtml: cached.initialHtml
+    }
+  }
   let plan: FragmentPlanValue
   let initialFragments: FragmentPayloadMap | undefined
 
@@ -84,7 +100,6 @@ export const loadHybridFragmentResource = async (
     plan = result.plan
     initialFragments = result.initialFragments
   } catch (error) {
-    const cached = fragmentPlanCache.get(path, lang)
     if (!cached) {
       throw error
     }
@@ -93,7 +108,12 @@ export const loadHybridFragmentResource = async (
       cached.initialFragments,
       selectInitialFragmentIds(cached.plan as FragmentPlanValue, { dynamicCriticalIds })
     )
-    return { plan: cached.plan as FragmentPlanValue, fragments: fallbackFragments, path: cached.plan.path }
+    return {
+      plan: cached.plan as FragmentPlanValue,
+      fragments: fallbackFragments,
+      path: cached.plan.path,
+      initialHtml: cached.initialHtml
+    }
   }
 
   const initialIds = selectInitialFragmentIds(plan, { dynamicCriticalIds })
@@ -114,13 +134,20 @@ export const loadHybridFragmentResource = async (
   }
 
   const cachedEntry = fragmentPlanCache.get(path, lang)
+  const initialHtml = readPlanInitialHtml(plan)
   fragmentPlanCache.set(path, lang, {
     etag: cachedEntry?.etag ?? '',
     plan,
-    initialFragments: fragments
+    initialFragments: fragments,
+    initialHtml
   })
 
-  return { plan, fragments, path: plan.path }
+  return {
+    plan,
+    fragments,
+    path: plan.path,
+    initialHtml
+  }
 }
 
 export const resolveRequestLang = (request: Request): Lang => {

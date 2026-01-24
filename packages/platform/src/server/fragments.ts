@@ -483,15 +483,20 @@ const buildInitialFragments = async (
     })
   }
 
+  const resolveFragmentEntry = async (id: string) => {
+    const cacheKey = buildFragmentCacheKey(id, lang)
+    let fragment = cacheKeyMap.get(cacheKey)
+    if (!fragment) {
+      fragment = await service.getFragmentEntry(id, { lang })
+      cacheKeyMap.set(cacheKey, fragment)
+      fragmentsByCacheKey?.set(cacheKey, fragment)
+    }
+    return { cacheKey, fragment }
+  }
+
   const entries = await Promise.all(
     ids.map(async (id) => {
-      const cacheKey = buildFragmentCacheKey(id, lang)
-      let fragment = cacheKeyMap.get(cacheKey) ?? null
-      if (fragment === null) {
-        fragment = await service.getFragmentEntry(id, { lang })
-        cacheKeyMap.set(cacheKey, fragment)
-        fragmentsByCacheKey?.set(cacheKey, fragment)
-      }
+      const { cacheKey, fragment } = await resolveFragmentEntry(id)
       let encoded = base64ByCacheKey.get(cacheKey)
       if (encoded === undefined) {
         encoded = Buffer.from(fragment.payload).toString('base64')
@@ -504,12 +509,15 @@ const buildInitialFragments = async (
     acc[id] = payload
     return acc
   }, {})
-  const initialHtml = lcpIds.reduce<FragmentPlanInitialHtml>((acc, id) => {
-    const cacheKey = buildFragmentCacheKey(id, lang)
-    const fragment = cacheKeyMap.get(cacheKey)
-    if (fragment?.html) {
-      acc[id] = fragment.html
-    }
+  const htmlIds = criticalIds
+  const htmlEntries = await Promise.all(
+    htmlIds.map(async (id) => {
+      const { fragment } = await resolveFragmentEntry(id)
+      return [id, fragment.html] as const
+    })
+  )
+  const initialHtml = htmlEntries.reduce<FragmentPlanInitialHtml>((acc, [id, html]) => {
+    if (html) acc[id] = html
     return acc
   }, {})
   return { initialFragments, initialHtml }
