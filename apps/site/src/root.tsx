@@ -4,7 +4,6 @@ import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
 import { createClientErrorReporter, initHighlight } from '@platform/logging'
 import { RouteMotion } from '@prometheus/ui'
 import globalStyles from '@prometheus/ui/global-critical.css?inline'
-import deferredStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
@@ -88,7 +87,6 @@ const setupLcpGate = (
 
 export default component$(() => {
   useStyles$(globalStyles)
-  useStyles$(deferredStyles)
   const clientReady = useClientReady()
   useVisibleTask$(
     (ctx) => {
