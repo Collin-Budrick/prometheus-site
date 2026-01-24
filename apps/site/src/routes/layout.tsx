@@ -283,7 +283,38 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
   return fallbackOrigin
 }
 
-const buildPreconnectOrigins = (currentOrigin: string | null) => {
+const TRACKING_CONSENT_KEY = 'prom:tracking-consent'
+
+const hasTrackingConsent = () => {
+  if (typeof window === 'undefined') return false
+  try {
+    const raw = window.localStorage.getItem(TRACKING_CONSENT_KEY) ?? ''
+    return ['1', 'true', 'yes', 'on', 'granted'].includes(raw.trim().toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+const buildTrackingOrigins = (currentOrigin: string | null) => {
+  const origins = new Set<string>()
+  const addOrigin = (href: string | undefined) => {
+    const origin = toPreconnectOrigin(href, currentOrigin)
+    if (!origin) return
+    origins.add(origin)
+  }
+
+  if (appConfig.analytics?.enabled) {
+    addOrigin(appConfig.analytics.beaconUrl)
+  }
+
+  if (appConfig.highlight?.enabled) {
+    addOrigin('https://app.highlight.io')
+  }
+
+  return Array.from(origins)
+}
+
+const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: boolean) => {
   const origins = new Set<string>()
   const addOrigin = (href: string | undefined) => {
     const origin = toPreconnectOrigin(href, currentOrigin)
@@ -296,12 +327,8 @@ const buildPreconnectOrigins = (currentOrigin: string | null) => {
     addOrigin(appConfig.webTransportBase)
   }
 
-  if (appConfig.analytics?.enabled) {
-    addOrigin(appConfig.analytics.beaconUrl)
-  }
-
-  if (appConfig.highlight?.enabled) {
-    addOrigin('https://app.highlight.io')
+  if (includeTracking) {
+    buildTrackingOrigins(currentOrigin).forEach((origin) => origins.add(origin))
   }
 
   return Array.from(origins)
@@ -363,10 +390,52 @@ export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
   const currentOrigin = location.url?.origin ?? null
-  const preconnectOrigins = buildPreconnectOrigins(currentOrigin)
+  const trackingReady = useSignal(false)
+  const trackingOrigins = buildTrackingOrigins(currentOrigin)
+  const preconnectOrigins = buildPreconnectOrigins(currentOrigin, trackingReady.value)
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
+
+  useVisibleTask$(() => {
+    if (typeof window === 'undefined') return
+    if (trackingReady.value || trackingOrigins.length === 0) return
+    if (hasTrackingConsent()) {
+      trackingReady.value = true
+      return
+    }
+
+    const enableTracking = () => {
+      if (trackingReady.value) return
+      trackingReady.value = true
+      cleanup()
+    }
+
+    const handleInteraction = () => {
+      enableTracking()
+    }
+
+    const handleConsentEvent = () => {
+      if (hasTrackingConsent()) {
+        enableTracking()
+      }
+    }
+
+    const cleanup = () => {
+      window.removeEventListener('pointerdown', handleInteraction)
+      window.removeEventListener('keydown', handleInteraction)
+      window.removeEventListener('touchstart', handleInteraction)
+      window.removeEventListener('prom:tracking-consent', handleConsentEvent as EventListener)
+    }
+
+    window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+    window.addEventListener('keydown', handleInteraction, { once: true })
+    window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+    window.addEventListener('prom:tracking-consent', handleConsentEvent as EventListener)
+
+    return () => cleanup()
+  })
+
   return (
     <>
       <title>{head.title}</title>
@@ -396,6 +465,9 @@ export const RouterHead = component$(() => {
           href={origin}
           crossOrigin={origin !== currentOrigin ? 'anonymous' : undefined}
         />
+      ))}
+      {trackingOrigins.map((origin) => (
+        <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
       ))}
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
       <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
