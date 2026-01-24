@@ -191,6 +191,10 @@ const buildPlanCriticalCssHints = (plan: FragmentPlanPayload) =>
     .map((entry) => resolveFragmentCssHint(entry.id))
     .filter((hint): hint is EarlyHint => Boolean(hint))
 
+const lcpAssetManifest: Record<string, EarlyHint[]> = {
+  '/': [{ href: withBase('/assets/starfield-layer-1.svg'), as: 'image', type: 'image/svg+xml' }]
+}
+
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
   if (warning.code !== 'EVAL') return false
   const file = warning.loc?.file ?? warning.id ?? ''
@@ -235,8 +239,9 @@ const getEarlyHints = async (pathName: string) => {
   const payload = (await response.json()) as FragmentPlanPayload
   const planHints = Array.isArray(payload.earlyHints) ? payload.earlyHints : []
   const criticalCssHints = buildPlanCriticalCssHints(payload)
-  if (!planHints.length && !criticalCssHints.length) return []
-  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints]))
+  const lcpHints = lcpAssetManifest[pathName] ?? []
+  if (!planHints.length && !criticalCssHints.length && !lcpHints.length) return []
+  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints, ...lcpHints]))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {
@@ -415,6 +420,20 @@ const sanitizeOutputOptionsPlugin = (): Plugin => ({
   }
 })
 
+const manualChunks = (id: string) => {
+  if (id.includes('/node_modules/')) {
+    if (id.includes('@builder.io/qwik') || id.includes('@builder.io/qwik-city') || id.includes('@qwik-client-manifest')) {
+      return undefined
+    }
+    return 'vendor'
+  }
+  if (id.includes('/packages/ui/')) return 'ui'
+  if (id.includes('/packages/features/')) return 'features'
+  if (id.includes('/packages/core/')) return 'core'
+  if (id.includes('/packages/platform/')) return 'platform'
+  return undefined
+}
+
 export default defineConfig(
   (async () => {
     const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
@@ -524,6 +543,11 @@ export default defineConfig(
       },
       build: {
         cssMinify: 'lightningcss',
+        rollupOptions: {
+          output: {
+            manualChunks
+          }
+        },
         rolldownOptions: {
           onwarn(warning, defaultHandler) {
             if (isProtobufEvalWarning(warning)) return

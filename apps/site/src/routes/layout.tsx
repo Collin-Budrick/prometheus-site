@@ -6,7 +6,6 @@ import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, In
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
-import { loadFragmentPlan } from '@core/fragment/server'
 import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
@@ -14,8 +13,9 @@ import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../app-config'
-import { resolveServerApiBase } from '../shared/api-base'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
+import { fragmentPlanCache } from '../fragment/plan-cache'
+import type { FragmentPlan } from '../fragment/types'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -150,7 +150,7 @@ const loadClientManifest = async (): Promise<ClientManifest | null> => {
 const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
   const links: string[] = []
   const seen = new Set<string>()
-  const maxLinks = 6
+  const maxLinks = 8
   const resolvedManifest: ClientManifest = {
     core: clientManifest.core ?? manifest.core,
     preloader: clientManifest.preloader ?? manifest.preloader,
@@ -174,9 +174,9 @@ const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifes
     imports.forEach((importName) => pushLink(importName, options?.crossorigin))
   }
 
-  addBundle(resolvedManifest.core)
+  addBundle(resolvedManifest.core, { includeImports: true })
   if (resolvedManifest.preloader && resolvedManifest.preloader !== resolvedManifest.core) {
-    addBundle(resolvedManifest.preloader, { crossorigin: true })
+    addBundle(resolvedManifest.preloader, { crossorigin: true, includeImports: true })
   }
   return links
 }
@@ -226,21 +226,33 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values())
 }
 
-const getPlanEarlyHints = async (pathName: string, request: Request | null) => {
-  if (!request) return []
-  try {
-    const apiBase = resolveServerApiBase(appConfig.apiBase, request)
-    if (!apiBase) return []
-    const lang = resolveRequestLang(request)
-    const { plan } = await loadFragmentPlan(pathName, { apiBase }, lang, { includeInitial: false })
-    const criticalCss = buildFragmentCssLinks(plan, { criticalOnly: true }).map((link) => ({
-      href: link.href,
-      as: 'style'
-    }))
-    return sanitizeHints([...(plan.earlyHints ?? []), ...criticalCss])
-  } catch {
-    return []
-  }
+const lcpAssetManifest: Record<string, EarlyHint[]> = {
+  '/': [{ href: '/assets/starfield-layer-1.svg', as: 'image', type: 'image/svg+xml' }]
+}
+
+const buildLcpAssetHints = (pathName: string, basePath: string) =>
+  (lcpAssetManifest[pathName] ?? []).map((hint) => ({
+    ...hint,
+    href: hint.href.startsWith('/') ? withBasePath(basePath, hint.href) : hint.href
+  }))
+
+const buildPlanEarlyHints = (plan: FragmentPlan | null | undefined) => {
+  if (!plan) return []
+  const criticalCss = buildFragmentCssLinks(plan, { criticalOnly: true }).map((link) => ({
+    href: link.href,
+    as: 'style'
+  }))
+  return [...(plan.earlyHints ?? []), ...criticalCss]
+}
+
+const getPlanEarlyHints = (pathName: string, request: Request | null, basePath: string) => {
+  const lcpHints = buildLcpAssetHints(pathName, basePath)
+  if (!request) return sanitizeHints(lcpHints)
+  const lang = resolveRequestLang(request)
+  const cached = fragmentPlanCache.get(pathName, lang)
+  const planHints =
+    cached?.earlyHints?.length ? cached.earlyHints : cached ? buildPlanEarlyHints(cached.plan) : []
+  return sanitizeHints([...planHints, ...lcpHints])
 }
 
 const withLangParam = (href: string, langValue: Lang) => {
@@ -363,7 +375,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
     const preloadLinks = await getModulePreloadLinks(basePath)
     preloadLinks.forEach((link) => headers.append('Link', link))
     const pathName = request ? new URL(request.url).pathname : '/'
-    const planHints = await getPlanEarlyHints(pathName, request ?? null)
+    const planHints = getPlanEarlyHints(pathName, request ?? null, basePath)
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
@@ -373,6 +385,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
+  const fadeState = useInitialFadeState()
   const currentOrigin = location.url?.origin ?? null
   const trackingReady = useSignal(false)
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
@@ -453,8 +466,12 @@ export const RouterHead = component$(() => {
       {trackingOrigins.map((origin) => (
         <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
       ))}
-      <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
-      <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
+      {fadeState.value.initialFade ? (
+        <>
+          <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
+          <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
+        </>
+      ) : null}
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       <link rel="manifest" href={withBase('manifest.webmanifest')} />

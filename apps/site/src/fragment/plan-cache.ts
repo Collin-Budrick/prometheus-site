@@ -1,11 +1,18 @@
-import {
-  createFragmentPlanCache,
-  type FragmentPlanCache,
-  type FragmentPlanCacheEntry
-} from '@core/fragments'
+import { createFragmentPlanCache, type FragmentPlanCacheEntry } from '@core/fragments'
+import type { EarlyHint } from './types'
+
+type FragmentPlanCacheEntryWithHints = FragmentPlanCacheEntry & {
+  earlyHints?: EarlyHint[]
+  initialHtml?: Record<string, string>
+}
+
+type FragmentPlanCacheWithHints = {
+  get: (path: string, lang?: string) => FragmentPlanCacheEntryWithHints | undefined
+  set: (path: string, lang: string | undefined, entry: FragmentPlanCacheEntryWithHints) => void
+}
 
 type StoredPlanCacheEntry = {
-  entry: FragmentPlanCacheEntry
+  entry: FragmentPlanCacheEntryWithHints
   savedAt: number
 }
 
@@ -65,7 +72,7 @@ const parseFragmentPlanCachePayload = (raw: string): FragmentPlanCachePayload | 
 const buildCacheEntries = (
   path: string,
   lang: string | undefined,
-  entry: FragmentPlanCacheEntry,
+  entry: FragmentPlanCacheEntryWithHints,
   savedAt: number
 ) => {
   const entries: Record<string, StoredPlanCacheEntry> = {}
@@ -81,7 +88,7 @@ const buildCacheEntries = (
 export const createFragmentPlanCachePayload = (
   path: string,
   lang: string | undefined,
-  entry: FragmentPlanCacheEntry,
+  entry: FragmentPlanCacheEntryWithHints,
   savedAt: number = Date.now()
 ) => {
   const payload: FragmentPlanCachePayload = {
@@ -115,8 +122,8 @@ const readServerPayload = (): Record<string, StoredPlanCacheEntry> => {
 const createPersistentFragmentPlanCache = (
   limit: number = DEFAULT_LIMIT,
   ttlMs: number = DEFAULT_TTL_MS
-): FragmentPlanCache => {
-  const memoryCache = createFragmentPlanCache(limit)
+): FragmentPlanCacheWithHints => {
+  const memoryCache = createFragmentPlanCache(limit) as FragmentPlanCacheWithHints
   let storedEntries: Record<string, StoredPlanCacheEntry> | null = null
 
   const isExpired = (savedAt: number) => Date.now() - savedAt > ttlMs
@@ -195,7 +202,7 @@ const createPersistentFragmentPlanCache = (
     return stored.entry
   }
 
-  const persistEntry = (key: string, entry: FragmentPlanCacheEntry, savedAt: number = Date.now()) => {
+  const persistEntry = (key: string, entry: FragmentPlanCacheEntryWithHints, savedAt: number = Date.now()) => {
     const entries = getStoredEntries()
     entries[key] = { entry, savedAt }
     writeStorage(entries)

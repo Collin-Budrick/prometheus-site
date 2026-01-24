@@ -1,9 +1,10 @@
 import { $, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } from '@builder.io/qwik'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
-import type { FragmentPayloadMap } from '../types'
+import type { EarlyHint, FragmentPayloadMap, FragmentPlan } from '../types'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
 import { getFragmentHeaderCopy } from '../../shared/fragment-copy'
 import { createFragmentPlanCachePayload } from '../plan-cache'
+import { buildFragmentCssLinks } from '../fragment-css'
 import {
   getFragmentShellCacheEntry,
   normalizeFragmentShellPath,
@@ -26,6 +27,34 @@ import {
   parseStoredOrder,
   ORDER_STORAGE_PREFIX
 } from './fragment-shell-utils'
+
+const buildPlanEarlyHints = (planValue: FragmentPlan) => {
+  const criticalCss = buildFragmentCssLinks(planValue, { criticalOnly: true }).map((link) => ({
+    href: link.href,
+    as: 'style' as const
+  }))
+  const hints = [...(planValue.earlyHints ?? []), ...criticalCss]
+  const unique = new Map<string, EarlyHint>()
+  hints.forEach((hint) => {
+    if (!hint?.href) return
+    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${hint.crossorigin ? '1' : '0'}`
+    if (!unique.has(key)) unique.set(key, hint)
+  })
+  return Array.from(unique.values())
+}
+
+const resolveLcpFragmentIds = (planValue: FragmentPlan) =>
+  planValue.fragments
+    .filter((entry) => entry.critical && entry.renderHtml !== false)
+    .map((entry) => entry.id)
+
+const pickFragments = (fragments: FragmentPayloadMap, ids: string[]) =>
+  ids.reduce<FragmentPayloadMap>((acc, id) => {
+    if (fragments[id]) {
+      acc[id] = fragments[id]
+    }
+    return acc
+  }, {})
 
 export const useFragmentShellState = ({
   plan,
@@ -54,17 +83,28 @@ export const useFragmentShellState = ({
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(path) : undefined
   const hasIntro = Boolean(introMarkdown?.trim())
   const initialFragmentMap = resolveFragments(initialFragments)
+  const lcpFragmentIds = resolveLcpFragmentIds(planValue)
+  const lcpFragments =
+    lcpFragmentIds.length > 0 ? pickFragments(initialFragmentMap, lcpFragmentIds) : initialFragmentMap
+  const initialHtml = lcpFragmentIds.reduce<Record<string, string>>((acc, id) => {
+    const html = initialFragmentMap[id]?.html
+    if (html) acc[id] = html
+    return acc
+  }, {})
+  const planEarlyHints = buildPlanEarlyHints(planValue)
   const planCachePayload =
     typeof window === 'undefined'
       ? createFragmentPlanCachePayload(path, initialLang, {
           etag: '',
           plan: planValue,
-          initialFragments: initialFragmentMap
+          initialFragments: initialFragmentMap,
+          earlyHints: planEarlyHints,
+          initialHtml
         })
       : null
   const cachedFragments = cachedEntry?.fragments
   const fragments = useSignal<FragmentPayloadMap>(
-    cachedFragments ? { ...initialFragmentMap, ...cachedFragments } : initialFragmentMap
+    cachedFragments ? { ...lcpFragments, ...cachedFragments } : lcpFragments
   )
   const status = useSharedFragmentStatusSignal()
   const seedExpandedId = seedState?.expandedId ?? cachedEntry?.expandedId ?? null
@@ -386,6 +426,8 @@ export const useFragmentShellState = ({
     hasCache,
     skipCssGuard,
     planCachePayload,
-    initialFragmentMap
+    initialFragmentMap,
+    initialHtml,
+    initialFragments: lcpFragments
   }
 }
