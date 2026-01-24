@@ -235,13 +235,6 @@ const buildCacheHeaders = (entry: StoredFragment) => {
   return headers
 }
 
-const fragmentResponse = (entry: StoredFragment) => {
-  const body = entry.payload.slice().buffer
-  return new Response(body, {
-    headers: buildCacheHeaders(entry)
-  })
-}
-
 const selectEncoding = (raw: string | null) => {
   if (raw === null) return null
   const encodings = raw
@@ -254,10 +247,71 @@ const selectEncoding = (raw: string | null) => {
 const resolveStreamEncoding = (request: Request): CompressionEncoding | null =>
   selectEncoding(request.headers.get('x-fragment-accept-encoding'))
 
+const resolveRequestEncoding = (
+  headers: Headers
+): { encoding: CompressionEncoding | null; varyHeaders: string[] } => {
+  const fragmentEncoding = selectEncoding(headers.get('x-fragment-accept-encoding'))
+  if (fragmentEncoding !== null) {
+    return { encoding: fragmentEncoding, varyHeaders: ['Accept-Encoding', 'x-fragment-accept-encoding'] }
+  }
+  const acceptEncoding = selectEncoding(headers.get('accept-encoding'))
+  if (acceptEncoding !== null) {
+    return { encoding: acceptEncoding, varyHeaders: ['Accept-Encoding'] }
+  }
+  return { encoding: null, varyHeaders: [] }
+}
+
 const getCompressionStreamCtor = () =>
   typeof CompressionStream === 'function' ? CompressionStream : null
 
 type FragmentStreamBody = ReadableStream<Uint8Array>
+
+const createSingleChunkStream = (payload: Uint8Array): ReadableStream<Uint8Array> =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(payload)
+      controller.close()
+    }
+  })
+
+const mergeVaryHeader = (headers: Headers, values: string[]) => {
+  if (values.length === 0) return
+  const existing = headers.get('vary')
+  const merged = new Set<string>()
+  if (existing) {
+    existing
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value !== '')
+      .forEach((value) => merged.add(value))
+  }
+  values.forEach((value) => merged.add(value))
+  headers.set('vary', Array.from(merged).join(', '))
+}
+
+const buildCompressedResponse = (
+  payload: Uint8Array,
+  headers: Headers,
+  requestHeaders: Headers
+) => {
+  const { encoding, varyHeaders } = resolveRequestEncoding(requestHeaders)
+  let body: BodyInit = payload
+  if (encoding !== null) {
+    const compressed = compressFragmentStream(createSingleChunkStream(payload), encoding)
+    if (compressed.encoding !== null) {
+      body = compressed.stream
+      headers.set('content-encoding', compressed.encoding)
+      mergeVaryHeader(headers, varyHeaders)
+    }
+  }
+  return new Response(body, { headers })
+}
+
+const fragmentResponse = (entry: StoredFragment, request: Request) => {
+  const headers = buildCacheHeaders(entry)
+  const body = entry.payload.slice()
+  return buildCompressedResponse(body, headers, request.headers)
+}
 
 const streamToAsyncIterable = (stream: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> => ({
   async *[Symbol.asyncIterator]() {
@@ -538,7 +592,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
   return new Elysia({ prefix: '/fragments' })
   .post(
     '/batch',
-    async ({ body }) => {
+    async ({ body, request }) => {
       const inflight = new Map<string, Promise<string>>()
 
       const resolvePayload = async (id: string, lang: string, refresh: boolean) => {
@@ -563,10 +617,15 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         })
       )
 
-      return entries.reduce<Record<string, string>>((acc, [id, payload]) => {
+      const payload = entries.reduce<Record<string, string>>((acc, [id, payload]) => {
         acc[id] = payload
         return acc
       }, {})
+      const headers = new Headers({
+        'content-type': 'application/json',
+        'cache-control': buildCacheControlHeader(0, 0)
+      })
+      return buildCompressedResponse(Buffer.from(JSON.stringify(payload)), headers, request.headers)
     },
     {
       body: t.Array(
@@ -615,10 +674,11 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         return new Response(null, { status: 304, headers: buildPlanHeaders(etag) })
       }
       if (!includeInitial) {
-        return new Response(JSON.stringify(basePlan), {
-          status: 200,
-          headers: buildPlanHeaders(etag)
-        })
+        return buildCompressedResponse(
+          Buffer.from(JSON.stringify(basePlan)),
+          buildPlanHeaders(etag),
+          request.headers
+        )
       }
       const initialCacheKey = buildFragmentInitialCacheKey(path, lang, etag)
       const cachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
@@ -643,10 +703,11 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         initialFragments,
         ...(initialHtml && Object.keys(initialHtml).length ? { initialHtml } : {})
       }
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: buildPlanHeaders(etag)
-      })
+      return buildCompressedResponse(
+        Buffer.from(JSON.stringify(payload)),
+        buildPlanHeaders(etag),
+        request.headers
+      )
     },
     {
       query: t.Object({
@@ -730,7 +791,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
   )
   .get(
     '/',
-    async ({ query }) => {
+    async ({ query, request }) => {
       const id = typeof query.id === 'string' ? query.id : ''
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       if (!id) {
@@ -739,7 +800,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
-      return fragmentResponse(entry)
+      return fragmentResponse(entry, request)
     },
     {
       query: t.Object({
@@ -749,10 +810,10 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       })
     }
   )
-  .get('/:id', async ({ params, query }) => {
+  .get('/:id', async ({ params, query, request }) => {
     const id = params.id
     const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
     const entry = await getFragmentEntry(id, { lang })
-    return fragmentResponse(entry)
+    return fragmentResponse(entry, request)
   })
 }
