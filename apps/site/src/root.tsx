@@ -30,6 +30,62 @@ const shouldEnableAmbientMotion = () => {
   return true
 }
 
+const setupLcpGate = (
+  ctx: { cleanup: (cleanupFn: () => void) => void },
+  onReady: () => void,
+  options?: { timeoutMs?: number }
+) => {
+  const timeoutMs = options?.timeoutMs ?? 3000
+  let fired = false
+  let timeoutHandle: number | null = null
+  let observer: PerformanceObserver | null = null
+
+  const cleanup = () => {
+    if (timeoutHandle !== null) {
+      window.clearTimeout(timeoutHandle)
+      timeoutHandle = null
+    }
+    observer?.disconnect()
+    observer = null
+    window.removeEventListener('pointerdown', handleInteraction)
+    window.removeEventListener('keydown', handleInteraction)
+    window.removeEventListener('touchstart', handleInteraction)
+  }
+
+  const run = () => {
+    if (fired) return
+    fired = true
+    cleanup()
+    onReady()
+  }
+
+  const handleInteraction = () => {
+    run()
+  }
+
+  const observeLcp = () => {
+    if (!('PerformanceObserver' in window)) return
+    try {
+      observer = new PerformanceObserver((list) => {
+        if (list.getEntries().length === 0) return
+        run()
+      })
+      observer.observe({ type: 'largest-contentful-paint', buffered: true })
+    } catch {
+      observer?.disconnect()
+      observer = null
+    }
+  }
+
+  window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+  window.addEventListener('keydown', handleInteraction, { once: true })
+  window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+  timeoutHandle = window.setTimeout(run, timeoutMs)
+  observeLcp()
+
+  ctx.cleanup(() => cleanup())
+}
+
 export default component$(() => {
   useStyles$(globalStyles)
   useStyles$(deferredStyles)
@@ -37,65 +93,13 @@ export default component$(() => {
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      const setupLcpGate = (onReady: () => void, options?: { timeoutMs?: number }) => {
-        const timeoutMs = options?.timeoutMs ?? 3000
-        let fired = false
-        let timeoutHandle: number | null = null
-        let observer: PerformanceObserver | null = null
-
-        const cleanup = () => {
-          if (timeoutHandle !== null) {
-            window.clearTimeout(timeoutHandle)
-            timeoutHandle = null
-          }
-          observer?.disconnect()
-          observer = null
-          window.removeEventListener('pointerdown', handleInteraction)
-          window.removeEventListener('keydown', handleInteraction)
-          window.removeEventListener('touchstart', handleInteraction)
-        }
-
-        const run = () => {
-          if (fired) return
-          fired = true
-          cleanup()
-          onReady()
-        }
-
-        const handleInteraction = () => {
-          run()
-        }
-
-        const observeLcp = () => {
-          if (!('PerformanceObserver' in window)) return
-          try {
-            observer = new PerformanceObserver((list) => {
-              if (list.getEntries().length === 0) return
-              run()
-            })
-            observer.observe({ type: 'largest-contentful-paint', buffered: true })
-          } catch {
-            observer?.disconnect()
-            observer = null
-          }
-        }
-
-        window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
-        window.addEventListener('keydown', handleInteraction, { once: true })
-        window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
-        timeoutHandle = window.setTimeout(run, timeoutMs)
-        observeLcp()
-
-        return cleanup
-      }
-
-      const cleanup = setupLcpGate(
+      setupLcpGate(
+        ctx,
         () => {
           initHighlight(appConfig.highlight, { apiBase: appConfig.apiBase })
         },
         { timeoutMs: 3000 }
       )
-      ctx.cleanup(() => cleanup())
     },
     { strategy: 'document-idle' }
   )
@@ -105,59 +109,8 @@ export default component$(() => {
       if (!shouldEnableAmbientMotion()) return
       const root = document.documentElement
 
-      const setupLcpGate = (onReady: () => void, options?: { timeoutMs?: number }) => {
-        const timeoutMs = options?.timeoutMs ?? 2000
-        let fired = false
-        let timeoutHandle: number | null = null
-        let observer: PerformanceObserver | null = null
-
-        const cleanup = () => {
-          if (timeoutHandle !== null) {
-            window.clearTimeout(timeoutHandle)
-            timeoutHandle = null
-          }
-          observer?.disconnect()
-          observer = null
-          window.removeEventListener('pointerdown', handleInteraction)
-          window.removeEventListener('keydown', handleInteraction)
-          window.removeEventListener('touchstart', handleInteraction)
-        }
-
-        const run = () => {
-          if (fired) return
-          fired = true
-          cleanup()
-          onReady()
-        }
-
-        const handleInteraction = () => {
-          run()
-        }
-
-        const observeLcp = () => {
-          if (!('PerformanceObserver' in window)) return
-          try {
-            observer = new PerformanceObserver((list) => {
-              if (list.getEntries().length === 0) return
-              run()
-            })
-            observer.observe({ type: 'largest-contentful-paint', buffered: true })
-          } catch {
-            observer?.disconnect()
-            observer = null
-          }
-        }
-
-        window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
-        window.addEventListener('keydown', handleInteraction, { once: true })
-        window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
-        timeoutHandle = window.setTimeout(run, timeoutMs)
-        observeLcp()
-
-        return cleanup
-      }
-
-      const cleanup = setupLcpGate(
+      setupLcpGate(
+        ctx,
         () => {
           window.requestAnimationFrame(() => {
             root.dataset.decorReady = 'true'
@@ -165,7 +118,6 @@ export default component$(() => {
         },
         { timeoutMs: 2000 }
       )
-      ctx.cleanup(() => cleanup())
     },
     { strategy: 'document-idle' }
   )
