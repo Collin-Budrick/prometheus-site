@@ -125,6 +125,14 @@ type EarlyHint = {
 
 let clientManifestPromise: Promise<ClientManifest | null> | null = null
 
+const isClientManifest = (value: unknown): value is ClientManifest => typeof value === 'object' && value !== null
+
+const resolveClientManifest = (value?: ClientManifest | null) => {
+  if (isClientManifest(value)) return value
+  const fallback = manifest as ClientManifest | null
+  return isClientManifest(fallback) ? fallback : null
+}
+
 const loadClientManifest = async (): Promise<ClientManifest | null> => {
   if (!import.meta.env.SSR) return null
   if (clientManifestPromise) return clientManifestPromise
@@ -152,11 +160,7 @@ const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifes
   const links: string[] = []
   const seen = new Set<string>()
   const maxLinks = 2
-  const resolvedManifest: ClientManifest = {
-    core: clientManifest.core ?? manifest.core,
-    preloader: clientManifest.preloader ?? manifest.preloader,
-    bundles: clientManifest.bundles ?? (manifest as ClientManifest).bundles
-  }
+  const resolvedManifest = clientManifest
 
   const pushLink = (bundle: string, crossorigin?: boolean) => {
     if (!bundle || seen.has(bundle) || links.length >= maxLinks) return
@@ -180,11 +184,7 @@ const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifes
 }
 
 const buildModulePrefetchLinks = (basePath: string, clientManifest: ClientManifest) => {
-  const resolvedManifest: ClientManifest = {
-    core: clientManifest.core ?? manifest.core,
-    preloader: clientManifest.preloader ?? manifest.preloader,
-    bundles: clientManifest.bundles ?? (manifest as ClientManifest).bundles
-  }
+  const resolvedManifest = clientManifest
   const reserved = new Set<string>()
   if (resolvedManifest.core) reserved.add(resolvedManifest.core)
   if (resolvedManifest.preloader) reserved.add(resolvedManifest.preloader)
@@ -202,8 +202,12 @@ let cachedModulePreloadBase = ''
 const getModulePreloadLinks = async (basePath: string) => {
   if (cachedModulePreloads && cachedModulePreloadBase === basePath) return cachedModulePreloads
   cachedModulePreloadBase = basePath
-  const clientManifest = (await loadClientManifest()) ?? (manifest as ClientManifest)
-  cachedModulePreloads = buildModulePreloadLinks(basePath, clientManifest)
+  const resolvedManifest = resolveClientManifest(await loadClientManifest())
+  if (!resolvedManifest) {
+    cachedModulePreloads = []
+    return cachedModulePreloads
+  }
+  cachedModulePreloads = buildModulePreloadLinks(basePath, resolvedManifest)
   return cachedModulePreloads
 }
 
@@ -352,10 +356,10 @@ const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
   }
 
   const scheduleIdle = () => {
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(addLinks, { timeout: 2000 })
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => addLinks(), { timeout: 2000 })
     } else {
-      window.setTimeout(addLinks, 1500)
+      setTimeout(addLinks, 1500)
     }
   }
 
@@ -366,7 +370,7 @@ const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
     scheduleIdle()
   }
 
-  if ('PerformanceObserver' in window) {
+  if (typeof PerformanceObserver !== 'undefined') {
     try {
       const observer = new PerformanceObserver((list) => {
         if (list.getEntries().length === 0) return
@@ -374,14 +378,14 @@ const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
         scheduleOnce()
       })
       observer.observe({ type: 'largest-contentful-paint', buffered: true })
-      window.setTimeout(scheduleOnce, 3500)
+      setTimeout(scheduleOnce, 3500)
       return
     } catch {
       // ignore observer failure
     }
   }
 
-  window.setTimeout(scheduleOnce, 1500)
+  setTimeout(scheduleOnce, 1500)
 }
 
 const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
@@ -411,7 +415,7 @@ export const useShellPreferences = routeLoader$((event) => {
   return { lang, theme }
 })
 
-export const useInitialFadeState = routeLoader$((event) => {
+export const useInitialFadeState = routeLoader$((_event) => {
   const initialFade = null
   const criticalLite = 'ready'
   return { initialFade, criticalLite }
@@ -492,7 +496,9 @@ export const RouterHead = component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
-    const prefetchLinks = buildModulePrefetchLinks(base, manifest as ClientManifest)
+    const resolvedManifest = resolveClientManifest(manifest as ClientManifest | null)
+    if (!resolvedManifest) return
+    const prefetchLinks = buildModulePrefetchLinks(base, resolvedManifest)
     scheduleLowPriorityPrefetch(prefetchLinks)
   })
 

@@ -175,15 +175,14 @@
     animation: lava-fade-b 32s ease-in-out infinite;
   }
 
-  :root[data-theme="dark"][data-decor-ready="true"] body {
+  :root[data-theme="dark"][data-decor-ready="true"] body::before {
     background-image: var(--starfield-layer-1), var(--starfield-layer-2);
     background-size: 520px 520px, 760px 760px;
     background-position: 0 0, 240px 320px;
-    background-repeat: repeat;
-    background-attachment: scroll;
+    animation: none;
   }
 
-  :root[data-theme="dark"][data-decor-ready="true"] body::before {
+  :root[data-theme="dark"][data-decor-ready="true"] body::after {
     background-image: var(--starfield-twinkle);
     background-size: 980px 980px;
     background-position: 300px 380px;
@@ -191,11 +190,6 @@
     animation: starfield-twinkle 5.8s ease-in-out infinite;
     mix-blend-mode: screen;
     filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.9));
-  }
-
-  :root[data-theme="dark"] body::after {
-    content: none;
-    animation: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -206,7 +200,8 @@
       opacity: 0.55;
     }
 
-    :root[data-theme="dark"] body::before {
+    :root[data-theme="dark"] body::before,
+    :root[data-theme="dark"] body::after {
       animation: none;
       opacity: 0.22;
     }
@@ -225,13 +220,12 @@
       animation-timeline: auto, scroll(root);
     }
 
-    :root[data-theme="dark"][data-decor-ready="true"] body {
+    :root[data-theme="dark"][data-decor-ready="true"] body::before {
       animation: starfield-scroll 1s linear both;
       animation-timeline: scroll(root);
     }
 
-    :root[data-theme="dark"][data-decor-ready="true"] body::before {
-      background-position: 300px 380px;
+    :root[data-theme="dark"][data-decor-ready="true"] body::after {
       animation: starfield-twinkle 5.8s ease-in-out infinite, starfield-twinkle-scroll 1s linear both;
       animation-timeline: auto, scroll(root);
     }

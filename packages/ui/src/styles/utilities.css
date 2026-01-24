@@ -59,19 +59,19 @@
 
   @keyframes starfield-scroll {
     from {
-      background-position: 0 0, 240px 320px;
+      transform: translate3d(0, 0, 0);
     }
     to {
-      background-position: 0 200px, 240px 440px;
+      transform: translate3d(0, 200px, 0);
     }
   }
 
   @keyframes starfield-twinkle-scroll {
     from {
-      background-position: 300px 380px;
+      transform: translate3d(0, 0, 0);
     }
     to {
-      background-position: 300px 520px;
+      transform: translate3d(0, 140px, 0);
     }
   }
 
