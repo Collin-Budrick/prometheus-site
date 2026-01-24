@@ -23,6 +23,9 @@ import {
   buildCacheControlHeader,
   buildFragmentPlanLockKey,
   bumpPlanEtagVersion,
+  fragmentInitialCacheTtlSeconds,
+  fragmentPlanCacheStaleSeconds,
+  fragmentPlanCacheTtlSeconds,
   getPlanEtagVersion,
   readCache,
   recordLatencySample,
@@ -556,8 +559,6 @@ const buildPlanEtag = (plan: FragmentPlan, versionToken: string) => {
   return `"${hash.digest('hex')}"`
 }
 
-const planCacheTtlSeconds = 30
-const planCacheStaleSeconds = 60
 const planLockTtlMs = 500
 const initialLockTtlMs = 500
 const lockWaitMs = 60
@@ -569,7 +570,10 @@ const waitForLock = async () => {
 const buildPlanHeaders = (etag: string) =>
   new Headers({
     'content-type': 'application/json',
-    'cache-control': buildCacheControlHeader(planCacheTtlSeconds, planCacheStaleSeconds),
+    'cache-control': buildCacheControlHeader(
+      fragmentPlanCacheTtlSeconds,
+      fragmentPlanCacheStaleSeconds
+    ),
     etag
   })
 
@@ -794,7 +798,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
           }
           const elapsed = performance.now() - start
           void recordLatencySample(cache, 'fragment-plan', elapsed)
-          await writeCache(cache, cacheKey, plan, 30)
+          await writeCache(cache, cacheKey, plan, fragmentPlanCacheTtlSeconds)
         }
       }
       const basePlan = stripInitialFragments(plan)
@@ -843,7 +847,12 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
             const built = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
             initialFragments = built.initialFragments
             initialHtml = built.initialHtml
-            await writeCache(cache, initialCacheKey, { initialFragments, initialHtml }, 30)
+            await writeCache(
+              cache,
+              initialCacheKey,
+              { initialFragments, initialHtml },
+              fragmentInitialCacheTtlSeconds
+            )
           } finally {
             if (hasLock) {
               await releaseCacheLock(cache, lockKey, lockToken)

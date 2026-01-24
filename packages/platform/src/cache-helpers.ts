@@ -16,6 +16,9 @@ const releaseLockScript = `
   end
   return 0
 `
+const DEFAULT_FRAGMENT_PLAN_TTL_SECONDS = 180
+const DEFAULT_FRAGMENT_PLAN_STALE_TTL_SECONDS = 300
+const DEFAULT_FRAGMENT_INITIAL_TTL_SECONDS = 180
 
 const withValkeyTimeout = async <T>(
   cache: CacheClient,
@@ -30,6 +33,32 @@ const withValkeyTimeout = async <T>(
     clearTimeout(timer)
   }
 }
+
+const parseEnvSeconds = (value: string | undefined, fallback: number, name: string) => {
+  if (value === undefined) return fallback
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    console.warn(`Invalid ${name} value "${value}", falling back to ${fallback}.`)
+    return fallback
+  }
+  return parsed
+}
+
+export const fragmentPlanCacheTtlSeconds = parseEnvSeconds(
+  process.env.FRAGMENT_PLAN_TTL,
+  DEFAULT_FRAGMENT_PLAN_TTL_SECONDS,
+  'FRAGMENT_PLAN_TTL'
+)
+export const fragmentPlanCacheStaleSeconds = parseEnvSeconds(
+  process.env.FRAGMENT_PLAN_STALE_TTL,
+  DEFAULT_FRAGMENT_PLAN_STALE_TTL_SECONDS,
+  'FRAGMENT_PLAN_STALE_TTL'
+)
+export const fragmentInitialCacheTtlSeconds = parseEnvSeconds(
+  process.env.FRAGMENT_INITIAL_TTL,
+  DEFAULT_FRAGMENT_INITIAL_TTL_SECONDS,
+  'FRAGMENT_INITIAL_TTL'
+)
 
 export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
 export const buildFragmentInitialCacheKey = (path: string, lang: FragmentLang, etag: string) =>
