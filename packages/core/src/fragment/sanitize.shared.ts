@@ -60,6 +60,7 @@ export const allowedAttributes = [
   'width',
   'height',
   'loading',
+  'fetchpriority',
   'decoding',
   'srcset',
   'sizes',

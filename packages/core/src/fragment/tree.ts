@@ -25,7 +25,17 @@ const normalizeChildren = (children?: Child[] | Child): RenderNode[] => {
 export const h = (tag: string, attrs?: Attrs | null, children?: Child[] | Child): RenderNode => ({
   type: 'element',
   tag,
-  attrs: normalizeAttrs(attrs),
+  attrs: (() => {
+    const normalized = normalizeAttrs(attrs)
+    if (tag === 'img') {
+      const width = normalized?.width?.trim()
+      const height = normalized?.height?.trim()
+      if (!width || !height) {
+        throw new Error('Image nodes must include width and height attributes in fragment definitions.')
+      }
+    }
+    return normalized
+  })(),
   children: normalizeChildren(children)
 })
 
