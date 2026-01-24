@@ -283,10 +283,7 @@
     @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    transition:
-      color 160ms ease,
-      border-color 160ms ease,
-      transform 160ms ease;
+    transition: transform 160ms ease;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted-soft));
@@ -315,10 +312,7 @@
     @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    transition:
-      border-color 160ms ease,
-      color 160ms ease,
-      transform 160ms ease;
+    transition: transform 160ms ease;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted-soft));
@@ -440,10 +434,7 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
-    transition:
-      color 160ms ease,
-      border-color 160ms ease,
-      transform 160ms ease;
+    transition: transform 160ms ease;
     justify-self: start;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
@@ -1020,10 +1011,7 @@
     height: 28px;
     line-height: 1;
     letter-spacing: 0;
-    transition:
-      border-color 160ms ease,
-      color 160ms ease,
-      transform 160ms ease;
+    transition: transform 160ms ease;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted));
