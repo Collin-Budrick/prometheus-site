@@ -1,4 +1,5 @@
 import { Elysia, t } from 'elysia'
+import type { ValkeyClientType } from '@valkey/client'
 import { buildCacheStatus, createFragmentService } from '@core/fragment/service'
 import type { FragmentLang } from '@core/fragment/i18n'
 import { normalizeFragmentLang } from '@core/fragment/i18n'
@@ -44,6 +45,21 @@ const releaseLockScript = `
   end
   return 0
 `
+const fragmentStoreTimeoutMs = 300
+
+const withValkeyTimeout = async <T>(
+  cache: CacheClient,
+  runner: (commandOptions: ReturnType<ValkeyClientType['commandOptions']>) => Promise<T>,
+  timeoutMs: number = fragmentStoreTimeoutMs
+) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await runner(cache.client.commandOptions({ signal: controller.signal }))
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const normalizeCacheValue = (value: unknown): string | Buffer | null | undefined => {
   if (typeof value === 'string') return value
@@ -56,27 +72,57 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
   const adapter = {
     mget: async (keys: string[]) => {
       if (!cache.isReady()) return keys.map(() => null)
-      const [rawValues] = await cache.client.multi().mGet(keys).execAsPipeline()
-      if (!Array.isArray(rawValues)) return keys.map(() => null)
-      return rawValues.map(normalizeCacheValue)
+      try {
+        const rawValues = await withValkeyTimeout(cache, (commandOptions) =>
+          cache.client.mGet(commandOptions, keys)
+        )
+        if (!Array.isArray(rawValues)) return keys.map(() => null)
+        return rawValues.map(normalizeCacheValue)
+      } catch {
+        return keys.map(() => null)
+      }
     },
     set: async (key: string, value: string, ttlSeconds: number) => {
       if (!cache.isReady()) return
-      await cache.client.set(key, value, { EX: ttlSeconds })
+      try {
+        await withValkeyTimeout(cache, (commandOptions) =>
+          cache.client.set(commandOptions, key, value, { EX: ttlSeconds })
+        )
+      } catch {
+        // ignore cache write failures
+      }
     },
     acquireLock: async (key: string, token: string, ttlMs: number) => {
       if (!cache.isReady()) return false
-      const result = await cache.client.set(key, token, { NX: true, PX: ttlMs })
-      return result !== null
+      try {
+        const result = await withValkeyTimeout(cache, (commandOptions) =>
+          cache.client.set(commandOptions, key, token, { NX: true, PX: ttlMs })
+        )
+        return result !== null
+      } catch {
+        return false
+      }
     },
     releaseLock: async (key: string, token: string) => {
       if (!cache.isReady()) return
-      await cache.client.eval(releaseLockScript, { keys: [key], arguments: [token] })
+      try {
+        await withValkeyTimeout(cache, (commandOptions) =>
+          cache.client.eval(commandOptions, releaseLockScript, { keys: [key], arguments: [token] })
+        )
+      } catch {
+        // ignore lock release failures
+      }
     },
     isLocked: async (key: string) => {
       if (!cache.isReady()) return false
-      const result = await cache.client.exists(key)
-      return result === 1
+      try {
+        const result = await withValkeyTimeout(cache, (commandOptions) =>
+          cache.client.exists(commandOptions, key)
+        )
+        return result === 1
+      } catch {
+        return false
+      }
     }
   }
 

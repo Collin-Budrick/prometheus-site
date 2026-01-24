@@ -57,6 +57,10 @@ const composeEnv = {
 }
 
 const { devUpstream, configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+  dev: {
+    encode: 'br gzip',
+    stripAcceptEncoding: true
+  },
   prod: {
     encode: 'br gzip',
     stripAcceptEncoding: true

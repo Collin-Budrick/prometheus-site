@@ -1,11 +1,27 @@
 import { normalizePlanPath } from '@core/fragment/planner'
 import type { FragmentLang } from '@core/fragment/i18n'
+import type { ValkeyClientType } from '@valkey/client'
 import type { CacheClient } from './cache'
 
 const fragmentPlanCachePrefix = 'fragments:plan:'
 const fragmentInitialCachePrefix = 'fragments:initial:'
 const latencyHashKey = 'latency:stats'
 const earlyLimitPrefix = 'early:limit:'
+const cacheCommandTimeoutMs = 300
+
+const withValkeyTimeout = async <T>(
+  cache: CacheClient,
+  runner: (commandOptions: ReturnType<ValkeyClientType['commandOptions']>) => Promise<T>,
+  timeoutMs: number = cacheCommandTimeoutMs
+) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await runner(cache.client.commandOptions({ signal: controller.signal }))
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 export const buildFragmentPlanCacheKey = (path: string, lang: FragmentLang) => `${fragmentPlanCachePrefix}${lang}:${path}`
 export const buildFragmentInitialCacheKey = (path: string, lang: FragmentLang, etag: string) =>
@@ -81,7 +97,7 @@ const safeJsonParse = (raw: string | null): unknown => {
 export const readCache = async (cache: CacheClient, key: string): Promise<unknown> => {
   if (!cache.isReady()) return null
   try {
-    const cached = await cache.client.get(key)
+    const cached = await withValkeyTimeout(cache, (commandOptions) => cache.client.get(commandOptions, key))
     return safeJsonParse(cached)
   } catch {
     return null
@@ -91,7 +107,9 @@ export const readCache = async (cache: CacheClient, key: string): Promise<unknow
 export const writeCache = async (cache: CacheClient, key: string, value: unknown, ttlSeconds: number) => {
   if (!cache.isReady()) return
   try {
-    await cache.client.set(key, JSON.stringify(value), { EX: ttlSeconds })
+    await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.set(commandOptions, key, JSON.stringify(value), { EX: ttlSeconds })
+    )
   } catch (error) {
     console.warn('Failed to write cache entry', { key, error })
   }
@@ -134,8 +152,10 @@ export const recordLatencySample = async (cache: CacheClient, metric: string, du
   const bucketKey = `${latencyHashKey}:${metric}`
   const rounded = Math.max(0, Math.round(durationMs))
   try {
-    await cache.client.hIncrBy(bucketKey, 'count', 1)
-    await cache.client.hIncrBy(bucketKey, 'totalMs', rounded)
+    await withValkeyTimeout(cache, (commandOptions) => cache.client.hIncrBy(commandOptions, bucketKey, 'count', 1))
+    await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.hIncrBy(commandOptions, bucketKey, 'totalMs', rounded)
+    )
   } catch (error) {
     console.warn('Failed to record latency sample', { metric, error })
   }
@@ -146,9 +166,9 @@ export const checkEarlyLimit = async (cache: CacheClient, key: string, max: numb
   const windowSeconds = Math.max(1, Math.ceil(windowMs / 1000))
   const cacheKey = `${earlyLimitPrefix}${key}`
   try {
-    const count = await cache.client.incr(cacheKey)
+    const count = await withValkeyTimeout(cache, (commandOptions) => cache.client.incr(commandOptions, cacheKey))
     if (count === 1) {
-      await cache.client.expire(cacheKey, windowSeconds)
+      await withValkeyTimeout(cache, (commandOptions) => cache.client.expire(commandOptions, cacheKey, windowSeconds))
     }
     return { allowed: count <= max, remaining: Math.max(0, max - count) }
   } catch (error) {
