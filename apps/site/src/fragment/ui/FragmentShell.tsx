@@ -31,7 +31,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
       />
       <FragmentStreamController
         plan={props.plan}
-        initialFragments={props.initialFragments}
+        initialFragments={shell.initialFragments}
         path={props.path}
         fragments={shell.fragments}
         status={shell.status}

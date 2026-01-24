@@ -39,6 +39,12 @@ export type FragmentRouteOptions = {
   environment: string
 }
 
+type FragmentPlanInitialHtml = Record<string, string>
+type FragmentPlanInitialCachePayload = {
+  initialFragments: FragmentPlanInitialPayloads
+  initialHtml?: FragmentPlanInitialHtml
+}
+
 const releaseLockScript = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
@@ -194,12 +200,26 @@ const isFragmentPlanResponse = (value: unknown): value is FragmentPlanResponse =
     if (!isRecord(value.initialFragments)) return false
     if (!Object.values(value.initialFragments).every((entry) => typeof entry === 'string')) return false
   }
+  if (value.initialHtml !== undefined) {
+    if (!isRecord(value.initialHtml)) return false
+    if (!Object.values(value.initialHtml).every((entry) => typeof entry === 'string')) return false
+  }
   return true
 }
 
 const isFragmentInitialPayloads = (value: unknown): value is FragmentPlanInitialPayloads => {
   if (!isRecord(value)) return false
   return Object.values(value).every((entry) => typeof entry === 'string')
+}
+
+const isFragmentInitialCachePayload = (value: unknown): value is FragmentPlanInitialCachePayload => {
+  if (!isRecord(value)) return false
+  if (!isFragmentInitialPayloads(value.initialFragments)) return false
+  if (value.initialHtml !== undefined) {
+    if (!isRecord(value.initialHtml)) return false
+    if (!Object.values(value.initialHtml).every((entry) => typeof entry === 'string')) return false
+  }
+  return true
 }
 
 const buildCacheHeaders = (entry: StoredFragment) => {
@@ -337,7 +357,7 @@ const isTruthyParam = (value: string | undefined) => {
 }
 
 const stripInitialFragments = (plan: FragmentPlanResponse) => {
-  const { initialFragments: _initialFragments, ...rest } = plan
+  const { initialFragments: _initialFragments, initialHtml: _initialHtml, ...rest } = plan
   return rest
 }
 
@@ -382,10 +402,13 @@ const buildPlanEtag = (plan: FragmentPlan, versionToken: string) => {
   return `"${hash.digest('hex')}"`
 }
 
+const planCacheTtlSeconds = 30
+const planCacheStaleSeconds = 60
+
 const buildPlanHeaders = (etag: string) =>
   new Headers({
     'content-type': 'application/json',
-    'cache-control': buildCacheControlHeader(0, 0),
+    'cache-control': buildCacheControlHeader(planCacheTtlSeconds, planCacheStaleSeconds),
     etag
   })
 
@@ -412,13 +435,16 @@ const buildInitialFragments = async (
   store: FragmentStore,
   service: FragmentService,
   fragmentsByCacheKey?: Map<string, StoredFragment>
-): Promise<FragmentPlanInitialPayloads> => {
+): Promise<FragmentPlanInitialCachePayload> => {
   const group =
     plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
       ? plan.fetchGroups[0]
       : plan.fragments.map((entry) => entry.id)
   const criticalIds = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
-  const seedIds = criticalIds.length ? criticalIds : group
+  const lcpIds = plan.fragments
+    .filter((entry) => entry.critical && entry.renderHtml !== false)
+    .map((entry) => entry.id)
+  const seedIds = lcpIds.length ? lcpIds : criticalIds.length ? criticalIds : group
   const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
   const required = new Set<string>()
   const stack = [...seedIds]
@@ -432,7 +458,9 @@ const buildInitialFragments = async (
     })
   }
   const ids = Array.from(required)
-  if (ids.length === 0) return {}
+  if (ids.length === 0) {
+    return { initialFragments: {}, initialHtml: {} }
+  }
   const base64ByCacheKey = new Map<string, string>()
 
   const cacheKeyMap = new Map<string, StoredFragment>()
@@ -472,10 +500,19 @@ const buildInitialFragments = async (
       return [id, encoded] as const
     })
   )
-  return entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
+  const initialFragments = entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
     acc[id] = payload
     return acc
   }, {})
+  const initialHtml = lcpIds.reduce<FragmentPlanInitialHtml>((acc, id) => {
+    const cacheKey = buildFragmentCacheKey(id, lang)
+    const fragment = cacheKeyMap.get(cacheKey)
+    if (fragment?.html) {
+      acc[id] = fragment.html
+    }
+    return acc
+  }, {})
+  return { initialFragments, initialHtml }
 }
 
 export const createFragmentRoutes = (options: FragmentRouteOptions) => {
@@ -577,14 +614,27 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       }
       const initialCacheKey = buildFragmentInitialCacheKey(path, lang, etag)
       const cachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
-      const initialFragments =
-        cachedInitial !== null && isFragmentInitialPayloads(cachedInitial)
-          ? cachedInitial
-          : await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
-      if (cachedInitial === null || !isFragmentInitialPayloads(cachedInitial)) {
-        await writeCache(cache, initialCacheKey, initialFragments, 30)
+      let initialFragments: FragmentPlanInitialPayloads | null = null
+      let initialHtml: FragmentPlanInitialHtml | undefined
+      if (cachedInitial !== null && isFragmentInitialPayloads(cachedInitial)) {
+        initialFragments = cachedInitial
+      } else if (cachedInitial !== null && isFragmentInitialCachePayload(cachedInitial)) {
+        initialFragments = cachedInitial.initialFragments
+        initialHtml = cachedInitial.initialHtml
       }
-      const payload: FragmentPlanResponse = { ...basePlan, initialFragments }
+
+      if (initialFragments === null) {
+        const built = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
+        initialFragments = built.initialFragments
+        initialHtml = built.initialHtml
+        await writeCache(cache, initialCacheKey, { initialFragments, initialHtml }, 30)
+      }
+
+      const payload: FragmentPlanResponse & { initialHtml?: FragmentPlanInitialHtml } = {
+        ...basePlan,
+        initialFragments,
+        ...(initialHtml && Object.keys(initialHtml).length ? { initialHtml } : {})
+      }
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: buildPlanHeaders(etag)
