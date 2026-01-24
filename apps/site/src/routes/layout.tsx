@@ -417,13 +417,16 @@ export const useInitialFadeState = routeLoader$((event) => {
 })
 
 export const onRequest: RequestHandler = async ({ headers, method, basePathname, request }) => {
-  if ((method === 'GET' || method === 'HEAD') && !headers.has('Cache-Control')) {
-    headers.set(
-      'Cache-Control',
-      PUBLIC_CACHE_CONTROL // 0s freshness, allow 60s stale-while-revalidate to keep streams aligned.
-    )
+  const isCacheableMethod = method === 'GET' || method === 'HEAD'
+  const isHtmlRequest = isCacheableMethod && headers.get('Accept')?.includes('text/html')
+
+  if (isHtmlRequest) {
+    headers.set('Cache-Control', PUBLIC_CACHE_CONTROL)
+  } else if (isCacheableMethod && !headers.has('Cache-Control')) {
+    headers.set('Cache-Control', PUBLIC_CACHE_CONTROL)
   }
-  if ((method === 'GET' || method === 'HEAD') && headers.get('Accept')?.includes('text/html')) {
+
+  if (isHtmlRequest) {
     const basePath = basePathname || '/'
     const preloadLinks = await getModulePreloadLinks(basePath)
     preloadLinks.forEach((link) => headers.append('Link', link))
