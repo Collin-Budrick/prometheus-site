@@ -40,9 +40,11 @@ export default function () {
     setupServiceWorkerBridge()
   }
 
-  setupWebSocketBackoffMonitor()
-  setupOfflineErrorFilters()
-  setupServerHealthProbe()
+  runNonCriticalSetup(() => {
+    setupWebSocketBackoffMonitor()
+    setupOfflineErrorFilters()
+    setupServerHealthProbe()
+  })
 
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -65,6 +67,15 @@ export default function () {
         void registerServiceWorker()
       })
     })
+  }
+}
+
+function runNonCriticalSetup(callback: () => void) {
+  if (typeof window === 'undefined') return
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(callback, { timeout: 2000 })
+  } else {
+    window.setTimeout(callback, 0)
   }
 }
 
