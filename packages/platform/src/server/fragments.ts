@@ -601,28 +601,7 @@ const buildInitialFragments = async (
   service: FragmentService,
   fragmentsByCacheKey?: Map<string, StoredFragment>
 ): Promise<FragmentPlanInitialCachePayload> => {
-  const group =
-    plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
-      ? plan.fetchGroups[0]
-      : plan.fragments.map((entry) => entry.id)
-  const criticalIds = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
-  const lcpIds = plan.fragments
-    .filter((entry) => entry.critical && entry.renderHtml !== false)
-    .map((entry) => entry.id)
-  const seedIds = lcpIds.length ? lcpIds : criticalIds.length ? criticalIds : group
-  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
-  const required = new Set<string>()
-  const stack = [...seedIds]
-  while (stack.length) {
-    const id = stack.pop()
-    if (!id || required.has(id)) continue
-    required.add(id)
-    const deps = entryById.get(id)?.dependsOn ?? []
-    deps.forEach((dep) => {
-      if (!required.has(dep)) stack.push(dep)
-    })
-  }
-  const ids = Array.from(required)
+  const { ids, criticalIds } = collectInitialFragmentIds(plan)
   if (ids.length === 0) {
     return { initialFragments: {}, initialHtml: {} }
   }
@@ -686,6 +665,48 @@ const buildInitialFragments = async (
     return acc
   }, {})
   return { initialFragments, initialHtml }
+}
+
+function collectInitialFragmentIds(plan: FragmentPlanResponse) {
+  const group =
+    plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
+      ? plan.fetchGroups[0]
+      : plan.fragments.map((entry) => entry.id)
+  const criticalIds = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
+  const lcpIds = plan.fragments
+    .filter((entry) => entry.critical && entry.renderHtml !== false)
+    .map((entry) => entry.id)
+  const seedIds = lcpIds.length ? lcpIds : criticalIds.length ? criticalIds : group
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const required = new Set<string>()
+  const stack = [...seedIds]
+  while (stack.length) {
+    const id = stack.pop()
+    if (!id || required.has(id)) continue
+    required.add(id)
+    const deps = entryById.get(id)?.dependsOn ?? []
+    deps.forEach((dep) => {
+      if (!required.has(dep)) stack.push(dep)
+    })
+  }
+  return { ids: Array.from(required), criticalIds, lcpIds }
+}
+
+const prefetchCriticalFragments = async (
+  plan: FragmentPlanResponse,
+  lang: FragmentLang,
+  service: FragmentService,
+  fragmentsByCacheKey?: Map<string, StoredFragment>
+) => {
+  const { ids } = collectInitialFragmentIds(plan)
+  if (ids.length === 0) return
+  const pending = ids.filter((id) => {
+    if (!fragmentsByCacheKey) return true
+    const cacheKey = buildFragmentCacheKey(id, lang)
+    return fragmentsByCacheKey.get(cacheKey) === undefined
+  })
+  if (pending.length === 0) return
+  await Promise.allSettled(pending.map((id) => service.getFragmentEntry(id, { lang })))
 }
 
 export const createFragmentRoutes = (options: FragmentRouteOptions) => {
@@ -766,6 +787,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const cached =
         cachedValue !== null && isFragmentPlanResponse(cachedValue) ? stripInitialFragments(cachedValue) : null
       let plan = cached
+      let didBuildPlan = false
       const memoPlan = refresh ? null : getMemoizedPlan(path, lang)
       const fragmentsByCacheKey = new Map<string, StoredFragment>()
       if (plan === null) {
@@ -791,6 +813,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
           const start = performance.now()
           try {
             plan = await getFragmentPlan(path, lang, { fragmentsByCacheKey, basePlan: memoPlan ?? undefined })
+            didBuildPlan = true
           } finally {
             if (hasLock) {
               await releaseCacheLock(cache, lockKey, lockToken)
@@ -803,6 +826,9 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       }
       const basePlan = stripInitialFragments(plan)
       memoizeFragmentPlan(path, lang, basePlan)
+      if (didBuildPlan) {
+        void prefetchCriticalFragments(basePlan, lang, service, fragmentsByCacheKey)
+      }
 
       const version = getPlanEtagVersion(path, lang)
       const etag = buildPlanEtag(basePlan, `${version.global}:${version.entry}`)
