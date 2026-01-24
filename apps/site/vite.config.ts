@@ -110,11 +110,7 @@ const pwaPrecacheEntries = [
   { url: withBase('/favicon.ico'), revision: null },
   { url: withBase('/favicon.svg'), revision: null },
   { url: withBase('/icons/icon-192.avif'), revision: null },
-  { url: withBase('/icons/icon-192.webp'), revision: null },
-  { url: withBase('/icons/icon-192.png'), revision: null },
-  { url: withBase('/icons/icon-512.avif'), revision: null },
-  { url: withBase('/icons/icon-512.webp'), revision: null },
-  { url: withBase('/icons/icon-512.png'), revision: null }
+  { url: withBase('/icons/icon-512.avif'), revision: null }
 ]
 
 const resolveApiBase = () => {
