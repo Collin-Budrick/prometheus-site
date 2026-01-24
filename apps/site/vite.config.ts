@@ -191,10 +191,6 @@ const buildPlanCriticalCssHints = (plan: FragmentPlanPayload) =>
     .map((entry) => resolveFragmentCssHint(entry.id))
     .filter((hint): hint is EarlyHint => Boolean(hint))
 
-const lcpAssetManifest: Record<string, EarlyHint[]> = {
-  '/': [{ href: withBase('/assets/starfield-layer-1.svg'), as: 'image', type: 'image/svg+xml' }]
-}
-
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
   if (warning.code !== 'EVAL') return false
   const file = warning.loc?.file ?? warning.id ?? ''
@@ -239,9 +235,8 @@ const getEarlyHints = async (pathName: string) => {
   const payload = (await response.json()) as FragmentPlanPayload
   const planHints = Array.isArray(payload.earlyHints) ? payload.earlyHints : []
   const criticalCssHints = buildPlanCriticalCssHints(payload)
-  const lcpHints = lcpAssetManifest[pathName] ?? []
-  if (!planHints.length && !criticalCssHints.length && !lcpHints.length) return []
-  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints, ...lcpHints]))
+  if (!planHints.length && !criticalCssHints.length) return []
+  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints]))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {

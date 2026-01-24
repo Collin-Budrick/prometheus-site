@@ -226,16 +226,6 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values())
 }
 
-const lcpAssetManifest: Record<string, EarlyHint[]> = {
-  '/': [{ href: '/assets/starfield-layer-1.svg', as: 'image', type: 'image/svg+xml' }]
-}
-
-const buildLcpAssetHints = (pathName: string, basePath: string) =>
-  (lcpAssetManifest[pathName] ?? []).map((hint) => ({
-    ...hint,
-    href: hint.href.startsWith('/') ? withBasePath(basePath, hint.href) : hint.href
-  }))
-
 const buildPlanEarlyHints = (plan: FragmentPlan | null | undefined) => {
   if (!plan) return []
   const criticalCss = buildFragmentCssLinks(plan, { criticalOnly: true }).map((link) => ({
@@ -245,14 +235,13 @@ const buildPlanEarlyHints = (plan: FragmentPlan | null | undefined) => {
   return [...(plan.earlyHints ?? []), ...criticalCss]
 }
 
-const getPlanEarlyHints = (pathName: string, request: Request | null, basePath: string) => {
-  const lcpHints = buildLcpAssetHints(pathName, basePath)
-  if (!request) return sanitizeHints(lcpHints)
+const getPlanEarlyHints = (pathName: string, request: Request | null) => {
+  if (!request) return []
   const lang = resolveRequestLang(request)
   const cached = fragmentPlanCache.get(pathName, lang)
   const planHints =
     cached?.earlyHints?.length ? cached.earlyHints : cached ? buildPlanEarlyHints(cached.plan) : []
-  return sanitizeHints([...planHints, ...lcpHints])
+  return sanitizeHints(planHints)
 }
 
 const withLangParam = (href: string, langValue: Lang) => {
@@ -375,7 +364,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
     const preloadLinks = await getModulePreloadLinks(basePath)
     preloadLinks.forEach((link) => headers.append('Link', link))
     const pathName = request ? new URL(request.url).pathname : '/'
-    const planHints = getPlanEarlyHints(pathName, request ?? null, basePath)
+    const planHints = getPlanEarlyHints(pathName, request ?? null)
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
