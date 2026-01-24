@@ -24,8 +24,17 @@ export type StoreConsumeResult = {
 
 export const storeCartAddEvent = 'store:cart:add'
 export const storeCartQueueEvent = 'store:cart:queue'
+export const storeInventoryEvent = 'store:inventory:update'
 const storeCartQueueVersion = 1
 const storeCartSnapshotVersion = 1
+
+export type StoreCommandPayload = {
+  type: 'consume' | 'restore'
+  id: number
+  amount?: number
+}
+
+export type StoreCommandSender = (payload: StoreCommandPayload) => Promise<StoreConsumeResult | null>
 
 type StoreCartQueuedAction = {
   type: 'consume' | 'restore'
@@ -49,6 +58,7 @@ const storeCartQueueKey = 'store-cart-queue'
 const storeCartSnapshotKey = 'store-cart-snapshot'
 const storeCartQueueCookieKey = 'prom-store-cart-queue'
 const storeCartSnapshotCookieKey = 'prom-store-cart'
+let storeCommandSender: StoreCommandSender | null = null
 
 const readCookieValue = (cookieHeader: string | null, key: string) => {
   if (!cookieHeader) return null
@@ -72,6 +82,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const setStoreCartDragItem = (item: StoreCartItem | null) => {
   lastDraggedItem = item
+}
+
+export const setStoreCommandSender = (sender: StoreCommandSender | null) => {
+  storeCommandSender = sender
 }
 
 export const consumeStoreCartDragItem = () => {
@@ -116,6 +130,11 @@ const buildApiUrl = (path: string, origin: string) => {
   if (!base) return `${origin}${path}`
   if (base.startsWith('/')) return `${origin}${base}${path}`
   return `${base}${path}`
+}
+
+const emitInventoryUpdate = (item?: StoreConsumeItem) => {
+  if (!item || typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(storeInventoryEvent, { detail: item }))
 }
 
 export const normalizeStoreCartItem = (value: unknown): StoreCartItem | null => {
@@ -293,6 +312,16 @@ const performConsumeStoreItem = async (
     return { ok: true, status: 0, queued: true }
   }
 
+  if (storeCommandSender && !isOffline()) {
+    try {
+      const result = await storeCommandSender({ type: 'consume', id })
+      if (result) return result
+    } catch (error) {
+      console.warn('Store command consume failed', error)
+      return { ok: false, status: 0 }
+    }
+  }
+
   try {
     const response = await fetch(buildApiUrl(`/store/items/${id}/consume`, origin), {
       method: 'POST',
@@ -337,6 +366,19 @@ const performRestoreStoreItem = async (
     return { ok: true, status: 0, queued: true }
   }
 
+  if (storeCommandSender && !isOffline()) {
+    try {
+      const result = await storeCommandSender({ type: 'restore', id, amount })
+      if (result) {
+        emitInventoryUpdate(result.item)
+        return result
+      }
+    } catch (error) {
+      console.warn('Store command restore failed', error)
+      return { ok: false, status: 0 }
+    }
+  }
+
   try {
     const response = await fetch(buildApiUrl(`/store/items/${id}/restore`, origin), {
       method: 'POST',
@@ -357,6 +399,7 @@ const performRestoreStoreItem = async (
     }
 
     const item = normalizeStoreConsumeItem((payload as Record<string, unknown> | null)?.item)
+    emitInventoryUpdate(item ?? undefined)
     return { ok: true, status: response.status, item: item ?? undefined }
   } catch (error) {
     console.warn('Failed to restore store item', error)

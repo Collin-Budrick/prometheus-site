@@ -8,9 +8,13 @@ import {
   consumeStoreItem,
   flushStoreCartQueue,
   getStoreCartQueueSize,
+  setStoreCommandSender,
   setStoreCartDragItem,
   storeCartAddEvent,
-  storeCartQueueEvent
+  storeCartQueueEvent,
+  storeInventoryEvent,
+  type StoreCommandPayload,
+  type StoreConsumeResult
 } from '../shared/store-cart'
 
 type StoreStreamProps = {
@@ -70,6 +74,15 @@ const normalizeItem = (value: unknown): StoreItem | null => {
   const score = parseScore(record.score)
   const quantity = parseQuantity(record.quantity)
   return { id, name, price, quantity, score }
+}
+
+const normalizeInventoryUpdate = (value: unknown) => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const id = Number(record.id)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const quantity = parseQuantity(record.quantity)
+  return { id, quantity }
 }
 
 const clampLimit = (value: string | undefined) => {
@@ -317,13 +330,15 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       let active = true
       let reconnectTimer: number | null = null
       let reconnectAttempt = 0
-      let isInView = false
       let isPageVisible = document.visibilityState === 'visible'
-      let observer: IntersectionObserver | null = null
-      const visibilityMargin = 200
+      const pendingCommands = new Map<
+        string,
+        { resolve: (result: StoreConsumeResult) => void; timeoutId: number }
+      >()
+      const commandTimeoutMs = 5000
 
       const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
-      const canConnect = () => active && isInView && isPageVisible
+      const canConnect = () => active && isPageVisible
 
       const clearReconnectTimer = () => {
         if (reconnectTimer !== null) {
@@ -434,6 +449,22 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           if (!payload || typeof payload !== 'object') return
           const record = payload as Record<string, unknown>
           const type = record.type
+          if (type === 'store:ack') {
+            const requestId = typeof record.requestId === 'string' ? record.requestId : ''
+            const pending = requestId ? pendingCommands.get(requestId) : undefined
+            if (pending) {
+              pendingCommands.delete(requestId)
+              window.clearTimeout(pending.timeoutId)
+              const statusRaw = Number(record.status)
+              const ok = record.ok === true
+              const status = Number.isFinite(statusRaw) ? statusRaw : ok ? 200 : 500
+              const item = normalizeInventoryUpdate(record.item)
+              const result: StoreConsumeResult = { ok, status }
+              if (item) result.item = item
+              pending.resolve(result)
+            }
+            return
+          }
           if (type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }))
             return
@@ -443,6 +474,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             streamError.value = null
             reconnectAttempt = 0
             clearReconnectTimer()
+            refreshTick.value += 1
             return
           }
           if (type === 'error') {
@@ -474,6 +506,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
         ws.addEventListener('close', () => {
           wsRef.value = undefined
+          pendingCommands.forEach((pending) => {
+            window.clearTimeout(pending.timeoutId)
+            pending.resolve({ ok: false, status: 0 })
+          })
+          pendingCommands.clear()
           if (!canConnect()) return
           streamState.value = isOffline() ? 'offline' : streamState.value === 'error' ? 'error' : 'offline'
           scheduleReconnect()
@@ -495,24 +532,33 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         updateConnection()
       }
 
-      observer = new IntersectionObserver(
-        (entries) => {
-          const entry = entries[0]
-          const next = Boolean(entry?.isIntersecting)
-          if (next === isInView) return
-          isInView = next
-          updateConnection()
-        },
-        { rootMargin: `${visibilityMargin}px 0px` }
-      )
+      const sendStoreCommand = async (payload: StoreCommandPayload): Promise<StoreConsumeResult | null> => {
+        const ws = wsRef.value
+        if (!ws || ws.readyState !== WebSocket.OPEN) return null
+        const requestId = `store:${Date.now()}:${Math.random().toString(16).slice(2)}`
+        const message = {
+          type: payload.type === 'restore' ? 'store:restore' : 'store:consume',
+          requestId,
+          id: payload.id,
+          ...(payload.type === 'restore' ? { amount: payload.amount } : {})
+        }
+        return new Promise((resolve) => {
+          const timeoutId = window.setTimeout(() => {
+            pendingCommands.delete(requestId)
+            resolve({ ok: false, status: 0 })
+          }, commandTimeoutMs)
+          pendingCommands.set(requestId, { resolve, timeoutId })
+          try {
+            ws.send(JSON.stringify(message))
+          } catch (error) {
+            window.clearTimeout(timeoutId)
+            pendingCommands.delete(requestId)
+            console.warn('Failed to send store command', error)
+            resolve(null)
+          }
+        })
+      }
 
-      observer.observe(root)
-      const rect = root.getBoundingClientRect()
-      isInView =
-        rect.bottom >= -visibilityMargin &&
-        rect.top <= window.innerHeight + visibilityMargin &&
-        rect.right >= 0 &&
-        rect.left <= window.innerWidth
       updateConnection()
 
       const handleOnline = () => {
@@ -534,17 +580,22 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       document.addEventListener('visibilitychange', handleVisibilityChange)
       window.addEventListener('pageshow', handleVisibilityChange)
       window.addEventListener('pagehide', handlePageHide)
+      setStoreCommandSender(sendStoreCommand)
 
       ctx.cleanup(() => {
         active = false
         clearReconnectTimer()
+        setStoreCommandSender(null)
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         window.removeEventListener('pageshow', handleVisibilityChange)
         window.removeEventListener('pagehide', handlePageHide)
-        observer?.disconnect()
-        observer = null
+        pendingCommands.forEach((pending) => {
+          window.clearTimeout(pending.timeoutId)
+          pending.resolve({ ok: false, status: 0 })
+        })
+        pendingCommands.clear()
         wsRef.value?.close()
       })
     },
@@ -575,6 +626,25 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         window.removeEventListener(storeCartQueueEvent, handleQueue)
         navigator.serviceWorker?.removeEventListener('message', handleMessage)
       })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const handleInventoryUpdate = (event: Event) => {
+        const detail = (event as CustomEvent).detail
+        const update = normalizeInventoryUpdate(detail)
+        if (!update) return
+        const existingIndex = items.value.findIndex((entry) => entry.id === update.id)
+        if (existingIndex < 0) return
+        const next = [...items.value]
+        next[existingIndex] = { ...next[existingIndex], quantity: update.quantity }
+        items.value = next
+      }
+      window.addEventListener(storeInventoryEvent, handleInventoryUpdate)
+      ctx.cleanup(() => window.removeEventListener(storeInventoryEvent, handleInventoryUpdate))
     },
     { strategy: 'document-ready' }
   )
@@ -709,7 +779,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     }
   })
 
-  useVisibleTask$(({ track, cleanup }) => {
+  useVisibleTask$((ctx) => {
+    const { track } = ctx
     const sentinel = loadMoreRef.value
     const panel = panelRef.value
     const length = track(() => items.value.length)
@@ -736,7 +807,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
     observer.observe(sentinel)
 
-    cleanup(() => {
+    ctx.cleanup(() => {
       observer.disconnect()
     })
   })

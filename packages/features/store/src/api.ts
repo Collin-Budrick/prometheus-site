@@ -123,6 +123,44 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     console.warn('Store Valkey operation failed', { label, error })
   }
 
+  const isTimeoutError = (error: unknown) => {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase()
+      return (
+        error.name === 'TimeoutError' ||
+        error.name === 'AbortError' ||
+        message.includes('timeout') ||
+        message.includes('aborted')
+      )
+    }
+    const message = String(error).toLowerCase()
+    return message.includes('timeout') || message.includes('aborted')
+  }
+
+  const buildTimeoutError = (ms: number) => {
+    const error = new Error(`Timeout after ${ms}ms`)
+    error.name = 'TimeoutError'
+    return error
+  }
+
+  const withValkeyTimeout = async <T>(
+    runner: (commandOptions: ReturnType<ValkeyClientType['commandOptions']>) => Promise<T>,
+    ms: number
+  ) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), ms)
+    try {
+      return await runner(options.valkey.commandOptions({ signal: controller.signal }))
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') {
+        throw buildTimeoutError(ms)
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   const ensureSearchReady = async () => {
     if (!isValkeyUsable()) return false
     const now = Date.now()
@@ -185,7 +223,10 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         if (isValkeyUsable()) {
           try {
-            const cached = await withTimeout(options.valkey.get(cacheKey), valkeyTimeoutMs)
+            const cached = await withValkeyTimeout(
+              (commandOptions) => options.valkey.get(commandOptions, cacheKey),
+              valkeyTimeoutMs
+            )
             if (cached !== null) {
               const parsed: unknown = JSON.parse(cached)
               if (isStoreItemsPayload<StoreItem>(parsed)) {
@@ -196,8 +237,10 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
             telemetry.cacheMisses += 1
           } catch (error) {
             telemetry.cacheGetErrors += 1
-            markValkeyFailure('cache.get', error)
-            console.warn('Cache read failed; serving fresh data', { cacheKey, error })
+            if (!isTimeoutError(error)) {
+              markValkeyFailure('cache.get', error)
+              console.warn('Cache read failed; serving fresh data', { cacheKey, error })
+            }
           }
         }
 
@@ -237,11 +280,16 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         if (isValkeyUsable()) {
           try {
-            await withTimeout(options.valkey.set(cacheKey, JSON.stringify(payload), { EX: 60 }), valkeyTimeoutMs)
+            await withValkeyTimeout(
+              (commandOptions) => options.valkey.set(commandOptions, cacheKey, JSON.stringify(payload), { EX: 60 }),
+              valkeyTimeoutMs
+            )
           } catch (error) {
             telemetry.cacheSetErrors += 1
-            markValkeyFailure('cache.set', error)
-            console.warn('Cache write failed; response not cached', { cacheKey, error })
+            if (!isTimeoutError(error)) {
+              markValkeyFailure('cache.set', error)
+              console.warn('Cache write failed; response not cached', { cacheKey, error })
+            }
           }
         }
 

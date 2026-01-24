@@ -240,11 +240,16 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       })
     })
 
-    if (featureFlags.store && authFeature) {
+    if (featureFlags.store) {
+      const validateSession =
+        authFeature?.validateSession ??
+        (async () => new Response(null, { status: 401 }))
       registerStoreWs(app, {
         valkey: storeValkey,
         isValkeyReady: isStoreValkeyReady,
-        validateSession: authFeature.validateSession,
+        db,
+        storeItemsTable: storeItems,
+        validateSession,
         allowAnonymous: true,
         checkWsOpenQuota,
         resolveWsClientIp,

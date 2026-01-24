@@ -158,6 +158,7 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
           void mountIsland(element, mounted, pending)
         })
       }
+      const isHostCritical = (host: HTMLElement) => host.dataset.critical === 'true'
       const scheduleIdle = (callback: () => void) => {
         const idleApi = window as {
           requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
@@ -210,6 +211,10 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
           islandsByHost.set(host, set)
         }
         set.add(element)
+        if (isHostCritical(host)) {
+          mountHostIslands(host)
+          return
+        }
         if (isHostInView(host)) {
           scheduleHostMount(host)
           return
