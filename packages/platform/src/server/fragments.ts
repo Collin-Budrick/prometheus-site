@@ -137,7 +137,7 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
 
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
-const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } }
+const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null

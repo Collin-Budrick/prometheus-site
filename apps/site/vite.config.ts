@@ -90,6 +90,7 @@ const withBase = (value: string) => {
   return `${base}${trimmed}`
 }
 const staticCacheControl = 'public, max-age=31536000, immutable'
+const brotliQuality = 6
 const stripPublicBase = (pathname: string) => {
   if (publicBase === './' || publicBase === '/') return pathname
   const base = publicBase.endsWith('/') ? publicBase.slice(0, -1) : publicBase
@@ -493,7 +494,7 @@ export default defineConfig(
           algorithms: [
             defineAlgorithm('brotliCompress', {
               params: {
-                [constants.BROTLI_PARAM_QUALITY]: 6
+                [constants.BROTLI_PARAM_QUALITY]: brotliQuality
               }
             }),
           ]
