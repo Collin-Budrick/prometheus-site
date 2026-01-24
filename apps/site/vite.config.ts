@@ -468,6 +468,7 @@ export default defineConfig(
             }),
           ]
         }),
+        compression({ algorithm: 'gzip' }),
         serwist({
           swSrc: 'src/service-worker.ts',
           swDest: 'service-worker.js',
