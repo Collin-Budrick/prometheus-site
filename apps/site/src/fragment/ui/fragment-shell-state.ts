@@ -8,6 +8,7 @@ import {
   getFragmentShellCacheEntry,
   normalizeFragmentShellPath,
   setFragmentShellCacheEntry,
+  writeFragmentCriticalToCookie,
   writeFragmentShellStateToCookie
 } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
@@ -165,6 +166,7 @@ export const useFragmentShellState = ({
         } catch {
           // ignore storage errors
         }
+        writeFragmentCriticalToCookie({ path, ids, viewport: viewportKey })
       }
 
       const stored = readStored()

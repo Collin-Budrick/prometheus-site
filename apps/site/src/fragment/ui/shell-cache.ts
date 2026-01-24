@@ -27,6 +27,10 @@ export type FragmentShellCacheEntry = {
 
 const fragmentShellCache = new Map<string, FragmentShellCacheEntry>()
 const SHELL_COOKIE_KEY = 'prom-shell'
+const CRITICAL_COOKIE_KEYS = {
+  mobile: 'prom-frag-critical-m',
+  desktop: 'prom-frag-critical-d'
+} as const
 
 const normalizeFragmentShellPath = (value: string) => value.replace(/\/+$/, '') || '/'
 
@@ -62,6 +66,41 @@ const normalizeOrderIds = (value: unknown) => {
     .slice(0, 120)
 }
 
+const normalizeCriticalIds = (value: unknown) => {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const normalized = value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry): entry is string => entry.length > 0)
+    .filter((entry) => {
+      if (seen.has(entry)) return false
+      seen.add(entry)
+      return true
+    })
+  return normalized.slice(0, 40)
+}
+
+export type FragmentCriticalViewport = keyof typeof CRITICAL_COOKIE_KEYS
+
+export const readFragmentCriticalFromCookie = (
+  cookieHeader: string | null,
+  path: string,
+  viewport: FragmentCriticalViewport
+) => {
+  const raw = readCookieValue(cookieHeader, CRITICAL_COOKIE_KEYS[viewport])
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object') return []
+    const parsedPath = typeof parsed.path === 'string' ? normalizeFragmentShellPath(parsed.path) : ''
+    const expectedPath = normalizeFragmentShellPath(path)
+    if (!parsedPath || parsedPath !== expectedPath) return []
+    return normalizeCriticalIds(parsed.ids)
+  } catch {
+    return []
+  }
+}
+
 export const readFragmentShellStateFromCookie = (cookieHeader: string | null, path: string): FragmentShellState | null => {
   const raw = readCookieValue(cookieHeader, SHELL_COOKIE_KEY)
   if (!raw) return null
@@ -92,6 +131,25 @@ export const writeFragmentShellStateToCookie = (state: FragmentShellState) => {
   try {
     const serialized = encodeURIComponent(JSON.stringify(payload))
     document.cookie = `${SHELL_COOKIE_KEY}=${serialized}; path=/; max-age=3600; samesite=lax`
+  } catch {
+    // ignore cookie failures
+  }
+}
+
+export const writeFragmentCriticalToCookie = (state: {
+  path: string
+  ids: string[]
+  viewport: FragmentCriticalViewport
+}) => {
+  if (typeof document === 'undefined') return
+  const payload = {
+    path: normalizeFragmentShellPath(state.path),
+    ids: normalizeCriticalIds(state.ids)
+  }
+  if (!payload.ids.length) return
+  try {
+    const serialized = encodeURIComponent(JSON.stringify(payload))
+    document.cookie = `${CRITICAL_COOKIE_KEYS[state.viewport]}=${serialized}; path=/; max-age=604800; samesite=lax`
   } catch {
     // ignore cookie failures
   }

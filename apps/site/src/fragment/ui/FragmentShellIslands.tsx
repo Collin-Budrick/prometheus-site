@@ -159,9 +159,16 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
         })
       }
       const scheduleIdle = (callback: () => void) => {
-        if ('requestIdleCallback' in window) {
-          const handle = window.requestIdleCallback(callback, { timeout: 900 })
-          return () => window.cancelIdleCallback(handle)
+        const idleApi = window as {
+          requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+          cancelIdleCallback?: (handle: number) => void
+        }
+
+        if (idleApi.requestIdleCallback) {
+          const handle = idleApi.requestIdleCallback(callback, { timeout: 900 })
+          return () => {
+            idleApi.cancelIdleCallback?.(handle)
+          }
         }
         const handle = window.setTimeout(callback, 140)
         return () => window.clearTimeout(handle)

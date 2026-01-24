@@ -4,6 +4,7 @@ import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type Lang } from '../shared/lang-store'
 import { resolveServerApiBase } from '../shared/api-base'
+import { readFragmentCriticalFromCookie } from '../fragment/ui/shell-cache'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue
@@ -11,11 +12,17 @@ export type HybridFragmentResource = {
   path: string
 }
 
-export const selectInitialFragmentIds = (plan: FragmentPlanValue | undefined) => {
+export const selectInitialFragmentIds = (
+  plan: FragmentPlanValue | undefined,
+  options: { dynamicCriticalIds?: string[] } = {}
+) => {
   if (!plan) return []
-  const critical = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
   const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
-  const seedIds = critical.length ? critical : plan.fetchGroups?.[0] ?? plan.fragments.map((entry) => entry.id)
+  const critical = plan.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
+  const dynamicCritical =
+    options.dynamicCriticalIds?.filter((id) => entryById.has(id)) ?? []
+  const combined = Array.from(new Set([...critical, ...dynamicCritical]))
+  const seedIds = combined.length ? combined : plan.fetchGroups?.[0] ?? plan.fragments.map((entry) => entry.id)
   const required = new Set<string>()
   const stack = [...seedIds]
   while (stack.length) {
@@ -41,6 +48,19 @@ const pickFragments = (fragments: FragmentPayloadMap | undefined, ids: string[])
   }, {})
 }
 
+const resolveViewportHint = (request: Request | undefined) => {
+  if (!request) return 'desktop'
+  const hint = request.headers.get('sec-ch-ua-mobile')
+  if (hint === '?1') return 'mobile'
+  if (hint === '?0') return 'desktop'
+  const ua = request.headers.get('user-agent')?.toLowerCase() ?? ''
+  if (!ua) return 'desktop'
+  if (ua.includes('mobi') || ua.includes('android') || ua.includes('iphone') || ua.includes('ipad')) {
+    return 'mobile'
+  }
+  return 'desktop'
+}
+
 export const loadHybridFragmentResource = async (
   path: string,
   config: Pick<AppConfig, 'apiBase'>,
@@ -48,6 +68,10 @@ export const loadHybridFragmentResource = async (
   request?: Request
 ): Promise<HybridFragmentResource> => {
   const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
+  const viewport = resolveViewportHint(request)
+  const dynamicCriticalIds = request
+    ? readFragmentCriticalFromCookie(request.headers.get('cookie'), path, viewport)
+    : []
   let plan: FragmentPlanValue
   let initialFragments: FragmentPayloadMap | undefined
 
@@ -63,12 +87,12 @@ export const loadHybridFragmentResource = async (
     console.warn('Fragment plan fetch failed, using cached entry', error)
     const fallbackFragments = pickFragments(
       cached.initialFragments,
-      selectInitialFragmentIds(cached.plan as FragmentPlanValue)
+      selectInitialFragmentIds(cached.plan as FragmentPlanValue, { dynamicCriticalIds })
     )
     return { plan: cached.plan as FragmentPlanValue, fragments: fallbackFragments, path: cached.plan.path }
   }
 
-  const initialIds = selectInitialFragmentIds(plan)
+  const initialIds = selectInitialFragmentIds(plan, { dynamicCriticalIds })
   let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
   const missingIds = initialIds.filter((id) => !fragments[id])
 
