@@ -16,11 +16,6 @@
   }
 
   :root {
-    --parallax-stars-1-y: 0px;
-    --parallax-stars-2-y: 0px;
-    --parallax-stars-twinkle-y: 0px;
-    --parallax-blob-a-y: 0px;
-    --parallax-blob-b-y: 0px;
     --lava-blob-a: url("/assets/lava-blob-a.svg");
     --lava-blob-b: url("/assets/lava-blob-b.svg");
   }
@@ -183,9 +178,7 @@
   :root[data-theme="dark"][data-decor-ready="true"] body {
     background-image: var(--starfield-layer-1), var(--starfield-layer-2);
     background-size: 520px 520px, 760px 760px;
-    background-position:
-      0 calc(var(--parallax-stars-1-y, 0px)),
-      240px calc(320px + var(--parallax-stars-2-y, 0px));
+    background-position: 0 0, 240px 320px;
     background-repeat: repeat;
     background-attachment: scroll;
   }
@@ -193,7 +186,7 @@
   :root[data-theme="dark"][data-decor-ready="true"] body::before {
     background-image: var(--starfield-twinkle);
     background-size: 980px 980px;
-    background-position: 300px calc(380px + var(--parallax-stars-twinkle-y, 0px));
+    background-position: 300px 380px;
     opacity: 0.5;
     animation: starfield-twinkle 5.8s ease-in-out infinite;
     mix-blend-mode: screen;
@@ -216,6 +209,31 @@
     :root[data-theme="dark"] body::before {
       animation: none;
       opacity: 0.22;
+    }
+  }
+
+  @supports (animation-timeline: scroll()) {
+    :root[data-decor-ready="true"] body::before {
+      background-position: 0 0;
+      animation: lava-fade-a 26s ease-in-out infinite, lava-scroll-a 1s linear both;
+      animation-timeline: auto, scroll(root);
+    }
+
+    :root[data-decor-ready="true"] body::after {
+      background-position: 240px 200px;
+      animation: lava-fade-b 32s ease-in-out infinite, lava-scroll-b 1s linear both;
+      animation-timeline: auto, scroll(root);
+    }
+
+    :root[data-theme="dark"][data-decor-ready="true"] body {
+      animation: starfield-scroll 1s linear both;
+      animation-timeline: scroll(root);
+    }
+
+    :root[data-theme="dark"][data-decor-ready="true"] body::before {
+      background-position: 300px 380px;
+      animation: starfield-twinkle 5.8s ease-in-out infinite, starfield-twinkle-scroll 1s linear both;
+      animation-timeline: auto, scroll(root);
     }
   }
 
