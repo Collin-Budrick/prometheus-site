@@ -1,5 +1,4 @@
 import { render } from '@builder.io/qwik'
-import globalStylesHref from '@prometheus/ui/global.css?url'
 import { buildApiUrl, resolveApiHost } from './components/contact-invites/api'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import {
@@ -23,25 +22,6 @@ const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
 
-const ensureGlobalStylesheet = () => {
-  if (typeof document === 'undefined') return
-  const href = globalStylesHref
-  if (!href) return
-  const existing = document.querySelector(`link[rel="stylesheet"][href="${href}"]`)
-  if (existing) return
-  const preload = document.querySelector(`link[rel="preload"][href="${href}"]`)
-  if (preload instanceof HTMLLinkElement) {
-    preload.rel = 'stylesheet'
-    preload.onload = null
-    preload.removeAttribute('as')
-    return
-  }
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = href
-  document.head?.appendChild(link)
-}
-
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(name, { detail }))
@@ -54,7 +34,6 @@ if (import.meta.hot) {
 }
 
 export default function () {
-  ensureGlobalStylesheet()
   void render(document, <Root />)
 
   if ('serviceWorker' in navigator) {

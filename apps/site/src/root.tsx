@@ -3,7 +3,8 @@ import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
 import { createClientErrorReporter, initHighlight } from '@platform/logging'
 import { RouteMotion } from '@prometheus/ui'
-import globalStyles from '@prometheus/ui/global-critical.css?inline'
+import globalCriticalStyles from '@prometheus/ui/global-critical.css?inline'
+import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
@@ -86,6 +87,7 @@ const setupLcpGate = (
 }
 
 export default component$(() => {
+  useStyles$(globalCriticalStyles)
   useStyles$(globalStyles)
   const clientReady = useClientReady()
   useVisibleTask$(

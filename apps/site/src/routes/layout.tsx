@@ -16,7 +16,6 @@ import { appConfig } from '../app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
-import globalStylesHref from '@prometheus/ui/global.css?url'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -505,10 +504,6 @@ export const RouterHead = component$(() => {
   return (
     <>
       <title>{head.title}</title>
-      <HTMLFragment dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(globalStylesHref)} />
-      <noscript>
-        <link rel="stylesheet" href={globalStylesHref} />
-      </noscript>
       {head.meta.map((meta) => (
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}

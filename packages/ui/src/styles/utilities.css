@@ -41,19 +41,19 @@
 
   @keyframes lava-scroll-a {
     from {
-      background-position: 0 0;
+      translate: 0 0;
     }
     to {
-      background-position: 0 160px;
+      translate: 0 160px;
     }
   }
 
   @keyframes lava-scroll-b {
     from {
-      background-position: 240px 200px;
+      translate: 0 0;
     }
     to {
-      background-position: 240px 360px;
+      translate: 0 160px;
     }
   }
 
