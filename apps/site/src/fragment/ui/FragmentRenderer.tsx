@@ -1,10 +1,7 @@
-import { component$ } from '@builder.io/qwik'
+import { Resource, component$, useResource$ } from '@builder.io/qwik'
+import type { Component } from '@builder.io/qwik'
 import type { RenderNode } from '@core/fragments'
 import { sanitizeAttributes } from '@core/fragments'
-import { PreactIsland } from '../../components/PreactIsland'
-import { ReactBinaryDemo } from '../../components/ReactBinaryDemo'
-import { WasmRendererDemo } from '../../components/WasmRendererDemo'
-import { PlannerDemo } from '../../components/PlannerDemo'
 import { StoreStream } from '../../components/StoreStream'
 import { StoreCreateForm } from '../../components/StoreCreateForm'
 import { StoreCart } from '../../components/StoreCart'
@@ -49,25 +46,61 @@ const voidTags = new Set<VoidTag>([
 
 const isVoidTag = (tag: string): tag is VoidTag => voidTags.has(tag as VoidTag)
 
+type LazyComponentLoader<Props> = () => Promise<Component<Props>>
+
+const loadPreactIsland: LazyComponentLoader<{ label?: string }> = () =>
+  import('../../components/PreactIsland').then((mod) => mod.PreactIsland)
+
+const loadReactBinaryDemo: LazyComponentLoader<Record<string, never>> = () =>
+  import('../../components/ReactBinaryDemo').then((mod) => mod.ReactBinaryDemo)
+
+const loadWasmRendererDemo: LazyComponentLoader<Record<string, never>> = () =>
+  import('../../components/WasmRendererDemo').then((mod) => mod.WasmRendererDemo)
+
+const loadPlannerDemo: LazyComponentLoader<Record<string, never>> = () =>
+  import('../../components/PlannerDemo').then((mod) => mod.PlannerDemo)
+
+const LazyFragmentComponent = component$<{
+  loader: LazyComponentLoader<any>
+  props?: Record<string, unknown>
+}>(({ loader, props }) => {
+  const resource = useResource$<Component<any>>(async ({ track }) => {
+    track(() => loader)
+    return loader()
+  })
+
+  return (
+    <Resource
+      value={resource}
+      onPending={() => (
+        <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
+          <div class="loader" aria-hidden="true" />
+        </div>
+      )}
+      onResolved={(ResolvedComponent) => <ResolvedComponent {...props} />}
+    />
+  )
+})
+
 export const FragmentRenderer = component$(({ node }: NodeProps) => {
   if (node.type === 'text') {
     return <>{node.text ?? ''}</>
   }
 
   if (node.tag === 'preact-island') {
-    return <PreactIsland label={node.attrs?.label} />
+    return <LazyFragmentComponent loader={loadPreactIsland} props={{ label: node.attrs?.label }} />
   }
 
   if (node.tag === 'react-binary-demo') {
-    return <ReactBinaryDemo />
+    return <LazyFragmentComponent loader={loadReactBinaryDemo} />
   }
 
   if (node.tag === 'wasm-renderer-demo') {
-    return <WasmRendererDemo />
+    return <LazyFragmentComponent loader={loadWasmRendererDemo} />
   }
 
   if (node.tag === 'planner-demo') {
-    return <PlannerDemo />
+    return <LazyFragmentComponent loader={loadPlannerDemo} />
   }
 
   if (node.tag === 'store-stream') {
