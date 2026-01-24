@@ -133,6 +133,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const searchMeta = useSignal<{ total: number; query: string } | null>(seedMeta)
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
+  const rootRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLElement>()
   const loadMoreRef = useSignal<HTMLDivElement>()
 
@@ -308,12 +309,20 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      ctx.track(() => rootRef.value)
+      const root = rootRef.value
+      if (!root) return
       const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       let active = true
       let reconnectTimer: number | null = null
       let reconnectAttempt = 0
+      let isInView = false
+      let isPageVisible = document.visibilityState === 'visible'
+      let observer: IntersectionObserver | null = null
+      const visibilityMargin = 200
 
       const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+      const canConnect = () => active && isInView && isPageVisible
 
       const clearReconnectTimer = () => {
         if (reconnectTimer !== null) {
@@ -323,7 +332,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       }
 
       const scheduleReconnect = (delayMs?: number) => {
-        if (!active || reconnectTimer !== null) return
+        if (!canConnect() || reconnectTimer !== null) return
         if (isOffline()) {
           streamState.value = 'offline'
           return
@@ -338,9 +347,34 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         const wait = cappedDelay + jitter
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null
-          if (!active) return
+          if (!canConnect()) return
           connect()
         }, wait)
+      }
+
+      const pauseStream = () => {
+        clearReconnectTimer()
+        if (streamState.value === 'connecting' || streamState.value === 'live') {
+          streamState.value = 'idle'
+        }
+        const ws = wsRef.value
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          wsRef.value = undefined
+          ws.close()
+        }
+      }
+
+      const updateConnection = () => {
+        if (!canConnect()) {
+          pauseStream()
+          return
+        }
+        const ws = wsRef.value
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+          return
+        }
+        clearReconnectTimer()
+        connect()
       }
 
       const handleUpsert = (item: StoreItem) => {
@@ -373,9 +407,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       }
 
       const connect = () => {
-        if (!active) return
+        if (!canConnect()) return
         if (isOffline()) {
           streamState.value = 'offline'
+          return
+        }
+        const existing = wsRef.value
+        if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
           return
         }
         const wsUrl = buildWsUrl('/store/ws', window.location.origin)
@@ -434,7 +472,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         })
 
         ws.addEventListener('close', () => {
-          if (!active) return
+          wsRef.value = undefined
+          if (!canConnect()) return
           streamState.value = isOffline() ? 'offline' : streamState.value === 'error' ? 'error' : 'offline'
           scheduleReconnect()
         })
@@ -445,11 +484,38 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         })
       }
 
-      connect()
+      const handleVisibilityChange = () => {
+        isPageVisible = document.visibilityState === 'visible'
+        updateConnection()
+      }
+
+      const handlePageHide = () => {
+        isPageVisible = false
+        updateConnection()
+      }
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0]
+          const next = Boolean(entry?.isIntersecting)
+          if (next === isInView) return
+          isInView = next
+          updateConnection()
+        },
+        { rootMargin: `${visibilityMargin}px 0px` }
+      )
+
+      observer.observe(root)
+      const rect = root.getBoundingClientRect()
+      isInView =
+        rect.bottom >= -visibilityMargin &&
+        rect.top <= window.innerHeight + visibilityMargin &&
+        rect.right >= 0 &&
+        rect.left <= window.innerWidth
+      updateConnection()
 
       const handleOnline = () => {
-        if (!active) return
-        if (isOffline()) return
+        if (!canConnect()) return
         const ws = wsRef.value
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
           return
@@ -464,12 +530,20 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       window.addEventListener('online', handleOnline)
       window.addEventListener('offline', handleOffline)
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      window.addEventListener('pageshow', handleVisibilityChange)
+      window.addEventListener('pagehide', handlePageHide)
 
       ctx.cleanup(() => {
         active = false
         clearReconnectTimer()
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+        window.removeEventListener('pageshow', handleVisibilityChange)
+        window.removeEventListener('pagehide', handlePageHide)
+        observer?.disconnect()
+        observer = null
         wsRef.value?.close()
       })
     },
@@ -667,7 +741,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   })
 
   return (
-    <div class={rootClass.value} data-state={streamState.value} data-mode={query.value.trim() ? 'search' : 'browse'}>
+    <div
+      ref={rootRef}
+      class={rootClass.value}
+      data-state={streamState.value}
+      data-mode={query.value.trim() ? 'search' : 'browse'}
+    >
       <div class="store-stream-controls">
         <form preventdefault:submit class="store-stream-search" onSubmit$={handleRefresh}>
           <div class="store-stream-field">

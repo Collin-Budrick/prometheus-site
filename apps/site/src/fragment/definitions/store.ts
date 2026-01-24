@@ -57,7 +57,7 @@ const storeFragmentCss = `
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
   flex: 1;
   min-width: 220px;
-  transition: border-color 240ms ease, box-shadow 240ms ease, background 240ms ease;
+  transition: transform 220ms ease;
 }
 
 .store-stream-field input {
@@ -77,6 +77,7 @@ const storeFragmentCss = `
   box-shadow:
     0 20px 34px rgba(15, 23, 42, 0.2),
     0 0 0 1px rgb(var(--accent) / 0.45);
+  transform: translateY(-1px);
 }
 
 .store-stream-clear {
@@ -90,12 +91,17 @@ const storeFragmentCss = `
   text-transform: uppercase;
   letter-spacing: 0.3em;
   cursor: pointer;
-  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+  transition: transform 180ms ease;
 }
 
 .store-stream-clear:hover {
   border-color: rgb(var(--stroke-strong));
   color: rgb(var(--ink));
+  transform: translateY(-1px);
+}
+
+.store-stream-clear:active {
+  transform: translateY(0);
 }
 
 .store-stream-status {
@@ -171,7 +177,7 @@ const storeFragmentCss = `
   transform: translateY(10px);
   animation: store-stream-card-in 520ms var(--view-transition-ease, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
   animation-delay: calc(var(--stagger-index) * 70ms);
-  transition: box-shadow 220ms ease, border-color 220ms ease;
+  transition: transform 220ms ease, opacity 220ms ease;
   min-width: 0;
   cursor: grab;
 }
@@ -197,6 +203,7 @@ const storeFragmentCss = `
 .store-stream-row:hover {
   border-color: rgb(var(--stroke-strong));
   box-shadow: 0 22px 34px rgba(15, 23, 42, 0.22);
+  transform: translateY(-2px);
 }
 
 .store-stream-delete {
@@ -217,7 +224,7 @@ const storeFragmentCss = `
   place-items: center;
   padding: 0;
   cursor: pointer;
-  transition: color 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .store-stream-delete:hover {
@@ -283,7 +290,7 @@ const storeFragmentCss = `
   letter-spacing: 0.2em;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .store-stream-add:hover {
@@ -576,7 +583,6 @@ const storeFragmentCss = `
   font-size: 13px;
   letter-spacing: 0.12em;
   color: rgb(var(--ink));
-  transition: color 200ms ease;
   will-change: transform;
 }
 
@@ -599,13 +605,14 @@ const storeFragmentCss = `
   min-height: 180px;
   display: grid;
   gap: 12px;
-  transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease;
+  transition: transform 200ms ease;
 }
 
 .store-cart-dropzone.is-active {
   border-color: rgb(var(--accent));
   background: rgb(var(--surface-soft));
   box-shadow: 0 18px 32px rgba(15, 23, 42, 0.14);
+  transform: translateY(-1px);
 }
 
 .store-cart-drop-hint {
@@ -726,7 +733,7 @@ const storeFragmentCss = `
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: color 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .store-cart-remove:hover {
