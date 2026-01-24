@@ -40,14 +40,14 @@ describe('rate limiter fallback', () => {
 describe('store cache invalidation', () => {
   it('removes store item cache entries by prefix', async () => {
     resetTestState()
-    await testValkey.set('store:items:0:10', 'first')
-    await testValkey.set('store:items:10:10', 'second')
+    await testValkey.set('store:items:0:10:id:asc', 'first')
+    await testValkey.set('store:items:10:10:id:asc', 'second')
     await testValkey.set('other:key', 'persist')
 
     await invalidateStoreItemsCache(testValkey, () => true)
 
-    expect(await testValkey.get('store:items:0:10')).toBeNull()
-    expect(await testValkey.get('store:items:10:10')).toBeNull()
+    expect(await testValkey.get('store:items:0:10:id:asc')).toBeNull()
+    expect(await testValkey.get('store:items:10:10:id:asc')).toBeNull()
     expect(await testValkey.get('other:key')).toBe('persist')
   })
 })

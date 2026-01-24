@@ -68,7 +68,7 @@ describe('store pagination', () => {
     expect(firstPayload.items[0].id).toBe(1)
     expect(firstPayload.items.at(-1)?.id).toBe(10)
     expect(firstPayload.cursor).toBe(10)
-    expect(cacheKeysWritten).toContain('store:items:0:10')
+    expect(cacheKeysWritten).toContain('store:items:0:10:id:asc')
 
     const nextPage = await fetch(`${apiUrl}/store/items?cursor=${firstPayload.cursor}&limit=5`)
     expect(nextPage.status).toBe(200)

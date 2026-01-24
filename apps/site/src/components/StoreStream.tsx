@@ -5,6 +5,16 @@ import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
 import {
+  buildStoreSortToken,
+  defaultStoreSortDir,
+  defaultStoreSortKey,
+  normalizeStoreSortDir,
+  normalizeStoreSortKey,
+  parseStoreSortToken,
+  type StoreSortDir,
+  type StoreSortKey
+} from '../shared/store-sort'
+import {
   consumeStoreItem,
   flushStoreCartQueue,
   getStoreCartQueueSize,
@@ -31,6 +41,24 @@ type StoreItem = {
   price: number
   quantity: number
   score?: number
+}
+
+const compareStoreItems = (left: StoreItem, right: StoreItem, key: StoreSortKey, dir: StoreSortDir) => {
+  let result = 0
+
+  if (key === 'price') {
+    result = left.price - right.price
+  } else if (key === 'name') {
+    result = left.name.localeCompare(right.name)
+  } else {
+    result = left.id - right.id
+  }
+
+  if (result === 0) {
+    result = left.id - right.id
+  }
+
+  return dir === 'desc' ? -result : result
 }
 
 const streamLayoutCache = new WeakMap<HTMLElement, Map<number, DOMRect>>()
@@ -131,11 +159,17 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       : null
   const seedQuery = typeof seedStream?.query === 'string' ? seedStream.query : seedMeta?.query ?? ''
   const seedQueryValue = seedMeta?.query ?? seedQuery
+  const seedSortKey = normalizeStoreSortKey(seedStream?.sort ?? defaultStoreSortKey)
+  const seedSortDir = normalizeStoreSortDir(seedStream?.dir ?? defaultStoreSortDir)
   const shouldSkipInitialFetch = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
   const query = useSignal(seedQuery)
   const items = useSignal<StoreItem[]>(seedItems)
   const visibleCount = useSignal(Math.min(seedItems.length, initialBatch))
   const lastQuery = useSignal(seedQueryValue)
+  const sortKey = useSignal<StoreSortKey>(seedSortKey)
+  const sortDir = useSignal<StoreSortDir>(seedSortDir)
+  const sortToken = useComputed$(() => buildStoreSortToken(sortKey.value, sortDir.value))
+  const lastSortToken = useSignal(buildStoreSortToken(seedSortKey, seedSortDir))
   const removingIds = useSignal<number[]>([])
   const deletingIds = useSignal<number[]>([])
   const draggingId = useSignal<number | null>(null)
@@ -168,6 +202,22 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
   const outOfStockLabel = copy?.['Out of stock'] ?? 'Out of stock'
   const queuedLabel = copy?.['Queued actions'] ?? 'Queued actions'
+  const sortLabel = copy?.['Sort by'] ?? 'Sort by'
+  const sortNewestLabel = copy?.['Newest first'] ?? 'Newest first'
+  const sortOldestLabel = copy?.['Oldest first'] ?? 'Oldest first'
+  const sortPriceLowLabel = copy?.['Price low to high'] ?? 'Price low to high'
+  const sortPriceHighLabel = copy?.['Price high to low'] ?? 'Price high to low'
+  const sortNameAscLabel = copy?.['Name A to Z'] ?? 'Name A to Z'
+  const sortNameDescLabel = copy?.['Name Z to A'] ?? 'Name Z to A'
+
+  const sortOptions = [
+    { value: buildStoreSortToken('id', 'desc'), label: sortNewestLabel },
+    { value: buildStoreSortToken('id', 'asc'), label: sortOldestLabel },
+    { value: buildStoreSortToken('price', 'asc'), label: sortPriceLowLabel },
+    { value: buildStoreSortToken('price', 'desc'), label: sortPriceHighLabel },
+    { value: buildStoreSortToken('name', 'asc'), label: sortNameAscLabel },
+    { value: buildStoreSortToken('name', 'desc'), label: sortNameDescLabel }
+  ]
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -214,6 +264,21 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
   const handleRefresh = $(() => {
     refreshTick.value += 1
+  })
+
+  const handleSortChange = $((event: Event) => {
+    const target = event.target as HTMLSelectElement | null
+    if (!target) return
+    const parsed = parseStoreSortToken(target.value)
+    if (parsed.key === sortKey.value && parsed.dir === sortDir.value) return
+    sortKey.value = parsed.key
+    sortDir.value = parsed.dir
+    refreshTick.value += 1
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('sort', parsed.key)
+    url.searchParams.set('dir', parsed.dir)
+    window.history.replaceState(null, '', url.toString())
   })
 
   const updateItemQuantity = $((id: number, quantity: number) => {
@@ -402,17 +467,19 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         if (existingIndex >= 0) {
           const next = [...items.value]
           next[existingIndex] = { ...next[existingIndex], ...item }
-          items.value = next
           if (searchActive) {
+            items.value = next
             refreshTick.value += 1
+            return
           }
+          items.value = next.sort((left, right) => compareStoreItems(left, right, sortKey.value, sortDir.value))
           return
         }
         if (searchActive) {
           refreshTick.value += 1
           return
         }
-        const next = [...items.value, item].sort((a, b) => b.id - a.id)
+        const next = [...items.value, item].sort((left, right) => compareStoreItems(left, right, sortKey.value, sortDir.value))
         items.value = next.slice(0, maxItems)
       }
 
@@ -654,8 +721,16 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       if (typeof window === 'undefined') return
       const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       const activeQuery = ctx.track(() => query.value).trim()
+      const activeSortKey = ctx.track(() => sortKey.value)
+      const activeSortDir = ctx.track(() => sortDir.value)
       const refresh = ctx.track(() => refreshTick.value)
-      if (shouldSkipInitialFetch.value && refresh === 0 && activeQuery === seedQueryValue) {
+      if (
+        shouldSkipInitialFetch.value &&
+        refresh === 0 &&
+        activeQuery === seedQueryValue &&
+        activeSortKey === seedSortKey &&
+        activeSortDir === seedSortDir
+      ) {
         shouldSkipInitialFetch.value = false
         return
       }
@@ -670,7 +745,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         try {
           const path = activeQuery
             ? `/store/search?q=${encodeURIComponent(activeQuery)}&limit=${maxItems}`
-            : `/store/items?limit=${maxItems}`
+            : `/store/items?limit=${maxItems}&sort=${encodeURIComponent(activeSortKey)}&dir=${encodeURIComponent(
+                activeSortDir
+              )}`
           const response = await fetch(buildApiUrl(path, window.location.origin), {
             signal: controller.signal,
             credentials: 'include',
@@ -693,7 +770,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               query: activeQuery
             }
           } else {
-            items.value = normalized.sort((a, b) => b.id - a.id).slice(0, maxItems)
+            items.value = normalized
             searchMeta.value = null
           }
           searchState.value = 'idle'
@@ -762,9 +839,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(({ track }) => {
     const length = track(() => items.value.length)
     const queryValue = track(() => query.value)
+    const sortValue = track(() => sortToken.value)
 
-    if (queryValue !== lastQuery.value) {
+    if (queryValue !== lastQuery.value || sortValue !== lastSortToken.value) {
       lastQuery.value = queryValue
+      lastSortToken.value = sortValue
       visibleCount.value = Math.min(length, initialBatch)
       return
     }
@@ -836,6 +915,16 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             </button>
           ) : null}
         </form>
+        <div class="store-stream-sort">
+          <span>{sortLabel}</span>
+          <select aria-label={sortLabel} value={sortToken.value} onChange$={handleSortChange}>
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div class="store-stream-status" aria-live="polite">
           <span class="store-stream-status-dot" aria-hidden="true" />
           <span class="sr-only">{statusLabel.value}</span>

@@ -1,5 +1,5 @@
 import { Elysia, t, type HTTPHeaders } from 'elysia'
-import { and, eq, gt, gte, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 import type { ValkeyClientType } from '@valkey/client'
 import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
@@ -34,6 +34,16 @@ export type StoreRouteOptions = {
 }
 
 type StoreItemsPayload<StoreItem> = { items: StoreItem[]; cursor: number | null }
+
+type StoreSortKey = 'id' | 'name' | 'price'
+type StoreSortDir = 'asc' | 'desc'
+
+const normalizeStoreSortKey = (value: unknown): StoreSortKey => {
+  if (value === 'name' || value === 'price' || value === 'id') return value
+  return 'id'
+}
+
+const normalizeStoreSortDir = (value: unknown): StoreSortDir => (value === 'desc' ? 'desc' : 'asc')
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -211,15 +221,17 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
       async ({ query, request, set }) => {
         const limitValue = typeof query.limit === 'string' ? query.limit : '10'
         const cursorValue = typeof query.cursor === 'string' ? query.cursor : '0'
+        const sortKey = normalizeStoreSortKey(query.sort)
+        const sortDir = normalizeStoreSortDir(query.dir)
         const limitRaw = Number.parseInt(limitValue, 10)
-        const lastId = Number.parseInt(cursorValue, 10)
+        const cursor = Number.parseInt(cursorValue, 10)
 
-        if (Number.isNaN(lastId) || lastId < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
+        if (Number.isNaN(cursor) || cursor < 0 || Number.isNaN(limitRaw) || limitRaw <= 0) {
           return options.jsonError(400, 'Invalid cursor or limit')
         }
 
         const limit = Math.min(limitRaw, 50)
-        const cacheKey = buildStoreItemsCacheKey(lastId, limit)
+        const cacheKey = buildStoreItemsCacheKey(cursor, limit, sortKey, sortDir)
 
         if (isValkeyUsable()) {
           try {
@@ -261,13 +273,30 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         const itemsQuery = options.db.select().from(options.storeItemsTable)
+        const isIdSort = sortKey === 'id'
+        const orderDirection = sortDir === 'desc' ? desc : asc
+        const orderColumn =
+          sortKey === 'price'
+            ? options.storeItemsTable.price
+            : sortKey === 'name'
+              ? options.storeItemsTable.name
+              : options.storeItemsTable.id
+        const orderByColumns =
+          sortKey === 'id'
+            ? [orderDirection(orderColumn)]
+            : [orderDirection(orderColumn), orderDirection(options.storeItemsTable.id)]
         const paginatedQuery =
-          lastId > 0 ? itemsQuery.where(gt(options.storeItemsTable.id, lastId)) : itemsQuery
+          isIdSort && cursor > 0
+            ? itemsQuery.where(
+                sortDir === 'desc' ? lt(options.storeItemsTable.id, cursor) : gt(options.storeItemsTable.id, cursor)
+              )
+            : itemsQuery
 
         const start = performance.now()
         let items
         try {
-          items = await paginatedQuery.orderBy(options.storeItemsTable.id).limit(limit)
+          const orderedQuery = paginatedQuery.orderBy(...orderByColumns).limit(limit)
+          items = await (isIdSort || cursor === 0 ? orderedQuery : orderedQuery.offset(cursor))
         } catch (error) {
           console.error('Failed to query store items', error)
           return attachRateLimitHeaders(options.jsonError(500, 'Unable to load items'), rateLimit.headers)
@@ -275,7 +304,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
         const elapsed = performance.now() - start
         void options.recordLatencySample('store:items', elapsed)
-        const nextCursor = items.length === limit ? items[items.length - 1].id : null
+        const nextCursor = items.length === limit ? (isIdSort ? items[items.length - 1].id : cursor + items.length) : null
         const payload = { items, cursor: nextCursor }
 
         if (isValkeyUsable()) {
@@ -298,7 +327,9 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
       {
         query: t.Object({
           limit: t.Optional(t.String()),
-          cursor: t.Optional(t.String())
+          cursor: t.Optional(t.String()),
+          sort: t.Optional(t.String()),
+          dir: t.Optional(t.String())
         })
       }
     )

@@ -18,6 +18,7 @@ import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-reso
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
+import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../shared/store-sort'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 
 const featureStoreModule = await import('@features/store/pages/Store')
@@ -96,7 +97,17 @@ const buildStoreApiUrl = (apiBase: string, path: string) => {
   return `${trimmed}${suffix}`
 }
 
-const loadStoreSeed = async (request: Request): Promise<StoreSeed> => {
+const resolveStoreSort = (url: URL): { sort: StoreSortKey; dir: StoreSortDir } => {
+  return {
+    sort: normalizeStoreSortKey(url.searchParams.get('sort')),
+    dir: normalizeStoreSortDir(url.searchParams.get('dir'))
+  }
+}
+
+const loadStoreSeed = async (
+  request: Request,
+  sortParams: { sort: StoreSortKey; dir: StoreSortDir }
+): Promise<StoreSeed> => {
   const cookieHeader = request.headers.get('cookie')
   const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
   const queued = readStoreCartQueueFromCookie(cookieHeader)
@@ -104,7 +115,10 @@ const loadStoreSeed = async (request: Request): Promise<StoreSeed> => {
 
   try {
     const apiBase = resolveStoreApiBase(request)
-    const url = buildStoreApiUrl(apiBase, `/store/items?limit=${STORE_STREAM_LIMIT}`)
+    const url = buildStoreApiUrl(
+      apiBase,
+      `/store/items?limit=${STORE_STREAM_LIMIT}&sort=${sortParams.sort}&dir=${sortParams.dir}`
+    )
     if (url) {
       const response = await fetch(url, {
         headers: { accept: 'application/json' },
@@ -122,7 +136,7 @@ const loadStoreSeed = async (request: Request): Promise<StoreSeed> => {
   }
 
   return {
-    stream: { items: streamItems },
+    stream: { items: streamItems, sort: sortParams.sort, dir: sortParams.dir },
     cart: { items: cartItems, queuedCount: queued.length }
   }
 }
@@ -131,7 +145,8 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
   if (!storeEnabled) return null
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
-  const storeSeed = await loadStoreSeed(request)
+  const sortParams = resolveStoreSort(url)
+  const storeSeed = await loadStoreSeed(request, sortParams)
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
