@@ -16,9 +16,21 @@ export type HybridFragmentResource = {
 const readPlanInitialHtml = (plan: FragmentPlanValue | undefined) =>
   (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
 
+type InitialFragmentSelectionOptions = {
+  dynamicCriticalIds?: string[]
+  path?: string
+  viewport?: 'desktop' | 'mobile'
+}
+
+const shouldRestrictInitialFragments = (path: string | undefined, viewport: 'desktop' | 'mobile') => {
+  if (viewport === 'mobile') return true
+  if (!path) return false
+  return path.startsWith('/store') || path.startsWith('/chat')
+}
+
 export const selectInitialFragmentIds = (
   plan: FragmentPlanValue | undefined,
-  options: { dynamicCriticalIds?: string[] } = {}
+  options: InitialFragmentSelectionOptions = {}
 ) => {
   if (!plan) return []
   const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
@@ -26,11 +38,16 @@ export const selectInitialFragmentIds = (
   const dynamicCritical = options.dynamicCriticalIds?.filter((id) => entryById.has(id)) ?? []
   const combined = Array.from(new Set([...critical, ...dynamicCritical]))
   const fetchGroup = plan.fetchGroups?.[0]?.filter((id) => entryById.has(id)) ?? []
+  const restrictInitialFragments = shouldRestrictInitialFragments(options.path, options.viewport ?? 'desktop')
   const seedIds = fetchGroup.length
     ? fetchGroup
     : combined.length
       ? combined
-      : plan.fragments.map((entry) => entry.id)
+      : restrictInitialFragments
+        ? plan.fragments[0]?.id
+          ? [plan.fragments[0].id]
+          : []
+        : plan.fragments.map((entry) => entry.id)
   const required = new Set<string>()
   const stack = [...seedIds]
   while (stack.length) {
@@ -83,7 +100,7 @@ export const loadHybridFragmentResource = async (
   const cached = fragmentPlanCache.get(path, lang)
   if (cached?.plan && (cached.initialFragments || cached.initialHtml)) {
     const cachedPlan = cached.plan as FragmentPlanValue
-    const initialIds = selectInitialFragmentIds(cachedPlan, { dynamicCriticalIds })
+    const initialIds = selectInitialFragmentIds(cachedPlan, { dynamicCriticalIds, path, viewport })
     const fallbackFragments = pickFragments(cached.initialFragments, initialIds)
     return {
       plan: cachedPlan,
@@ -106,7 +123,7 @@ export const loadHybridFragmentResource = async (
     console.warn('Fragment plan fetch failed, using cached entry', error)
     const fallbackFragments = pickFragments(
       cached.initialFragments,
-      selectInitialFragmentIds(cached.plan as FragmentPlanValue, { dynamicCriticalIds })
+      selectInitialFragmentIds(cached.plan as FragmentPlanValue, { dynamicCriticalIds, path, viewport })
     )
     return {
       plan: cached.plan as FragmentPlanValue,
@@ -116,7 +133,7 @@ export const loadHybridFragmentResource = async (
     }
   }
 
-  const initialIds = selectInitialFragmentIds(plan, { dynamicCriticalIds })
+  const initialIds = selectInitialFragmentIds(plan, { dynamicCriticalIds, path, viewport })
   let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
   const missingIds = initialIds.filter((id) => !fragments[id])
 

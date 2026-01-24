@@ -6,8 +6,8 @@ if (!__PUBLIC_APP_CONFIG__) {
   throw new Error('Public app config is not available in this runtime.')
 }
 
-const DEFAULT_FRAGMENT_VISIBILITY_MARGIN = '40% 0px'
-const DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD = 0.25
+const DEFAULT_FRAGMENT_VISIBILITY_MARGIN = '60% 0px'
+const DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD = 0.4
 
 const publicEnv =
   typeof import.meta !== 'undefined'
