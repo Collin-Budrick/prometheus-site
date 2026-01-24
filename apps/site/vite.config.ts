@@ -179,40 +179,17 @@ type FragmentPlanPayload = {
   earlyHints?: EarlyHint[]
 }
 
-const lcpAssetManifest: Array<{ path: string; type?: string }> = [
-  { path: 'assets/lava-blob-a.svg', type: 'image/svg+xml' },
-  { path: 'assets/lava-blob-b.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-layer-1.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-layer-2.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-twinkle.svg', type: 'image/svg+xml' }
-]
-
 const resolveFragmentCssHint = (id: string): EarlyHint | null => {
   const entry = fragmentCssManifest[id as keyof typeof fragmentCssManifest]
   if (!entry) return null
   return { href: withBase(entry.path), as: 'style' }
 }
 
-const buildPlanLcpHints = (plan: FragmentPlanPayload) => {
-  const hints: EarlyHint[] = []
-  const criticalCss = (plan.fragments ?? [])
+const buildPlanCriticalCssHints = (plan: FragmentPlanPayload) =>
+  (plan.fragments ?? [])
     .filter((entry) => entry.critical)
     .map((entry) => resolveFragmentCssHint(entry.id))
     .filter((hint): hint is EarlyHint => Boolean(hint))
-  hints.push(...criticalCss)
-
-  if (plan.path === '/') {
-    hints.push(
-      ...lcpAssetManifest.map((entry) => ({
-        href: withBase(entry.path),
-        as: 'image',
-        type: entry.type
-      }))
-    )
-  }
-
-  return hints
-}
 
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
   if (warning.code !== 'EVAL') return false
@@ -257,9 +234,9 @@ const getEarlyHints = async (pathName: string) => {
   if (!response.ok) return []
   const payload = (await response.json()) as FragmentPlanPayload
   const planHints = Array.isArray(payload.earlyHints) ? payload.earlyHints : []
-  const lcpHints = buildPlanLcpHints(payload)
-  if (!planHints.length && !lcpHints.length) return []
-  return sanitizeHints(filterPlanHints([...planHints, ...lcpHints]))
+  const criticalCssHints = buildPlanCriticalCssHints(payload)
+  if (!planHints.length && !criticalCssHints.length) return []
+  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints]))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {

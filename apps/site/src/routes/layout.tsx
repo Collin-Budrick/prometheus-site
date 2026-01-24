@@ -192,21 +192,6 @@ const getModulePreloadLinks = async (basePath: string) => {
   return cachedModulePreloads
 }
 
-const lcpAssetManifest: Array<{ path: string; type?: string }> = [
-  { path: 'assets/lava-blob-a.svg', type: 'image/svg+xml' },
-  { path: 'assets/lava-blob-b.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-layer-1.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-layer-2.svg', type: 'image/svg+xml' },
-  { path: 'assets/starfield-twinkle.svg', type: 'image/svg+xml' }
-]
-
-const buildLcpAssetHints = (basePath: string) =>
-  lcpAssetManifest.map((entry) => ({
-    href: withBasePath(basePath, entry.path),
-    as: 'image',
-    type: entry.type
-  }))
-
 const shouldSkipEarlyHint = (hint: EarlyHint) => {
   const href = hint.href?.trim()
   if (!href) return true
@@ -241,7 +226,7 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values())
 }
 
-const getPlanEarlyHints = async (pathName: string, request: Request | null, basePath: string) => {
+const getPlanEarlyHints = async (pathName: string, request: Request | null) => {
   if (!request) return []
   try {
     const apiBase = resolveServerApiBase(appConfig.apiBase, request)
@@ -252,8 +237,7 @@ const getPlanEarlyHints = async (pathName: string, request: Request | null, base
       href: link.href,
       as: 'style'
     }))
-    const heroHints = plan.path === '/' ? buildLcpAssetHints(basePath) : []
-    return sanitizeHints([...(plan.earlyHints ?? []), ...criticalCss, ...heroHints])
+    return sanitizeHints([...(plan.earlyHints ?? []), ...criticalCss])
   } catch {
     return []
   }
@@ -379,7 +363,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
     const preloadLinks = await getModulePreloadLinks(basePath)
     preloadLinks.forEach((link) => headers.append('Link', link))
     const pathName = request ? new URL(request.url).pathname : '/'
-    const planHints = await getPlanEarlyHints(pathName, request ?? null, basePath)
+    const planHints = await getPlanEarlyHints(pathName, request ?? null)
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
