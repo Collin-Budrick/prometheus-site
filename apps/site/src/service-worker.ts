@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { CacheableResponsePlugin, Serwist, StaleWhileRevalidate } from 'serwist'
+import { CacheFirst, CacheableResponsePlugin, Serwist, StaleWhileRevalidate } from 'serwist'
 
 declare const self: ServiceWorkerGlobalScope & {
   __SW_MANIFEST: (string | { url: string; revision?: string | null })[]
@@ -14,6 +14,7 @@ const OFFLINE_FALLBACK_URL = new URL('./offline/', scopeUrl).toString()
 const FRAGMENT_STREAM_PATH = '/fragments/stream'
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image', 'worker', 'manifest'])
 const STATIC_EXTENSIONS = /\.(css|js|mjs|cjs|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp|avif|txt|mp4|webm)$/i
+const HASHED_BUILD_ASSET = /\/build\/.*(?:[.-][a-f0-9]{8,})\./i
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const STORE_CART_SYNC_TAG = 'store-cart-queue'
 const INVITE_QUEUE_SYNC_TAG = 'contact-invites-queue'
@@ -36,6 +37,11 @@ const isNavigationRequest = (request: Request) =>
 
 const isStaticAssetRequest = (request: Request, url: URL) =>
   STATIC_DESTINATIONS.has(request.destination) || STATIC_EXTENSIONS.test(url.pathname)
+
+const isHashedBuildAssetRequest = (request: Request, url: URL) =>
+  isStaticAssetRequest(request, url) &&
+  scopedPathname(url).startsWith('/build/') &&
+  HASHED_BUILD_ASSET.test(url.pathname)
 
 const isCacheableResponse = (response?: Response) =>
   response && response.ok && (response.type === 'basic' || response.type === 'default')
@@ -113,8 +119,12 @@ const handleShell = async ({ event, request }: { event: ExtendableEvent; request
 
 const staticAssetStrategy = new StaleWhileRevalidate({
   cacheName: CACHE_NAME,
-  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })],
-  fetchOptions: { cache: 'reload' }
+  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
+})
+
+const hashedBuildAssetStrategy = new CacheFirst({
+  cacheName: CACHE_NAME,
+  plugins: [new CacheableResponsePlugin({ statuses: [0, 200] })]
 })
 
 const handleStaticAsset = async ({
@@ -139,6 +149,20 @@ const handleStaticAsset = async ({
     return shellFallback
   }
 
+  return Response.error()
+}
+
+const handleHashedBuildAsset = async ({
+  event,
+  request,
+  url
+}: {
+  event: ExtendableEvent
+  request: Request
+  url: URL
+}) => {
+  const response = await hashedBuildAssetStrategy.handle({ event, request, url })
+  if (response) return response
   return Response.error()
 }
 
@@ -212,6 +236,13 @@ const serwist = new Serwist({
     {
       matcher: ({ request, url }) => isJsonRequest(request, url),
       handler: handleJson
+    },
+    {
+      matcher: ({ request, url }) =>
+        url.origin === self.location.origin &&
+        !isFragmentStreamPath(url) &&
+        isHashedBuildAssetRequest(request, url),
+      handler: handleHashedBuildAsset
     },
     {
       matcher: ({ request, url }) =>
