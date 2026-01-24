@@ -453,7 +453,7 @@ export default defineConfig(
         ...(bundleVisualizer ? [bundleVisualizer] : []),
         qwikCity(),
         qwikVite({
-          entryStrategy: { type: 'single' },
+          entryStrategy: { type: 'smart' },
           optimizerOptions: {
             binding,
             inlineStylesUpToBytes: 60000
