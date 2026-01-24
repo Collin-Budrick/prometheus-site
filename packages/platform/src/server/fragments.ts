@@ -142,6 +142,8 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
 const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }
+const buildCompressedFragmentCacheKey = (cacheKey: string, encoding: CompressionEncoding) =>
+  `${cacheKey}:${encoding}`
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -293,6 +295,44 @@ const mergeVaryHeader = (headers: Headers, values: string[]) => {
   headers.set('vary', Array.from(merged).join(', '))
 }
 
+const readCompressedFragmentPayload = async (
+  cache: CacheClient,
+  cacheKey: string
+): Promise<Uint8Array | null> => {
+  if (!cache.isReady()) return null
+  try {
+    const cached = await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.get(commandOptions, cacheKey)
+    )
+    const normalized = normalizeCacheValue(cached)
+    if (normalized === null || normalized === undefined) return null
+    if (typeof normalized === 'string') {
+      return Uint8Array.from(Buffer.from(normalized, 'base64'))
+    }
+    return Uint8Array.from(normalized)
+  } catch {
+    return null
+  }
+}
+
+const writeCompressedFragmentPayload = async (
+  cache: CacheClient,
+  cacheKey: string,
+  payload: Uint8Array,
+  ttlSeconds: number
+) => {
+  if (!cache.isReady()) return
+  try {
+    await withValkeyTimeout(cache, (commandOptions) =>
+      cache.client.set(commandOptions, cacheKey, Buffer.from(payload).toString('base64'), {
+        EX: ttlSeconds
+      })
+    )
+  } catch {
+    // ignore cache write failures
+  }
+}
+
 const buildCompressedResponse = (
   payload: Uint8Array,
   headers: Headers,
@@ -311,10 +351,66 @@ const buildCompressedResponse = (
   return new Response(body, { headers })
 }
 
-const fragmentResponse = (entry: StoredFragment, request: Request) => {
+const readStreamPayload = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        total += value.byteLength
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return merged
+}
+
+const compressFragmentPayload = async (
+  payload: Uint8Array,
+  encoding: CompressionEncoding
+): Promise<Uint8Array | null> => {
+  const compressed = compressFragmentStream(createSingleChunkStream(payload), encoding)
+  if (compressed.encoding === null) return null
+  return readStreamPayload(compressed.stream)
+}
+
+const fragmentResponse = async (entry: StoredFragment, request: Request, cache: CacheClient) => {
   const headers = buildCacheHeaders(entry)
   const body = entry.payload.slice()
-  return buildCompressedResponse(body, headers, request.headers)
+  const { encoding, varyHeaders } = resolveRequestEncoding(request.headers)
+  if (encoding === null) {
+    return new Response(body, { headers })
+  }
+
+  const cacheKey = buildCompressedFragmentCacheKey(entry.meta.cacheKey, encoding)
+  const cachedPayload = await readCompressedFragmentPayload(cache, cacheKey)
+  if (cachedPayload !== null) {
+    headers.set('content-encoding', encoding)
+    mergeVaryHeader(headers, varyHeaders)
+    return new Response(cachedPayload, { headers })
+  }
+
+  const compressedPayload = await compressFragmentPayload(body, encoding)
+  mergeVaryHeader(headers, varyHeaders)
+  if (compressedPayload === null) {
+    return new Response(body, { headers })
+  }
+
+  headers.set('content-encoding', encoding)
+  const ttlSeconds = Math.max(1, Math.ceil(entry.meta.ttl))
+  void writeCompressedFragmentPayload(cache, cacheKey, compressedPayload, ttlSeconds)
+  return new Response(compressedPayload, { headers })
 }
 
 const streamToAsyncIterable = (stream: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> => ({
@@ -858,7 +954,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
-      return fragmentResponse(entry, request)
+      return fragmentResponse(entry, request, cache)
     },
     {
       query: t.Object({
@@ -872,6 +968,6 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
     const id = params.id
     const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
     const entry = await getFragmentEntry(id, { lang })
-    return fragmentResponse(entry, request)
+    return fragmentResponse(entry, request, cache)
   })
 }
