@@ -20,10 +20,8 @@ import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
-const FRAGMENT_ROOT_MARGIN = appConfig.fragmentVisibilityMargin || '0px'
-const FRAGMENT_THRESHOLD = Number.isFinite(appConfig.fragmentVisibilityThreshold)
-  ? appConfig.fragmentVisibilityThreshold
-  : 0
+const FRAGMENT_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
+const FRAGMENT_THRESHOLD = appConfig.fragmentVisibilityThreshold
 const FRAGMENT_STREAMING_ENABLED = appConfig.enableFragmentStreaming
 
 type FragmentStreamControllerProps = {
