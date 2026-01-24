@@ -61,6 +61,7 @@ export const useFragmentShellState = ({
   initialFragments,
   path,
   initialLang,
+  initialHtml: initialHtmlInput,
   introMarkdown,
   preserveFragmentEffects,
   initialShellState
@@ -86,11 +87,15 @@ export const useFragmentShellState = ({
   const lcpFragmentIds = resolveLcpFragmentIds(planValue)
   const lcpFragments =
     lcpFragmentIds.length > 0 ? pickFragments(initialFragmentMap, lcpFragmentIds) : initialFragmentMap
-  const initialHtml = lcpFragmentIds.reduce<Record<string, string>>((acc, id) => {
+  const initialHtmlFromFragments = lcpFragmentIds.reduce<Record<string, string>>((acc, id) => {
     const html = initialFragmentMap[id]?.html
     if (html) acc[id] = html
     return acc
   }, {})
+  const initialHtml = {
+    ...initialHtmlFromFragments,
+    ...(initialHtmlInput ?? {})
+  }
   const planEarlyHints = buildPlanEarlyHints(planValue)
   const planCachePayload =
     typeof window === 'undefined'

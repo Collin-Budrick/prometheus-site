@@ -57,12 +57,24 @@ const escapeJsonForScript = (value: string) => value.replace(/</g, '\\u003c')
 const serializeFragmentPlanCachePayload = (payload: FragmentPlanCachePayload) =>
   escapeJsonForScript(JSON.stringify(payload))
 
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  Boolean(value) &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.values(value as Record<string, unknown>).every((entry) => typeof entry === 'string')
+
 const parseFragmentPlanCachePayload = (raw: string): FragmentPlanCachePayload | null => {
   try {
     const parsed = JSON.parse(raw) as FragmentPlanCachePayload
     if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== 'object') {
       return null
     }
+    Object.values(parsed.entries).forEach((stored) => {
+      if (!stored?.entry) return
+      if (stored.entry.initialHtml !== undefined && !isStringRecord(stored.entry.initialHtml)) {
+        delete stored.entry.initialHtml
+      }
+    })
     return parsed
   } catch {
     return null

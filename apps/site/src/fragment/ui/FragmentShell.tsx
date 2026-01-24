@@ -18,6 +18,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         gridRef={shell.gridRef}
         slottedEntries={shell.slottedEntries}
         fragments={shell.fragments}
+        initialHtml={shell.initialHtml}
         fragmentHeaders={shell.fragmentHeaders}
         langSignal={shell.langSignal}
         initialLang={props.initialLang}
