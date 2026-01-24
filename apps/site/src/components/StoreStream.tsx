@@ -101,6 +101,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const maxItems = clampLimit(limit)
   const initialBatch = Math.min(12, maxItems)
   const loadBatchSize = Math.min(8, maxItems)
+  const searchDebounceMs = 350
   const langSignal = useSharedLangSignal()
   const storeSeed = useStoreSeed()
   const seedStream = storeSeed?.stream ?? null
@@ -592,7 +593,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         shouldSkipInitialFetch.value = false
       }
       const controller = new AbortController()
-      const delay = activeQuery ? 250 : 0
+      const delay = activeQuery ? searchDebounceMs : 0
       const timeout = window.setTimeout(async () => {
         searchState.value = 'loading'
         searchError.value = null

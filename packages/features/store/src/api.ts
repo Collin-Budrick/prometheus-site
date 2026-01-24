@@ -108,14 +108,47 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     cacheSetErrors: 0
   }
   const valkeyTimeoutMs = 2000
+  const valkeySearchTimeoutMs = 5000
   const valkeyBackoffMs = 15000
   let valkeyBackoffUntil = 0
+  const searchReadySuccessTtlMs = 60000
+  const searchReadyFailureTtlMs = 15000
+  let searchReadyCache = { ready: false, checkedAt: 0 }
+  let searchReadyPromise: Promise<boolean> | null = null
 
   const isValkeyUsable = () => options.isValkeyReady() && Date.now() >= valkeyBackoffUntil
 
   const markValkeyFailure = (label: string, error: unknown) => {
     valkeyBackoffUntil = Date.now() + valkeyBackoffMs
     console.warn('Store Valkey operation failed', { label, error })
+  }
+
+  const ensureSearchReady = async () => {
+    if (!isValkeyUsable()) return false
+    const now = Date.now()
+    if (searchReadyCache.checkedAt > 0) {
+      const age = now - searchReadyCache.checkedAt
+      const ttl = searchReadyCache.ready ? searchReadySuccessTtlMs : searchReadyFailureTtlMs
+      if (age < ttl) return searchReadyCache.ready
+    }
+
+    if (searchReadyPromise) return searchReadyPromise
+
+    searchReadyPromise = (async () => {
+      try {
+        const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeySearchTimeoutMs)
+        searchReadyCache = { ready, checkedAt: Date.now() }
+        return ready
+      } catch (error) {
+        markValkeyFailure('search.ensure', error)
+        searchReadyCache = { ready: false, checkedAt: Date.now() }
+        return false
+      } finally {
+        searchReadyPromise = null
+      }
+    })()
+
+    return searchReadyPromise
   }
 
   const checkEarlyLimitSafe = async (key: string, max: number, windowMs: number) => {
@@ -271,7 +304,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
+              const ready = await ensureSearchReady()
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, {
                 id: created.id,
@@ -402,7 +435,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
+              const ready = await ensureSearchReady()
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, responseItem)
             } catch (error) {
@@ -524,7 +557,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
+              const ready = await ensureSearchReady()
               if (!ready) return
               await upsertStoreSearchDocument(options.valkey, responseItem)
             } catch (error) {
@@ -593,7 +626,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           void invalidateStoreItemsCache(options.valkey, isValkeyUsable)
           void (async () => {
             try {
-              const ready = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
+              const ready = await ensureSearchReady()
               if (!ready) return
               await removeStoreSearchDocument(options.valkey, deleted.id)
             } catch (error) {
@@ -656,12 +689,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
 
-        let searchReady = false
-        try {
-          searchReady = await withTimeout(ensureStoreSearchIndex(options.valkey), valkeyTimeoutMs)
-        } catch (error) {
-          markValkeyFailure('search.ensure', error)
-        }
+        const searchReady = await ensureSearchReady()
         if (!searchReady) {
           return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
         }
