@@ -150,7 +150,7 @@ const loadClientManifest = async (): Promise<ClientManifest | null> => {
 const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
   const links: string[] = []
   const seen = new Set<string>()
-  const maxLinks = 8
+  const maxLinks = 2
   const resolvedManifest: ClientManifest = {
     core: clientManifest.core ?? manifest.core,
     preloader: clientManifest.preloader ?? manifest.preloader,
@@ -166,19 +166,33 @@ const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifes
     seen.add(bundle)
   }
 
-  const addBundle = (bundle: string | undefined, options?: { crossorigin?: boolean; includeImports?: boolean }) => {
+  const addBundle = (bundle: string | undefined, options?: { crossorigin?: boolean }) => {
     if (!bundle) return
     pushLink(bundle, options?.crossorigin)
-    if (!options?.includeImports) return
-    const imports = resolvedManifest.bundles?.[bundle]?.imports ?? []
-    imports.forEach((importName) => pushLink(importName, options?.crossorigin))
   }
 
-  addBundle(resolvedManifest.core, { includeImports: true })
+  addBundle(resolvedManifest.core)
   if (resolvedManifest.preloader && resolvedManifest.preloader !== resolvedManifest.core) {
-    addBundle(resolvedManifest.preloader, { crossorigin: true, includeImports: true })
+    addBundle(resolvedManifest.preloader, { crossorigin: true })
   }
   return links
+}
+
+const buildModulePrefetchLinks = (basePath: string, clientManifest: ClientManifest) => {
+  const resolvedManifest: ClientManifest = {
+    core: clientManifest.core ?? manifest.core,
+    preloader: clientManifest.preloader ?? manifest.preloader,
+    bundles: clientManifest.bundles ?? (manifest as ClientManifest).bundles
+  }
+  const reserved = new Set<string>()
+  if (resolvedManifest.core) reserved.add(resolvedManifest.core)
+  if (resolvedManifest.preloader) reserved.add(resolvedManifest.preloader)
+  const bundleEntries = Object.keys(resolvedManifest.bundles ?? {}).filter((bundle) => {
+    if (reserved.has(bundle)) return false
+    return /\.m?js$/i.test(bundle)
+  })
+  const maxPrefetch = 6
+  return bundleEntries.slice(0, maxPrefetch).map((bundle) => withBasePath(basePath, `build/${bundle}`))
 }
 
 let cachedModulePreloads: string[] | null = null
@@ -319,6 +333,56 @@ const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: b
   return Array.from(origins)
 }
 
+const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
+  if (typeof document === 'undefined' || hrefs.length === 0) return
+  const head = document.head
+  if (!head) return
+
+  const addLinks = () => {
+    hrefs.forEach((href) => {
+      if (document.querySelector(`link[rel="prefetch"][href="${href}"]`)) return
+      const link = document.createElement('link')
+      link.rel = 'prefetch'
+      link.as = 'script'
+      link.fetchPriority = 'low'
+      link.href = href
+      head.appendChild(link)
+    })
+  }
+
+  const scheduleIdle = () => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(addLinks, { timeout: 2000 })
+    } else {
+      window.setTimeout(addLinks, 1500)
+    }
+  }
+
+  let scheduled = false
+  const scheduleOnce = () => {
+    if (scheduled) return
+    scheduled = true
+    scheduleIdle()
+  }
+
+  if ('PerformanceObserver' in window) {
+    try {
+      const observer = new PerformanceObserver((list) => {
+        if (list.getEntries().length === 0) return
+        observer.disconnect()
+        scheduleOnce()
+      })
+      observer.observe({ type: 'largest-contentful-paint', buffered: true })
+      window.setTimeout(scheduleOnce, 3500)
+      return
+    } catch {
+      // ignore observer failure
+    }
+  }
+
+  window.setTimeout(scheduleOnce, 1500)
+}
+
 const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navHome: InHomeSimple,
   navStore: InShop,
@@ -420,6 +484,12 @@ export const RouterHead = component$(() => {
     window.addEventListener('prom:tracking-consent', handleConsentEvent as EventListener)
 
     return () => cleanup()
+  })
+
+  useVisibleTask$(() => {
+    if (typeof window === 'undefined') return
+    const prefetchLinks = buildModulePrefetchLinks(base, manifest as ClientManifest)
+    scheduleLowPriorityPrefetch(prefetchLinks)
   })
 
   return (

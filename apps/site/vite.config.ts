@@ -13,7 +13,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
-import { fragmentCssManifest } from './src/fragment/fragment-css.generated'
 
 const require = createRequire(import.meta.url)
 
@@ -114,14 +113,6 @@ const pwaPrecacheEntries = [
   { url: withBase('/icons/icon-512.avif'), revision: null }
 ]
 
-const resolveApiBase = () => {
-  const candidate = process.env.API_BASE?.trim() || process.env.VITE_API_BASE?.trim() || ''
-  if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
-    return candidate.replace(/\/$/, '')
-  }
-  return ''
-}
-
 const buildLinkHeader = (hint: EarlyHint) => {
   const href = hint.href?.trim()
   if (!href) return null
@@ -165,33 +156,6 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   return hints
 }
 
-const filterPlanHints = (hints: EarlyHint[]) => {
-  return hints.filter((hint) => {
-    const href = hint.href?.trim()
-    if (!href) return false
-    if (href.includes('/build/') && /\.m?js([?#]|$)/.test(href)) return false
-    return true
-  })
-}
-
-type FragmentPlanPayload = {
-  path?: string
-  fragments?: Array<{ id: string; critical: boolean }>
-  earlyHints?: EarlyHint[]
-}
-
-const resolveFragmentCssHint = (id: string): EarlyHint | null => {
-  const entry = fragmentCssManifest[id as keyof typeof fragmentCssManifest]
-  if (!entry) return null
-  return { href: withBase(entry.path), as: 'style' }
-}
-
-const buildPlanCriticalCssHints = (plan: FragmentPlanPayload) =>
-  (plan.fragments ?? [])
-    .filter((entry) => entry.critical)
-    .map((entry) => resolveFragmentCssHint(entry.id))
-    .filter((hint): hint is EarlyHint => Boolean(hint))
-
 const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
   if (warning.code !== 'EVAL') return false
   const file = warning.loc?.file ?? warning.id ?? ''
@@ -224,20 +188,6 @@ const getShellHints = async (server?: ViteDevServer | null) => {
   }
   const manifest = await loadManifestFromDisk(process.cwd())
   return sanitizeHints(buildManifestHints(manifest))
-}
-
-const getEarlyHints = async (pathName: string) => {
-  const apiBase = resolveApiBase()
-  if (!apiBase) return []
-  const url = new URL('/fragments/plan', apiBase)
-  url.searchParams.set('path', pathName)
-  const response = await fetch(url.toString(), { headers: { accept: 'application/json' } })
-  if (!response.ok) return []
-  const payload = (await response.json()) as FragmentPlanPayload
-  const planHints = Array.isArray(payload.earlyHints) ? payload.earlyHints : []
-  const criticalCssHints = buildPlanCriticalCssHints(payload)
-  if (!planHints.length && !criticalCssHints.length) return []
-  return sanitizeHints(filterPlanHints([...planHints, ...criticalCssHints]))
 }
 
 const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {
@@ -282,8 +232,8 @@ const earlyHintsPlugin = (): Plugin => {
         return
       }
       try {
-        const [shellHints, planHints] = await Promise.all([resolveShellHints(), getEarlyHints(url.pathname)])
-        const hints = sanitizeHints([...shellHints, ...planHints])
+        const shellHints = await resolveShellHints()
+        const hints = sanitizeHints(shellHints).filter((hint) => hint.rel === 'modulepreload')
         const links = hints.map(buildLinkHeader).filter((value): value is string => Boolean(value))
         if (links.length) {
           ;(res as unknown as Record<symbol, boolean>)[sentSymbol] = true
