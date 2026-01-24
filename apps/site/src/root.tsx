@@ -9,55 +9,6 @@ import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
 
-const scheduleIdleOrInteraction = (callback: () => void, options?: { timeoutMs?: number }) => {
-  if (typeof window === 'undefined') return () => {}
-  const timeoutMs = options?.timeoutMs ?? 3000
-  let fired = false
-  let timeoutHandle: number | null = null
-  let idleHandle: number | null = null
-  const idleApi = window as {
-    requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
-    cancelIdleCallback?: (handle: number) => void
-  }
-
-  const cleanup = () => {
-    if (timeoutHandle !== null) {
-      window.clearTimeout(timeoutHandle)
-      timeoutHandle = null
-    }
-    if (idleHandle !== null && idleApi.cancelIdleCallback) {
-      idleApi.cancelIdleCallback(idleHandle)
-      idleHandle = null
-    }
-    window.removeEventListener('pointerdown', handleInteraction)
-    window.removeEventListener('keydown', handleInteraction)
-    window.removeEventListener('touchstart', handleInteraction)
-  }
-
-  const run = () => {
-    if (fired) return
-    fired = true
-    cleanup()
-    callback()
-  }
-
-  const handleInteraction = () => {
-    run()
-  }
-
-  window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
-  window.addEventListener('keydown', handleInteraction, { once: true })
-  window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
-
-  if (idleApi.requestIdleCallback) {
-    idleHandle = idleApi.requestIdleCallback(run, { timeout: timeoutMs })
-  } else {
-    timeoutHandle = window.setTimeout(run, timeoutMs)
-  }
-
-  return cleanup
-}
-
 const shouldEnableAmbientMotion = () => {
   if (typeof window === 'undefined') return false
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
@@ -85,7 +36,60 @@ export default component$(() => {
   const clientReady = useClientReady()
   useVisibleTask$(
     (ctx) => {
-      const cleanup = scheduleIdleOrInteraction(
+      if (typeof window === 'undefined') return
+      const setupLcpGate = (onReady: () => void, options?: { timeoutMs?: number }) => {
+        const timeoutMs = options?.timeoutMs ?? 3000
+        let fired = false
+        let timeoutHandle: number | null = null
+        let observer: PerformanceObserver | null = null
+
+        const cleanup = () => {
+          if (timeoutHandle !== null) {
+            window.clearTimeout(timeoutHandle)
+            timeoutHandle = null
+          }
+          observer?.disconnect()
+          observer = null
+          window.removeEventListener('pointerdown', handleInteraction)
+          window.removeEventListener('keydown', handleInteraction)
+          window.removeEventListener('touchstart', handleInteraction)
+        }
+
+        const run = () => {
+          if (fired) return
+          fired = true
+          cleanup()
+          onReady()
+        }
+
+        const handleInteraction = () => {
+          run()
+        }
+
+        const observeLcp = () => {
+          if (!('PerformanceObserver' in window)) return
+          try {
+            observer = new PerformanceObserver((list) => {
+              if (list.getEntries().length === 0) return
+              run()
+            })
+            observer.observe({ type: 'largest-contentful-paint', buffered: true })
+          } catch {
+            observer?.disconnect()
+            observer = null
+          }
+        }
+
+        window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+        window.addEventListener('keydown', handleInteraction, { once: true })
+        window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+        timeoutHandle = window.setTimeout(run, timeoutMs)
+        observeLcp()
+
+        return cleanup
+      }
+
+      const cleanup = setupLcpGate(
         () => {
           initHighlight(appConfig.highlight, { apiBase: appConfig.apiBase })
         },
@@ -100,7 +104,60 @@ export default component$(() => {
       if (typeof window === 'undefined') return
       if (!shouldEnableAmbientMotion()) return
       const root = document.documentElement
-      const stopIdle = scheduleIdleOrInteraction(
+
+      const setupLcpGate = (onReady: () => void, options?: { timeoutMs?: number }) => {
+        const timeoutMs = options?.timeoutMs ?? 2000
+        let fired = false
+        let timeoutHandle: number | null = null
+        let observer: PerformanceObserver | null = null
+
+        const cleanup = () => {
+          if (timeoutHandle !== null) {
+            window.clearTimeout(timeoutHandle)
+            timeoutHandle = null
+          }
+          observer?.disconnect()
+          observer = null
+          window.removeEventListener('pointerdown', handleInteraction)
+          window.removeEventListener('keydown', handleInteraction)
+          window.removeEventListener('touchstart', handleInteraction)
+        }
+
+        const run = () => {
+          if (fired) return
+          fired = true
+          cleanup()
+          onReady()
+        }
+
+        const handleInteraction = () => {
+          run()
+        }
+
+        const observeLcp = () => {
+          if (!('PerformanceObserver' in window)) return
+          try {
+            observer = new PerformanceObserver((list) => {
+              if (list.getEntries().length === 0) return
+              run()
+            })
+            observer.observe({ type: 'largest-contentful-paint', buffered: true })
+          } catch {
+            observer?.disconnect()
+            observer = null
+          }
+        }
+
+        window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+        window.addEventListener('keydown', handleInteraction, { once: true })
+        window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+        timeoutHandle = window.setTimeout(run, timeoutMs)
+        observeLcp()
+
+        return cleanup
+      }
+
+      const cleanup = setupLcpGate(
         () => {
           window.requestAnimationFrame(() => {
             root.dataset.decorReady = 'true'
@@ -108,7 +165,7 @@ export default component$(() => {
         },
         { timeoutMs: 2000 }
       )
-      ctx.cleanup(() => stopIdle())
+      ctx.cleanup(() => cleanup())
     },
     { strategy: 'document-idle' }
   )
@@ -167,7 +224,59 @@ export default component$(() => {
         }
       }
 
-      const stopIdle = scheduleIdleOrInteraction(start, { timeoutMs: 2500 })
+      const setupLcpGate = (onReady: () => void, options?: { timeoutMs?: number }) => {
+        const timeoutMs = options?.timeoutMs ?? 2500
+        let fired = false
+        let timeoutHandle: number | null = null
+        let observer: PerformanceObserver | null = null
+
+        const cleanup = () => {
+          if (timeoutHandle !== null) {
+            window.clearTimeout(timeoutHandle)
+            timeoutHandle = null
+          }
+          observer?.disconnect()
+          observer = null
+          window.removeEventListener('pointerdown', handleInteraction)
+          window.removeEventListener('keydown', handleInteraction)
+          window.removeEventListener('touchstart', handleInteraction)
+        }
+
+        const run = () => {
+          if (fired) return
+          fired = true
+          cleanup()
+          onReady()
+        }
+
+        const handleInteraction = () => {
+          run()
+        }
+
+        const observeLcp = () => {
+          if (!('PerformanceObserver' in window)) return
+          try {
+            observer = new PerformanceObserver((list) => {
+              if (list.getEntries().length === 0) return
+              run()
+            })
+            observer.observe({ type: 'largest-contentful-paint', buffered: true })
+          } catch {
+            observer?.disconnect()
+            observer = null
+          }
+        }
+
+        window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
+        window.addEventListener('keydown', handleInteraction, { once: true })
+        window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
+        timeoutHandle = window.setTimeout(run, timeoutMs)
+        observeLcp()
+
+        return cleanup
+      }
+
+      const stopIdle = setupLcpGate(start, { timeoutMs: 2500 })
 
       ctx.cleanup(() => {
         stopIdle()
