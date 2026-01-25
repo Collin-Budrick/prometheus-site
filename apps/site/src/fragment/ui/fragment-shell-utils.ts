@@ -161,18 +161,25 @@ export const getGridstackSlotMetrics = (slot: BentoSlot, index: number) => {
   }
 }
 
-export const buildBentoSlots = (count: number) => {
+export const buildBentoSlots = (count: number, leftCount = Math.ceil(count / 2)) => {
   const slots: BentoSlot[] = []
   const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
-  for (let index = 0; index < count; index += 1) {
-    const row = Math.floor(index / 2) + 1
-    const isLeft = index % 2 === 0
-    const columnStart = isLeft ? 1 : half + 1
+  const safeLeft = Math.max(0, Math.min(count, leftCount))
+  const rightCount = count - safeLeft
+  for (let index = 0; index < safeLeft; index += 1) {
     slots.push({
-      id: `slot-${index + 1}`,
+      id: `slot-left-${index + 1}`,
       size: 'small',
-      column: `${columnStart} / span ${half}`,
-      row: `${row}`
+      column: `1 / span ${half}`,
+      row: `${index + 1}`
+    })
+  }
+  for (let index = 0; index < rightCount; index += 1) {
+    slots.push({
+      id: `slot-right-${index + 1}`,
+      size: 'small',
+      column: `${half + 1} / span ${half}`,
+      row: `${index + 1}`
     })
   }
   return slots

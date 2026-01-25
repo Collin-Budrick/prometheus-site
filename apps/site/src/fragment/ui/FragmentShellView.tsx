@@ -194,7 +194,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const hasLoadedContent = Boolean(fragment || useFallbackHtml)
           const applyMinHeight = Boolean(!hasLoadedContent && minHeight && minHeight > 0)
           const minHeightRows =
-            applyMinHeight
+            applyMinHeight && minHeight !== null
               ? Math.max(1, Math.ceil((minHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
               : gridMetrics.h
           const gridItemStyle = minHeight

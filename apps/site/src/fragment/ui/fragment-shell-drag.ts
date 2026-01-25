@@ -11,6 +11,7 @@ import {
 
 type FragmentShellDragOptions = {
   orderIds: Signal<string[]>
+  columnSplit: Signal<number>
   dragState: Signal<FragmentDragState>
   layoutTick: Signal<number>
   gridRef: Signal<HTMLDivElement | undefined>
@@ -70,6 +71,7 @@ const syncGridHeights = (gridEl: GridStackElement) => {
 
 export const useFragmentShellDrag = ({
   orderIds,
+  columnSplit,
   dragState,
   layoutTick,
   gridRef
@@ -110,7 +112,9 @@ export const useFragmentShellDrag = ({
       let dragStartId: string | null = null
       let dragTargetId: string | null = null
       let dragStartOrder: string[] | null = null
+      let dragStartSplit: number | null = null
       let pendingPoint: { x: number; y: number } | null = null
+      let lastDragPoint: { x: number; y: number } | null = null
 
       const hasGridVars = () => {
         const style = window.getComputedStyle(gridEl)
@@ -246,34 +250,104 @@ export const useFragmentShellDrag = ({
         return bestId
       }
 
-      const collectOrder = () => {
-        const nodes = grid.engine.nodes
-          .filter((node) => node && (node.id || node.el))
-          .slice()
-          .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0))
-        return nodes
-          .map((node) => (typeof node.id === 'string' ? node.id : node.el?.getAttribute('gs-id') ?? null))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      const escapeSelector = (value: string) => {
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+          return CSS.escape(value)
+        }
+        return value.replace(/["\\]/g, '\\$&')
       }
 
-      const syncOrder = () => {
-        const nextOrder = collectOrder()
-        if (!nextOrder.length) return
-        if (nextOrder.join('|') !== orderIds.value.join('|')) {
+      const findItemById = (id: string) => {
+        const escaped = escapeSelector(id)
+        return gridEl.querySelector<HTMLElement>(`.grid-stack-item[gs-id="${escaped}"]`)
+      }
+
+      const getColumnForIndex = (index: number, split: number) => (index < split ? 'left' : 'right')
+
+      const clampSplit = (value: number, length: number) => Math.max(0, Math.min(length, value))
+
+      const clampInsertIndex = (index: number, column: 'left' | 'right', split: number, length: number) => {
+        if (column === 'left') {
+          const maxIndex = Math.max(0, split - 1)
+          return Math.min(Math.max(0, index), maxIndex)
+        }
+        return Math.min(Math.max(split, index), length)
+      }
+
+      const resolveDropColumn = (point: { x: number; y: number } | null, rect: DOMRect | null) => {
+        const gridRect = gridEl.getBoundingClientRect()
+        const midX = gridRect.left + gridRect.width / 2
+        const probeX =
+          point?.x ?? (rect ? rect.left + rect.width / 2 : undefined)
+        if (probeX === undefined) return null
+        return probeX < midX ? 'left' : 'right'
+      }
+
+      const applyOrder = (nextOrder: string[], nextSplit: number) => {
+        const orderChanged = nextOrder.join('|') !== orderIds.value.join('|')
+        const splitChanged = nextSplit !== columnSplit.value
+        if (orderChanged) {
           orderIds.value = nextOrder
+        }
+        if (splitChanged) {
+          columnSplit.value = nextSplit
+        }
+        if (orderChanged || splitChanged) {
           layoutTick.value += 1
         }
       }
 
-      const swapOrder = (dragId: string, targetId: string) => {
-        const current = orderIds.value.slice()
-        const fromIndex = current.indexOf(dragId)
-        const toIndex = current.indexOf(targetId)
-        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return false
-        ;[current[fromIndex], current[toIndex]] = [current[toIndex], current[fromIndex]]
-        orderIds.value = current
-        layoutTick.value += 1
-        return true
+      const moveAcrossColumns = (
+        current: string[],
+        fromIndex: number,
+        targetId: string | null,
+        targetColumn: 'left' | 'right',
+        insertAfter: boolean,
+        split: number
+      ) => {
+        const next = current.slice()
+        const [dragId] = next.splice(fromIndex, 1)
+        let nextSplit = clampSplit(split + (targetColumn === 'left' ? 1 : -1), next.length)
+        let insertIndex: number
+        if (targetId) {
+          const targetIndex = next.indexOf(targetId)
+          if (targetIndex === -1) {
+            insertIndex = targetColumn === 'left' ? nextSplit - 1 : next.length
+          } else {
+            insertIndex = targetIndex + (insertAfter ? 1 : 0)
+          }
+        } else {
+          insertIndex = targetColumn === 'left' ? nextSplit - 1 : next.length
+        }
+        insertIndex = clampInsertIndex(insertIndex, targetColumn, nextSplit, next.length)
+        next.splice(insertIndex, 0, dragId)
+        return { order: next, split: nextSplit }
+      }
+
+      const moveWithinColumn = (
+        current: string[],
+        fromIndex: number,
+        targetId: string | null,
+        column: 'left' | 'right',
+        insertAfter: boolean,
+        split: number
+      ) => {
+        const next = current.slice()
+        const [dragId] = next.splice(fromIndex, 1)
+        const removedFromLeft = fromIndex < split
+        const adjustedSplit = removedFromLeft ? Math.max(0, split - 1) : split
+        const segmentStart = column === 'left' ? 0 : adjustedSplit
+        const segmentEnd = column === 'left' ? adjustedSplit : next.length
+        let insertIndex: number
+        if (targetId) {
+          const targetIndex = next.indexOf(targetId)
+          insertIndex = targetIndex === -1 ? segmentEnd : targetIndex + (insertAfter ? 1 : 0)
+        } else {
+          insertIndex = segmentEnd
+        }
+        insertIndex = Math.min(Math.max(segmentStart, insertIndex), segmentEnd)
+        next.splice(insertIndex, 0, dragId)
+        return next
       }
 
       const handleDragStart = (_event: Event, el: HTMLElement) => {
@@ -281,6 +355,7 @@ export const useFragmentShellDrag = ({
         dragStartId = id
         dragTargetId = null
         dragStartOrder = orderIds.value.slice()
+        dragStartSplit = columnSplit.value
         dragState.value = {
           active: true,
           suppressUntil: 0,
@@ -293,6 +368,7 @@ export const useFragmentShellDrag = ({
         if (!dragStartId) return
         const point = getEventPoint(event)
         if (!point) return
+        lastDragPoint = point
         pendingPoint = point
         if (dragMoveFrame) return
         dragMoveFrame = requestAnimationFrame(() => {
@@ -316,20 +392,65 @@ export const useFragmentShellDrag = ({
         }
         const dragId = dragStartId
         const rect = el?.getBoundingClientRect()
-        const point = getEventPoint(event)
+        const point = getEventPoint(event) ?? lastDragPoint
         const pointerTarget = point ? resolveTargetId(point) : null
         const rectTarget = dragId && rect ? resolveTargetIdFromRect(rect, dragId) : null
-        const targetId = rectTarget ?? pointerTarget ?? dragTargetId
+        const targetId = pointerTarget ?? rectTarget ?? dragTargetId
         dragStartId = null
         dragTargetId = null
         const startOrder = dragStartOrder
         dragStartOrder = null
+        const startSplit = dragStartSplit
+        dragStartSplit = null
         pendingPoint = null
-        if (dragId && targetId) {
-          if (swapOrder(dragId, targetId)) return
+        lastDragPoint = null
+        if (dragId) {
+          const current = orderIds.value.slice()
+          const split = clampSplit(columnSplit.value, current.length)
+          const fromIndex = current.indexOf(dragId)
+          if (fromIndex !== -1) {
+            const dragColumn = getColumnForIndex(fromIndex, split)
+            const dropColumn = resolveDropColumn(point, rect)
+            if (targetId) {
+              const toIndex = current.indexOf(targetId)
+              if (toIndex !== -1) {
+                const targetColumn = getColumnForIndex(toIndex, split)
+                if (!pointerTarget && dropColumn && targetColumn !== dropColumn) {
+                  // Pointer is in a different column; treat this as an empty column drop.
+                } else {
+                  const targetEl = findItemById(targetId)
+                  const targetRect = targetEl?.getBoundingClientRect()
+                  const probeY =
+                    point?.y ?? (rect ? rect.top + rect.height / 2 : targetRect?.top ?? 0)
+                  const insertAfter = targetRect ? probeY >= targetRect.top + targetRect.height / 2 : true
+                  if (dragColumn === targetColumn) {
+                    const nextOrder = moveWithinColumn(current, fromIndex, targetId, dragColumn, insertAfter, split)
+                    applyOrder(nextOrder, split)
+                    return
+                  }
+                  const next = moveAcrossColumns(current, fromIndex, targetId, targetColumn, insertAfter, split)
+                  applyOrder(next.order, next.split)
+                  return
+                }
+              }
+            }
+            if (dropColumn) {
+              if (dropColumn === dragColumn) {
+                const nextOrder = moveWithinColumn(current, fromIndex, null, dragColumn, true, split)
+                applyOrder(nextOrder, split)
+                return
+              }
+              const next = moveAcrossColumns(current, fromIndex, null, dropColumn, true, split)
+              applyOrder(next.order, next.split)
+              return
+            }
+          }
         }
         if (startOrder) {
           orderIds.value = startOrder
+          if (startSplit !== null) {
+            columnSplit.value = startSplit
+          }
           layoutTick.value += 1
         }
         const lock = el?.dataset.columnLock

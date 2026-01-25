@@ -122,6 +122,8 @@ export const useFragmentShellState = ({
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
   const cachedOrder = seedState?.orderIds?.length ? seedState.orderIds : cachedEntry?.orderIds ?? []
   const orderIds = useSignal<string[]>(cachedOrder.length ? buildOrderedIds(planValue.fragments, cachedOrder) : [])
+  const defaultSplit = Math.ceil(planValue.fragments.length / 2)
+  const columnSplit = useSignal<number>(defaultSplit)
   const dragState = useSignal<FragmentDragState>({
     active: false,
     suppressUntil: 0,
@@ -133,7 +135,7 @@ export const useFragmentShellState = ({
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
   const slottedEntries = useComputed$<SlottedEntry[]>(() => {
     const entries = orderedEntries.value
-    const slots = buildBentoSlots(entries.length)
+    const slots = buildBentoSlots(entries.length, columnSplit.value)
     const rowCounts = new Map<number, number>()
     const slotRows = slots.map((slot, index) => {
       const entry = entries[index]
@@ -269,6 +271,22 @@ export const useFragmentShellState = ({
   )
 
   useVisibleTask$(
+    () => {
+      if (typeof window === 'undefined') return
+      const storageKey = `${ORDER_STORAGE_PREFIX}:columns:${path}`
+      const raw = window.localStorage.getItem(storageKey)
+      const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
+      const maxSplit = Math.max(0, planValue.fragments.length)
+      if (Number.isFinite(parsed)) {
+        columnSplit.value = Math.min(maxSplit, Math.max(0, parsed))
+      } else {
+        columnSplit.value = Math.min(maxSplit, Math.max(0, columnSplit.value))
+      }
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
     (ctx) => {
       ctx.track(() => orderIds.value)
       ctx.track(() => dragState.value.active)
@@ -277,6 +295,24 @@ export const useFragmentShellState = ({
       if (dragState.value.active) return
       const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
       window.localStorage.setItem(storageKey, JSON.stringify(orderIds.value))
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      ctx.track(() => columnSplit.value)
+      ctx.track(() => orderIds.value.length)
+      ctx.track(() => dragState.value.active)
+      if (typeof window === 'undefined') return
+      if (dragState.value.active) return
+      const storageKey = `${ORDER_STORAGE_PREFIX}:columns:${path}`
+      const maxSplit = Math.max(0, orderIds.value.length)
+      const nextSplit = Math.min(maxSplit, Math.max(0, columnSplit.value))
+      if (nextSplit !== columnSplit.value) {
+        columnSplit.value = nextSplit
+      }
+      window.localStorage.setItem(storageKey, String(nextSplit))
     },
     { strategy: 'document-ready' }
   )
@@ -409,7 +445,7 @@ export const useFragmentShellState = ({
     { strategy: 'document-ready' }
   )
 
-  useFragmentShellDrag({ orderIds, dragState, layoutTick, gridRef })
+  useFragmentShellDrag({ orderIds, columnSplit, dragState, layoutTick, gridRef })
   useFragmentShellLayout({ planValue, gridRef, layoutTick, expandedId })
 
   return {
