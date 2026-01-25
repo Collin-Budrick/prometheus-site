@@ -109,6 +109,7 @@ export const useFragmentShellDrag = ({
       let dragMoveFrame = 0
       let dragStartId: string | null = null
       let dragTargetId: string | null = null
+      let dragStartOrder: string[] | null = null
       let pendingPoint: { x: number; y: number } | null = null
 
       const hasGridVars = () => {
@@ -211,6 +212,40 @@ export const useFragmentShellDrag = ({
         return id
       }
 
+      const resolveTargetIdFromRect = (rect: DOMRect, sourceId: string) => {
+        const items = Array.from(gridEl.querySelectorAll<HTMLElement>('.grid-stack-item')).filter(
+          (item) => !item.classList.contains('grid-stack-placeholder')
+        )
+        if (!items.length) return null
+        let bestId: string | null = null
+        let bestArea = 0
+        let bestDistance = Number.POSITIVE_INFINITY
+        const centerX = rect.left + rect.width / 2
+        const centerY = rect.top + rect.height / 2
+        items.forEach((item) => {
+          const id = item.getAttribute('gs-id') ?? item.dataset.fragmentId ?? null
+          if (!id || id === sourceId) return
+          const box = item.getBoundingClientRect()
+          const overlapX = Math.min(rect.right, box.right) - Math.max(rect.left, box.left)
+          const overlapY = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top)
+          const area = Math.max(0, overlapX) * Math.max(0, overlapY)
+          if (area > bestArea) {
+            bestArea = area
+            bestId = id
+            return
+          }
+          if (bestArea > 0) return
+          const dx = centerX - (box.left + box.width / 2)
+          const dy = centerY - (box.top + box.height / 2)
+          const distance = dx * dx + dy * dy
+          if (distance < bestDistance) {
+            bestDistance = distance
+            bestId = id
+          }
+        })
+        return bestId
+      }
+
       const collectOrder = () => {
         const nodes = grid.engine.nodes
           .filter((node) => node && (node.id || node.el))
@@ -245,6 +280,7 @@ export const useFragmentShellDrag = ({
         const id = el?.getAttribute('gs-id') ?? el?.dataset.fragmentId ?? null
         dragStartId = id
         dragTargetId = null
+        dragStartOrder = orderIds.value.slice()
         dragState.value = {
           active: true,
           suppressUntil: 0,
@@ -278,20 +314,23 @@ export const useFragmentShellDrag = ({
           cancelAnimationFrame(dragMoveFrame)
           dragMoveFrame = 0
         }
-        const point = getEventPoint(event)
-        if (point) {
-          const resolvedTarget = resolveTargetId(point)
-          if (resolvedTarget) {
-            dragTargetId = resolvedTarget
-          }
-        }
         const dragId = dragStartId
-        const targetId = dragTargetId
+        const rect = el?.getBoundingClientRect()
+        const point = getEventPoint(event)
+        const pointerTarget = point ? resolveTargetId(point) : null
+        const rectTarget = dragId && rect ? resolveTargetIdFromRect(rect, dragId) : null
+        const targetId = rectTarget ?? pointerTarget ?? dragTargetId
         dragStartId = null
         dragTargetId = null
+        const startOrder = dragStartOrder
+        dragStartOrder = null
         pendingPoint = null
         if (dragId && targetId) {
           if (swapOrder(dragId, targetId)) return
+        }
+        if (startOrder) {
+          orderIds.value = startOrder
+          layoutTick.value += 1
         }
         const lock = el?.dataset.columnLock
         if (lock) {
@@ -303,7 +342,6 @@ export const useFragmentShellDrag = ({
             grid.update(el, { x, w: half })
           }
         }
-        syncOrder()
       }
 
       grid.on('dragstart', handleDragStart)
