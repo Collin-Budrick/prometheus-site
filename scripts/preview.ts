@@ -15,9 +15,10 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-const resolveCapacitorServerUrl = (host: string, httpsPort: string) => {
+const resolveCapacitorServerUrl = (host: string, httpsPort: string, allowFallback = true) => {
   const explicit = process.env.CAPACITOR_SERVER_URL?.trim()
   if (explicit) return explicit
+  if (!allowFallback) return undefined
   const trimmedHost = host.trim()
   if (!trimmedHost) return undefined
   if (trimmedHost.startsWith('http://') || trimmedHost.startsWith('https://')) return trimmedHost
@@ -91,10 +92,16 @@ const resolveCapacitorRunner = (siteRoot: string, preferNode: boolean): Capacito
 }
 
 const syncCapacitorAndroid = (serverUrl?: string) => {
-  if (!serverUrl) return
   const siteRoot = path.resolve(root, 'apps', 'site')
   const androidRoot = path.join(siteRoot, 'android')
   if (!existsSync(androidRoot)) return
+  if (!serverUrl) {
+    const distIndex = path.join(siteRoot, 'dist', 'index.html')
+    if (!existsSync(distIndex)) {
+      console.warn('[capacitor] Missing dist assets. Run: bun run --cwd apps/site build:capacitor')
+      return
+    }
+  }
   if (!ensureCapacitorCli(siteRoot)) return
   const preferNode = process.platform === 'win32'
   const runSync = (runner: CapacitorRunner) =>
@@ -103,7 +110,13 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
       cwd: siteRoot,
       env: {
         ...process.env,
-        CAPACITOR_SERVER_URL: serverUrl
+        ...(serverUrl
+          ? { CAPACITOR_SERVER_URL: serverUrl }
+          : {
+            CAPACITOR_SERVER_URL: '',
+            PROMETHEUS_WEB_HOST: '',
+            PROMETHEUS_HTTPS_PORT: ''
+          })
       }
     })
 
@@ -359,7 +372,7 @@ for (const target of buildResults) {
 }
 saveBuildCache(cache)
 
-syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort))
+syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
 
 try {
   const resolved = await lookup(previewWebHost, { all: true })

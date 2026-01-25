@@ -463,16 +463,20 @@ export default defineConfig(async (configEnv) => {
           }
         }),
         ...(capacitorBuildEnabled ? [staticAdapter({}), capacitorSsrInputPlugin(ssrInputs)] : []),
-        compression({
-          algorithms: [
-            defineAlgorithm('brotliCompress', {
-              params: {
-                [constants.BROTLI_PARAM_QUALITY]: brotliQuality
-              }
+        ...(capacitorBuildEnabled
+          ? []
+          : [
+            compression({
+              algorithms: [
+                defineAlgorithm('brotliCompress', {
+                  params: {
+                    [constants.BROTLI_PARAM_QUALITY]: brotliQuality
+                  }
+                })
+              ]
             }),
-          ]
-        }),
-        compression({ algorithm: 'gzip' }),
+            compression({ algorithm: 'gzip' })
+          ]),
         serwist({
           swSrc: 'src/service-worker.ts',
           swDest: 'service-worker.js',

@@ -21,7 +21,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 ## Dev and runtime flow
 
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddyfile, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
-- **Capacitor Android sync (dev/preview):** `bun run dev` and `bun run preview` run `cap sync android` using `CAPACITOR_SERVER_URL` (defaulting to the dev/preview host) and install site deps (`bun install --filter site`) if the CLI is missing. On Windows, the sync falls back to running the Capacitor CLI with Node for tar extraction compatibility.
+- **Capacitor Android sync (dev/preview):** `bun run dev` and `bun run preview` run `cap sync android`. Dev defaults to the live dev host; preview uses bundled assets unless `CAPACITOR_SERVER_URL` is set. The scripts install site deps (`bun install --filter site`) if the CLI is missing. On Windows, the sync falls back to running the Capacitor CLI with Node for tar extraction compatibility.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragments` and emits `fragments:refresh` to re-fetch fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
