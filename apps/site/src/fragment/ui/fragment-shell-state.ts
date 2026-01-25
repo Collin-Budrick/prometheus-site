@@ -409,7 +409,7 @@ export const useFragmentShellState = ({
     { strategy: 'document-ready' }
   )
 
-  useFragmentShellDrag({ planValue, orderIds, dragState, layoutTick, gridRef })
+  useFragmentShellDrag({ orderIds, dragState, layoutTick, gridRef })
   useFragmentShellLayout({ planValue, gridRef, layoutTick, expandedId })
 
   return {

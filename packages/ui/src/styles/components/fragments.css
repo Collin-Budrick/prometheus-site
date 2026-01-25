@@ -141,6 +141,10 @@
     box-shadow: 0 3px 0 0 rgb(var(--accent) / 0.7), 0 24px 48px rgba(15, 23, 42, 0.14);
   }
 
+  .fragment-card.is-drop-target {
+    box-shadow: 0 0 0 2px rgb(var(--accent) / 0.65), 0 24px 48px rgba(15, 23, 42, 0.14);
+  }
+
   .fragment-grid.is-stacked > .fragment-slot.is-inline {
     width: 100%;
   }

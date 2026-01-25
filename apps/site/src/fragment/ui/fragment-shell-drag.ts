@@ -1,5 +1,4 @@
 import { useVisibleTask$, type Signal } from '@builder.io/qwik'
-import type { FragmentPlan } from '../types'
 import type { FragmentDragState } from './fragment-shell-types'
 import {
   DRAG_HOLD_MS,
@@ -8,13 +7,10 @@ import {
   DRAG_REORDER_EASE,
   DRAG_SCROLL_EDGE_PX,
   DRAG_SCROLL_MAX_PX,
-  DRAG_SWAP_HOVER_MS,
   INTERACTIVE_SELECTOR,
-  buildOrderedIds
 } from './fragment-shell-utils'
 
 type FragmentShellDragOptions = {
-  planValue: FragmentPlan
   orderIds: Signal<string[]>
   dragState: Signal<FragmentDragState>
   layoutTick: Signal<number>
@@ -22,7 +18,6 @@ type FragmentShellDragOptions = {
 }
 
 export const useFragmentShellDrag = ({
-  planValue,
   orderIds,
   dragState,
   layoutTick,
@@ -39,8 +34,6 @@ export const useFragmentShellDrag = ({
       let scrollFrame = 0
       let dragging = false
       let dragActivated = false
-      let liveReorder = false
-      let swapAdjustFrame = 0
       let reorderFrame = 0
       let reorderTransitionFrame = 0
       let pointerId: number | null = null
@@ -48,53 +41,39 @@ export const useFragmentShellDrag = ({
       let startY = 0
       let lastX = 0
       let lastY = 0
+      let dragStartRect: DOMRect | null = null
       let draggingId: string | null = null
       let draggingEl: HTMLElement | null = null
       let pendingTargetId: string | null = null
-      let pendingInsertAfter = false
       let dropIndicator: HTMLElement | null = null
       let previousUserSelect = ''
-      let swapTimer = 0
-      let swapTargetId: string | null = null
-      let swapInsertAfter = false
       let finalizePending = false
 
-      const getOrderIds = () => buildOrderedIds(planValue.fragments, orderIds.value)
+      type SlotSnapshot = {
+        slot: HTMLElement
+        card: HTMLElement | null
+        id: string | null
+        draggable: boolean
+        rect: DOMRect
+      }
+
       const getWrapperFragmentId = (wrapper: HTMLElement) =>
         wrapper.querySelector<HTMLElement>('.fragment-card')?.dataset.fragmentId ?? null
       const isCardDraggable = (card: HTMLElement | null) => card?.dataset.draggable !== 'false'
-      const isIdDraggable = (id: string) => {
-        const card = grid.querySelector<HTMLElement>(`.fragment-card[data-fragment-id="${id}"]`)
-        return isCardDraggable(card)
-      }
-      const splitOrder = (current: string[]) => {
-        const locked = new Map<number, string>()
-        const draggable: string[] = []
-        current.forEach((entryId, index) => {
-          if (isIdDraggable(entryId)) {
-            draggable.push(entryId)
-          } else {
-            locked.set(index, entryId)
+
+      const getSlotSnapshots = (): SlotSnapshot[] => {
+        const slots = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-slot'))
+        return slots.map((slot) => {
+          const card = slot.querySelector<HTMLElement>('.fragment-card')
+          const id = card?.dataset.fragmentId ?? null
+          return {
+            slot,
+            card,
+            id,
+            draggable: Boolean(card && isCardDraggable(card)),
+            rect: slot.getBoundingClientRect()
           }
         })
-        return { draggable, locked }
-      }
-      const mergeOrder = (draggable: string[], locked: Map<number, string>, total: number) => {
-        const merged: string[] = []
-        let dragIndex = 0
-        for (let index = 0; index < total; index += 1) {
-          const lockedId = locked.get(index)
-          if (lockedId) {
-            merged.push(lockedId)
-            continue
-          }
-          const next = draggable[dragIndex]
-          if (next) {
-            merged.push(next)
-            dragIndex += 1
-          }
-        }
-        return merged
       }
 
       const clearHold = () => {
@@ -114,15 +93,17 @@ export const useFragmentShellDrag = ({
 
       const clearDropIndicator = () => {
         if (!dropIndicator) return
-        dropIndicator.classList.remove('is-drop-before', 'is-drop-after')
+        dropIndicator.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after')
         dropIndicator = null
       }
 
-      const clearSwapTimer = () => {
-        if (!swapTimer) return
-        window.clearTimeout(swapTimer)
-        swapTimer = 0
-        swapTargetId = null
+      const updateDropIndicator = (slots: SlotSnapshot[], targetId: string | null) => {
+        const nextCard = targetId ? slots.find((slot) => slot.id === targetId)?.card ?? null : null
+        if (dropIndicator === nextCard) return
+        clearDropIndicator()
+        if (!nextCard) return
+        dropIndicator = nextCard
+        dropIndicator.classList.add('is-drop-target')
       }
 
       const stopAutoScroll = () => {
@@ -163,8 +144,8 @@ export const useFragmentShellDrag = ({
         if (!draggingEl || !draggingId || dragging) return
         dragging = true
         dragActivated = true
-        liveReorder = false
         finalizePending = false
+        dragStartRect = draggingEl.getBoundingClientRect()
         dragState.value = { active: true, suppressUntil: 0, draggingId }
         grid.classList.add('is-dragging')
         previousUserSelect = document.body.style.userSelect
@@ -173,29 +154,48 @@ export const useFragmentShellDrag = ({
         draggingEl.style.pointerEvents = 'none'
         draggingEl.style.willChange = 'transform'
         pendingTargetId = null
-        pendingInsertAfter = false
         clearDropIndicator()
         scheduleAutoScroll()
+      }
+
+      const buildNextOrder = (slots: SlotSnapshot[], targetId: string) => {
+        if (!draggingId) return null
+        const ids = slots.map((slot) => slot.id)
+        if (ids.some((id) => typeof id !== 'string')) return null
+        const currentOrder = ids as string[]
+        const draggingIndex = currentOrder.indexOf(draggingId)
+        const targetIndex = currentOrder.indexOf(targetId)
+        if (draggingIndex === -1 || targetIndex === -1) return null
+        if (draggingIndex === targetIndex || targetId === draggingId) return currentOrder
+        const next = [...currentOrder]
+        next[draggingIndex] = targetId
+        next[targetIndex] = draggingId
+        return next
+      }
+
+      const resolvePointerTargetId = () => {
+        const elementAtPoint =
+          typeof document !== 'undefined' ? document.elementFromPoint(lastX, lastY) : null
+        const slotTarget = elementAtPoint?.closest<HTMLElement>('.fragment-slot') ?? null
+        if (!slotTarget) return null
+        const card = slotTarget.querySelector<HTMLElement>('.fragment-card')
+        const id = card?.dataset.fragmentId ?? null
+        if (!id || id === draggingId) return null
+        if (!isCardDraggable(card)) return null
+        return id
       }
 
       const finishDrag = () => {
         finalizePending = false
         clearHold()
-        clearSwapTimer()
         stopAutoScroll()
         if (updateFrame) {
           cancelAnimationFrame(updateFrame)
           updateFrame = 0
         }
-        if (swapAdjustFrame) {
-          cancelAnimationFrame(swapAdjustFrame)
-          swapAdjustFrame = 0
-        }
         let dropTargetId: string | null = null
-        let dropInsertAfter = false
-        if (dragActivated && draggingId && pendingTargetId) {
-          dropTargetId = pendingTargetId
-          dropInsertAfter = pendingInsertAfter
+        if (dragActivated && draggingId) {
+          dropTargetId = pendingTargetId ?? resolvePointerTargetId()
         }
         if (dragging) {
           resetDraggingStyles()
@@ -209,47 +209,21 @@ export const useFragmentShellDrag = ({
           suppressUntil: dragActivated ? Date.now() + 300 : 0,
           draggingId: null
         }
-        if (!liveReorder && dragActivated && draggingId && dropTargetId && dropTargetId !== draggingId) {
-          const resolved = resolveOrder(draggingId, dropTargetId, dropInsertAfter)
-          if (resolved.order.join('|') !== orderIds.value.join('|')) {
-            orderIds.value = resolved.order
-            applyOrderToDom(resolved.order, { animate: true })
+        if (dragActivated && draggingId && dropTargetId) {
+          const slots = getSlotSnapshots()
+          const nextOrder = buildNextOrder(slots, dropTargetId)
+          if (nextOrder && nextOrder.join('|') !== orderIds.value.join('|')) {
+            orderIds.value = nextOrder
+            applyOrderToDom(nextOrder, { animate: true })
             layoutTick.value += 1
           }
         }
         dragActivated = false
         draggingId = null
         draggingEl = null
+        dragStartRect = null
         pointerId = null
         pendingTargetId = null
-        pendingInsertAfter = false
-        liveReorder = false
-      }
-
-      const moveOrder = (current: string[], id: string, targetId: string, insertAfter: boolean) => {
-        if (!current.length) return current
-        const { draggable, locked } = splitOrder(current)
-        if (!draggable.length) return current
-        if (!draggable.includes(id) || !draggable.includes(targetId)) return current
-        const without = draggable.filter((entryId) => entryId !== id)
-        const targetIndex = without.indexOf(targetId)
-        if (targetIndex === -1) return current
-        const insertIndex = insertAfter ? targetIndex + 1 : targetIndex
-        without.splice(insertIndex, 0, id)
-        return mergeOrder(without, locked, current.length)
-      }
-
-      const resolveOrder = (id: string, targetId: string, insertAfter: boolean) => {
-        const current = getOrderIds()
-        const preferred = moveOrder(current, id, targetId, insertAfter)
-        if (preferred.join('|') !== current.join('|')) {
-          return { order: preferred, insertAfter }
-        }
-        const flipped = moveOrder(current, id, targetId, !insertAfter)
-        if (flipped.join('|') !== current.join('|')) {
-          return { order: flipped, insertAfter: !insertAfter }
-        }
-        return { order: current, insertAfter }
       }
 
       const applyOrderToDom = (
@@ -311,47 +285,89 @@ export const useFragmentShellDrag = ({
         })
       }
 
-      const getInsertAfter = (rect: DOMRect) =>
-        lastY > rect.top + rect.height / 2 ||
-        (Math.abs(lastY - (rect.top + rect.height / 2)) < 6 && lastX > rect.left + rect.width / 2)
-
-      const applyLiveInsert = (targetId: string, insertAfter: boolean) => {
-        if (!draggingEl || !draggingId) return
-        const beforeRect = draggingEl.getBoundingClientRect()
-        const resolved = resolveOrder(draggingId, targetId, insertAfter)
-        if (resolved.order.join('|') === orderIds.value.join('|')) return resolved.insertAfter
-        orderIds.value = resolved.order
-        applyOrderToDom(resolved.order, { animate: true, draggingId })
-        layoutTick.value += 1
-        liveReorder = true
-        if (swapAdjustFrame) cancelAnimationFrame(swapAdjustFrame)
-        swapAdjustFrame = requestAnimationFrame(() => {
-          swapAdjustFrame = 0
-          if (!draggingEl) return
-          const afterRect = draggingEl.getBoundingClientRect()
-          startX += afterRect.left - beforeRect.left
-          startY += afterRect.top - beforeRect.top
-        })
-        return resolved.insertAfter
+      const buildGhostRect = (dx: number, dy: number) => {
+        if (!dragStartRect) return null
+        return {
+          left: dragStartRect.left + dx,
+          top: dragStartRect.top + dy,
+          right: dragStartRect.right + dx,
+          bottom: dragStartRect.bottom + dy,
+          width: dragStartRect.width,
+          height: dragStartRect.height
+        }
       }
 
-      const scheduleSwap = () => {
-        clearSwapTimer()
-        if (!pendingTargetId || !draggingId) return
-        swapTargetId = pendingTargetId
-        swapInsertAfter = pendingInsertAfter
-        swapTimer = window.setTimeout(() => {
-          swapTimer = 0
-          if (!dragging || !draggingId) return
-          if (swapTargetId !== pendingTargetId || swapInsertAfter !== pendingInsertAfter) return
-          if (!pendingTargetId) return
-          const resolvedInsert = applyLiveInsert(pendingTargetId, pendingInsertAfter)
-          if (resolvedInsert !== undefined && resolvedInsert !== pendingInsertAfter && dropIndicator) {
-            pendingInsertAfter = resolvedInsert
-            dropIndicator.classList.remove('is-drop-before', 'is-drop-after')
-            dropIndicator.classList.add(resolvedInsert ? 'is-drop-after' : 'is-drop-before')
+      const getRectCenter = (rect: { left: number; top: number; width: number; height: number }) => ({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      })
+
+      const getOverlapArea = (rect: { left: number; top: number; right: number; bottom: number }, other: DOMRect) => {
+        const overlapX = Math.max(0, Math.min(rect.right, other.right) - Math.max(rect.left, other.left))
+        const overlapY = Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top))
+        return overlapX * overlapY
+      }
+
+      const pickTargetId = (ghostRect: ReturnType<typeof buildGhostRect>) => {
+        const slots = getSlotSnapshots()
+        if (!slots.length || !ghostRect) {
+          return { targetId: null, slots }
+        }
+        const gridRect = grid.getBoundingClientRect()
+        const margin = 32
+        const ghostCenter = getRectCenter(ghostRect)
+        if (
+          ghostCenter.x < gridRect.left - margin ||
+          ghostCenter.x > gridRect.right + margin ||
+          ghostCenter.y < gridRect.top - margin ||
+          ghostCenter.y > gridRect.bottom + margin
+        ) {
+          return { targetId: null, slots }
+        }
+
+        let bestTargetId: string | null = null
+        let bestOverlap = 0
+        let bestDistance = Number.POSITIVE_INFINITY
+
+        slots.forEach((slot) => {
+          if (!slot.draggable || !slot.id || !slot.card || slot.id === draggingId) return
+          const overlap = getOverlapArea(ghostRect, slot.rect)
+          if (overlap <= 0) return
+          const slotCenter = getRectCenter(slot.rect)
+          const dx = ghostCenter.x - slotCenter.x
+          const dy = ghostCenter.y - slotCenter.y
+          const distance = Math.hypot(dx, dy)
+          if (overlap > bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
+            bestOverlap = overlap
+            bestDistance = distance
+            bestTargetId = slot.id
           }
-        }, DRAG_SWAP_HOVER_MS)
+        })
+
+        if (bestTargetId) {
+          return { targetId: bestTargetId, slots }
+        }
+
+        const pointerTargetId = resolvePointerTargetId()
+        if (pointerTargetId) {
+          return { targetId: pointerTargetId, slots }
+        }
+
+        let nearestId: string | null = null
+        let nearestDistance = Number.POSITIVE_INFINITY
+        slots.forEach((slot) => {
+          if (!slot.draggable || !slot.id || !slot.card || slot.id === draggingId) return
+          const slotCenter = getRectCenter(slot.rect)
+          const dx = ghostCenter.x - slotCenter.x
+          const dy = ghostCenter.y - slotCenter.y
+          const distance = Math.hypot(dx, dy)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestId = slot.id
+          }
+        })
+
+        return { targetId: nearestId, slots }
       }
 
       const updatePosition = () => {
@@ -362,20 +378,12 @@ export const useFragmentShellDrag = ({
         }
         const dx = lastX - startX
         const dy = lastY - startY
-        const closest = pickClosestTarget()
-        if (closest) {
-          const targetId = closest.el.dataset.fragmentId ?? null
-          if (targetId && targetId !== draggingId) {
-            const insertAfter = getInsertAfter(closest.rect)
-            const targetChanged = pendingTargetId !== targetId
-            if (targetChanged || pendingInsertAfter !== insertAfter) {
-              pendingTargetId = targetId
-              pendingInsertAfter = insertAfter
-              clearDropIndicator()
-              dropIndicator = closest.el
-              dropIndicator.classList.add(insertAfter ? 'is-drop-after' : 'is-drop-before')
-              scheduleSwap()
-            }
+        if (!finalizePending) {
+          const ghostRect = buildGhostRect(dx, dy)
+          const { targetId, slots } = pickTargetId(ghostRect)
+          if (targetId !== pendingTargetId) {
+            pendingTargetId = targetId
+            updateDropIndicator(slots, targetId)
           }
         }
 
@@ -385,47 +393,6 @@ export const useFragmentShellDrag = ({
           finalizePending = false
           finishDrag()
         }
-      }
-
-      const pickClosestTarget = (): {
-        el: HTMLElement
-        rect: DOMRect
-        distance: number
-        threshold: number
-      } | null => {
-        if (!draggingEl) return null
-        const elementAtPoint =
-          typeof document !== 'undefined' ? document.elementFromPoint(lastX, lastY) : null
-        const directTarget = elementAtPoint?.closest<HTMLElement>('.fragment-card') ?? null
-        if (directTarget && directTarget !== draggingEl && isCardDraggable(directTarget)) {
-          return { el: directTarget, rect: directTarget.getBoundingClientRect(), distance: 0, threshold: 0 }
-        }
-        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.fragment-card')).filter(
-          (card) => card !== draggingEl && isCardDraggable(card)
-        )
-        if (!cards.length) return null
-        let closestEl: HTMLElement | null = null
-        let closestRect: DOMRect | null = null
-        let closestDistance = Infinity
-        let closestThreshold = 0
-        cards.forEach((card) => {
-          const rect = card.getBoundingClientRect()
-          const cx = rect.left + rect.width / 2
-          const cy = rect.top + rect.height / 2
-          const dx = lastX - cx
-          const dy = lastY - cy
-          const distance = dx * dx + dy * dy
-          const threshold = Math.max(160, Math.min(rect.width, rect.height) * 0.6)
-          if (distance < closestDistance) {
-            closestEl = card
-            closestRect = rect
-            closestDistance = distance
-            closestThreshold = threshold
-          }
-        })
-        if (!closestEl || !closestRect) return null
-        if (Math.sqrt(closestDistance) > closestThreshold) return null
-        return { el: closestEl, rect: closestRect, distance: closestDistance, threshold: closestThreshold }
       }
 
       const scheduleUpdate = () => {
@@ -467,8 +434,9 @@ export const useFragmentShellDrag = ({
           const dy = lastY - startY
           if (Math.hypot(dx, dy) > DRAG_MOVE_THRESHOLD) {
             clearHold()
+            startDrag()
           }
-          return
+          if (!dragging) return
         }
         event.preventDefault()
         scheduleUpdate()
