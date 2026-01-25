@@ -98,6 +98,17 @@
     overflow: visible;
   }
 
+  .fragment-grid.grid-stack > .grid-stack-item > .grid-stack-item-content {
+    overflow: visible !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .fragment-grid.grid-stack > .grid-stack-item > .grid-stack-item-content::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
   .grid-stack-item > .ui-resizable-handle {
     display: none !important;
   }
@@ -243,6 +254,19 @@
     background-color: rgb(var(--surface) / 0.9);
     border-color: rgb(var(--accent) / 0.2);
     isolation: isolate;
+  }
+
+  .fragment-card,
+  .fragment-card * {
+    overflow: hidden !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .fragment-card::-webkit-scrollbar,
+  .fragment-card *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
 
   :root:not([data-theme="dark"]) .fragment-card {

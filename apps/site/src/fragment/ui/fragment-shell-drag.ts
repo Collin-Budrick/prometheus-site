@@ -170,6 +170,7 @@ export const useFragmentShellDrag = ({
       let dragStartPoint: { x: number; y: number } | null = null
       let pendingPoint: { x: number; y: number } | null = null
       let lastDragPoint: { x: number; y: number } | null = null
+      let releaseHandlersActive = false
 
       const hasGridVars = () => {
         const style = window.getComputedStyle(gridEl)
@@ -303,6 +304,40 @@ export const useFragmentShellDrag = ({
           }
         })
         return bestId
+      }
+
+      const releaseGlobalDrag = () => {
+        if (dragState.value.active) {
+          dragState.value = {
+            active: false,
+            suppressUntil: Date.now() + 300,
+            draggingId: null
+          }
+        }
+        gridEl.classList.remove('is-dragging')
+        gridEl.style.touchAction = ''
+        document.body.style.touchAction = ''
+        document.documentElement.style.touchAction = ''
+      }
+
+      const addReleaseHandlers = () => {
+        if (releaseHandlersActive) return
+        releaseHandlersActive = true
+        window.addEventListener('pointerup', releaseGlobalDrag, { capture: true, passive: true })
+        window.addEventListener('pointercancel', releaseGlobalDrag, { capture: true, passive: true })
+        window.addEventListener('mouseup', releaseGlobalDrag, { capture: true, passive: true })
+        window.addEventListener('touchend', releaseGlobalDrag, { capture: true, passive: true })
+        window.addEventListener('touchcancel', releaseGlobalDrag, { capture: true, passive: true })
+      }
+
+      const removeReleaseHandlers = () => {
+        if (!releaseHandlersActive) return
+        releaseHandlersActive = false
+        window.removeEventListener('pointerup', releaseGlobalDrag, true)
+        window.removeEventListener('pointercancel', releaseGlobalDrag, true)
+        window.removeEventListener('mouseup', releaseGlobalDrag, true)
+        window.removeEventListener('touchend', releaseGlobalDrag, true)
+        window.removeEventListener('touchcancel', releaseGlobalDrag, true)
       }
 
       const escapeSelector = (value: string) => {
@@ -460,6 +495,7 @@ export const useFragmentShellDrag = ({
           draggingId: id
         }
         gridEl.classList.add('is-dragging')
+        addReleaseHandlers()
       }
 
       const handleDragMove = (event: Event) => {
@@ -485,6 +521,10 @@ export const useFragmentShellDrag = ({
           draggingId: null
         }
         gridEl.classList.remove('is-dragging')
+        gridEl.style.touchAction = ''
+        document.body.style.touchAction = ''
+        document.documentElement.style.touchAction = ''
+        removeReleaseHandlers()
         if (dragMoveFrame) {
           cancelAnimationFrame(dragMoveFrame)
           dragMoveFrame = 0
@@ -595,6 +635,10 @@ export const useFragmentShellDrag = ({
         grid.destroy(false)
         delete gridEl.dataset.dragReady
         gridEl.classList.remove('is-dragging')
+        gridEl.style.touchAction = ''
+        document.body.style.touchAction = ''
+        document.documentElement.style.touchAction = ''
+        removeReleaseHandlers()
         mutationObserver?.disconnect()
         resizeObserver?.disconnect()
         if (heightFrame) cancelAnimationFrame(heightFrame)
