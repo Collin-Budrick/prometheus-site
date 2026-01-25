@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin, type ProxyOptions, type ViteDevServer } from 'vite'
 import { qwikCity } from '@builder.io/qwik-city/vite'
+import { staticAdapter } from '@builder.io/qwik-city/adapters/static/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
 import tailwindcss from '@tailwindcss/vite'
 import { serwist } from '@serwist/vite'
@@ -103,6 +104,18 @@ const isStaticCachePath = (pathname: string) =>
   /^\/(?:build|assets|icons)\//.test(pathname) ||
   /^\/favicon\.[^/]+$/.test(pathname) ||
   pathname === '/manifest.webmanifest'
+const capacitorSsrInputPlugin = (ssrInputs?: Record<string, string>): Plugin => ({
+  name: 'prometheus-capacitor-ssr-input',
+  enforce: 'post',
+  apply: 'build',
+  config(config, env) {
+    if (!env.isSsrBuild || !ssrInputs) return
+    config.build ??= {}
+    config.build.rollupOptions ??= {}
+    config.build.rollupOptions.input = ssrInputs
+    config.build.ssr = true
+  }
+})
 const pwaPrecacheEntries = [
   { url: withBase('/'), revision: null },
   { url: withBase('/offline/'), revision: null },
@@ -380,8 +393,15 @@ const manualChunks = (id: string) => {
   return undefined
 }
 
-export default defineConfig(
-  (async () => {
+export default defineConfig(async (configEnv) => {
+  const ssrBuild = Boolean(configEnv?.isSsrBuild)
+  const ssrInputs = ssrBuild
+    ? {
+      'entry.ssr': path.resolve(configRoot, 'src', 'entry.ssr.tsx'),
+      '@qwik-city-plan': '@qwik-city-plan'
+    }
+    : undefined
+
     const devHost = process.env.VITE_DEV_HOST?.trim() || 'localhost'
     const useProxyHttps = process.env.VITE_DEV_HTTPS === '1' || process.env.VITE_DEV_HTTPS === 'true'
     const devHttpsPort = process.env.VITE_DEV_HTTPS_PORT?.trim()
@@ -409,6 +429,7 @@ export default defineConfig(
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
+    const capacitorBuildEnabled = isTruthyEnv(process.env.VITE_CAPACITOR)
     const publicAppConfig = resolveAppConfig(process.env)
     const binding = await loadQwikBinding()
     const bundleVisualizer = shouldVisualizeBundle
@@ -425,6 +446,7 @@ export default defineConfig(
         __HIGHLIGHT_BUILD_ENABLED__: JSON.stringify(highlightBuildEnabled),
         __PUBLIC_APP_CONFIG__: JSON.stringify(publicAppConfig)
       },
+      publicDir: ssrBuild ? false : 'public',
       plugins: [
         sanitizeOutputOptionsPlugin(),
         earlyHintsPlugin(),
@@ -440,6 +462,7 @@ export default defineConfig(
             inlineStylesUpToBytes: 60000
           }
         }),
+        ...(capacitorBuildEnabled ? [staticAdapter({}), capacitorSsrInputPlugin(ssrInputs)] : []),
         compression({
           algorithms: [
             defineAlgorithm('brotliCompress', {
@@ -488,8 +511,11 @@ export default defineConfig(
         transformer: 'lightningcss'
       },
       build: {
+        outDir: ssrBuild ? 'server' : 'dist',
+        ssr: ssrBuild ? true : undefined,
         cssMinify: 'lightningcss',
         rollupOptions: {
+          ...(ssrInputs ? { input: ssrInputs } : {}),
           output: {
             manualChunks
           }
@@ -527,5 +553,4 @@ export default defineConfig(
         allowedHosts: ['prometheus.prod', 'prometheus.dev']
       }
     }
-  })()
-)
+})

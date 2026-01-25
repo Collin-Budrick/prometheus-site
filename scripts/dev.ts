@@ -1,5 +1,8 @@
-import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   computeFingerprint,
   ensureCaddyConfig,
@@ -11,6 +14,102 @@ import {
 } from './compose-utils'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+
+const resolveCapacitorServerUrl = (host: string, httpsPort: string) => {
+  const explicit = process.env.CAPACITOR_SERVER_URL?.trim()
+  if (explicit) return explicit
+  const trimmedHost = host.trim()
+  if (!trimmedHost) return undefined
+  if (trimmedHost.startsWith('http://') || trimmedHost.startsWith('https://')) return trimmedHost
+  const portSuffix = httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
+  return `https://${trimmedHost}${portSuffix}`
+}
+
+const resolveNodeBin = () => process.env.PROMETHEUS_NODE_BINARY?.trim() || 'node'
+
+const hasCapacitorCli = (siteRoot: string) => {
+  const binNames = ['cap', 'cap.cmd', 'cap.ps1']
+  const binDirs = [
+    path.resolve(siteRoot, 'node_modules', '.bin'),
+    path.resolve(root, 'node_modules', '.bin')
+  ]
+  const cliCandidates = [
+    path.resolve(siteRoot, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor'),
+    path.resolve(root, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor')
+  ]
+  const candidates = binDirs.flatMap((dir) => binNames.map((name) => path.join(dir, name))).concat(cliCandidates)
+  return candidates.some((candidate) => existsSync(candidate))
+}
+
+const ensureCapacitorCli = (bunBin: string, siteRoot: string) => {
+  if (hasCapacitorCli(siteRoot)) return true
+  const result = spawnSync(bunBin, ['install', '--filter', 'site'], {
+    stdio: 'inherit',
+    cwd: root,
+    env: process.env
+  })
+  if (result.status !== 0) {
+    console.warn('[capacitor] Dependency install failed; skipping Android sync.')
+    return false
+  }
+  if (!hasCapacitorCli(siteRoot)) {
+    console.warn('[capacitor] CLI not found after install; skipping Android sync.')
+    return false
+  }
+  return true
+}
+
+type CapacitorRunner = {
+  command: string
+  args: string[]
+  label: 'bun' | 'node'
+}
+
+const resolveCapacitorRunner = (bunBin: string, siteRoot: string, preferNode: boolean): CapacitorRunner => {
+  if (preferNode) {
+    const cliCandidates = [
+      path.resolve(siteRoot, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor'),
+      path.resolve(root, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor')
+    ]
+    const cliBin = cliCandidates.find((candidate) => existsSync(candidate))
+    if (cliBin) {
+      return { command: resolveNodeBin(), args: [cliBin], label: 'node' }
+    }
+  }
+  return { command: bunBin, args: ['x', '--bun', 'cap'], label: 'bun' }
+}
+
+const syncCapacitorAndroid = (bunBin: string, serverUrl?: string) => {
+  if (!serverUrl) return
+  const siteRoot = path.resolve(root, 'apps', 'site')
+  const androidRoot = path.join(siteRoot, 'android')
+  if (!existsSync(androidRoot)) return
+  if (!ensureCapacitorCli(bunBin, siteRoot)) return
+  const preferNode = process.platform === 'win32'
+  const runSync = (runner: CapacitorRunner) =>
+    spawnSync(runner.command, [...runner.args, 'sync', 'android'], {
+      stdio: 'inherit',
+      cwd: siteRoot,
+      env: {
+        ...process.env,
+        CAPACITOR_SERVER_URL: serverUrl
+      }
+    })
+
+  const primary = resolveCapacitorRunner(bunBin, siteRoot, preferNode)
+  const secondary = resolveCapacitorRunner(bunBin, siteRoot, !preferNode)
+  const result = runSync(primary)
+  if (result.status === 0) return
+
+  if (secondary.label !== primary.label) {
+    const fallback = runSync(secondary)
+    if (fallback.status === 0) return
+    console.warn(`[capacitor] Android sync failed (exit ${fallback.status ?? 'unknown'}).`)
+    return
+  }
+
+  console.warn(`[capacitor] Android sync failed (exit ${result.status ?? 'unknown'}).`)
+}
 
 const { command, prefix } = resolveComposeCommand()
 
@@ -231,6 +330,8 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_HIGHLIGHT_SAMPLE_RATE: devHighlightSampleRate,
   API_BASE: `http://127.0.0.1:${devApiPort}`
 }
+
+syncCapacitorAndroid(bunBin, resolveCapacitorServerUrl(devWebHost, devHttpsPort))
 
 if (enablePollingWatch) {
   webEnv.CHOKIDAR_USEPOLLING = webEnv.CHOKIDAR_USEPOLLING || '1'

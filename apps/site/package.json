@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run scripts/vite-run.ts -- --mode ssr --port 4173",
     "build": "bun run scripts/vite-run.ts -- build",
+    "build:capacitor": "VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build && VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build --ssr",
     "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
     "preview": "bun run scripts/vite-run.ts -- preview --port 4173",
     "lint": "oxlint ."
@@ -14,6 +15,8 @@
     "@bokuweb/zstd-wasm": "^0.0.27",
     "@builder.io/qwik": "1.18.0",
     "@builder.io/qwik-city": "1.18.0",
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/core": "^8.0.1",
     "@preact/signals-core": "^1.12.2",
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
@@ -27,8 +30,9 @@
     "yjs": "^13.6.29"
   },
   "devDependencies": {
-    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.1",
+    "@capacitor/cli": "^8.0.1",
     "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.1",
+    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.1",
     "@serwist/vite": "^9.5.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "25.0.10",
