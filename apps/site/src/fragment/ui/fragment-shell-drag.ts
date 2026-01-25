@@ -284,6 +284,31 @@ export const useFragmentShellDrag = ({
         return probeX < midX ? 'left' : 'right'
       }
 
+      const snapPlaceholderToColumn = (point: { x: number; y: number } | null) => {
+        if (currentColumn === 1) return
+        const placeholder = gridEl.querySelector<HTMLElement>('.grid-stack-placeholder')
+        if (!placeholder) return
+        const placeholderRect = placeholder.getBoundingClientRect()
+        const dropColumn = resolveDropColumn(point, placeholderRect)
+        if (!dropColumn) return
+        const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+        const x = dropColumn === 'right' ? half : 0
+        const w = half
+        if (x === 0) {
+          placeholder.style.left = ''
+        } else {
+          placeholder.style.left = `calc(${x} * var(--gs-column-width))`
+        }
+        placeholder.style.width = `calc(${w} * var(--gs-column-width))`
+        placeholder.setAttribute('gs-x', String(x))
+        placeholder.setAttribute('gs-w', String(w))
+        const node = (placeholder as HTMLElement & { gridstackNode?: { x?: number; w?: number } }).gridstackNode
+        if (node) {
+          node.x = x
+          node.w = w
+        }
+      }
+
       const applyOrder = (nextOrder: string[], nextSplit: number) => {
         const orderChanged = nextOrder.join('|') !== orderIds.value.join('|')
         const splitChanged = nextSplit !== columnSplit.value
@@ -410,6 +435,7 @@ export const useFragmentShellDrag = ({
           dragMoveFrame = 0
           if (!pendingPoint) return
           dragTargetId = resolveTargetId(pendingPoint)
+          snapPlaceholderToColumn(pendingPoint)
           pendingPoint = null
         })
       }
