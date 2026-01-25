@@ -68,20 +68,20 @@
   }
 
   .fragment-grid.grid-stack:not([data-drag-ready='true']) > .grid-stack-item {
-    position: relative;
-    top: auto;
-    left: auto;
-    width: 100%;
-    height: auto;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    height: auto !important;
   }
 
   .fragment-grid.grid-stack:not([data-drag-ready='true']) > .grid-stack-item > .grid-stack-item-content {
-    position: relative;
-    top: auto;
-    right: auto;
-    bottom: auto;
-    left: auto;
-    margin: 0;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    margin: 0 !important;
   }
 
   .fragment-grid-item {

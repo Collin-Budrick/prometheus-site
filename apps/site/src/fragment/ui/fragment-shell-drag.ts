@@ -88,6 +88,59 @@ export const useFragmentShellDrag = ({
       const initialColumn = getColumnCount()
       let currentColumn = initialColumn
 
+      const applyPrelayout = () => {
+        const items = Array.from(gridEl.querySelectorAll<HTMLElement>('.grid-stack-item'))
+        if (!items.length) return false
+        const isMobile = getColumnCount() === 1
+        const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+        let leftY = 0
+        let rightY = 0
+        let singleY = 0
+        items.forEach((item) => {
+          const card = item.querySelector<HTMLElement>('.fragment-card') ?? item
+          const height = card.getBoundingClientRect().height
+          const fallbackRows = Math.max(1, Number(item.getAttribute('gs-h')) || 1)
+          const rows = Number.isFinite(height) && height > 0 ? toGridRows(height) : fallbackRows
+          heightCache.set(item, rows)
+          if (isMobile) {
+            const y = singleY
+            singleY += rows
+            item.setAttribute('gs-x', '0')
+            item.setAttribute('gs-y', String(y))
+            item.setAttribute('gs-w', '1')
+            item.setAttribute('gs-h', String(rows))
+            item.setAttribute('gs-min-w', '1')
+            item.setAttribute('gs-max-w', '1')
+            return
+          }
+          const lock = item.dataset.columnLock
+          const column =
+            lock === 'right'
+              ? 'right'
+              : lock === 'left'
+                ? 'left'
+                : Number(item.getAttribute('gs-x')) >= half
+                  ? 'right'
+                  : 'left'
+          const x = column === 'right' ? half : 0
+          const y = column === 'right' ? rightY : leftY
+          if (column === 'right') {
+            rightY += rows
+          } else {
+            leftY += rows
+          }
+          item.setAttribute('gs-x', String(x))
+          item.setAttribute('gs-y', String(y))
+          item.setAttribute('gs-w', String(half))
+          item.setAttribute('gs-h', String(rows))
+          item.setAttribute('gs-min-w', String(half))
+          item.setAttribute('gs-max-w', String(half))
+        })
+        return true
+      }
+
+      applyPrelayout()
+
       const grid = GridStack.init(
         {
           column: initialColumn,
