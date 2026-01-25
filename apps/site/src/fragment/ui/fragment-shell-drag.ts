@@ -30,11 +30,14 @@ const syncGridFromDom = (gridEl: GridStackElement) => {
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : fallback
   }
+  const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
   grid.batchUpdate()
   items.forEach((item) => {
-    const x = toNumber(item.getAttribute('gs-x'), 0)
+    const lock = item.dataset.columnLock
+    const lockedX = lock === 'right' ? half : 0
+    const x = lock ? lockedX : toNumber(item.getAttribute('gs-x'), 0)
     const y = toNumber(item.getAttribute('gs-y'), 0)
-    const w = toNumber(item.getAttribute('gs-w'), 1)
+    const w = lock ? half : toNumber(item.getAttribute('gs-w'), 1)
     const h = toNumber(item.getAttribute('gs-h'), 1)
     grid.update(item, { x, y, w, h })
   })
@@ -166,13 +169,19 @@ export const useFragmentShellDrag = ({
         gridEl.classList.add('is-dragging')
       }
 
-      const handleDragStop = () => {
+      const handleDragStop = (_event: Event, el: HTMLElement) => {
         dragState.value = {
           active: false,
           suppressUntil: Date.now() + 300,
           draggingId: null
         }
         gridEl.classList.remove('is-dragging')
+        const lock = el?.dataset.columnLock
+        if (lock) {
+          const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+          const x = lock === 'right' ? half : 0
+          grid.update(el, { x, w: half })
+        }
         syncOrder()
       }
 

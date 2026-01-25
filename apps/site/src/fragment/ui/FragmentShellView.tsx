@@ -181,12 +181,14 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const motionDelay = hasCache || isCritical || inInitialViewport ? 0 : index * 120
           const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
           const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
-          const gridMetrics = getGridstackSlotMetrics(slot)
+          const gridMetrics = getGridstackSlotMetrics(slot, index)
           const gridItemAttrs = {
             'gs-x': gridMetrics.x,
             'gs-y': gridMetrics.y,
             'gs-w': gridMetrics.w,
             'gs-h': gridMetrics.h,
+            'gs-min-w': gridMetrics.w,
+            'gs-max-w': gridMetrics.w,
             'gs-id': entry?.id
           }
           return (
@@ -200,6 +202,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               }}
               data-critical={isCritical ? 'true' : undefined}
               data-fragment-id={entry?.id}
+              data-column-lock={gridMetrics.column}
               {...gridItemAttrs}
             >
               {entry ? (

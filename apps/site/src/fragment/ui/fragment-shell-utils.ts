@@ -142,17 +142,25 @@ const parseSlotColumn = (column: string) => {
   return { x: 0, w: GRIDSTACK_COLUMNS }
 }
 
-export const getGridstackSlotMetrics = (slot: BentoSlot) => {
+export const getGridstackSlotMetrics = (slot: BentoSlot, index: number) => {
   const rows = parseSlotRows(slot.row)
   const rowStart = rows[0] ?? 1
   const y = Math.max(0, rowStart - 1)
   const h = 1
-  const { x, w } = parseSlotColumn(slot.column)
+  const { x: rawX, w: rawW } = parseSlotColumn(slot.column)
+  const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+  let column: 'left' | 'right' = rawX >= half ? 'right' : 'left'
+  if (rawW > half) {
+    column = index % 2 === 0 ? 'left' : 'right'
+  }
+  const x = column === 'right' ? half : 0
+  const w = half
   return {
     x,
     y,
     w,
-    h: Math.max(1, h)
+    h: Math.max(1, h),
+    column
   }
 }
 
