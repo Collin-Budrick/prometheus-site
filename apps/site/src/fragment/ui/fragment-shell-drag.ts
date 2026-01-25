@@ -148,6 +148,7 @@ export const useFragmentShellDrag = ({
           margin: GRIDSTACK_MARGIN,
           disableResize: true,
           float: false,
+          animate: false,
           draggable: {
             handle: '.fragment-card',
             cancel: INTERACTIVE_SELECTOR,
