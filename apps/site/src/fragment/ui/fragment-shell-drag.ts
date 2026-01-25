@@ -323,6 +323,17 @@ export const useFragmentShellDrag = ({
         }
       }
 
+      const swapOrder = (dragId: string, targetId: string) => {
+        const current = orderIds.value.slice()
+        const fromIndex = current.indexOf(dragId)
+        const toIndex = current.indexOf(targetId)
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return false
+        ;[current[fromIndex], current[toIndex]] = [current[toIndex], current[fromIndex]]
+        orderIds.value = current
+        layoutTick.value += 1
+        return true
+      }
+
       const moveAcrossColumns = (
         current: string[],
         fromIndex: number,
@@ -348,32 +359,6 @@ export const useFragmentShellDrag = ({
         insertIndex = clampInsertIndex(insertIndex, targetColumn, nextSplit, next.length)
         next.splice(insertIndex, 0, dragId)
         return { order: next, split: nextSplit }
-      }
-
-      const moveWithinColumn = (
-        current: string[],
-        fromIndex: number,
-        targetId: string | null,
-        column: 'left' | 'right',
-        insertAfter: boolean,
-        split: number
-      ) => {
-        const next = current.slice()
-        const [dragId] = next.splice(fromIndex, 1)
-        const removedFromLeft = fromIndex < split
-        const adjustedSplit = removedFromLeft ? Math.max(0, split - 1) : split
-        const segmentStart = column === 'left' ? 0 : adjustedSplit
-        const segmentEnd = column === 'left' ? adjustedSplit : next.length
-        let insertIndex: number
-        if (targetId) {
-          const targetIndex = next.indexOf(targetId)
-          insertIndex = targetIndex === -1 ? segmentEnd : targetIndex + (insertAfter ? 1 : 0)
-        } else {
-          insertIndex = segmentEnd
-        }
-        insertIndex = Math.min(Math.max(segmentStart, insertIndex), segmentEnd)
-        next.splice(insertIndex, 0, dragId)
-        return next
       }
 
       const resolvePlaceholderTarget = (
@@ -512,9 +497,7 @@ export const useFragmentShellDrag = ({
                   // Pointer is in a different column; treat this as an empty column drop.
                 } else {
                   if (dragColumn === targetColumn) {
-                    const nextOrder = moveWithinColumn(current, fromIndex, targetId, dragColumn, insertAfter, split)
-                    applyOrder(nextOrder, split)
-                    return
+                    if (swapOrder(dragId, targetId)) return
                   }
                   const next = moveAcrossColumns(current, fromIndex, targetId, targetColumn, insertAfter, split)
                   applyOrder(next.order, next.split)
@@ -523,11 +506,6 @@ export const useFragmentShellDrag = ({
               }
             }
             if (dropColumn) {
-              if (dropColumn === dragColumn) {
-                const nextOrder = moveWithinColumn(current, fromIndex, null, dragColumn, true, split)
-                applyOrder(nextOrder, split)
-                return
-              }
               const next = moveAcrossColumns(current, fromIndex, null, dropColumn, true, split)
               applyOrder(next.order, next.split)
               return
