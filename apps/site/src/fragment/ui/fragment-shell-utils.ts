@@ -16,9 +16,6 @@ export const GRIDSTACK_COLUMNS = 12
 export const GRIDSTACK_CELL_HEIGHT = 8
 export const GRIDSTACK_MARGIN = 12
 
-const BENTO_SLOTS_PER_CYCLE = 6
-const BENTO_ROWS_PER_CYCLE = 4
-
 export const getFieldKey = (field: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, index: number) => {
   const fragmentId = (field.closest('[data-fragment-id]') as HTMLElement | null)?.dataset.fragmentId ?? 'shell'
   const name = field.getAttribute('name') ?? field.getAttribute('id')
@@ -166,22 +163,17 @@ export const getGridstackSlotMetrics = (slot: BentoSlot, index: number) => {
 
 export const buildBentoSlots = (count: number) => {
   const slots: BentoSlot[] = []
-  let cycle = 0
-  while (slots.length < count) {
-    const rowStart = cycle * BENTO_ROWS_PER_CYCLE + 1
-    const tallLeft = cycle % 2 === 0
-    const leftCol = tallLeft ? '1 / span 6' : '7 / span 6'
-    const rightCol = tallLeft ? '7 / span 6' : '1 / span 6'
-    const baseId = cycle * BENTO_SLOTS_PER_CYCLE
-    slots.push(
-      { id: `slot-${baseId + 1}`, size: 'small', column: leftCol, row: `${rowStart}` },
-      { id: `slot-${baseId + 2}`, size: 'small', column: rightCol, row: `${rowStart}` },
-      { id: `slot-${baseId + 3}`, size: 'big', column: '1 / -1', row: `${rowStart + 1}` },
-      { id: `slot-${baseId + 4}`, size: 'tall', column: leftCol, row: `${rowStart + 2} / span 2` },
-      { id: `slot-${baseId + 5}`, size: 'small', column: rightCol, row: `${rowStart + 2}` },
-      { id: `slot-${baseId + 6}`, size: 'small', column: rightCol, row: `${rowStart + 3}` }
-    )
-    cycle += 1
+  const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+  for (let index = 0; index < count; index += 1) {
+    const row = Math.floor(index / 2) + 1
+    const isLeft = index % 2 === 0
+    const columnStart = isLeft ? 1 : half + 1
+    slots.push({
+      id: `slot-${index + 1}`,
+      size: 'small',
+      column: `${columnStart} / span ${half}`,
+      row: `${row}`
+    })
   }
-  return slots.slice(0, count)
+  return slots
 }

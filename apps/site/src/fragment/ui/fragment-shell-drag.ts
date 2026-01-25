@@ -106,6 +106,10 @@ export const useFragmentShellDrag = ({
       let heightFrame = 0
       const observedCards = new Set<HTMLElement>()
       let resizeFrame = 0
+      let dragMoveFrame = 0
+      let dragStartId: string | null = null
+      let dragTargetId: string | null = null
+      let pendingPoint: { x: number; y: number } | null = null
 
       const hasGridVars = () => {
         const style = window.getComputedStyle(gridEl)
@@ -182,6 +186,31 @@ export const useFragmentShellDrag = ({
       applyColumnMode()
       window.addEventListener('resize', scheduleResize)
 
+      const getEventPoint = (event: Event) => {
+        const source = (event as { originalEvent?: Event }).originalEvent ?? event
+        if ('clientX' in source && 'clientY' in source) {
+          const { clientX, clientY } = source as MouseEvent
+          return { x: clientX, y: clientY }
+        }
+        if ('touches' in source || 'changedTouches' in source) {
+          const touchEvent = source as TouchEvent
+          const touch = touchEvent.touches[0] ?? touchEvent.changedTouches[0]
+          if (!touch) return null
+          return { x: touch.clientX, y: touch.clientY }
+        }
+        return null
+      }
+
+      const resolveTargetId = (point: { x: number; y: number }) => {
+        const element = document.elementFromPoint(point.x, point.y)
+        if (!element) return null
+        const item = element.closest<HTMLElement>('.grid-stack-item')
+        if (!item || item.classList.contains('grid-stack-placeholder')) return null
+        const id = item.getAttribute('gs-id') ?? item.dataset.fragmentId ?? null
+        if (!id || id === dragStartId) return null
+        return id
+      }
+
       const collectOrder = () => {
         const nodes = grid.engine.nodes
           .filter((node) => node && (node.id || node.el))
@@ -201,8 +230,21 @@ export const useFragmentShellDrag = ({
         }
       }
 
+      const swapOrder = (dragId: string, targetId: string) => {
+        const current = orderIds.value.slice()
+        const fromIndex = current.indexOf(dragId)
+        const toIndex = current.indexOf(targetId)
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return false
+        ;[current[fromIndex], current[toIndex]] = [current[toIndex], current[fromIndex]]
+        orderIds.value = current
+        layoutTick.value += 1
+        return true
+      }
+
       const handleDragStart = (_event: Event, el: HTMLElement) => {
         const id = el?.getAttribute('gs-id') ?? el?.dataset.fragmentId ?? null
+        dragStartId = id
+        dragTargetId = null
         dragState.value = {
           active: true,
           suppressUntil: 0,
@@ -211,13 +253,46 @@ export const useFragmentShellDrag = ({
         gridEl.classList.add('is-dragging')
       }
 
-      const handleDragStop = (_event: Event, el: HTMLElement) => {
+      const handleDragMove = (event: Event) => {
+        if (!dragStartId) return
+        const point = getEventPoint(event)
+        if (!point) return
+        pendingPoint = point
+        if (dragMoveFrame) return
+        dragMoveFrame = requestAnimationFrame(() => {
+          dragMoveFrame = 0
+          if (!pendingPoint) return
+          dragTargetId = resolveTargetId(pendingPoint)
+          pendingPoint = null
+        })
+      }
+
+      const handleDragStop = (event: Event, el: HTMLElement) => {
         dragState.value = {
           active: false,
           suppressUntil: Date.now() + 300,
           draggingId: null
         }
         gridEl.classList.remove('is-dragging')
+        if (dragMoveFrame) {
+          cancelAnimationFrame(dragMoveFrame)
+          dragMoveFrame = 0
+        }
+        const point = getEventPoint(event)
+        if (point) {
+          const resolvedTarget = resolveTargetId(point)
+          if (resolvedTarget) {
+            dragTargetId = resolvedTarget
+          }
+        }
+        const dragId = dragStartId
+        const targetId = dragTargetId
+        dragStartId = null
+        dragTargetId = null
+        pendingPoint = null
+        if (dragId && targetId) {
+          if (swapOrder(dragId, targetId)) return
+        }
         const lock = el?.dataset.columnLock
         if (lock) {
           if (currentColumn === 1) {
@@ -232,10 +307,12 @@ export const useFragmentShellDrag = ({
       }
 
       grid.on('dragstart', handleDragStart)
+      grid.on('drag', handleDragMove)
       grid.on('dragstop', handleDragStop)
 
       ctx.cleanup(() => {
         grid.off('dragstart')
+        grid.off('drag')
         grid.off('dragstop')
         grid.destroy(false)
         delete gridEl.dataset.dragReady
@@ -244,6 +321,7 @@ export const useFragmentShellDrag = ({
         resizeObserver?.disconnect()
         if (heightFrame) cancelAnimationFrame(heightFrame)
         if (resizeFrame) cancelAnimationFrame(resizeFrame)
+        if (dragMoveFrame) cancelAnimationFrame(dragMoveFrame)
         window.removeEventListener('resize', scheduleResize)
       })
     },

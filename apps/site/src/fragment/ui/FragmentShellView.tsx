@@ -191,12 +191,16 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
             typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
               ? Math.max(0, entry.layout.minHeight)
               : null
+          const hasLoadedContent = Boolean(fragment || useFallbackHtml)
+          const applyMinHeight = Boolean(!hasLoadedContent && minHeight && minHeight > 0)
           const minHeightRows =
-            minHeight && minHeight > 0
+            applyMinHeight
               ? Math.max(1, Math.ceil((minHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
               : gridMetrics.h
           const gridItemStyle = minHeight
-            ? { '--fragment-min-height': `${minHeight}px` }
+            ? applyMinHeight
+              ? { '--fragment-min-height': `${minHeight}px` }
+              : undefined
             : undefined
           const gridItemAttrs = {
             'gs-x': gridMetrics.x,
