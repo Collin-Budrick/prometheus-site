@@ -209,6 +209,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
             'gs-h': minHeightRows,
             'gs-min-w': gridMetrics.w,
             'gs-max-w': gridMetrics.w,
+            'gs-no-resize': 'true',
             'gs-id': entry?.id
           }
           return (

@@ -45,7 +45,7 @@ const syncGridFromDom = (gridEl: GridStackElement) => {
     const h = toNumber(item.getAttribute('gs-h'), 1)
     const minW = isMobile ? 1 : lock ? half : undefined
     const maxW = isMobile ? 1 : lock ? half : undefined
-    grid.update(item, { x, y, w, h, minW, maxW })
+    grid.update(item, { x, y, w, h, minW, maxW, noResize: true })
   })
   grid.batchUpdate(false)
 }
