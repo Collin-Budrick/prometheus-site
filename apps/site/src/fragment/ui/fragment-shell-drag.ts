@@ -5,6 +5,7 @@ import {
   GRIDSTACK_CELL_HEIGHT,
   GRIDSTACK_COLUMNS,
   GRIDSTACK_MARGIN,
+  DESKTOP_MIN_WIDTH,
   INTERACTIVE_SELECTOR
 } from './fragment-shell-utils'
 
@@ -30,16 +31,19 @@ const syncGridFromDom = (gridEl: GridStackElement) => {
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : fallback
   }
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < DESKTOP_MIN_WIDTH
   const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
   grid.batchUpdate()
   items.forEach((item) => {
     const lock = item.dataset.columnLock
     const lockedX = lock === 'right' ? half : 0
-    const x = lock ? lockedX : toNumber(item.getAttribute('gs-x'), 0)
+    const x = isMobile ? 0 : lock ? lockedX : toNumber(item.getAttribute('gs-x'), 0)
     const y = toNumber(item.getAttribute('gs-y'), 0)
-    const w = lock ? half : toNumber(item.getAttribute('gs-w'), 1)
+    const w = isMobile ? 1 : lock ? half : toNumber(item.getAttribute('gs-w'), 1)
     const h = toNumber(item.getAttribute('gs-h'), 1)
-    grid.update(item, { x, y, w, h })
+    const minW = isMobile ? 1 : lock ? half : undefined
+    const maxW = isMobile ? 1 : lock ? half : undefined
+    grid.update(item, { x, y, w, h, minW, maxW })
   })
   grid.batchUpdate(false)
 }
@@ -77,12 +81,15 @@ export const useFragmentShellDrag = ({
       const gridEl = gridRef.value
       if (!gridEl) return
 
+      const getColumnCount = () => (window.innerWidth < DESKTOP_MIN_WIDTH ? 1 : GRIDSTACK_COLUMNS)
+      const initialColumn = getColumnCount()
+      let currentColumn = initialColumn
+
       const grid = GridStack.init(
         {
-          column: GRIDSTACK_COLUMNS,
+          column: initialColumn,
           cellHeight: GRIDSTACK_CELL_HEIGHT,
           margin: GRIDSTACK_MARGIN,
-          sizeToContent: true,
           disableResize: true,
           float: false,
           draggable: {
@@ -98,6 +105,23 @@ export const useFragmentShellDrag = ({
       let ready = false
       let heightFrame = 0
       const observedCards = new Set<HTMLElement>()
+      let resizeFrame = 0
+
+      const hasGridVars = () => {
+        const style = window.getComputedStyle(gridEl)
+        const columnWidth = Number.parseFloat(style.getPropertyValue('--gs-column-width'))
+        const cellHeight = Number.parseFloat(style.getPropertyValue('--gs-cell-height'))
+        return Number.isFinite(columnWidth) && columnWidth > 0 && Number.isFinite(cellHeight) && cellHeight > 0
+      }
+
+      const maybeSetReady = (measured: boolean) => {
+        if (ready || !measured || !hasGridVars()) return
+        ready = true
+        gridEl.dataset.dragReady = 'true'
+      }
+
+      syncGridFromDom(gridEl)
+      maybeSetReady(syncGridHeights(gridEl))
 
       const scheduleHeightSync = () => {
         if (heightFrame) return
@@ -105,10 +129,7 @@ export const useFragmentShellDrag = ({
           heightFrame = 0
           if (dragState.value.active) return
           const measured = syncGridHeights(gridEl)
-          if (!ready && measured) {
-            ready = true
-            gridEl.dataset.dragReady = 'true'
-          }
+          maybeSetReady(measured)
         })
       }
 
@@ -139,6 +160,27 @@ export const useFragmentShellDrag = ({
 
       scanCards()
       mutationObserver?.observe(gridEl, { childList: true, subtree: true })
+
+      const applyColumnMode = () => {
+        const nextColumn = getColumnCount()
+        if (nextColumn === currentColumn) return
+        currentColumn = nextColumn
+        grid.column(nextColumn, 'move')
+        syncGridFromDom(gridEl)
+        syncGridHeights(gridEl)
+      }
+
+      const scheduleResize = () => {
+        if (resizeFrame) return
+        resizeFrame = requestAnimationFrame(() => {
+          resizeFrame = 0
+          if (dragState.value.active) return
+          applyColumnMode()
+        })
+      }
+
+      applyColumnMode()
+      window.addEventListener('resize', scheduleResize)
 
       const collectOrder = () => {
         const nodes = grid.engine.nodes
@@ -178,9 +220,13 @@ export const useFragmentShellDrag = ({
         gridEl.classList.remove('is-dragging')
         const lock = el?.dataset.columnLock
         if (lock) {
-          const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
-          const x = lock === 'right' ? half : 0
-          grid.update(el, { x, w: half })
+          if (currentColumn === 1) {
+            grid.update(el, { x: 0, w: 1, minW: 1, maxW: 1 })
+          } else {
+            const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+            const x = lock === 'right' ? half : 0
+            grid.update(el, { x, w: half })
+          }
         }
         syncOrder()
       }
@@ -197,6 +243,8 @@ export const useFragmentShellDrag = ({
         mutationObserver?.disconnect()
         resizeObserver?.disconnect()
         if (heightFrame) cancelAnimationFrame(heightFrame)
+        if (resizeFrame) cancelAnimationFrame(resizeFrame)
+        window.removeEventListener('resize', scheduleResize)
       })
     },
     { strategy: 'document-ready' }

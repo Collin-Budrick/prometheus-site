@@ -6,7 +6,12 @@ import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { applyHeaderOverride } from './header-overrides'
-import { getGridstackSlotMetrics, parseSlotRows } from './fragment-shell-utils'
+import {
+  GRIDSTACK_CELL_HEIGHT,
+  GRIDSTACK_MARGIN,
+  getGridstackSlotMetrics,
+  parseSlotRows
+} from './fragment-shell-utils'
 import { getFragmentCssHref } from '../fragment-css'
 
 type FragmentShellCopy = {
@@ -182,11 +187,22 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
           const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
           const gridMetrics = getGridstackSlotMetrics(slot, index)
+          const minHeight =
+            typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
+              ? Math.max(0, entry.layout.minHeight)
+              : null
+          const minHeightRows =
+            minHeight && minHeight > 0
+              ? Math.max(1, Math.ceil((minHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
+              : gridMetrics.h
+          const gridItemStyle = minHeight
+            ? { '--fragment-min-height': `${minHeight}px` }
+            : undefined
           const gridItemAttrs = {
             'gs-x': gridMetrics.x,
             'gs-y': gridMetrics.y,
             'gs-w': gridMetrics.w,
-            'gs-h': gridMetrics.h,
+            'gs-h': minHeightRows,
             'gs-min-w': gridMetrics.w,
             'gs-max-w': gridMetrics.w,
             'gs-id': entry?.id
@@ -203,6 +219,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               data-critical={isCritical ? 'true' : undefined}
               data-fragment-id={entry?.id}
               data-column-lock={gridMetrics.column}
+              style={gridItemStyle}
               {...gridItemAttrs}
             >
               {entry ? (
