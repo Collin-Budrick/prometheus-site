@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin, type ProxyOptions, type ViteDevServer } from 'vite'
+import { defineConfig, type Plugin, type ProxyOptions, type UserConfig, type ViteDevServer } from 'vite'
+import type { RollupLog, RollupLogWithString } from 'rolldown'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { staticAdapter } from '@builder.io/qwik-city/adapters/static/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
@@ -82,7 +83,15 @@ const resolvePublicBase = () => {
   if (!raw.startsWith('/')) return `/${raw}`
   return raw.endsWith('/') ? raw : `${raw}/`
 }
+const resolveStaticOrigin = () => {
+  const host = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.prod'
+  const httpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
+  if (host.startsWith('http://') || host.startsWith('https://')) return host
+  const portSuffix = httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
+  return `https://${host}${portSuffix}`
+}
 const publicBase = resolvePublicBase()
+const staticOrigin = resolveStaticOrigin()
 const withBase = (value: string) => {
   const trimmed = value.replace(/^\/+/, '')
   if (publicBase === './') return `./${trimmed}`
@@ -169,7 +178,7 @@ const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
   return hints
 }
 
-const isProtobufEvalWarning = (warning: { code?: string; id?: string; loc?: { file?: string } }) => {
+const isProtobufEvalWarning = (warning: RollupLog) => {
   if (warning.code !== 'EVAL') return false
   const file = warning.loc?.file ?? warning.id ?? ''
   return typeof file === 'string' && file.includes('@protobufjs/inquire')
@@ -393,7 +402,7 @@ const manualChunks = (id: string) => {
   return undefined
 }
 
-export default defineConfig(async (configEnv) => {
+export default defineConfig(async (configEnv): Promise<UserConfig> => {
   const ssrBuild = Boolean(configEnv?.isSsrBuild)
   const ssrInputs = ssrBuild
     ? {
@@ -462,7 +471,7 @@ export default defineConfig(async (configEnv) => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(capacitorBuildEnabled ? [staticAdapter({}), capacitorSsrInputPlugin(ssrInputs)] : []),
+        ...(capacitorBuildEnabled ? [staticAdapter({ origin: staticOrigin }), capacitorSsrInputPlugin(ssrInputs)] : []),
         ...(capacitorBuildEnabled
           ? []
           : [
@@ -475,7 +484,7 @@ export default defineConfig(async (configEnv) => {
                 })
               ]
             }),
-            compression({ algorithm: 'gzip' })
+            compression({ algorithms: ['gzip'] })
           ]),
         serwist({
           swSrc: 'src/service-worker.ts',
@@ -525,7 +534,10 @@ export default defineConfig(async (configEnv) => {
           }
         },
         rolldownOptions: {
-          onwarn(warning, defaultHandler) {
+          onwarn(
+            warning: RollupLog,
+            defaultHandler: (warning: RollupLogWithString | (() => RollupLogWithString)) => void
+          ) {
             if (isProtobufEvalWarning(warning)) return
             defaultHandler(warning)
           }
