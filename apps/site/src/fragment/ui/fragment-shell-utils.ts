@@ -12,6 +12,9 @@ export const DRAG_REORDER_DURATION_MS = 260
 export const DRAG_REORDER_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 export const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
+export const GRIDSTACK_COLUMNS = 12
+export const GRIDSTACK_CELL_HEIGHT = 8
+export const GRIDSTACK_MARGIN = 12
 
 const BENTO_SLOTS_PER_CYCLE = 6
 const BENTO_ROWS_PER_CYCLE = 4
@@ -114,6 +117,43 @@ export const parseSlotRows = (row: string) => {
   const span = spanMatch ? Number.parseInt(spanMatch[1] ?? '', 10) : 1
   const safeSpan = Number.isFinite(span) && span > 0 ? span : 1
   return Array.from({ length: safeSpan }, (_, index) => start + index)
+}
+
+const parseSlotColumn = (column: string) => {
+  const normalized = column.trim().replace(/\s+/g, ' ')
+  if (normalized.includes('/ -1') || normalized.includes('/-1')) {
+    return { x: 0, w: GRIDSTACK_COLUMNS }
+  }
+  const match = normalized.match(/^(\d+)\s*\/\s*span\s+(\d+)$/)
+  if (match) {
+    const start = Number.parseInt(match[1] ?? '', 10)
+    const span = Number.parseInt(match[2] ?? '', 10)
+    if (Number.isFinite(start) && Number.isFinite(span)) {
+      return { x: Math.max(0, start - 1), w: span }
+    }
+  }
+  const spanMatch = normalized.match(/span\s+(\d+)/)
+  if (spanMatch) {
+    const span = Number.parseInt(spanMatch[1] ?? '', 10)
+    if (Number.isFinite(span)) {
+      return { x: 0, w: span }
+    }
+  }
+  return { x: 0, w: GRIDSTACK_COLUMNS }
+}
+
+export const getGridstackSlotMetrics = (slot: BentoSlot) => {
+  const rows = parseSlotRows(slot.row)
+  const rowStart = rows[0] ?? 1
+  const y = Math.max(0, rowStart - 1)
+  const h = 1
+  const { x, w } = parseSlotColumn(slot.column)
+  return {
+    x,
+    y,
+    w,
+    h: Math.max(1, h)
+  }
 }
 
 export const buildBentoSlots = (count: number) => {

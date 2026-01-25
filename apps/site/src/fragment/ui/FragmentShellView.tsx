@@ -6,7 +6,7 @@ import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { applyHeaderOverride } from './header-overrides'
-import { parseSlotRows } from './fragment-shell-utils'
+import { getGridstackSlotMetrics, parseSlotRows } from './fragment-shell-utils'
 import { getFragmentCssHref } from '../fragment-css'
 
 type FragmentShellCopy = {
@@ -138,7 +138,6 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
         <div class="fragment-grid" data-fragment-grid="intro">
           <div
             class="fragment-slot"
-            data-size="big"
             data-variant="text"
             data-critical="true"
             style={{ gridColumn: '1 / -1' }}
@@ -159,7 +158,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           </div>
         </div>
       ) : null}
-      <div ref={gridRef} class="fragment-grid" data-fragment-grid="main">
+      <div ref={gridRef} class="fragment-grid grid-stack" data-fragment-grid="main">
         {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null
           const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
@@ -182,62 +181,63 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const motionDelay = hasCache || isCritical || inInitialViewport ? 0 : index * 120
           const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
           const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
-          const slotMinHeight =
-            typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
-              ? `${entry.layout.minHeight}px`
-              : undefined
-          const slotStyle = {
-            gridColumn: slot.column,
-            gridRow: slot.row,
-            ...(slotMinHeight ? { '--fragment-slot-min-height': slotMinHeight } : {})
+          const gridMetrics = getGridstackSlotMetrics(slot)
+          const gridItemAttrs = {
+            'gs-x': gridMetrics.x,
+            'gs-y': gridMetrics.y,
+            'gs-w': gridMetrics.w,
+            'gs-h': gridMetrics.h,
+            'gs-id': entry?.id
           }
           return (
             <div
-              key={slot.id}
+              key={entry?.id ?? slot.id}
               class={{
-                'fragment-slot': true,
+                'fragment-grid-item': true,
+                'grid-stack-item': true,
                 'is-solo': isSolo,
                 'is-inline': !slot.column.includes('/ -1') && !slot.column.includes('/-1')
               }}
-              data-size={slot.size}
               data-critical={isCritical ? 'true' : undefined}
-              style={slotStyle}
+              data-fragment-id={entry?.id}
+              {...gridItemAttrs}
             >
               {entry ? (
-                <div class="fragment-card-wrap">
-                  <FragmentCard
-                    key={entry.id}
-                    id={entry.id}
-                    fragmentId={entry.id}
-                    column="1 / -1"
-                    motionDelay={motionDelay}
-                    expandedId={expandedId}
-                    layoutTick={layoutTick}
-                    closeLabel={copy.value.fragmentClose}
-                    fragmentLoaded={Boolean(fragment)}
-                    fragmentHasCss={fragmentHasCss}
-                    disableMotion={isCritical}
-                    critical={isCritical}
-                    expandable={entry.expandable}
-                    fullWidth={entry.fullWidth}
-                    size={slot.size}
-                    dragState={dragState}
-                  >
-                    {fragment ? (
-                      useHtml ? (
-                        <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
+                <div class="grid-stack-item-content">
+                  <div class="fragment-card-wrap">
+                    <FragmentCard
+                      key={entry.id}
+                      id={entry.id}
+                      fragmentId={entry.id}
+                      column="1 / -1"
+                      motionDelay={motionDelay}
+                      expandedId={expandedId}
+                      layoutTick={layoutTick}
+                      closeLabel={copy.value.fragmentClose}
+                      fragmentLoaded={Boolean(fragment)}
+                      fragmentHasCss={fragmentHasCss}
+                      disableMotion={isCritical}
+                      critical={isCritical}
+                      expandable={entry.expandable}
+                      fullWidth={entry.fullWidth}
+                      dragState={dragState}
+                    >
+                      {fragment ? (
+                        useHtml ? (
+                          <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
+                        ) : (
+                          <FragmentRenderer node={renderNode ?? fragment.tree} />
+                        )
+                      ) : useFallbackHtml ? (
+                        <div class="fragment-html" dangerouslySetInnerHTML={fallbackHtml ?? ''} />
                       ) : (
-                        <FragmentRenderer node={renderNode ?? fragment.tree} />
-                      )
-                    ) : useFallbackHtml ? (
-                      <div class="fragment-html" dangerouslySetInnerHTML={fallbackHtml ?? ''} />
-                    ) : (
-                      <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
-                        <div class="loader" aria-hidden="true" />
-                        <span class="sr-only">{copy.value.fragmentLoading.replace('{id}', entry.id)}</span>
-                      </div>
-                    )}
-                  </FragmentCard>
+                        <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
+                          <div class="loader" aria-hidden="true" />
+                          <span class="sr-only">{copy.value.fragmentLoading.replace('{id}', entry.id)}</span>
+                        </div>
+                      )}
+                    </FragmentCard>
+                  </div>
                 </div>
               ) : null}
             </div>

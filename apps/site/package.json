@@ -19,6 +19,7 @@
     "@prometheus/platform": "workspace:*",
     "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "^0.0.13",
+    "gridstack": "^12.4.2",
     "nostr-tools": "^2.20.0",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121",

@@ -37,22 +37,61 @@
     @apply flex flex-col gap-6;
   }
 
+  .fragment-grid.grid-stack {
+    display: block;
+    gap: 0;
+  }
+
+  .fragment-grid.grid-stack:not([data-drag-ready='true']) > .grid-stack-item {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+  }
+
+  .fragment-grid.grid-stack:not([data-drag-ready='true']) > .grid-stack-item > .grid-stack-item-content {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    margin: 0;
+  }
+
+  .fragment-grid-item {
+    position: relative;
+    min-height: 0;
+  }
+
+  .fragment-grid-item:not([data-critical]):not([data-variant='text']) .fragment-card-body {
+    content-visibility: auto;
+  }
+
+  .grid-stack-item-content {
+    height: auto;
+    overflow: visible;
+  }
+
+  .grid-stack-item-content > .fragment-card-wrap {
+    width: 100%;
+    height: auto;
+  }
+
   .fragment-slot {
     position: relative;
     display: flex;
-    --fragment-slot-height: var(--fragment-card-small-height);
-    height: var(--fragment-slot-height);
-    min-height: var(--fragment-slot-height);
+    height: auto;
+    min-height: 0;
   }
 
   .fragment-slot:not([data-critical]):not([data-variant='text']) .fragment-card-body {
     content-visibility: auto;
-    contain-intrinsic-size: 1px var(--fragment-slot-min-height, var(--fragment-slot-height));
   }
 
   .fragment-slot > .fragment-card-wrap {
     width: 100%;
-    height: 100%;
+    height: auto;
   }
 
   .fragment-grid > .fragment-slot {
@@ -105,6 +144,15 @@
     align-items: stretch;
   }
 
+  .fragment-grid.grid-stack,
+  .fragment-grid.grid-stack.is-stacked {
+    display: block;
+    flex-direction: unset;
+    flex-wrap: unset;
+    align-items: unset;
+    gap: 0;
+  }
+
   .fragment-grid.is-stacked > .fragment-slot {
     flex-basis: auto;
     width: 100%;
@@ -115,12 +163,6 @@
     max-width: 100%;
   }
 
-  .fragment-grid > .fragment-slot[data-size='big'] {
-    flex-basis: 100%;
-    width: 100%;
-  }
-
-
   .fragment-grid.is-dragging {
     cursor: grabbing;
     user-select: none;
@@ -128,6 +170,12 @@
   }
 
   .fragment-card.is-dragging {
+    opacity: 0.85;
+    cursor: grabbing;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+  }
+
+  .grid-stack-item.ui-draggable-dragging .fragment-card {
     opacity: 0.85;
     cursor: grabbing;
     box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
@@ -317,37 +365,10 @@
     animation: card-glass-bloom 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .fragment-grid > .fragment-card[data-size="small"] {
-    height: var(--fragment-card-small-height);
-    max-height: var(--fragment-card-small-height);
-  }
-
-  .fragment-grid > .fragment-card[data-size="big"] {
-    height: var(--fragment-card-big-height);
-    max-height: var(--fragment-card-big-height);
-  }
-
-  .fragment-grid > .fragment-card[data-size="tall"] {
-    height: var(--fragment-card-tall-height);
-    max-height: var(--fragment-card-tall-height);
-  }
-
-  .fragment-grid > .fragment-card:only-of-type {
+  .fragment-slot > .fragment-card-wrap > .fragment-card,
+  .grid-stack-item-content > .fragment-card-wrap > .fragment-card {
     height: auto;
     max-height: none;
-  }
-
-  .fragment-slot[data-size="big"] {
-    --fragment-slot-height: var(--fragment-card-big-height);
-  }
-
-  .fragment-slot[data-size="tall"] {
-    --fragment-slot-height: var(--fragment-card-tall-height);
-  }
-
-  .fragment-slot > .fragment-card-wrap > .fragment-card {
-    height: 100%;
-    max-height: 100%;
   }
 
   .fragment-slot[data-variant='text'] {
@@ -366,23 +387,23 @@
 
   .fragment-slot.is-solo {
     height: auto;
-    min-height: var(--fragment-slot-height);
+    min-height: 0;
   }
 
   .fragment-slot.is-solo > .fragment-card-wrap {
     height: auto;
-    min-height: var(--fragment-slot-height);
+    min-height: 0;
   }
 
   .fragment-slot.is-solo > .fragment-card-wrap > .fragment-card {
     height: auto;
     max-height: none;
-    min-height: var(--fragment-slot-height);
+    min-height: 0;
   }
 
   .fragment-grid.is-stacked .fragment-slot {
     height: auto;
-    min-height: var(--fragment-slot-height);
+    min-height: 0;
   }
 
   .fragment-grid.is-stacked .fragment-slot > .fragment-card-wrap {
@@ -397,18 +418,18 @@
   @media (max-width: 1024px) {
     .fragment-grid > .fragment-slot {
       height: auto;
-      min-height: var(--fragment-slot-min-height, 0);
+      min-height: 0;
     }
 
     .fragment-grid > .fragment-slot > .fragment-card-wrap {
       height: auto;
-      min-height: var(--fragment-slot-min-height, 0);
+      min-height: 0;
     }
 
     .fragment-grid > .fragment-slot > .fragment-card-wrap > .fragment-card {
       height: auto;
       max-height: none;
-      min-height: var(--fragment-slot-min-height, 0);
+      min-height: 0;
     }
 
     .fragment-grid > .fragment-card {

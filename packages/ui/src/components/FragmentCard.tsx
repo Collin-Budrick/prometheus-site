@@ -59,7 +59,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const resolvedVariant = variant ?? 'card'
     const isDraggable = draggable !== false
     const waveIn = resolvedVariant === 'text' && !disableMotion
-    const resolvedSize = size ?? 'small'
+    const resolvedSize = size
     const resolvedInlineSpan =
       typeof inlineSpan === 'number' && Number.isFinite(inlineSpan) && inlineSpan > 0
         ? Math.min(12, Math.floor(inlineSpan))
@@ -533,29 +533,18 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       { strategy: 'document-ready' }
     )
 
-    const sizeHeight =
-      resolvedSize === 'small'
-        ? 'var(--fragment-card-small-height)'
-        : resolvedSize === 'big'
-          ? 'var(--fragment-card-big-height)'
-          : resolvedSize === 'tall'
-            ? 'var(--fragment-card-tall-height)'
-            : undefined
-    const lockedHeight = sizeHeight ?? (maxHeight.value ? `${Math.ceil(maxHeight.value)}px` : undefined)
-    const resolvedRow = row ?? (resolvedSize === 'tall' ? 'span 2' : undefined)
+    const resolvedRow = row
     const cardStyle = {
       gridColumn: resolvedColumn,
       gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
-      '--layout-version': `${layoutVersion}`,
-      minHeight: sizeHeight ? undefined : lockedHeight
+      '--layout-version': `${layoutVersion}`
     } as Record<string, string>
 
     const placeholderStyle = {
       gridColumn: resolvedColumn,
       gridRow: resolvedRow,
-      display: 'none',
-      minHeight: lockedHeight
+      display: 'none'
     } as Record<string, string>
 
     return (
@@ -565,7 +554,6 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           ref={cardRef}
           class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': isInline }}
           style={cardStyle}
-          data-size={resolvedSize}
           data-motion={disableMotion ? undefined : ''}
           data-motion-skip-visible={disableMotion ? undefined : ''}
           data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}
