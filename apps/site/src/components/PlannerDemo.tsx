@@ -156,13 +156,10 @@ export const PlannerDemo = component$(() => {
               data-cache={cacheHit ? 'hit' : 'miss'}
               data-render={renderState}
               data-revalidate={revalidateState}
+              data-title={fragment.label}
+              data-meta={fragment.id}
             >
-              <div class="planner-demo-card-header">
-                <div class="planner-demo-card-title">{fragment.label}</div>
-                <div class="planner-demo-card-meta">{fragment.id}</div>
-              </div>
-              <div class="planner-demo-row">
-                <span class="planner-demo-label">{copy.labels.dependencies}</span>
+              <div class="planner-demo-row" data-label={copy.labels.dependencies}>
                 <span class="planner-demo-value">
                   {fragment.deps.length ? fragment.deps.join(' + ') : copy.root}
                 </span>
@@ -170,8 +167,7 @@ export const PlannerDemo = component$(() => {
                   {stageIndex.value >= 0 ? copy.resolved : copy.pending}
                 </span>
               </div>
-              <div class="planner-demo-row">
-                <span class="planner-demo-label">{copy.labels.cache}</span>
+              <div class="planner-demo-row" data-label={copy.labels.cache}>
                 <button
                   class="planner-demo-toggle"
                   type="button"
@@ -184,8 +180,7 @@ export const PlannerDemo = component$(() => {
                   {showCache ? copy.checked : copy.waitingCache}
                 </span>
               </div>
-              <div class="planner-demo-row">
-                <span class="planner-demo-label">{copy.labels.runtime}</span>
+              <div class="planner-demo-row" data-label={copy.labels.runtime}>
                 <span class="planner-demo-pill" data-state={showRuntime ? 'ready' : 'idle'}>
                   {showRuntime ? fragment.runtime : copy.selecting}
                 </span>

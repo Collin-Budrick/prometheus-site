@@ -104,6 +104,7 @@ export const WasmRendererDemo = component$(() => {
               data-label={copy.metrics.burst}
               data-value={`${throughput.value} op/s`}
               aria-label={`${copy.metrics.burst} ${throughput.value} op/s`}
+              role="group"
             >
             </div>
             <div
@@ -111,6 +112,7 @@ export const WasmRendererDemo = component$(() => {
               data-label={copy.metrics.hotPath}
               data-value={`${hotPath.value} pts`}
               aria-label={`${copy.metrics.hotPath} ${hotPath.value} pts`}
+              role="group"
             >
             </div>
           </div>

@@ -365,27 +365,28 @@
     border-color: rgb(var(--stroke) / 0.7);
   }
 
+  .planner-demo-card::before {
+    content: attr(data-title);
+    @apply font-semibold text-slate-900 text-sm;
+    grid-column: 1 / -1;
+    order: -2;
+    color: rgb(var(--ink));
+  }
+
+  .planner-demo-card::after {
+    content: attr(data-meta);
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    grid-column: 1 / -1;
+    order: -1;
+    color: rgb(var(--muted-soft));
+  }
+
   .planner-demo-card[data-cache="miss"] {
     border-color: rgba(249, 115, 22, 0.4);
   }
 
   .planner-demo-card[data-cache="hit"] {
     border-color: rgba(20, 184, 166, 0.35);
-  }
-
-  .planner-demo-card-header {
-    display: grid;
-    gap: 4px;
-  }
-
-  .planner-demo-card-title {
-    @apply font-semibold text-slate-900 text-sm;
-    color: rgb(var(--ink));
-  }
-
-  .planner-demo-card-meta {
-    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
-    color: rgb(var(--muted-soft));
   }
 
   .planner-demo-row {
@@ -395,14 +396,17 @@
     gap: 8px;
   }
 
-  .planner-demo-label {
+  .planner-demo-row::before {
+    content: attr(data-label);
     @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    grid-column: 1;
     color: rgb(var(--muted-soft));
   }
 
   .planner-demo-value {
     @apply text-slate-600 text-xs;
     justify-self: start;
+    grid-column: 2;
     color: rgb(var(--muted));
   }
 
@@ -414,6 +418,7 @@
     justify-content: center;
     line-height: 1;
     justify-self: end;
+    grid-column: 3;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted-soft));
@@ -435,6 +440,7 @@
     line-height: 1;
     transition: transform 160ms ease;
     justify-self: start;
+    grid-column: 2;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
     color: rgb(var(--muted));
