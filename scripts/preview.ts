@@ -28,6 +28,9 @@ if (resolvedDeviceHost) {
 } else {
   process.env.PROMETHEUS_DEVICE_HOST = ''
 }
+if (!process.env.VITE_CAPACITOR?.trim()) {
+  process.env.VITE_CAPACITOR = '1'
+}
 
 const resolveCapacitorServerUrl = (host: string, httpsPort: string, allowFallback = true) => {
   const explicit = process.env.CAPACITOR_SERVER_URL?.trim()
@@ -350,7 +353,7 @@ const previewPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '543
 const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const previewWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
 const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
-const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.prod'
+const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
 const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const previewDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
 const useDeviceHost = Boolean(previewDeviceHost)
@@ -415,6 +418,7 @@ const resolvedWebTransportBase = explicitWebTransportBase
 const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
 const previewApiBase =
   process.env.VITE_API_BASE?.trim() || (previewOrigin ? `${previewOrigin}/api` : '')
+const previewBuildApiBase = process.env.API_BASE?.trim() || `http://127.0.0.1:${previewApiPort}`
 const previewWebTransportBase =
   process.env.VITE_WEBTRANSPORT_BASE?.trim() || resolvedWebTransportBase
 
@@ -453,39 +457,69 @@ const composeEnv = {
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
 
-const buildCapacitorBundle = () => {
+const waitForApiHealth = async (port: string) => {
+  const timeoutMs = 30000
+  const intervalMs = 500
+  const url = `http://127.0.0.1:${port}/health`
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url, { headers: { accept: 'application/json' } })
+      if (response.ok) return
+    } catch {
+      // ignore and retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+
+  console.warn(`[preview] API healthcheck timed out (${url}). Continuing with build.`)
+}
+
+const buildCapacitorBundle = async () => {
   const siteRoot = path.resolve(root, 'apps', 'site')
   const androidRoot = path.join(siteRoot, 'android')
   if (!existsSync(androidRoot)) return
-  const result = spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build:capacitor'], {
-    stdio: 'inherit',
-    cwd: root,
-    env: {
-      ...process.env,
-      VITE_API_BASE: previewApiBase,
-      API_BASE: previewApiBase,
-      VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
-      WEBTRANSPORT_BASE: previewWebTransportBase,
-      VITE_ENABLE_PREFETCH: previewEnablePrefetch,
-      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
-      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
-      VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
-      VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
-      VITE_ENABLE_HIGHLIGHT: previewEnableHighlight,
-      VITE_HIGHLIGHT_PROJECT_ID: previewHighlightProjectId,
-      VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
-      VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
-      VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
-      VITE_HIGHLIGHT_SAMPLE_RATE: previewHighlightSampleRate,
-      VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
-      VITE_P2P_RELAY_BASES: previewP2pRelayBases,
-      VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,
-      VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
-      VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
-      VITE_DISABLE_SW: previewDisableSw
-    }
-  })
-  if (result.status !== 0) process.exit(result.status ?? 1)
+  await waitForApiHealth(previewApiPort)
+  const buildEnv = {
+    ...process.env,
+    PROMETHEUS_WEB_HOST: previewWebHost,
+    PROMETHEUS_HTTPS_PORT: previewHttpsPort,
+    PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
+    PROMETHEUS_API_PORT: previewApiPort,
+    VITE_API_BASE: previewApiBase,
+    API_BASE: previewBuildApiBase,
+    VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
+    WEBTRANSPORT_BASE: previewWebTransportBase,
+    VITE_ENABLE_PREFETCH: previewEnablePrefetch,
+    VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
+    VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
+    VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
+    VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
+    VITE_ENABLE_HIGHLIGHT: previewEnableHighlight,
+    VITE_HIGHLIGHT_PROJECT_ID: previewHighlightProjectId,
+    VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
+    VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
+    VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
+    VITE_HIGHLIGHT_SAMPLE_RATE: previewHighlightSampleRate,
+    VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
+    VITE_P2P_RELAY_BASES: previewP2pRelayBases,
+    VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,
+    VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
+    VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
+    VITE_DISABLE_SW: previewDisableSw,
+    VITE_CAPACITOR: '1'
+  }
+  const runViteBuild = (args: string[]) =>
+    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', ...args], {
+      stdio: 'inherit',
+      cwd: root,
+      env: buildEnv
+    })
+  const clientResult = runViteBuild([])
+  if (clientResult.status !== 0) process.exit(clientResult.status ?? 1)
+  const ssrResult = runViteBuild(['--ssr'])
+  if (ssrResult.status !== 0) process.exit(ssrResult.status ?? 1)
 }
 
 const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
@@ -623,7 +657,7 @@ for (const target of buildResults) {
 }
 saveBuildCache(cache)
 
-buildCapacitorBundle()
+await buildCapacitorBundle()
 syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
 autoDeployAndroid(previewDeviceHost, previewDeviceWebPort)
 
