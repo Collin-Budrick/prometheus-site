@@ -22,6 +22,8 @@ export const ReactBinaryDemo = component$(() => {
   const binaryChunks = useSignal(initialChunks)
 
   const actionLabel = copy.actions[stage.id as keyof typeof copy.actions]
+  const binaryStream = binaryChunks.value.join(' ')
+  const domPreview = domNodes.map((node) => `<${node}>`).join(' ')
 
   const advance = $(() => {
     stageIndex.value = (stageIndex.value + 1) % copy.stages.length
@@ -89,24 +91,39 @@ export const ReactBinaryDemo = component$(() => {
         </div>
       </div>
       <div class="react-binary-steps" role="tablist" aria-label={copy.ariaStages}>
-        {copy.stages.map((item, index) => (
-          <button
-            key={item.id}
-            class="react-binary-step"
-            data-step={item.id}
-            type="button"
-            aria-pressed={stageIndex.value === index}
-            onClick$={() => {
-              stageIndex.value = index
-            }}
-          >
-            <span class="react-binary-step-dot" aria-hidden="true" />
-            {item.label}
-          </button>
-        ))}
+        {copy.stages.map((item, index) => {
+          const isActive = stageIndex.value === index
+          const tabId = `react-binary-tab-${item.id}`
+          const panelId = `react-binary-panel-${item.id}`
+          return (
+            <button
+              key={item.id}
+              class="react-binary-step"
+              data-step={item.id}
+              type="button"
+              id={tabId}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={panelId}
+              tabIndex={isActive ? 0 : -1}
+              onClick$={() => {
+                stageIndex.value = index
+              }}
+            >
+              <span class="react-binary-step-dot" aria-hidden="true" />
+              {item.label}
+            </button>
+          )
+        })}
       </div>
       <div class="react-binary-track">
-        <div class="react-binary-panel" data-panel="react">
+        <div
+          class="react-binary-panel"
+          data-panel="react"
+          id="react-binary-panel-react"
+          role="tabpanel"
+          aria-labelledby="react-binary-tab-react"
+        >
           <div class="react-binary-panel-title">{copy.panels.reactTitle}</div>
           <div class="react-binary-node-tree">
             {reactNodes.map((node, index) => (
@@ -118,24 +135,30 @@ export const ReactBinaryDemo = component$(() => {
           <div class="react-binary-caption">{copy.panels.reactCaption}</div>
         </div>
         <div class="react-binary-connector" aria-hidden="true" />
-        <div class="react-binary-panel" data-panel="binary">
+        <div
+          class="react-binary-panel"
+          data-panel="binary"
+          id="react-binary-panel-binary"
+          role="tabpanel"
+          aria-labelledby="react-binary-tab-binary"
+        >
           <div class="react-binary-panel-title">{copy.panels.binaryTitle}</div>
           <div class="react-binary-bits" role="group" aria-label={copy.footer.binaryStream}>
-            {binaryChunks.value.map((chunk, index) => (
-              <span key={`binary-${index}`} data-anim="true">
-                {chunk}
-              </span>
-            ))}
+            <span data-anim="true">{binaryStream}</span>
           </div>
           <div class="react-binary-caption">{copy.panels.binaryCaption}</div>
         </div>
         <div class="react-binary-connector" aria-hidden="true" />
-        <div class="react-binary-panel" data-panel="qwik">
+        <div
+          class="react-binary-panel"
+          data-panel="qwik"
+          id="react-binary-panel-qwik"
+          role="tabpanel"
+          aria-labelledby="react-binary-tab-qwik"
+        >
           <div class="react-binary-panel-title">{copy.panels.qwikTitle}</div>
           <div class="react-binary-dom">
-            {domNodes.map((node) => (
-              <span key={node}>{`<${node}>`}</span>
-            ))}
+            <span>{domPreview}</span>
           </div>
           <div class="react-binary-caption">{copy.panels.qwikCaption}</div>
         </div>

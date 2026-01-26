@@ -34,10 +34,10 @@ const planner: FragmentDefinition = {
       ),
       h('planner-demo', null),
       h('div', { class: 'matrix' }, [
-        h('div', { class: 'cell' }, [text('Dependencies'), h('strong', null, text('Resolved'))]),
-        h('div', { class: 'cell' }, [text('Cache hits'), h('strong', null, text('Parallel'))]),
-        h('div', { class: 'cell' }, [text('Runtime'), h('strong', null, text('Edge/Node'))]),
-        h('div', { class: 'cell' }, [text('Revalidation'), h('strong', null, text('Async'))])
+      h('div', { class: 'cell', 'data-value': 'Resolved' }, [text('Dependencies')]),
+      h('div', { class: 'cell', 'data-value': 'Parallel' }, [text('Cache hits')]),
+      h('div', { class: 'cell', 'data-value': 'Edge/Node' }, [text('Runtime')]),
+      h('div', { class: 'cell', 'data-value': 'Async' }, [text('Revalidation')])
       ])
     ])
   }
@@ -68,10 +68,10 @@ const ledger: FragmentDefinition = {
       ),
       h('wasm-renderer-demo', null),
       h('div', { class: 'matrix' }, [
-        h('div', { class: 'cell' }, [text('Burst throughput'), h('strong', null, text(`${burst} op/s`))]),
-        h('div', { class: 'cell' }, [text('Hot-path score'), h('strong', null, text(`${hotPath} pts`))]),
-        h('div', { class: 'cell' }, [text('Cache TTL'), h('strong', null, text('30s'))]),
-        h('div', { class: 'cell' }, [text('Stale TTL'), h('strong', null, text('120s'))])
+      h('div', { class: 'cell', 'data-value': `${burst} op/s` }, [text('Burst throughput')]),
+      h('div', { class: 'cell', 'data-value': `${hotPath} pts` }, [text('Hot-path score')]),
+      h('div', { class: 'cell', 'data-value': '30s' }, [text('Cache TTL')]),
+      h('div', { class: 'cell', 'data-value': '120s' }, [text('Stale TTL')])
       ])
     ])
   }

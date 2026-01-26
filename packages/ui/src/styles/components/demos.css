@@ -118,7 +118,6 @@
     stroke-linecap: round;
     transform: rotate(-90deg);
     transform-origin: 60px 60px;
-    transition: stroke-dashoffset 600ms ease;
   }
 
   .preact-island-dial-hand {
@@ -623,7 +622,7 @@
     color: rgb(var(--accent-strong));
   }
 
-  .react-binary-step[aria-pressed="true"] {
+  .react-binary-step[aria-selected="true"] {
     @apply border-amber-200/80 bg-amber-50 text-amber-700;
     background-color: rgb(var(--accent) / 0.12);
     border-color: rgb(var(--accent) / 0.3);
@@ -637,7 +636,7 @@
     background: rgb(var(--muted-faint) / 0.7);
   }
 
-  .react-binary-step[aria-pressed="true"] .react-binary-step-dot {
+  .react-binary-step[aria-selected="true"] .react-binary-step-dot {
     background: rgb(var(--accent));
     box-shadow: 0 0 8px rgba(249, 115, 22, 0.35);
   }
@@ -801,48 +800,6 @@
     background: rgb(var(--accent) / 0.12);
     border-color: rgb(var(--accent) / 0.25);
     animation: binary-flash 1.6s ease-in-out infinite;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(3) {
-    animation-delay: 0.3s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(4) {
-    animation-delay: 0.45s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(5) {
-    animation-delay: 0.6s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(6) {
-    animation-delay: 0.75s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(7) {
-    animation-delay: 0.9s;
-  }
-
-  .react-binary-demo[data-stage="binary"]
-    .react-binary-bits
-    span[data-anim="true"]:nth-child(8) {
-    animation-delay: 1.05s;
   }
 
   .react-binary-dom {
@@ -1094,13 +1051,21 @@
   .wasm-demo-metric {
     @apply rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2;
     @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    display: grid;
+    gap: 4px;
     background-color: rgb(var(--surface-soft));
     border-color: rgb(var(--stroke) / 0.7);
     color: rgb(var(--muted-soft));
   }
 
-  .wasm-demo-metric strong {
-    @apply block mt-1 font-semibold text-slate-900 text-base;
+  .wasm-demo-metric::before {
+    content: attr(data-label);
+    display: block;
+  }
+
+  .wasm-demo-metric::after {
+    content: attr(data-value);
+    @apply block font-semibold text-slate-900 text-base;
     color: rgb(var(--ink));
   }
 

@@ -99,13 +99,19 @@ export const WasmRendererDemo = component$(() => {
         <div class="wasm-demo-panel" data-panel="fragment">
           <div class="wasm-demo-panel-title">{copy.panels.fragment}</div>
           <div class="wasm-demo-metrics">
-            <div class="wasm-demo-metric">
-              <span>{copy.metrics.burst}</span>
-              <strong>{throughput.value} op/s</strong>
+            <div
+              class="wasm-demo-metric"
+              data-label={copy.metrics.burst}
+              data-value={`${throughput.value} op/s`}
+              aria-label={`${copy.metrics.burst} ${throughput.value} op/s`}
+            >
             </div>
-            <div class="wasm-demo-metric">
-              <span>{copy.metrics.hotPath}</span>
-              <strong>{hotPath.value} pts</strong>
+            <div
+              class="wasm-demo-metric"
+              data-label={copy.metrics.hotPath}
+              data-value={`${hotPath.value} pts`}
+              aria-label={`${copy.metrics.hotPath} ${hotPath.value} pts`}
+            >
             </div>
           </div>
           <div class="wasm-demo-bar">
