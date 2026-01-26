@@ -537,10 +537,7 @@ if (!useDeviceHost) {
   webEnv.VITE_HMR_CLIENT_PORT = devHttpsPort
   webEnv.VITE_HMR_PORT = '4173'
 } else {
-  webEnv.VITE_HMR_HOST = devHostForVite
-  webEnv.VITE_HMR_PROTOCOL = 'ws'
-  webEnv.VITE_HMR_CLIENT_PORT = devDeviceWebPort
-  webEnv.VITE_HMR_PORT = devDeviceWebPort
+  // Let Vite infer HMR host/protocol from the page origin in device mode.
 }
 
 syncCapacitorAndroid(bunBin, resolveCapacitorServerUrl(devWebHost, devHttpsPort))
