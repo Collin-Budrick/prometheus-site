@@ -102,6 +102,35 @@ const normalizeHost = (value?: string) => {
     return undefined
   }
 }
+
+const resolveDeviceApiBase = (options: {
+  deviceHost?: string
+  deviceProtocol?: string
+  apiPort?: string
+}) => {
+  const rawHost = options.deviceHost?.trim()
+  if (!rawHost) return ''
+  const protocol = options.deviceProtocol?.trim() || 'http'
+  const port = options.apiPort?.trim() || '4000'
+  if (rawHost.startsWith('http://') || rawHost.startsWith('https://')) {
+    try {
+      const url = new URL(rawHost)
+      if (url.port) return url.origin
+      return port ? `${url.origin}:${port}` : url.origin
+    } catch {
+      return ''
+    }
+  }
+  const defaultPort = protocol === 'https' ? '443' : '80'
+  const portSuffix = port && port !== defaultPort ? `:${port}` : ''
+  return `${protocol}://${rawHost}${portSuffix}`
+}
+
+const isLocalApiBase = (value: string) => {
+  if (!value) return true
+  if (value.startsWith('/')) return true
+  return value.includes('127.0.0.1') || value.includes('localhost')
+}
 const publicBase = resolvePublicBase()
 const staticOrigin = resolveStaticOrigin()
 const withBase = (value: string) => {
@@ -491,7 +520,20 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
     const capacitorBuildEnabled = isTruthyEnv(process.env.VITE_CAPACITOR)
-    const publicAppConfig = resolveAppConfig(process.env)
+    const deviceApiBase = resolveDeviceApiBase({
+      deviceHost: process.env.PROMETHEUS_DEVICE_HOST,
+      deviceProtocol: process.env.PROMETHEUS_DEVICE_PROTOCOL,
+      apiPort: process.env.PROMETHEUS_API_PORT
+    })
+    const appEnv =
+      capacitorBuildEnabled && deviceApiBase
+        ? { ...process.env, VITE_API_BASE: process.env.VITE_API_BASE?.trim() || deviceApiBase }
+        : process.env
+    const baseAppConfig = resolveAppConfig(appEnv)
+    const publicAppConfig =
+      capacitorBuildEnabled && deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
+        ? { ...baseAppConfig, apiBase: deviceApiBase }
+        : baseAppConfig
     const binding = await loadQwikBinding()
     const bundleVisualizer = shouldVisualizeBundle
       ? visualizer({

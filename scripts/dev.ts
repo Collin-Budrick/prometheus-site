@@ -25,6 +25,36 @@ const isPrivateIpv4 = (value: string) => {
   return octet >= 16 && octet <= 31
 }
 
+const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+
+const resolveWindowsIpv4FromIpconfig = () => {
+  if (!isWsl) return undefined
+  const result = spawnSync('ipconfig.exe', ['/all'], { encoding: 'utf8' })
+  if (result.status !== 0 || !result.stdout) return undefined
+  const matches = Array.from(result.stdout.matchAll(/IPv4 Address[^\d]*([\d.]+)/g))
+    .map((match) => match[1])
+    .filter((value) => value && isPrivateIpv4(value))
+  if (!matches.length) return undefined
+  const preferred = matches.find((value) => value.startsWith('192.168.'))
+  return preferred || matches[0]
+}
+
+const resolveWindowsIpv4 = () => {
+  if (!isWsl) return undefined
+  const script =
+    "$ips = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[0-1])\\.)' } | Select-Object -ExpandProperty IPAddress; " +
+    "if ($ips) { $ips }"
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], { encoding: 'utf8' })
+  if (result.status !== 0 || !result.stdout) return resolveWindowsIpv4FromIpconfig()
+  const candidates = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && isPrivateIpv4(line))
+  if (!candidates.length) return resolveWindowsIpv4FromIpconfig()
+  const preferred = candidates.find((value) => value.startsWith('192.168.'))
+  return preferred || candidates[0]
+}
+
 const resolveLocalIpv4 = () => {
   const nets = networkInterfaces()
   const candidates: string[] = []
@@ -42,7 +72,7 @@ const resolveLocalIpv4 = () => {
 
 const resolveDeviceHost = () => {
   const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (!raw) return resolveLocalIpv4()
+  if (!raw) return resolveWindowsIpv4() ?? resolveLocalIpv4()
   const lowered = raw.toLowerCase()
   if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
   return raw
@@ -362,7 +392,6 @@ const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim
 const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
 const devRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
-const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const isWindowsMount = root.startsWith('/mnt/')
 const enablePollingWatch = isWsl && isWindowsMount
 
