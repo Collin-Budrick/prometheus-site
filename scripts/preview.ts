@@ -15,9 +15,33 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
+const defaultDeviceHost = '192.168.1.138'
+const resolveDeviceHost = () => {
+  const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
+  if (!raw) return defaultDeviceHost
+  const lowered = raw.toLowerCase()
+  if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
+  return raw
+}
+const resolvedDeviceHost = resolveDeviceHost()
+if (resolvedDeviceHost) {
+  process.env.PROMETHEUS_DEVICE_HOST = resolvedDeviceHost
+} else {
+  process.env.PROMETHEUS_DEVICE_HOST = ''
+}
+
 const resolveCapacitorServerUrl = (host: string, httpsPort: string, allowFallback = true) => {
   const explicit = process.env.CAPACITOR_SERVER_URL?.trim()
   if (explicit) return explicit
+  const deviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
+  if (deviceHost) {
+    if (deviceHost.startsWith('http://') || deviceHost.startsWith('https://')) return deviceHost
+    const deviceProtocol = process.env.PROMETHEUS_DEVICE_PROTOCOL?.trim() || 'http'
+    const devicePort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
+    const defaultPort = deviceProtocol === 'https' ? '443' : '80'
+    const portSuffix = devicePort && devicePort !== defaultPort ? `:${devicePort}` : ''
+    return `${deviceProtocol}://${deviceHost}${portSuffix}`
+  }
   if (!allowFallback) return undefined
   const trimmedHost = host.trim()
   if (!trimmedHost) return undefined
@@ -38,6 +62,112 @@ const resolveBunBin = () => {
 const bunBin = resolveBunBin()
 
 const resolveNodeBin = () => process.env.PROMETHEUS_NODE_BINARY?.trim() || 'node'
+
+const truthyValues = new Set(['1', 'true', 'yes', 'on'])
+const falsyValues = new Set(['0', 'false', 'no', 'off', 'disabled'])
+const resolveBoolean = (value: string | undefined, fallback: boolean) => {
+  if (!value) return fallback
+  const normalized = value.trim().toLowerCase()
+  if (truthyValues.has(normalized)) return true
+  if (falsyValues.has(normalized)) return false
+  return fallback
+}
+const normalizeHost = (value?: string) => {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  try {
+    const url =
+      trimmed.startsWith('http://') || trimmed.startsWith('https://') ? new URL(trimmed) : new URL(`http://${trimmed}`)
+    return url.hostname
+  } catch {
+    return trimmed
+  }
+}
+const parseAdbDevices = (output: string) =>
+  output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('List of devices'))
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts.length >= 2 && parts[1] === 'device')
+    .map((parts) => parts[0])
+
+const resolveAdbSerial = (
+  adbBin: string,
+  explicitSerial: string | undefined,
+  waitForDevice: boolean,
+  waitTimeoutMs: number
+) => {
+  const listDevices = () => spawnSync(adbBin, ['devices', '-l'], { encoding: 'utf8' })
+  const tryWait = () => {
+    if (!waitForDevice) return
+    const waitArgs = explicitSerial ? ['-s', explicitSerial, 'wait-for-device'] : ['wait-for-device']
+    const waited = spawnSync(adbBin, waitArgs, { timeout: waitTimeoutMs, stdio: 'inherit' })
+    if (waited.error && (waited.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+      console.warn('[android] Timed out waiting for a device.')
+    }
+  }
+
+  let result = listDevices()
+  if (result.error) {
+    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.warn('[android] adb not found; skipping Android auto-deploy.')
+    } else {
+      console.warn('[android] adb is unavailable; skipping Android auto-deploy.')
+    }
+    return undefined
+  }
+  if (result.status !== 0) {
+    console.warn('[android] adb devices failed; skipping Android auto-deploy.')
+    return undefined
+  }
+  let devices = parseAdbDevices(result.stdout || '')
+
+  if (explicitSerial) {
+    if (devices.includes(explicitSerial)) return explicitSerial
+    tryWait()
+    result = listDevices()
+    if (result.status === 0) {
+      devices = parseAdbDevices(result.stdout || '')
+      if (devices.includes(explicitSerial)) return explicitSerial
+    }
+    console.warn('[android] Requested device not detected; skipping Android auto-deploy.')
+    return undefined
+  }
+
+  if (devices.length === 1) return devices[0]
+  if (devices.length === 0) {
+    tryWait()
+    result = listDevices()
+    if (result.status === 0) {
+      devices = parseAdbDevices(result.stdout || '')
+      if (devices.length === 1) return devices[0]
+    }
+  }
+
+  if (devices.length > 1) {
+    console.warn('[android] Multiple devices detected; set PROMETHEUS_ANDROID_SERIAL to pick one.')
+  } else {
+    console.warn('[android] No device detected; skipping Android auto-deploy.')
+  }
+  return undefined
+}
+const runAdb = (adbBin: string, args: string[]) => {
+  const result = spawnSync(adbBin, args, { stdio: 'inherit' })
+  if (result.error) {
+    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.warn('[android] adb not found; skipping Android auto-deploy.')
+    } else {
+      console.warn('[android] adb failed to run; skipping Android auto-deploy.')
+    }
+    return false
+  }
+  if (result.status !== 0) {
+    console.warn(`[android] adb exited with ${result.status ?? 'unknown'}; skipping remaining steps.`)
+    return false
+  }
+  return true
+}
 
 const hasCapacitorCli = (siteRoot: string) => {
   const binNames = ['cap', 'cap.cmd', 'cap.ps1']
@@ -135,6 +265,73 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
   console.warn(`[capacitor] Android sync failed (exit ${result.status ?? 'unknown'}).`)
 }
 
+const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string) => {
+  const autoDeploy = resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTODEPLOY, true)
+  const buildEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_BUILD, autoDeploy)
+  const installEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_INSTALL, autoDeploy)
+  const launchEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_LAUNCH, autoDeploy)
+  const loopback = (() => {
+    const host = normalizeHost(deviceHost)
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1'
+  })()
+  const reverseEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_REVERSE, autoDeploy && loopback)
+  const waitEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_WAIT, autoDeploy)
+  const waitTimeoutRaw = process.env.PROMETHEUS_ANDROID_WAIT_TIMEOUT_MS?.trim() || ''
+  const waitTimeoutParsed = Number.parseInt(waitTimeoutRaw, 10)
+  const waitTimeoutMs = Number.isFinite(waitTimeoutParsed) && waitTimeoutParsed > 0 ? waitTimeoutParsed : 30000
+  const shouldRun = buildEnabled || installEnabled || launchEnabled || reverseEnabled
+  if (!shouldRun) return
+
+  const adbBin = process.env.PROMETHEUS_ADB_PATH?.trim() || 'adb'
+  const serial = resolveAdbSerial(adbBin, process.env.PROMETHEUS_ANDROID_SERIAL?.trim(), waitEnabled, waitTimeoutMs)
+  if (!serial) return
+  const adbPrefix = serial ? ['-s', serial] : []
+
+  if (reverseEnabled) {
+    if (!runAdb(adbBin, [...adbPrefix, 'reverse', `tcp:${devicePort}`, `tcp:${devicePort}`])) return
+  }
+
+  const androidRoot = path.resolve(root, 'apps', 'site', 'android')
+  if (!existsSync(androidRoot)) {
+    console.warn('[android] Android project not found; skipping Android auto-deploy.')
+    return
+  }
+
+  const apkPath = path.join(androidRoot, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+  const gradleCmd = process.platform === 'win32' ? path.join(androidRoot, 'gradlew.bat') : path.join(androidRoot, 'gradlew')
+  if (buildEnabled || (installEnabled && !existsSync(apkPath))) {
+    if (!existsSync(gradleCmd)) {
+      console.warn('[android] Gradle wrapper not found; skipping Android build.')
+      return
+    }
+    const gradleRunner =
+      process.platform === 'win32'
+        ? { command: gradleCmd, args: ['assembleDebug'] }
+        : { command: 'bash', args: [gradleCmd, 'assembleDebug'] }
+    const result = spawnSync(gradleRunner.command, gradleRunner.args, { stdio: 'inherit', cwd: androidRoot })
+    if (result.error) {
+      console.warn('[android] Gradle failed to start; skipping Android install/launch.')
+      return
+    }
+    if (result.status !== 0) {
+      console.warn(`[android] Gradle exited with ${result.status ?? 'unknown'}; skipping Android install/launch.`)
+      return
+    }
+  }
+
+  if (installEnabled) {
+    if (!existsSync(apkPath)) {
+      console.warn('[android] APK not found; skipping Android install.')
+      return
+    }
+    if (!runAdb(adbBin, [...adbPrefix, 'install', '-r', apkPath])) return
+  }
+
+  if (launchEnabled) {
+    runAdb(adbBin, [...adbPrefix, 'shell', 'am', 'start', '-n', 'dev.prometheus.site/.MainActivity'])
+  }
+}
+
 const { command, prefix } = resolveComposeCommand()
 
 const previewHttpPort = process.env.PROMETHEUS_HTTP_PORT?.trim() || '80'
@@ -145,9 +342,14 @@ const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
 const previewWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
 const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
 const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.prod'
+const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
+const previewDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
+const useDeviceHost = Boolean(previewDeviceHost)
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
-const previewEnableWebTransport = process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
-const previewEnableWebTransportDatagrams = process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() || '1'
+const previewEnableWebTransport =
+  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (useDeviceHost ? '0' : '1')
+const previewEnableWebTransportDatagrams =
+  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (useDeviceHost ? '0' : '1')
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
 const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
 const previewEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0'
@@ -373,6 +575,7 @@ for (const target of buildResults) {
 saveBuildCache(cache)
 
 syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
+autoDeployAndroid(previewDeviceHost, previewDeviceWebPort)
 
 try {
   const resolved = await lookup(previewWebHost, { all: true })

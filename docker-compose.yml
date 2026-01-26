@@ -156,6 +156,7 @@ services:
         VITE_DISABLE_SW: ${VITE_DISABLE_SW:-}
     environment:
       API_BASE: http://api:4000
+      PROMETHEUS_DEVICE_HOST: ${PROMETHEUS_DEVICE_HOST:-}
     depends_on:
       api:
         condition: service_started

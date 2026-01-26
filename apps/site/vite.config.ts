@@ -90,6 +90,18 @@ const resolveStaticOrigin = () => {
   const portSuffix = httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
   return `https://${host}${portSuffix}`
 }
+const normalizeHost = (value?: string) => {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  try {
+    const url = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? new URL(trimmed)
+      : new URL(`http://${trimmed}`)
+    return url.hostname
+  } catch {
+    return undefined
+  }
+}
 const publicBase = resolvePublicBase()
 const staticOrigin = resolveStaticOrigin()
 const withBase = (value: string) => {
@@ -427,13 +439,23 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       Number.isFinite(hmrClientPort) ||
       Number.isFinite(hmrPort) ||
       !!hmrPath
-    const devApiProxyTarget = process.env.PROMETHEUS_DEV_API_PROXY?.trim() || 'http://127.0.0.1:4000'
+    const apiBaseEnv = process.env.API_BASE?.trim()
+    const devApiProxyTarget =
+      process.env.PROMETHEUS_DEV_API_PROXY?.trim() ||
+      (apiBaseEnv && (apiBaseEnv.startsWith('http://') || apiBaseEnv.startsWith('https://')) ? apiBaseEnv : undefined) ||
+      'http://127.0.0.1:4000'
     const apiProxy: ProxyOptions = {
       target: devApiProxyTarget,
       changeOrigin: true,
       secure: false,
       rewrite: (pathValue) => pathValue.replace(/^\/api/, '')
     }
+    const previewAllowedHosts = new Set(['prometheus.prod', 'prometheus.dev'])
+    const configuredWebHost = normalizeHost(process.env.PROMETHEUS_WEB_HOST)
+    if (configuredWebHost) previewAllowedHosts.add(configuredWebHost)
+    const deviceHost = normalizeHost(process.env.PROMETHEUS_DEVICE_HOST)
+    if (deviceHost) previewAllowedHosts.add(deviceHost)
+    const previewAllowedHostsList = Array.from(previewAllowedHosts)
     const shouldVisualizeBundle =
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
@@ -566,7 +588,10 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       },
       preview: {
         port: 4173,
-        allowedHosts: ['prometheus.prod', 'prometheus.dev']
+        allowedHosts: previewAllowedHostsList,
+        proxy: {
+          '/api': apiProxy
+        }
       }
     }
 })
