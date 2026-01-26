@@ -400,6 +400,32 @@ const sanitizeOutputOptionsPlugin = (): Plugin => ({
   }
 })
 
+const chunkImportMapRuntimePlugin = (enabled: boolean, fileName: string): Plugin => ({
+  name: 'chunk-importmap-runtime',
+  apply: 'build',
+  generateBundle(_, bundle) {
+    if (!enabled) return
+    const asset = bundle[fileName]
+    if (!asset || asset.type !== 'asset') return
+    const source = typeof asset.source === 'string' ? asset.source : asset.source?.toString()
+    if (!source) return
+    const importMapTag = `<script type="importmap">${source}</script>`
+    const importMapRegex = /<script\s+type=["']importmap["'][^>]*>[\s\S]*?<\/script>/i
+    Object.values(bundle).forEach((entry) => {
+      if (entry.type !== 'asset' || !entry.fileName.endsWith('.html')) return
+      const html = typeof entry.source === 'string' ? entry.source : entry.source?.toString()
+      if (!html) return
+      const next = importMapRegex.test(html)
+        ? html.replace(importMapRegex, importMapTag)
+        : html.includes('</head>')
+          ? html.replace('</head>', `${importMapTag}</head>`)
+          : `${importMapTag}${html}`
+      entry.source = next
+    })
+    delete bundle[fileName]
+  }
+})
+
 const manualChunks = (id: string) => {
   if (id.includes('/node_modules/')) {
     if (id.includes('@builder.io/qwik') || id.includes('@builder.io/qwik-city') || id.includes('@qwik-client-manifest')) {
@@ -456,6 +482,10 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
     const deviceHost = normalizeHost(process.env.PROMETHEUS_DEVICE_HOST)
     if (deviceHost) previewAllowedHosts.add(deviceHost)
     const previewAllowedHostsList = Array.from(previewAllowedHosts)
+    const devAllowedHosts = new Set([devHost, 'prometheus.dev', 'localhost', '127.0.0.1'])
+    if (configuredWebHost) devAllowedHosts.add(configuredWebHost)
+    if (deviceHost) devAllowedHosts.add(deviceHost)
+    const devAllowedHostsList = Array.from(devAllowedHosts)
     const shouldVisualizeBundle =
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
@@ -470,6 +500,40 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         template: 'treemap'
       })
       : null
+    const isDevServer = configEnv.command === 'serve'
+    const enableChunkImportMap = configEnv.command === 'build' && configEnv.mode === 'development'
+    const perfRolldownExperimental = {
+      chunkModulesOrder: 'module-id' as const,
+      chunkOptimization: true,
+      nativeMagicString: true,
+      resolveNewUrlToAsset: true
+    }
+    const rolldownOptimization = {
+      inlineConst: {
+        mode: 'all' as const,
+        pass: 1
+      },
+      pifeForModuleWrappers: true
+    }
+    const importMapExperimental = enableChunkImportMap
+      ? {
+          chunkImportMap: {
+            baseUrl: publicBase,
+            fileName: 'importmap.json'
+          }
+        }
+      : {}
+    const rolldownExperimental = {
+      ...perfRolldownExperimental,
+      ...importMapExperimental,
+      ...(isDevServer
+        ? {
+            attachDebugInfo: 'full' as const,
+            incrementalBuild: true,
+            transformHiresSourcemap: true
+          }
+        : {})
+    }
 
     return {
       base: publicBase,
@@ -480,6 +544,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       publicDir: ssrBuild ? false : 'public',
       plugins: [
         sanitizeOutputOptionsPlugin(),
+        chunkImportMapRuntimePlugin(enableChunkImportMap, 'importmap.json'),
         earlyHintsPlugin(),
         fragmentHmrPlugin(),
         staticCacheHeadersPlugin(),
@@ -556,6 +621,8 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
           }
         },
         rolldownOptions: {
+          experimental: rolldownExperimental,
+          optimization: rolldownOptimization,
           onwarn(
             warning: RollupLog,
             defaultHandler: (warning: RollupLogWithString | (() => RollupLogWithString)) => void
@@ -572,7 +639,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         origin: useProxyHttps
           ? `https://${devHost}${devHttpsPort && devHttpsPort !== '443' ? `:${devHttpsPort}` : ''}`
           : undefined,
-        allowedHosts: useProxyHttps ? [devHost] : undefined,
+        allowedHosts: devAllowedHostsList,
         hmr: hmrEnabled
           ? {
             protocol: hmrProtocol,
