@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
 import { existsSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import {
   computeFingerprint,
@@ -15,9 +16,33 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
+const isPrivateIpv4 = (value: string) => {
+  if (value.startsWith('10.')) return true
+  if (value.startsWith('192.168.')) return true
+  const match = /^172\.(\d{1,3})\./.exec(value)
+  if (!match) return false
+  const octet = Number.parseInt(match[1], 10)
+  return octet >= 16 && octet <= 31
+}
+
+const resolveLocalIpv4 = () => {
+  const nets = networkInterfaces()
+  const candidates: string[] = []
+  for (const net of Object.values(nets)) {
+    for (const addr of net ?? []) {
+      if (addr.family !== 'IPv4' || addr.internal) continue
+      if (!isPrivateIpv4(addr.address)) continue
+      candidates.push(addr.address)
+    }
+  }
+  if (!candidates.length) return undefined
+  const preferred = candidates.find((value) => value.startsWith('192.168.'))
+  return preferred || candidates[0]
+}
+
 const resolveDeviceHost = () => {
   const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (!raw) return undefined
+  if (!raw) return resolveLocalIpv4()
   const lowered = raw.toLowerCase()
   if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
   return raw
@@ -50,6 +75,28 @@ const resolveCapacitorServerUrl = (host: string, httpsPort: string, allowFallbac
   if (trimmedHost.startsWith('http://') || trimmedHost.startsWith('https://')) return trimmedHost
   const portSuffix = httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
   return `https://${trimmedHost}${portSuffix}`
+}
+
+const resolveDeviceApiBase = (deviceHost: string | undefined, apiPort: string) => {
+  const trimmed = deviceHost?.trim()
+  if (!trimmed) return ''
+  const deviceProtocol = process.env.PROMETHEUS_DEVICE_PROTOCOL?.trim() || 'http'
+  const defaultPort = deviceProtocol === 'https' ? '443' : '80'
+  const portSuffix = apiPort && apiPort !== defaultPort ? `:${apiPort}` : ''
+
+  try {
+    const url = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? new URL(trimmed)
+      : new URL(`http://${trimmed}`)
+    url.protocol = `${deviceProtocol}:`
+    url.port = apiPort
+    url.pathname = ''
+    url.search = ''
+    url.hash = ''
+    return url.origin
+  } catch {
+    return `${deviceProtocol}://${trimmed}${portSuffix}`
+  }
 }
 
 const resolveBunBin = () => {
@@ -277,7 +324,7 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
   console.warn(`[capacitor] Android sync failed (exit ${result.status ?? 'unknown'}).`)
 }
 
-const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string) => {
+const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string, apiPort: string) => {
   const autoDeploy = resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTODEPLOY, true)
   const buildEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_BUILD, autoDeploy)
   const installEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_INSTALL, autoDeploy)
@@ -301,6 +348,9 @@ const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string) =
 
   if (reverseEnabled) {
     if (!runAdb(adbBin, [...adbPrefix, 'reverse', `tcp:${devicePort}`, `tcp:${devicePort}`])) return
+    if (apiPort && apiPort !== devicePort) {
+      if (!runAdb(adbBin, [...adbPrefix, 'reverse', `tcp:${apiPort}`, `tcp:${apiPort}`])) return
+    }
   }
 
   const androidRoot = path.resolve(root, 'apps', 'site', 'android')
@@ -416,8 +466,11 @@ const resolvedWebTransportBase = explicitWebTransportBase
     ? legacyWebTransportBase
     : previewDefaultWebTransportBase
 const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
+const previewDeviceApiBase = resolveDeviceApiBase(previewDeviceHost, previewApiPort)
 const previewApiBase =
-  process.env.VITE_API_BASE?.trim() || (previewOrigin ? `${previewOrigin}/api` : '')
+  process.env.VITE_API_BASE?.trim() ||
+  previewDeviceApiBase ||
+  (previewOrigin ? `${previewOrigin}/api` : '')
 const previewBuildApiBase = process.env.API_BASE?.trim() || `http://127.0.0.1:${previewApiPort}`
 const previewWebTransportBase =
   process.env.VITE_WEBTRANSPORT_BASE?.trim() || resolvedWebTransportBase
@@ -679,7 +732,7 @@ saveBuildCache(cache)
 
 await buildCapacitorBundle()
 syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
-autoDeployAndroid(previewDeviceHost, previewDeviceWebPort)
+autoDeployAndroid(previewDeviceHost, previewDeviceWebPort, previewApiPort)
 
 try {
   const resolved = await lookup(previewWebHost, { all: true })

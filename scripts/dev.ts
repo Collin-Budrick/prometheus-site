@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { existsSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -15,10 +16,33 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-const defaultDeviceHost = '192.168.1.138'
+const isPrivateIpv4 = (value: string) => {
+  if (value.startsWith('10.')) return true
+  if (value.startsWith('192.168.')) return true
+  const match = /^172\.(\d{1,3})\./.exec(value)
+  if (!match) return false
+  const octet = Number.parseInt(match[1], 10)
+  return octet >= 16 && octet <= 31
+}
+
+const resolveLocalIpv4 = () => {
+  const nets = networkInterfaces()
+  const candidates: string[] = []
+  for (const net of Object.values(nets)) {
+    for (const addr of net ?? []) {
+      if (addr.family !== 'IPv4' || addr.internal) continue
+      if (!isPrivateIpv4(addr.address)) continue
+      candidates.push(addr.address)
+    }
+  }
+  if (!candidates.length) return undefined
+  const preferred = candidates.find((value) => value.startsWith('192.168.'))
+  return preferred || candidates[0]
+}
+
 const resolveDeviceHost = () => {
   const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (!raw) return defaultDeviceHost
+  if (!raw) return resolveLocalIpv4()
   const lowered = raw.toLowerCase()
   if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
   return raw
