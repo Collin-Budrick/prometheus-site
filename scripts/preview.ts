@@ -299,14 +299,15 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
       cwd: siteRoot,
       env: {
         ...process.env,
-        ...(serverUrl
-          ? { CAPACITOR_SERVER_URL: serverUrl }
-          : {
-            CAPACITOR_SERVER_URL: '',
-            PROMETHEUS_WEB_HOST: '',
-            PROMETHEUS_HTTPS_PORT: ''
-          })
-      }
+    ...(serverUrl
+      ? { CAPACITOR_SERVER_URL: serverUrl }
+      : {
+          CAPACITOR_SERVER_URL: '',
+          PROMETHEUS_WEB_HOST: '',
+          PROMETHEUS_HTTPS_PORT: '',
+          PROMETHEUS_DEVICE_HOST: ''
+        })
+  }
     })
 
   const primary = resolveCapacitorRunner(siteRoot, preferNode)
@@ -731,7 +732,8 @@ for (const target of buildResults) {
 saveBuildCache(cache)
 
 await buildCapacitorBundle()
-syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
+const explicitCapacitorServerUrl = process.env.CAPACITOR_SERVER_URL?.trim()
+syncCapacitorAndroid(explicitCapacitorServerUrl || undefined)
 autoDeployAndroid(previewDeviceHost, previewDeviceWebPort, previewApiPort)
 
 try {
