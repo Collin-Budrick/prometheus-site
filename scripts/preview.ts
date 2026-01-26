@@ -15,10 +15,9 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-const defaultDeviceHost = '192.168.1.138'
 const resolveDeviceHost = () => {
   const raw = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (!raw) return defaultDeviceHost
+  if (!raw) return undefined
   const lowered = raw.toLowerCase()
   if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
   return raw
