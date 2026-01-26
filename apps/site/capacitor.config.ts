@@ -42,9 +42,13 @@ const allowNavigation = (() => {
   if (webHost) allow.add(webHost);
   const deviceHost = normalizeHost(process.env.PROMETHEUS_DEVICE_HOST);
   if (deviceHost) allow.add(deviceHost);
+  const apiHost = normalizeHost(process.env.VITE_API_BASE || process.env.API_BASE);
+  if (apiHost) allow.add(apiHost);
   return allow.size ? Array.from(allow) : undefined;
 })();
 const cleartext = Boolean(serverUrl && serverUrl.startsWith('http://'));
+const apiBaseRaw = process.env.VITE_API_BASE?.trim() || process.env.API_BASE?.trim() || '';
+const apiCleartext = apiBaseRaw.startsWith('http://');
 const serverConfig = serverUrl
   ? {
       url: serverUrl,
@@ -58,7 +62,7 @@ const config: CapacitorConfig = {
   appName: 'Prometheus',
   webDir: 'dist',
   ...(serverConfig ? { server: serverConfig } : {}),
-  ...(cleartext ? { android: { allowMixedContent: true } } : {})
+  ...(cleartext || apiCleartext ? { android: { allowMixedContent: true } } : {})
 };
 
 export default config;

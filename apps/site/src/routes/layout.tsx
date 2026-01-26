@@ -619,6 +619,7 @@ export default component$(() => {
     )
   })
 
+
   useVisibleTask$(
     (ctx) => {
       const search = ctx.track(() => location.url.search)
@@ -816,25 +817,6 @@ export default component$(() => {
 
   return (
     <div class="layout-shell">
-      <div
-        class="api-base-debug"
-        style={{
-          position: 'fixed',
-          bottom: '8px',
-          left: '8px',
-          zIndex: '9999',
-          fontSize: '10px',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          background: 'rgba(0, 0, 0, 0.55)',
-          color: '#9ff',
-          padding: '4px 6px',
-          borderRadius: '6px',
-          pointerEvents: 'none'
-        }}
-      >
-        api: {appConfig.apiBase || '(empty)'}
-      </div>
       {bannerConfig ? (
         <div class="connection-banner" data-tone={bannerConfig.tone} role="status" aria-live="polite">
           <div class="connection-banner-content">

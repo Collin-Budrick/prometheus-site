@@ -77,6 +77,7 @@ const resolveDeviceHost = () => {
   if (['0', 'off', 'false', 'disabled', 'none'].includes(lowered)) return undefined
   return raw
 }
+const deviceHostExplicit = Boolean(process.env.PROMETHEUS_DEVICE_HOST?.trim())
 const resolvedDeviceHost = resolveDeviceHost()
 if (resolvedDeviceHost) {
   process.env.PROMETHEUS_DEVICE_HOST = resolvedDeviceHost
@@ -147,6 +148,31 @@ const normalizeHost = (value?: string) => {
   } catch {
     return trimmed
   }
+}
+
+const testPortReachable = (host: string, port: string) => {
+  if (!host || !port) return false
+  if (isWsl) {
+    const result = spawnSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        `Test-NetConnection -ComputerName "${host}" -Port ${port} -InformationLevel Quiet`
+      ],
+      { encoding: 'utf8' }
+    )
+    if (result.status !== 0 || typeof result.stdout !== 'string') return false
+    return result.stdout.trim().toLowerCase() === 'true'
+  }
+  return true
+}
+
+const resolvePreviewDeviceApiHost = (deviceHost: string | undefined, apiPort: string) => {
+  if (!deviceHost) return ''
+  if (deviceHostExplicit) return deviceHost
+  const reachable = testPortReachable(deviceHost, apiPort)
+  return reachable ? deviceHost : '127.0.0.1'
 }
 const resolvePreviewOrigin = (host: string, httpsPort: string) => {
   const trimmed = host.trim()
@@ -483,13 +509,18 @@ const resolvedWebTransportBase = explicitWebTransportBase
     ? legacyWebTransportBase
     : previewDefaultWebTransportBase
 const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
-const previewDeviceApiBase = resolveDeviceApiBase(previewDeviceHost, previewApiPort)
+const previewDeviceApiHost = resolvePreviewDeviceApiHost(previewDeviceHost, previewApiPort)
+const previewDeviceApiBase = resolveDeviceApiBase(previewDeviceApiHost, previewApiPort)
 const envApiBase = process.env.VITE_API_BASE?.trim() || ''
 const previewApiBase =
   previewDeviceApiBase && isLocalApiBase(envApiBase)
     ? previewDeviceApiBase
     : envApiBase || (previewOrigin ? `${previewOrigin}/api` : '')
-console.log(`[preview] deviceHost=${previewDeviceHost || '(none)'} deviceApiBase=${previewDeviceApiBase || '(none)'} envApiBase=${envApiBase || '(empty)'} resolvedApiBase=${previewApiBase || '(empty)'}`)
+console.log(
+  `[preview] deviceHost=${previewDeviceHost || '(none)'} deviceApiHost=${previewDeviceApiHost || '(none)'} ` +
+    `deviceApiBase=${previewDeviceApiBase || '(none)'} envApiBase=${envApiBase || '(empty)'} ` +
+    `resolvedApiBase=${previewApiBase || '(empty)'}`
+)
 const previewBuildApiBase =
   process.env.API_BASE?.trim() ||
   (previewApiBase && previewApiBase.trim()) ||
@@ -753,9 +784,15 @@ for (const target of buildResults) {
 saveBuildCache(cache)
 
 await buildCapacitorBundle()
+if (!process.env.VITE_API_BASE?.trim()) {
+  process.env.VITE_API_BASE = previewApiBase
+}
+if (!process.env.API_BASE?.trim()) {
+  process.env.API_BASE = previewBuildApiBase
+}
 const explicitCapacitorServerUrl = process.env.CAPACITOR_SERVER_URL?.trim()
 syncCapacitorAndroid(explicitCapacitorServerUrl || undefined)
-autoDeployAndroid(previewDeviceHost, previewDeviceWebPort, previewApiPort)
+autoDeployAndroid(previewDeviceApiHost || previewDeviceHost, previewDeviceWebPort, previewApiPort)
 
 try {
   const resolved = await lookup(previewWebHost, { all: true })
