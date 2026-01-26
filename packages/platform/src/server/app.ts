@@ -1,4 +1,4 @@
-import { Elysia } from 'elysia'
+import { Elysia, type AnyElysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
 import type { FragmentLang, FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
@@ -54,6 +54,71 @@ const jsonError = (status: number, error: string, meta: Record<string, unknown> 
 
 const rateLimitWindowMs = 60_000
 const rateLimitMaxRequests = 60
+
+const applyDevCors = (app: AnyElysia) => {
+  const allowMethods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+  const defaultHeaders = 'Content-Type, Authorization'
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object'
+
+  const toObject = (value: unknown): Record<string, unknown> | null =>
+    isRecord(value) ? value : null
+
+  const readOrigin = (context: unknown) => {
+    const objectContext = toObject(context)
+    if (objectContext === null) return ''
+    const request = objectContext.request
+    if (!(request instanceof Request)) return ''
+    return request.headers.get('origin') ?? ''
+  }
+
+  const applyOriginHeaders = (context: unknown, origin: string) => {
+    const objectContext = toObject(context)
+    if (objectContext === null) return
+    const set = objectContext.set
+    const setObject = toObject(set)
+    if (setObject === null) return
+    const headerRecord = toObject(setObject.headers)
+    if (headerRecord === null) return
+    headerRecord['Access-Control-Allow-Origin'] = origin
+    headerRecord['Access-Control-Allow-Credentials'] = 'true'
+    headerRecord['Vary'] = 'Origin'
+  }
+
+  const applyPreflight = (context: unknown) => {
+    const objectContext = toObject(context)
+    if (objectContext === null) return
+    const set = objectContext.set
+    const setObject = toObject(set)
+    if (setObject === null) return
+    const headerRecord = toObject(setObject.headers)
+    if (headerRecord === null) return
+    const request = objectContext.request
+    const requestedHeaders =
+      request instanceof Request ? request.headers.get('access-control-request-headers') ?? '' : ''
+    headerRecord['Access-Control-Allow-Methods'] = allowMethods
+    headerRecord['Access-Control-Allow-Headers'] =
+      requestedHeaders === '' ? defaultHeaders : requestedHeaders
+    headerRecord['Access-Control-Max-Age'] = '86400'
+    setObject.status = 204
+  }
+
+  app.onRequest((context) => {
+    const origin = readOrigin(context)
+    if (origin === '') return
+    applyOriginHeaders(context, origin)
+  })
+
+  app.options('/*', (context) => {
+    const origin = readOrigin(context)
+    if (origin !== '') {
+      applyOriginHeaders(context, origin)
+    }
+    applyPreflight(context)
+    return ''
+  })
+}
 
 export const startApiServer = async (options: ApiServerOptions = {}) => {
   const logger = createLogger('api')
@@ -132,6 +197,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     })
 
     const app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
+
+    if (platformConfig.environment !== 'production') {
+      applyDevCors(app)
+    }
 
     rateLimiter.setCleanupInterval(rateLimitWindowMs)
 
