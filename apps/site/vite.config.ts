@@ -558,7 +558,9 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(capacitorBuildEnabled ? [staticAdapter({ origin: staticOrigin }), capacitorSsrInputPlugin(ssrInputs)] : []),
+        ...(capacitorBuildEnabled
+          ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 }), capacitorSsrInputPlugin(ssrInputs)]
+          : []),
         ...(capacitorBuildEnabled
           ? []
           : [

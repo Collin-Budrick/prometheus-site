@@ -481,6 +481,20 @@ const buildCapacitorBundle = async () => {
   const androidRoot = path.join(siteRoot, 'android')
   if (!existsSync(androidRoot)) return
   await waitForApiHealth(previewApiPort)
+  const logSpawnFailure = (
+    label: string,
+    result: ReturnType<typeof spawnSync>
+  ) => {
+    if (result.error) {
+      console.warn(`[preview] ${label} failed to start: ${result.error.message}`)
+    }
+    if (result.signal) {
+      console.warn(`[preview] ${label} terminated by signal: ${result.signal}`)
+    }
+    if (typeof result.status === 'number') {
+      console.warn(`[preview] ${label} exited with ${result.status}`)
+    }
+  }
   const buildEnv = {
     ...process.env,
     PROMETHEUS_WEB_HOST: previewWebHost,
@@ -517,9 +531,15 @@ const buildCapacitorBundle = async () => {
       env: buildEnv
     })
   const clientResult = runViteBuild([])
-  if (clientResult.status !== 0) process.exit(clientResult.status ?? 1)
+  if (clientResult.status !== 0) {
+    logSpawnFailure('Vite client build', clientResult)
+    process.exit(clientResult.status ?? 1)
+  }
   const ssrResult = runViteBuild(['--ssr'])
-  if (ssrResult.status !== 0) process.exit(ssrResult.status ?? 1)
+  if (ssrResult.status !== 0) {
+    logSpawnFailure('Vite SSR build', ssrResult)
+    process.exit(ssrResult.status ?? 1)
+  }
 }
 
 const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {

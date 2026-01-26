@@ -1,4 +1,4 @@
-import type { AppConfig } from '@platform/env'
+import { normalizeApiBase, type AppConfig } from '@platform/env'
 
 declare const __PUBLIC_APP_CONFIG__: AppConfig | undefined
 
@@ -34,8 +34,20 @@ const fragmentVisibilityThreshold = hasPublicEnvValue('VITE_FRAGMENT_VISIBILITY_
     ? DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD
     : __PUBLIC_APP_CONFIG__.fragmentVisibilityThreshold
 
+const resolveServerApiBase = () => {
+  if (typeof process === 'undefined' || typeof process.env !== 'object') return ''
+  const raw = process.env.API_BASE
+  if (typeof raw !== 'string') return ''
+  return normalizeApiBase(raw)
+}
+
+const isServerRuntime = Boolean(publicEnv?.SSR)
+const serverApiBase = resolveServerApiBase()
+const apiBase = isServerRuntime && serverApiBase ? serverApiBase : __PUBLIC_APP_CONFIG__.apiBase
+
 export const appConfig: AppConfig = {
   ...__PUBLIC_APP_CONFIG__,
+  apiBase,
   fragmentVisibilityMargin,
   fragmentVisibilityThreshold
 }
