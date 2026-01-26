@@ -1,7 +1,7 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 
 const INTERACTIVE_SELECTOR =
-  'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link]'
+  'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link], [data-drag-handle]'
 
 const previousRects = new WeakMap<HTMLElement, DOMRect>()
 const previousRadii = new WeakMap<HTMLElement, string>()
@@ -57,7 +57,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
   } = props
     const isFullWidth = fullWidth === true
     const resolvedVariant = variant ?? 'card'
-    const isDraggable = draggable !== false
+    const isDraggable = draggable !== false && Boolean(dragState)
     const waveIn = resolvedVariant === 'text' && !disableMotion
     const resolvedSize = size
     const resolvedInlineSpan =
@@ -565,6 +565,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           onClick$={handleToggle}
         >
+          {isDraggable ? <span class="fragment-card-drag" data-drag-handle aria-hidden="true" /> : null}
           <div class="fragment-card-body">
             <Slot />
             {isExpanded ? (

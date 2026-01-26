@@ -85,6 +85,13 @@ export const useFragmentShellDrag = ({
       if (!gridEl) return
 
       const getColumnCount = () => (window.innerWidth < DESKTOP_MIN_WIDTH ? 1 : GRIDSTACK_COLUMNS)
+      const shouldUseTouchHandle = () => {
+        if (typeof window === 'undefined') return false
+        const coarseMatch =
+          typeof window.matchMedia === 'function' && window.matchMedia('(any-pointer: coarse)').matches
+        if (coarseMatch) return true
+        return typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0
+      }
       const initialColumn = getColumnCount()
       let currentColumn = initialColumn
 
@@ -150,7 +157,7 @@ export const useFragmentShellDrag = ({
           float: false,
           animate: false,
           draggable: {
-            handle: '.fragment-card',
+            handle: shouldUseTouchHandle() ? '.fragment-card-drag' : '.fragment-card',
             cancel: INTERACTIVE_SELECTOR,
             scroll: true,
             appendTo: 'body'
