@@ -34,13 +34,13 @@
     "lefthook-windows-arm64": "2.0.15"
   },
   "devDependencies": {
-    "@oxlint-tsgolint/linux-arm64": "^0.11.1",
-    "@oxlint-tsgolint/win32-arm64": "^0.11.1",
+    "@oxlint-tsgolint/linux-arm64": "^0.11.2",
+    "@oxlint-tsgolint/win32-arm64": "^0.11.2",
     "@oxlint/win32-arm64": "^1.41.0",
-    "@playwright/test": "^1.59.0-alpha-2026-01-24",
+    "@playwright/test": "^1.59.0-alpha-2026-01-26",
     "@types/web-push": "^3.6.4",
     "lefthook": "^2.0.15",
     "oxlint": "1.41.0",
-    "oxlint-tsgolint": "^0.11.1"
+    "oxlint-tsgolint": "^0.11.2"
   }
 }

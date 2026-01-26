@@ -41,7 +41,7 @@
     "rollup-plugin-visualizer": "^6.0.5",
     "serwist": "^10.0.0-preview.14",
     "tailwindcss": "^4.1.18",
-    "typescript": "6.0.0-dev.20260124",
+    "typescript": "6.0.0-dev.20260125",
     "vite": "8.0.0-beta.10",
     "vite-plugin-compression2": "^2.4.0"
   },

@@ -82,6 +82,16 @@ const normalizeHost = (value?: string) => {
     return trimmed
   }
 }
+const resolvePreviewOrigin = (host: string, httpsPort: string) => {
+  const trimmed = host.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed.replace(/\/+$/, '')
+  }
+  const hasPort = trimmed.includes(':')
+  const portSuffix = !hasPort && httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
+  return `https://${trimmed}${portSuffix}`
+}
 const parseAdbDevices = (output: string) =>
   output
     .split(/\r?\n/)
@@ -402,6 +412,11 @@ const resolvedWebTransportBase = explicitWebTransportBase
   : legacyWebTransportBase && legacyMatchesPort
     ? legacyWebTransportBase
     : previewDefaultWebTransportBase
+const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
+const previewApiBase =
+  process.env.VITE_API_BASE?.trim() || (previewOrigin ? `${previewOrigin}/api` : '')
+const previewWebTransportBase =
+  process.env.VITE_WEBTRANSPORT_BASE?.trim() || resolvedWebTransportBase
 
 const composeEnv = {
   ...process.env,
@@ -436,6 +451,41 @@ const composeEnv = {
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
+}
+
+const buildCapacitorBundle = () => {
+  const siteRoot = path.resolve(root, 'apps', 'site')
+  const androidRoot = path.join(siteRoot, 'android')
+  if (!existsSync(androidRoot)) return
+  const result = spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build:capacitor'], {
+    stdio: 'inherit',
+    cwd: root,
+    env: {
+      ...process.env,
+      VITE_API_BASE: previewApiBase,
+      API_BASE: previewApiBase,
+      VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
+      WEBTRANSPORT_BASE: previewWebTransportBase,
+      VITE_ENABLE_PREFETCH: previewEnablePrefetch,
+      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableWebTransport,
+      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: previewEnableWebTransportDatagrams,
+      VITE_ENABLE_FRAGMENT_COMPRESSION: previewEnableCompression,
+      VITE_ENABLE_ANALYTICS: previewEnableAnalytics,
+      VITE_ENABLE_HIGHLIGHT: previewEnableHighlight,
+      VITE_HIGHLIGHT_PROJECT_ID: previewHighlightProjectId,
+      VITE_HIGHLIGHT_PRIVACY: previewHighlightPrivacy,
+      VITE_HIGHLIGHT_SESSION_RECORDING: previewHighlightSessionRecording,
+      VITE_HIGHLIGHT_CANVAS_SAMPLING: previewHighlightCanvasSampling,
+      VITE_HIGHLIGHT_SAMPLE_RATE: previewHighlightSampleRate,
+      VITE_P2P_CRDT_SIGNALING: previewCrdtSignaling,
+      VITE_P2P_RELAY_BASES: previewP2pRelayBases,
+      VITE_P2P_NOSTR_RELAYS: previewP2pNostrRelays,
+      VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
+      VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
+      VITE_DISABLE_SW: previewDisableSw
+    }
+  })
+  if (result.status !== 0) process.exit(result.status ?? 1)
 }
 
 const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
@@ -573,6 +623,7 @@ for (const target of buildResults) {
 }
 saveBuildCache(cache)
 
+buildCapacitorBundle()
 syncCapacitorAndroid(resolveCapacitorServerUrl(previewWebHost, previewHttpsPort, false))
 autoDeployAndroid(previewDeviceHost, previewDeviceWebPort)
 
