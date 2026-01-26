@@ -12,17 +12,12 @@
     z-index: 1;
     display: grid;
     gap: 12px;
-  }
-
-  .preact-island-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    grid-template-columns: 1fr auto;
   }
 
   .preact-island-label {
     @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
+    grid-column: 1;
     color: rgb(var(--muted-soft));
   }
 
@@ -33,6 +28,8 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
+    grid-column: 2;
+    justify-self: end;
     background-color: rgb(var(--signal) / 0.12);
     border-color: rgb(var(--signal) / 0.28);
     color: rgb(var(--signal-strong));
@@ -60,9 +57,14 @@
     position: relative;
     display: grid;
     place-items: center;
+    align-content: center;
+    gap: 6px;
+    text-align: center;
     padding: 18px;
+    min-height: 196px;
     border-radius: 20px;
     border: 1px solid rgb(var(--signal) / 0.25);
+    grid-column: 1 / -1;
     background:
       radial-gradient(
         circle at 50% 25%,
@@ -95,6 +97,10 @@
     width: 160px;
     height: 160px;
     display: block;
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    pointer-events: none;
   }
 
   .preact-island-dial-track {
@@ -137,14 +143,6 @@
     fill: rgb(var(--surface) / 0.9);
   }
 
-  .preact-island-stage-center {
-    position: absolute;
-    text-align: center;
-    display: grid;
-    gap: 6px;
-    pointer-events: none;
-  }
-
   .preact-island-stage-title {
     @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
     color: rgb(var(--muted-soft));
@@ -168,6 +166,8 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
+    grid-column: 1 / -1;
+    justify-self: center;
     transition:
       color 160ms ease,
       border-color 160ms ease,

@@ -102,14 +102,12 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
         const displayLabel = label ?? copy.label
 
         return h('div', { class: 'preact-island-ui', 'data-running': remaining > 0 ? 'true' : 'false' }, [
-          h('div', { class: 'preact-island-top' }, [
-            h('div', { class: 'preact-island-label' }, displayLabel),
-            h(
-              'div',
-              { class: 'preact-island-timer', 'aria-live': 'polite' },
-              remaining === 0 ? copy.ready : `${minutes}:${seconds}`
-            )
-          ]),
+          h('div', { class: 'preact-island-label' }, displayLabel),
+          h(
+            'div',
+            { class: 'preact-island-timer', 'aria-live': 'polite' },
+            remaining === 0 ? copy.ready : `${minutes}:${seconds}`
+          ),
           h(
             'div',
             {
@@ -151,19 +149,13 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
                   h('circle', { class: 'preact-island-dial-center-dot', cx: 60, cy: 60, r: 4 })
                 ]
               ),
-              h('div', { class: 'preact-island-stage-center' }, [
-                h('div', { class: 'preact-island-stage-title' }, copy.countdown),
-                h(
-                  'div',
-                  { class: 'preact-island-stage-time', 'aria-live': 'polite' },
-                  remaining === 0 ? '0:00' : `${minutes}:${seconds}`
-                ),
-                h(
-                  'div',
-                  { class: 'preact-island-stage-sub' },
-                  remaining === 0 ? copy.readySub : copy.activeSub
-                )
-              ])
+              h('div', { class: 'preact-island-stage-title' }, copy.countdown),
+              h(
+                'div',
+                { class: 'preact-island-stage-time', 'aria-live': 'polite' },
+                remaining === 0 ? '0:00' : `${minutes}:${seconds}`
+              ),
+              h('div', { class: 'preact-island-stage-sub' }, remaining === 0 ? copy.readySub : copy.activeSub)
             ]
           ),
           h(
