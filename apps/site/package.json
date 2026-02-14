@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run scripts/vite-run.ts -- --mode ssr --port 4173",
+    "dev": "bun run scripts/vite-run.ts -- --port 4173",
     "build": "bun run scripts/vite-run.ts -- build",
     "build:capacitor": "VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build && VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build --ssr",
     "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
