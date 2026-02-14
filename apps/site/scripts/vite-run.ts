@@ -65,6 +65,13 @@ const patchRolldownIndex = () => {
 const nodeRuntime = resolveNodeRuntime()
 const runtime = nodeRuntime ?? { bin: process.execPath, arch: process.arch }
 const env = { ...process.env }
+if (env.NODE_OPTIONS && typeof env.NODE_OPTIONS === 'string') {
+  if (!env.NODE_OPTIONS.includes('--use-system-ca')) {
+    env.NODE_OPTIONS = `${env.NODE_OPTIONS} --use-system-ca`
+  }
+} else {
+  env.NODE_OPTIONS = '--use-system-ca'
+}
 
 if (!existsSync(viteBin)) {
   console.error('[vite] CLI not found. Run bun install before starting dev or preview.')
