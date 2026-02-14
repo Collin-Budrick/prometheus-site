@@ -16,6 +16,67 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
+const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+
+const resolveExistingPath = (value: string | undefined) => {
+  const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')
+  if (!raw) return undefined
+
+  const normalizedWindows = raw.replace(/\\/g, '/')
+  const driveMatch = /^([a-zA-Z]):\/(.*)$/.exec(normalizedWindows)
+  const candidates = [raw]
+  if (isWsl && driveMatch) {
+    const [, drive, rest] = driveMatch
+    candidates.push(`/mnt/${drive.toLowerCase()}/${rest}`)
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  return undefined
+}
+
+const resolveAndroidSdkHome = () => {
+  const explicit = resolveExistingPath(process.env.ANDROID_HOME?.trim() || process.env.ANDROID_SDK_ROOT?.trim())
+  if (explicit) return explicit
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
+    const fallback = resolveExistingPath(path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk'))
+    if (fallback) return fallback
+  }
+  if (process.platform === 'win32' && process.env.USERPROFILE?.trim()) {
+    const fallback = resolveExistingPath(path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Android', 'Sdk'))
+    if (fallback) return fallback
+  }
+
+  if (isWsl) {
+    const users = [process.env.USERNAME?.trim(), process.env.USER?.trim()].filter((value): value is string => Boolean(value))
+    for (const user of users) {
+      const fallback = resolveExistingPath(path.join('/mnt', 'c', 'Users', user, 'AppData', 'Local', 'Android', 'Sdk'))
+      if (fallback) return fallback
+    }
+    return resolveExistingPath('/mnt/c/Users/Collin/AppData/Local/Android/Sdk')
+  }
+
+  return undefined
+}
+const androidSdkHome = resolveAndroidSdkHome()
+if (androidSdkHome && !process.env.ANDROID_HOME) process.env.ANDROID_HOME = androidSdkHome
+if (androidSdkHome && !process.env.ANDROID_SDK_ROOT) process.env.ANDROID_SDK_ROOT = androidSdkHome
+if (androidSdkHome) {
+  console.info(`[android] Using SDK: ${androidSdkHome}`)
+}
+
+const resolveAndroidBinary = (binary: 'emulator' | 'adb') => {
+  const sdkHome = resolveAndroidSdkHome()
+  const fileName = process.platform === 'win32' ? `${binary}.exe` : binary
+  if (!sdkHome) return binary
+  const toolPath =
+    binary === 'emulator'
+      ? path.join(sdkHome, 'emulator', fileName)
+      : path.join(sdkHome, 'platform-tools', fileName)
+  return existsSync(toolPath) ? toolPath : binary
+}
+
 const isPrivateIpv4 = (value: string) => {
   if (value.startsWith('10.')) return true
   if (value.startsWith('192.168.')) return true
@@ -24,8 +85,6 @@ const isPrivateIpv4 = (value: string) => {
   const octet = Number.parseInt(match[1], 10)
   return octet >= 16 && octet <= 31
 }
-
-const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 
 const resolveWindowsIpv4FromIpconfig = () => {
   if (!isWsl) return undefined
@@ -138,6 +197,13 @@ const resolveBoolean = (value: string | undefined, fallback: boolean) => {
   if (falsyValues.has(normalized)) return false
   return fallback
 }
+const ensureDefault = (name: string, value: string) => {
+  const current = process.env[name]?.trim()
+  if (!current) process.env[name] = value
+}
+ensureDefault('PROMETHEUS_ANDROID_AUTODEPLOY', '1')
+ensureDefault('PROMETHEUS_ANDROID_AUTO_START_EMULATOR', '1')
+
 const normalizeHost = (value?: string) => {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
@@ -184,14 +250,98 @@ const resolvePreviewOrigin = (host: string, httpsPort: string) => {
   const portSuffix = !hasPort && httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
   return `https://${trimmed}${portSuffix}`
 }
+type AdbDeviceInfo = {
+  serial: string
+  state: string
+}
+
 const parseAdbDevices = (output: string) =>
   output
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('List of devices'))
     .map((line) => line.split(/\s+/))
-    .filter((parts) => parts.length >= 2 && parts[1] === 'device')
-    .map((parts) => parts[0])
+    .filter((parts) => parts.length >= 2)
+    .map((parts) => ({ serial: parts[0], state: parts[1] }))
+
+const describeDevices = (devices: AdbDeviceInfo[]) =>
+  devices.length ? devices.map((device) => `${device.serial} (${device.state})`).join(', ') : 'none'
+
+const readyDevices = (devices: AdbDeviceInfo[]) => devices.filter((device) => device.state === 'device')
+const resolvePreferredEmulatorName = () =>
+  process.env.PROMETHEUS_ANDROID_EMULATOR_NAME?.trim() ||
+  process.env.PROMETHEUS_ANDROID_AVD?.trim() ||
+  process.env.ANDROID_AVD?.trim() ||
+  ''
+const listEmulatorAvds = (emulatorBin: string) => {
+  const result = spawnSync(emulatorBin, ['-list-avds'], { encoding: 'utf8' })
+  if (result.error) {
+    if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.warn('[android] Emulator binary not found while listing AVDs.')
+    } else {
+      console.warn('[android] Failed to list Android Virtual Devices.')
+    }
+    return []
+  }
+  if (result.status !== 0 || !result.stdout) {
+    console.warn('[android] Android Virtual Devices listing failed or returned no data.')
+    return []
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+}
+let emulatorLaunchAttempted = false
+const launchAndroidEmulator = (): boolean => {
+  const autoStart = resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTO_START_EMULATOR, true)
+  if (!autoStart || emulatorLaunchAttempted) return false
+
+  const emulatorBin = resolveAndroidBinary('emulator')
+  if (emulatorBin === 'emulator') {
+    console.warn('[android] Android emulator binary not found. Set ANDROID_HOME and include emulator in SDK tools.')
+    return false
+  }
+  const available = listEmulatorAvds(emulatorBin)
+  if (!available.length) {
+    console.warn('[android] No Android Virtual Devices found. Create one in Android Studio.')
+    return false
+  }
+
+  const preferred = resolvePreferredEmulatorName()
+  const avd = preferred && available.includes(preferred) ? preferred : available[0]
+  emulatorLaunchAttempted = true
+  if (preferred && !available.includes(preferred)) {
+    console.warn(`[android] Requested emulator '${preferred}' was not found. Falling back to '${avd}'.`)
+  }
+
+  try {
+    const args = ['-avd', avd, '-no-snapshot-load']
+    const proc = spawn(emulatorBin, args, { detached: true, stdio: 'ignore', windowsHide: true })
+    proc.unref()
+    console.info(`[android] Starting emulator '${avd}' with: ${emulatorBin} ${args.join(' ')}`)
+    return true
+  } catch {
+    try {
+      const args = ['-avd', avd]
+      const proc = spawn(emulatorBin, args, { detached: true, stdio: 'ignore', windowsHide: true })
+      proc.unref()
+      console.info(`[android] Starting emulator '${avd}' with: ${emulatorBin} ${args.join(' ')}`)
+      return true
+    } catch {
+      console.warn('[android] Failed to start Android emulator automatically.')
+      return false
+    }
+  }
+}
+const resolveAdbBinary = () => {
+  const override = resolveExistingPath(process.env.PROMETHEUS_ADB_PATH?.trim())
+  const adb = override || resolveAndroidBinary('adb')
+  if (!override && process.env.PROMETHEUS_ADB_PATH?.trim()) {
+    console.warn(`[android] PROMETHEUS_ADB_PATH was set but not found; using SDK adb at ${adb}.`)
+  }
+  return adb
+}
 
 const resolveAdbSerial = (
   adbBin: string,
@@ -223,33 +373,66 @@ const resolveAdbSerial = (
     return undefined
   }
   let devices = parseAdbDevices(result.stdout || '')
+  if (!devices.length) {
+    if (launchAndroidEmulator()) {
+      tryWait()
+      result = listDevices()
+      if (result.status === 0) {
+        devices = parseAdbDevices(result.stdout || '')
+      }
+    }
+  }
 
   if (explicitSerial) {
-    if (devices.includes(explicitSerial)) return explicitSerial
+    if (readyDevices(devices).find((device) => device.serial === explicitSerial)) return explicitSerial
+    const matching = devices.find((device) => device.serial === explicitSerial)
+    if (matching) {
+      console.warn(`[android] Requested device '${explicitSerial}' is ${matching.state}; waiting for it to become ready.`)
+    }
     tryWait()
     result = listDevices()
     if (result.status === 0) {
       devices = parseAdbDevices(result.stdout || '')
-      if (devices.includes(explicitSerial)) return explicitSerial
+      if (readyDevices(devices).find((device) => device.serial === explicitSerial)) return explicitSerial
     }
     console.warn('[android] Requested device not detected; skipping Android auto-deploy.')
     return undefined
   }
 
-  if (devices.length === 1) return devices[0]
+  let ready = readyDevices(devices)
+  if (ready.length === 1) return ready[0].serial
   if (devices.length === 0) {
     tryWait()
     result = listDevices()
     if (result.status === 0) {
       devices = parseAdbDevices(result.stdout || '')
-      if (devices.length === 1) return devices[0]
+      ready = readyDevices(devices)
+      if (ready.length === 1) return ready[0].serial
+      if (ready.length > 1) {
+        console.warn(
+          `[android] Multiple ready devices detected after wait: ${describeDevices(ready)}. Set PROMETHEUS_ANDROID_SERIAL to pick one.`
+        )
+      }
     }
   }
 
   if (devices.length > 1) {
-    console.warn('[android] Multiple devices detected; set PROMETHEUS_ANDROID_SERIAL to pick one.')
+    const readyCount = ready.length
+    if (readyCount > 1) {
+      console.warn(
+        `[android] Multiple devices detected: ${describeDevices(devices)}. Set PROMETHEUS_ANDROID_SERIAL to pick one.`
+      )
+    } else if (readyCount === 1) {
+      return ready[0].serial
+    } else {
+      console.warn(`[android] No ready devices yet (states: ${describeDevices(devices)}). Waiting for boot may fix it.`)
+    }
   } else {
-    console.warn('[android] No device detected; skipping Android auto-deploy.')
+    if (devices.length === 1) {
+      console.warn(`[android] Device ${describeDevices(devices)} is not ready yet; skipping Android auto-deploy.`)
+    } else {
+      console.warn('[android] No device detected; skipping Android auto-deploy.')
+    }
   }
   return undefined
 }
@@ -380,11 +563,11 @@ const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string, a
   const waitEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_WAIT, autoDeploy)
   const waitTimeoutRaw = process.env.PROMETHEUS_ANDROID_WAIT_TIMEOUT_MS?.trim() || ''
   const waitTimeoutParsed = Number.parseInt(waitTimeoutRaw, 10)
-  const waitTimeoutMs = Number.isFinite(waitTimeoutParsed) && waitTimeoutParsed > 0 ? waitTimeoutParsed : 30000
+  const waitTimeoutMs = Number.isFinite(waitTimeoutParsed) && waitTimeoutParsed > 0 ? waitTimeoutParsed : 120000
   const shouldRun = buildEnabled || installEnabled || launchEnabled || reverseEnabled
   if (!shouldRun) return
 
-  const adbBin = process.env.PROMETHEUS_ADB_PATH?.trim() || 'adb'
+  const adbBin = resolveAdbBinary()
   const serial = resolveAdbSerial(adbBin, process.env.PROMETHEUS_ANDROID_SERIAL?.trim(), waitEnabled, waitTimeoutMs)
   if (!serial) return
   const adbPrefix = serial ? ['-s', serial] : []
