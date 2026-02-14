@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -172,12 +172,23 @@ const resolveBoolean = (value: string | undefined, fallback: boolean) => {
   if (falsyValues.has(normalized)) return false
   return fallback
 }
+const resolvePositiveInt = (value: string | undefined, fallback: string) => {
+  const parsed = Number.parseInt(value ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return `${parsed}`
+}
 const ensureDefault = (name: string, value: string) => {
   const current = process.env[name]?.trim()
   if (!current) process.env[name] = value
 }
 ensureDefault('PROMETHEUS_ANDROID_AUTODEPLOY', '1')
 ensureDefault('PROMETHEUS_ANDROID_AUTO_START_EMULATOR', '1')
+ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE', '1')
+ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB', '4096')
+ensureDefault('PROMETHEUS_ANDROID_EMULATOR_CORES', '4')
+ensureDefault('PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE', '1')
+ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '0')
+ensureDefault('PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME', '1')
 
 const normalizeHost = (value?: string) => {
   const trimmed = value?.trim()
@@ -189,6 +200,20 @@ const normalizeHost = (value?: string) => {
   } catch {
     return trimmed
   }
+}
+const parseArgList = (value: string | undefined) => {
+  const raw = value?.trim()
+  if (!raw) return []
+  const matches = raw.match(/[^\s"]+|"([^"]*)"/g)
+  if (!matches) return []
+  return matches.map((part) => part.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1'))
+}
+const resolveEmulatorRefreshRate = () => {
+  const raw = process.env.PROMETHEUS_ANDROID_REFRESH_RATE?.trim() || process.env.PROMETHEUS_ANDROID_FPS?.trim()
+  if (!raw) return '120'
+  const parsed = Number.parseFloat(raw)
+  if (!Number.isFinite(parsed) || parsed <= 0) return '120'
+  return `${parsed}`
 }
 type AdbDeviceInfo = {
   serial: string
@@ -213,6 +238,49 @@ const resolvePreferredEmulatorName = () =>
   process.env.PROMETHEUS_ANDROID_AVD?.trim() ||
   process.env.ANDROID_AVD?.trim() ||
   ''
+const resolvePreferredEmulator = (available: string[]) => {
+  const preferred = resolvePreferredEmulatorName()
+  if (preferred && available.includes(preferred)) return preferred
+
+  const pixel = available.find((avd) => /pixel/i.test(avd))
+  if (pixel) return pixel
+  return available[0]
+}
+const resolveAvailablePixelSkins = () => {
+  if (!androidSdkHome) return []
+  const skinsRoot = path.join(androidSdkHome, 'skins')
+  if (!existsSync(skinsRoot)) return []
+  try {
+    return readdirSync(skinsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) => /pixel/i.test(name))
+  } catch (error) {
+    return []
+  }
+}
+const resolveEmulatorSkin = (avd: string) => {
+  const explicit = process.env.PROMETHEUS_ANDROID_EMULATOR_SKIN?.trim()
+  if (explicit) return explicit
+
+  const enablePixelFrame = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME, true)
+  if (!enablePixelFrame) return undefined
+
+  if (/pixel/i.test(avd)) {
+    const directSkin = /pixel[-_]?\d+/i.test(avd) ? avd.toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'pixel'
+    return directSkin
+  }
+
+  const skins = resolveAvailablePixelSkins()
+  if (skins.length > 1) {
+    const exactMatch = skins.find((name) => /_6|_7|_8|_9|pro/i.test(name))
+    if (exactMatch) return exactMatch
+    return skins[0]
+  }
+  if (skins.length === 1) return skins[0]
+
+  return undefined
+}
 const listEmulatorAvds = (emulatorBin: string) => {
   const result = spawnSync(emulatorBin, ['-list-avds'], { encoding: 'utf8' })
   if (result.error) {
@@ -249,24 +317,60 @@ const launchAndroidEmulator = (): boolean => {
   }
 
   const preferred = resolvePreferredEmulatorName()
-  const avd = preferred && available.includes(preferred) ? preferred : available[0]
+  const avd = resolvePreferredEmulator(available)
   emulatorLaunchAttempted = true
   if (preferred && !available.includes(preferred)) {
     console.warn(`[android] Requested emulator '${preferred}' was not found. Falling back to '${avd}'.`)
+  } else if (!preferred && /pixel/i.test(avd)) {
+    console.info('[android] No emulator name provided. Selected a Pixel AVD automatically for better fidelity/performance defaults.')
+  }
+
+  const memoryMb = resolvePositiveInt(process.env.PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB?.trim(), '4096')
+  const cores = resolvePositiveInt(process.env.PROMETHEUS_ANDROID_EMULATOR_CORES?.trim(), '4')
+  const extraArgs = parseArgList(process.env.PROMETHEUS_ANDROID_EMULATOR_ARGS?.trim())
+  const enableMaxPerformance = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE, true)
+  const skin = resolveEmulatorSkin(avd)
+  const skinArgs = skin ? ['-skin', skin] : []
+  const baseArgs = enableMaxPerformance
+    ? [
+        '-no-snapshot-load',
+        '-no-snapshot',
+        '-no-boot-anim',
+        '-gpu',
+        'host',
+        '-memory',
+        memoryMb,
+        '-cores',
+        cores
+      ]
+    : ['-no-snapshot-load']
+  const refreshRate = resolveEmulatorRefreshRate()
+  const propArgs =
+    enableMaxPerformance && refreshRate ? ['-prop', `qemu.sf.lcd_refresh_rate=${refreshRate}`] : []
+  const args = ['-avd', avd, ...skinArgs, ...baseArgs, ...propArgs, ...extraArgs]
+
+  const toRun = (launchArgs: string[]) =>
+    `${emulatorBin} ${launchArgs.map((value) => (value.includes(' ') ? `"${value}"` : value)).join(' ')}`
+
+  const hasCustomExtra = extraArgs.length > 0
+  if (hasCustomExtra) {
+    console.info(`[android] Applying custom emulator args: ${extraArgs.join(' ')}`)
+  }
+  if (skin) {
+    console.info(`[android] Applying emulator skin: ${skin}`)
   }
 
   try {
-    const args = ['-avd', avd, '-no-snapshot-load']
     const proc = spawn(emulatorBin, args, { detached: true, stdio: 'ignore', windowsHide: true })
     proc.unref()
-    console.info(`[android] Starting emulator '${avd}' with: ${emulatorBin} ${args.join(' ')}`)
+    console.info(`[android] Starting emulator '${avd}' with: ${toRun(args)}`)
     return true
   } catch {
     try {
-      const args = ['-avd', avd]
-      const proc = spawn(emulatorBin, args, { detached: true, stdio: 'ignore', windowsHide: true })
+      const fallbackArgs = ['-avd', avd, '-no-snapshot-load']
+      const proc = spawn(emulatorBin, fallbackArgs, { detached: true, stdio: 'ignore', windowsHide: true })
       proc.unref()
-      console.info(`[android] Starting emulator '${avd}' with: ${emulatorBin} ${args.join(' ')}`)
+      console.info(`[android] Starting emulator '${avd}' with fallback args: ${toRun(fallbackArgs)}`)
       return true
     } catch {
       console.warn('[android] Failed to start Android emulator automatically.')
@@ -390,6 +494,48 @@ const runAdb = (adbBin: string, args: string[]) => {
   }
   return true
 }
+const sleepSync = (ms: number) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+const waitForAndroidBoot = (adbBin: string, serial: string, timeoutMs: number) => {
+  const serialPrefix = ['-s', serial]
+  const deadline = Date.now() + Math.max(5000, timeoutMs)
+  while (Date.now() < deadline) {
+    const bootResult = spawnSync(adbBin, [...serialPrefix, 'shell', 'getprop', 'sys.boot_completed'], { encoding: 'utf8' })
+    const packageResult = spawnSync(adbBin, [...serialPrefix, 'shell', 'pm', 'path', 'android'], { encoding: 'utf8' })
+    const bootReady = bootResult.status === 0 && bootResult.stdout?.trim() === '1'
+    const packageReady =
+      packageResult.status === 0 && typeof packageResult.stdout === 'string' && packageResult.stdout.includes('package:')
+
+    if (bootReady && packageReady) return true
+    sleepSync(1000)
+  }
+  return false
+}
+const optimizeAndroidDevice = (adbBin: string, serial: string) => {
+  const serialPrefix = ['-s', serial]
+  const enabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE, true)
+  if (!enabled) return
+
+  const refreshRate = resolveEmulatorRefreshRate()
+  if (refreshRate) {
+    const rateCmds = [
+      ['settings', 'put', 'system', 'min_refresh_rate', refreshRate],
+      ['settings', 'put', 'system', 'peak_refresh_rate', refreshRate]
+    ]
+    for (const cmd of rateCmds) {
+      runAdb(adbBin, [...serialPrefix, 'shell', ...cmd])
+    }
+  }
+
+  const animationScale = process.env.PROMETHEUS_ANDROID_ANIMATION_SCALE?.trim() || '0'
+  const animationCommands = [
+    ['settings', 'put', 'global', 'window_animation_scale', animationScale],
+    ['settings', 'put', 'global', 'transition_animation_scale', animationScale],
+    ['settings', 'put', 'global', 'animator_duration_scale', animationScale]
+  ]
+  for (const cmd of animationCommands) runAdb(adbBin, [...serialPrefix, 'shell', ...cmd])
+}
 
 const hasCapacitorCli = (siteRoot: string) => {
   const binNames = ['cap', 'cap.cmd', 'cap.ps1']
@@ -495,7 +641,12 @@ const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string) =
   const adbBin = resolveAdbBinary()
   const serial = resolveAdbSerial(adbBin, process.env.PROMETHEUS_ANDROID_SERIAL?.trim(), waitEnabled, waitTimeoutMs)
   if (!serial) return
+  if (!waitForAndroidBoot(adbBin, serial, waitTimeoutMs)) {
+    console.warn('[android] Device did not finish booting in time. Skipping Android auto-deploy to avoid unstable state.')
+    return
+  }
   const adbPrefix = serial ? ['-s', serial] : []
+  optimizeAndroidDevice(adbBin, serial)
 
   if (reverseEnabled) {
     if (!runAdb(adbBin, [...adbPrefix, 'reverse', `tcp:${devicePort}`, `tcp:${devicePort}`])) return
