@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.5
-FROM oven/bun:1.3.6 AS deps
+FROM oven/bun:1.3.9 AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -14,7 +14,7 @@ COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --ignore-scripts --frozen-lockfile --filter site
 
-FROM oven/bun:1.3.6 AS runner
+FROM oven/bun:1.3.9 AS runner
 WORKDIR /app
 
 ENV PORT=4444
