@@ -471,6 +471,7 @@ const manualChunks = (id: string) => {
 
 export default defineConfig(async (configEnv): Promise<UserConfig> => {
   const ssrBuild = Boolean(configEnv?.isSsrBuild)
+  const isBuildCommand = configEnv.command === 'build'
   const ssrInputs = ssrBuild
     ? {
       'entry.ssr': path.resolve(configRoot, 'src', 'entry.ssr.tsx'),
@@ -600,10 +601,10 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(capacitorBuildEnabled
+        ...(capacitorBuildEnabled && isBuildCommand
           ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 }), capacitorSsrInputPlugin(ssrInputs)]
           : []),
-        ...(capacitorBuildEnabled
+        ...(capacitorBuildEnabled && isBuildCommand
           ? []
           : [
             compression({
@@ -627,7 +628,23 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         })
       ],
       optimizeDeps: {
-        exclude: ['@bokuweb/zstd-wasm']
+        include: ['extend'],
+        exclude: ['@bokuweb/zstd-wasm', '@builder.io/qwik-city', '@builder.io/qwik', '@qwik-client-manifest']
+      },
+      ssr: {
+        noExternal: [
+          '@builder.io/qwik-city',
+          '@builder.io/qwik',
+          '@builder.io/qwik/server',
+          '@builder.io/qwik/jsx-runtime',
+          '@qwik-client-manifest',
+          '@qwik-city-plan',
+          '@qwik-city-sw-register',
+          '@qwik-city-static-paths',
+          '@qwik-city-not-found-paths',
+          '@qwik-city-entries'
+        ],
+        external: ['extend', 'extend/index', 'extend/index.js']
       },
       oxc: false,
       resolve: {

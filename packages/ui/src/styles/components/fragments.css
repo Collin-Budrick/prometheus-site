@@ -264,7 +264,7 @@
   }
 
   .fragment-card {
-    @apply relative overflow-hidden rounded-(--radius) border border-amber-100/80 bg-white/80 p-6;
+    @apply relative rounded-(--radius) border border-amber-100/80 bg-white/80 p-6;
     min-height: var(--fragment-min-height, 0px);
     --motion-fade-duration: 1200ms;
     --motion-fade-distance: 8px;
@@ -339,7 +339,6 @@
 
   .fragment-card,
   .fragment-card * {
-    overflow: hidden !important;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
