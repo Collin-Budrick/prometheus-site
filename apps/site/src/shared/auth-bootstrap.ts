@@ -293,12 +293,6 @@ const parseBootstrapSession = (token: string, userRaw: string | null) => {
   })
 }
 
-const resolveApiHost = (origin: string, apiBase?: string) => {
-  if (!apiBase) return ''
-  if (apiBase.startsWith('/')) return `${origin}${apiBase}`
-  return apiBase
-}
-
 const resolveAuthBase = (origin: string, apiBase?: string) => {
   const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
   if (!apiBase) return ''

@@ -1,6 +1,8 @@
 .git
 node_modules
 apps/*/node_modules
+packages/*/node_modules
+packages/**/node_modules
 apps/*/dist
 apps/site/server
 apps/site/qwikcity-import.cpuprofile

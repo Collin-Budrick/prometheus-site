@@ -1,18 +1,43 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.resolve(scriptDir, '..')
 const workspaceRoot = path.resolve(siteRoot, '..', '..')
-const viteBin = path.resolve(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js')
-const rolldownIndex = path.resolve(workspaceRoot, 'node_modules', 'rolldown', 'dist', 'index.mjs')
+const resolveFirstExisting = (candidates: string[]) => candidates.find((candidate) => existsSync(candidate)) || candidates[0]
+
+const viteBin = resolveFirstExisting([
+  path.resolve(siteRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
+  path.resolve(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js')
+])
+const viteNodeModulesDir = path.resolve(path.dirname(viteBin), '..', '..')
+
+const rolldownIndexCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'rolldown', 'dist', 'index.mjs'),
+  path.resolve(workspaceRoot, 'node_modules', 'rolldown', 'dist', 'index.mjs')
+]
 const qwikOptimizerCandidates = [
   path.resolve(siteRoot, 'node_modules', '@builder.io', 'qwik', 'dist', 'optimizer.mjs'),
   path.resolve(workspaceRoot, 'apps', 'site', 'node_modules', '@builder.io', 'qwik', 'dist', 'optimizer.mjs'),
   path.resolve(workspaceRoot, 'node_modules', '@builder.io', 'qwik', 'dist', 'optimizer.mjs')
 ]
+
+type WinBindingStatus = {
+  targetArch: 'x64' | 'arm64'
+  missingRolldown: boolean
+  missingOxide: boolean
+  missingRollup: boolean
+  missingLightningcss: boolean
+  missingTailwindLightningcss: boolean
+  missingEsbuild: boolean
+}
+
+type EsbuildBindingTarget = {
+  packagePathParts: string[]
+  expectedVersion: string
+}
 
 const resolveNodeRuntime = () => {
   const nodeBinary = process.env.PROMETHEUS_NODE_BINARY?.trim() || 'node'
@@ -24,11 +49,317 @@ const resolveNodeRuntime = () => {
   return null
 }
 
-const hasWinBinding = (rootDir: string, packageName: string, bindingFile: string) =>
-  existsSync(path.resolve(rootDir, 'node_modules', packageName, bindingFile))
+const hasWinBinding = (nodeModulesDir: string, packageName: string, bindingFile: string) =>
+  existsSync(path.resolve(nodeModulesDir, packageName, bindingFile))
 
-const warnMissingBindings = (rootDir: string, arch: string) => {
-  if (process.platform !== 'win32') return
+const rolldownPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'vite', 'node_modules', 'rolldown', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'vite', 'node_modules', 'rolldown', 'package.json'),
+  path.resolve(siteRoot, 'node_modules', 'rolldown', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'rolldown', 'package.json')
+]
+
+const tailwindPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'tailwindcss', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'tailwindcss', 'package.json')
+]
+
+const rollupPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'rollup', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'rollup', 'package.json')
+]
+
+const lightningcssPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'lightningcss', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'lightningcss', 'package.json')
+]
+
+const tailwindLightningcssPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', '@tailwindcss', 'node', 'node_modules', 'lightningcss', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', '@tailwindcss', 'node', 'node_modules', 'lightningcss', 'package.json')
+]
+
+const esbuildPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'esbuild', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'esbuild', 'package.json')
+]
+
+const serwistViteEsbuildPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', '@serwist', 'vite', 'node_modules', 'vite', 'node_modules', 'esbuild', 'package.json'),
+  path.resolve(
+    workspaceRoot,
+    'node_modules',
+    '@serwist',
+    'vite',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  )
+]
+
+const tailwindViteEsbuildPackageVersionCandidates = [
+  path.resolve(
+    siteRoot,
+    'node_modules',
+    '@tailwindcss',
+    'vite',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  ),
+  path.resolve(
+    workspaceRoot,
+    'node_modules',
+    '@tailwindcss',
+    'vite',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  )
+]
+
+const qwikViteEsbuildPackageVersionCandidates = [
+  path.resolve(
+    siteRoot,
+    'node_modules',
+    '@builder.io',
+    'qwik',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  ),
+  path.resolve(
+    workspaceRoot,
+    'node_modules',
+    '@builder.io',
+    'qwik',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  )
+]
+
+const qwikCityViteEsbuildPackageVersionCandidates = [
+  path.resolve(
+    siteRoot,
+    'node_modules',
+    '@builder.io',
+    'qwik-city',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  ),
+  path.resolve(
+    workspaceRoot,
+    'node_modules',
+    '@builder.io',
+    'qwik-city',
+    'node_modules',
+    'vite',
+    'node_modules',
+    'esbuild',
+    'package.json'
+  )
+]
+
+const tsxEsbuildPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'tsx', 'node_modules', 'esbuild', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'tsx', 'node_modules', 'esbuild', 'package.json')
+]
+
+const resolveStorePackageDir = (nodeModulesDir: string, storePrefix: string, packagePathParts: string[]) => {
+  const storeDir = path.resolve(nodeModulesDir, '.bun')
+  if (!existsSync(storeDir)) return null
+  const entries = readdirSync(storeDir).filter((name) => name.startsWith(`${storePrefix}@`))
+  if (!entries.length) return null
+  return { storeDir, entries, packagePathParts }
+}
+
+const resolveStorePackagePath = (
+  nodeModulesDir: string,
+  storePrefix: string,
+  packagePathParts: string[],
+  expectedVersion?: string
+) => {
+  const store = resolveStorePackageDir(nodeModulesDir, storePrefix, packagePathParts)
+  if (!store) return null
+  const { storeDir, entries } = store
+  const preferredEntry =
+    (expectedVersion && entries.find((name) => name === `${storePrefix}@${expectedVersion}`)) || entries[0]
+  const candidate = path.resolve(storeDir, preferredEntry, 'node_modules', ...packagePathParts)
+  return existsSync(candidate) ? candidate : null
+}
+
+const resolvePackageVersion = (packageJsonCandidates: string[]) => {
+  for (const candidate of packageJsonCandidates) {
+    if (!existsSync(candidate)) continue
+    try {
+      const source = readFileSync(candidate, 'utf8')
+      const parsed = JSON.parse(source) as { version?: string }
+      if (typeof parsed.version === 'string' && parsed.version.trim()) return parsed.version.trim()
+    } catch {
+      // ignore parse errors and continue
+    }
+  }
+  return null
+}
+
+const resolveEsbuildBindingTargets = (targetArch: 'x64' | 'arm64'): EsbuildBindingTarget[] => {
+  const esbuildPackageNamePart = targetArch === 'x64' ? 'win32-x64' : 'win32-arm64'
+  const contexts = [
+    { packageJsonCandidates: esbuildPackageVersionCandidates, packagePathPrefix: [] as string[] },
+    {
+      packageJsonCandidates: serwistViteEsbuildPackageVersionCandidates,
+      packagePathPrefix: ['@serwist', 'vite', 'node_modules', 'vite', 'node_modules', 'esbuild', 'node_modules'] as string[]
+    },
+    {
+      packageJsonCandidates: tailwindViteEsbuildPackageVersionCandidates,
+      packagePathPrefix: ['@tailwindcss', 'vite', 'node_modules', 'vite', 'node_modules', 'esbuild', 'node_modules'] as string[]
+    },
+    {
+      packageJsonCandidates: qwikViteEsbuildPackageVersionCandidates,
+      packagePathPrefix: ['@builder.io', 'qwik', 'node_modules', 'vite', 'node_modules', 'esbuild', 'node_modules'] as string[]
+    },
+    {
+      packageJsonCandidates: qwikCityViteEsbuildPackageVersionCandidates,
+      packagePathPrefix: ['@builder.io', 'qwik-city', 'node_modules', 'vite', 'node_modules', 'esbuild', 'node_modules'] as string[]
+    },
+    {
+      packageJsonCandidates: tsxEsbuildPackageVersionCandidates,
+      packagePathPrefix: ['tsx', 'node_modules', 'esbuild', 'node_modules'] as string[]
+    }
+  ]
+  const targets: EsbuildBindingTarget[] = []
+  for (const context of contexts) {
+    const expectedVersion = resolvePackageVersion(context.packageJsonCandidates)
+    if (!expectedVersion) continue
+    targets.push({
+      expectedVersion,
+      packagePathParts: [...context.packagePathPrefix, '@esbuild', esbuildPackageNamePart]
+    })
+  }
+  return targets
+}
+
+const ensureModuleLinkFromStore = (
+  nodeModulesDir: string,
+  packagePathParts: string[],
+  storePrefix: string,
+  verifyFile: string,
+  expectedVersion?: string,
+  sourcePackagePathParts: string[] = packagePathParts
+) => {
+  const destination = path.resolve(nodeModulesDir, ...packagePathParts)
+  const resolvedFile = path.resolve(destination, verifyFile)
+  if (existsSync(resolvedFile)) {
+    if (!expectedVersion) return true
+    const currentVersion = resolvePackageVersion([path.resolve(destination, 'package.json')])
+    if (currentVersion === expectedVersion) return true
+  }
+  const source = resolveStorePackagePath(nodeModulesDir, storePrefix, sourcePackagePathParts, expectedVersion)
+  if (!source) return false
+
+  mkdirSync(path.dirname(destination), { recursive: true })
+  try {
+    rmSync(destination, { recursive: true, force: true })
+  } catch {
+    // ignore and continue with best effort
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      cpSync(source, destination, { recursive: true })
+      return existsSync(resolvedFile)
+    } catch {
+      return false
+    }
+  }
+
+  try {
+    symlinkSync(source, destination, 'dir')
+    return existsSync(resolvedFile)
+  } catch {
+    try {
+      cpSync(source, destination, { recursive: true })
+      return existsSync(resolvedFile)
+    } catch {
+      return false
+    }
+  }
+}
+
+const repairWinBindingLinks = (nodeModulesDir: string, targetArch: 'x64' | 'arm64') => {
+  const rolldownName = targetArch === 'x64' ? 'binding-win32-x64-msvc' : 'binding-win32-arm64-msvc'
+  const oxideName = targetArch === 'x64' ? 'oxide-win32-x64-msvc' : 'oxide-win32-arm64-msvc'
+  const rollupName = targetArch === 'x64' ? 'rollup-win32-x64-msvc' : 'rollup-win32-arm64-msvc'
+  const lightningcssName = targetArch === 'x64' ? 'lightningcss-win32-x64-msvc' : 'lightningcss-win32-arm64-msvc'
+  const lightningcssFile = targetArch === 'x64' ? 'lightningcss.win32-x64-msvc.node' : 'lightningcss.win32-arm64-msvc.node'
+  const esbuildName = targetArch === 'x64' ? 'win32-x64' : 'win32-arm64'
+  const esbuildStorePrefix = `@esbuild+${esbuildName}`
+  const rolldownVersion = resolvePackageVersion(rolldownPackageVersionCandidates)
+  const tailwindVersion = resolvePackageVersion(tailwindPackageVersionCandidates)
+  const rollupVersion = resolvePackageVersion(rollupPackageVersionCandidates)
+  const lightningcssVersion = resolvePackageVersion(lightningcssPackageVersionCandidates)
+  const tailwindLightningcssVersion = resolvePackageVersion(tailwindLightningcssPackageVersionCandidates)
+  const esbuildTargets = resolveEsbuildBindingTargets(targetArch)
+  ensureModuleLinkFromStore(
+    nodeModulesDir,
+    ['@rolldown', rolldownName],
+    `@rolldown+${rolldownName}`,
+    targetArch === 'x64' ? 'rolldown-binding.win32-x64-msvc.node' : 'rolldown-binding.win32-arm64-msvc.node',
+    rolldownVersion
+  )
+  ensureModuleLinkFromStore(
+    nodeModulesDir,
+    ['@tailwindcss', oxideName],
+    `@tailwindcss+${oxideName}`,
+    targetArch === 'x64' ? 'tailwindcss-oxide.win32-x64-msvc.node' : 'tailwindcss-oxide.win32-arm64-msvc.node',
+    tailwindVersion
+  )
+  ensureModuleLinkFromStore(
+    nodeModulesDir,
+    ['@rollup', rollupName],
+    `@rollup+${rollupName}`,
+    targetArch === 'x64' ? 'rollup.win32-x64-msvc.node' : 'rollup.win32-arm64-msvc.node',
+    rollupVersion
+  )
+  ensureModuleLinkFromStore(nodeModulesDir, [lightningcssName], lightningcssName, lightningcssFile, lightningcssVersion)
+  ensureModuleLinkFromStore(
+    nodeModulesDir,
+    ['@tailwindcss', 'node', 'node_modules', 'lightningcss', 'node_modules', lightningcssName],
+    lightningcssName,
+    lightningcssFile,
+    tailwindLightningcssVersion,
+    [lightningcssName]
+  )
+  for (const target of esbuildTargets) {
+    ensureModuleLinkFromStore(
+      nodeModulesDir,
+      target.packagePathParts,
+      esbuildStorePrefix,
+      'esbuild.exe',
+      target.expectedVersion,
+      ['@esbuild', esbuildName]
+    )
+  }
+}
+
+const resolveWinBindingStatus = (nodeModulesDirs: string[], arch: string): WinBindingStatus | null => {
+  if (process.platform !== 'win32') return null
+  const primaryNodeModulesDir = nodeModulesDirs[0]
+  if (!primaryNodeModulesDir) return null
   const targetArch = arch === 'x64' || arch === 'arm64' ? arch : 'arm64'
   const rolldownPackage =
     targetArch === 'x64' ? '@rolldown/binding-win32-x64-msvc' : '@rolldown/binding-win32-arm64-msvc'
@@ -38,35 +369,166 @@ const warnMissingBindings = (rootDir: string, arch: string) => {
     targetArch === 'x64' ? '@tailwindcss/oxide-win32-x64-msvc' : '@tailwindcss/oxide-win32-arm64-msvc'
   const oxideFile =
     targetArch === 'x64' ? 'tailwindcss-oxide.win32-x64-msvc.node' : 'tailwindcss-oxide.win32-arm64-msvc.node'
+  const rollupPackage =
+    targetArch === 'x64' ? '@rollup/rollup-win32-x64-msvc' : '@rollup/rollup-win32-arm64-msvc'
+  const rollupFile = targetArch === 'x64' ? 'rollup.win32-x64-msvc.node' : 'rollup.win32-arm64-msvc.node'
+  const lightningcssPackage = targetArch === 'x64' ? 'lightningcss-win32-x64-msvc' : 'lightningcss-win32-arm64-msvc'
+  const lightningcssFile = targetArch === 'x64' ? 'lightningcss.win32-x64-msvc.node' : 'lightningcss.win32-arm64-msvc.node'
+  const tailwindLightningcssPackage = path.join(
+    '@tailwindcss',
+    'node',
+    'node_modules',
+    'lightningcss',
+    'node_modules',
+    lightningcssPackage
+  )
+  const rolldownExpectedVersion = resolvePackageVersion(rolldownPackageVersionCandidates)
+  const tailwindExpectedVersion = resolvePackageVersion(tailwindPackageVersionCandidates)
+  const rollupExpectedVersion = resolvePackageVersion(rollupPackageVersionCandidates)
+  const lightningcssExpectedVersion = resolvePackageVersion(lightningcssPackageVersionCandidates)
+  const tailwindLightningcssExpectedVersion = resolvePackageVersion(tailwindLightningcssPackageVersionCandidates)
+  const esbuildTargets = resolveEsbuildBindingTargets(targetArch)
 
-  const missingRolldown = !hasWinBinding(rootDir, rolldownPackage, rolldownFile)
-  const missingOxide = !hasWinBinding(rootDir, oxidePackage, oxideFile)
-  if (!missingRolldown && !missingOxide) return
+  const missingRolldown = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, rolldownPackage, rolldownFile)) return false
+    if (!rolldownExpectedVersion) return true
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, rolldownPackage, 'package.json')])
+    return current === rolldownExpectedVersion
+  })()
+  const missingOxide = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, oxidePackage, oxideFile)) return false
+    if (!tailwindExpectedVersion) return true
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, oxidePackage, 'package.json')])
+    return current === tailwindExpectedVersion
+  })()
+  const missingRollup = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, rollupPackage, rollupFile)) return false
+    if (!rollupExpectedVersion) return true
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, rollupPackage, 'package.json')])
+    return current === rollupExpectedVersion
+  })()
+  const missingLightningcss = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, lightningcssPackage, lightningcssFile)) return false
+    if (!lightningcssExpectedVersion) return true
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, lightningcssPackage, 'package.json')])
+    return current === lightningcssExpectedVersion
+  })()
+  const missingTailwindLightningcss = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, tailwindLightningcssPackage, lightningcssFile)) return false
+    if (!tailwindLightningcssExpectedVersion) return true
+    const current = resolvePackageVersion([
+      path.resolve(primaryNodeModulesDir, tailwindLightningcssPackage, 'package.json')
+    ])
+    return current === tailwindLightningcssExpectedVersion
+  })()
+  const missingEsbuild = !esbuildTargets.every((target) => {
+    const packagePath = path.join(...target.packagePathParts)
+    if (!hasWinBinding(primaryNodeModulesDir, packagePath, 'esbuild.exe')) return false
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, packagePath, 'package.json')])
+    return current === target.expectedVersion
+  })
+  return {
+    targetArch,
+    missingRolldown,
+    missingOxide,
+    missingRollup,
+    missingLightningcss,
+    missingTailwindLightningcss,
+    missingEsbuild
+  }
+}
 
-  const hintCpu = targetArch === 'x64' ? 'x64' : 'arm64'
+const resolveBunBin = () => {
+  const bunGlobal = globalThis as typeof globalThis & { Bun?: { execPath?: string } }
+  return (
+    (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
+    (typeof process.execPath === 'string' && process.execPath) ||
+    'bun'
+  )
+}
+
+const resolveStoreBackedNodeModulesDir = (nodeModulesDirs: string[]) => {
+  for (const dir of nodeModulesDirs) {
+    if (existsSync(path.resolve(dir, '.bun'))) return dir
+  }
+  return nodeModulesDirs[0]
+}
+
+const ensureWinBindings = (nodeModulesDirs: string[], arch: string) => {
+  const initial = resolveWinBindingStatus(nodeModulesDirs, arch)
+  if (
+    !initial ||
+    (!initial.missingRolldown &&
+      !initial.missingOxide &&
+      !initial.missingRollup &&
+      !initial.missingLightningcss &&
+      !initial.missingTailwindLightningcss &&
+      !initial.missingEsbuild)
+  ) {
+    return initial
+  }
+  if (process.env.PROMETHEUS_SKIP_NATIVE_REPAIR?.trim() === '1') return initial
+
+  const bunBin = resolveBunBin()
+  const commonArgs = ['--cpu', initial.targetArch, '--os', 'win32']
+  const installEnv = { ...process.env, PROMETHEUS_SKIP_NATIVE_REPAIR: '1' }
+  const tryInstall = (args: string[]) =>
+    spawnSync(bunBin, args, { stdio: 'inherit', cwd: workspaceRoot, env: installEnv })
+
+  const filtered = tryInstall(['install', ...commonArgs, '--filter', 'site'])
+  if (filtered.status !== 0) {
+    tryInstall(['install', ...commonArgs])
+  }
+  for (const nodeModulesDir of nodeModulesDirs) {
+    repairWinBindingLinks(nodeModulesDir, initial.targetArch)
+  }
+
+  return resolveWinBindingStatus(nodeModulesDirs, arch)
+}
+
+const warnMissingBindings = (status: WinBindingStatus | null) => {
+  if (
+    !status ||
+    (!status.missingRolldown &&
+      !status.missingOxide &&
+      !status.missingRollup &&
+      !status.missingLightningcss &&
+      !status.missingTailwindLightningcss &&
+      !status.missingEsbuild)
+  ) {
+    return
+  }
+
+  const hintCpu = status.targetArch === 'x64' ? 'x64' : 'arm64'
   const parts = []
-  if (missingRolldown) parts.push('rolldown')
-  if (missingOxide) parts.push('tailwind oxide')
+  if (status.missingRolldown) parts.push('rolldown')
+  if (status.missingOxide) parts.push('tailwind oxide')
+  if (status.missingRollup) parts.push('rollup')
+  if (status.missingLightningcss) parts.push('lightningcss')
+  if (status.missingTailwindLightningcss) parts.push('tailwind lightningcss')
+  if (status.missingEsbuild) parts.push('esbuild')
   console.warn(
-    `[native] Missing ${parts.join(' + ')} binding(s) for ${targetArch}. ` +
+    `[native] Missing ${parts.join(' + ')} binding(s) for ${status.targetArch}. ` +
       `Run: bun install --cpu ${hintCpu} --os win32 --filter site`
   )
 }
 
 const patchRolldownIndex = () => {
-  if (!existsSync(rolldownIndex)) return
-  const source = readFileSync(rolldownIndex, 'utf8')
-  if (!source.includes('initTraceSubscriber')) return
-  if (source.includes('typeof initTraceSubscriber') || source.includes('typeof import_binding.initTraceSubscriber')) {
-    return
+  for (const rolldownIndex of rolldownIndexCandidates) {
+    if (!existsSync(rolldownIndex)) continue
+    const source = readFileSync(rolldownIndex, 'utf8')
+    if (!source.includes('initTraceSubscriber')) continue
+    if (source.includes('typeof initTraceSubscriber') || source.includes('typeof import_binding.initTraceSubscriber')) {
+      continue
+    }
+    const marker = 'const subscriberGuard = (0, import_binding.initTraceSubscriber)();'
+    if (!source.includes(marker)) continue
+    const patched = source.replace(
+      marker,
+      'const initTraceSubscriber = import_binding.initTraceSubscriber;\n\tconst subscriberGuard = typeof initTraceSubscriber === "function" ? initTraceSubscriber() : null;'
+    )
+    writeFileSync(rolldownIndex, patched, 'utf8')
   }
-  const marker = 'const subscriberGuard = (0, import_binding.initTraceSubscriber)();'
-  if (!source.includes(marker)) return
-  const patched = source.replace(
-    marker,
-    'const initTraceSubscriber = import_binding.initTraceSubscriber;\n\tconst subscriberGuard = typeof initTraceSubscriber === "function" ? initTraceSubscriber() : null;'
-  )
-  writeFileSync(rolldownIndex, patched, 'utf8')
 }
 
 const restoreQwikOptimizerDevServerData = () => {
@@ -177,7 +639,16 @@ if (!existsSync(viteBin)) {
 
 patchRolldownIndex()
 restoreQwikOptimizerDevServerData()
-warnMissingBindings(workspaceRoot, runtime.arch)
+const bindingNodeModulesCandidates = [
+  viteNodeModulesDir,
+  path.resolve(siteRoot, 'node_modules'),
+  path.resolve(workspaceRoot, 'node_modules')
+]
+const bindingNodeModulesDirs = Array.from(
+  new Set([resolveStoreBackedNodeModulesDir(bindingNodeModulesCandidates), ...bindingNodeModulesCandidates])
+)
+const bindingStatus = ensureWinBindings(bindingNodeModulesDirs, runtime.arch)
+warnMissingBindings(bindingStatus)
 
 const args = process.argv.slice(2)
 const hasConfigLoader = args.some((arg) => arg === '--configLoader' || arg.startsWith('--configLoader='))

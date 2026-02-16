@@ -118,4 +118,3 @@ export const runLangViewTransition = (update: () => void | Promise<void>, option
     return Promise.resolve(update())
   }
 }
-

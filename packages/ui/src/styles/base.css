@@ -38,7 +38,7 @@
     }
   }
 
-  @supports (view-transition-name: root) {
+  @supports (view-transition-name: none) {
     :root {
       view-transition-name: none;
     }
@@ -147,10 +147,12 @@
       --view-transition-duration-long: 0ms;
     }
 
-    :root[data-theme-direction]::view-transition-new(root) {
-      animation: none;
-      -webkit-mask-image: none;
-      mask-image: none;
+    @supports (view-transition-name: none) {
+      :root[data-theme-direction]::view-transition-new(root) {
+        animation: none;
+        -webkit-mask-image: none;
+        mask-image: none;
+      }
     }
   }
 

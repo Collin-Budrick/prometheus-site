@@ -9,10 +9,13 @@ import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
 import { hideNativeSplashScreen, initNativeShell } from './native/native-shell'
+import { isNativeCapacitorRuntime } from './native/runtime'
 
 const shouldEnableAmbientMotion = () => {
   if (typeof window === 'undefined') return false
+  if (isNativeCapacitorRuntime()) return true
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
+
   const nav = navigator as Navigator & {
     deviceMemory?: number
     connection?: {
@@ -109,6 +112,9 @@ export default component$(() => {
   useStyles$(globalStyles)
   const clientReady = useClientReady()
   useVisibleTask$(() => {
+    if (typeof window !== 'undefined') {
+      (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime = isNativeCapacitorRuntime()
+    }
     initNativeShell()
   })
   useVisibleTask$(
@@ -127,8 +133,26 @@ export default component$(() => {
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      if (!shouldEnableAmbientMotion()) return
+      const shouldEnable = shouldEnableAmbientMotion()
+      const isNative = isNativeCapacitorRuntime()
       const root = document.documentElement
+      const supportsViewTransition =
+        shouldEnable &&
+        !isNative &&
+        'startViewTransition' in document &&
+        !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      if (shouldEnable) {
+        root.dataset.motionEnabled = 'true'
+      } else {
+        delete root.dataset.motionEnabled
+      }
+      if (supportsViewTransition) {
+        root.dataset.viewTransitions = 'true'
+      } else {
+        delete root.dataset.viewTransitions
+      }
+      if (!shouldEnable) return
 
       setupLcpGate(
         ctx,

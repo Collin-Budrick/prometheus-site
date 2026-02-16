@@ -1,13 +1,21 @@
 @layer components {
+  html[data-motion-ready="true"] [data-motion] {
+    transition-property: transform, opacity;
+    transition-duration: 500ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+  }
+
   html:not([data-motion-ready="true"]) [data-motion] {
     opacity: 1;
     transform: none;
     animation: none;
+    transition: none;
   }
 
   html[data-motion-ready="true"] [data-motion][data-motion-state="out"] {
     opacity: 0;
-    transform: translateY(var(--motion-distance));
+    transform: translateY(var(--motion-distance, var(--motion-fade-distance, 12px)));
     will-change: transform, opacity;
   }
 
@@ -26,7 +34,7 @@
     }
   }
 
-  @supports (view-transition-name: root) {
+  @supports (view-transition-name: none) {
     [data-view-transition="shell-header"] {
       view-transition-name: shell-header;
     }
@@ -100,7 +108,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    @supports (view-transition-name: root) {
+    @supports (view-transition-name: none) {
       [data-view-transition] {
         view-transition-name: none !important;
       }

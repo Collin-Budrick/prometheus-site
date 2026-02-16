@@ -64,6 +64,97 @@ type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle
 }
 
+const isLikelyNativeCapacitorRuntime = () => {
+  if (typeof window === 'undefined') return false
+  const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
+  if (runtimeFlag === true) return true
+  if (runtimeFlag === false) return false
+
+  const capacitorRuntime = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+  if (typeof capacitorRuntime?.isNativePlatform === 'function' && capacitorRuntime.isNativePlatform()) {
+    return true
+  }
+  if (
+    typeof capacitorRuntime?.getPlatform === 'function' &&
+    capacitorRuntime.getPlatform() !== 'web'
+  ) {
+    return true
+  }
+
+  if (window.location.protocol === 'capacitor:') return true
+  if (window.location.host === 'localhost' && window.location.pathname.startsWith('/__capacitor')) return true
+  if (window.navigator.userAgent.toLowerCase().includes('wv')) return true
+  return false
+}
+
+const supportsThemeViewTransitions = () => {
+  if (typeof document === 'undefined') return false
+  if (isLikelyNativeCapacitorRuntime()) return false
+  const doc = document as DocumentWithViewTransition
+  if (typeof doc.startViewTransition !== 'function') return false
+  if (!window.matchMedia('(prefers-reduced-motion: no-preference)').matches) return false
+  if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return false
+  return CSS.supports('view-transition-name: none')
+}
+
+const runThemeFallbackTransition = (
+  nextTheme: Theme,
+  applyThemeChange: () => void,
+  onComplete: () => void
+) => {
+  const body = document.body
+  if (!body) {
+    applyThemeChange()
+    onComplete()
+    return
+  }
+
+  const root = document.documentElement
+  const toColor =
+    nextTheme === 'dark'
+      ? 'var(--theme-transition-dark-color, #0f172a)'
+      : 'var(--theme-transition-light-color, #f97316)'
+  const computed = getComputedStyle(root)
+  const themeDuration = computed.getPropertyValue('--theme-transition-duration').trim()
+  const themeEase = computed.getPropertyValue('--theme-transition-ease').trim()
+  const rawDuration = Number.parseFloat(themeDuration.replace(/[^0-9.]/g, ''))
+  const duration = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 1400
+  const overlay = document.createElement('div')
+  const reducedThemeName = nextTheme === 'dark' ? 'dark' : 'light'
+  const direction = reducedThemeName === 'dark' ? '100%' : '-100%'
+  overlay.style.position = 'fixed'
+  overlay.style.inset = '0'
+  overlay.style.background = toColor
+  overlay.style.pointerEvents = 'none'
+  overlay.style.zIndex = '99999'
+  overlay.style.willChange = 'transform'
+  overlay.style.transformOrigin = 'center'
+  const easing = themeEase || 'cubic-bezier(0.42, 0, 0.58, 1)'
+  body.appendChild(overlay)
+  void overlay.getBoundingClientRect()
+  let done = false
+  const finalize = () => {
+    if (done) return
+    done = true
+    overlay.remove()
+    onComplete()
+  }
+
+  overlay.style.transform = 'translateY(0)'
+  overlay.style.transition = `transform ${duration}ms ${easing}`
+  const start = () => {
+    applyThemeChange()
+    overlay.style.transform = `translateY(${direction})`
+  }
+  window.setTimeout(finalize, duration + 150)
+  overlay.addEventListener('transitionend', finalize, { once: true })
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(start)
+  } else {
+    start()
+  }
+}
+
 export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, labels, initialTheme, onToggle$ }) => {
   const themeSignal = useSignal<Theme>(initialTheme ?? themeStore.value)
   const hasStoredPreference = useSignal(false)
@@ -103,20 +194,10 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
     const root = document.documentElement
     const supportsTransition =
       typeof doc.startViewTransition === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+      supportsThemeViewTransitions()
 
     const previousViewTransitionName = root.style.getPropertyValue('view-transition-name')
     root.style.setProperty('view-transition-name', 'root')
-
-    if (!supportsTransition) {
-      applyNextTheme()
-      if (previousViewTransitionName) {
-        root.style.setProperty('view-transition-name', previousViewTransitionName)
-      } else {
-        root.style.removeProperty('view-transition-name')
-      }
-      return
-    }
 
     const finalizeTransition = () => {
       delete root.dataset.themeDirection
@@ -125,6 +206,15 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       } else {
         root.style.removeProperty('view-transition-name')
       }
+    }
+
+    root.dataset.themeDirection = nextTheme
+
+    if (!supportsTransition) {
+      runThemeFallbackTransition(nextTheme, applyNextTheme, () => {
+        finalizeTransition()
+      })
+      return
     }
 
     const startTransition = () => {
@@ -145,8 +235,6 @@ export const ThemeToggle = component$<ThemeToggleProps>(({ class: className, lab
       finalizeTransition()
       return
     }
-
-    root.dataset.themeDirection = nextTheme
 
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(startTransition)

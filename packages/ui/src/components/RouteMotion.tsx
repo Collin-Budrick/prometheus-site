@@ -41,8 +41,65 @@ const nextMotionRunId = () => {
   return motionInstanceId
 }
 
+const supportsViewTransitions = (reducedMotion: boolean) => {
+  if (reducedMotion) return false
+  if (typeof document === 'undefined') return false
+  const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
+  if (runtimeFlag === true) return false
+  if (!('startViewTransition' in document)) return false
+  return true
+}
+
+const runShellTransitionFallback = () => {
+  if (typeof document === 'undefined') return
+
+  const root = document.documentElement
+  const direction = root.dataset.navDirection === 'back' ? 'back' : 'forward'
+  const shell = document.querySelector<HTMLElement>('main[data-view-transition="shell-main"]')
+  if (!shell) return
+
+  const distance = direction === 'back' ? '-14px' : '14px'
+  const duration = 360
+  const easing = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+  shell.style.willChange = 'transform, opacity'
+  shell.style.transform = `translateX(${distance})`
+  shell.style.opacity = '0.985'
+
+  if ('animate' in shell) {
+    const animation = shell.animate(
+      [{ transform: `translateX(${distance})`, opacity: 0.985 }, { transform: 'translateX(0)', opacity: 1 }],
+      {
+        duration,
+        easing,
+        fill: 'forwards'
+      }
+    )
+    animation.finished.catch(() => void 0).finally(() => {
+      shell.style.transform = ''
+      shell.style.opacity = ''
+      shell.style.willChange = ''
+    })
+    return
+  }
+
+  shell.style.transition = `transform ${duration}ms ${easing}, opacity ${duration}ms ${easing}`
+  requestAnimationFrame(() => {
+    shell.style.transform = 'translateX(0)'
+    shell.style.opacity = '1'
+  })
+  window.setTimeout(() => {
+    shell.style.transition = ''
+    shell.style.transform = ''
+    shell.style.opacity = ''
+    shell.style.willChange = ''
+  }, duration + 160)
+}
+
 const shouldEnableRouteMotion = () => {
   if (typeof window === 'undefined') return false
+  const rootMotionState = document.documentElement.dataset.motionEnabled
+  if (rootMotionState === 'true') return true
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
   return true
 }
@@ -62,7 +119,6 @@ export const RouteMotion = component$(() => {
       let stopIdle = () => {}
       const clearMotionState = () => {
         delete document.documentElement.dataset.motionReady
-        delete document.documentElement.dataset.viewTransitions
         delete document.documentElement.dataset.cardStagger
       }
 
@@ -96,15 +152,17 @@ export const RouteMotion = component$(() => {
 
             const motionRoot = () => document.querySelector('[data-motion-root]') ?? document.body
             const mutationRoot = document.body ?? document.documentElement
-            const viewTransitionsReady =
-              'startViewTransition' in document &&
-              window.matchMedia('(prefers-reduced-motion: no-preference)').matches
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            const viewTransitionsReady = supportsViewTransitions(prefersReducedMotion)
 
             const enableViewTransitions = () => {
               if (viewTransitionsReady) {
                 document.documentElement.dataset.viewTransitions = 'true'
               } else {
                 delete document.documentElement.dataset.viewTransitions
+                if (!prefersReducedMotion) {
+                  runShellTransitionFallback()
+                }
               }
             }
 
@@ -136,12 +194,11 @@ export const RouteMotion = component$(() => {
 
             const startMotionPipeline = () => {
               const elements = getMotionElements()
+              enableViewTransitions()
               if (!elements.length) {
                 clearMotionState()
                 return
               }
-
-              enableViewTransitions()
               const cardStaggerState = document.documentElement.dataset.cardStagger
               const staggerStartedAt =
                 (window as typeof window & { __PROM_CARD_STAGGER__?: number }).__PROM_CARD_STAGGER__

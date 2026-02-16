@@ -21,7 +21,6 @@
     "build": "bun run build:site && bun run build:api",
     "preview": "bun run build:fragment-css && bun run scripts/preview.ts",
     "patch:android": "bun run scripts/patch-capacitor-android-plugins.ts",
-    "postinstall": "bun run scripts/patch-capacitor-android-plugins.ts",
     "lint:workspace": "bunx --bun oxlint packages apps/site --config .oxlintrc.json",
     "lint:api": "bun run --cwd packages/platform lint",
     "lint:web": "bun run --cwd apps/site lint",

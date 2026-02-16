@@ -19,7 +19,8 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/apps/site/package.json ./apps/site/package.json
+COPY --from=deps /app/apps ./apps
+COPY --from=deps /app/packages ./packages
 
 COPY tsconfig.base.json ./tsconfig.base.json
 COPY apps/site ./apps/site
@@ -87,4 +88,4 @@ COPY --from=builder /app/apps/site/scripts ./scripts
 COPY --from=builder /app/packages/platform/src/env.ts /app/packages/platform/src/env.ts
 
 EXPOSE 4173
-CMD ["bun", "run", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]
+CMD ["bun", "run", "scripts/vite-run.ts", "--", "preview", "--host", "0.0.0.0", "--port", "4173"]

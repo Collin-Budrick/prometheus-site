@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "bun run --watch src/entrypoints/api.ts",
     "build": "bun build src/entrypoints/api.ts --target bun --outfile dist/index.js",
-    "lint": "oxlint .",
+    "lint": "bunx --bun oxlint .",
     "format": "oxfmt --write .",
     "test": "bun test tests",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",

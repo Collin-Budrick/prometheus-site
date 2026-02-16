@@ -26,6 +26,7 @@ type NativeBackIntentDetail = {
 
 declare global {
   var __prometheusNativeShell: NativeShellState | undefined
+  var __prometheusNativeRuntime: boolean | undefined
   interface WindowEventMap {
     'prometheus:native-back-intent': CustomEvent<NativeBackIntentDetail>
   }
@@ -194,13 +195,16 @@ const setupNativeListeners = () => {
 }
 
 export const initNativeShell = () => {
+  const isNativeRuntime = isNativeCapacitorRuntime()
+  window.__prometheusNativeRuntime = isNativeRuntime
+
   const state = getNativeShellState()
   state.cleanup?.()
   state.cleanup = null
 
   void initConnectivityStore()
 
-  if (!isNativeCapacitorRuntime()) {
+  if (!isNativeRuntime) {
     state.initialized = false
     setKeyboardHeight(0)
     return

@@ -9,7 +9,7 @@
     "build:capacitor": "VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build && VITE_CAPACITOR=1 bun run scripts/vite-run.ts -- build --ssr",
     "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
     "preview": "bun run scripts/vite-run.ts -- build && bun run scripts/vite-run.ts -- build --ssr src/entry.preview.tsx && bun run scripts/vite-run.ts -- preview --port 4173",
-    "lint": "oxlint ."
+    "lint": "bunx --bun oxlint ."
   },
   "dependencies": {
     "@bokuweb/zstd-wasm": "0.0.27",

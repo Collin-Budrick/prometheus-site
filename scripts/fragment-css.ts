@@ -1,9 +1,7 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-
-import { clearFragmentDefinitions, getAllFragmentDefinitions } from '../packages/core/src/fragment/registry'
+import { fileURLToPath } from 'node:url'
 
 type CssManifestEntry = {
   path: string
@@ -17,21 +15,72 @@ type CssOutput = {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outputDir = resolve(repoRoot, 'apps/site/public/fragments')
 const manifestPath = resolve(repoRoot, 'apps/site/src/fragment/fragment-css.generated.ts')
+const fragmentDefinitionSources = [
+  'apps/site/src/fragment/definitions/home.server.ts',
+  'apps/site/src/fragment/definitions/store.ts',
+  'apps/site/src/fragment/definitions/chat.ts'
+]
 
-const importModule = async (relativePath: string) => {
-  const target = resolve(repoRoot, relativePath)
-  await import(pathToFileURL(target).href)
+const parseTemplateConstants = (source: string) => {
+  const map = new Map<string, string>()
+  const pattern = /const\s+([A-Za-z_$][\w$]*)\s*=\s*`([\s\S]*?)`/g
+  let match: RegExpExecArray | null = pattern.exec(source)
+  while (match) {
+    map.set(match[1], match[2])
+    match = pattern.exec(source)
+  }
+  return map
 }
 
-clearFragmentDefinitions()
-await importModule('apps/site/src/fragment/definitions/home.server.ts')
-await importModule('apps/site/src/fragment/definitions/store.ts')
-await importModule('apps/site/src/fragment/definitions/chat.ts')
+const unquoteCssToken = (token: string) => {
+  if (token.length < 2) return token
+  const quote = token[0]
+  const endQuote = token[token.length - 1]
+  if (quote !== endQuote) return token
+  if (quote === '`') return token.slice(1, -1)
+  if (quote === '"') {
+    try {
+      return JSON.parse(token) as string
+    } catch {
+      return token.slice(1, -1)
+    }
+  }
+  if (quote === "'") return token.slice(1, -1).replace(/\\'/g, "'").replace(/\\\\/g, '\\')
+  return token
+}
 
-const definitions = getAllFragmentDefinitions()
-const cssEntries = definitions
-  .map((definition) => ({ id: definition.id, css: definition.css?.trim() ?? '' }))
-  .filter((entry) => entry.css.length > 0)
+const collectFragmentCssEntries = (source: string, templateConstants: Map<string, string>) => {
+  const entries: Array<{ id: string; css: string }> = []
+  const idPattern = /id:\s*(['"`])(fragment:\/\/[^'"`]+)\1/g
+  let idMatch: RegExpExecArray | null = idPattern.exec(source)
+  while (idMatch) {
+    const id = idMatch[2]
+    const windowStart = idMatch.index
+    const windowEnd = Math.min(source.length, windowStart + 600)
+    const windowSource = source.slice(windowStart, windowEnd)
+    const cssMatch = /css:\s*([^,\n]+)/.exec(windowSource)
+    if (cssMatch) {
+      const cssToken = cssMatch[1].trim()
+      let css = ''
+      if (cssToken.startsWith("'") || cssToken.startsWith('"') || cssToken.startsWith('`')) {
+        css = unquoteCssToken(cssToken)
+      } else {
+        css = templateConstants.get(cssToken) ?? ''
+      }
+      const normalized = css.trim()
+      if (normalized.length > 0) entries.push({ id, css: normalized })
+    }
+    idMatch = idPattern.exec(source)
+  }
+  return entries
+}
+
+const cssEntries = fragmentDefinitionSources.flatMap((relativePath) => {
+  const sourcePath = resolve(repoRoot, relativePath)
+  const source = readFileSync(sourcePath, 'utf8')
+  const templateConstants = parseTemplateConstants(source)
+  return collectFragmentCssEntries(source, templateConstants)
+})
 
 const cssByContent = new Map<string, CssManifestEntry & { fileName: string }>()
 const outputs: CssOutput[] = []

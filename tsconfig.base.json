@@ -9,6 +9,8 @@
       "@platform/*": ["./packages/platform/src/*"],
       "@ui": ["./packages/ui/src/index.ts"],
       "@ui/*": ["./packages/ui/src/*"],
+      "@prometheus/ui": ["./packages/ui/src/index.ts"],
+      "@prometheus/ui/*": ["./packages/ui/src/*"],
       "@features/auth": ["./packages/features/auth/src/index.ts"],
       "@features/auth/*": ["./packages/features/auth/src/*"],
       "@features/store": ["./packages/features/store/src/index.ts"],

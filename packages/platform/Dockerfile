@@ -12,16 +12,15 @@ COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --ignore-scripts --omit=optional --omit=dev --filter @prometheus/platform \
-    || (echo "Workspace-filtered platform install failed; falling back to full workspace install" && bun install --ignore-scripts --omit=optional --omit=dev)
+    bun install --ignore-scripts --omit=optional --omit=dev
 
 FROM oven/bun:1.3.9 AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/apps/site/package.json ./apps/site/package.json
-COPY --from=deps /app/packages/platform/package.json ./packages/platform/package.json
+COPY --from=deps /app/apps ./apps
+COPY --from=deps /app/packages ./packages
 
 COPY tsconfig.base.json ./tsconfig.base.json
 COPY apps/site ./apps/site
