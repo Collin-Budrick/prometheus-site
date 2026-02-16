@@ -11,6 +11,7 @@ import {
 } from './shared/service-worker-seed'
 import Root from './root'
 import { initConnectivityStore, isOnline } from './native/connectivity'
+import { initNativeFeelTelemetry } from './native/telemetry'
 
 declare global {
   interface Window {
@@ -42,6 +43,7 @@ export default function () {
   }
 
   void initConnectivityStore()
+  initNativeFeelTelemetry()
 
   runNonCriticalSetup(() => {
     setupWebSocketBackoffMonitor()
