@@ -591,6 +591,7 @@ const chatInvitesCss = `
     rgb(var(--surface));
   box-shadow: 0 30px 50px rgba(2, 6, 23, 0.45);
   padding: 28px;
+  padding-bottom: calc(28px + var(--bottom-offset));
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 20px;
@@ -798,6 +799,7 @@ html[data-chat-dm-open='true'] .fragment-card {
     linear-gradient(160deg, rgb(var(--surface-soft) / 0.9), rgb(var(--surface) / 0.98)),
     rgb(var(--surface));
   padding: 20px;
+  padding-bottom: calc(20px + var(--bottom-offset));
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 16px;
@@ -986,6 +988,7 @@ html[data-chat-dm-open='true'] .fragment-card {
 
 .chat-invites-dm-compose {
   display: flex;
+  padding-bottom: max(0px, calc(var(--bottom-offset) - var(--safe-area-inset-bottom)));
   align-items: center;
   gap: 12px;
 }

@@ -2,7 +2,7 @@
   .dock-shell {
     position: fixed;
     left: 50vw;
-    bottom: calc(18px + var(--safe-area-inset-bottom));
+    bottom: calc(18px + var(--bottom-offset));
     transform: translateX(-50%);
     z-index: 80;
     pointer-events: none;

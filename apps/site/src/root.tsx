@@ -8,7 +8,7 @@ import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
-import { initNativeShell } from './native/native-shell'
+import { hideNativeSplashScreen, initNativeShell } from './native/native-shell'
 
 const shouldEnableAmbientMotion = () => {
   if (typeof window === 'undefined') return false
@@ -29,6 +29,22 @@ const shouldEnableAmbientMotion = () => {
   if (typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 && nav.deviceMemory <= 4) return false
   if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) return false
   return true
+}
+
+
+const waitForClientAppReady = async () => {
+  if (typeof window === 'undefined') return
+  if (document.readyState === 'loading') {
+    await new Promise<void>((resolve) => {
+      const onReady = () => {
+        document.removeEventListener('DOMContentLoaded', onReady)
+        resolve()
+      }
+      document.addEventListener('DOMContentLoaded', onReady, { once: true })
+    })
+  }
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
 }
 
 const setupLcpGate = (
@@ -126,6 +142,12 @@ export default component$(() => {
     },
     { strategy: 'document-idle' }
   )
+
+  useVisibleTask$(({ track }) => {
+    const isClientReady = track(() => clientReady.value)
+    if (!isClientReady) return
+    void waitForClientAppReady().then(() => hideNativeSplashScreen())
+  })
   const clientExtrasConfig: ClientExtrasConfig = {
     apiBase: appConfig.apiBase,
     enablePrefetch: appConfig.enablePrefetch,
@@ -139,13 +161,20 @@ export default component$(() => {
         <meta charSet="utf-8" />
         <RouterHead />
       </head>
-      <body class="app-shell">
+      <body class="app-shell" data-client-ready={clientReady.value ? 'true' : 'false'}>
         {clientReady.value ? (
           <>
             <ClientExtras config={clientExtrasConfig} />
             <RouteMotion />
           </>
-        ) : null}
+        ) : (
+          <div class="native-boot-skeleton static-route-skeleton" aria-hidden="true">
+            <span class="skeleton-line is-meta" />
+            <span class="skeleton-line is-title" />
+            <span class="skeleton-line is-description" />
+            <span class="skeleton-line is-button" />
+          </div>
+        )}
         <FragmentStatusProvider>
           <RouterOutlet />
         </FragmentStatusProvider>

@@ -42,3 +42,35 @@ Rules:
 - Keep all Capacitor event/listener registration in `initNativeShell()`.
 - Include runtime guards so NativeShell is a no-op for web/PWA contexts.
 - Use HMR-safe setup/teardown so listeners are not duplicated during local development.
+
+## Native navigation and deep-link policy
+
+### Android hardware/system back behavior
+
+`NativeShell` enforces this exact handling order in Capacitor runtime:
+
+1. Dismiss feature-level modal/sheet/overlay state (via `prometheus:native-back-intent` cancelable event, then close button/backdrop fallbacks).
+2. Close keyboard (blur active input + `Keyboard.hide()`).
+3. Navigate back (`history.back()`) when the user is not at root.
+4. Exit app only at root route (`/`) and only on a repeated back press guard window.
+
+Feature code that opens overlays must either:
+
+- Register a listener for `prometheus:native-back-intent` and `preventDefault()` when it consumes dismissal, or
+- Expose a close affordance with selectors used by `NativeShell` (`[data-native-dismiss="true"]`, etc.).
+
+### Deep-link mapping rules
+
+`NativeShell` handles both launch-time and runtime links:
+
+- Cold start: `App.getLaunchUrl()`
+- Warm start: `appUrlOpen`
+
+Normalization rules:
+
+- `http(s)` URLs map to `pathname + search + hash` and navigate in-app.
+- Non-http schemes map to the best-effort path component.
+- Relative links (`/path`, `?query`, `#hash`) are normalized to in-app routes.
+- Malformed/unparseable URLs safely fall back to `/`.
+
+When adding new routes, keep them addressable by normalized URL paths (no feature-only implicit state required to render the destination).
