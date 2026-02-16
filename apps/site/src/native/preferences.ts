@@ -101,7 +101,6 @@ const readLegacyValue = (key: PreferenceKey) => readWebStorageValue(LEGACY_STORA
 
 const copyLegacyKeys = async () => {
   for (const key of preferenceAllowedKeys) {
-    const storageKey = resolveStorageKey(key)
     const existing = await getPreference(key)
     if (existing !== null) continue
     const legacy = readLegacyValue(key)

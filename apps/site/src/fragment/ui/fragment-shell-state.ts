@@ -94,7 +94,7 @@ export const useFragmentShellState = ({
   }, {})
   const initialHtml = {
     ...initialHtmlFromFragments,
-    ...(initialHtmlInput ?? {})
+    ...initialHtmlInput
   }
   const planEarlyHints = buildPlanEarlyHints(planValue)
   const planCachePayload =
