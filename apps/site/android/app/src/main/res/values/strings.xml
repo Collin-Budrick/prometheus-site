@@ -4,4 +4,5 @@
     <string name="title_activity_main">Prometheus</string>
     <string name="package_name">dev.prometheus.site</string>
     <string name="custom_url_scheme">dev.prometheus.site</string>
+    <string name="push_default_channel_id">messages</string>
 </resources>

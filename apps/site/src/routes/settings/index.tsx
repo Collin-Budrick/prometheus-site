@@ -19,6 +19,12 @@ import {
   type ChatSettings
 } from '../../shared/chat-settings'
 import settingsStyles from './settings.css?inline'
+import {
+  getPrivacyScreenAlwaysOn,
+  setPrivacyScreenAlwaysOn,
+  setSensitivePrivacyView
+} from '../../native/privacy-screen-policy'
+import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -139,6 +145,8 @@ export default component$(() => {
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const friendCode = useSignal('')
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const privacyAlwaysOn = useSignal(false)
+  const textZoom = useSignal(100)
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
   const user = data.value.user
@@ -147,6 +155,16 @@ export default component$(() => {
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
     saveChatSettings(userId, chatSettings.value)
+  })
+
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    privacyAlwaysOn.value = getPrivacyScreenAlwaysOn()
+    textZoom.value = getStoredTextZoom()
+    void setSensitivePrivacyView(window.location.pathname.startsWith('/settings'))
+    ctx.cleanup(() => {
+      void setSensitivePrivacyView(false)
+    })
   })
 
   useVisibleTask$(() => {
@@ -273,6 +291,21 @@ export default component$(() => {
     }
     friendCode.value = rotateFriendCode(friendUser)
     friendCodeStatus.value = { tone: 'success', message: copy.value.settingsInviteRotated }
+  })
+
+  const togglePrivacyAlwaysOn = $(async () => {
+    const next = !privacyAlwaysOn.value
+    privacyAlwaysOn.value = next
+    await setPrivacyScreenAlwaysOn(next)
+  })
+
+  const handleTextZoomInput = $(async (event: Event) => {
+    const target = event.target as HTMLInputElement | null
+    if (!target) return
+    const value = Number(target.value)
+    if (!Number.isFinite(value)) return
+    textZoom.value = value
+    await applyTextZoom(value)
   })
 
   return (
@@ -408,6 +441,51 @@ export default component$(() => {
             {swStatus.value.message}
           </div>
         ) : null}
+      </section>
+
+      <section class="settings-panel">
+        <div class="settings-panel-header">
+          <span class="settings-panel-title">Native Accessibility</span>
+          <p class="settings-panel-description">Adjust text scaling and privacy masking for sensitive screens.</p>
+        </div>
+        <div class="settings-action-row">
+          <div class="settings-action-label">
+            <label class="settings-toggle-title" for="settings-text-zoom">Text size ({textZoom.value}%)</label>
+            <span class="settings-toggle-hint">Large text applies through native Text Zoom and app typography tokens.</span>
+          </div>
+          <input
+            id="settings-text-zoom"
+            class="settings-range"
+            type="range"
+            min="85"
+            max="140"
+            step="5"
+            value={textZoom.value}
+            aria-valuemin={85}
+            aria-valuemax={140}
+            aria-valuenow={textZoom.value}
+            aria-label="Text size percentage"
+            onInput$={handleTextZoomInput}
+          />
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-label">
+            <span class="settings-toggle-title">Always-on privacy shield</span>
+            <span class="settings-toggle-hint">Keep native privacy masking enabled even when the app is foregrounded.</span>
+          </div>
+          <button
+            type="button"
+            class="chat-settings-toggle"
+            data-active={privacyAlwaysOn.value ? 'true' : 'false'}
+            role="switch"
+            aria-checked={privacyAlwaysOn.value}
+            onClick$={togglePrivacyAlwaysOn}
+          >
+            <span class="chat-settings-toggle-track">
+              <span class="chat-settings-toggle-knob" />
+            </span>
+          </button>
+        </div>
       </section>
       {logoutMessage.value ? (
         <div class="auth-status" role="status" aria-live="polite" data-tone="error">

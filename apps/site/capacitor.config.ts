@@ -72,6 +72,9 @@ const config: CapacitorConfig = {
       resize: 'body',
       resizeOnFullScreen: true
     },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert']
+    },
     SplashScreen: {
       launchAutoHide: false,
       launchShowDuration: 0,
