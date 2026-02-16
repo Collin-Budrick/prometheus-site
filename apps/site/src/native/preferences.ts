@@ -109,6 +109,11 @@ const copyLegacyKeys = async () => {
       await setPreference(key, legacy as PreferenceSchema[typeof key])
       continue
     }
+
+    if (key === 'locale') {
+      continue
+    }
+
     await setPreference(key, DEFAULTS[key])
     if (!isNativeCapacitorRuntime()) {
       writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
