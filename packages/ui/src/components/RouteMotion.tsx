@@ -44,21 +44,6 @@ const nextMotionRunId = () => {
 const shouldEnableRouteMotion = () => {
   if (typeof window === 'undefined') return false
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
-  const nav = navigator as Navigator & {
-    deviceMemory?: number
-    connection?: {
-      effectiveType?: string
-      saveData?: boolean
-      downlink?: number
-    }
-  }
-  const connection = nav.connection
-  if (connection?.saveData) return false
-  const effectiveType = connection?.effectiveType ?? ''
-  if (effectiveType && ['slow-2g', '2g', '3g'].includes(effectiveType)) return false
-  if (typeof connection?.downlink === 'number' && connection.downlink > 0 && connection.downlink < 1.5) return false
-  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 && nav.deviceMemory <= 4) return false
-  if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency > 0 && nav.hardwareConcurrency <= 4) return false
   return true
 }
 
@@ -75,6 +60,11 @@ export const RouteMotion = component$(() => {
       let cancelled = false
       let released = false
       let stopIdle = () => {}
+      const clearMotionState = () => {
+        delete document.documentElement.dataset.motionReady
+        delete document.documentElement.dataset.viewTransitions
+        delete document.documentElement.dataset.cardStagger
+      }
 
       const handlePageHide = (event: PageTransitionEvent) => {
         if (event.persisted) return
@@ -86,6 +76,7 @@ export const RouteMotion = component$(() => {
         released = true
         cancelled = true
         stopIdle()
+        clearMotionState()
         releaseMotionPipeline(motionRunId)
         window.removeEventListener('pagehide', handlePageHide)
       }
@@ -94,98 +85,100 @@ export const RouteMotion = component$(() => {
 
       stopIdle = scheduleIdleTask(
         () => {
-        if (cancelled) return
+          if (cancelled) return
 
-        const setup = async (): Promise<(() => void) | void> => {
-          if (!shouldEnableRouteMotion()) {
-            delete document.documentElement.dataset.motionReady
-            delete document.documentElement.dataset.viewTransitions
-            release()
-            return
-          }
-
-          const motionRoot = () => document.querySelector('[data-motion-root]') ?? document.body
-          const mutationRoot = document.body ?? document.documentElement
-          const viewTransitionsReady =
-            'startViewTransition' in document &&
-            window.matchMedia('(prefers-reduced-motion: no-preference)').matches
-
-          const enableViewTransitions = () => {
-            if (viewTransitionsReady) {
-              document.documentElement.dataset.viewTransitions = 'true'
-            } else {
-              delete document.documentElement.dataset.viewTransitions
-            }
-          }
-
-          const getMotionElements = () => Array.from(motionRoot().querySelectorAll<HTMLElement>('[data-motion]'))
-          const observedElements = new WeakSet<HTMLElement>()
-          const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
-          const animations = new WeakMap<HTMLElement, Animation>()
-          const activeAnimations = new Set<Animation>()
-          const viewHeight = () => window.innerHeight || document.documentElement.clientHeight
-          const viewWidth = () => window.innerWidth || document.documentElement.clientWidth
-
-          const animateElement = (
-            element: HTMLElement,
-            keyframes: Keyframe[] | PropertyIndexedKeyframes,
-            options: KeyframeAnimationOptions
-          ) => {
-            if (!('animate' in element)) return null
-            return element.animate(keyframes, options)
-          }
-
-          const isInView = (element: HTMLElement) => {
-            const height = viewHeight()
-            const width = viewWidth()
-            const margin = Math.min(140, height * 0.15)
-            const rect = element.getBoundingClientRect()
-            return rect.bottom > -margin && rect.right > 0 && rect.top < height + margin && rect.left < width
-          }
-
-          const startMotionPipeline = () => {
-            const elements = getMotionElements()
-            if (!elements.length) {
-              delete document.documentElement.dataset.motionReady
-              return undefined
+          const setup = async (): Promise<(() => void) | void> => {
+            if (!shouldEnableRouteMotion()) {
+              clearMotionState()
+              release()
+              return
             }
 
-            enableViewTransitions()
-            const cardStaggerState = document.documentElement.dataset.cardStagger
-            const staggerStartedAt =
-              (window as typeof window & { __PROM_CARD_STAGGER__?: number }).__PROM_CARD_STAGGER__
-            const skipInitialCardStagger =
-              cardStaggerState === 'ready' ||
-              cardStaggerState === 'pending' ||
-              (typeof staggerStartedAt === 'number' && Date.now() - staggerStartedAt < 6000)
+            const motionRoot = () => document.querySelector('[data-motion-root]') ?? document.body
+            const mutationRoot = document.body ?? document.documentElement
+            const viewTransitionsReady =
+              'startViewTransition' in document &&
+              window.matchMedia('(prefers-reduced-motion: no-preference)').matches
 
-            const seedInitialTargets = () => {
-              elements.forEach((element) => {
-                const current = element.dataset.motionState
-                const next = current === 'in' || current === 'out' ? current : 'out'
-                element.dataset.motionState = next
-                targets.set(element, next)
-              })
+            const enableViewTransitions = () => {
+              if (viewTransitionsReady) {
+                document.documentElement.dataset.viewTransitions = 'true'
+              } else {
+                delete document.documentElement.dataset.viewTransitions
+              }
             }
 
-            seedInitialTargets()
-            document.documentElement.dataset.motionReady = 'true'
+            const getMotionElements = () => Array.from(motionRoot().querySelectorAll<HTMLElement>('[data-motion]'))
+            const observedElements = new WeakSet<HTMLElement>()
+            const targets = new WeakMap<HTMLElement, 'in' | 'out'>()
+            const animations = new WeakMap<HTMLElement, Animation>()
+            const activeAnimations = new Set<Animation>()
+            const viewHeight = () => window.innerHeight || document.documentElement.clientHeight
+            const viewWidth = () => window.innerWidth || document.documentElement.clientWidth
 
-            let disposed = false
-            let pendingIdle: (() => void) | null = null
+            const animateElement = (
+              element: HTMLElement,
+              keyframes: Keyframe[] | PropertyIndexedKeyframes,
+              options: KeyframeAnimationOptions
+            ) => {
+              if (!('animate' in element)) return null
+              return element.animate(keyframes, options)
+            }
 
-            const setTarget = (element: HTMLElement, next: 'in' | 'out') => {
-              if (disposed || targets.get(element) === next) return
-              targets.set(element, next)
-              element.dataset.motionState = next
+            const isInView = (element: HTMLElement) => {
+              const height = viewHeight()
+              const width = viewWidth()
+              const margin = Math.min(140, height * 0.15)
+              const rect = element.getBoundingClientRect()
+              return rect.bottom > -margin && rect.right > 0 && rect.top < height + margin && rect.left < width
+            }
 
-              const current = animations.get(element)
-              if (current) {
-                current.cancel()
-                activeAnimations.delete(current)
+            const startMotionPipeline = () => {
+              const elements = getMotionElements()
+              if (!elements.length) {
+                clearMotionState()
+                return
               }
 
-              element.style.willChange = 'transform, opacity'
+              enableViewTransitions()
+              const cardStaggerState = document.documentElement.dataset.cardStagger
+              const staggerStartedAt =
+                (window as typeof window & { __PROM_CARD_STAGGER__?: number }).__PROM_CARD_STAGGER__
+              const skipInitialCardStagger =
+                cardStaggerState === 'ready' ||
+                cardStaggerState === 'pending' ||
+                (typeof staggerStartedAt === 'number' && Date.now() - staggerStartedAt < 6000)
+              document.documentElement.dataset.cardStagger = 'ready'
+              const motionWindow = window as typeof window & { __PROM_CARD_STAGGER__?: number }
+              motionWindow.__PROM_CARD_STAGGER__ = Date.now()
+
+              const seedInitialTargets = () => {
+                elements.forEach((element) => {
+                  const current = element.dataset.motionState
+                  const next = current === 'in' || current === 'out' ? current : 'out'
+                  element.dataset.motionState = next
+                  targets.set(element, next)
+                })
+              }
+
+              seedInitialTargets()
+              document.documentElement.dataset.motionReady = 'true'
+
+              let disposed = false
+              let pendingIdle: (() => void) | null = null
+
+              const setTarget = (element: HTMLElement, next: 'in' | 'out') => {
+                if (disposed || targets.get(element) === next) return
+                targets.set(element, next)
+                element.dataset.motionState = next
+
+                const current = animations.get(element)
+                if (current) {
+                  current.cancel()
+                  activeAnimations.delete(current)
+                }
+
+                element.style.willChange = 'transform, opacity'
 
               const animation = animateElement(
                 element,
@@ -243,7 +236,6 @@ export const RouteMotion = component$(() => {
               if (
                 skipInitialCardStagger &&
                 element.classList.contains('fragment-card') &&
-                element.getAttribute('data-variant') !== 'text' &&
                 isInView(element)
               ) {
                 element.dataset.motionState = 'in'
@@ -337,6 +329,7 @@ export const RouteMotion = component$(() => {
               observer.disconnect()
               mutationObserver.disconnect()
               if (pendingIdle) pendingIdle()
+              clearMotionState()
               window.removeEventListener('popstate', handlePopState)
               window.removeEventListener('pageshow', handlePageShow)
               activeAnimations.forEach((animation) => animation.cancel())
@@ -345,8 +338,7 @@ export const RouteMotion = component$(() => {
 
           const initialElements = getMotionElements()
           if (!initialElements.length) {
-            delete document.documentElement.dataset.motionReady
-            delete document.documentElement.dataset.viewTransitions
+            clearMotionState()
 
             let pipelineTeardown: (() => void) | undefined
             const waitForMotion = new MutationObserver((records) => {

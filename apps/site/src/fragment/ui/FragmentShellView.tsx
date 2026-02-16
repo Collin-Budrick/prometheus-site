@@ -152,7 +152,6 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                 id="shell-intro"
                 column="1 / -1"
                 motionDelay={0}
-                disableMotion={true}
                 expandedId={expandedId}
                 layoutTick={layoutTick}
                 closeLabel={copy.value.fragmentClose}
@@ -241,7 +240,6 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       closeLabel={copy.value.fragmentClose}
                       fragmentLoaded={Boolean(fragment)}
                       fragmentHasCss={fragmentHasCss}
-                      disableMotion={isCritical}
                       critical={isCritical}
                       expandable={entry.expandable}
                       fullWidth={entry.fullWidth}

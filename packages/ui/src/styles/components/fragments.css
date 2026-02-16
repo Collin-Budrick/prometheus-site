@@ -749,7 +749,7 @@
     color: rgb(var(--muted));
   }
 
-  :root[data-card-stagger='ready'] .fragment-card[data-motion]:not([data-variant='text']) {
+  :root[data-card-stagger='ready'] .fragment-card[data-motion] {
     opacity: 0;
     transform: translateY(var(--motion-fade-distance));
     animation: fragment-card-stagger-in var(--motion-fade-duration) var(--motion-fade-ease) both;
@@ -757,7 +757,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    :root[data-card-stagger='ready'] .fragment-card[data-motion]:not([data-variant='text']) {
+    :root[data-card-stagger='ready'] .fragment-card[data-motion] {
       animation: none;
       opacity: 1;
       transform: none;
