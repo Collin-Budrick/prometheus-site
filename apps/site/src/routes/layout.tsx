@@ -449,7 +449,7 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
-  const fadeState = useInitialFadeState()
+  const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const currentOrigin = location.url?.origin ?? null
   const trackingReady = useSignal(false)
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
@@ -538,7 +538,7 @@ export const RouterHead = component$(() => {
       {trackingOrigins.map((origin) => (
         <link key={`dns-prefetch-${origin}`} rel="dns-prefetch" href={origin} />
       ))}
-      {fadeState.value.initialFade ? (
+      {initialFade ? (
         <>
           <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
           <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />

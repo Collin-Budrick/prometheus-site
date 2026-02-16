@@ -54,17 +54,69 @@ const syncGridHeights = (gridEl: GridStackElement) => {
   const grid = gridEl.gridstack
   if (!grid) return false
   const items = Array.from(gridEl.querySelectorAll<HTMLElement>('.grid-stack-item'))
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < DESKTOP_MIN_WIDTH
+  const half = Math.max(1, Math.floor(GRIDSTACK_COLUMNS / 2))
+  const nextRows = new Map<HTMLElement, number>()
   let measured = false
-  grid.batchUpdate()
+
   items.forEach((item) => {
     const card = item.querySelector<HTMLElement>('.fragment-card') ?? item
     const height = card.getBoundingClientRect().height
     if (!Number.isFinite(height) || height <= 0) return
     measured = true
     const rows = toGridRows(height)
-    if (heightCache.get(item) === rows) return
+    nextRows.set(item, rows)
+  })
+
+  if (!measured) return false
+
+  let leftY = 0
+  let rightY = 0
+  let singleY = 0
+
+  grid.batchUpdate()
+  items.forEach((item) => {
+    const fallbackRows = Math.max(1, Number(item.getAttribute('gs-h')) || 1)
+    const rows = nextRows.get(item) ?? heightCache.get(item) ?? fallbackRows
     heightCache.set(item, rows)
-    grid.update(item, { h: rows })
+
+    if (isMobile) {
+      const y = singleY
+      singleY += rows
+      item.setAttribute('gs-x', '0')
+      item.setAttribute('gs-y', String(y))
+      item.setAttribute('gs-w', '1')
+      item.setAttribute('gs-h', String(rows))
+      item.setAttribute('gs-min-w', '1')
+      item.setAttribute('gs-max-w', '1')
+      grid.update(item, { x: 0, y, w: 1, h: rows, minW: 1, maxW: 1, noResize: true })
+      return
+    }
+
+    const lock = item.dataset.columnLock
+    const column =
+      lock === 'right'
+        ? 'right'
+        : lock === 'left'
+          ? 'left'
+          : Number(item.getAttribute('gs-x')) >= half
+            ? 'right'
+            : 'left'
+    const x = column === 'right' ? half : 0
+    const y = column === 'right' ? rightY : leftY
+    if (column === 'right') {
+      rightY += rows
+    } else {
+      leftY += rows
+    }
+
+    item.setAttribute('gs-x', String(x))
+    item.setAttribute('gs-y', String(y))
+    item.setAttribute('gs-w', String(half))
+    item.setAttribute('gs-h', String(rows))
+    item.setAttribute('gs-min-w', String(half))
+    item.setAttribute('gs-max-w', String(half))
+    grid.update(item, { x, y, w: half, h: rows, minW: half, maxW: half, noResize: true })
   })
   grid.batchUpdate(false)
   return measured
