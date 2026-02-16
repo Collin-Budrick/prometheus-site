@@ -65,6 +65,19 @@ const config: CapacitorConfig = {
   ...(serverConfig ? { server: serverConfig } : {}),
   ...(cleartext || apiCleartext ? { android: { allowMixedContent: true } } : {}),
   plugins: {
+    App: {
+      handleApplicationNotifications: true
+    },
+    Keyboard: {
+      resize: 'body',
+      resizeOnFullScreen: true
+    },
+    SplashScreen: {
+      launchAutoHide: false,
+      launchShowDuration: 0,
+      backgroundColor: '#05070f',
+      showSpinner: false
+    },
     SystemBars: {
       insetsHandling: 'css',
       statusBarStyle: 'light',
