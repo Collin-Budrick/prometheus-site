@@ -115,6 +115,7 @@ export const RouteMotion = component$(() => {
             const activeAnimations = new Set<Animation>()
             const viewHeight = () => window.innerHeight || document.documentElement.clientHeight
             const viewWidth = () => window.innerWidth || document.documentElement.clientWidth
+            const getMotionMargin = () => Math.min(140, viewHeight() * 0.15)
 
             const animateElement = (
               element: HTMLElement,
@@ -128,7 +129,7 @@ export const RouteMotion = component$(() => {
             const isInView = (element: HTMLElement) => {
               const height = viewHeight()
               const width = viewWidth()
-              const margin = Math.min(140, height * 0.15)
+              const margin = getMotionMargin()
               const rect = element.getBoundingClientRect()
               return rect.bottom > -margin && rect.right > 0 && rect.top < height + margin && rect.left < width
             }
@@ -166,9 +167,17 @@ export const RouteMotion = component$(() => {
 
               let disposed = false
               let pendingIdle: (() => void) | null = null
+              let isPriming = true
 
               const setTarget = (element: HTMLElement, next: 'in' | 'out') => {
                 if (disposed || targets.get(element) === next) return
+
+                if (isPriming) {
+                  targets.set(element, next)
+                  element.dataset.motionState = next
+                  return
+                }
+
                 targets.set(element, next)
                 element.dataset.motionState = next
 
@@ -213,16 +222,16 @@ export const RouteMotion = component$(() => {
               animation.addEventListener('cancel', finalize, { once: true })
             }
 
-          const observerOptions = { threshold: 0, rootMargin: '-12% 0px -12% 0px' }
+          const observerOptions = { threshold: 0, rootMargin: `${getMotionMargin()}px 0px ${getMotionMargin()}px 0px` }
           const observer = new IntersectionObserver(
             (entries) => {
               entries.forEach((entry) => {
                 const target = entry.target as HTMLElement
-                  if (entry.isIntersecting) {
-                    setTarget(target, 'in')
-                  } else {
-                    setTarget(target, 'out')
-                  }
+                if (isInView(target)) {
+                  setTarget(target, 'in')
+                } else {
+                  setTarget(target, 'out')
+                }
               })
             },
             observerOptions
@@ -292,7 +301,9 @@ export const RouteMotion = component$(() => {
             const elementsToAnimate = getMotionElements()
             elementsToAnimate.forEach((element) => {
               if (isInView(element)) setTarget(element, 'in')
+              else setTarget(element, 'out')
             })
+            isPriming = false
           })
 
           const handlePopState = () => {
