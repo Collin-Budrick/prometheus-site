@@ -20,6 +20,8 @@
     "build:api": "bun run --cwd packages/platform build",
     "build": "bun run build:site && bun run build:api",
     "preview": "bun run build:fragment-css && bun run scripts/preview.ts",
+    "patch:android": "bun run scripts/patch-capacitor-android-plugins.ts",
+    "postinstall": "bun run scripts/patch-capacitor-android-plugins.ts",
     "lint:workspace": "bunx --bun oxlint packages apps/site --config .oxlintrc.json",
     "lint:api": "bun run --cwd packages/platform lint",
     "lint:web": "bun run --cwd apps/site lint",
@@ -34,13 +36,13 @@
     "lefthook-windows-arm64": "2.1.1"
   },
   "devDependencies": {
-    "@oxlint-tsgolint/linux-arm64": "^0.13.0",
-    "@oxlint-tsgolint/win32-arm64": "^0.13.0",
+    "@oxlint-tsgolint/linux-arm64": "^0.14.0",
+    "@oxlint-tsgolint/win32-arm64": "^0.14.0",
     "@oxlint/win32-arm64": "^1.43.0",
     "@playwright/test": "^1.59.0-alpha-2026-02-16",
     "@types/web-push": "^3.6.4",
     "lefthook": "^2.1.1",
-    "oxlint": "1.47.0",
-    "oxlint-tsgolint": "^0.13.0"
+    "oxlint": "1.48.0",
+    "oxlint-tsgolint": "^0.14.0"
   }
 }
