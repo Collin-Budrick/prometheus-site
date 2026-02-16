@@ -93,6 +93,8 @@
     will-change: transform;
     position: relative;
     z-index: var(--dock-z, 1);
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
     box-shadow:
       0 10px 18px rgb(var(--ink) / var(--dock-shadow-alpha)),
       inset 0 0 0 1px rgb(var(--surface-strong) / 0.5);
@@ -118,6 +120,15 @@
     width: 100%;
     height: 100%;
     display: block;
+    shape-rendering: geometricPrecision;
+    transform: translateZ(0);
+  }
+
+  .dock-icon-svg *[stroke] {
+    stroke: currentColor;
+    shape-rendering: geometricPrecision;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   body.card-expanded .dock-shell {
