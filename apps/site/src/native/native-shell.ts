@@ -1,6 +1,7 @@
 import { App } from '@capacitor/app'
-import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
+import { initConnectivityStore } from './connectivity'
+import { isNativeCapacitorRuntime } from './runtime'
 
 type NativeShellState = {
   initialized: boolean
@@ -35,17 +36,6 @@ const getNativeShellState = (): NativeShellState => {
     }
   }
   return globalThis.__prometheusNativeShell
-}
-
-const isStandalonePwa = () => {
-  if (typeof window === 'undefined') return false
-  return window.matchMedia('(display-mode: standalone)').matches
-}
-
-const isNativeCapacitorRuntime = () => {
-  if (typeof window === 'undefined') return false
-  if (isStandalonePwa()) return false
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() !== 'web'
 }
 
 const applyNativeState = (active: boolean) => {
@@ -228,6 +218,8 @@ export const initNativeShell = () => {
   const state = getNativeShellState()
   state.cleanup?.()
   state.cleanup = null
+
+  void initConnectivityStore()
 
   if (!isNativeCapacitorRuntime()) {
     state.initialized = false
