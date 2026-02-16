@@ -1,0 +1,5 @@
+declare module '@capacitor/browser'
+declare module '@capacitor/inappbrowser'
+declare module '@capawesome/capacitor-app-shortcuts'
+declare module '@capacitor-community/in-app-review'
+declare module '@capawesome/capacitor-app-update'

@@ -18,7 +18,9 @@ import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
 import { connectivityState, initConnectivityStore } from '../native/connectivity'
 import { showNativeActionSheet, showNativeToast } from '../native/affordances'
+import { isNativeCapacitorRuntime } from '../native/runtime'
 import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
+import { isExternalHttpUrl, openExternalUrl } from '../native/native-app-extras'
 import { triggerHapticSelection, triggerHapticTap, withUserActionHaptics } from '../native/haptics'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -726,6 +728,16 @@ export default component$(() => {
 
     const handleClick = (event: Event) => {
       if (!(event.target instanceof Element)) return
+      const anyAnchor = event.target.closest('a[href]')
+      if (anyAnchor instanceof HTMLAnchorElement) {
+        const anyHref = anyAnchor.getAttribute('href')
+        if (anyHref && isNativeCapacitorRuntime() && isExternalHttpUrl(anyHref)) {
+          event.preventDefault()
+          void openExternalUrl(anyHref)
+          return
+        }
+      }
+
       const anchor = event.target.closest('a[data-fragment-link]')
       if (!(anchor instanceof HTMLAnchorElement)) return
       const href = anchor.getAttribute('href')

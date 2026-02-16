@@ -3,6 +3,7 @@ import { Keyboard } from '@capacitor/keyboard'
 import { initConnectivityStore } from './connectivity'
 import { initNativeNotifications } from './notifications'
 import { initPrivacyScreenPolicy } from './privacy-screen-policy'
+import { initializeNativeAppExtras } from './native-app-extras'
 import { isNativeCapacitorRuntime } from './runtime'
 import { initNativeTextZoom } from './text-zoom'
 import { isRootRoute, navigateDeepLink } from './deep-links'
@@ -194,6 +195,7 @@ export const initNativeShell = () => {
   void initNativeNotifications()
   void initNativeTextZoom()
   void initPrivacyScreenPolicy()
+  void initializeNativeAppExtras()
   state.initialized = true
 }
 
