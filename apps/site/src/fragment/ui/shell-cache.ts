@@ -50,7 +50,8 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
       if (!raw) return ''
       try {
         return decodeURIComponent(raw)
-      } catch {
+      } catch (error) {
+        console.warn('Failed to decode shell cookie:', error)
         return null
       }
     }
@@ -96,7 +97,8 @@ export const readFragmentCriticalFromCookie = (
     const expectedPath = normalizeFragmentShellPath(path)
     if (!parsedPath || parsedPath !== expectedPath) return []
     return normalizeCriticalIds(parsed.ids)
-  } catch {
+  } catch (error) {
+    console.warn('Failed to parse shell critical cookie:', error)
     return []
   }
 }
@@ -115,7 +117,8 @@ export const readFragmentShellStateFromCookie = (cookieHeader: string | null, pa
     const scrollY =
       typeof parsed.scrollY === 'number' && Number.isFinite(parsed.scrollY) ? Math.max(0, parsed.scrollY) : 0
     return { path: parsedPath, orderIds, expandedId, scrollY }
-  } catch {
+  } catch (error) {
+    console.warn('Failed to parse shell state cookie:', error)
     return null
   }
 }
@@ -131,8 +134,8 @@ export const writeFragmentShellStateToCookie = (state: FragmentShellState) => {
   try {
     const serialized = encodeURIComponent(JSON.stringify(payload))
     document.cookie = `${SHELL_COOKIE_KEY}=${serialized}; path=/; max-age=3600; samesite=lax`
-  } catch {
-    // ignore cookie failures
+  } catch (error) {
+    console.warn('Failed to write shell state cookie:', error)
   }
 }
 
@@ -150,8 +153,8 @@ export const writeFragmentCriticalToCookie = (state: {
   try {
     const serialized = encodeURIComponent(JSON.stringify(payload))
     document.cookie = `${CRITICAL_COOKIE_KEYS[state.viewport]}=${serialized}; path=/; max-age=604800; samesite=lax`
-  } catch {
-    // ignore cookie failures
+  } catch (error) {
+    console.warn('Failed to write shell critical cookie:', error)
   }
 }
 

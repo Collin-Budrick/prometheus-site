@@ -24,7 +24,8 @@ const readCookieValue = (cookieHeader: string | null, name: string) => {
       if (!raw) return ''
       try {
         return decodeURIComponent(raw)
-      } catch {
+      } catch (error) {
+        console.warn('Failed to decode planner demo cookie:', error)
         return null
       }
     }
@@ -53,7 +54,8 @@ const resolveCacheState = (cookieHeader: string | null, fragments: ReadonlyArray
       }
     }
     return hasData ? hydrated : null
-  } catch {
+  } catch (error) {
+    console.warn('Failed to parse planner demo cache state:', error)
     return null
   }
 }

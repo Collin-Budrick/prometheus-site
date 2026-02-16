@@ -71,7 +71,8 @@ const setupLcpGate = (
         run()
       })
       observer.observe({ type: 'largest-contentful-paint', buffered: true })
-    } catch {
+    } catch (error) {
+      console.warn('Failed to observe LCP in root readiness gate:', error)
       observer?.disconnect()
       observer = null
     }

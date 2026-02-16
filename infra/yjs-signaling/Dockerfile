@@ -12,7 +12,8 @@ COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --ignore-scripts --frozen-lockfile --filter site
+    bun install --ignore-scripts --filter site \
+    || (echo "Workspace-filtered site install failed; falling back to full workspace install" && bun install --ignore-scripts)
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app

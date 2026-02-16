@@ -45,7 +45,8 @@ const loadFragmentTranslations = (): Record<FragmentLang, Record<string, string>
         const raw = readFileSync(resolve(langDir, file), 'utf-8')
         const parsed = JSON.parse(raw) as LanguagePack
         translations[lang] = parsed?.fragments ?? {}
-      } catch {
+      } catch (error) {
+        console.warn(`Failed to load fragment translation file ${file}:`, error)
         translations[lang] = {}
       }
     }

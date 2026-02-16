@@ -6,7 +6,8 @@ const resolveApiBase = (origin: string, apiBase?: string) => {
   if (base.startsWith('/')) return base
   try {
     return new URL(base).toString()
-  } catch {
+  } catch (error) {
+    console.warn('Failed to resolve contact invites API base:', error)
     return ''
   }
 }
@@ -33,13 +34,15 @@ export const resolveApiHost = (origin: string, apiBase?: string) => {
   if (!base || base.startsWith('/')) {
     try {
       return new URL(origin).host
-    } catch {
+    } catch (error) {
+      console.warn('Failed to resolve contact invites API origin from origin value:', error)
       return ''
     }
   }
   try {
     return new URL(base).host
-  } catch {
+  } catch (error) {
+    console.warn('Failed to resolve contact invites API origin from base:', error)
     return ''
   }
 }

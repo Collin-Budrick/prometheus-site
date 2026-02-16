@@ -42,12 +42,13 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
   for (const part of parts) {
     const [name, raw] = part.trim().split('=')
     if (name === key) {
-      if (!raw) return ''
-      try {
-        return decodeURIComponent(raw)
-      } catch {
-        return null
-      }
+    if (!raw) return ''
+    try {
+      return decodeURIComponent(raw)
+    } catch (error) {
+      console.warn('Failed to decode store create cookie value:', error)
+      return null
+    }
     }
   }
   return null
@@ -55,12 +56,12 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
 
 const writeCookieValue = (key: string, value: string) => {
   if (typeof document === 'undefined') return
-  try {
-    const encoded = encodeURIComponent(value)
-    document.cookie = `${key}=${encoded}; path=/; max-age=${STORE_CREATE_COOKIE_MAX_AGE}; samesite=lax`
-  } catch {
-    // ignore cookie failures
-  }
+    try {
+      const encoded = encodeURIComponent(value)
+      document.cookie = `${key}=${encoded}; path=/; max-age=${STORE_CREATE_COOKIE_MAX_AGE}; samesite=lax`
+    } catch (error) {
+      console.warn('Failed to write store create cookie value:', error)
+    }
 }
 
 const clearCookieValue = (key: string) => {
@@ -216,8 +217,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
             if (payload?.error) {
               errorMessage = payload.error
             }
-          } catch {
-            // ignore parsing failures
+          } catch (error) {
+            console.warn('Failed to parse store create error response:', error)
           }
           state.value = 'error'
           statusMessage.value = errorMessage

@@ -76,7 +76,8 @@ const parseFragmentPlanCachePayload = (raw: string): FragmentPlanCachePayload | 
       }
     })
     return parsed
-  } catch {
+  } catch (error) {
+    console.warn('Failed to parse fragment plan cache payload from DOM script tag', error)
     return null
   }
 }

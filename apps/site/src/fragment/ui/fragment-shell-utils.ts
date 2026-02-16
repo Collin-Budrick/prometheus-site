@@ -68,7 +68,8 @@ export const parseStoredOrder = (raw: string | null) => {
   try {
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string') ? parsed : []
-  } catch {
+  } catch (error) {
+    console.warn('Failed to parse stored fragment order payload:', error)
     return []
   }
 }

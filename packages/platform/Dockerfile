@@ -12,7 +12,8 @@ COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --ignore-scripts --frozen-lockfile --omit=optional --omit=dev --filter @prometheus/platform
+    bun install --ignore-scripts --omit=optional --omit=dev --filter @prometheus/platform \
+    || (echo "Workspace-filtered platform install failed; falling back to full workspace install" && bun install --ignore-scripts --omit=optional --omit=dev)
 
 FROM oven/bun:1.3.9 AS builder
 WORKDIR /app

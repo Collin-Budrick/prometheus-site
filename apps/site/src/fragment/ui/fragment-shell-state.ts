@@ -198,7 +198,8 @@ export const useFragmentShellState = ({
           const parsed = JSON.parse(raw)
           if (!Array.isArray(parsed)) return []
           return parsed.filter((id) => typeof id === 'string' && validIds.has(id))
-        } catch {
+        } catch (error) {
+          console.warn('Failed to read stored fragment critical IDs:', error)
           return []
         }
       }
@@ -210,8 +211,8 @@ export const useFragmentShellState = ({
         lastSerialized = serialized
         try {
           window.localStorage.setItem(storageKey, serialized)
-        } catch {
-          // ignore storage errors
+        } catch (error) {
+          console.warn('Failed to persist fragment critical IDs:', error)
         }
         writeFragmentCriticalToCookie({ path, ids, viewport: viewportKey })
       }

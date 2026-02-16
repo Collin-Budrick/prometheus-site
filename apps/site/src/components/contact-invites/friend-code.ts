@@ -38,7 +38,8 @@ const readStoredCode = (user: FriendCodeUser) => {
   if (typeof window === 'undefined') return ''
   try {
     return window.localStorage.getItem(resolveStorageKey(user)) ?? ''
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read stored friend code:', error)
     return ''
   }
 }
@@ -47,8 +48,8 @@ const writeStoredCode = (user: FriendCodeUser, code: string) => {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(resolveStorageKey(user), code)
-  } catch {
-    // ignore storage errors
+  } catch (error) {
+    console.warn('Failed to write stored friend code:', error)
   }
 }
 

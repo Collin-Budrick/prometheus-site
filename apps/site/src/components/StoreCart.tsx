@@ -138,8 +138,8 @@ export const StoreCart = component$<StoreCartProps>(
       if (raw) {
         try {
           parsed = JSON.parse(raw)
-        } catch {
-          // ignore parse failures
+        } catch (error) {
+          console.warn('Failed to parse dropped store cart payload:', error)
         }
       }
       const item = normalizeStoreCartItem(parsed) ?? consumeStoreCartDragItem()

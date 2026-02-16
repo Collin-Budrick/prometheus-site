@@ -101,7 +101,8 @@ function stringifyDevServerData(serverData) {
     if (serialized) {
       return serialized;
     }
-  } catch {
+  } catch (error) {
+    console.warn('Failed to stringify Qwik optimizer payload for dev server data fallback:', error)
     // continue to fallback payload below
   }
 
@@ -124,7 +125,8 @@ function stringifyDevServerData(serverData) {
 
   try {
     return JSON.stringify(fallback)
-  } catch {
+  } catch (error) {
+    console.warn('Failed to fallback stringify Qwik optimizer payload:', error)
     return '{}'
   }
 }

@@ -354,7 +354,10 @@ const valkey = {
   async eval(_script: string, options: { keys: string[]; arguments: string[] }) {
     const targetKey = options.keys[0]
     const token = options.arguments[0]
-    if (targetKey && token && cacheStorage.get(targetKey) === token) {
+    if (typeof targetKey !== 'string' || typeof token !== 'string') {
+      return 0
+    }
+    if (cacheStorage.get(targetKey) === token) {
       cacheStorage.delete(targetKey)
       return 1
     }

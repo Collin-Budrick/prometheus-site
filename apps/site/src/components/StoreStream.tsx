@@ -510,7 +510,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           let payload: unknown
           try {
             payload = JSON.parse(String(event.data))
-          } catch {
+          } catch (error) {
+            console.warn('Failed to parse store stream websocket message:', error)
             return
           }
           if (!payload || typeof payload !== 'object') return

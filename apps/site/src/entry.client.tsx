@@ -99,7 +99,8 @@ function setupOfflineErrorFilters() {
     if (!match) return ''
     try {
       return new URL(match[1]).host
-    } catch {
+    } catch (error) {
+      console.warn('Failed to resolve host from message error:', error)
       return ''
     }
   }
@@ -107,7 +108,8 @@ function setupOfflineErrorFilters() {
     if (typeof value !== 'string') return ''
     try {
       return new URL(value, window.location.origin).host
-    } catch {
+    } catch (error) {
+      console.warn('Failed to resolve host from resource URL:', error)
       return ''
     }
   }
@@ -173,7 +175,8 @@ function setupWebSocketBackoffMonitor() {
   const resolveHostFromUrl = (value: string | URL) => {
     try {
       return resolveKnownHost(new URL(String(value), window.location.origin).host)
-    } catch {
+    } catch (error) {
+      console.warn('Failed to resolve host from WebSocket URL:', error)
       return ''
     }
   }
@@ -266,7 +269,8 @@ function setupServerHealthProbe() {
       } else {
         markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
       }
-    } catch {
+    } catch (error) {
+      console.warn('Server health probe failed:', error)
       markServerFailure(serverKey, { baseDelayMs: 3000, maxDelayMs: 120000 })
     } finally {
       clearTimeout(timeout)
@@ -343,13 +347,14 @@ async function registerServiceWorker() {
   }
 }
 
-async function getActiveRegistration() {
+  async function getActiveRegistration() {
   const { scopeUrl } = resolveServiceWorkerLocation()
   const registration = await navigator.serviceWorker.getRegistration(scopeUrl)
   if (registration) return registration
   try {
     return await navigator.serviceWorker.ready
-  } catch {
+  } catch (error) {
+    console.warn('Failed to resolve active service worker registration:', error)
     return undefined
   }
 }
@@ -383,26 +388,28 @@ function isServiceWorkerOptedOut() {
   }
 }
 
-function shouldForceServiceWorkerCleanup() {
-  try {
-    if (window.__FRAGMENT_PRIME_FORCE_SW_CLEANUP__ === true) return true
-    if (serviceWorkerSeed.forceCleanup !== undefined) return serviceWorkerSeed.forceCleanup
-    return window.localStorage.getItem(FORCE_CLEANUP_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function hasRunCleanupForVersion() {
-  try {
-    if (serviceWorkerSeed.cleanupVersion) {
-      return serviceWorkerSeed.cleanupVersion === getBuildVersion()
+  function shouldForceServiceWorkerCleanup() {
+    try {
+      if (window.__FRAGMENT_PRIME_FORCE_SW_CLEANUP__ === true) return true
+      if (serviceWorkerSeed.forceCleanup !== undefined) return serviceWorkerSeed.forceCleanup
+      return window.localStorage.getItem(FORCE_CLEANUP_KEY) === '1'
+    } catch (error) {
+      console.warn('Failed to resolve service worker cleanup flag:', error)
+      return false
     }
-    return window.localStorage.getItem(CLEANUP_VERSION_KEY) === getBuildVersion()
-  } catch {
-    return false
   }
-}
+
+  function hasRunCleanupForVersion() {
+    try {
+      if (serviceWorkerSeed.cleanupVersion) {
+        return serviceWorkerSeed.cleanupVersion === getBuildVersion()
+      }
+      return window.localStorage.getItem(CLEANUP_VERSION_KEY) === getBuildVersion()
+    } catch (error) {
+      console.warn('Failed to resolve service worker cleanup version:', error)
+      return false
+    }
+  }
 
 function markCleanupComplete() {
   try {

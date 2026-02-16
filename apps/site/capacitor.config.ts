@@ -28,7 +28,8 @@ const normalizeHost = (value?: string) => {
       ? new URL(trimmed)
       : new URL(`http://${trimmed}`);
     return url.hostname;
-  } catch {
+  } catch (error) {
+    console.warn('Failed to normalize Capacitor host:', error);
     return undefined;
   }
 };

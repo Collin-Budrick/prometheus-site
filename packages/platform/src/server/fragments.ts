@@ -52,12 +52,6 @@ type FragmentPlanInitialCachePayload = {
   initialHtml?: FragmentPlanInitialHtml
 }
 
-const releaseLockScript = `
-  if redis.call("get", KEYS[1]) == ARGV[1] then
-    return redis.call("del", KEYS[1])
-  end
-  return 0
-`
 const fragmentStoreTimeoutMs = 300
 
 const withValkeyTimeout = async <T>(
@@ -119,11 +113,13 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
     releaseLock: async (key: string, token: string) => {
       if (!cache.isReady()) return
       try {
+        const current = await withValkeyTimeout(cache, (commandOptions) => cache.client.get(commandOptions, key))
+        if (current !== token) return
         await withValkeyTimeout(cache, (commandOptions) =>
-          cache.client.eval(commandOptions, releaseLockScript, { keys: [key], arguments: [token] })
+          cache.client.del(commandOptions, key)
         )
-      } catch {
-        // ignore lock release failures
+      } catch (error) {
+        console.warn('Failed to release fragment cache lock:', { key, error })
       }
     },
     isLocked: async (key: string) => {

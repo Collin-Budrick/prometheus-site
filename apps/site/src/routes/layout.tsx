@@ -148,7 +148,8 @@ const loadClientManifest = async (): Promise<ClientManifest | null> => {
       if (!manifestPath) return null
       const raw = readFileSync(manifestPath, 'utf8')
       return JSON.parse(raw) as ClientManifest
-    } catch {
+    } catch (error) {
+      console.warn('Failed to read client manifest for preloads:', error)
       return null
     }
   })()
@@ -269,7 +270,8 @@ const withLangParam = (href: string, langValue: Lang) => {
     const url = new URL(href, base)
     url.searchParams.set(LANG_PREFETCH_PARAM, langValue)
     return `${url.pathname}${url.search}${url.hash}`
-  } catch {
+  } catch (error) {
+    console.warn('Failed to add language param to href:', href, error)
     return href
   }
 }
@@ -279,9 +281,10 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
   if (href.startsWith('http://') || href.startsWith('https://')) {
     try {
       return new URL(href).origin
-    } catch {
-      return null
-    }
+      } catch (error) {
+        console.warn('Failed to resolve preconnect origin:', href, error)
+        return null
+      }
   }
   return fallbackOrigin
 }
@@ -293,7 +296,8 @@ const hasTrackingConsent = () => {
   try {
     const raw = window.localStorage.getItem(TRACKING_CONSENT_KEY) ?? ''
     return ['1', 'true', 'yes', 'on', 'granted'].includes(raw.trim().toLowerCase())
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read tracking consent:', error)
     return false
   }
 }
@@ -379,8 +383,8 @@ const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
       observer.observe({ type: 'largest-contentful-paint', buffered: true })
       setTimeout(scheduleOnce, 3500)
       return
-    } catch {
-      // ignore observer failure
+    } catch (error) {
+      console.warn('Failed to initialize low-priority prefetch observer:', error)
     }
   }
 
@@ -702,9 +706,10 @@ export default component$(() => {
       let targetPath = href
       try {
         targetPath = new URL(href, window.location.href).pathname
-      } catch {
-        return
-      }
+    } catch (error) {
+      console.warn('Failed to parse clicked route href:', href, error)
+      return
+    }
 
       const currentPath = normalizePath(window.location.pathname)
       const nextPath = normalizePath(targetPath)

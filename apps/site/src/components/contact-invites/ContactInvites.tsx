@@ -36,8 +36,8 @@ const readErrorMessage = async (response: Response) => {
   try {
     const payload = (await response.json()) as { error?: string } | null
     if (payload?.error) return payload.error
-  } catch {
-    // ignore parse failures
+  } catch (error) {
+    console.warn('Failed to parse contact invite error response:', error)
   }
   return response.statusText || 'Request failed'
 }
