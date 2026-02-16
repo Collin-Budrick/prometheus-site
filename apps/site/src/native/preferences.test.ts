@@ -47,6 +47,7 @@ describe('native preferences migration', () => {
     installWindow()
     await migratePreferencesFromLegacy()
 
+    expect(await getPreference('locale')).toBeNull()
     expect(await getPreferenceOrDefault('haptics-enabled')).toBe(preferenceDefaults['haptics-enabled'])
     expect(await getPreferenceOrDefault('onboarding-complete')).toBe(preferenceDefaults['onboarding-complete'])
     expect(await getPreferenceOrDefault('last-tab')).toBe(preferenceDefaults['last-tab'])
