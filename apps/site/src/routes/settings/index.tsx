@@ -25,6 +25,9 @@ import {
   setSensitivePrivacyView
 } from '../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
+import { isNativeCapacitorRuntime } from '../../native/runtime'
+import { checkNativeUpdate, requestNativeReview } from '../../native/native-app-extras'
+import { isNativeBiometricAuthSupported, requestNativeBiometricAuth } from '../../native/native-auth'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -139,10 +142,12 @@ export default component$(() => {
   const data = useSettingsData()
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
+  const nativeActionBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
   const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })
   const swOptOut = useSignal(Boolean(data.value.swOptOut))
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const nativeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const friendCode = useSignal('')
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const privacyAlwaysOn = useSignal(false)
@@ -212,6 +217,16 @@ export default component$(() => {
 
   const handleLogout = $(async () => {
     if (logoutBusy.value || typeof window === 'undefined') return
+    if (isNativeCapacitorRuntime()) {
+      const supportsBio = await isNativeBiometricAuthSupported()
+      if (supportsBio) {
+        const ok = await requestNativeBiometricAuth({ reason: 'Confirm sign out', title: 'Prometheus' })
+        if (!ok) {
+          logoutMessage.value = copy.value.settingsNativeUnavailable
+          return
+        }
+      }
+    }
     logoutBusy.value = true
     logoutMessage.value = null
     try {
@@ -232,6 +247,54 @@ export default component$(() => {
       logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'
     } finally {
       logoutBusy.value = false
+    }
+  })
+
+  const handleNativeReview = $(async () => {
+    if (nativeActionBusy.value || typeof window === 'undefined') return
+    nativeActionBusy.value = true
+    nativeStatus.value = null
+    try {
+      if (!isNativeCapacitorRuntime()) {
+        nativeStatus.value = { tone: 'error', message: copy.value.settingsNativeUnavailable }
+        return
+      }
+      const requested = await requestNativeReview()
+      nativeStatus.value = {
+        tone: requested ? 'success' : 'info',
+        message: requested ? copy.value.settingsNativeRequestSuccess : copy.value.settingsNativeUnavailable
+      }
+    } catch (error) {
+      nativeStatus.value = {
+        tone: 'error',
+        message: error instanceof Error ? error.message : copy.value.settingsNativeUnavailable
+      }
+    } finally {
+      nativeActionBusy.value = false
+    }
+  })
+
+  const handleNativeUpdate = $(async () => {
+    if (nativeActionBusy.value || typeof window === 'undefined') return
+    nativeActionBusy.value = true
+    nativeStatus.value = null
+    try {
+      if (!isNativeCapacitorRuntime()) {
+        nativeStatus.value = { tone: 'error', message: copy.value.settingsNativeUnavailable }
+        return
+      }
+      const updated = await checkNativeUpdate()
+      nativeStatus.value = {
+        tone: updated ? 'success' : 'info',
+        message: updated ? copy.value.settingsNativeRequestSuccess : copy.value.settingsNativeUnavailable
+      }
+    } catch (error) {
+      nativeStatus.value = {
+        tone: 'error',
+        message: error instanceof Error ? error.message : copy.value.settingsNativeUnavailable
+      }
+    } finally {
+      nativeActionBusy.value = false
     }
   })
 
@@ -445,13 +508,55 @@ export default component$(() => {
 
       <section class="settings-panel">
         <div class="settings-panel-header">
-          <span class="settings-panel-title">Native Accessibility</span>
-          <p class="settings-panel-description">Adjust text scaling and privacy masking for sensitive screens.</p>
+          <span class="settings-panel-title">{copy.value.settingsNativeTitle}</span>
+          <p class="settings-panel-description">{copy.value.settingsNativeDescription}</p>
         </div>
         <div class="settings-action-row">
           <div class="settings-action-label">
-            <label class="settings-toggle-title" for="settings-text-zoom">Text size ({textZoom.value}%)</label>
-            <span class="settings-toggle-hint">Large text applies through native Text Zoom and app typography tokens.</span>
+            <span class="settings-toggle-title">{copy.value.settingsNativeReviewAction}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsNativeReviewHint}</span>
+          </div>
+          <button
+            type="button"
+            class="settings-action-button"
+            disabled={nativeActionBusy.value || !isNativeCapacitorRuntime()}
+            onClick$={handleNativeReview}
+          >
+            {copy.value.settingsNativeReviewAction}
+          </button>
+        </div>
+        <div class="settings-action-row">
+          <div class="settings-action-label">
+            <span class="settings-toggle-title">{copy.value.settingsNativeUpdateAction}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsNativeUpdateHint}</span>
+          </div>
+          <button
+            type="button"
+            class="settings-action-button"
+            disabled={nativeActionBusy.value || !isNativeCapacitorRuntime()}
+            onClick$={handleNativeUpdate}
+          >
+            {copy.value.settingsNativeUpdateAction}
+          </button>
+        </div>
+        {nativeStatus.value ? (
+          <div class="auth-status" role="status" aria-live="polite" data-tone={nativeStatus.value.tone}>
+            {nativeStatus.value.message}
+          </div>
+        ) : null}
+      </section>
+
+      <section class="settings-panel">
+        <div class="settings-panel-header">
+          <span class="settings-panel-title">{copy.value.settingsNativeAccessibilityTitle}</span>
+          <p class="settings-panel-description">{copy.value.settingsNativeAccessibilityDescription}</p>
+        </div>
+        <div class="settings-action-row">
+          <div class="settings-action-label">
+            <label class="settings-toggle-title" for="settings-text-zoom">
+              {copy.value.settingsNativeTextZoomAction} ({textZoom.value}%)
+            </label>
+            <span class="settings-toggle-hint">{copy.value.settingsNativeTextZoomHint}</span>
           </div>
           <input
             id="settings-text-zoom"
@@ -464,14 +569,14 @@ export default component$(() => {
             aria-valuemin={85}
             aria-valuemax={140}
             aria-valuenow={textZoom.value}
-            aria-label="Text size percentage"
+            aria-label={copy.value.settingsNativeTextZoomAriaLabel}
             onInput$={handleTextZoomInput}
           />
         </div>
         <div class="settings-toggle-row">
           <div class="settings-toggle-label">
-            <span class="settings-toggle-title">Always-on privacy shield</span>
-            <span class="settings-toggle-hint">Keep native privacy masking enabled even when the app is foregrounded.</span>
+            <span class="settings-toggle-title">{copy.value.settingsNativePrivacyShieldAction}</span>
+            <span class="settings-toggle-hint">{copy.value.settingsNativePrivacyShieldHint}</span>
           </div>
           <button
             type="button"

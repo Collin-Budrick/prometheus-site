@@ -261,6 +261,54 @@
     background: rgb(220 252 231 / 0.75);
   }
 
+  .auth-social {
+    display: grid;
+    gap: 10px;
+    border-top: 1px solid rgb(var(--stroke) / 0.6);
+    padding-top: 12px;
+  }
+
+  .auth-social-label {
+    font-size: 11px;
+    color: rgb(var(--muted-soft));
+    margin: 0;
+    letter-spacing: 0.12em;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+  }
+
+  .auth-social-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .auth-social-button {
+    border-radius: 999px;
+    border: 1px solid rgb(var(--stroke) / 0.7);
+    background: rgb(var(--surface) / 0.85);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: rgb(var(--ink));
+    cursor: pointer;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .auth-social-button:hover {
+    border-color: rgb(var(--signal) / 0.7);
+    box-shadow: 0 8px 18px rgb(var(--signal) / 0.18);
+    transform: translateY(-1px);
+  }
+
+  .auth-social-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
   .auth-shell .fragment-card {
     backdrop-filter: none;
   }

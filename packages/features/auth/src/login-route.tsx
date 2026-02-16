@@ -1,6 +1,10 @@
 import { $, component$, useOnDocument, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
+import { attemptBootstrapSession, buildApiUrl } from '@site/shared/auth-bootstrap'
+import { isNativeCapacitorRuntime } from '@site/native/runtime'
+import { nativeSocialLogin, resolveNativeSocialProviders, savePasswordIfSupported } from '@site/native/native-auth'
+import { openExternalUrl } from '@site/native/native-app-extras'
 import authStyles from './auth.css?inline'
 
 export type AuthCopy = {
@@ -19,6 +23,7 @@ export type AuthCopy = {
   rememberLabel: string
   passkeyLabel: string
   passkeyHint: string
+  socialSectionLabel: string
   closeLabel: string
 }
 
@@ -49,44 +54,21 @@ const defaultAuthCopy: AuthCopy = {
   rememberLabel: 'Remember this device',
   passkeyLabel: 'Use keypass',
   passkeyHint: 'Keypass signs in with your device credential.',
+  socialSectionLabel: 'Or continue with',
   closeLabel: 'Close'
 }
 
-const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-
-const resolveAuthBase = (origin: string, apiBase?: string) => {
-  if (!apiBase) return ''
-  if (apiBase.startsWith('/')) return apiBase
-  try {
-    const apiUrl = new URL(apiBase)
-    const originUrl = new URL(origin)
-    const apiHost = apiUrl.hostname
-    const originHost = originUrl.hostname
-    if (isLocalHost(apiHost) && !isLocalHost(originHost) && apiHost !== originHost) {
-      return '/api'
-    }
-  } catch {
-    return ''
-  }
-  return apiBase
+const normalizeProviderName = (provider: string) => {
+  const trimmed = provider.trim()
+  if (!trimmed) return trimmed
+  return trimmed
+    .toLowerCase()
+    .split(/[-_]/g)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
 }
 
-const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
-  const base = resolveAuthBase(origin, apiBase)
-  if (!base) return `${origin}${path}`
-
-  if (base.startsWith('/')) {
-    if (path.startsWith(base)) return `${origin}${path}`
-    return `${origin}${base}${path}`
-  }
-
-  if (path.startsWith('/api')) {
-    const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base
-    return `${normalizedBase}${path}`
-  }
-
-  return `${base}${path}`
-}
+const normalizeProviderId = (provider: string) => provider.trim().toLowerCase()
 
 const readFormValue = (data: FormData, key: string) => {
   const value = data.get(key)
@@ -95,11 +77,6 @@ const readFormValue = (data: FormData, key: string) => {
 
 const readCheckbox = (data: FormData, key: string) => data.get(key) === 'on'
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null
-
-const bootstrapTokenKey = 'auth:bootstrap:token'
-const bootstrapUserKey = 'auth:bootstrap:user'
 const authModeCookieKey = 'auth:mode'
 const authRememberCookieKey = 'auth:remember'
 const authEmailCookieKey = 'auth:email'
@@ -185,46 +162,6 @@ const persistAuthFormCookies = (payload: { email?: string; name?: string; rememb
   }
 }
 
-const storeBootstrapSession = (token: string, user: { id: string; email?: string | null; name?: string | null }) => {
-  if (typeof window === 'undefined') return false
-  try {
-    window.localStorage.setItem(bootstrapTokenKey, token)
-    window.localStorage.setItem(bootstrapUserKey, JSON.stringify(user))
-    return true
-  } catch {
-    return false
-  }
-}
-
-const attemptBootstrapSession = async (origin: string, apiBase?: string) => {
-  if (typeof window === 'undefined') return false
-  try {
-    const response = await fetch(buildApiUrl('/auth/bootstrap', origin, apiBase), {
-      method: 'POST',
-      credentials: 'include'
-    })
-    if (!response.ok) return false
-    const payload: unknown = await response.json()
-    if (!isRecord(payload) || typeof payload.token !== 'string') return false
-    const user = isRecord(payload.user) ? payload.user : null
-    const id = user && typeof user.id === 'string' ? user.id : null
-    if (!id) return false
-    const email = user && typeof user.email === 'string' ? user.email : undefined
-    const name =
-      user && (typeof user.name === 'string' || user.name === null)
-        ? (user.name as string | null)
-        : undefined
-    const storedUser = {
-      id,
-      email,
-      name
-    }
-    return storeBootstrapSession(payload.token, storedUser)
-  } catch {
-    return false
-  }
-}
-
 export const LoginRoute = component$<{
   copy?: Partial<AuthCopy>
   apiBase?: string
@@ -240,6 +177,8 @@ export const LoginRoute = component$<{
   const remember = useSignal(initialFormState.remember)
   const state = useSignal<AuthState>('idle')
   const passkeyState = useSignal<PasskeyState>('idle')
+  const socialBusy = useSignal(false)
+  const socialProviders = useSignal<string[]>([])
   const statusTone = useSignal<StatusTone>('neutral')
   const statusMessage = useSignal<string | null>(null)
   const expandedId = useSignal<string | null>(null)
@@ -276,6 +215,14 @@ export const LoginRoute = component$<{
     email.value = nextState.email
     name.value = nextState.name
     remember.value = nextState.remember
+  })
+
+  useVisibleTask$(async () => {
+    if (!isNativeCapacitorRuntime() || typeof window === 'undefined') return
+    const providers = await resolveNativeSocialProviders()
+    if (providers.length === 0) return
+    const normalized = [...new Set(providers.map(normalizeProviderId))].filter((provider) => provider.length > 0)
+    socialProviders.value = normalized
   })
 
   const setMode = $((next: AuthMode) => {
@@ -409,6 +356,8 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
+      const { email, password } = parsed.data
+      void savePasswordIfSupported({ username: email, password, website: origin })
       await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
     } catch (error) {
@@ -467,6 +416,8 @@ export const LoginRoute = component$<{
       }
 
       state.value = 'success'
+      const { email, password } = parsed.data
+      void savePasswordIfSupported({ username: email, password, website: origin })
       await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
     } catch (error) {
@@ -558,7 +509,48 @@ export const LoginRoute = component$<{
     persistAuthFormCookies({ rememberMe: checked })
   })
 
+  const handleSocialLogin = $(async (provider: string) => {
+    if (!isNativeCapacitorRuntime() || socialBusy.value || busy || typeof window === 'undefined') return
+    const normalized = normalizeProviderId(provider)
+    if (!normalized) return
+
+    const origin = window.location.origin
+    const fallbackUrl = buildApiUrl(`/auth/oauth/${normalized}/start`, origin, apiBase)
+
+    socialBusy.value = true
+    await clearStatus()
+    state.value = 'idle'
+    passkeyState.value = 'idle'
+    try {
+      if (isNativeCapacitorRuntime()) {
+        const nativeSuccess = await nativeSocialLogin(normalized)
+        if (nativeSuccess) {
+          const bootstrapped = await attemptBootstrapSession(origin, apiBase)
+          if (bootstrapped) {
+            await goToProfile()
+            return
+          }
+          statusTone.value = 'success'
+          statusMessage.value = 'Continuing sign-in in browser.'
+          return
+        }
+      }
+
+      statusTone.value = 'neutral'
+      statusMessage.value = 'Continuing sign-in in browser.'
+      const result = await openExternalUrl(fallbackUrl)
+      if (!result.attempted || !result.handled) {
+        window.location.assign(fallbackUrl)
+      }
+    } catch (error) {
+      await setError(error instanceof Error ? error.message : 'Unable to continue with social sign-in.')
+    } finally {
+      socialBusy.value = false
+    }
+  })
+
   const busy = state.value === 'submitting' || passkeyState.value === 'requesting' || passkeyState.value === 'verifying'
+  const interactionBusy = busy || socialBusy.value
 
   return (
     <section class="fragment-shell auth-shell">
@@ -613,29 +605,29 @@ export const LoginRoute = component$<{
               >
                 <label class="auth-field">
                   <span>{resolvedCopy.emailLabel}</span>
-                  <input
-                    class="auth-input"
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    placeholder="name@domain.com"
-                    value={email.value}
-                    onInput$={handleEmailInput}
-                    required
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-input"
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      placeholder="name@domain.com"
+                      value={email.value}
+                      onInput$={handleEmailInput}
+                      required
+                      disabled={interactionBusy}
+                    />
                 </label>
                 <label class="auth-field">
                   <span>{resolvedCopy.passwordLabel}</span>
-                  <input
-                    class="auth-input"
-                    type="password"
-                    name="password"
-                    autoComplete="current-password"
-                    placeholder="********"
-                    required
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-input"
+                      type="password"
+                      name="password"
+                      autoComplete="current-password"
+                      placeholder="********"
+                      required
+                      disabled={interactionBusy}
+                    />
                 </label>
                 <label class="auth-check">
                   <input
@@ -644,7 +636,7 @@ export const LoginRoute = component$<{
                     name="remember"
                     checked={remember.value}
                     onChange$={handleRememberChange}
-                    disabled={busy}
+                    disabled={interactionBusy}
                   />
                   <span>{resolvedCopy.rememberLabel}</span>
                 </label>
@@ -652,11 +644,28 @@ export const LoginRoute = component$<{
                   <button class="auth-primary" type="submit" disabled={busy}>
                     {resolvedCopy.actionLabel}
                   </button>
-                  <button class="auth-passkey" type="button" disabled={busy} onClick$={handlePasskey}>
+                  <button class="auth-passkey" type="button" disabled={interactionBusy} onClick$={handlePasskey}>
                     <span class="auth-passkey-label">{resolvedCopy.passkeyLabel}</span>
                     <span class="auth-passkey-hint">{resolvedCopy.passkeyHint}</span>
                   </button>
                 </div>
+                {socialProviders.value.length > 0 ? (
+                  <div class="auth-social">
+                    <p class="auth-social-label">{resolvedCopy.socialSectionLabel}</p>
+                    <div class="auth-social-actions">
+                      {socialProviders.value.map((provider) => (
+                        <button
+                          type="button"
+                          class="auth-social-button"
+                          disabled={interactionBusy}
+                          onClick$={() => handleSocialLogin(provider)}
+                        >
+                          {normalizeProviderName(provider)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </form>
               <form
                 id="auth-panel-signup"
@@ -669,59 +678,76 @@ export const LoginRoute = component$<{
               >
                 <label class="auth-field">
                   <span>{resolvedCopy.nameLabel}</span>
-                  <input
-                    class="auth-input"
-                    type="text"
-                    name="name"
-                    autoComplete="name"
-                    placeholder="Nova Lane"
-                    value={name.value}
-                    onInput$={handleNameInput}
-                    required
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-input"
+                      type="text"
+                      name="name"
+                      autoComplete="name"
+                      placeholder="Nova Lane"
+                      value={name.value}
+                      onInput$={handleNameInput}
+                      required
+                      disabled={interactionBusy}
+                    />
                 </label>
                 <label class="auth-field">
                   <span>{resolvedCopy.emailLabel}</span>
-                  <input
-                    class="auth-input"
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    placeholder="name@domain.com"
-                    value={email.value}
-                    onInput$={handleEmailInput}
-                    required
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-input"
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      placeholder="name@domain.com"
+                      value={email.value}
+                      onInput$={handleEmailInput}
+                      required
+                      disabled={interactionBusy}
+                    />
                 </label>
                 <label class="auth-field">
                   <span>{resolvedCopy.passwordLabel}</span>
-                  <input
-                    class="auth-input"
-                    type="password"
-                    name="password"
-                    autoComplete="new-password"
-                    placeholder="********"
-                    required
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-input"
+                      type="password"
+                      name="password"
+                      autoComplete="new-password"
+                      placeholder="********"
+                      required
+                      disabled={interactionBusy}
+                    />
                 </label>
                 <label class="auth-check">
-                  <input
-                    class="auth-check-input"
-                    type="checkbox"
-                    name="remember"
-                    checked={remember.value}
-                    onChange$={handleRememberChange}
-                    disabled={busy}
-                  />
+                    <input
+                      class="auth-check-input"
+                      type="checkbox"
+                      name="remember"
+                      checked={remember.value}
+                      onChange$={handleRememberChange}
+                      disabled={interactionBusy}
+                    />
                   <span>{resolvedCopy.rememberLabel}</span>
                 </label>
                 <div class="auth-actions">
-                  <button class="auth-primary" type="submit" disabled={busy}>
+                  <button class="auth-primary" type="submit" disabled={interactionBusy}>
                     {resolvedCopy.signupActionLabel}
                   </button>
+                  {socialProviders.value.length > 0 ? (
+                    <div class="auth-social">
+                      <p class="auth-social-label">{resolvedCopy.socialSectionLabel}</p>
+                      <div class="auth-social-actions">
+                        {socialProviders.value.map((provider) => (
+                          <button
+                            type="button"
+                            class="auth-social-button"
+                            disabled={interactionBusy}
+                            onClick$={() => handleSocialLogin(provider)}
+                          >
+                            {normalizeProviderName(provider)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </form>
             </div>

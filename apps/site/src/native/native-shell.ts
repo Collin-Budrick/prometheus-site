@@ -7,6 +7,9 @@ import { initializeNativeAppExtras } from './native-app-extras'
 import { isNativeCapacitorRuntime } from './runtime'
 import { initNativeTextZoom } from './text-zoom'
 import { isRootRoute, navigateDeepLink } from './deep-links'
+import { type NavLabelKey } from '../config'
+import { getLanguagePack } from '../lang'
+import { defaultLang, supportedLangs, type Lang } from '../shared/lang-store'
 
 type NativeShellState = {
   initialized: boolean
@@ -111,6 +114,18 @@ const maybeNavigateBack = () => {
   return true
 }
 
+const resolveNativeLabelResolver = () => {
+  if (typeof document === 'undefined') return undefined
+  const raw = document.documentElement.lang || defaultLang
+  const normalizedLang = raw.split(/[-_]/)[0] ?? raw
+  const resolved = supportedLangs.includes(normalizedLang as Lang) ? (normalizedLang as Lang) : defaultLang
+  const ui = getLanguagePack(resolved).ui
+  return (key: NavLabelKey) => {
+    const value = (ui as Record<string, string>)[key]
+    return typeof value === 'string' && value.trim() ? value : key
+  }
+}
+
 const maybeExitApp = async () => {
   if (!isRootRoute()) return false
   const state = getNativeShellState()
@@ -195,7 +210,7 @@ export const initNativeShell = () => {
   void initNativeNotifications()
   void initNativeTextZoom()
   void initPrivacyScreenPolicy()
-  void initializeNativeAppExtras()
+  void initializeNativeAppExtras({ labelResolver: resolveNativeLabelResolver() })
   state.initialized = true
 }
 

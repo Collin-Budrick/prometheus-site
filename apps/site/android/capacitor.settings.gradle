@@ -20,11 +20,32 @@ project(':capacitor-keyboard').projectDir = new File('../../../node_modules/@cap
 include ':capacitor-local-notifications'
 project(':capacitor-local-notifications').projectDir = new File('../../../node_modules/@capacitor/local-notifications/android')
 
+include ':capawesome-capacitor-app-shortcuts'
+project(':capawesome-capacitor-app-shortcuts').projectDir = new File('../../../node_modules/@capawesome/capacitor-app-shortcuts/android')
+
+include ':capawesome-capacitor-app-update'
+project(':capawesome-capacitor-app-update').projectDir = new File('../../../node_modules/@capawesome/capacitor-app-update/android')
+
 include ':capacitor-network'
 project(':capacitor-network').projectDir = new File('../../../node_modules/@capacitor/network/android')
 
+include ':capacitor-community-in-app-review'
+project(':capacitor-community-in-app-review').projectDir = new File('../../../node_modules/@capacitor-community/in-app-review/android')
+
 include ':capacitor-preferences'
 project(':capacitor-preferences').projectDir = new File('../../../node_modules/@capacitor/preferences/android')
+
+include ':capgo-capacitor-autofill-save-password'
+project(':capgo-capacitor-autofill-save-password').projectDir = new File('../../../node_modules/@capgo/capacitor-autofill-save-password/android')
+
+include ':capgo-capacitor-social-login'
+project(':capgo-capacitor-social-login').projectDir = new File('../../../node_modules/@capgo/capacitor-social-login/android')
+
+include ':aparajita-capacitor-biometric-auth'
+project(':aparajita-capacitor-biometric-auth').projectDir = new File('../../../node_modules/@aparajita/capacitor-biometric-auth/android')
+
+include ':aparajita-capacitor-secure-storage'
+project(':aparajita-capacitor-secure-storage').projectDir = new File('../../../node_modules/@aparajita/capacitor-secure-storage/android')
 
 include ':capacitor-privacy-screen'
 project(':capacitor-privacy-screen').projectDir = new File('../../../node_modules/@capacitor/privacy-screen/android')

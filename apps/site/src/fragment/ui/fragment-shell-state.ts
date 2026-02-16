@@ -61,7 +61,7 @@ export const useFragmentShellState = ({
   initialFragments,
   path,
   initialLang,
-  initialHtml: initialHtmlInput,
+  initialHtml: initialHtmlInput = {},
   introMarkdown,
   preserveFragmentEffects,
   initialShellState

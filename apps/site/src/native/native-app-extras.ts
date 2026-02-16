@@ -1,5 +1,7 @@
 import { isNativeCapacitorRuntime } from './runtime'
 import { loadNativePlugin } from './capacitor-plugin-loader'
+import { emitNativeFeatureTelemetry } from './telemetry'
+import { type NavLabelKey, authNavItems, enabledNavItems } from '../config'
 
 type ShortcutPayloadItem = {
   id: string
@@ -7,6 +9,11 @@ type ShortcutPayloadItem = {
   description?: string
   url: string
   icon?: string
+}
+
+type NativeExtrasOptions = {
+  labelResolver?: (key: NavLabelKey) => string
+  telemetry?: boolean
 }
 
 type OpenAttemptResult = {
@@ -96,25 +103,38 @@ export const openExternalUrl = async (rawUrl: string): Promise<OpenAttemptResult
   return { attempted: true, handled: false }
 }
 
-const buildQuickShortcutPayload = (): { items: ShortcutPayloadItem[] } => {
+const defaultLabelResolver: Record<NavLabelKey, string> = {
+  navHome: 'Home',
+  navStore: 'Store',
+  navLab: 'Lab',
+  navLogin: 'Login',
+  navProfile: 'Profile',
+  navChat: 'Chat',
+  navSettings: 'Settings',
+  navDashboard: 'Dashboard'
+}
+
+const resolveShortcutLabel = (labelKey: NavLabelKey, labelResolver?: NativeExtrasOptions['labelResolver']) =>
+  labelResolver?.(labelKey) ?? defaultLabelResolver[labelKey]
+
+const buildQuickShortcutPayload = (labelResolver?: NativeExtrasOptions['labelResolver']): { items: ShortcutPayloadItem[] } => {
+  if (typeof window === 'undefined') return { items: [] }
   const origin = window.location.origin
-  return {
-    items: [
-      {
-        id: 'home',
-        title: 'Home',
-        description: 'Open home',
-        url: `${origin}/`,
-        icon: 'ic_home'
-      },
-      {
-        id: 'search',
-        title: 'Search',
-        description: 'Search the app',
-        url: `${origin}/`,
-        icon: 'ic_search'
+  const items = [...enabledNavItems, ...authNavItems]
+    .filter((item, index, array) => index === array.findIndex((entry) => entry.href === item.href))
+    .map((item): ShortcutPayloadItem | null => {
+      const title = resolveShortcutLabel(item.labelKey, labelResolver)
+      const url = `${origin}${item.href === '/' ? '' : item.href}`
+      return {
+        id: item.href.replace(/\//g, '_') || 'home',
+        title,
+        description: `Open ${title}`,
+        url
       }
-    ]
+    })
+    .filter((item): item is ShortcutPayloadItem => item !== null)
+  return {
+    items
   }
 }
 
@@ -164,6 +184,22 @@ export const initializeNativeShortcuts = async () => {
   }
 }
 
+export const initializeNativeShortcutsWithLabels = async (labelResolver?: (key: NavLabelKey) => string) => {
+  if (!isNativeCapacitorRuntime() || typeof window === 'undefined') return false
+  const shortcutModule = await loadNativePlugin<unknown>('@capawesome/capacitor-app-shortcuts')
+  if (!shortcutModule) return false
+
+  const plugin = normalizePlugin(shortcutModule)
+  if (!plugin) return false
+
+  const payload = buildQuickShortcutPayload(labelResolver)
+  try {
+    return await invokeShortcutSetter(plugin, payload)
+  } catch {
+    return false
+  }
+}
+
 export const requestNativeReview = async () => {
   if (!isNativeCapacitorRuntime()) return false
 
@@ -177,11 +213,14 @@ export const requestNativeReview = async () => {
     if (typeof method !== 'function') continue
     try {
       await method.call(plugin)
+      emitNativeFeatureTelemetry('native-review', 'success')
       return true
     } catch {
+      // try alternate signature
       continue
     }
   }
+  emitNativeFeatureTelemetry('native-review', 'fallback')
   return false
 }
 
@@ -198,12 +237,32 @@ export const checkNativeUpdate = async () => {
 
   try {
     await method.call(plugin)
+    emitNativeFeatureTelemetry('native-update-check', 'success')
     return true
   } catch {
+    emitNativeFeatureTelemetry('native-update-check', 'fallback')
     return false
   }
 }
 
-export const initializeNativeAppExtras = async () => {
-  void initializeNativeShortcuts()
+export const initializeNativeAppExtras = async (options: NativeExtrasOptions = {}) => {
+  const { telemetry = true, labelResolver } = options
+  if (!isNativeCapacitorRuntime() || typeof window === 'undefined') return
+
+  try {
+    const wasSet = labelResolver ? await initializeNativeShortcutsWithLabels(labelResolver) : await initializeNativeShortcuts()
+    if (telemetry) emitNativeFeatureTelemetry('native-shortcuts-init', wasSet ? 'success' : 'fallback')
+  } catch {
+    if (telemetry) emitNativeFeatureTelemetry('native-shortcuts-init', 'error')
+  }
+}
+
+export const initializeNativeReviewFlow = async () => {
+  if (!isNativeCapacitorRuntime()) return false
+  return requestNativeReview()
+}
+
+export const initializeNativeUpdateFlow = async () => {
+  if (!isNativeCapacitorRuntime()) return false
+  return checkNativeUpdate()
 }

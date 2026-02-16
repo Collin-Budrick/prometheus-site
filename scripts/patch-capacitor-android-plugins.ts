@@ -35,6 +35,71 @@ const patches: Array<{ path: string; replacements: Array<{ find: string; replace
     ],
   },
   {
+    path: join(ROOT, "node_modules", "@capacitor-community", "in-app-review", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
+    path: join(ROOT, "node_modules", "@capawesome", "capacitor-app-shortcuts", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
+    path: join(ROOT, "node_modules", "@capawesome", "capacitor-app-update", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
+    path: join(ROOT, "node_modules", "@capgo", "capacitor-autofill-save-password", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
+    path: join(ROOT, "node_modules", "@capgo", "capacitor-social-login", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
     path: join(ROOT, "node_modules", "@capacitor", "privacy-screen", "android", "build.gradle"),
     replacements: [
       {

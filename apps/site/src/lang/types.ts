@@ -40,6 +40,7 @@ export type UiCopy = {
   authRememberLabel: string
   authPasskeyLabel: string
   authPasskeyHint: string
+  authSocialSectionLabel: string
   authLogoutLabel: string
   profileNameAction: string
   settingsChatTitle: string
@@ -74,6 +75,21 @@ export type UiCopy = {
   settingsOfflineEnabled: string
   settingsOfflineDisabled: string
   settingsOfflineStorageError: string
+  settingsNativeTitle: string
+  settingsNativeDescription: string
+  settingsNativeReviewAction: string
+  settingsNativeReviewHint: string
+  settingsNativeUpdateAction: string
+  settingsNativeUpdateHint: string
+  settingsNativeUnavailable: string
+  settingsNativeRequestSuccess: string
+  settingsNativeAccessibilityTitle: string
+  settingsNativeAccessibilityDescription: string
+  settingsNativeTextZoomAction: string
+  settingsNativeTextZoomHint: string
+  settingsNativeTextZoomAriaLabel: string
+  settingsNativePrivacyShieldAction: string
+  settingsNativePrivacyShieldHint: string
   networkOfflineTitle: string
   networkOfflineHint: string
   networkOnlineTitle: string

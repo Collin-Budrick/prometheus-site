@@ -1,7 +1,12 @@
 import { isNativeCapacitorRuntime } from './runtime'
 
 type TelemetryEvent = {
-  metric: 'startup-interactive-ms' | 'long-task-ms' | 'transition-jank-ms' | 'deep-link-latency-ms'
+  metric:
+    | 'startup-interactive-ms'
+    | 'long-task-ms'
+    | 'transition-jank-ms'
+    | 'deep-link-latency-ms'
+    | 'native-feature-status'
   value: number
   tags?: Record<string, string>
 }
@@ -9,6 +14,7 @@ type TelemetryEvent = {
 declare global {
   interface WindowEventMap {
     'prom:deep-link-start': CustomEvent<{ targetPath: string; startedAt: number }>
+    'prom:telemetry-native-feature': CustomEvent<TelemetryEvent>
     'prom:telemetry-native-feel': CustomEvent<TelemetryEvent>
   }
 }
@@ -16,6 +22,20 @@ declare global {
 const emitTelemetry = (event: TelemetryEvent) => {
   window.dispatchEvent(new CustomEvent('prom:telemetry-native-feel', { detail: event }))
   console.info('[native-feel]', event.metric, event.value, event.tags ?? {})
+}
+
+export const emitNativeFeatureTelemetry = (feature: string, status: 'success' | 'fallback' | 'error', options?: { detail?: Record<string, string> }) => {
+  const event: TelemetryEvent = {
+    metric: 'native-feature-status',
+    value: 1,
+    tags: {
+      feature,
+      status,
+      ...options?.detail
+    }
+  }
+  window.dispatchEvent(new CustomEvent('prom:telemetry-native-feature', { detail: event }))
+  console.info('[native-feature]', feature, status, event.tags ?? {})
 }
 
 const setupStartupInteractiveTelemetry = () => {

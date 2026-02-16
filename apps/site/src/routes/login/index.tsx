@@ -89,6 +89,7 @@ const EnabledLoginRoute = component$(() => {
         rememberLabel: copy.value.authRememberLabel,
         passkeyLabel: copy.value.authPasskeyLabel,
         passkeyHint: copy.value.authPasskeyHint,
+        socialSectionLabel: copy.value.authSocialSectionLabel,
         closeLabel: copy.value.fragmentClose
       }}
     />

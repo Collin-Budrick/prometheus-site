@@ -595,6 +595,14 @@ const syncCapacitorAndroid = (bunBin: string, serverUrl?: string) => {
   const androidRoot = path.join(siteRoot, 'android')
   if (!existsSync(androidRoot)) return
   if (!ensureCapacitorCli(bunBin, siteRoot)) return
+  const patchResult = spawnSync(bunBin, ['run', 'patch:android'], {
+    stdio: 'inherit',
+    cwd: root,
+    env: process.env
+  })
+  if (patchResult.status !== 0) {
+    console.warn('[android] Capacitor Android patching failed; continuing with existing plugin configs.')
+  }
   const preferNode = process.platform === 'win32'
   const runSync = (runner: CapacitorRunner) =>
     spawnSync(runner.command, [...runner.args, 'sync', 'android'], {

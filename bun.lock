@@ -23,40 +23,47 @@
       "name": "site",
       "version": "0.1.0",
       "dependencies": {
-        "@bokuweb/zstd-wasm": "^0.0.27",
+        "@aparajita/capacitor-biometric-auth": "10.0.0",
+        "@aparajita/capacitor-secure-storage": "8.0.0",
+        "@bokuweb/zstd-wasm": "0.0.27",
         "@builder.io/qwik": "1.19.0",
         "@builder.io/qwik-city": "1.19.0",
-        "@capacitor/action-sheet": "^8.0.1",
-        "@capacitor/android": "^9.0.0-nightly-20260211T152431.0",
-        "@capacitor/app": "^8.0.1",
-        "@capacitor/core": "^9.0.0-nightly-20260211T152431.0",
-        "@capacitor/dialog": "^8.0.1",
-        "@capacitor/haptics": "^8.0.0",
-        "@capacitor/ios": "^9.0.0-nightly-20260211T152431.0",
-        "@capacitor/keyboard": "^8.0.0",
-        "@capacitor/local-notifications": "^8.0.1",
-        "@capacitor/network": "^8.0.1",
-        "@capacitor/preferences": "^8.0.1",
-        "@capacitor/privacy-screen": "^2.0.1",
-        "@capacitor/push-notifications": "^8.0.1",
-        "@capacitor/share": "^8.0.1",
-        "@capacitor/splash-screen": "^8.0.1",
-        "@capacitor/text-zoom": "^8.0.1",
-        "@capacitor/toast": "^8.0.1",
+        "@capacitor-community/in-app-review": "8.0.0",
+        "@capacitor/action-sheet": "8.0.1",
+        "@capacitor/android": "9.0.0-nightly-20260211T152431.0",
+        "@capacitor/app": "8.0.1",
+        "@capacitor/core": "9.0.0-nightly-20260211T152431.0",
+        "@capacitor/dialog": "8.0.1",
+        "@capacitor/haptics": "8.0.0",
+        "@capacitor/ios": "9.0.0-nightly-20260211T152431.0",
+        "@capacitor/keyboard": "8.0.0",
+        "@capacitor/local-notifications": "8.0.1",
+        "@capacitor/network": "8.0.1",
+        "@capacitor/preferences": "8.0.1",
+        "@capacitor/privacy-screen": "2.0.1",
+        "@capacitor/push-notifications": "8.0.1",
+        "@capacitor/share": "8.0.1",
+        "@capacitor/splash-screen": "8.0.1",
+        "@capacitor/text-zoom": "8.0.1",
+        "@capacitor/toast": "8.0.1",
+        "@capawesome/capacitor-app-shortcuts": "8.0.0",
+        "@capawesome/capacitor-app-update": "8.0.2",
+        "@capgo/capacitor-autofill-save-password": "8.0.15",
+        "@capgo/capacitor-social-login": "8.3.2",
         "@preact/signals-core": "1.13.0",
         "@prometheus/core": "workspace:*",
         "@prometheus/platform": "workspace:*",
         "@prometheus/ui": "workspace:*",
-        "@qwikest/icons": "^0.0.13",
-        "gridstack": "^12.4.2",
+        "@qwikest/icons": "0.0.13",
+        "gridstack": "12.4.2",
         "nostr-tools": "2.23.1",
         "preact": "11.0.0-experimental.1",
         "react": "19.3.0-canary-fd524fe0-20251121",
-        "y-webrtc": "^10.3.0",
-        "yjs": "^13.6.29",
+        "y-webrtc": "10.3.0",
+        "yjs": "13.6.29",
       },
       "devDependencies": {
-        "@capacitor/cli": "^9.0.0-nightly-20260211T152431.0",
+        "@capacitor/cli": "9.0.0-nightly-20260211T152431.0",
         "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.4",
         "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.4",
         "@serwist/vite": "9.5.6",
@@ -64,12 +71,12 @@
         "@types/node": "25.2.3",
         "lightningcss": "1.31.1",
         "oxlint": "1.48.0",
-        "rollup-plugin-visualizer": "^6.0.5",
-        "serwist": "^10.0.0-preview.14",
-        "tailwindcss": "^4.1.18",
+        "rollup-plugin-visualizer": "6.0.5",
+        "serwist": "10.0.0-preview.14",
+        "tailwindcss": "4.1.18",
         "typescript": "5.9.3",
         "vite": "8.0.0-beta.14",
-        "vite-plugin-compression2": "^2.4.0",
+        "vite-plugin-compression2": "2.4.0",
       },
       "optionalDependencies": {
         "@oxlint/win32-arm64": "1.43.0",
@@ -155,6 +162,10 @@
     },
   },
   "packages": {
+    "@aparajita/capacitor-biometric-auth": ["@aparajita/capacitor-biometric-auth@10.0.0", "", { "dependencies": { "@capacitor/android": "^8.0.2", "@capacitor/app": "^8.0.0", "@capacitor/core": "^8.0.2", "@capacitor/ios": "^8.0.2" } }, "sha512-azjWaRucB8x1/gSzSTp/NxelaOZyg+m765gSzjwUkSQgg30RrZPmPq6pyLeeXVSZNDY3Rxf5Hj8obgZaXirCFQ=="],
+
+    "@aparajita/capacitor-secure-storage": ["@aparajita/capacitor-secure-storage@8.0.0", "", { "dependencies": { "@capacitor/android": "^8.0.2", "@capacitor/app": "^8.0.0", "@capacitor/core": "^8.0.2", "@capacitor/ios": "^8.0.2", "@capacitor/keyboard": "^8.0.0" } }, "sha512-oYnwSjdIh23aRNgz8982+TmFvQH/2yZkEdw1iIg+H2ziFJoOVELPTc7u6Ez2HwOuDIW5AGqBX75GvrzQ+D70Qg=="],
+
     "@ark/schema": ["@ark/schema@0.56.0", "", { "dependencies": { "@ark/util": "0.56.0" } }, "sha512-ECg3hox/6Z/nLajxXqNhgPtNdHWC9zNsDyskwO28WinoFEnWow4IsERNz9AnXRhTZJnYIlAJ4uGn3nlLk65vZA=="],
 
     "@ark/util": ["@ark/util@0.56.0", "", {}, "sha512-BghfRC8b9pNs3vBoDJhcta0/c1J1rsoS1+HgVUreMFPdhz/CRAKReAu57YEllNaSy98rWAdY1gE+gFup7OXpgA=="],
@@ -221,6 +232,8 @@
 
     "@builder.io/qwik-city": ["@builder.io/qwik-city@1.19.0", "", { "dependencies": { "@mdx-js/mdx": "^3.1.1", "@types/mdx": "^2.0.13", "source-map": "^0.7.6", "svgo": "^3.3.2", "undici": "*", "valibot": ">=0.36.0 <2", "vfile": "6.0.3", "vite": ">=5 <8", "vite-imagetools": "^9.0.0", "zod": "3.25.48" } }, "sha512-TAXSDRYPXVX4cKKmvMReCDyjjGLnzkCLNQvVfcNPsK/9xSZwUR5AZF22c/XSLv6g17QnWHKSfVdZ1idtncl7LQ=="],
 
+    "@capacitor-community/in-app-review": ["@capacitor-community/in-app-review@8.0.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-AYpEkIjdv27WGS3hnlc7xAQ1BhaBvD2svgQBfHF4P2Olw1N6a7MSCOQC6O4SuxmdBdJ2fM6uFeo1jyNjKLtIPw=="],
+
     "@capacitor/action-sheet": ["@capacitor/action-sheet@8.0.1", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-1a0c2P5+tclU/PYfWS9kn4KBp/as27KKCo+lIPq4zWgdN3lev+lGYDEJkUI3X20G+u2tBV3/IQUco+9OgsWKcg=="],
 
     "@capacitor/android": ["@capacitor/android@9.0.0-nightly-20260211T152431.0", "", { "peerDependencies": { "@capacitor/core": "^9.0.0-nightly-20260211T152431.0" } }, "sha512-KRdI66QHLyk7W1SZ9+2qS4yi+0ZwYtugAm2ik3UnUzX1sFOeAWaRJiAqfpTbi1HanspveelVyW+HvabAJf56Wg=="],
@@ -256,6 +269,14 @@
     "@capacitor/text-zoom": ["@capacitor/text-zoom@8.0.1", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-hib9Srjme4DRmbzGYfwAWB5OIl0C3ihjXQNTpMMSVqBUxlHfm3O35H/In6FtNrbJ78ro13Zb0NDDK8o3kLPEnQ=="],
 
     "@capacitor/toast": ["@capacitor/toast@8.0.1", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-0uoyftoAeFjtOMiozBo7YXEo+zcpQCAxtBONSvrljJ05SKdlb1A8OFHaV/DZfIpGt+19kzUGaEaUemLdll4wUw=="],
+
+    "@capawesome/capacitor-app-shortcuts": ["@capawesome/capacitor-app-shortcuts@8.0.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-LOzLfTLBidmLmSNpT24JgEZ1PC2ckwFWwlwDtkQKNEk/fZYgqCl/kVMaFX1cE1Ko5YRWW1z2I5K/vPoJ9HQx5A=="],
+
+    "@capawesome/capacitor-app-update": ["@capawesome/capacitor-app-update@8.0.2", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-UBMVXaPBGJkmJEaWsPSuq8gfB+iAvZV5KAvz00mUJRUp9OAYyH8YLfpBt4PNIdGBrB2EA+5t1Oxt9WD6wO+Jnw=="],
+
+    "@capgo/capacitor-autofill-save-password": ["@capgo/capacitor-autofill-save-password@8.0.15", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-rwmuevFOjg+UBipmCCYGrVg6tcD+7vaGo8YDzLwmhjzvlz8UASbhQW9Gga+6FCL2i7hKz15t2rjuCQR3b2oF8w=="],
+
+    "@capgo/capacitor-social-login": ["@capgo/capacitor-social-login@8.3.2", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-FleT4E7GAkP+Jg1257OnuErPhYLqivLWjKEJGiXwhAPoYLCwUPciofKYAIy65gD5IciB4t0UGNHpCDATz0AKFQ=="],
 
     "@chevrotain/cst-dts-gen": ["@chevrotain/cst-dts-gen@10.5.0", "", { "dependencies": { "@chevrotain/gast": "10.5.0", "@chevrotain/types": "10.5.0", "lodash": "4.17.21" } }, "sha512-lhmC/FyqQ2o7pGK4Om+hzuDrm9rhFYIJ/AXoQBeongmn870Xeb0L6oGEiuR8nohFNL5sMaQEJWCxr1oIVIVXrw=="],
 
@@ -1681,6 +1702,18 @@
 
     "zwitch": ["zwitch@2.0.4", "", {}, "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
 
+    "@aparajita/capacitor-biometric-auth/@capacitor/android": ["@capacitor/android@8.1.0", "", { "peerDependencies": { "@capacitor/core": "^8.1.0" } }, "sha512-z0acTPxj5DCy/U2FU7w+GA93oC+wdyKnsOcRg5rutDmSYa8Do1tzYqApKgf+hnuTNPbtrCTHp0Zy1cLiK/4MEw=="],
+
+    "@aparajita/capacitor-biometric-auth/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@aparajita/capacitor-biometric-auth/@capacitor/ios": ["@capacitor/ios@8.1.0", "", { "peerDependencies": { "@capacitor/core": "^8.1.0" } }, "sha512-wPaQ8ayL0UY+SxydZbrmfzPs8TryZVEB6hrL/XBnXxQtb6rpEmIy/3GIltPwM+/T4m/IuaSDZOToWK65ruC00g=="],
+
+    "@aparajita/capacitor-secure-storage/@capacitor/android": ["@capacitor/android@8.1.0", "", { "peerDependencies": { "@capacitor/core": "^8.1.0" } }, "sha512-z0acTPxj5DCy/U2FU7w+GA93oC+wdyKnsOcRg5rutDmSYa8Do1tzYqApKgf+hnuTNPbtrCTHp0Zy1cLiK/4MEw=="],
+
+    "@aparajita/capacitor-secure-storage/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@aparajita/capacitor-secure-storage/@capacitor/ios": ["@capacitor/ios@8.1.0", "", { "peerDependencies": { "@capacitor/core": "^8.1.0" } }, "sha512-wPaQ8ayL0UY+SxydZbrmfzPs8TryZVEB6hrL/XBnXxQtb6rpEmIy/3GIltPwM+/T4m/IuaSDZOToWK65ruC00g=="],
+
     "@azure/identity/open": ["open@10.2.0", "", { "dependencies": { "default-browser": "^5.2.1", "define-lazy-prop": "^3.0.0", "is-inside-container": "^1.0.0", "wsl-utils": "^0.1.0" } }, "sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA=="],
 
     "@better-auth/core/zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
@@ -1692,6 +1725,16 @@
     "@builder.io/qwik-city/vite": ["vite@7.3.0", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-dZwN5L1VlUBewiP6H9s2+B3e3Jg96D0vzN+Ry73sOefebhYr9f94wwkMNN/9ouoU8pV1BqA1d1zGk8928cx0rg=="],
 
     "@builder.io/qwik-city/zod": ["zod@3.25.48", "", {}, "sha512-0X1mz8FtgEIvaxGjdIImYpZEaZMrund9pGXm3M6vM7Reba0e2eI71KPjSCGXBfwKDPwPoywf6waUKc3/tFvX2Q=="],
+
+    "@capacitor-community/in-app-review/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@capawesome/capacitor-app-shortcuts/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@capawesome/capacitor-app-update/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@capgo/capacitor-autofill-save-password/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
+
+    "@capgo/capacitor-social-login/@capacitor/core": ["@capacitor/core@8.1.0", "", { "dependencies": { "tslib": "^2.1.0" } }, "sha512-UfMBMWc1v7J+14AhH03QmeNwV3HZx3qnOWhpwnHfzALEwAwlV/itQOQqcasMQYhOHWL0tiymc5ByaLTn7KKQxw=="],
 
     "@ionic/utils-fs/fs-extra": ["fs-extra@9.1.0", "", { "dependencies": { "at-least-node": "^1.0.0", "graceful-fs": "^4.2.0", "jsonfile": "^6.0.1", "universalify": "^2.0.0" } }, "sha512-hcg3ZmepS30/7BSFqRvoo3DOMQu7IjqxO5nCDt+zM9XWjb33Wg7ziNT+Qvqbuc3+gWpzO02JubVyk2G4Zvo1OQ=="],
 
