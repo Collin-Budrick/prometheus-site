@@ -5,7 +5,7 @@
 
   .connection-banner {
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    top: calc(var(--safe-area-inset-top) + 14px);
     left: 50%;
     transform: translateX(-50%);
     width: min(92vw, 680px);

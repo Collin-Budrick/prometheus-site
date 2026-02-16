@@ -31,3 +31,14 @@ docker build -f apps/site/Dockerfile \
   --build-arg VITE_HIGHLIGHT_SAMPLE_RATE=0.1 \
   -t prometheus-site .
 ```
+
+## Native shell architecture (Capacitor)
+
+`src/native/native-shell.ts` is the only allowed entrypoint for Capacitor runtime lifecycle or plugin wiring in the site app.
+
+Rules:
+
+- Initialize once from `src/root.tsx` in the client `useVisibleTask$` startup path.
+- Keep all Capacitor event/listener registration in `initNativeShell()`.
+- Include runtime guards so NativeShell is a no-op for web/PWA contexts.
+- Use HMR-safe setup/teardown so listeners are not duplicated during local development.

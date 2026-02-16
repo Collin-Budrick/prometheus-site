@@ -8,6 +8,7 @@ import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
+import { initNativeShell } from './native/native-shell'
 
 const shouldEnableAmbientMotion = () => {
   if (typeof window === 'undefined') return false
@@ -91,6 +92,9 @@ export default component$(() => {
   useStyles$(globalCriticalStyles)
   useStyles$(globalStyles)
   const clientReady = useClientReady()
+  useVisibleTask$(() => {
+    initNativeShell()
+  })
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
@@ -133,7 +137,6 @@ export default component$(() => {
     <QwikCityProvider viewTransition>
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <RouterHead />
       </head>
       <body class="app-shell">

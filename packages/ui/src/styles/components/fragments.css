@@ -632,7 +632,7 @@
 
   .fragment-card-close {
     position: fixed;
-    top: 18px;
+    top: calc(18px + var(--safe-area-inset-top));
     right: 18px;
     z-index: 70;
     width: 38px;

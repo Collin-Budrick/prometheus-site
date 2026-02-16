@@ -547,6 +547,7 @@ export const RouterHead = component$(() => {
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       <link rel="manifest" href={withBase('manifest.webmanifest')} />
+      <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <meta name="theme-color" content={siteBrand.themeColor} />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content={siteBrand.themeColor} />
       <meta name="apple-mobile-web-app-capable" content="yes" />
