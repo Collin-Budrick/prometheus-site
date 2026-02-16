@@ -64,11 +64,15 @@ export const initNativeNotifications = async () => {
   const requestPermissions = async () => {
     markPrompted()
     const status = await PushNotifications.checkPermissions()
-    if (status.receive === 'granted') return
-    const asked = await PushNotifications.requestPermissions()
-    if (asked.receive === 'granted') {
+    if (status.receive === 'granted') {
       await PushNotifications.register()
+      return
     }
+
+    const asked = await PushNotifications.requestPermissions()
+    if (asked.receive !== 'granted') return
+
+    await PushNotifications.register()
   }
 
   if (!shouldPromptNow()) return
