@@ -452,6 +452,7 @@
 - Working tree anomaly: `.continue/mcpServers/new-mcp-server.yaml` is tracked but missing from disk; restore or remove from versioning contract.
 
 ## Bug findings
+
 | Severity | File | Impact | Recommended fix | Owner |
 | --- | --- | --- | --- | --- |
 | P2 | `apps/site/capacitor.config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
@@ -510,6 +511,7 @@
 | P3 | `scripts/lefthook-lint.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Build owner |
 | P3 | `scripts/preview.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Build owner |
 | P2 | `scripts/preview.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Build owner |
+
 ## Final completion summary
 
 - Total reviewed files: 352

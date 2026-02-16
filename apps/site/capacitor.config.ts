@@ -83,10 +83,8 @@ const config: CapacitorConfig = {
     },
     SystemBars: {
       insetsHandling: 'css',
-      statusBarStyle: 'light',
-      statusBarBackgroundColor: '#00000000',
-      navigationBarStyle: 'light',
-      navigationBarColor: '#00000000'
+      style: 'LIGHT',
+      hidden: false
     }
   }
 };
