@@ -1,6 +1,7 @@
 import { effect, signal } from '@preact/signals-core'
 import { defaultLanguage, supportedLanguages, type Lang } from '../lang'
 import { runLangViewTransition } from './view-transitions'
+import { getPreference, setPreference } from '../native/preferences'
 
 const STORAGE_KEY = 'prometheus-lang'
 const COOKIE_KEY = 'prometheus-lang'
@@ -45,6 +46,7 @@ const setDocumentLang = (value: Lang) => {
 }
 
 const persistLang = (value: Lang) => {
+  void setPreference('locale', value)
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, value)
   }
@@ -83,6 +85,13 @@ export const initLang = (): Lang => {
     lang.value = next
   }
   setDocumentLang(next)
+
+  void getPreference('locale').then((preferred) => {
+    const resolvedPreferred = normalizeLang(preferred)
+    if (resolvedPreferred === next || resolvedPreferred === lang.value) return
+    lang.value = resolvedPreferred
+    setDocumentLang(resolvedPreferred)
+  })
   return next
 }
 

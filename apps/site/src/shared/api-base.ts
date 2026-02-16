@@ -1,8 +1,9 @@
 import { normalizeApiBase, resolveApiBase, resolveRuntimeEnv } from '@platform/env'
+import { isOnline } from '../native/connectivity'
 
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+const isOffline = () => !isOnline()
 const isTruthyEnv = (value?: string) => {
   if (!value) return false
   const normalized = value.trim().toLowerCase()

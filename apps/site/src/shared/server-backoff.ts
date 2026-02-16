@@ -1,3 +1,5 @@
+import { isOnline } from '../native/connectivity'
+
 type BackoffState = {
   attempts: number
   until: number
@@ -161,7 +163,7 @@ export const getServerBackoffMs = (key: string) => {
 }
 
 export const shouldAttemptServer = (key: string) => {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
+  if (!isOnline()) return false
   return getServerBackoffMs(key) === 0
 }
 

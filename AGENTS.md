@@ -55,6 +55,9 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 - **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site + packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
+
+- **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke Capacitor plugins in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
+- **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `packages/ui/src/global.css` and component patterns (Qwik components with `$` suffix).
 - **Git hooks:** `bun run hooks:install` sets `.githooks`; commit messages should be conventional and meaningful.
 

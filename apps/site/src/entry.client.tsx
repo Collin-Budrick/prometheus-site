@@ -10,6 +10,7 @@ import {
   writeServiceWorkerOptOutCookie
 } from './shared/service-worker-seed'
 import Root from './root'
+import { initConnectivityStore, isOnline } from './native/connectivity'
 
 declare global {
   interface Window {
@@ -39,6 +40,8 @@ export default function () {
   if ('serviceWorker' in navigator) {
     setupServiceWorkerBridge()
   }
+
+  void initConnectivityStore()
 
   runNonCriticalSetup(() => {
     setupWebSocketBackoffMonitor()
@@ -84,7 +87,7 @@ function setupOfflineErrorFilters() {
   const windowHost = window.location.host
   const apiHost = resolveApiHost(window.location.origin)
   const isServerOffline = () => {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+    if (!isOnline()) return true
     return getServerBackoffMs(windowHost) > 0 || getServerBackoffMs(apiHost) > 0
   }
   const resolveKnownHost = (host: string) => {
@@ -253,7 +256,7 @@ function setupServerHealthProbe() {
 
   const probe = async () => {
     if (inFlight) return
-    if (navigator.onLine === false) return
+    if (!isOnline()) return
     if (getServerBackoffMs(serverKey) <= 0) return
     inFlight = true
     const controller = new AbortController()

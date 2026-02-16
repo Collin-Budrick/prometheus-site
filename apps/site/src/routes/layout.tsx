@@ -1,7 +1,7 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { manifest } from '@qwik-client-manifest'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, applyTheme, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -16,6 +16,10 @@ import { appConfig } from '../app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
+import { connectivityState, initConnectivityStore } from '../native/connectivity'
+import { showNativeActionSheet, showNativeToast } from '../native/affordances'
+import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
+import { triggerHapticSelection, triggerHapticTap, withUserActionHaptics } from '../native/haptics'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -615,6 +619,7 @@ export default component$(() => {
       () => {
         langSignal.value = next
         applyLang(next)
+        void setPreference('locale', next)
       },
       {
         mutationRoot: root,
@@ -647,6 +652,24 @@ export default component$(() => {
     { strategy: 'document-ready' }
   )
 
+
+
+  useVisibleTask$(async () => {
+    await migratePreferencesFromLegacy()
+    void initConnectivityStore()
+    const preferredTheme = await getPreference('theme')
+    if (preferredTheme === 'light' || preferredTheme === 'dark') {
+      applyTheme(preferredTheme)
+    }
+    const preferredLocale = await getPreference('locale')
+    if (preferredLocale) {
+      const normalized = resolveLangParam(preferredLocale) ?? shellPreferences.value.lang
+      if (normalized !== langSignal.value) {
+        langSignal.value = normalized
+        applyLang(normalized)
+      }
+    }
+  }, { strategy: 'document-ready' })
 
   useOnDocument(
     'click',
@@ -687,9 +710,13 @@ export default component$(() => {
     }
   })
 
-  const handleRetrySync = $(() => {
+  const handleRetrySync = $(async () => {
     if (typeof window === 'undefined') return
-    window.dispatchEvent(new CustomEvent('prom:sw-manual-sync'))
+    await withUserActionHaptics(async () => {
+      await triggerHapticTap()
+      window.dispatchEvent(new CustomEvent('prom:sw-manual-sync'))
+      await showNativeToast(copy.value.networkSyncQueued)
+    })
     void setBanner('sync', 3200)
   })
 
@@ -732,7 +759,8 @@ export default component$(() => {
 
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
-    if (navigator.onLine === false) {
+    void initConnectivityStore()
+    if (!connectivityState.value.online) {
       void setBanner('offline')
     }
 
@@ -761,16 +789,12 @@ export default component$(() => {
       void setBanner('sync', 3200)
     }
 
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
     window.addEventListener('prom:network-status', handleNetworkStatus)
     window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
     window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
     window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
 
     ctx.cleanup(() => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
       window.removeEventListener('prom:network-status', handleNetworkStatus)
       window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
       window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
@@ -854,13 +878,14 @@ export default component$(() => {
                 aria-expanded={settingsOpen.value ? 'true' : 'false'}
                 aria-label={copy.value.navSettings}
                 aria-controls="topbar-settings-menu"
-                onClick$={() => {
+                onClick$={$(() => withUserActionHaptics(async () => {
+                  await triggerHapticTap()
                   const next = !settingsOpen.value
                   settingsOpen.value = next
                   if (!next) {
                     langMenuOpen.value = false
                   }
-                }}
+                }))}
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
@@ -881,14 +906,27 @@ export default component$(() => {
                       lang={langSignal}
                       ariaLabel={copy.value.languageToggleLabel}
                       pressed={langMenuOpen.value}
-                      onToggle$={$(() => {
+                      onToggle$={$(() => withUserActionHaptics(async () => {
+                        await triggerHapticSelection()
+                        const selectedIndex = await showNativeActionSheet(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
+                        if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
+                          const selected = supportedLangs[selectedIndex] as Lang
+                          void applyLangChoice(selected)
+                          return
+                        }
                         langMenuOpen.value = !langMenuOpen.value
-                      })}
+                      }))}
                     />
                   ) : null}
                   <ThemeToggle
                     initialTheme={shellPreferences.value.theme}
                     labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
+                    onToggle$={$((nextTheme) => {
+                      void withUserActionHaptics(async () => {
+                        await triggerHapticTap()
+                        await setPreference('theme', nextTheme)
+                      })
+                    })}
                   />
                 </div>
                 {hasMultipleLangs ? (
