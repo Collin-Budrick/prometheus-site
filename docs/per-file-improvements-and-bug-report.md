@@ -1,31 +1,10 @@
-# Improvements and Bug Evaluation
+# File-by-file Improvements and Bug Evaluation
 
-- Target file: docs/improvements.md
-- Scope: [352 files] (static-only review, non-text files marked reviewed non-text)
-- Date: 2026-02-15
-- Reviewer: Codex (static audit)
+- Source: `docs/improvements.md`
+- Date: 2026-02-15T13:19:23-05:00
+- Scope: all tracked files in the review corpus (352 files)
 
-## Legend
-
-- Status values: Not Started, In Progress, Done, Blocked
-- Severity values: P0/P1/P2/P3
-
-## Bug Evaluation Rubric
-
-- Code (TypeScript, JavaScript, Go, Java): syntax/readability/edge-case/security/contract consistency checks.
-- Config (JSON, YAML, Dockerfile, shell/PowerShell): schema correctness, env var consistency, drift risk.
-- CSS/HTML/XML: dead styles, duplicate/unused critical rules, malformed selectors/nesting checks.
-- JSON locales/data/SQL: parse validity and value consistency checks.
-- Binary (PNG, SVG, WebP, AVIF, JAR, ICO): ownership, referenced-path, and size/format-drift checks only.
-
-## File-level checklist
-
-### Expected review corpus
-
-- Tracked files in scope: 352
-- Files included in checklist: 352
-
-## AGENTS + root
+## Checklist (all files reviewed)
 
 | Status | Path | Type | Bug risk | Recommended improvements | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -43,11 +22,6 @@
 | [x] | `docker-compose.yml` | Config (YAML) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `package.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `tsconfig.base.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
-
-## apps/site
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `apps/site/Dockerfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/README.md` | Documentation | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/android/.gitignore` | Text/Config | None | No change needed. | Reviewed and within rubric. |
@@ -226,11 +200,6 @@
 | [x] | `apps/site/tailwind.config.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/tsconfig.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/vite.config.ts` | Code (TypeScript/JavaScript) | P2 | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Review completed; issues tracked in bug findings. |
-
-### apps/site/tests
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `apps/site/src/fragment/client.effects.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/src/fragment/config.test.ts` | Code (TypeScript/JavaScript) | P2 | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Review completed; issues tracked in bug findings. |
 | [x] | `apps/site/src/fragment/sanitize.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
@@ -239,11 +208,6 @@
 | [x] | `apps/site/tests/lang-toggle-fragment.spec.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/tests/lang-toggle.spec.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/site/tests/p2p-chat.spec.ts` | Code (TypeScript/JavaScript) | P3 | Route runtime console output through structured logging and gate debug logs from production. | Review completed; issues tracked in bug findings. |
-
-## packages/core
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `packages/core/package.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/core/src/app/client.tsx` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/core/src/app/prefetch.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
@@ -268,11 +232,6 @@
 | [x] | `packages/core/src/index.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/core/src/types/quicklink.d.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/core/tsconfig.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
-
-## packages/platform
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `packages/platform/.oxfmtrc.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/.oxlintrc.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/Dockerfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
@@ -313,22 +272,12 @@
 | [x] | `packages/platform/src/server/fragments.ts` | Code (TypeScript/JavaScript) | P2 | Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths. | Review completed; issues tracked in bug findings. |
 | [x] | `packages/platform/tsconfig.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tsconfig.lint.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
-
-### packages/platform/tests
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `packages/platform/tests/api.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tests/auth.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tests/config.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tests/react-fragment.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tests/server-utils.test.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/platform/tests/setup.ts` | Code (TypeScript/JavaScript) | P2 | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths. | Review completed; issues tracked in bug findings. |
-
-## packages/ui
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `packages/ui/package.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/ui/src/components/Dock.tsx` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/ui/src/components/DockBar.tsx` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
@@ -352,11 +301,6 @@
 | [x] | `packages/ui/src/styles/utilities.css` | Stylesheet | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/ui/src/theme-store.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/ui/tsconfig.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
-
-## packages/features/*
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `packages/features/auth/package.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/features/auth/src/auth.css` | Stylesheet | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/features/auth/src/index.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
@@ -398,135 +342,52 @@
 | [x] | `packages/features/store/src/store-route.tsx` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `packages/features/store/src/ws.ts` | Code (TypeScript/JavaScript) | P3 | Route runtime console output through structured logging and gate debug logs from production. | Review completed; issues tracked in bug findings. |
 | [x] | `packages/features/store/tsconfig.json` | Data/Config (JSON) | None | No change needed. | Reviewed and within rubric. |
-
-## apps/webtransport
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `apps/webtransport/Dockerfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/webtransport/go.mod` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/webtransport/go.sum` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `apps/webtransport/main.go` | Code (Go) | None | No change needed. | Reviewed and within rubric. |
-
-## infra
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `infra/caddy/Caddyfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `infra/caddy/Dockerfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `infra/compose/dev.yml` | Config (YAML) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `infra/db/init.sql` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `infra/valkey/valkey.conf` | Text/Config | None | No change needed. | Reviewed and within rubric. |
 | [x] | `infra/yjs-signaling/Dockerfile` | Text/Config | None | No change needed. | Reviewed and within rubric. |
-
-## scripts
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `scripts/compose-utils.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `scripts/dev.ts` | Code (TypeScript/JavaScript) | P2 | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Route runtime console output through structured logging and gate debug logs from production. | Review completed; issues tracked in bug findings. |
 | [x] | `scripts/fragment-css.ts` | Code (TypeScript/JavaScript) | None | No change needed. | Reviewed and within rubric. |
 | [x] | `scripts/lefthook-lint.ts` | Code (TypeScript/JavaScript) | P3 | Route runtime console output through structured logging and gate debug logs from production. | Review completed; issues tracked in bug findings. |
 | [x] | `scripts/preview.ts` | Code (TypeScript/JavaScript) | P2 | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Route runtime console output through structured logging and gate debug logs from production. | Review completed; issues tracked in bug findings. |
 | [x] | `scripts/setup-windows-https.ps1` | Config/Script | None | No change needed. | Reviewed and within rubric. |
-
-## docs
-
-| Status | Path | Type | Bug risk | Recommended improvements | Notes |
-| --- | --- | --- | --- | --- | --- |
 | [x] | `docs/monorepo-refactor-plan.md` | Documentation | None | No change needed. | Reviewed and within rubric. |
 | [x] | `docs/pwa.md` | Documentation | None | No change needed. | Reviewed and within rubric. |
 
-### docs/improvements.md (meta artifact)
-
-- Path: `docs/improvements.md`
-- Status: Done
-- Type: Documentation Artifact
-- Bug risk: None
-- Recommended improvements: Track reproducibility command + corpus checks under `Repository hygiene findings` and keep this section updated whenever audit scope/exclude patterns change.
-- Notes: This file is intentionally excluded from the 352-file corpus because it is untracked at generation time, then evaluated here as a self-review artifact.
-
-## Repository hygiene findings
-
-- Working tree anomaly: `package.json` is modified; please verify intended changes.
-- Working tree anomaly: `.continue/mcpServers/new-mcp-server.yaml` is tracked but missing from disk; restore or remove from versioning contract.
-
-## Bug findings
-| Severity | File | Impact | Recommended fix | Owner |
-| --- | --- | --- | --- | --- |
-| P2 | `apps/site/capacitor.config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P2 | `apps/site/playwright.config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P3 | `apps/site/scripts/vite-run.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P2 | `apps/site/scripts/vite-run.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P2 | `apps/site/src/app-config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P3 | `apps/site/src/components/StoreStream.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/entry.client.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/fragment/plan-cache.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/fragment/ui/FragmentShellIslands.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/fragment/ui/FragmentShellView.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/fragment/ui/FragmentStreamController.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/chat/index.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/fragment-resource.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/home.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/lab/index.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/login/index.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `apps/site/src/routes/store/index.tsx` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P2 | `apps/site/src/shared/api-base.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P3 | `apps/site/src/shared/store-cart.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P2 | `apps/site/vite.config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P2 | `apps/site/src/fragment/config.test.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Site owner |
-| P3 | `apps/site/tests/p2p-chat.spec.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Site owner |
-| P3 | `packages/core/src/fragment/client.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Core owner |
-| P3 | `packages/core/src/fragment/server.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Core owner |
-| P2 | `packages/platform/drizzle.config.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Platform owner |
-| P2 | `packages/platform/src/cache-helpers.ts` | Potential runtime/code-injection or CSP-hardening bypass risk. | Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths. | Platform owner |
-| P3 | `packages/platform/src/cache-helpers.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Platform owner |
-| P2 | `packages/platform/src/cache-helpers.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Platform owner |
-| P3 | `packages/platform/src/db/migrate.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Platform owner |
-| P3 | `packages/platform/src/db/prepare-cli.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Platform owner |
-| P3 | `packages/platform/src/db/seed.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Platform owner |
-| P2 | `packages/platform/src/server/app.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Platform owner |
-| P2 | `packages/platform/src/server/fragments.ts` | Potential runtime/code-injection or CSP-hardening bypass risk. | Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths. | Platform owner |
-| P2 | `packages/platform/tests/setup.ts` | Potential runtime/code-injection or CSP-hardening bypass risk. | Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths. | Platform owner |
-| P2 | `packages/platform/tests/setup.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Platform owner |
-| P3 | `packages/features/auth/src/server.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P2 | `packages/features/auth/src/server.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Feature owner |
-| P3 | `packages/features/messaging/src/api/push.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/queries/contacts.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/queries/p2p.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/queries/session.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/routes/contacts.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/routes/core.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/api/routes/p2p.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/cache.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/messaging/src/ws.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/store/src/api.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/store/src/cache.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/store/src/realtime.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/store/src/search.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `packages/features/store/src/ws.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Feature owner |
-| P3 | `scripts/dev.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Build owner |
-| P2 | `scripts/dev.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Build owner |
-| P3 | `scripts/lefthook-lint.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Build owner |
-| P3 | `scripts/preview.ts` | Potential observability noise or leakage of runtime details through console output. | Route runtime console output through structured logging and gate debug logs from production. | Build owner |
-| P2 | `scripts/preview.ts` | Missing/misaligned env assumptions can produce runtime drift across environments. | Centralize environment resolution and validate required envs with explicit defaults and schema guards. | Build owner |
 ## Final completion summary
 
 - Total reviewed files: 352
-- Status coverage: complete (352/352).
-- P0/P1 open issues: 0
-- P2 open issues: 9
-- P3 open issues: 34
+- Remaining unchecked rows: 0
+- Bug findings recorded: 43
 
-## Top 10 highest-impact recommended improvements
+## Bug findings and recommended fixes
 
-1. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-2. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-3. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-4. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-5. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-6. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-7. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-8. Centralize environment resolution and validate required envs with explicit defaults and schema guards.
-9. Replace eval usage with safe parser/typed execution path; avoid arbitrary string execution paths.
-10. Route runtime console output through structured logging and gate debug logs from production.
+| Path | Severity | Owner | Issue | Recommended fix |
+| --- | --- | --- | --- | --- |
+| `apps/site/capacitor.config.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/scripts/vite-run.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/PlannerDemo.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/StoreCart.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/StoreCreateForm.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/StoreStream.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/contact-invites/ContactInvites.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/contact-invites/api.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/components/contact-invites/friend-code.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/entry.client.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/fragment/definitions/i18n.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/fragment/plan-cache.ts` | P3 | Core owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/fragment/ui/fragment-shell-state.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/fragment/ui/fragment-shell-utils.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/fragment/ui/shell-cache.ts` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/root.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `apps/site/src/routes/layout.tsx` | P3 | Site owner | Potential maintainability or observability gap. | Capture error metadata or explicitly document intentional exception suppression. |
+| `packages/platform/src/cache-helpers.ts` | P2 | Platform owner | High-impact execution risk. | Replace eval usage with safe parser/typed flow; ensure script content is static and input-validated. |
+| `packages/platform/src/server/fragments.ts` | P2 | Platform owner | High-impact execution risk. | Replace eval usage with safe parser/typed flow; ensure script content is static and input-validated. |
+| `packages/platform/tests/setup.ts` | P2 | Platform owner | High-impact execution risk. | Replace eval usage with safe parser/typed flow; ensure script content is static and input-validated. |
