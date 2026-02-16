@@ -63,7 +63,16 @@ const config: CapacitorConfig = {
   appName: 'Prometheus',
   webDir: 'dist',
   ...(serverConfig ? { server: serverConfig } : {}),
-  ...(cleartext || apiCleartext ? { android: { allowMixedContent: true } } : {})
+  ...(cleartext || apiCleartext ? { android: { allowMixedContent: true } } : {}),
+  plugins: {
+    SystemBars: {
+      insetsHandling: 'css',
+      statusBarStyle: 'light',
+      statusBarBackgroundColor: '#00000000',
+      navigationBarStyle: 'light',
+      navigationBarColor: '#00000000'
+    }
+  }
 };
 
 export default config;

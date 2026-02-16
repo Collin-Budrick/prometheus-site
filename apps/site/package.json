@@ -17,6 +17,7 @@
     "@builder.io/qwik-city": "1.19.0",
     "@capacitor/android": "^9.0.0-nightly-20260211T152431.0",
     "@capacitor/core": "^9.0.0-nightly-20260211T152431.0",
+    "@capacitor/ios": "^9.0.0-nightly-20260211T152431.0",
     "@preact/signals-core": "1.13.0",
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
