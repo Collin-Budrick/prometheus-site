@@ -58,7 +58,7 @@ const viewportFadeHeadStyle = `
     right: 0;
     height: 100vh;
     pointer-events: none;
-    z-index: 2147483647;
+    z-index: 60;
     background:
       linear-gradient(
         to bottom,
