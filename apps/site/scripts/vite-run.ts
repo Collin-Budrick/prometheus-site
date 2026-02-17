@@ -32,6 +32,7 @@ type WinBindingStatus = {
   missingLightningcss: boolean
   missingTailwindLightningcss: boolean
   missingEsbuild: boolean
+  missingSharp: boolean
 }
 
 type EsbuildBindingTarget = {
@@ -82,6 +83,11 @@ const tailwindLightningcssPackageVersionCandidates = [
 const esbuildPackageVersionCandidates = [
   path.resolve(siteRoot, 'node_modules', 'esbuild', 'package.json'),
   path.resolve(workspaceRoot, 'node_modules', 'esbuild', 'package.json')
+]
+
+const sharpPackageVersionCandidates = [
+  path.resolve(siteRoot, 'node_modules', 'sharp', 'package.json'),
+  path.resolve(workspaceRoot, 'node_modules', 'sharp', 'package.json')
 ]
 
 const serwistViteEsbuildPackageVersionCandidates = [
@@ -308,11 +314,14 @@ const repairWinBindingLinks = (nodeModulesDir: string, targetArch: 'x64' | 'arm6
   const lightningcssFile = targetArch === 'x64' ? 'lightningcss.win32-x64-msvc.node' : 'lightningcss.win32-arm64-msvc.node'
   const esbuildName = targetArch === 'x64' ? 'win32-x64' : 'win32-arm64'
   const esbuildStorePrefix = `@esbuild+${esbuildName}`
+  const sharpName = targetArch === 'x64' ? 'sharp-win32-x64' : 'sharp-win32-arm64'
+  const sharpFile = targetArch === 'x64' ? 'lib/sharp-win32-x64.node' : 'lib/sharp-win32-arm64.node'
   const rolldownVersion = resolvePackageVersion(rolldownPackageVersionCandidates)
   const tailwindVersion = resolvePackageVersion(tailwindPackageVersionCandidates)
   const rollupVersion = resolvePackageVersion(rollupPackageVersionCandidates)
   const lightningcssVersion = resolvePackageVersion(lightningcssPackageVersionCandidates)
   const tailwindLightningcssVersion = resolvePackageVersion(tailwindLightningcssPackageVersionCandidates)
+  const sharpVersion = resolvePackageVersion(sharpPackageVersionCandidates)
   const esbuildTargets = resolveEsbuildBindingTargets(targetArch)
   ensureModuleLinkFromStore(
     nodeModulesDir,
@@ -343,6 +352,13 @@ const repairWinBindingLinks = (nodeModulesDir: string, targetArch: 'x64' | 'arm6
     lightningcssFile,
     tailwindLightningcssVersion,
     [lightningcssName]
+  )
+  ensureModuleLinkFromStore(
+    nodeModulesDir,
+    ['@img', sharpName],
+    `@img+${sharpName}`,
+    sharpFile,
+    sharpVersion
   )
   for (const target of esbuildTargets) {
     ensureModuleLinkFromStore(
@@ -388,6 +404,9 @@ const resolveWinBindingStatus = (nodeModulesDirs: string[], arch: string): WinBi
   const lightningcssExpectedVersion = resolvePackageVersion(lightningcssPackageVersionCandidates)
   const tailwindLightningcssExpectedVersion = resolvePackageVersion(tailwindLightningcssPackageVersionCandidates)
   const esbuildTargets = resolveEsbuildBindingTargets(targetArch)
+  const sharpPackage = targetArch === 'x64' ? '@img/sharp-win32-x64' : '@img/sharp-win32-arm64'
+  const sharpFile = targetArch === 'x64' ? 'lib/sharp-win32-x64.node' : 'lib/sharp-win32-arm64.node'
+  const sharpExpectedVersion = resolvePackageVersion(sharpPackageVersionCandidates)
 
   const missingRolldown = !(() => {
     if (!hasWinBinding(primaryNodeModulesDir, rolldownPackage, rolldownFile)) return false
@@ -427,6 +446,12 @@ const resolveWinBindingStatus = (nodeModulesDirs: string[], arch: string): WinBi
     const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, packagePath, 'package.json')])
     return current === target.expectedVersion
   })
+  const missingSharp = !(() => {
+    if (!hasWinBinding(primaryNodeModulesDir, sharpPackage, sharpFile)) return false
+    if (!sharpExpectedVersion) return true
+    const current = resolvePackageVersion([path.resolve(primaryNodeModulesDir, sharpPackage, 'package.json')])
+    return current === sharpExpectedVersion
+  })()
   return {
     targetArch,
     missingRolldown,
@@ -434,7 +459,8 @@ const resolveWinBindingStatus = (nodeModulesDirs: string[], arch: string): WinBi
     missingRollup,
     missingLightningcss,
     missingTailwindLightningcss,
-    missingEsbuild
+    missingEsbuild,
+    missingSharp
   }
 }
 
@@ -463,7 +489,8 @@ const ensureWinBindings = (nodeModulesDirs: string[], arch: string) => {
       !initial.missingRollup &&
       !initial.missingLightningcss &&
       !initial.missingTailwindLightningcss &&
-      !initial.missingEsbuild)
+      !initial.missingEsbuild &&
+      !initial.missingSharp)
   ) {
     return initial
   }
@@ -494,7 +521,8 @@ const warnMissingBindings = (status: WinBindingStatus | null) => {
       !status.missingRollup &&
       !status.missingLightningcss &&
       !status.missingTailwindLightningcss &&
-      !status.missingEsbuild)
+      !status.missingEsbuild &&
+      !status.missingSharp)
   ) {
     return
   }
@@ -507,6 +535,7 @@ const warnMissingBindings = (status: WinBindingStatus | null) => {
   if (status.missingLightningcss) parts.push('lightningcss')
   if (status.missingTailwindLightningcss) parts.push('tailwind lightningcss')
   if (status.missingEsbuild) parts.push('esbuild')
+  if (status.missingSharp) parts.push('sharp')
   console.warn(
     `[native] Missing ${parts.join(' + ')} binding(s) for ${status.targetArch}. ` +
       `Run: bun install --cpu ${hintCpu} --os win32 --filter site`

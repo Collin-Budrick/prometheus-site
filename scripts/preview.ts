@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import {
@@ -629,6 +629,16 @@ const ensureCapacitorCli = (siteRoot: string) => {
   return true
 }
 
+const clearCapacitorAndroidPublicAssets = (androidRoot: string) => {
+  const publicAssetsRoot = path.join(androidRoot, 'app', 'src', 'main', 'assets', 'public')
+  try {
+    rmSync(publicAssetsRoot, { recursive: true, force: true })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[capacitor] Failed to clean Android web assets at ${publicAssetsRoot}: ${message}`)
+  }
+}
+
 type CapacitorRunner = {
   command: string
   args: string[]
@@ -653,6 +663,7 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
   const siteRoot = path.resolve(root, 'apps', 'site')
   const androidRoot = path.join(siteRoot, 'android')
   if (!existsSync(androidRoot)) return
+  clearCapacitorAndroidPublicAssets(androidRoot)
   if (!serverUrl) {
     const distIndex = path.join(siteRoot, 'dist', 'index.html')
     if (!existsSync(distIndex)) {
