@@ -948,7 +948,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       data-state={streamState.value}
       data-mode={query.value.trim() ? 'search' : 'browse'}
     >
-      <div class="store-stream-controls">
+      <div class="store-stream-controls" style={{ position: 'relative', zIndex: '30' }}>
         <form preventdefault:submit class="store-stream-search" onSubmit$={handleRefresh}>
           <div class="store-stream-field">
             <input
@@ -970,9 +970,18 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             </button>
           ) : null}
         </form>
-        <div class="store-stream-sort" data-open={sortMenuOpen.value ? 'true' : 'false'}>
+        <div
+          class="store-stream-sort"
+          data-open={sortMenuOpen.value ? 'true' : 'false'}
+          style={{ position: 'relative', zIndex: sortMenuOpen.value ? '70' : '30' }}
+        >
           <span>{sortLabel}</span>
-          <div class="store-stream-sort-menu" ref={sortMenuRef} data-open={sortMenuOpen.value ? 'true' : 'false'}>
+          <div
+            class="store-stream-sort-menu"
+            ref={sortMenuRef}
+            data-open={sortMenuOpen.value ? 'true' : 'false'}
+            style={{ position: 'relative', zIndex: '80' }}
+          >
             <button
               class="store-stream-sort-trigger"
               type="button"
@@ -986,7 +995,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
                 v
               </span>
             </button>
-            <div class="store-stream-sort-drawer" data-open={sortMenuOpen.value ? 'true' : 'false'}>
+            <div
+              class="store-stream-sort-drawer"
+              data-open={sortMenuOpen.value ? 'true' : 'false'}
+              style={{ zIndex: '90' }}
+            >
               <div class="store-stream-sort-list" role="menu" aria-label={sortLabel}>
                 {sortOptions.map((option) => {
                   const isActive = option.value === sortToken.value
@@ -1022,7 +1035,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             : `${items.value.length} ${itemsLabel}`}
         </span>
       </div>
-      <div class="store-stream-panel" role="list" aria-live="polite" ref={panelRef}>
+      <div class="store-stream-panel" role="list" aria-live="polite" ref={panelRef} style={{ position: 'relative', zIndex: '1' }}>
         {panelMessage.value ? (
           <div class="store-stream-empty">{panelMessage.value}</div>
         ) : (

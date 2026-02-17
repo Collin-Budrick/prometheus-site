@@ -24,6 +24,8 @@ const storeFragmentCss = `
 .store-stream {
   display: grid;
   gap: 16px;
+  position: relative;
+  isolation: isolate;
 }
 
 .store-stream-controls {
@@ -32,6 +34,8 @@ const storeFragmentCss = `
   gap: 14px;
   align-items: center;
   justify-content: space-between;
+  position: relative;
+  z-index: 30;
 }
 
 .store-stream-search {
@@ -154,7 +158,7 @@ const storeFragmentCss = `
 
 .store-stream-sort-menu {
   position: relative;
-  z-index: 1;
+  z-index: 35;
   min-width: 170px;
 }
 
@@ -201,6 +205,7 @@ const storeFragmentCss = `
   right: 0;
   display: grid;
   gap: 8px;
+  border-radius: 16px;
   overflow: hidden;
   max-height: 0;
   opacity: 0;
@@ -208,12 +213,16 @@ const storeFragmentCss = `
   pointer-events: none;
   visibility: hidden;
   min-width: 220px;
-  z-index: 20;
+  z-index: 40;
   transition:
     max-height 200ms ease,
     opacity 200ms ease,
     transform 200ms ease,
     visibility 0ms linear 200ms;
+}
+
+.store-stream-sort[data-open='true'] {
+  z-index: 40;
 }
 
 .store-stream-sort-drawer[data-open='true'] {
@@ -222,6 +231,7 @@ const storeFragmentCss = `
   transform: translateY(0);
   pointer-events: auto;
   visibility: visible;
+  filter: drop-shadow(0 18px 30px rgba(15, 23, 42, 0.14));
   transition:
     max-height 200ms ease,
     opacity 200ms ease,
@@ -232,10 +242,10 @@ const storeFragmentCss = `
   display: grid;
   gap: 6px;
   padding: 8px;
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid rgb(var(--stroke));
   background: rgb(var(--surface) / 0.95);
-  box-shadow: 0 16px 26px rgba(15, 23, 42, 0.18);
+  box-shadow: none;
 }
 
 .store-stream-sort-option {
@@ -336,6 +346,8 @@ const storeFragmentCss = `
   scrollbar-gutter: stable;
   overflow: auto;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+  position: relative;
+  z-index: 1;
 }
 
 .store-stream-row {
