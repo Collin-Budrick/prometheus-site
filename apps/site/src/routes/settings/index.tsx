@@ -26,7 +26,7 @@ import {
 } from '../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { isNativeCapacitorRuntime } from '../../native/runtime'
-import { isNativeBiometricAuthSupported, requestNativeBiometricAuth } from '../../native/native-auth'
+import { clearNativeAuthCredentials, isNativeBiometricAuthSupported, requestNativeBiometricAuth } from '../../native/native-auth'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -239,6 +239,7 @@ export default component$(() => {
       }
 
       clearBootstrapSession()
+      await clearNativeAuthCredentials()
       window.location.assign('/')
     } catch (error) {
       logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'

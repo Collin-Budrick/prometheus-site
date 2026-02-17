@@ -40,6 +40,11 @@ export type UiCopy = {
   authRememberLabel: string
   authPasskeyLabel: string
   authPasskeyHint: string
+  authBiometricLoginLabel: string
+  authBiometricLoginHint: string
+  authBiometricLoginUnavailable: string
+  authBiometricLoginFailed: string
+  authBiometricLoginCredentialsExpired: string
   authSocialSectionLabel: string
   authLogoutLabel: string
   profileNameAction: string

@@ -3,7 +3,16 @@ import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 import { attemptBootstrapSession, buildApiUrl } from '@site/shared/auth-bootstrap'
 import { isNativeCapacitorRuntime } from '@site/native/runtime'
-import { nativeSocialLogin, resolveNativeSocialProviders, savePasswordIfSupported } from '@site/native/native-auth'
+import {
+  canUseNativeBiometricQuickLogin,
+  clearNativeAuthCredentials,
+  loadNativeAuthCredentials,
+  nativeSocialLogin,
+  requestNativeBiometricAuth,
+  resolveNativeSocialProviders,
+  saveNativeAuthCredentials,
+  savePasswordIfSupported
+} from '@site/native/native-auth'
 import { openExternalUrl } from '@site/native/native-app-extras'
 import authStyles from './auth.css?inline'
 
@@ -23,6 +32,11 @@ export type AuthCopy = {
   rememberLabel: string
   passkeyLabel: string
   passkeyHint: string
+  authBiometricLoginLabel: string
+  authBiometricLoginHint: string
+  authBiometricLoginUnavailable: string
+  authBiometricLoginFailed: string
+  authBiometricLoginCredentialsExpired: string
   socialSectionLabel: string
   closeLabel: string
 }
@@ -54,6 +68,11 @@ const defaultAuthCopy: AuthCopy = {
   rememberLabel: 'Remember this device',
   passkeyLabel: 'Use keypass',
   passkeyHint: 'Keypass signs in with your device credential.',
+  authBiometricLoginLabel: 'Sign in with biometrics',
+  authBiometricLoginHint: 'Use biometrics to continue with your saved credentials.',
+  authBiometricLoginUnavailable: 'Biometric quick login is unavailable right now.',
+  authBiometricLoginFailed: 'Biometric authentication was canceled or failed.',
+  authBiometricLoginCredentialsExpired: 'Saved credentials expired. Sign in manually and re-enable remember me.',
   socialSectionLabel: 'Or continue with',
   closeLabel: 'Close'
 }
@@ -76,6 +95,24 @@ const readFormValue = (data: FormData, key: string) => {
 }
 
 const readCheckbox = (data: FormData, key: string) => data.get(key) === 'on'
+
+const readAuthErrorMessage = async (response: Response, fallbackMessage: string) => {
+  let message = fallbackMessage
+  try {
+    const payload = (await response.json()) as { message?: string; error?: string }
+    message = payload.message ?? payload.error ?? message
+  } catch {
+    // ignore parsing failures
+  }
+  return message
+}
+
+const isCredentialRejectionResponse = (status: number, message: string) => {
+  if (status === 401 || status === 403) return true
+  if (status !== 400) return false
+  const normalized = message.trim().toLowerCase()
+  return normalized.includes('invalid') || normalized.includes('credential') || normalized.includes('password')
+}
 
 const authModeCookieKey = 'auth:mode'
 const authRememberCookieKey = 'auth:remember'
@@ -177,6 +214,8 @@ export const LoginRoute = component$<{
   const remember = useSignal(initialFormState.remember)
   const state = useSignal<AuthState>('idle')
   const passkeyState = useSignal<PasskeyState>('idle')
+  const biometricBusy = useSignal(false)
+  const biometricAvailable = useSignal(false)
   const socialBusy = useSignal(false)
   const socialProviders = useSignal<string[]>([])
   const statusTone = useSignal<StatusTone>('neutral')
@@ -225,12 +264,18 @@ export const LoginRoute = component$<{
     socialProviders.value = normalized
   })
 
+  useVisibleTask$(async () => {
+    if (typeof window === 'undefined') return
+    biometricAvailable.value = await canUseNativeBiometricQuickLogin()
+  })
+
   const setMode = $((next: AuthMode) => {
     if (mode.value === next) return
     mode.value = next
     writeAuthModeCookie(next)
     state.value = 'idle'
     passkeyState.value = 'idle'
+    biometricBusy.value = false
     statusTone.value = 'neutral'
     statusMessage.value = null
   })
@@ -309,6 +354,7 @@ export const LoginRoute = component$<{
 
   const handleLoginSubmit = $(async (event: SubmitEvent) => {
     event.preventDefault()
+    if (biometricBusy.value) return
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
     const { object, string, boolean: zBoolean, email, minLength, optional } =
@@ -344,19 +390,18 @@ export const LoginRoute = component$<{
       })
 
       if (!response.ok) {
-        let message = 'Unable to sign in.'
-        try {
-          const payload = (await response.json()) as { message?: string; error?: string }
-          message = payload.message ?? payload.error ?? message
-        } catch {
-          // ignore parsing failures
-        }
+        const message = await readAuthErrorMessage(response, 'Unable to sign in.')
         await setError(message)
         return
       }
 
       state.value = 'success'
-      const { email, password } = parsed.data
+      const { email, password, rememberMe } = parsed.data
+      if (rememberMe) {
+        await saveNativeAuthCredentials({ username: email, password, website: origin })
+      } else {
+        await clearNativeAuthCredentials()
+      }
       void savePasswordIfSupported({ username: email, password, website: origin })
       await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
@@ -367,6 +412,7 @@ export const LoginRoute = component$<{
 
   const handleSignupSubmit = $(async (event: SubmitEvent) => {
     event.preventDefault()
+    if (biometricBusy.value) return
     const form = event.target as HTMLFormElement
     const data = new FormData(form)
     const { object, string, boolean: zBoolean, email, minLength, optional } =
@@ -404,19 +450,18 @@ export const LoginRoute = component$<{
       })
 
       if (!response.ok) {
-        let message = 'Unable to create account.'
-        try {
-          const payload = (await response.json()) as { message?: string; error?: string }
-          message = payload.message ?? payload.error ?? message
-        } catch {
-          // ignore parsing failures
-        }
+        const message = await readAuthErrorMessage(response, 'Unable to create account.')
         await setError(message)
         return
       }
 
       state.value = 'success'
-      const { email, password } = parsed.data
+      const { email, password, rememberMe } = parsed.data
+      if (rememberMe) {
+        await saveNativeAuthCredentials({ username: email, password, website: origin })
+      } else {
+        await clearNativeAuthCredentials()
+      }
       void savePasswordIfSupported({ username: email, password, website: origin })
       await attemptBootstrapSession(origin, apiBase)
       await goToProfile()
@@ -425,8 +470,89 @@ export const LoginRoute = component$<{
     }
   })
 
+  const handleBiometricQuickLogin = $(async () => {
+    if (mode.value !== 'login') return
+    if (biometricBusy.value || socialBusy.value || state.value === 'submitting') return
+    if (typeof window === 'undefined') return
+
+    biometricBusy.value = true
+    state.value = 'idle'
+    passkeyState.value = 'idle'
+    await clearStatus()
+
+    try {
+      const canUseQuickLogin = await canUseNativeBiometricQuickLogin()
+      biometricAvailable.value = canUseQuickLogin
+      if (!canUseQuickLogin) {
+        await setError(resolvedCopy.authBiometricLoginUnavailable)
+        return
+      }
+
+      const authenticated = await requestNativeBiometricAuth({
+        reason: resolvedCopy.authBiometricLoginHint,
+        title: 'Prometheus',
+        allowDeviceCredential: true
+      })
+
+      if (!authenticated) {
+        await setError(resolvedCopy.authBiometricLoginFailed)
+        return
+      }
+
+      const credentials = await loadNativeAuthCredentials()
+      if (!credentials) {
+        biometricAvailable.value = false
+        await setError(resolvedCopy.authBiometricLoginUnavailable)
+        return
+      }
+
+      persistAuthFormCookies({ email: credentials.username, rememberMe: true })
+      email.value = credentials.username
+      remember.value = true
+      state.value = 'submitting'
+
+      const origin = window.location.origin
+      const response = await fetch(buildApiUrl('/auth/sign-in/email', origin, apiBase), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: credentials.username,
+          password: credentials.password,
+          rememberMe: true
+        })
+      })
+
+      if (!response.ok) {
+        const message = await readAuthErrorMessage(response, resolvedCopy.authBiometricLoginFailed)
+        if (isCredentialRejectionResponse(response.status, message)) {
+          await clearNativeAuthCredentials()
+          biometricAvailable.value = false
+          await setError(resolvedCopy.authBiometricLoginCredentialsExpired)
+          return
+        }
+
+        await setError(message)
+        return
+      }
+
+      state.value = 'success'
+      void savePasswordIfSupported({
+        username: credentials.username,
+        password: credentials.password,
+        website: origin
+      })
+      await attemptBootstrapSession(origin, apiBase)
+      await goToProfile()
+    } catch (error) {
+      await setError(error instanceof Error ? error.message : resolvedCopy.authBiometricLoginFailed)
+    } finally {
+      biometricBusy.value = false
+    }
+  })
+
   const handlePasskey = $(async () => {
-    if (passkeyState.value !== 'idle' || state.value === 'submitting') return
+    if (passkeyState.value !== 'idle' || state.value === 'submitting' || biometricBusy.value) return
     if (typeof window === 'undefined' || !('PublicKeyCredential' in window) || !navigator.credentials) {
       await setError('Passkeys are not supported on this device.')
       return
@@ -510,7 +636,7 @@ export const LoginRoute = component$<{
   })
 
   const handleSocialLogin = $(async (provider: string) => {
-    if (!isNativeCapacitorRuntime() || socialBusy.value || busy || typeof window === 'undefined') return
+    if (!isNativeCapacitorRuntime() || socialBusy.value || biometricBusy.value || busy || typeof window === 'undefined') return
     const normalized = normalizeProviderId(provider)
     if (!normalized) return
 
@@ -550,7 +676,7 @@ export const LoginRoute = component$<{
   })
 
   const busy = state.value === 'submitting' || passkeyState.value === 'requesting' || passkeyState.value === 'verifying'
-  const interactionBusy = busy || socialBusy.value
+  const interactionBusy = busy || socialBusy.value || biometricBusy.value
 
   return (
     <section class="fragment-shell auth-shell">
@@ -641,13 +767,24 @@ export const LoginRoute = component$<{
                   <span>{resolvedCopy.rememberLabel}</span>
                 </label>
                 <div class="auth-actions">
-                  <button class="auth-primary" type="submit" disabled={busy}>
+                  <button class="auth-primary" type="submit" disabled={interactionBusy}>
                     {resolvedCopy.actionLabel}
                   </button>
                   <button class="auth-passkey" type="button" disabled={interactionBusy} onClick$={handlePasskey}>
                     <span class="auth-passkey-label">{resolvedCopy.passkeyLabel}</span>
                     <span class="auth-passkey-hint">{resolvedCopy.passkeyHint}</span>
                   </button>
+                  {biometricAvailable.value ? (
+                    <button
+                      class="auth-biometric"
+                      type="button"
+                      disabled={interactionBusy}
+                      onClick$={handleBiometricQuickLogin}
+                    >
+                      <span class="auth-biometric-label">{resolvedCopy.authBiometricLoginLabel}</span>
+                      <span class="auth-biometric-hint">{resolvedCopy.authBiometricLoginHint}</span>
+                    </button>
+                  ) : null}
                 </div>
                 {socialProviders.value.length > 0 ? (
                   <div class="auth-social">
