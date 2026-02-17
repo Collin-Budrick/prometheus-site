@@ -15,8 +15,6 @@ type BackgroundRunnerModule = {
   BackgroundRunner?: BackgroundRunnerPlugin
 }
 
-type RunnerDispatch = (event: string, details?: Record<string, unknown>) => Promise<unknown | null>
-
 type RunnerDispatchOverride = (event: string, details: Record<string, unknown>) => Promise<unknown | null>
 
 export type BackgroundStoreQueueAction = {

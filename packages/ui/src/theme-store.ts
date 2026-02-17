@@ -89,8 +89,6 @@ export const initTheme = (): Theme => {
   } else if (cookie) {
     next = cookie
     shouldPersist = true
-  } else if (docTheme) {
-    next = docTheme
   } else {
     next = resolveSystemTheme()
   }
