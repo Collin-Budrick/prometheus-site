@@ -124,6 +124,8 @@ const clampLimit = (value: string | undefined) => {
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
 const infinitySymbol = '\u221e'
 const formatQuantity = (value: number) => (value < 0 ? infinitySymbol : String(value))
+const interpolate = (value: string, params: Record<string, string | number>) =>
+  value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
 
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
@@ -206,25 +208,25 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const addLabel = copy?.['Add to cart'] ?? 'Add to cart'
   const outOfStockLabel = copy?.['Out of stock'] ?? 'Out of stock'
   const queuedLabel = copy?.['Queued actions'] ?? 'Queued actions'
+  const clearLabel = copy?.['Clear'] ?? 'Clear'
   const sortLabel = copy?.['Sort by'] ?? 'Sort by'
-  const sortNewestLabel = copy?.['Newest first'] ?? 'Newest first'
-  const sortOldestLabel = copy?.['Oldest first'] ?? 'Oldest first'
-  const sortPriceLowLabel = copy?.['Price low to high'] ?? 'Price low to high'
-  const sortPriceHighLabel = copy?.['Price high to low'] ?? 'Price high to low'
-  const sortNameAscLabel = copy?.['Name A to Z'] ?? 'Name A to Z'
-  const sortNameDescLabel = copy?.['Name Z to A'] ?? 'Name Z to A'
+  const requestFailedTemplate = copy?.['Request failed: {{status}}'] ?? 'Request failed: {{status}}'
 
-  const sortOptions = [
-    { value: buildStoreSortToken('id', 'desc'), label: sortNewestLabel },
-    { value: buildStoreSortToken('id', 'asc'), label: sortOldestLabel },
-    { value: buildStoreSortToken('price', 'asc'), label: sortPriceLowLabel },
-    { value: buildStoreSortToken('price', 'desc'), label: sortPriceHighLabel },
-    { value: buildStoreSortToken('name', 'asc'), label: sortNameAscLabel },
-    { value: buildStoreSortToken('name', 'desc'), label: sortNameDescLabel }
-  ]
-  const activeSortLabel = useComputed$(
-    () => sortOptions.find((option) => option.value === sortToken.value)?.label ?? sortOptions[0]?.label ?? sortLabel
-  )
+  const sortOptions = useComputed$(() => {
+    const optionsCopy = fragmentCopy.value
+    return [
+      { value: buildStoreSortToken('id', 'desc'), label: optionsCopy?.['Newest first'] ?? 'Newest first' },
+      { value: buildStoreSortToken('id', 'asc'), label: optionsCopy?.['Oldest first'] ?? 'Oldest first' },
+      { value: buildStoreSortToken('price', 'asc'), label: optionsCopy?.['Price low to high'] ?? 'Price low to high' },
+      { value: buildStoreSortToken('price', 'desc'), label: optionsCopy?.['Price high to low'] ?? 'Price high to low' },
+      { value: buildStoreSortToken('name', 'asc'), label: optionsCopy?.['Name A to Z'] ?? 'Name A to Z' },
+      { value: buildStoreSortToken('name', 'desc'), label: optionsCopy?.['Name Z to A'] ?? 'Name Z to A' }
+    ]
+  })
+  const activeSortLabel = useComputed$(() => {
+    const options = sortOptions.value
+    return options.find((option) => option.value === sortToken.value)?.label ?? options[0]?.label ?? sortLabel
+  })
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -802,7 +804,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             }
           })
           if (!response.ok) {
-            throw new Error(`Request failed: ${response.status}`)
+            throw new Error(interpolate(requestFailedTemplate, { status: response.status }))
           }
           const payload = (await response.json()) as { items?: unknown; total?: unknown; query?: unknown }
           if (controller.signal.aborted) return
@@ -987,7 +989,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           </div>
           {query.value.trim() ? (
             <button class="store-stream-clear" type="button" onClick$={handleClear}>
-              Clear
+              {clearLabel}
             </button>
           ) : null}
         </form>
@@ -1022,7 +1024,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               style={{ zIndex: '90' }}
             >
               <div class="store-stream-sort-list" role="menu" aria-label={sortLabel}>
-                {sortOptions.map((option) => {
+                {sortOptions.value.map((option) => {
                   const isActive = option.value === sortToken.value
                   return (
                     <button
