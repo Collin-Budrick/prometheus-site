@@ -26,7 +26,6 @@ import {
 } from '../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { isNativeCapacitorRuntime } from '../../native/runtime'
-import { checkNativeUpdate, requestNativeReview } from '../../native/native-app-extras'
 import { isNativeBiometricAuthSupported, requestNativeBiometricAuth } from '../../native/native-auth'
 
 type ProtectedRouteData = {
@@ -142,12 +141,10 @@ export default component$(() => {
   const data = useSettingsData()
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
-  const nativeActionBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
   const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })
   const swOptOut = useSignal(Boolean(data.value.swOptOut))
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
-  const nativeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const friendCode = useSignal('')
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const privacyAlwaysOn = useSignal(false)
@@ -247,54 +244,6 @@ export default component$(() => {
       logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'
     } finally {
       logoutBusy.value = false
-    }
-  })
-
-  const handleNativeReview = $(async () => {
-    if (nativeActionBusy.value || typeof window === 'undefined') return
-    nativeActionBusy.value = true
-    nativeStatus.value = null
-    try {
-      if (!isNativeCapacitorRuntime()) {
-        nativeStatus.value = { tone: 'error', message: copy.value.settingsNativeUnavailable }
-        return
-      }
-      const requested = await requestNativeReview()
-      nativeStatus.value = {
-        tone: requested ? 'success' : 'info',
-        message: requested ? copy.value.settingsNativeRequestSuccess : copy.value.settingsNativeUnavailable
-      }
-    } catch (error) {
-      nativeStatus.value = {
-        tone: 'error',
-        message: error instanceof Error ? error.message : copy.value.settingsNativeUnavailable
-      }
-    } finally {
-      nativeActionBusy.value = false
-    }
-  })
-
-  const handleNativeUpdate = $(async () => {
-    if (nativeActionBusy.value || typeof window === 'undefined') return
-    nativeActionBusy.value = true
-    nativeStatus.value = null
-    try {
-      if (!isNativeCapacitorRuntime()) {
-        nativeStatus.value = { tone: 'error', message: copy.value.settingsNativeUnavailable }
-        return
-      }
-      const updated = await checkNativeUpdate()
-      nativeStatus.value = {
-        tone: updated ? 'success' : 'info',
-        message: updated ? copy.value.settingsNativeRequestSuccess : copy.value.settingsNativeUnavailable
-      }
-    } catch (error) {
-      nativeStatus.value = {
-        tone: 'error',
-        message: error instanceof Error ? error.message : copy.value.settingsNativeUnavailable
-      }
-    } finally {
-      nativeActionBusy.value = false
     }
   })
 
@@ -502,46 +451,6 @@ export default component$(() => {
         {swStatus.value ? (
           <div class="auth-status" role="status" aria-live="polite" data-tone={swStatus.value.tone}>
             {swStatus.value.message}
-          </div>
-        ) : null}
-      </section>
-
-      <section class="settings-panel">
-        <div class="settings-panel-header">
-          <span class="settings-panel-title">{copy.value.settingsNativeTitle}</span>
-          <p class="settings-panel-description">{copy.value.settingsNativeDescription}</p>
-        </div>
-        <div class="settings-action-row">
-          <div class="settings-action-label">
-            <span class="settings-toggle-title">{copy.value.settingsNativeReviewAction}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsNativeReviewHint}</span>
-          </div>
-          <button
-            type="button"
-            class="settings-action-button"
-            disabled={nativeActionBusy.value || !isNativeCapacitorRuntime()}
-            onClick$={handleNativeReview}
-          >
-            {copy.value.settingsNativeReviewAction}
-          </button>
-        </div>
-        <div class="settings-action-row">
-          <div class="settings-action-label">
-            <span class="settings-toggle-title">{copy.value.settingsNativeUpdateAction}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsNativeUpdateHint}</span>
-          </div>
-          <button
-            type="button"
-            class="settings-action-button"
-            disabled={nativeActionBusy.value || !isNativeCapacitorRuntime()}
-            onClick$={handleNativeUpdate}
-          >
-            {copy.value.settingsNativeUpdateAction}
-          </button>
-        </div>
-        {nativeStatus.value ? (
-          <div class="auth-status" role="status" aria-live="polite" data-tone={nativeStatus.value.tone}>
-            {nativeStatus.value.message}
           </div>
         ) : null}
       </section>

@@ -3,7 +3,12 @@ import { Keyboard } from '@capacitor/keyboard'
 import { initConnectivityStore } from './connectivity'
 import { initNativeNotifications } from './notifications'
 import { initPrivacyScreenPolicy } from './privacy-screen-policy'
-import { initializeNativeAppExtras } from './native-app-extras'
+import {
+  disposeNativeAutomaticAppActions,
+  initializeNativeAppExtras,
+  initializeNativeAutomaticAppActions,
+  runNativeAutomaticAppActionsOnResume
+} from './native-app-extras'
 import { isNativeCapacitorRuntime } from './runtime'
 import { initNativeTextZoom } from './text-zoom'
 import { isRootRoute, navigateDeepLink } from './deep-links'
@@ -155,7 +160,10 @@ const setupNativeListeners = () => {
     pluginHandles.push(handle)
   }
 
-  const onResume = () => applyNativeState(true)
+  const onResume = () => {
+    applyNativeState(true)
+    void runNativeAutomaticAppActionsOnResume()
+  }
   const onPause = () => applyNativeState(false)
 
   applyNativeState(true)
@@ -188,6 +196,7 @@ const setupNativeListeners = () => {
     setKeyboardHeight(0)
     window.removeEventListener('resume', onResume)
     window.removeEventListener('pause', onPause)
+    disposeNativeAutomaticAppActions()
     for (const handle of pluginHandles) {
       void handle.remove()
     }
@@ -215,6 +224,7 @@ export const initNativeShell = () => {
   void initNativeTextZoom()
   void initPrivacyScreenPolicy()
   void initializeNativeAppExtras({ labelResolver: resolveNativeLabelResolver() })
+  void initializeNativeAutomaticAppActions()
   state.initialized = true
 }
 
@@ -230,6 +240,7 @@ if (import.meta.hot) {
     state.cleanup?.()
     state.cleanup = null
     state.initialized = false
+    disposeNativeAutomaticAppActions()
     if (typeof document !== 'undefined') {
       document.documentElement.style.setProperty('--kbd', '0px')
       document.documentElement.dataset.keyboardOpen = 'false'
