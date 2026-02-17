@@ -168,6 +168,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const lastQuery = useSignal(seedQueryValue)
   const sortKey = useSignal<StoreSortKey>(seedSortKey)
   const sortDir = useSignal<StoreSortDir>(seedSortDir)
+  const sortMenuOpen = useSignal(false)
   const sortToken = useComputed$(() => buildStoreSortToken(sortKey.value, sortDir.value))
   const lastSortToken = useSignal(buildStoreSortToken(seedSortKey, seedSortDir))
   const removingIds = useSignal<number[]>([])
@@ -182,6 +183,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const refreshTick = useSignal(0)
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const rootRef = useSignal<HTMLElement>()
+  const sortMenuRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLElement>()
   const loadMoreRef = useSignal<HTMLDivElement>()
 
@@ -218,6 +220,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     { value: buildStoreSortToken('name', 'asc'), label: sortNameAscLabel },
     { value: buildStoreSortToken('name', 'desc'), label: sortNameDescLabel }
   ]
+  const activeSortLabel = useComputed$(
+    () => sortOptions.find((option) => option.value === sortToken.value)?.label ?? sortOptions[0]?.label ?? sortLabel
+  )
 
   const rootClass = useComputed$(() => {
     if (!className) return 'store-stream'
@@ -266,19 +271,25 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     refreshTick.value += 1
   })
 
-  const handleSortChange = $((event: Event) => {
-    const target = event.target as HTMLSelectElement | null
-    if (!target) return
-    const parsed = parseStoreSortToken(target.value)
-    if (parsed.key === sortKey.value && parsed.dir === sortDir.value) return
+  const handleSortSelect = $((value: string) => {
+    const parsed = parseStoreSortToken(value)
+    if (parsed.key === sortKey.value && parsed.dir === sortDir.value) {
+      sortMenuOpen.value = false
+      return
+    }
     sortKey.value = parsed.key
     sortDir.value = parsed.dir
+    sortMenuOpen.value = false
     refreshTick.value += 1
     if (typeof window === 'undefined') return
     const url = new URL(window.location.href)
     url.searchParams.set('sort', parsed.key)
     url.searchParams.set('dir', parsed.dir)
     window.history.replaceState(null, '', url.toString())
+  })
+
+  const handleSortToggle = $(() => {
+    sortMenuOpen.value = !sortMenuOpen.value
   })
 
   const updateItemQuantity = $((id: number, quantity: number) => {
@@ -892,6 +903,29 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     })
   })
 
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    const open = ctx.track(() => sortMenuOpen.value)
+    if (!open) return
+    const handlePointerDown = (event: PointerEvent) => {
+      const menu = sortMenuRef.value
+      const target = event.target as Node | null
+      if (!menu || !target) return
+      if (menu.contains(target)) return
+      sortMenuOpen.value = false
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      sortMenuOpen.value = false
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    ctx.cleanup(() => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    })
+  })
+
   return (
     <div
       ref={rootRef}
@@ -921,15 +955,43 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             </button>
           ) : null}
         </form>
-        <div class="store-stream-sort">
+        <div class="store-stream-sort" data-open={sortMenuOpen.value ? 'true' : 'false'}>
           <span>{sortLabel}</span>
-          <select aria-label={sortLabel} value={sortToken.value} onChange$={handleSortChange}>
-            {sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div class="store-stream-sort-menu" ref={sortMenuRef} data-open={sortMenuOpen.value ? 'true' : 'false'}>
+            <button
+              class="store-stream-sort-trigger"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={sortMenuOpen.value ? 'true' : 'false'}
+              aria-label={sortLabel}
+              onClick$={handleSortToggle}
+            >
+              <span>{activeSortLabel.value}</span>
+              <span class="store-stream-sort-caret" aria-hidden="true">
+                v
+              </span>
+            </button>
+            <div class="store-stream-sort-drawer" data-open={sortMenuOpen.value ? 'true' : 'false'}>
+              <div class="store-stream-sort-list" role="menu" aria-label={sortLabel}>
+                {sortOptions.map((option) => {
+                  const isActive = option.value === sortToken.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isActive}
+                      class="store-stream-sort-option"
+                      data-active={isActive ? 'true' : 'false'}
+                      onClick$={() => handleSortSelect(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
         </div>
         {queuedCount.value > 0 ? (
           <div class="store-stream-queue" aria-live="polite">
