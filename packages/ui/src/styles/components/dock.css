@@ -16,6 +16,13 @@
     opacity: 0;
   }
 
+  html[data-keyboard-open="true"] .dock-shell {
+    bottom: calc(18px + var(--safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(140%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .dock {
     --dock-bg-scale: 1;
     --dock-bg-shift: 0px;

@@ -264,6 +264,18 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     query.value = target.value
   })
 
+  const ensureKeyboardVisible = $((event: Event) => {
+    const target = event.currentTarget as HTMLInputElement | null
+    if (!target || target.disabled || target.readOnly) return
+    target.focus()
+    if (!isNativeCapacitorRuntime()) return
+    void import('@capacitor/keyboard')
+      .then(({ Keyboard }) => Keyboard.show())
+      .catch(() => {
+        // Keyboard.show is best-effort across platforms.
+      })
+  })
+
   const handleClear = $(() => {
     query.value = ''
     refreshTick.value += 1
@@ -955,6 +967,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               type="search"
               placeholder={searchPlaceholder}
               value={query.value}
+              onPointerDown$={ensureKeyboardVisible}
+              onFocus$={ensureKeyboardVisible}
               onInput$={handleInput}
               aria-label={searchAriaLabel}
             />

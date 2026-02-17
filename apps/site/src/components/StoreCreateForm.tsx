@@ -1,6 +1,7 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
+import { isNativeCapacitorRuntime } from '../native/runtime'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 
 type StoreCreateFormProps = {
@@ -279,6 +280,18 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       writeCookieValue(STORE_CREATE_DIGITAL_COOKIE, next ? '1' : '0')
     })
 
+    const ensureKeyboardVisible = $((event: Event) => {
+      const target = event.currentTarget as HTMLInputElement | null
+      if (!target || target.disabled || target.readOnly) return
+      target.focus()
+      if (!isNativeCapacitorRuntime()) return
+      void import('@capacitor/keyboard')
+        .then(({ Keyboard }) => Keyboard.show())
+        .catch(() => {
+          // Keyboard.show is best-effort across platforms.
+        })
+    })
+
     const resolvedNameLabel = normalizeLabel(nameLabel ? resolve(nameLabel) : undefined, resolve('Item name'))
     const resolvedPriceLabel = normalizeLabel(priceLabel ? resolve(priceLabel) : undefined, resolve('Price'))
     const resolvedQuantityLabel = normalizeLabel(quantityLabel ? resolve(quantityLabel) : undefined, resolve('Quantity'))
@@ -308,6 +321,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   autocomplete="off"
                   placeholder={resolvedNamePlaceholder}
                   value={name.value}
+                  onPointerDown$={ensureKeyboardVisible}
+                  onFocus$={ensureKeyboardVisible}
                   onInput$={(event) => {
                     const value = (event.target as HTMLInputElement).value
                     name.value = value
@@ -325,6 +340,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                   inputMode="decimal"
                   placeholder={resolvedPricePlaceholder}
                   value={price.value}
+                  onPointerDown$={ensureKeyboardVisible}
+                  onFocus$={ensureKeyboardVisible}
                   onInput$={(event) => {
                     const value = (event.target as HTMLInputElement).value
                     price.value = value
@@ -349,6 +366,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
                     placeholder={resolvedQuantityPlaceholder}
                     value={quantityDisplay.value}
                     readOnly={digitalProduct.value}
+                    onPointerDown$={ensureKeyboardVisible}
+                    onFocus$={ensureKeyboardVisible}
                     onInput$={handleQuantityInput}
                   />
                 </div>
