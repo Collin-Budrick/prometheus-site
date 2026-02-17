@@ -432,11 +432,14 @@ const storeFragmentCss = `
   font-size: 0.95rem;
 }
 
-.store-create-input-quantity input {
-  padding-right: 170px;
+.store-create-quantity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
-.store-create-input-quantity[data-digital='true'] input {
+.store-create-input-quantity[data-digital='true'] .store-create-quantity-input {
   color: rgb(var(--accent-strong));
   font-family: var(--font-mono);
   letter-spacing: 0.2em;
@@ -448,14 +451,11 @@ const storeFragmentCss = `
 }
 
 .store-create-digital {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 0 12px;
   min-height: 44px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));

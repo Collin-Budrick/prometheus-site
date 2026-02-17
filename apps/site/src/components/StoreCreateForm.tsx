@@ -336,20 +336,22 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
               <label class="store-create-label" for="store-create-quantity">
                 {resolvedQuantityLabel}
               </label>
-              <div class="store-create-field">
-                <input
-                  id="store-create-quantity"
-                  class="store-create-quantity-input"
-                  type={digitalProduct.value ? 'text' : 'number'}
-                  name="quantity"
-                  min={digitalProduct.value ? undefined : '0'}
-                  step={digitalProduct.value ? undefined : '1'}
-                  inputMode={digitalProduct.value ? 'text' : 'numeric'}
-                  placeholder={resolvedQuantityPlaceholder}
-                  value={quantityDisplay.value}
-                  readOnly={digitalProduct.value}
-                  onInput$={handleQuantityInput}
-                />
+              <div class="store-create-quantity-row">
+                <div class="store-create-field">
+                  <input
+                    id="store-create-quantity"
+                    class="store-create-quantity-input"
+                    type={digitalProduct.value ? 'text' : 'number'}
+                    name="quantity"
+                    min={digitalProduct.value ? undefined : '0'}
+                    step={digitalProduct.value ? undefined : '1'}
+                    inputMode={digitalProduct.value ? 'text' : 'numeric'}
+                    placeholder={resolvedQuantityPlaceholder}
+                    value={quantityDisplay.value}
+                    readOnly={digitalProduct.value}
+                    onInput$={handleQuantityInput}
+                  />
+                </div>
                 <label class="store-create-digital">
                   <input
                     id="store-create-digital"
