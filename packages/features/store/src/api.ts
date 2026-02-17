@@ -209,6 +209,48 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
     }
   }
 
+  const buildDbSearchPayload = async (queryValue: string, limit: number, offset: number) => {
+    const escaped = queryValue
+      .trim()
+      .toLowerCase()
+      .replace(/\\/g, '\\\\')
+      .replace(/%/g, '\\%')
+      .replace(/_/g, '\\_')
+    const likePattern = `%${escaped}%`
+
+    const whereClause = sql`lower(${options.storeItemsTable.name}) like ${likePattern} escape '\\'`
+
+    const [countRow] = await options.db
+      .select({ total: sql<number>`count(*)` })
+      .from(options.storeItemsTable)
+      .where(whereClause)
+    const total = Number(countRow?.total ?? 0)
+
+    const rows = await options.db
+      .select()
+      .from(options.storeItemsTable)
+      .where(whereClause)
+      .orderBy(asc(options.storeItemsTable.name), asc(options.storeItemsTable.id))
+      .limit(limit)
+      .offset(offset)
+
+    const items = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      price: parsePrice(row.price),
+      quantity: parseQuantity(row.quantity),
+      score: undefined as number | undefined
+    }))
+
+    return {
+      items,
+      total,
+      query: queryValue,
+      limit,
+      offset
+    }
+  }
+
   const storeItemInsertSchema = z.object({
     name: z.string().trim().min(2).max(120),
     price: z.coerce.number().min(0).max(100000),
@@ -765,12 +807,22 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
         }
 
         if (!isValkeyUsable()) {
-          return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
+          try {
+            return await buildDbSearchPayload(queryValue, limit, offset)
+          } catch (error) {
+            console.error('Store search fallback failed', error)
+            return attachRateLimitHeaders(options.jsonError(500, 'Search unavailable'), rateLimit.headers)
+          }
         }
 
         const searchReady = await ensureSearchReady()
         if (!searchReady) {
-          return attachRateLimitHeaders(options.jsonError(503, 'Search unavailable'), rateLimit.headers)
+          try {
+            return await buildDbSearchPayload(queryValue, limit, offset)
+          } catch (error) {
+            console.error('Store search fallback failed', error)
+            return attachRateLimitHeaders(options.jsonError(500, 'Search unavailable'), rateLimit.headers)
+          }
         }
 
         const start = performance.now()
@@ -782,8 +834,13 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           )
         } catch (error) {
           markValkeyFailure('search.query', error)
-          console.error('Store search failed', error)
-          return attachRateLimitHeaders(options.jsonError(500, 'Search failed'), rateLimit.headers)
+          console.warn('Store search failed; using database fallback', error)
+          try {
+            return await buildDbSearchPayload(queryValue, limit, offset)
+          } catch (fallbackError) {
+            console.error('Store search fallback failed', fallbackError)
+            return attachRateLimitHeaders(options.jsonError(500, 'Search failed'), rateLimit.headers)
+          }
         }
 
         const ids = searchResult.hits.map((hit) => hit.id)
