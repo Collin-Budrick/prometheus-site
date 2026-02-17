@@ -25,6 +25,8 @@
     "@capacitor/background-runner": "3.0.0",
     "@capacitor/core": "9.0.0-nightly-20260211T152431.0",
     "@capacitor/dialog": "8.0.1",
+    "@capacitor/file-transfer": "2.0.4",
+    "@capacitor/file-viewer": "2.0.1",
     "@capacitor/haptics": "8.0.0",
     "@capacitor/ios": "9.0.0-nightly-20260211T152431.0",
     "@capacitor/keyboard": "8.0.0",

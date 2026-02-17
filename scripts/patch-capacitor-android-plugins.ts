@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -194,6 +194,44 @@ const patches: Array<{ relativePath: string; replacements: Array<{ find: string;
       },
     ],
   },
+  {
+    relativePath: join("@capacitor", "file-transfer", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+      {
+        find:
+          "apply plugin: 'com.android.library'\napply plugin: 'kotlin-android'",
+        replace:
+          "apply plugin: 'com.android.library'\nif (!extensions.findByName(\"kotlin\")) {\n    apply plugin: 'kotlin-android'\n}",
+      },
+      {
+        find: "kotlin {\n    jvmToolchain(21)\n}\n",
+        replace: "",
+      },
+    ],
+  },
+  {
+    relativePath: join("@capacitor", "file-viewer", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+      {
+        find:
+          "apply plugin: 'com.android.library'\napply plugin: 'kotlin-android'",
+        replace:
+          "apply plugin: 'com.android.library'\nif (!extensions.findByName(\"kotlin\")) {\n    apply plugin: 'kotlin-android'\n}",
+      },
+      {
+        find: "kotlin {\n    jvmToolchain(21)\n}\n",
+        replace: "",
+      },
+    ],
+  },
 ];
 
 let modifiedAny = false;
@@ -236,15 +274,10 @@ const projectFilePatches: FilePatch[] = [
       let next = content;
       next = next.replace(
         /repositories\s*\{[\s\S]*?\}\s*\n\s*dependencies\s*\{/m,
-        "repositories {\n    flatDir {\n        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'\n        dirs '../../node_modules/@capacitor/background-runner/android/src/main/libs', 'libs'\n    }\n}\n\ndependencies {"
+        "repositories {\n    flatDir {\n        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'\n    }\n}\n\ndependencies {"
       );
       next = next.replace(/implementation fileTree\(include: \['\*\.jar'(?:, '\*\.aar')?\], dir: 'libs'\)/, "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')");
-      if (!next.includes("implementation(name: 'android-js-engine-release', ext: 'aar')")) {
-        next = next.replace(
-          "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')",
-          "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')\n    implementation(name: 'android-js-engine-release', ext: 'aar')"
-        );
-      }
+      next = next.replace(/\n\s*implementation\(name:\s*'android-js-engine-release',\s*ext:\s*'aar'\)\s*/g, "\n");
       return next;
     },
   },
@@ -276,6 +309,28 @@ for (const filePatch of projectFilePatches) {
     modifiedAny = true;
     console.log(`${LOG_PREFIX} patched ${filePatch.path}`);
   }
+}
+
+const backgroundRunnerAarRelativePath = join(
+  "@capacitor",
+  "background-runner",
+  "android",
+  "src",
+  "main",
+  "libs",
+  "android-js-engine-release.aar"
+);
+const backgroundRunnerAarTargetPath = join(ANDROID_ROOT, "app", "libs", "android-js-engine-release.aar");
+
+for (const nodeModulesRoot of NODE_MODULE_ROOTS) {
+  const sourcePath = join(nodeModulesRoot, backgroundRunnerAarRelativePath);
+  if (!existsSync(sourcePath)) continue;
+  foundAny = true;
+  mkdirSync(dirname(backgroundRunnerAarTargetPath), { recursive: true });
+  copyFileSync(sourcePath, backgroundRunnerAarTargetPath);
+  modifiedAny = true;
+  console.log(`${LOG_PREFIX} copied ${sourcePath} -> ${backgroundRunnerAarTargetPath}`);
+  break;
 }
 
 if (!modifiedAny) {

@@ -17,6 +17,8 @@ dependencies {
     implementation project(':capacitor-app')
     implementation project(':capacitor-background-runner')
     implementation project(':capacitor-dialog')
+    implementation project(':capacitor-file-transfer')
+    implementation project(':capacitor-file-viewer')
     implementation project(':capacitor-haptics')
     implementation project(':capacitor-keyboard')
     implementation project(':capacitor-local-notifications')

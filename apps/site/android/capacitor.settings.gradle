@@ -26,6 +26,12 @@ project(':capacitor-background-runner').projectDir = new File('../../../node_mod
 include ':capacitor-dialog'
 project(':capacitor-dialog').projectDir = new File('../../../node_modules/.bun/@capacitor+dialog@8.0.1+9876f7f24611f21d/node_modules/@capacitor/dialog/android')
 
+include ':capacitor-file-transfer'
+project(':capacitor-file-transfer').projectDir = new File('../../../node_modules/.bun/@capacitor+file-transfer@2.0.4+9876f7f24611f21d/node_modules/@capacitor/file-transfer/android')
+
+include ':capacitor-file-viewer'
+project(':capacitor-file-viewer').projectDir = new File('../../../node_modules/.bun/@capacitor+file-viewer@2.0.1+9876f7f24611f21d/node_modules/@capacitor/file-viewer/android')
+
 include ':capacitor-haptics'
 project(':capacitor-haptics').projectDir = new File('../../../node_modules/.bun/@capacitor+haptics@8.0.0+9876f7f24611f21d/node_modules/@capacitor/haptics/android')
 
