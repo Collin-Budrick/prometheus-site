@@ -41,34 +41,39 @@ const nextMotionRunId = () => {
   return motionInstanceId
 }
 
-const supportsViewTransitions = (reducedMotion: boolean) => {
-  if (reducedMotion) return false
-  if (typeof document === 'undefined') return false
-  const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
-  if (runtimeFlag === true) return false
-  if (!('startViewTransition' in document)) return false
-  return true
-}
-
-const runShellTransitionFallback = () => {
+const runShellTransitionFallback = (retryCount = 0) => {
   if (typeof document === 'undefined') return
 
   const root = document.documentElement
   const direction = root.dataset.navDirection === 'back' ? 'back' : 'forward'
-  const shell = document.querySelector<HTMLElement>('main[data-view-transition="shell-main"]')
-  if (!shell) return
+  const shellCandidate =
+    document.querySelector<HTMLElement>('main[data-view-transition="shell-main"]') ??
+    document.querySelector<HTMLElement>('[data-motion-root]') ??
+    document.querySelector<HTMLElement>('main')
+  if (!(shellCandidate instanceof HTMLElement)) {
+    if (retryCount < 2) {
+      window.requestAnimationFrame(() => {
+        runShellTransitionFallback(retryCount + 1)
+      })
+    }
+    return
+  }
+  const shell = shellCandidate
 
-  const distance = direction === 'back' ? '-14px' : '14px'
-  const duration = 360
+  const distance = direction === 'back' ? '-72px' : '72px'
+  const duration = 420
   const easing = 'cubic-bezier(0.22, 1, 0.36, 1)'
+  const startOpacity = 0.92
 
   shell.style.willChange = 'transform, opacity'
   shell.style.transform = `translateX(${distance})`
-  shell.style.opacity = '0.985'
+  shell.style.opacity = `${startOpacity}`
 
-  if ('animate' in shell) {
-    const animation = shell.animate(
-      [{ transform: `translateX(${distance})`, opacity: 0.985 }, { transform: 'translateX(0)', opacity: 1 }],
+  const shellAnimate = shell.animate
+  if (typeof shellAnimate === 'function') {
+    const animation = shellAnimate.call(
+      shell,
+      [{ transform: `translateX(${distance})`, opacity: startOpacity }, { transform: 'translateX(0)', opacity: 1 }],
       {
         duration,
         easing,
@@ -102,6 +107,39 @@ const shouldEnableRouteMotion = () => {
   if (rootMotionState === 'true') return true
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
   return true
+}
+
+const isNativeShell = () => {
+  if (typeof window === 'undefined') return false
+  const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
+  if (runtimeFlag === true) return true
+  if (runtimeFlag === false) return false
+  const capacitor = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+  if (typeof capacitor?.isNativePlatform === 'function' && capacitor.isNativePlatform()) {
+    return true
+  }
+  if (typeof capacitor?.getPlatform === 'function' && capacitor.getPlatform() !== 'web') {
+    return true
+  }
+  if (window.location.protocol === 'capacitor:') return true
+  if (
+    window.location.host === 'localhost' &&
+    window.location.pathname.startsWith('/__capacitor')
+  ) {
+    return true
+  }
+  if (navigator.userAgent.toLowerCase().includes('wv')) return true
+  const shellMode = document.documentElement.dataset.nativeShell
+  return shellMode === 'native' || shellMode === 'background'
+}
+
+const supportsViewTransitions = (reducedMotion: boolean) => {
+  if (reducedMotion || isNativeShell()) return false
+  if (typeof document === 'undefined') return false
+  if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return false
+  if (!CSS.supports('view-transition-name: none')) return false
+  const viewTransition = document as Document & { startViewTransition?: (callback: () => void | Promise<void>) => { finished: Promise<void> } }
+  return typeof viewTransition.startViewTransition === 'function'
 }
 
 export const RouteMotion = component$(() => {
@@ -160,7 +198,7 @@ export const RouteMotion = component$(() => {
                 document.documentElement.dataset.viewTransitions = 'true'
               } else {
                 delete document.documentElement.dataset.viewTransitions
-                if (!prefersReducedMotion) {
+                if (!prefersReducedMotion || isNativeShell()) {
                   runShellTransitionFallback()
                 }
               }
@@ -194,7 +232,6 @@ export const RouteMotion = component$(() => {
 
             const startMotionPipeline = () => {
               const elements = getMotionElements()
-              enableViewTransitions()
               if (!elements.length) {
                 clearMotionState()
                 return
@@ -402,11 +439,12 @@ export const RouteMotion = component$(() => {
               window.removeEventListener('pageshow', handlePageShow)
               activeAnimations.forEach((animation) => animation.cancel())
             }
-          }
+            }
 
-          const initialElements = getMotionElements()
-          if (!initialElements.length) {
-            clearMotionState()
+            enableViewTransitions()
+            const initialElements = getMotionElements()
+            if (!initialElements.length) {
+              clearMotionState()
 
             let pipelineTeardown: (() => void) | undefined
             const waitForMotion = new MutationObserver((records) => {

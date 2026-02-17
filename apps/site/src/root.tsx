@@ -165,12 +165,21 @@ export default component$(() => {
     (ctx) => {
       if (typeof window === 'undefined') return
       const shouldEnable = shouldEnableAmbientMotion()
-      const isNative = isNativeCapacitorRuntime()
+      const nativeRuntimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
+      const isNativeShell =
+        isNativeCapacitorRuntime() ||
+        nativeRuntimeFlag === true ||
+        document.documentElement.dataset.nativeShell === 'native' ||
+        document.documentElement.dataset.nativeShell === 'background'
+      const docWithTransitions = document as Document & { startViewTransition?: () => void }
       const root = document.documentElement
       const supportsViewTransition =
         shouldEnable &&
-        !isNative &&
-        'startViewTransition' in document &&
+        !isNativeShell &&
+        typeof docWithTransitions.startViewTransition === 'function' &&
+        typeof CSS !== 'undefined' &&
+        typeof CSS.supports === 'function' &&
+        CSS.supports('view-transition-name: none') &&
         !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
       if (shouldEnable) {
