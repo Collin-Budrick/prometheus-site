@@ -567,6 +567,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       target: devApiProxyTarget,
       changeOrigin: true,
       secure: false,
+      ws: true,
       rewrite: (pathValue) => pathValue.replace(/^\/api/, '')
     }
     const previewAllowedHosts = new Set(['prometheus.prod', 'prometheus.dev'])

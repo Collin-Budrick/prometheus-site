@@ -25,6 +25,7 @@ COPY --from=deps /app/packages ./packages
 COPY tsconfig.base.json ./tsconfig.base.json
 COPY apps/site ./apps/site
 COPY packages ./packages
+COPY scripts ./scripts
 ARG VITE_API_BASE=/api
 ARG VITE_ENABLE_PREFETCH
 ARG VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
@@ -85,6 +86,7 @@ COPY --from=builder /app/apps/site/server ./server
 COPY --from=builder /app/apps/site/public ./public
 COPY --from=builder /app/apps/site/src ./src
 COPY --from=builder /app/apps/site/scripts ./scripts
+COPY --from=builder /app/scripts /app/scripts
 COPY --from=builder /app/packages/platform/src/env.ts /app/packages/platform/src/env.ts
 
 EXPOSE 4173

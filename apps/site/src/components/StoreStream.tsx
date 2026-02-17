@@ -2,6 +2,8 @@ import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } 
 import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
+import { isOnline } from '../native/connectivity'
+import { isNativeCapacitorRuntime } from '../native/runtime'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
 import {
@@ -406,6 +408,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       let active = true
       let reconnectTimer: number | null = null
       let reconnectAttempt = 0
+      const nativeRuntime = isNativeCapacitorRuntime()
       let isPageVisible = document.visibilityState === 'visible'
       const pendingCommands = new Map<
         string,
@@ -413,8 +416,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       >()
       const commandTimeoutMs = 5000
 
-      const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
-      const canConnect = () => active && isPageVisible
+      const isOffline = () => !isOnline()
+      const canConnect = () => active && (nativeRuntime || isPageVisible)
 
       const clearReconnectTimer = () => {
         if (reconnectTimer !== null) {
@@ -654,8 +657,19 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         streamState.value = 'offline'
       }
 
+      const handleNetworkStatus = (event: Event) => {
+        const detail = (event as CustomEvent<{ online?: unknown }>).detail
+        if (typeof detail?.online !== 'boolean') return
+        if (!detail.online) {
+          streamState.value = 'offline'
+          return
+        }
+        handleOnline()
+      }
+
       window.addEventListener('online', handleOnline)
       window.addEventListener('offline', handleOffline)
+      window.addEventListener('prom:network-status', handleNetworkStatus as EventListener)
       document.addEventListener('visibilitychange', handleVisibilityChange)
       window.addEventListener('pageshow', handleVisibilityChange)
       window.addEventListener('pagehide', handlePageHide)
@@ -667,6 +681,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         setStoreCommandSender(null)
         window.removeEventListener('online', handleOnline)
         window.removeEventListener('offline', handleOffline)
+        window.removeEventListener('prom:network-status', handleNetworkStatus as EventListener)
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         window.removeEventListener('pageshow', handleVisibilityChange)
         window.removeEventListener('pagehide', handlePageHide)
@@ -698,7 +713,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       }
       window.addEventListener(storeCartQueueEvent, handleQueue)
       navigator.serviceWorker?.addEventListener('message', handleMessage)
-      if (!(queuedCount.value > 0 && navigator.onLine === false)) {
+      if (!(queuedCount.value > 0 && !isOnline())) {
         void flushStoreCartQueue(window.location.origin)
       }
       ctx.cleanup(() => {

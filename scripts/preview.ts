@@ -212,7 +212,7 @@ ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE', '1')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB', '4096')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_CORES', '4')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE', '1')
-ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '0')
+ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '1')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME', '1')
 
 const normalizeHost = (value?: string) => {
@@ -588,7 +588,7 @@ const optimizeAndroidDevice = (adbBin: string, serial: string) => {
     }
   }
 
-  const animationScale = process.env.PROMETHEUS_ANDROID_ANIMATION_SCALE?.trim() || '0'
+  const animationScale = process.env.PROMETHEUS_ANDROID_ANIMATION_SCALE?.trim() || '1'
   const animationCommands = [
     ['settings', 'put', 'global', 'window_animation_scale', animationScale],
     ['settings', 'put', 'global', 'transition_animation_scale', animationScale],
