@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 const ROOT = process.cwd();
 const LOG_PREFIX = "[capacitor-android-patches]";
 const NODE_MODULE_ROOTS = [join(ROOT, "node_modules"), join(ROOT, "apps", "site", "node_modules")];
+const ANDROID_ROOT = join(ROOT, "apps", "site", "android");
 
 const patches: Array<{ relativePath: string; replacements: Array<{ find: string; replace: string }> }> = [
   {
@@ -147,6 +148,57 @@ for (const patch of patches) {
       modifiedAny = true;
       console.log(`${LOG_PREFIX} patched ${path}`);
     }
+  }
+}
+
+type FilePatch = {
+  path: string;
+  transform: (content: string) => string;
+};
+
+const projectFilePatches: FilePatch[] = [
+  {
+    path: join(ANDROID_ROOT, "app", "build.gradle"),
+    transform: (content) => {
+      let next = content;
+      next = next.replace(
+        /repositories\s*\{\s*flatDir\s*\{\s*dirs\s+'\.\.\/capacitor-cordova-android-plugins\/src\/main\/libs',\s*'libs'\s*\}\s*\}/m,
+        "repositories {\n}\n"
+      );
+      next = next.replace(
+        "implementation fileTree(include: ['*.jar'], dir: 'libs')",
+        "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')"
+      );
+      return next;
+    },
+  },
+  {
+    path: join(ANDROID_ROOT, "capacitor-cordova-android-plugins", "build.gradle"),
+    transform: (content) => {
+      let next = content;
+      next = next.replace(
+        /repositories\s*\{\s*google\(\)\s*mavenCentral\(\)\s*flatDir\s*\{\s*dirs\s+'src\/main\/libs',\s*'libs'\s*\}\s*\}/m,
+        "repositories {\n    google()\n    mavenCentral()\n}\n"
+      );
+      next = next.replace(
+        "implementation fileTree(dir: 'src/main/libs', include: ['*.jar'])",
+        "implementation fileTree(dir: 'src/main/libs', include: ['*.jar', '*.aar'])\n    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])"
+      );
+      return next;
+    },
+  },
+];
+
+for (const filePatch of projectFilePatches) {
+  if (!existsSync(filePatch.path)) continue;
+  foundAny = true;
+  const original = readFileSync(filePatch.path, "utf8");
+  const next = filePatch.transform(original);
+  if (next !== original) {
+    mkdirSync(dirname(filePatch.path), { recursive: true });
+    writeFileSync(filePatch.path, next, "utf8");
+    modifiedAny = true;
+    console.log(`${LOG_PREFIX} patched ${filePatch.path}`);
   }
 }
 

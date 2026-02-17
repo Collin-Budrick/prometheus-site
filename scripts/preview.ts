@@ -672,14 +672,19 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
     }
   }
   if (!ensureCapacitorCli(siteRoot)) return
-  const patchResult = spawnSync(bunBin, ['run', 'patch:android'], {
-    stdio: 'inherit',
-    cwd: root,
-    env: process.env
-  })
-  if (patchResult.status !== 0) {
-    console.warn('[android] Capacitor Android patching failed; continuing with existing plugin configs.')
+  const runAndroidPatches = () => {
+    const patchResult = spawnSync(bunBin, ['run', 'patch:android'], {
+      stdio: 'inherit',
+      cwd: root,
+      env: process.env
+    })
+    if (patchResult.status !== 0) {
+      console.warn('[android] Capacitor Android patching failed; continuing with existing plugin configs.')
+      return false
+    }
+    return true
   }
+  runAndroidPatches()
   const preferNode = process.platform === 'win32'
   const runSync = (runner: CapacitorRunner) =>
     spawnSync(runner.command, [...runner.args, 'sync', 'android'], {
@@ -701,11 +706,17 @@ const syncCapacitorAndroid = (serverUrl?: string) => {
   const primary = resolveCapacitorRunner(siteRoot, preferNode)
   const secondary = resolveCapacitorRunner(siteRoot, !preferNode)
   const result = runSync(primary)
-  if (result.status === 0) return
+  if (result.status === 0) {
+    runAndroidPatches()
+    return
+  }
 
   if (secondary.label !== primary.label) {
     const fallback = runSync(secondary)
-    if (fallback.status === 0) return
+    if (fallback.status === 0) {
+      runAndroidPatches()
+      return
+    }
     console.warn(`[capacitor] Android sync failed (exit ${fallback.status ?? 'unknown'}).`)
     return
   }
