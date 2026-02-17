@@ -1070,9 +1070,9 @@ const storeStream: FragmentDefinition = {
   render: ({ t }) =>
     h('section', { class: 'store-fragment' }, [
       h('div', { class: 'store-fragment-badges' }, [
-        h('span', { class: 'badge' }, textNode(t('Postgres truth'))),
-        h('span', { class: 'badge signal' }, textNode(t('Valkey search'))),
-        h('span', { class: 'badge accent' }, textNode(t('Realtime stream')))
+        h('span', { class: 'badge' }, textNode(t('Postgres'))),
+        h('span', { class: 'badge signal' }, textNode(t('Valkey'))),
+        h('span', { class: 'badge accent' }, textNode(t('Realtime')))
       ]),
       h('store-stream', {
         class: 'store-stream',
