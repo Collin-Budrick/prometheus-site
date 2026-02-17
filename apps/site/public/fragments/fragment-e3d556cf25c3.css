@@ -512,7 +512,7 @@
 .store-create-submit {
   border: none;
   background: rgb(var(--accent));
-  color: rgb(var(--accent-ink));
+  color: rgb(255 255 255);
   padding: 10px 16px;
   border-radius: 12px;
   font-size: 11px;
