@@ -50,87 +50,6 @@ const waitForClientAppReady = async () => {
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
 }
 
-const scanViewportFadeRules = () => {
-  const styleSheets = Array.from(document.styleSheets)
-  let scannedRules = 0
-  let matchingRules = 0
-  let blockedSheets = 0
-
-  styleSheets.forEach((sheet) => {
-    try {
-      const rules = Array.from(sheet.cssRules ?? [])
-      scannedRules += rules.length
-      rules.forEach((rule) => {
-        if (rule.cssText.includes('.viewport-fade')) matchingRules += 1
-      })
-    } catch {
-      blockedSheets += 1
-    }
-  })
-
-  return {
-    totalStyleSheets: styleSheets.length,
-    scannedRules,
-    matchingRules,
-    blockedSheets
-  }
-}
-
-const logViewportFadeDiagnostics = (phase: string) => {
-  if (typeof window === 'undefined') return
-  const root = document.documentElement
-  const fade = document.querySelector<HTMLElement>('.viewport-fade')
-  const computed = fade ? window.getComputedStyle(fade) : null
-  const rect = fade?.getBoundingClientRect()
-  const qStyleCount = document.querySelectorAll('style[q\\:style]').length
-  const qStyleHiddenCount = document.querySelectorAll('style[q\\:style][hidden]').length
-  const bodyChildren =
-    document.body
-      ? Array.from(document.body.children).map((el) => `${el.tagName.toLowerCase()}.${el.className || '(no-class)'}`)
-      : []
-
-  console.info('[viewport-fade-debug]', {
-    phase,
-    url: window.location.href,
-    readyState: document.readyState,
-    theme: root.getAttribute('data-theme'),
-    colorScheme: root.style.colorScheme || null,
-    clientReady: document.body?.getAttribute('data-client-ready') || null,
-    hasViewportFade: Boolean(fade),
-    fadeClass: fade?.className || null,
-    fadeRect: rect
-      ? {
-        top: Math.round(rect.top),
-        bottom: Math.round(rect.bottom),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      }
-      : null,
-    fadeComputed: computed
-      ? {
-        display: computed.display,
-        visibility: computed.visibility,
-        opacity: computed.opacity,
-        position: computed.position,
-        zIndex: computed.zIndex,
-        height: computed.height,
-        pointerEvents: computed.pointerEvents,
-        backgroundImage: computed.backgroundImage,
-        backgroundSize: computed.backgroundSize,
-        backgroundPosition: computed.backgroundPosition
-      }
-      : null,
-    styleTags: {
-      headStyleCount: document.head.querySelectorAll('style').length,
-      stylesheetLinkCount: document.head.querySelectorAll('link[rel="stylesheet"]').length,
-      qStyleCount,
-      qStyleHiddenCount
-    },
-    bodyChildren,
-    ruleScan: scanViewportFadeRules()
-  })
-}
-
 const viewportFadeHeadStyle = `
   .viewport-fade {
     position: fixed;
@@ -283,18 +202,6 @@ export default component$(() => {
     const isClientReady = track(() => clientReady.value)
     if (!isClientReady) return
     void waitForClientAppReady().then(() => hideNativeSplashScreen())
-  })
-  useVisibleTask$((ctx) => {
-    if (typeof window === 'undefined') return
-    logViewportFadeDiagnostics('mounted')
-    const raf1 = window.requestAnimationFrame(() => logViewportFadeDiagnostics('raf-1'))
-    const timeout500 = window.setTimeout(() => logViewportFadeDiagnostics('t+500ms'), 500)
-    const timeout2000 = window.setTimeout(() => logViewportFadeDiagnostics('t+2000ms'), 2000)
-    ctx.cleanup(() => {
-      window.cancelAnimationFrame(raf1)
-      window.clearTimeout(timeout500)
-      window.clearTimeout(timeout2000)
-    })
   })
   const clientExtrasConfig: ClientExtrasConfig = {
     apiBase: appConfig.apiBase,
