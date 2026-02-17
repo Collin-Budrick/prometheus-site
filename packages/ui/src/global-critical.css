@@ -137,14 +137,14 @@ body[data-client-ready='true'] .native-boot-skeleton {
   background:
     linear-gradient(
       to bottom,
-      rgb(var(--viewport-fade-color) / 0.95),
-      rgb(var(--viewport-fade-color) / 0)
+      rgba(255, 255, 255, 0.95),
+      rgba(255, 255, 255, 0)
     )
       top / 100% var(--viewport-fade-size) no-repeat,
     linear-gradient(
       to top,
-      rgb(var(--viewport-fade-color) / 0.9),
-      rgb(var(--viewport-fade-color) / 0)
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0)
     )
       bottom / 100% var(--viewport-fade-size) no-repeat;
 }
@@ -153,4 +153,20 @@ body[data-client-ready='true'] .native-boot-skeleton {
   .viewport-fade {
     height: 100svh;
   }
+}
+
+:root[data-theme="dark"] .viewport-fade {
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.95),
+      rgba(0, 0, 0, 0)
+    )
+      top / 100% var(--viewport-fade-size) no-repeat,
+    linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.9),
+      rgba(0, 0, 0, 0)
+    )
+      bottom / 100% var(--viewport-fade-size) no-repeat;
 }

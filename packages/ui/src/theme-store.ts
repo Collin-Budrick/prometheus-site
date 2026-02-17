@@ -74,13 +74,16 @@ export const initTheme = (): Theme => {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return theme.value
   }
+  const docTheme = parseTheme(document.documentElement.dataset.theme)
   const stored = parseTheme(window.localStorage.getItem(STORAGE_KEY))
   const cookie = readThemeFromCookie(document.cookie)
-  const docTheme = parseTheme(document.documentElement.dataset.theme)
   let next: Theme
   let shouldPersist = false
 
-  if (stored) {
+  if (docTheme) {
+    next = docTheme
+    shouldPersist = stored !== docTheme
+  } else if (stored) {
     next = stored
     shouldPersist = stored !== cookie
   } else if (cookie) {

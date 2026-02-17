@@ -2,7 +2,7 @@ import type { RequestEvent } from '@builder.io/qwik-city'
 import { renderToStream, type RenderToStreamOptions } from '@builder.io/qwik/server'
 import { manifest } from '@qwik-client-manifest'
 import Root from './root'
-import { readThemeFromCookie } from '@prometheus/ui'
+import { defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { readServiceWorkerSeedFromCookie } from './shared/service-worker-seed'
 
 export default function (opts: RenderToStreamOptions) {
@@ -18,6 +18,8 @@ export default function (opts: RenderToStreamOptions) {
   }
   if (theme) {
     containerAttributes['data-theme'] = theme
+  } else {
+    containerAttributes['data-theme'] = defaultTheme
   }
   containerAttributes['data-sw-disabled'] = disableSw ? '1' : '0'
   if (swSeed.cleanupVersion) {

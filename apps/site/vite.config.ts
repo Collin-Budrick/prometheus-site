@@ -475,6 +475,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
   const ssrInputs = ssrBuild
     ? {
       'entry.ssr': path.resolve(configRoot, 'src', 'entry.ssr.tsx'),
+      'entry.preview': path.resolve(configRoot, 'src', 'entry.preview.tsx'),
       '@qwik-city-plan': '@qwik-city-plan'
     }
     : undefined
@@ -601,8 +602,11 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(capacitorBuildEnabled && isBuildCommand
-          ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 }), capacitorSsrInputPlugin(ssrInputs)]
+        ...(isBuildCommand
+          ? [
+            ...(capacitorBuildEnabled ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })] : []),
+            ...(ssrInputs ? [capacitorSsrInputPlugin(ssrInputs)] : [])
+          ]
           : []),
         ...(capacitorBuildEnabled && isBuildCommand
           ? []

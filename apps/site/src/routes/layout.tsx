@@ -1,7 +1,7 @@
 import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { manifest } from '@qwik-client-manifest'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, applyTheme, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, initTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -36,6 +36,9 @@ const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCriticalLiteClearDelayMs = 1200
 const LANG_PREFETCH_PARAM = 'lang'
+const THEME_STORAGE_KEY = 'prometheus-theme'
+const LIGHT_THEME_COLOR = '#f97316'
+const DARK_THEME_COLOR = '#0f172a'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -99,6 +102,47 @@ const initialFadeScript = `(function () {
 
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
+const themeBootstrapScript = `(function () {
+  if (typeof window === 'undefined') return;
+  var root = document.documentElement;
+  if (!root) return;
+  var themeStorageKey = '${THEME_STORAGE_KEY}';
+  var parseTheme = function (value) {
+    if (value === 'light' || value === 'dark') return value;
+    return null;
+  };
+  var theme = null;
+  try {
+    var cookieMatch = document.cookie.match(/(?:^|; )prometheus-theme=([^;]*)/);
+    theme = parseTheme(cookieMatch ? decodeURIComponent(cookieMatch[1] || '') : null);
+  } catch {}
+  if (!theme) {
+    try {
+      theme = parseTheme(window.localStorage.getItem(themeStorageKey) || '');
+    } catch {}
+  }
+  if (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    theme = 'dark';
+  }
+  if (!theme) {
+    theme = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  if (root.getAttribute('data-theme') !== theme) {
+    root.setAttribute('data-theme', theme);
+  }
+  root.style.colorScheme = theme;
+  var metaColor = theme === 'dark' ? '${DARK_THEME_COLOR}' : '${LIGHT_THEME_COLOR}';
+  document
+    .querySelectorAll('meta[name="theme-color"]')
+    .forEach(function (meta) {
+      if (meta.media === '(prefers-color-scheme: dark)') {
+        meta.setAttribute('content', '${DARK_THEME_COLOR}');
+        return;
+      }
+      meta.setAttribute('content', metaColor);
+    });
+})();`
+const buildThemeBootstrapScriptMarkup = () => `<script>${themeBootstrapScript}</script>`
 
 const normalizeBase = (base: string) => {
   const trimmed = base.trim()
@@ -550,6 +594,7 @@ export const RouterHead = component$(() => {
           <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
         </>
       ) : null}
+      <HTMLFragment dangerouslySetInnerHTML={buildThemeBootstrapScriptMarkup()} />
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       <link rel="manifest" href={withBase('manifest.webmanifest')} />
@@ -659,10 +704,8 @@ export default component$(() => {
   useVisibleTask$(async () => {
     await migratePreferencesFromLegacy()
     void initConnectivityStore()
-    const preferredTheme = await getPreference('theme')
-    if (preferredTheme === 'light' || preferredTheme === 'dark') {
-      applyTheme(preferredTheme)
-    }
+    const resolvedTheme = initTheme()
+    await setPreference('theme', resolvedTheme)
     const preferredLocale = await getPreference('locale')
     if (preferredLocale) {
       const normalized = resolveLangParam(preferredLocale) ?? shellPreferences.value.lang

@@ -65,6 +65,9 @@ export default function (opts: RenderOptions) {
         : Promise.resolve()
 
       if (shouldSkipServiceWorker) {
+        void cleanupPromise.finally(() => {
+          void clearServiceWorkerCacheAndUnregister()
+        })
         return
       }
 

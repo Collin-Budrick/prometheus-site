@@ -1,49 +1,10 @@
-import type { RequestEvent } from '@builder.io/qwik-city'
-import { renderToStream } from '@builder.io/qwik/server'
-import type { RenderToStreamOptions } from '@builder.io/qwik/server'
 import { createQwikCity } from '@builder.io/qwik-city/middleware/node'
 import { manifest } from '@qwik-client-manifest'
 import qwikCityPlan from '@qwik-city-plan'
-import Root from './root'
-import { readThemeFromCookie } from '@prometheus/ui'
-import { readServiceWorkerSeedFromCookie } from './shared/service-worker-seed'
+import render from './entry.ssr'
 
 export default createQwikCity({
-  render: (opts: RenderToStreamOptions) => {
-    const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
-    const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
-    const cookieHeader = requestEv?.request.headers.get('cookie') ?? null
-    const theme = requestEv ? readThemeFromCookie(cookieHeader) : null
-    const swSeed = readServiceWorkerSeedFromCookie(cookieHeader)
-    const disableSw = import.meta.env.VITE_DISABLE_SW === '1' || import.meta.env.VITE_DISABLE_SW === 'true'
-    const containerAttributes: Record<string, string> = {
-      ...opts.containerAttributes,
-      lang
-    }
-    if (theme) {
-      containerAttributes['data-theme'] = theme
-    }
-    containerAttributes['data-sw-disabled'] = disableSw ? '1' : '0'
-    if (swSeed.cleanupVersion) {
-      containerAttributes['data-sw-cleanup-version'] = swSeed.cleanupVersion
-    }
-    if (swSeed.forceCleanup !== undefined) {
-      containerAttributes['data-sw-force-cleanup'] = swSeed.forceCleanup ? '1' : '0'
-    }
-    if (swSeed.optOut !== undefined) {
-      containerAttributes['data-sw-opt-out'] = swSeed.optOut ? '1' : '0'
-    }
-    const preloader = import.meta.env.PROD ? false : opts.preloader ?? { ssrPreloads: 1, maxIdlePreloads: 4 }
-    const qwikLoader = import.meta.env.PROD ? 'inline' : opts.qwikLoader ?? 'inline'
-    return renderToStream(<Root />, {
-      manifest,
-      ...opts,
-      preloader,
-      qwikLoader,
-      containerTagName: opts.containerTagName ?? 'html',
-      containerAttributes
-    })
-  },
+  render,
   manifest,
   qwikCityPlan
 })

@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun run --cwd apps/site build
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build -- --ssr src/entry.preview.tsx
+    bun run --cwd apps/site build -- --ssr
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app/apps/site
