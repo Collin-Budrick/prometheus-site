@@ -9,6 +9,7 @@ type FragmentPlanCacheEntryWithHints = FragmentPlanCacheEntry & {
 type FragmentPlanCacheWithHints = {
   get: (path: string, lang?: string) => FragmentPlanCacheEntryWithHints | undefined
   set: (path: string, lang: string | undefined, entry: FragmentPlanCacheEntryWithHints) => void
+  clear?: () => void
 }
 
 type StoredPlanCacheEntry = {
@@ -49,6 +50,15 @@ const writeStorage = (entries: Record<string, StoredPlanCacheEntry>) => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
   } catch (error) {
     console.warn('Failed to persist fragment plan cache', error)
+  }
+}
+
+const clearStorage = () => {
+  if (!canUseStorage()) return
+  try {
+    window.localStorage.removeItem(STORAGE_KEY)
+  } catch (error) {
+    console.warn('Failed to clear fragment plan cache storage', error)
   }
 }
 
@@ -241,9 +251,17 @@ const createPersistentFragmentPlanCache = (
       Object.keys(buildCacheEntries(path, lang, entry, savedAt)).forEach((key) => {
         persistEntry(key, entry, savedAt)
       })
+    },
+    clear: () => {
+      memoryCache.clear?.()
+      storedEntries = {}
+      clearStorage()
     }
   }
 }
 
 export const fragmentPlanCache = createPersistentFragmentPlanCache()
+export const clearFragmentPlanCache = () => {
+  fragmentPlanCache.clear?.()
+}
 export { createPersistentFragmentPlanCache, FRAGMENT_PLAN_CACHE_PAYLOAD_ID }

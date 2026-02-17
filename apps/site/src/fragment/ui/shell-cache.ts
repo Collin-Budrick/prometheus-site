@@ -41,6 +41,14 @@ export const setFragmentShellCacheEntry = (path: string, entry: FragmentShellCac
   fragmentShellCache.set(normalizeFragmentShellPath(path), entry)
 }
 
+export const clearFragmentShellCache = (path?: string) => {
+  if (typeof path === 'string' && path.trim()) {
+    fragmentShellCache.delete(normalizeFragmentShellPath(path))
+    return
+  }
+  fragmentShellCache.clear()
+}
+
 const readCookieValue = (cookieHeader: string | null, key: string) => {
   if (!cookieHeader) return null
   const parts = cookieHeader.split(';')

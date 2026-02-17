@@ -10,6 +10,7 @@ export type FragmentPlanCacheEntry = {
 export type FragmentPlanCache = {
   get: (path: string, lang?: string) => FragmentPlanCacheEntry | undefined
   set: (path: string, lang: string | undefined, entry: FragmentPlanCacheEntry) => void
+  clear?: () => void
 }
 
 const buildPlanCacheKey = (path: string, lang?: string) => `${lang ?? 'default'}|${path}`
@@ -29,6 +30,9 @@ export const createFragmentPlanCache = (limit: number = 20): FragmentPlanCache =
       if (normalizedKey !== requestKey) {
         planCache.set(normalizedKey, entry)
       }
+    },
+    clear: () => {
+      planCache.clear()
     }
   }
 }

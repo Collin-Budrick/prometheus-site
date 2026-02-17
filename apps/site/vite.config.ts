@@ -322,10 +322,12 @@ const earlyHintsPlugin = (): Plugin => {
 }
 
 const fragmentHmrPlugin = (): Plugin => {
-  const fragmentRoot = path.resolve(process.cwd(), 'src/fragments')
+  const fragmentRoot = path.resolve(process.cwd(), 'src/fragment')
   const fragmentDefinitionsRoot = path.resolve(process.cwd(), 'src/fragment/definitions')
+  const fragmentComponentsRoot = path.resolve(process.cwd(), 'src/components')
   const normalizedRoot = path.normalize(fragmentRoot)
   const normalizedDefinitionsRoot = path.normalize(fragmentDefinitionsRoot)
+  const normalizedComponentsRoot = path.normalize(fragmentComponentsRoot)
   const fragmentCssLogPrefix = '[fragment-hmr]'
   let regenerateTimer: ReturnType<typeof setTimeout> | null = null
   let regenerateInFlight = false
@@ -333,6 +335,7 @@ const fragmentHmrPlugin = (): Plugin => {
 
   const isFragmentFile = (file: string) => path.normalize(file).startsWith(normalizedRoot)
   const isDefinitionFile = (file: string) => path.normalize(file).startsWith(normalizedDefinitionsRoot)
+  const isFragmentComponentFile = (file: string) => path.normalize(file).startsWith(normalizedComponentsRoot)
 
   return {
     name: 'fragment-hmr',
@@ -354,6 +357,25 @@ const fragmentHmrPlugin = (): Plugin => {
       if (existsSync(fragmentDefinitionsRoot)) {
         server.watcher.add(fragmentDefinitionsRoot)
       }
+      if (existsSync(fragmentComponentsRoot)) {
+        server.watcher.add(fragmentComponentsRoot)
+      }
+
+      const emitFragmentRefresh = (
+        file: string,
+        reason: 'fragment' | 'definition' | 'fragment-css' | 'island-component'
+      ) => {
+        server.ws.send({
+          type: 'custom',
+          event: 'fragments:refresh',
+          data: {
+            file,
+            reason,
+            clearCaches: true,
+            ts: Date.now()
+          }
+        })
+      }
 
       const regenerateCss = async () => {
         if (regenerateInFlight) {
@@ -363,7 +385,7 @@ const fragmentHmrPlugin = (): Plugin => {
         regenerateInFlight = true
         try {
           generateFragmentCss(workspaceRoot)
-          server.ws.send({ type: 'full-reload' })
+          emitFragmentRefresh(path.join('src', 'fragment', 'fragment-css.generated.ts'), 'fragment-css')
         } catch (error) {
           server.config.logger.error(
             `${fragmentCssLogPrefix} failed to regenerate fragment css: ${
@@ -391,12 +413,12 @@ const fragmentHmrPlugin = (): Plugin => {
       }
 
       const notify = (file: string) => {
-        if (isFragmentFile(file)) {
-          server.ws.send({
-            type: 'custom',
-            event: 'fragments:refresh',
-            data: { file }
-          })
+        if (isDefinitionFile(file)) {
+          emitFragmentRefresh(file, 'definition')
+        } else if (isFragmentFile(file)) {
+          emitFragmentRefresh(file, 'fragment')
+        } else if (isFragmentComponentFile(file)) {
+          emitFragmentRefresh(file, 'island-component')
         }
         scheduleCssRegeneration(file)
       }

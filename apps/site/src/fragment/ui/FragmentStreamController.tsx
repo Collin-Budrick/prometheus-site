@@ -16,6 +16,8 @@ import type {
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
 import { appConfig } from '../../app-config'
+import { clearFragmentPlanCache } from '../plan-cache'
+import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
 
@@ -34,6 +36,10 @@ type FragmentStreamControllerProps = {
   preserveFragmentEffects?: boolean
   initialLang?: Lang
   dynamicCriticalIds?: Signal<string[]>
+}
+
+type FragmentHmrEventPayload = {
+  clearCaches?: boolean
 }
 
 export const FragmentStreamController = component$(
@@ -71,6 +77,7 @@ export const FragmentStreamController = component$(
         let observeTargets = () => {}
         let flushHandle: number | null = null
         let hmrTimer: number | null = null
+        let hmrClearCachesPending = false
         const activeLang = ctx.track(() => langSignal.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
@@ -272,21 +279,31 @@ export const FragmentStreamController = component$(
           planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
         }
 
-        const scheduleHmrRefresh = () => {
+        const scheduleHmrRefresh = (payload?: FragmentHmrEventPayload) => {
+          if (payload?.clearCaches) {
+            hmrClearCachesPending = true
+          }
           if (hmrTimer) {
             window.clearTimeout(hmrTimer)
           }
           hmrTimer = window.setTimeout(() => {
             hmrTimer = null
+            if (hmrClearCachesPending) {
+              hmrClearCachesPending = false
+              clearFragmentPlanCache()
+              clearFragmentShellCache(path)
+            }
             markAllForRefresh()
+            pending.clear()
+            deferred.clear()
+            queued.clear()
+            refreshQueue.clear()
             if (!observer) {
               requestFragments(planValue.fragments.map((entry) => entry.id))
               return
             }
             observeTargets()
-            if (visibleIds.size) {
-              requestFragments(Array.from(visibleIds))
-            }
+            requestFragments(planValue.fragments.map((entry) => entry.id))
           }, 75)
         }
 
