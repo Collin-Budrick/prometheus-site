@@ -1,4 +1,17 @@
 import { appConfig } from '../app-config'
+import {
+  createStoreLocalRepo,
+  parseStoreCartQueue,
+  parseStoreCartSnapshot,
+  serializeStoreCartQueue,
+  serializeStoreCartSnapshot,
+  storeCartQueueStorageKey,
+  storeCartSnapshotStorageKey,
+  type StoreCartQueuedAction,
+  type StoreCartSnapshotItem,
+  type StoreLocalSeed,
+  type StoreLocalRepo
+} from './store-local-repo'
 
 export type StoreCartItem = {
   id: number
@@ -6,9 +19,7 @@ export type StoreCartItem = {
   price: number
 }
 
-export type StoreCartSnapshotItem = StoreCartItem & {
-  qty: number
-}
+export type { StoreCartSnapshotItem }
 
 export type StoreConsumeItem = {
   id: number
@@ -25,8 +36,6 @@ export type StoreConsumeResult = {
 export const storeCartAddEvent = 'store:cart:add'
 export const storeCartQueueEvent = 'store:cart:queue'
 export const storeInventoryEvent = 'store:inventory:update'
-const storeCartQueueVersion = 1
-const storeCartSnapshotVersion = 1
 
 export type StoreCommandPayload = {
   type: 'consume' | 'restore'
@@ -36,42 +45,24 @@ export type StoreCommandPayload = {
 
 export type StoreCommandSender = (payload: StoreCommandPayload) => Promise<StoreConsumeResult | null>
 
-type StoreCartQueuedAction = {
-  type: 'consume' | 'restore'
-  id: number
-  amount?: number
-  queuedAt: string
-}
-
-type StoreCartQueueEnvelope = {
-  version: typeof storeCartQueueVersion
-  queue: StoreCartQueuedAction[]
-}
-
-type StoreCartSnapshotEnvelope = {
-  version: typeof storeCartSnapshotVersion
-  items: StoreCartSnapshotItem[]
-}
-
-let lastDraggedItem: StoreCartItem | null = null
-const storeCartQueueKey = 'store-cart-queue'
-const storeCartSnapshotKey = 'store-cart-snapshot'
 const storeCartQueueCookieKey = 'prom-store-cart-queue'
 const storeCartSnapshotCookieKey = 'prom-store-cart'
+
+let lastDraggedItem: StoreCartItem | null = null
 let storeCommandSender: StoreCommandSender | null = null
+let storeLocalRepoPromise: Promise<StoreLocalRepo> | null = null
 
 const readCookieValue = (cookieHeader: string | null, key: string) => {
   if (!cookieHeader) return null
   const parts = cookieHeader.split(';')
   for (const part of parts) {
     const [name, raw] = part.trim().split('=')
-    if (name === key) {
-      if (!raw) return ''
-      try {
-        return decodeURIComponent(raw)
-      } catch {
-        return null
-      }
+    if (name !== key) continue
+    if (!raw) return ''
+    try {
+      return decodeURIComponent(raw)
+    } catch {
+      return null
     }
   }
   return null
@@ -79,20 +70,6 @@ const readCookieValue = (cookieHeader: string | null, key: string) => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
-
-export const setStoreCartDragItem = (item: StoreCartItem | null) => {
-  lastDraggedItem = item
-}
-
-export const setStoreCommandSender = (sender: StoreCommandSender | null) => {
-  storeCommandSender = sender
-}
-
-export const consumeStoreCartDragItem = () => {
-  const item = lastDraggedItem
-  lastDraggedItem = null
-  return item
-}
 
 const parsePrice = (value: unknown) => {
   if (typeof value === 'number') {
@@ -116,12 +93,48 @@ const parseQuantity = (value: unknown) => {
   return 0
 }
 
+const readLocalStorageValue = (key: string) => {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+const normalizeQueueAction = (value: unknown): StoreCartQueuedAction | null => {
+  if (!isRecord(value)) return null
+  const type = value.type === 'restore' ? 'restore' : value.type === 'consume' ? 'consume' : null
+  const id = Number(value.id)
+  const queuedAt = typeof value.queuedAt === 'string' ? value.queuedAt : ''
+  const amount = value.amount !== undefined ? parseQuantity(value.amount) : undefined
+  if (!type || !Number.isFinite(id) || id <= 0 || !queuedAt) return null
+  if (type === 'restore') {
+    if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null
+    return { type, id, amount, queuedAt }
+  }
+  return { type, id, queuedAt }
+}
+
+export const setStoreCartDragItem = (item: StoreCartItem | null) => {
+  lastDraggedItem = item
+}
+
+export const setStoreCommandSender = (sender: StoreCommandSender | null) => {
+  storeCommandSender = sender
+}
+
+export const consumeStoreCartDragItem = () => {
+  const item = lastDraggedItem
+  lastDraggedItem = null
+  return item
+}
+
 const normalizeStoreConsumeItem = (value: unknown): StoreConsumeItem | null => {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const id = Number(record.id)
+  if (!isRecord(value)) return null
+  const id = Number(value.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const quantity = parseQuantity(record.quantity)
+  const quantity = parseQuantity(value.quantity)
   return { id, quantity }
 }
 
@@ -138,103 +151,21 @@ const emitInventoryUpdate = (item?: StoreConsumeItem) => {
 }
 
 export const normalizeStoreCartItem = (value: unknown): StoreCartItem | null => {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const id = Number(record.id)
+  if (!isRecord(value)) return null
+  const id = Number(value.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const name = typeof record.name === 'string' && record.name.trim() !== '' ? record.name : `Item ${id}`
-  const price = parsePrice(record.price)
+  const name = typeof value.name === 'string' && value.name.trim() !== '' ? value.name : `Item ${id}`
+  const price = parsePrice(value.price)
   return { id, name, price }
 }
 
 export const normalizeStoreCartSnapshotItem = (value: unknown): StoreCartSnapshotItem | null => {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const base = normalizeStoreCartItem(record)
+  if (!isRecord(value)) return null
+  const base = normalizeStoreCartItem(value)
   if (!base) return null
-  const qty = parseQuantity(record.qty)
+  const qty = parseQuantity(value.qty)
   if (!Number.isFinite(qty) || qty <= 0) return null
   return { ...base, qty }
-}
-
-const resolveQueuePayload = (value: unknown) => {
-  if (Array.isArray(value)) return value
-  if (isRecord(value) && value.version === storeCartQueueVersion && Array.isArray(value.queue)) {
-    return value.queue
-  }
-  return null
-}
-
-const resolveSnapshotPayload = (value: unknown) => {
-  if (Array.isArray(value)) return value
-  if (isRecord(value) && value.version === storeCartSnapshotVersion && Array.isArray(value.items)) {
-    return value.items
-  }
-  return null
-}
-
-const serializeStoreCartQueue = (queue: StoreCartQueuedAction[]) =>
-  JSON.stringify({ version: storeCartQueueVersion, queue } satisfies StoreCartQueueEnvelope)
-
-const serializeStoreCartSnapshot = (items: StoreCartSnapshotItem[]) =>
-  JSON.stringify({ version: storeCartSnapshotVersion, items } satisfies StoreCartSnapshotEnvelope)
-
-const parseStoreCartQueue = (raw: string | null) => {
-  if (!raw) return [] as StoreCartQueuedAction[]
-  try {
-    const parsed = JSON.parse(raw)
-    const payload = resolveQueuePayload(parsed)
-    if (!payload) return []
-    return payload
-      .map((entry) => {
-        if (!entry || typeof entry !== 'object') return null
-        const record = entry as Record<string, unknown>
-        const type = record.type === 'restore' ? 'restore' : record.type === 'consume' ? 'consume' : null
-        const id = Number(record.id)
-        const queuedAt = typeof record.queuedAt === 'string' ? record.queuedAt : ''
-        const amount = record.amount !== undefined ? parseQuantity(record.amount) : undefined
-        if (!type || !Number.isFinite(id) || id <= 0 || !queuedAt) return null
-        if (type === 'restore') {
-          if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null
-          return { type, id, amount, queuedAt }
-        }
-        return { type, id, queuedAt }
-      })
-      .filter((entry): entry is StoreCartQueuedAction => entry !== null)
-  } catch {
-    return []
-  }
-}
-
-const parseStoreCartSnapshot = (raw: string | null) => {
-  if (!raw) return [] as StoreCartSnapshotItem[]
-  try {
-    const parsed = JSON.parse(raw)
-    const payload = resolveSnapshotPayload(parsed)
-    if (!payload) return []
-    return payload
-      .map((entry) => normalizeStoreCartSnapshotItem(entry))
-      .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
-  } catch {
-    return []
-  }
-}
-
-const loadStoreCartQueue = () => {
-  if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
-  const raw = window.localStorage.getItem(storeCartQueueKey)
-  const parsed = parseStoreCartQueue(raw)
-  if (parsed.length) return parsed
-  const cookieValue = typeof document === 'undefined' ? null : readCookieValue(document.cookie, storeCartQueueCookieKey)
-  const cookieParsed = parseStoreCartQueue(cookieValue)
-  if (cookieParsed.length) {
-    try {
-      window.localStorage.setItem(storeCartQueueKey, serializeStoreCartQueue(cookieParsed))
-    } catch {
-      // ignore storage failures
-    }
-  }
-  return cookieParsed
 }
 
 const writeStoreCartQueueCookie = (queue: StoreCartQueuedAction[]) => {
@@ -265,15 +196,88 @@ const writeStoreCartSnapshotCookie = (items: StoreCartSnapshotItem[]) => {
   }
 }
 
-const saveStoreCartQueue = (queue: StoreCartQueuedAction[]) => {
+const emitQueueSizeUpdate = (size: number) => {
   if (typeof window === 'undefined') return
-  if (queue.length) {
-    window.localStorage.setItem(storeCartQueueKey, serializeStoreCartQueue(queue))
-  } else {
-    window.localStorage.removeItem(storeCartQueueKey)
+  window.dispatchEvent(new CustomEvent(storeCartQueueEvent, { detail: { size } }))
+}
+
+const resolveLegacyQueueSeed = () => {
+  if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
+  const localParsed = parseStoreCartQueue(readLocalStorageValue(storeCartQueueStorageKey))
+  if (localParsed.length) return localParsed
+  const cookieValue = typeof document === 'undefined' ? null : readCookieValue(document.cookie, storeCartQueueCookieKey)
+  return parseStoreCartQueue(cookieValue)
+}
+
+const resolveLegacySnapshotSeed = () => {
+  if (typeof window === 'undefined') return [] as StoreCartSnapshotItem[]
+  const localParsed = parseStoreCartSnapshot(readLocalStorageValue(storeCartSnapshotStorageKey))
+  if (localParsed.length) return localParsed
+  const cookieValue = typeof document === 'undefined' ? null : readCookieValue(document.cookie, storeCartSnapshotCookieKey)
+  return parseStoreCartSnapshot(cookieValue)
+}
+
+const resolveStoreLocalSeed = (): StoreLocalSeed => ({
+  queue: resolveLegacyQueueSeed(),
+  snapshot: resolveLegacySnapshotSeed()
+})
+
+const getStoreLocalRepo = async () => {
+  if (!storeLocalRepoPromise) {
+    storeLocalRepoPromise = (async () => {
+      const repo = createStoreLocalRepo()
+      await repo.init(resolveStoreLocalSeed())
+      return repo
+    })()
   }
-  writeStoreCartQueueCookie(queue)
-  window.dispatchEvent(new CustomEvent(storeCartQueueEvent, { detail: { size: queue.length } }))
+  try {
+    return await storeLocalRepoPromise
+  } catch (error) {
+    storeLocalRepoPromise = null
+    throw error
+  }
+}
+
+const loadStoreCartQueue = async () => {
+  if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
+  try {
+    const repo = await getStoreLocalRepo()
+    const queue = await repo.readQueue()
+    return queue
+      .map((entry) => normalizeQueueAction(entry))
+      .filter((entry): entry is StoreCartQueuedAction => entry !== null)
+  } catch {
+    return resolveLegacyQueueSeed()
+  }
+}
+
+const saveStoreCartQueue = async (queue: StoreCartQueuedAction[]) => {
+  if (typeof window === 'undefined') return
+  const normalized = queue
+    .map((entry) => normalizeQueueAction(entry))
+    .filter((entry): entry is StoreCartQueuedAction => entry !== null)
+  try {
+    const repo = await getStoreLocalRepo()
+    await repo.writeQueue(normalized)
+  } catch {
+    // ignore repo storage failures; cookie mirror still tracks queue state for SSR fallback.
+  }
+  writeStoreCartQueueCookie(normalized)
+  emitQueueSizeUpdate(normalized.length)
+}
+
+const saveStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) => {
+  if (typeof window === 'undefined') return
+  const normalized = items
+    .map((entry) => normalizeStoreCartSnapshotItem(entry))
+    .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
+  try {
+    const repo = await getStoreLocalRepo()
+    await repo.writeSnapshot(normalized)
+  } catch {
+    // ignore repo storage failures; cookie mirror still tracks snapshot state for SSR fallback.
+  }
+  writeStoreCartSnapshotCookie(normalized)
 }
 
 const requestStoreCartSync = async () => {
@@ -289,10 +293,10 @@ const requestStoreCartSync = async () => {
   }
 }
 
-const enqueueStoreCartAction = (action: StoreCartQueuedAction) => {
-  const queue = loadStoreCartQueue()
+const enqueueStoreCartAction = async (action: StoreCartQueuedAction) => {
+  const queue = await loadStoreCartQueue()
   queue.push(action)
-  saveStoreCartQueue(queue)
+  await saveStoreCartQueue(queue)
   void requestStoreCartSync()
 }
 
@@ -308,7 +312,7 @@ const performConsumeStoreItem = async (
   }
 
   if (allowQueue && isOffline()) {
-    enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
+    await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
     return { ok: true, status: 0, queued: true }
   }
 
@@ -344,7 +348,7 @@ const performConsumeStoreItem = async (
   } catch (error) {
     console.warn('Failed to consume store item', error)
     if (allowQueue && isOffline()) {
-      enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
+      await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
       return { ok: true, status: 0, queued: true }
     }
     return { ok: false, status: 0 }
@@ -362,7 +366,7 @@ const performRestoreStoreItem = async (
   }
 
   if (allowQueue && isOffline()) {
-    enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
+    await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
     return { ok: true, status: 0, queued: true }
   }
 
@@ -404,14 +408,22 @@ const performRestoreStoreItem = async (
   } catch (error) {
     console.warn('Failed to restore store item', error)
     if (allowQueue && isOffline()) {
-      enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
+      await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
       return { ok: true, status: 0, queued: true }
     }
     return { ok: false, status: 0 }
   }
 }
 
-export const getStoreCartQueueSize = () => loadStoreCartQueue().length
+export const getStoreCartQueueSize = async () => {
+  if (typeof window === 'undefined') return 0
+  try {
+    const repo = await getStoreLocalRepo()
+    return await repo.getQueueSize()
+  } catch {
+    return resolveLegacyQueueSeed().length
+  }
+}
 
 export const readStoreCartQueueFromCookie = (cookieHeader: string | null) =>
   parseStoreCartQueue(readCookieValue(cookieHeader, storeCartQueueCookieKey))
@@ -419,27 +431,15 @@ export const readStoreCartQueueFromCookie = (cookieHeader: string | null) =>
 export const readStoreCartSnapshotFromCookie = (cookieHeader: string | null) =>
   parseStoreCartSnapshot(readCookieValue(cookieHeader, storeCartSnapshotCookieKey))
 
-export const persistStoreCartSnapshot = (items: StoreCartSnapshotItem[]) => {
+export const persistStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) => {
   if (typeof window === 'undefined') return
-  const normalized = items
-    .map((item) => normalizeStoreCartSnapshotItem(item))
-    .filter((entry): entry is StoreCartSnapshotItem => entry !== null)
-  if (normalized.length) {
-    try {
-      window.localStorage.setItem(storeCartSnapshotKey, serializeStoreCartSnapshot(normalized))
-    } catch {
-      // ignore storage failures
-    }
-  } else {
-    window.localStorage.removeItem(storeCartSnapshotKey)
-  }
-  writeStoreCartSnapshotCookie(normalized)
+  await saveStoreCartSnapshot(items)
 }
 
 export const flushStoreCartQueue = async (origin: string) => {
   if (typeof window === 'undefined') return { processed: 0, remaining: 0 }
-  if (isOffline()) return { processed: 0, remaining: loadStoreCartQueue().length }
-  const queue = loadStoreCartQueue()
+  if (isOffline()) return { processed: 0, remaining: await getStoreCartQueueSize() }
+  const queue = await loadStoreCartQueue()
   if (!queue.length) return { processed: 0, remaining: 0 }
   const remaining: StoreCartQueuedAction[] = []
   let processed = 0
@@ -461,7 +461,7 @@ export const flushStoreCartQueue = async (origin: string) => {
     }
   }
 
-  saveStoreCartQueue(remaining)
+  await saveStoreCartQueue(remaining)
   return { processed, remaining: remaining.length }
 }
 
@@ -473,3 +473,4 @@ export const restoreStoreItem = async (
   amount: number,
   origin: string
 ): Promise<StoreConsumeResult> => performRestoreStoreItem(id, amount, origin, true)
+

@@ -170,7 +170,7 @@ export const StoreCart = component$<StoreCartProps>(
       (ctx) => {
         if (typeof window === 'undefined') return
         ctx.track(() => cartItems.value.map((item) => `${item.id}:${item.qty}`).join(','))
-        persistStoreCartSnapshot(cartItems.value)
+        void persistStoreCartSnapshot(cartItems.value)
       },
       { strategy: 'document-ready' }
     )

@@ -720,11 +720,18 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      queuedCount.value = getStoreCartQueueSize()
+      const refreshQueuedCount = async () => {
+        queuedCount.value = await getStoreCartQueueSize()
+      }
+      void refreshQueuedCount()
       const handleQueue = (event: Event) => {
         const detail = (event as CustomEvent).detail as { size?: unknown } | undefined
         const size = Number(detail?.size)
-        queuedCount.value = Number.isFinite(size) ? Math.max(0, size) : getStoreCartQueueSize()
+        if (Number.isFinite(size)) {
+          queuedCount.value = Math.max(0, size)
+          return
+        }
+        void refreshQueuedCount()
       }
       const handleMessage = (event: MessageEvent) => {
         const data = event.data as Record<string, unknown> | undefined
@@ -732,14 +739,19 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           void flushStoreCartQueue(window.location.origin)
         }
       }
+      const handleResume = () => {
+        void flushStoreCartQueue(window.location.origin)
+      }
       window.addEventListener(storeCartQueueEvent, handleQueue)
       navigator.serviceWorker?.addEventListener('message', handleMessage)
+      window.addEventListener('resume', handleResume)
       if (!(queuedCount.value > 0 && !isOnline())) {
         void flushStoreCartQueue(window.location.origin)
       }
       ctx.cleanup(() => {
         window.removeEventListener(storeCartQueueEvent, handleQueue)
         navigator.serviceWorker?.removeEventListener('message', handleMessage)
+        window.removeEventListener('resume', handleResume)
       })
     },
     { strategy: 'document-ready' }
