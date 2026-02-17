@@ -214,6 +214,7 @@ ensureDefault('PROMETHEUS_ANDROID_EMULATOR_CORES', '4')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE', '1')
 ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '1')
 ensureDefault('PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME', '1')
+ensureDefault('PROMETHEUS_ANDROID_GRADLE_CONFIGURATION_CACHE', '1')
 
 const normalizeHost = (value?: string) => {
   const trimmed = value?.trim()
@@ -729,6 +730,7 @@ const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string, a
   const buildEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_BUILD, autoDeploy)
   const installEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_INSTALL, autoDeploy)
   const launchEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_LAUNCH, autoDeploy)
+  const gradleConfigurationCacheEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_GRADLE_CONFIGURATION_CACHE, true)
   const loopback = (() => {
     const host = normalizeHost(deviceHost)
     return host === '127.0.0.1' || host === 'localhost' || host === '::1'
@@ -773,8 +775,14 @@ const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string, a
     }
     const gradleRunner =
       process.platform === 'win32'
-        ? { command: gradleCmd, args: ['assembleDebug'] }
-        : { command: 'bash', args: [gradleCmd, 'assembleDebug'] }
+        ? {
+            command: gradleCmd,
+            args: ['assembleDebug', ...(gradleConfigurationCacheEnabled ? ['--configuration-cache'] : [])]
+          }
+        : {
+            command: 'bash',
+            args: [gradleCmd, 'assembleDebug', ...(gradleConfigurationCacheEnabled ? ['--configuration-cache'] : [])]
+          }
     const result = spawnSync(gradleRunner.command, gradleRunner.args, { stdio: 'inherit', cwd: androidRoot })
     if (result.error) {
       console.warn('[android] Gradle failed to start; skipping Android install/launch.')
