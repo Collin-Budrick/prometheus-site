@@ -909,6 +909,11 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               onInput$={handleInput}
               aria-label={searchAriaLabel}
             />
+
+            <div class="store-stream-field-status" aria-live="polite">
+              <span class="store-stream-status-dot" aria-hidden="true" />
+              <span class="sr-only">{statusLabel.value}</span>
+            </div>
           </div>
           {query.value.trim() ? (
             <button class="store-stream-clear" type="button" onClick$={handleClear}>
@@ -925,10 +930,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               </option>
             ))}
           </select>
-        </div>
-        <div class="store-stream-status" aria-live="polite">
-          <span class="store-stream-status-dot" aria-hidden="true" />
-          <span class="sr-only">{statusLabel.value}</span>
         </div>
         {queuedCount.value > 0 ? (
           <div class="store-stream-queue" aria-live="polite">

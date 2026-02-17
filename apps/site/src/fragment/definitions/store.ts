@@ -67,6 +67,7 @@ const storeFragmentCss = `
   outline: none;
   font-size: 0.98rem;
   color: rgb(var(--ink));
+  padding-right: 24px;
 }
 
 .store-stream-field input::placeholder {
@@ -146,15 +147,14 @@ const storeFragmentCss = `
     0 0 0 1px rgb(var(--accent) / 0.35);
 }
 
-.store-stream-status {
+.store-stream-field-status {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.25em;
-  color: rgb(var(--muted));
+  pointer-events: none;
 }
 
 .store-stream-status-dot {
