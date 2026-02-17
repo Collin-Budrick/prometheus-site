@@ -1,6 +1,6 @@
-import { render } from '@builder.io/qwik'
+import { render, type RenderOptions } from '@builder.io/qwik'
 import Root from './root'
 
-export default function () {
-  void render(document, <Root />)
+export default function (opts: RenderOptions) {
+  void render(document, <Root />, opts)
 }

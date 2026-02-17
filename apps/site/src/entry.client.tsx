@@ -1,4 +1,4 @@
-import { render } from '@builder.io/qwik'
+import { render, type RenderOptions } from '@builder.io/qwik'
 import { buildApiUrl, resolveApiHost } from './components/contact-invites/api'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import {
@@ -35,8 +35,8 @@ if (import.meta.hot) {
   })
 }
 
-export default function () {
-  void render(document, <Root />)
+export default function (opts: RenderOptions) {
+  void render(document, <Root />, opts)
 
   if ('serviceWorker' in navigator) {
     setupServiceWorkerBridge()

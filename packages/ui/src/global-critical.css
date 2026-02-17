@@ -128,30 +128,34 @@ body[data-client-ready='true'] .native-boot-skeleton {
 }
 .viewport-fade {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 100vh;
+  inset: 0;
   pointer-events: none;
-  z-index: 62;
-  contain: paint;
-  background:
-    linear-gradient(
-      to bottom,
-      rgb(var(--viewport-fade-color) / 0.95),
-      rgb(var(--viewport-fade-color) / 0)
-    )
-      top / 100% var(--viewport-fade-size) no-repeat,
-    linear-gradient(
-      to top,
-      rgb(var(--viewport-fade-color) / 0.9),
-      rgb(var(--viewport-fade-color) / 0)
-    )
-      bottom / 100% var(--viewport-fade-size) no-repeat;
+  z-index: 100;
 }
 
-@supports (height: 1svh) {
-  .viewport-fade {
-    height: 100svh;
-  }
+.viewport-fade::before,
+.viewport-fade::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--viewport-fade-size);
+}
+
+.viewport-fade::before {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--viewport-fade-color) / 0.95),
+    rgb(var(--viewport-fade-color) / 0)
+  );
+}
+
+.viewport-fade::after {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    rgb(var(--viewport-fade-color) / 0.9),
+    rgb(var(--viewport-fade-color) / 0)
+  );
 }
