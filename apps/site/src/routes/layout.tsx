@@ -22,6 +22,14 @@ import { isNativeCapacitorRuntime } from '../native/runtime'
 import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
 import { isExternalHttpUrl, openExternalUrl } from '../native/native-app-extras'
 import { triggerHapticSelection, triggerHapticTap, withUserActionHaptics } from '../native/haptics'
+import {
+  backgroundPrefetchAuthRoutes,
+  backgroundPrefetchFragmentRoutes,
+  backgroundPrefetchPublicRoutes,
+  configureBackgroundPrefetch,
+  hydrateBackgroundPrefetchCache,
+  runBackgroundPrefetchNow
+} from '../native/background-runner'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -715,6 +723,44 @@ export default component$(() => {
       }
     }
   }, { strategy: 'document-ready' })
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const lang = ctx.track(() => langSignal.value)
+      const authStatus = ctx.track(() => authSession.value.status)
+      const authenticated = authStatus === 'authenticated'
+      let cancelled = false
+
+      const configurePrefetch = async (reason: string) => {
+        const configured = await configureBackgroundPrefetch({
+          origin: window.location.origin,
+          apiBase: appConfig.apiBase,
+          lang,
+          isAuthenticated: authenticated,
+          publicRoutes: Array.from(backgroundPrefetchPublicRoutes),
+          authRoutes: Array.from(backgroundPrefetchAuthRoutes),
+          fragmentRoutes: Array.from(backgroundPrefetchFragmentRoutes)
+        })
+        if (!configured || cancelled) return
+        await hydrateBackgroundPrefetchCache()
+        if (cancelled) return
+        await runBackgroundPrefetchNow(reason)
+      }
+
+      void configurePrefetch('layout-config')
+      const handleResume = () => {
+        void configurePrefetch('resume')
+      }
+      window.addEventListener('resume', handleResume)
+
+      ctx.cleanup(() => {
+        cancelled = true
+        window.removeEventListener('resume', handleResume)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
 
   useOnDocument(
     'click',

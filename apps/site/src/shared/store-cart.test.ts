@@ -77,6 +77,7 @@ const installRuntime = (online: boolean) => {
 }
 
 let storeCartModulePromise: Promise<typeof import('./store-cart')> | null = null
+let backgroundRunnerModulePromise: Promise<typeof import('../native/background-runner')> | null = null
 
 const loadStoreCartModule = async () => {
   ;(globalThis as unknown as { __PUBLIC_APP_CONFIG__?: unknown }).__PUBLIC_APP_CONFIG__ = {
@@ -90,7 +91,23 @@ const loadStoreCartModule = async () => {
   return storeCartModulePromise
 }
 
-afterEach(() => {
+const loadBackgroundRunnerModule = async () => {
+  ;(globalThis as unknown as { __PUBLIC_APP_CONFIG__?: unknown }).__PUBLIC_APP_CONFIG__ = {
+    apiBase: '',
+    fragmentVisibilityMargin: '60% 0px',
+    fragmentVisibilityThreshold: 0.4
+  }
+  if (!backgroundRunnerModulePromise) {
+    backgroundRunnerModulePromise = import('../native/background-runner')
+  }
+  return backgroundRunnerModulePromise
+}
+
+afterEach(async () => {
+  if (backgroundRunnerModulePromise) {
+    const backgroundRunner = await backgroundRunnerModulePromise
+    backgroundRunner.resetBackgroundRunnerForTests()
+  }
   delete (globalThis as unknown as { window?: unknown }).window
   delete (globalThis as unknown as { document?: unknown }).document
   delete (globalThis as unknown as { navigator?: unknown }).navigator
@@ -158,5 +175,61 @@ describe('store cart queue persistence', () => {
     ;(globalThis as unknown as { navigator: NavigatorStub }).navigator.onLine = false
     await mod.consumeStoreItem(3, 'https://prometheus.dev')
     expect(cookieMap.has('prom-store-cart-queue')).toBe(true)
+  })
+
+  it('uses native runner queue and delegated flush retry counts when available', async () => {
+    installRuntime(false)
+    const mod = await loadStoreCartModule()
+    const backgroundRunner = await loadBackgroundRunnerModule()
+
+    backgroundRunner.setBackgroundRunnerNativeRuntimeOverrideForTests(true)
+
+    let allowNativeSync = false
+    let syncCalls = 0
+    let queue: Array<{ type: 'consume' | 'restore'; id: number; amount?: number; queuedAt: string }> = []
+
+    backgroundRunner.setBackgroundRunnerDispatchOverrideForTests(async (event, details) => {
+      if (event === 'store-cart-queue:set') {
+        queue = Array.isArray(details.queue) ? (details.queue as typeof queue) : []
+        return { size: queue.length }
+      }
+      if (event === 'store-cart-queue:get') {
+        return { queue }
+      }
+      if (event === 'store-cart-config:set') {
+        return { ok: allowNativeSync }
+      }
+      if (event === 'store-cart-sync') {
+        syncCalls += 1
+        if (syncCalls === 1) {
+          return { processed: 0, remaining: queue.length }
+        }
+        const processed = queue.length
+        queue = []
+        return { processed, remaining: 0 }
+      }
+      return null
+    })
+
+    await mod.consumeStoreItem(44, 'https://prometheus.dev')
+    expect(await mod.getStoreCartQueueSize()).toBe(1)
+
+    let fetchCalls = 0
+    ;(globalThis as unknown as { fetch?: unknown }).fetch = (async () => {
+      fetchCalls += 1
+      return new Response('ok', { status: 200 })
+    }) as unknown as typeof fetch
+
+    ;(globalThis as unknown as { navigator: NavigatorStub }).navigator.onLine = true
+    allowNativeSync = true
+
+    const first = await mod.flushStoreCartQueue('https://prometheus.dev')
+    expect(first).toEqual({ processed: 0, remaining: 1 })
+    expect(await mod.getStoreCartQueueSize()).toBe(1)
+
+    const second = await mod.flushStoreCartQueue('https://prometheus.dev')
+    expect(second).toEqual({ processed: 1, remaining: 0 })
+    expect(await mod.getStoreCartQueueSize()).toBe(0)
+    expect(fetchCalls).toBe(0)
   })
 })

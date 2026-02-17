@@ -147,14 +147,50 @@ const patches: Array<{ relativePath: string; replacements: Array<{ find: string;
       },
       {
         find:
-          "apply plugin: 'org.jetbrains.kotlin.android'",
+          "apply plugin: 'com.android.library'\napply plugin: 'org.jetbrains.kotlin.android'",
         replace:
-          "if (!extensions.findByName(\"kotlin\")) {\n    apply plugin: 'org.jetbrains.kotlin.android'\n}",
+          "apply plugin: 'com.android.library'\nif (!extensions.findByName(\"kotlin\")) {\n    apply plugin: 'org.jetbrains.kotlin.android'\n}",
       },
       {
         find: "compileSdk = 36",
         replace:
           "compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36",
+      },
+    ],
+  },
+  {
+    relativePath: join("@capacitor", "background-runner", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+      {
+        find:
+          "apply plugin: 'com.android.library'\napply plugin: 'org.jetbrains.kotlin.android'",
+        replace:
+          "apply plugin: 'com.android.library'\nif (!extensions.findByName(\"kotlin\")) {\n    apply plugin: 'org.jetbrains.kotlin.android'\n}",
+      },
+      {
+        find: "compileSdk = 36",
+        replace:
+          "compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36",
+      },
+      {
+        find: "implementation fileTree(dir: 'libs', include: ['*.jar'])",
+        replace: "implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])",
+      },
+      {
+        find: 'implementation (name: "android-js-engine-release", ext: "aar")',
+        replace: 'compileOnly (name: "android-js-engine-release", ext: "aar")',
+      },
+      {
+        find: "implementation files('src/main/libs/android-js-engine-release.aar')",
+        replace: 'compileOnly (name: "android-js-engine-release", ext: "aar")',
       },
     ],
   },
@@ -199,13 +235,16 @@ const projectFilePatches: FilePatch[] = [
     transform: (content) => {
       let next = content;
       next = next.replace(
-        /repositories\s*\{\s*flatDir\s*\{\s*dirs\s+'\.\.\/capacitor-cordova-android-plugins\/src\/main\/libs',\s*'libs'\s*\}\s*\}/m,
-        "repositories {\n}\n"
+        /repositories\s*\{[\s\S]*?\}\s*\n\s*dependencies\s*\{/m,
+        "repositories {\n    flatDir {\n        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'\n        dirs '../../node_modules/@capacitor/background-runner/android/src/main/libs', 'libs'\n    }\n}\n\ndependencies {"
       );
-      next = next.replace(
-        "implementation fileTree(include: ['*.jar'], dir: 'libs')",
-        "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')"
-      );
+      next = next.replace(/implementation fileTree\(include: \['\*\.jar'(?:, '\*\.aar')?\], dir: 'libs'\)/, "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')");
+      if (!next.includes("implementation(name: 'android-js-engine-release', ext: 'aar')")) {
+        next = next.replace(
+          "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')",
+          "implementation fileTree(include: ['*.jar', '*.aar'], dir: 'libs')\n    implementation(name: 'android-js-engine-release', ext: 'aar')"
+        );
+      }
       return next;
     },
   },

@@ -12,6 +12,11 @@ import {
   type StoreLocalSeed,
   type StoreLocalRepo
 } from './store-local-repo'
+import {
+  getBackgroundStoreQueue,
+  setBackgroundStoreQueue,
+  syncBackgroundStoreQueue
+} from '../native/background-runner'
 
 export type StoreCartItem = {
   id: number
@@ -201,6 +206,11 @@ const emitQueueSizeUpdate = (size: number) => {
   window.dispatchEvent(new CustomEvent(storeCartQueueEvent, { detail: { size } }))
 }
 
+const mirrorStoreCartQueue = (queue: StoreCartQueuedAction[]) => {
+  writeStoreCartQueueCookie(queue)
+  emitQueueSizeUpdate(queue.length)
+}
+
 const resolveLegacyQueueSeed = () => {
   if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
   const localParsed = parseStoreCartQueue(readLocalStorageValue(storeCartQueueStorageKey))
@@ -240,6 +250,12 @@ const getStoreLocalRepo = async () => {
 
 const loadStoreCartQueue = async () => {
   if (typeof window === 'undefined') return [] as StoreCartQueuedAction[]
+  const nativeQueue = await getBackgroundStoreQueue()
+  if (nativeQueue) {
+    return nativeQueue
+      .map((entry) => normalizeQueueAction(entry))
+      .filter((entry): entry is StoreCartQueuedAction => entry !== null)
+  }
   try {
     const repo = await getStoreLocalRepo()
     const queue = await repo.readQueue()
@@ -256,14 +272,18 @@ const saveStoreCartQueue = async (queue: StoreCartQueuedAction[]) => {
   const normalized = queue
     .map((entry) => normalizeQueueAction(entry))
     .filter((entry): entry is StoreCartQueuedAction => entry !== null)
+  const nativeSaved = await setBackgroundStoreQueue(normalized)
+  if (nativeSaved) {
+    mirrorStoreCartQueue(normalized)
+    return
+  }
   try {
     const repo = await getStoreLocalRepo()
     await repo.writeQueue(normalized)
   } catch {
     // ignore repo storage failures; cookie mirror still tracks queue state for SSR fallback.
   }
-  writeStoreCartQueueCookie(normalized)
-  emitQueueSizeUpdate(normalized.length)
+  mirrorStoreCartQueue(normalized)
 }
 
 const saveStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) => {
@@ -280,8 +300,10 @@ const saveStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) => {
   writeStoreCartSnapshotCookie(normalized)
 }
 
-const requestStoreCartSync = async () => {
+const requestStoreCartSync = async (origin: string) => {
   if (typeof window === 'undefined') return
+  const nativeSync = await syncBackgroundStoreQueue({ origin, reason: 'enqueue' })
+  if (nativeSync) return
   if (!('serviceWorker' in navigator)) return
   try {
     const registration = await navigator.serviceWorker.ready
@@ -293,11 +315,11 @@ const requestStoreCartSync = async () => {
   }
 }
 
-const enqueueStoreCartAction = async (action: StoreCartQueuedAction) => {
+const enqueueStoreCartAction = async (action: StoreCartQueuedAction, origin: string) => {
   const queue = await loadStoreCartQueue()
   queue.push(action)
   await saveStoreCartQueue(queue)
-  void requestStoreCartSync()
+  void requestStoreCartSync(origin)
 }
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
@@ -312,7 +334,7 @@ const performConsumeStoreItem = async (
   }
 
   if (allowQueue && isOffline()) {
-    await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
+    await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() }, origin)
     return { ok: true, status: 0, queued: true }
   }
 
@@ -348,7 +370,7 @@ const performConsumeStoreItem = async (
   } catch (error) {
     console.warn('Failed to consume store item', error)
     if (allowQueue && isOffline()) {
-      await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() })
+      await enqueueStoreCartAction({ type: 'consume', id, queuedAt: new Date().toISOString() }, origin)
       return { ok: true, status: 0, queued: true }
     }
     return { ok: false, status: 0 }
@@ -366,7 +388,7 @@ const performRestoreStoreItem = async (
   }
 
   if (allowQueue && isOffline()) {
-    await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
+    await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() }, origin)
     return { ok: true, status: 0, queued: true }
   }
 
@@ -408,7 +430,7 @@ const performRestoreStoreItem = async (
   } catch (error) {
     console.warn('Failed to restore store item', error)
     if (allowQueue && isOffline()) {
-      await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() })
+      await enqueueStoreCartAction({ type: 'restore', id, amount, queuedAt: new Date().toISOString() }, origin)
       return { ok: true, status: 0, queued: true }
     }
     return { ok: false, status: 0 }
@@ -417,6 +439,8 @@ const performRestoreStoreItem = async (
 
 export const getStoreCartQueueSize = async () => {
   if (typeof window === 'undefined') return 0
+  const nativeQueue = await getBackgroundStoreQueue()
+  if (nativeQueue) return nativeQueue.length
   try {
     const repo = await getStoreLocalRepo()
     return await repo.getQueueSize()
@@ -439,6 +463,12 @@ export const persistStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) =
 export const flushStoreCartQueue = async (origin: string) => {
   if (typeof window === 'undefined') return { processed: 0, remaining: 0 }
   if (isOffline()) return { processed: 0, remaining: await getStoreCartQueueSize() }
+  const nativeSync = await syncBackgroundStoreQueue({ origin, reason: 'manual' })
+  if (nativeSync) {
+    const queue = await loadStoreCartQueue()
+    mirrorStoreCartQueue(queue)
+    return nativeSync
+  }
   const queue = await loadStoreCartQueue()
   if (!queue.length) return { processed: 0, remaining: 0 }
   const remaining: StoreCartQueuedAction[] = []
@@ -473,4 +503,3 @@ export const restoreStoreItem = async (
   amount: number,
   origin: string
 ): Promise<StoreConsumeResult> => performRestoreStoreItem(id, amount, origin, true)
-

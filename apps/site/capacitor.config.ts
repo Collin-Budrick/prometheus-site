@@ -1,3 +1,4 @@
+/// <reference types="@capacitor/background-runner" />
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const resolveServerUrl = (): string | undefined => {
@@ -74,6 +75,14 @@ const config: CapacitorConfig = {
     },
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert']
+    },
+    BackgroundRunner: {
+      label: 'dev.prometheus.site.background.task',
+      src: 'runners/background.js',
+      event: 'background:tick',
+      repeat: true,
+      interval: 15,
+      autoStart: true
     },
     SplashScreen: {
       launchAutoHide: false,
