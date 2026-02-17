@@ -265,9 +265,16 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   })
 
   const ensureKeyboardVisible = $((event: Event) => {
-    const target = event.currentTarget as HTMLInputElement | null
-    if (!target || target.disabled || target.readOnly) return
-    target.focus()
+    const candidate = (event.currentTarget ?? event.target) as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | HTMLElement
+      | null
+    if (!candidate || typeof (candidate as { focus?: unknown }).focus !== 'function') return
+    if (candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement) {
+      if (candidate.disabled || candidate.readOnly) return
+    }
+    candidate.focus()
     if (!isNativeCapacitorRuntime()) return
     void import('@capacitor/keyboard')
       .then(({ Keyboard }) => Keyboard.show())
