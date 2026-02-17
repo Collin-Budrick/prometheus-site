@@ -1,12 +1,36 @@
 #!/usr/bin/env bun
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const ROOT = process.cwd();
 const LOG_PREFIX = "[capacitor-android-patches]";
-const NODE_MODULE_ROOTS = [join(ROOT, "node_modules"), join(ROOT, "apps", "site", "node_modules")];
+const collectNodeModuleRoots = () => {
+  const baseRoots = [join(ROOT, "node_modules"), join(ROOT, "apps", "site", "node_modules")];
+  const discovered = [...baseRoots];
+
+  for (const baseRoot of baseRoots) {
+    const bunStoreRoot = join(baseRoot, ".bun");
+    if (!existsSync(bunStoreRoot)) continue;
+    try {
+      const entries = readdirSync(bunStoreRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const nestedNodeModules = join(bunStoreRoot, entry.name, "node_modules");
+        if (existsSync(nestedNodeModules)) {
+          discovered.push(nestedNodeModules);
+        }
+      }
+    } catch {
+      // Ignore transient filesystem issues; patching will continue with known roots.
+    }
+  }
+
+  return Array.from(new Set(discovered));
+};
+
+const NODE_MODULE_ROOTS = collectNodeModuleRoots();
 const ANDROID_ROOT = join(ROOT, "apps", "site", "android");
 
 const patches: Array<{ relativePath: string; replacements: Array<{ find: string; replace: string }> }> = [
@@ -38,6 +62,19 @@ const patches: Array<{ relativePath: string; replacements: Array<{ find: string;
   },
   {
     relativePath: join("@capacitor-community", "in-app-review", "android", "build.gradle"),
+    replacements: [
+      {
+        find: "getDefaultProguardFile('proguard-android.txt')",
+        replace: "getDefaultProguardFile('proguard-android-optimize.txt')",
+      },
+      {
+        find: "classpath 'com.android.tools.build:gradle:8.13.0'",
+        replace: "classpath 'com.android.tools.build:gradle:9.1.0-alpha09'",
+      },
+    ],
+  },
+  {
+    relativePath: join("@capacitor-community", "sqlite", "android", "build.gradle"),
     replacements: [
       {
         find: "getDefaultProguardFile('proguard-android.txt')",

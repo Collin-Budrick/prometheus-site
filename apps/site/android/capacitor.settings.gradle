@@ -29,6 +29,9 @@ project(':capawesome-capacitor-app-update').projectDir = new File('../../../node
 include ':capacitor-network'
 project(':capacitor-network').projectDir = new File('../../../node_modules/.bun/@capacitor+network@8.0.1+9876f7f24611f21d/node_modules/@capacitor/network/android')
 
+include ':capacitor-community-sqlite'
+project(':capacitor-community-sqlite').projectDir = new File('../../../node_modules/.bun/@capacitor-community+sqlite@8.0.0+9876f7f24611f21d/node_modules/@capacitor-community/sqlite/android')
+
 include ':capacitor-community-in-app-review'
 project(':capacitor-community-in-app-review').projectDir = new File('../../../node_modules/.bun/@capacitor-community+in-app-review@8.0.0+9876f7f24611f21d/node_modules/@capacitor-community/in-app-review/android')
 
