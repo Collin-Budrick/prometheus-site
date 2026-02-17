@@ -121,6 +121,35 @@ const storeFragmentCss = `
   text-transform: uppercase;
   letter-spacing: 0.2em;
   color: rgb(var(--muted));
+  position: relative;
+  isolation: isolate;
+  transition: transform 160ms ease;
+  --control-glow-opacity: 0;
+  --control-glow-translate: 0px;
+  --control-glow-border: rgb(var(--accent) / 0.5);
+  --control-glow-shadow: 0 14px 26px rgb(var(--accent) / 0.18);
+}
+
+.store-stream-sort::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--control-glow-border);
+  opacity: var(--control-glow-opacity);
+  transform: translateY(var(--control-glow-translate));
+  box-shadow: var(--control-glow-shadow);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  pointer-events: none;
+}
+
+.store-stream-sort:hover {
+  color: rgb(var(--ink));
+  transform: translateY(-1px);
+  --control-glow-opacity: 1;
+  --control-glow-translate: -1px;
 }
 
 .store-stream-sort select {
@@ -134,6 +163,13 @@ const storeFragmentCss = `
   letter-spacing: 0.2em;
   min-width: 160px;
   cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+.store-stream-sort > span {
+  position: relative;
+  z-index: 1;
 }
 
 .store-stream-sort select:focus {
@@ -145,6 +181,10 @@ const storeFragmentCss = `
   box-shadow:
     0 18px 28px rgba(15, 23, 42, 0.18),
     0 0 0 1px rgb(var(--accent) / 0.35);
+  --control-glow-opacity: 1;
+  --control-glow-translate: 0px;
+  --control-glow-border: rgb(var(--accent) / 0.6);
+  --control-glow-shadow: 0 12px 20px rgb(var(--accent) / 0.16);
 }
 
 .store-stream-field-status {

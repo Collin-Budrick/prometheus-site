@@ -15,6 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
+import { generateFragmentCss } from '../../scripts/fragment-css.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -322,25 +323,82 @@ const earlyHintsPlugin = (): Plugin => {
 
 const fragmentHmrPlugin = (): Plugin => {
   const fragmentRoot = path.resolve(process.cwd(), 'src/fragments')
+  const fragmentDefinitionsRoot = path.resolve(process.cwd(), 'src/fragment/definitions')
   const normalizedRoot = path.normalize(fragmentRoot)
+  const normalizedDefinitionsRoot = path.normalize(fragmentDefinitionsRoot)
+  const fragmentCssLogPrefix = '[fragment-hmr]'
+  let regenerateTimer: ReturnType<typeof setTimeout> | null = null
+  let regenerateInFlight = false
+  let regenerateQueued = false
 
   const isFragmentFile = (file: string) => path.normalize(file).startsWith(normalizedRoot)
+  const isDefinitionFile = (file: string) => path.normalize(file).startsWith(normalizedDefinitionsRoot)
 
   return {
     name: 'fragment-hmr',
     apply: 'serve',
     configureServer(server) {
+      try {
+        generateFragmentCss(workspaceRoot)
+      } catch (error) {
+        server.config.logger.warn(
+          `${fragmentCssLogPrefix} initial fragment css generation failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      }
+
       if (existsSync(fragmentRoot)) {
         server.watcher.add(fragmentRoot)
       }
+      if (existsSync(fragmentDefinitionsRoot)) {
+        server.watcher.add(fragmentDefinitionsRoot)
+      }
+
+      const regenerateCss = async () => {
+        if (regenerateInFlight) {
+          regenerateQueued = true
+          return
+        }
+        regenerateInFlight = true
+        try {
+          generateFragmentCss(workspaceRoot)
+          server.ws.send({ type: 'full-reload' })
+        } catch (error) {
+          server.config.logger.error(
+            `${fragmentCssLogPrefix} failed to regenerate fragment css: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
+        } finally {
+          regenerateInFlight = false
+          if (regenerateQueued) {
+            regenerateQueued = false
+            void regenerateCss()
+          }
+        }
+      }
+
+      const scheduleCssRegeneration = (file: string) => {
+        if (!isDefinitionFile(file)) return
+        if (regenerateTimer) {
+          clearTimeout(regenerateTimer)
+        }
+        regenerateTimer = setTimeout(() => {
+          regenerateTimer = null
+          void regenerateCss()
+        }, 120)
+      }
 
       const notify = (file: string) => {
-        if (!isFragmentFile(file)) return
-        server.ws.send({
-          type: 'custom',
-          event: 'fragments:refresh',
-          data: { file }
-        })
+        if (isFragmentFile(file)) {
+          server.ws.send({
+            type: 'custom',
+            event: 'fragments:refresh',
+            data: { file }
+          })
+        }
+        scheduleCssRegeneration(file)
       }
 
       server.watcher.on('add', notify)
@@ -348,6 +406,10 @@ const fragmentHmrPlugin = (): Plugin => {
       server.watcher.on('unlink', notify)
 
       return () => {
+        if (regenerateTimer) {
+          clearTimeout(regenerateTimer)
+          regenerateTimer = null
+        }
         server.watcher.off('add', notify)
         server.watcher.off('change', notify)
         server.watcher.off('unlink', notify)
