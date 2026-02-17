@@ -311,7 +311,10 @@ export const runBackgroundPrefetchNow = async (reason = 'manual') => {
   return {
     warmed: Number.isFinite(Number(result.warmed)) ? Math.max(0, Math.trunc(Number(result.warmed))) : 0,
     planned: Number.isFinite(Number(result.planned)) ? Math.max(0, Math.trunc(Number(result.planned))) : 0,
-    cached: Number.isFinite(Number(result.cached)) ? Math.max(0, Math.trunc(Number(result.cached))) : 0
+    cached: Number.isFinite(Number(result.cached)) ? Math.max(0, Math.trunc(Number(result.cached))) : 0,
+    documentsCached: Number.isFinite(Number(result.documentsCached))
+      ? Math.max(0, Math.trunc(Number(result.documentsCached)))
+      : 0
   }
 }
 

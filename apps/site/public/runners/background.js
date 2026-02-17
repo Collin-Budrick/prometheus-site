@@ -6,6 +6,8 @@ const PREFETCH_CACHE_VERSION = 1
 const PREFETCH_ENTRY_MAX_BYTES = 512 * 1024
 const PREFETCH_CACHE_MAX_BYTES = 4 * 1024 * 1024
 const PREFETCH_CACHE_TTL_MS = 1000 * 60 * 60 * 24
+const PREFETCH_CACHE_KIND_PLAN = 'plan'
+const PREFETCH_CACHE_KIND_DOCUMENT = 'document'
 
 const defaultPublicRoutes = ['/', '/store', '/lab', '/login', '/offline']
 const defaultAuthRoutes = ['/chat', '/profile', '/settings', '/dashboard']
@@ -330,10 +332,19 @@ const withLang = (origin, path, lang) => {
 const prefetchRouteDocument = async (origin, path, lang) => {
   const url = withLang(origin, path, lang)
   try {
-    await fetch(url, { method: 'GET', headers: { accept: 'text/html' } })
-    return { ok: true }
+    const response = await fetch(url, { method: 'GET', headers: { accept: 'text/html' } })
+    if (!response.ok) {
+      return { ok: false, status: response.status }
+    }
+    const payloadText = await response.text()
+    const payloadBytes = byteLength(payloadText)
+    if (payloadBytes > PREFETCH_ENTRY_MAX_BYTES) {
+      return { ok: false, status: 413 }
+    }
+    const etag = toString(response.headers.get('etag'))
+    return { ok: true, status: response.status, payloadText, payloadBytes, etag }
   } catch {
-    return { ok: false }
+    return { ok: false, status: 0 }
   }
 }
 
@@ -381,22 +392,40 @@ const runPrefetch = async (reason) => {
   }
 
   const activeRoutes = buildActiveRoutes(config)
+  const publicRouteSet = new Set(uniquePaths(config.publicRoutes))
   const fragmentRouteSet = new Set(uniquePaths(config.fragmentRoutes))
   const cache = readPrefetchCache()
   let warmed = 0
   let planned = 0
   let cached = 0
+  let documentsCached = 0
 
   for (const path of activeRoutes) {
     const warmResult = await prefetchRouteDocument(config.origin, path, config.lang)
-    if (warmResult.ok) warmed += 1
+    if (warmResult.ok) {
+      warmed += 1
+      if (publicRouteSet.has(path)) {
+        const key = `doc:${config.lang}|${path}`
+        upsertPrefetchEntry(cache, key, {
+          kind: PREFETCH_CACHE_KIND_DOCUMENT,
+          path,
+          lang: config.lang,
+          fetchedAt: Date.now(),
+          etag: warmResult.etag,
+          payloadText: warmResult.payloadText,
+          payloadBytes: warmResult.payloadBytes
+        })
+        documentsCached += 1
+      }
+    }
     if (!fragmentRouteSet.has(path)) continue
 
     const planResult = await fetchFragmentPlanPayload(config.apiBase, path, config.lang)
     if (!planResult.ok) continue
     planned += 1
-    const key = `${config.lang}|${path}`
+    const key = `plan:${config.lang}|${path}`
     upsertPrefetchEntry(cache, key, {
+      kind: PREFETCH_CACHE_KIND_PLAN,
       path,
       lang: config.lang,
       fetchedAt: Date.now(),
@@ -408,14 +437,19 @@ const runPrefetch = async (reason) => {
   }
 
   writePrefetchCache(cache)
-  return { warmed, planned, cached, reason, source: 'runner' }
+  return { warmed, planned, cached, documentsCached, reason, source: 'runner' }
 }
 
 const exportPrefetchCache = () => {
   const cache = prunePrefetchCache(readPrefetchCache())
   writePrefetchCache(cache)
-  const entries = Object.values(cache.entries)
-    .filter((entry) => isRecord(entry))
+  const entries = Object.entries(cache.entries)
+    .filter(([, entry]) => {
+      if (!isRecord(entry)) return false
+      const kind = toString(entry.kind)
+      return !kind || kind === PREFETCH_CACHE_KIND_PLAN
+    })
+    .map(([, entry]) => entry)
     .map((entry) => ({
       path: normalizePath(toString(entry.path)),
       lang: toString(entry.lang) || 'en',
