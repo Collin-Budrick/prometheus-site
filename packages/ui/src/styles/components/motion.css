@@ -47,10 +47,6 @@
       view-transition-name: dock-shell;
     }
 
-    .viewport-fade {
-      view-transition-name: viewport-fade;
-    }
-
     :root[data-theme-direction] [data-view-transition] {
       view-transition-name: none !important;
     }
