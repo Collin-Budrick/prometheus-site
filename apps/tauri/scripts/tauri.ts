@@ -8,6 +8,39 @@ const env = { ...process.env };
 const tauriRoot = process.cwd();
 const siteRoot = join(tauriRoot, "../site");
 const workspaceRoot = join(tauriRoot, "../..");
+const isDevCommand = args.includes("dev");
+
+const resolveTauriConfig = () => {
+  const raw = env.TAURI_CONFIG?.trim();
+  if (!raw) return {} as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // keep behavior deterministic even if TAURI_CONFIG was invalid JSON
+  }
+  return {} as Record<string, unknown>;
+};
+
+const overrideDevUrl = env.PROMETHEUS_TAURI_DEV_URL?.trim();
+if (isDevCommand && overrideDevUrl) {
+  const tauriConfig = resolveTauriConfig();
+  const build =
+    tauriConfig.build && typeof tauriConfig.build === "object" && !Array.isArray(tauriConfig.build)
+      ? (tauriConfig.build as Record<string, unknown>)
+      : {};
+
+  env.TAURI_CONFIG = JSON.stringify({
+    ...tauriConfig,
+    build: {
+      ...build,
+      devUrl: overrideDevUrl,
+    },
+  });
+  console.info(`[tauri] Using devUrl override: ${overrideDevUrl}`);
+}
 
 const ensureSiteTauriClientDeps = () => {
   if (process.platform !== "win32") return;
