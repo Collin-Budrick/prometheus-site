@@ -693,7 +693,6 @@ const child = spawn(runtime.bin, [viteBin, ...args], {
   env,
   cwd: siteRoot
 })
-
 child.on('exit', (code) => {
   process.exit(code ?? 0)
 })

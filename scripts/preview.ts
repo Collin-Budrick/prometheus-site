@@ -813,7 +813,7 @@ const buildNativeBundle = async () => {
       logSpawnFailure('Vite client build', clientResult)
       process.exit(clientResult.status ?? 1)
     }
-    const ssrResult = runViteBuild(['--ssr'])
+    const ssrResult = runViteBuild(['--ssr', 'src/entry.preview.tsx'])
     if (ssrResult.status !== 0) {
       logSpawnFailure('Vite SSR build', ssrResult)
       process.exit(ssrResult.status ?? 1)
@@ -937,24 +937,33 @@ const buildTargets: BuildTarget[] = [
   }
 ]
 
-const activeBuildTargets = isTauriMode
-  ? buildTargets.filter((target) => target.service !== 'web' && target.service !== 'caddy')
-  : buildTargets
+const activeBuildTargets = buildTargets
 const buildResults = activeBuildTargets.map((target) => {
   const fingerprint = computeFingerprint(target.inputs, target.extra)
-  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
+  const forceBuild = isTauriMode && target.service === 'web'
+  const needsBuild = forceBuild || cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
 })
 
 const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
 if (buildServices.length) {
-  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
-  if (build.status !== 0) process.exit(build.status ?? 1)
+  const shouldRebuildWebNoCache = isTauriMode && buildServices.includes('web')
+  const remainingServices = shouldRebuildWebNoCache
+    ? buildServices.filter((service) => service !== 'web')
+    : buildServices
+
+  if (shouldRebuildWebNoCache) {
+    const buildWeb = runSync(command, [...prefix, 'build', '--no-cache', 'web'], composeEnv)
+    if (buildWeb.status !== 0) process.exit(buildWeb.status ?? 1)
+  }
+
+  if (remainingServices.length) {
+    const build = runSync(command, [...prefix, 'build', ...remainingServices], composeEnv)
+    if (build.status !== 0) process.exit(build.status ?? 1)
+  }
 }
 
-const previewServices = isTauriMode
-  ? ['postgres', 'valkey', 'api', 'webtransport', 'yjs-signaling']
-  : ['postgres', 'valkey', 'api', 'web', 'webtransport', 'yjs-signaling', 'caddy']
+const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'yjs-signaling', 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))
 const needsFullUp = !allRunning

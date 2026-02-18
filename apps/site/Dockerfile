@@ -69,12 +69,10 @@ ENV VITE_PUBLIC_BASE=$VITE_PUBLIC_BASE
 ENV VITE_DISABLE_SW=$VITE_DISABLE_SW
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build \
-    && if [ -f apps/site/server/entry.preview.js ]; then cp apps/site/server/entry.preview.js /tmp/entry.preview.js; fi
+    bun run --cwd apps/site build
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build -- --ssr \
-    && if [ -f /tmp/entry.preview.js ]; then cp /tmp/entry.preview.js apps/site/server/entry.preview.js; fi
+    bun run --cwd apps/site build -- --ssr src/entry.preview.tsx
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app/apps/site
