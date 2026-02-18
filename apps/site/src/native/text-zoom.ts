@@ -1,5 +1,3 @@
-import { isNativeCapacitorRuntime } from './runtime'
-
 const TEXT_ZOOM_STORAGE_KEY = 'prometheus:text-zoom-percent'
 const MIN_TEXT_ZOOM = 85
 const MAX_TEXT_ZOOM = 140
@@ -31,9 +29,6 @@ export const applyTextZoom = async (percent: number) => {
     document.documentElement.style.fontSize = `${zoom}%`
   }
   persistTextZoom(zoom)
-  if (!isNativeCapacitorRuntime()) return
-  const { TextZoom } = await import('@capacitor/text-zoom')
-  await TextZoom.set({ value: zoom / 100 })
 }
 
 let initialized = false

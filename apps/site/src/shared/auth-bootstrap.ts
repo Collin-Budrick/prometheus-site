@@ -1,6 +1,4 @@
-import { loadNativePlugin } from '@site/native/capacitor-plugin-loader'
 import { appConfig } from '../app-config'
-import { isNativeCapacitorRuntime } from '../native/runtime'
 
 type JsonObject = Record<string, string | number | boolean | null>
 
@@ -19,7 +17,6 @@ export type BootstrapSession = {
 
 const tokenKey = 'auth:bootstrap:token'
 const userKey = 'auth:bootstrap:user'
-const migrationKey = 'auth:bootstrap:migrated'
 
 const decodeBase64Url = (value: string) => {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
@@ -108,19 +105,6 @@ const verifyToken = async (token: string) => {
   return payload
 }
 
-type NativeStoragePlugin = {
-  set?: unknown
-  get?: unknown
-  remove?: unknown
-  getItem?: unknown
-  setItem?: unknown
-  removeItem?: unknown
-}
-
-type StorageReadResult = {
-  value?: string | null
-}
-
 const readWebStorage = (key: string) => {
   if (typeof window === 'undefined') return null
   try {
@@ -131,131 +115,30 @@ const readWebStorage = (key: string) => {
 }
 
 const writeWebStorage = (key: string, value: string) => {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') return false
   try {
     window.localStorage.setItem(key, value)
+    return true
   } catch {
-    // ignore storage failures in browsers without durable storage.
+    return false
   }
 }
 
 const removeWebStorage = (key: string) => {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') return false
   try {
     window.localStorage.removeItem(key)
+    return true
   } catch {
-    // ignore storage failures in browsers without durable storage.
+    return false
   }
-}
-
-const CALL_SUCCESS = Symbol('CALL_SUCCESS')
-
-const toPluginMethod = async (plugin: NativeStoragePlugin, methodNames: string[], key: string, value?: string) => {
-  const tryObjectCall = async (methodName: string) => {
-    const method = plugin[methodName as keyof NativeStoragePlugin]
-    if (typeof method !== 'function') return undefined
-
-    const callVariants =
-      value !== undefined
-        ? [() => method.call(plugin, { key, value }), () => method.call(plugin, key, value)]
-        : [() => method.call(plugin, { key }), () => method.call(plugin, key)]
-
-    for (const call of callVariants) {
-      try {
-        const result = await call()
-        return result === undefined ? CALL_SUCCESS : result
-      } catch {
-        // fallback to next signature
-      }
-    }
-    return undefined
-  }
-
-  for (const methodName of methodNames) {
-    const result = await tryObjectCall(methodName)
-    if (result !== undefined) {
-      return result
-    }
-  }
-
-  return undefined
-}
-
-const normalizeWriteResult = (result: unknown) => {
-  if (result === undefined) return false
-  if (result === CALL_SUCCESS) return true
-  if (typeof result === 'boolean') return result
-  return true
-}
-
-const pluginValueToString = (value: unknown) => {
-  if (value === null || value === undefined) return null
-  if (typeof value === 'string') return value
-  if (parseRecord<StorageReadResult>(value)) {
-    return typeof value.value === 'string' ? value.value : value.value === null ? null : null
-  }
-  return null
-}
-
-const resolveSecureStorage = async () => {
-  if (!isNativeCapacitorRuntime()) return null
-  const plugin = await loadNativePlugin<NativeStoragePlugin>('@aparajita/capacitor-secure-storage')
-  if (!plugin) return null
-
-    return {
-    read: async (key: string) => {
-      const result = await toPluginMethod(plugin, ['get', 'getItem'], key)
-      return pluginValueToString(result)
-    },
-    write: async (key: string, value: string) => {
-      const result = await toPluginMethod(plugin, ['set', 'setItem'], key, value)
-      return normalizeWriteResult(result)
-    },
-    remove: async (key: string) => {
-      const methodNames = ['remove', 'removeItem', 'delete', 'deleteItem']
-      const result = await toPluginMethod(plugin, methodNames, key)
-      return normalizeWriteResult(result)
-    },
-    available: true
-  } as const
-}
-
-const resolveBootstrapStorage = async () => {
-  const secure = await resolveSecureStorage()
-  if (secure) {
-    return secure
-  }
-  return {
-    read: async (key: string) => readWebStorage(key),
-    write: async (key: string, value: string) => {
-      writeWebStorage(key, value)
-      return true
-    },
-    remove: async (key: string) => {
-      removeWebStorage(key)
-      return true
-    },
-    available: false
-  } as const
-}
-
-const readStorageValue = async (key: string) => {
-  const storage = await resolveBootstrapStorage()
-  return storage.read(key)
-}
-
-const writeStorageValue = async (key: string, value: string) => {
-  const storage = await resolveBootstrapStorage()
-  return storage.write(key, value)
-}
-
-const removeStorageValue = async (key: string) => {
-  const storage = await resolveBootstrapStorage()
-  return storage.remove(key)
 }
 
 const readBootstrapPayload = async () => {
-  const [token, userRaw] = await Promise.all([readStorageValue(tokenKey), readStorageValue(userKey)])
+  const [token, userRaw] = await Promise.all([
+    Promise.resolve(readWebStorage(tokenKey)),
+    Promise.resolve(readWebStorage(userKey))
+  ])
   return {
     token,
     userRaw
@@ -269,8 +152,8 @@ const writeBootstrapPayload = async (session: BootstrapSession) => {
     name: session.user.name
   }
   const [tokenSaved, userSaved] = await Promise.all([
-    writeStorageValue(tokenKey, session.token),
-    writeStorageValue(userKey, JSON.stringify(writeUser))
+    Promise.resolve(writeWebStorage(tokenKey, session.token)),
+    Promise.resolve(writeWebStorage(userKey, JSON.stringify(writeUser)))
   ])
   if (!tokenSaved || !userSaved) throw new Error('Unable to persist bootstrap session')
 }
@@ -328,32 +211,6 @@ export const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
   return `${base}${path}`
 }
 
-const migrateLegacyBootstrapSession = async () => {
-  if (!isNativeCapacitorRuntime()) return
-  const migrated = await readStorageValue(migrationKey)
-  if (migrated === '1') return
-
-  const token = readWebStorage(tokenKey)
-  const userRaw = readWebStorage(userKey)
-  if (!token && !userRaw) {
-    await writeStorageValue(migrationKey, '1')
-    return
-  }
-
-  const user = parseJson<BootstrapUser>(userRaw ?? '')
-  const payload = await verifyToken(token ?? '')
-  if (token && payload?.sub) {
-    await writeStorageValue(tokenKey, token)
-    await writeStorageValue(userKey, JSON.stringify({ id: payload.sub, email: payload.email, name: user?.name ?? payload.name }))
-  }
-
-  if (userRaw) {
-    await writeStorageValue(userKey, userRaw)
-  }
-
-  await writeStorageValue(migrationKey, '1')
-}
-
 export const storeBootstrapSession = async (session: BootstrapSession): Promise<boolean> => {
   if (typeof window === 'undefined') return false
   try {
@@ -366,15 +223,14 @@ export const storeBootstrapSession = async (session: BootstrapSession): Promise<
 
 export const clearBootstrapSession = async () => {
   if (typeof window === 'undefined') return
-  await Promise.all([removeStorageValue(tokenKey), removeStorageValue(userKey)])
+  await Promise.all([
+    Promise.resolve(removeWebStorage(tokenKey)),
+    Promise.resolve(removeWebStorage(userKey))
+  ])
 }
 
 export const loadBootstrapSession = async (): Promise<BootstrapSession | null> => {
   if (typeof window === 'undefined') return null
-  if (isNativeCapacitorRuntime()) {
-    await migrateLegacyBootstrapSession()
-  }
-
   const payload = await readBootstrapPayload()
   if (!payload.token) return null
   return parseBootstrapSession(payload.token, payload.userRaw)

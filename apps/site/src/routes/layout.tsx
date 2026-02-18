@@ -18,7 +18,7 @@ import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
 import { connectivityState, initConnectivityStore } from '../native/connectivity'
 import { showNativeActionSheet, showNativeToast } from '../native/affordances'
-import { isNativeCapacitorRuntime } from '../native/runtime'
+import { isNativeShellRuntime } from '../native/runtime'
 import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
 import { isExternalHttpUrl, openExternalUrl } from '../native/native-app-extras'
 import { triggerHapticSelection, triggerHapticTap, withUserActionHaptics } from '../native/haptics'
@@ -820,7 +820,7 @@ export default component$(() => {
       const anyAnchor = event.target.closest('a[href]')
       if (anyAnchor instanceof HTMLAnchorElement) {
         const anyHref = anyAnchor.getAttribute('href')
-        if (anyHref && isNativeCapacitorRuntime() && isExternalHttpUrl(anyHref)) {
+        if (anyHref && isNativeShellRuntime() && isExternalHttpUrl(anyHref)) {
           event.preventDefault()
           void openExternalUrl(anyHref)
           return

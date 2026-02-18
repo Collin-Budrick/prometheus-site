@@ -3,7 +3,6 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
 import { isOnline } from '../native/connectivity'
-import { isNativeCapacitorRuntime } from '../native/runtime'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
 import {
@@ -277,12 +276,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       if (candidate.disabled || candidate.readOnly) return
     }
     candidate.focus()
-    if (!isNativeCapacitorRuntime()) return
-    void import('@capacitor/keyboard')
-      .then(({ Keyboard }) => Keyboard.show())
-      .catch(() => {
-        // Keyboard.show is best-effort across platforms.
-      })
   })
 
   const handleClear = $(() => {
@@ -429,7 +422,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       let active = true
       let reconnectTimer: number | null = null
       let reconnectAttempt = 0
-      const nativeRuntime = isNativeCapacitorRuntime()
+      const nativeRuntime = (window as Window & { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime === true
       let isPageVisible = document.visibilityState === 'visible'
       const pendingCommands = new Map<
         string,

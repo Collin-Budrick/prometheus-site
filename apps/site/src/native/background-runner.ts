@@ -1,7 +1,7 @@
 import { decodeFragmentPayload, type FragmentPayloadMap, type FragmentPlan } from '@core/fragments'
 import { appConfig } from '../app-config'
 import { fragmentPlanCache } from '../fragment/plan-cache'
-import { isNativeCapacitorRuntime } from './runtime'
+import { isNativeShellRuntime } from './runtime'
 
 type BackgroundRunnerPlugin = {
   dispatchEvent: <T = unknown>(options: {
@@ -9,10 +9,6 @@ type BackgroundRunnerPlugin = {
     event: string
     details: Record<string, unknown>
   }) => Promise<T>
-}
-
-type BackgroundRunnerModule = {
-  BackgroundRunner?: BackgroundRunnerPlugin
 }
 
 type RunnerDispatchOverride = (event: string, details: Record<string, unknown>) => Promise<unknown | null>
@@ -63,7 +59,6 @@ export const backgroundPrefetchPublicRoutes = ['/', '/store', '/lab', '/login', 
 export const backgroundPrefetchAuthRoutes = ['/chat', '/profile', '/settings', '/dashboard'] as const
 export const backgroundPrefetchFragmentRoutes = ['/', '/store', '/lab', '/login', '/chat'] as const
 
-let pluginPromise: Promise<BackgroundRunnerPlugin | null> | null = null
 let dispatchOverride: RunnerDispatchOverride | null = null
 let nativeRuntimeOverride: boolean | null = null
 
@@ -102,29 +97,12 @@ const normalizeApiBase = (origin: string, apiBase: string) => {
 
 const isNativeRuntime = () => {
   if (nativeRuntimeOverride !== null) return nativeRuntimeOverride
-  return isNativeCapacitorRuntime()
+  return isNativeShellRuntime()
 }
 
-const loadBackgroundRunner = async () => {
+const loadBackgroundRunner = async (): Promise<BackgroundRunnerPlugin | null> => {
   if (!isNativeRuntime() || typeof window === 'undefined') return null
-  if (pluginPromise) return pluginPromise
-
-  pluginPromise = (async () => {
-    try {
-      const module = (await import('@capacitor/background-runner')) as BackgroundRunnerModule
-      const plugin = module.BackgroundRunner
-      if (!plugin || typeof plugin.dispatchEvent !== 'function') return null
-      return plugin
-    } catch {
-      return null
-    }
-  })()
-
-  const plugin = await pluginPromise
-  if (!plugin) {
-    pluginPromise = null
-  }
-  return plugin
+  return null
 }
 
 const dispatchRunnerEvent = async <T = unknown>(event: string, details: Record<string, unknown> = {}) => {
@@ -368,5 +346,4 @@ export const setBackgroundRunnerNativeRuntimeOverrideForTests = (value: boolean 
 export const resetBackgroundRunnerForTests = () => {
   dispatchOverride = null
   nativeRuntimeOverride = null
-  pluginPromise = null
 }

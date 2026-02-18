@@ -1,5 +1,3 @@
-import { isNativeCapacitorRuntime } from './runtime'
-
 const ALWAYS_ON_STORAGE_KEY = 'prometheus:privacy-screen:always-on'
 
 let sensitiveViewActive = false
@@ -12,14 +10,8 @@ const getAlwaysOn = () => {
   }
 }
 
-const setPluginEnabled = async (enabled: boolean) => {
-  if (!isNativeCapacitorRuntime()) return
-  const { PrivacyScreen } = await import('@capacitor/privacy-screen')
-  if (enabled) {
-    await PrivacyScreen.enable()
-    return
-  }
-  await PrivacyScreen.disable()
+const setPluginEnabled = async (_enabled: boolean) => {
+  // no-op on web and Tauri shell without a privacy-screen plugin.
 }
 
 export const setSensitivePrivacyView = async (active: boolean) => {
@@ -54,23 +46,11 @@ let initialized = false
 export const initPrivacyScreenPolicy = async () => {
   if (initialized || typeof window === 'undefined') return
   initialized = true
-  if (!isNativeCapacitorRuntime()) return
-
-  const onPause = () => {
-    void setPluginEnabled(true)
-  }
-
-  const onResume = () => {
-    void applyPrivacyScreenPolicy('resume')
-  }
 
   const onRoute = () => {
     void applyPrivacyScreenPolicy('route')
   }
 
-  window.addEventListener('pause', onPause)
-  window.addEventListener('resume', onResume)
   window.addEventListener('popstate', onRoute)
-
   await applyPrivacyScreenPolicy('init')
 }

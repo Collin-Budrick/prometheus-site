@@ -28,3 +28,4 @@ Trace-*
 infra/caddy/Caddyfile
 tmp
 apps/site/server/*
+apps/tauri/src-tauri/target

@@ -1,5 +1,5 @@
 import { isNativeSQLiteAvailable, withNativeSQLite, type NativeSQLiteDatabase } from '../native/sqlite'
-import { isNativeCapacitorRuntime } from '../native/runtime'
+import { isNativeShellRuntime } from '../native/runtime'
 
 export type StoreCartQueuedAction = {
   type: 'consume' | 'restore'
@@ -457,7 +457,7 @@ const createSQLiteStoreLocalRepo = (sqliteRunner: typeof withNativeSQLite): Stor
 }
 
 const defaultDependencies: StoreLocalRepoDependencies = {
-  isNativeRuntime: isNativeCapacitorRuntime,
+  isNativeRuntime: isNativeShellRuntime,
   isSQLiteAvailable: isNativeSQLiteAvailable,
   withSQLite: withNativeSQLite
 }
@@ -564,4 +564,3 @@ export const createStoreLocalRepo = (overrides: Partial<StoreLocalRepoDependenci
 
   return repo
 }
-

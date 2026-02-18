@@ -64,32 +64,21 @@ type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void) => ViewTransitionHandle
 }
 
-const isLikelyNativeCapacitorRuntime = () => {
+const isLikelyNativeShellRuntime = () => {
   if (typeof window === 'undefined') return false
   const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
   if (runtimeFlag === true) return true
   if (runtimeFlag === false) return false
 
-  const capacitorRuntime = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
-  if (typeof capacitorRuntime?.isNativePlatform === 'function' && capacitorRuntime.isNativePlatform()) {
-    return true
-  }
-  if (
-    typeof capacitorRuntime?.getPlatform === 'function' &&
-    capacitorRuntime.getPlatform() !== 'web'
-  ) {
-    return true
-  }
-
-  if (window.location.protocol === 'capacitor:') return true
-  if (window.location.host === 'localhost' && window.location.pathname.startsWith('/__capacitor')) return true
+  if (window.location.protocol === 'tauri:' || window.location.protocol === 'ipc:') return true
+  if (window.navigator.userAgent.toLowerCase().includes('tauri')) return true
   if (window.navigator.userAgent.toLowerCase().includes('wv')) return true
   return false
 }
 
 const supportsThemeViewTransitions = () => {
   if (typeof document === 'undefined') return false
-  if (isLikelyNativeCapacitorRuntime()) return false
+  if (isLikelyNativeShellRuntime()) return false
   const doc = document as DocumentWithViewTransition
   if (typeof doc.startViewTransition !== 'function') return false
   if (!window.matchMedia('(prefers-reduced-motion: no-preference)').matches) return false

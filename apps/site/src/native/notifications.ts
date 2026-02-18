@@ -1,7 +1,5 @@
-import { isNativeCapacitorRuntime } from './runtime'
-import { navigateDeepLink } from './deep-links'
+let initialized = false
 
-const DEFAULT_CHANNEL_ID = 'messages'
 const PROMPT_COOLDOWN_KEY = 'prometheus:notifications:last-prompt-at'
 const PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -24,58 +22,21 @@ const markPrompted = () => {
   }
 }
 
-let initialized = false
-
 export const initNativeNotifications = async () => {
   if (initialized || typeof window === 'undefined') return
   initialized = true
-  if (!isNativeCapacitorRuntime()) return
-
-  const { PushNotifications } = await import('@capacitor/push-notifications')
-  const { LocalNotifications } = await import('@capacitor/local-notifications')
-
-  PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
-    const url = event.notification.data?.url
-    if (typeof url === 'string') {
-      navigateDeepLink(url)
-    }
-  })
-
-  LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
-    const url = event.notification.extra?.url
-    if (typeof url === 'string') {
-      navigateDeepLink(url)
-    }
-  })
-
-  try {
-    await PushNotifications.createChannel({
-      id: DEFAULT_CHANNEL_ID,
-      name: 'Messages',
-      description: 'Direct messages and invite activity',
-      importance: 4,
-      visibility: 1,
-      sound: 'default'
-    })
-  } catch {
-    // no-op on unsupported devices
-  }
+  if (typeof Notification === 'undefined') return
+  if (!shouldPromptNow()) return
 
   const requestPermissions = async () => {
     markPrompted()
-    const status = await PushNotifications.checkPermissions()
-    if (status.receive === 'granted') {
-      await PushNotifications.register()
-      return
+    if (Notification.permission !== 'default') return
+    try {
+      await Notification.requestPermission()
+    } catch {
+      // no-op
     }
-
-    const asked = await PushNotifications.requestPermissions()
-    if (asked.receive !== 'granted') return
-
-    await PushNotifications.register()
   }
-
-  if (!shouldPromptNow()) return
 
   const onIntentSignal = () => {
     window.removeEventListener('pointerdown', onIntentSignal)

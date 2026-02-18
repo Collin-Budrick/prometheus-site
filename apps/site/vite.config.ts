@@ -18,6 +18,15 @@ import { resolveAppConfig } from '../../packages/platform/src/env.ts'
 import { generateFragmentCss } from '../../scripts/fragment-css.ts'
 
 const require = createRequire(import.meta.url)
+const resolveOptionalPackageEntry = (id: string) => {
+  try {
+    return require.resolve(id)
+  } catch {
+    return null
+  }
+}
+const tauriDeepLinkPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-deep-link')
+const tauriShellPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-shell')
 
 const truthyEnvValues = new Set(['1', 'true', 'yes', 'on'])
 const isTruthyEnv = (value?: string) => {
@@ -155,18 +164,6 @@ const isStaticCachePath = (pathname: string) =>
   /^\/(?:build|assets|icons)\//.test(pathname) ||
   /^\/favicon\.[^/]+$/.test(pathname) ||
   pathname === '/manifest.webmanifest'
-const capacitorSsrInputPlugin = (ssrInputs?: Record<string, string>): Plugin => ({
-  name: 'prometheus-capacitor-ssr-input',
-  enforce: 'post',
-  apply: 'build',
-  config(config, env) {
-    if (!env.isSsrBuild || !ssrInputs) return
-    config.build ??= {}
-    config.build.rollupOptions ??= {}
-    config.build.rollupOptions.input = ssrInputs
-    config.build.ssr = true
-  }
-})
 const pwaPrecacheEntries = [
   { url: withBase('/'), revision: null },
   { url: withBase('/offline/'), revision: null },
@@ -606,19 +603,19 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
-    const capacitorBuildEnabled = isTruthyEnv(process.env.VITE_CAPACITOR)
+    const nativeBuildEnabled = isTruthyEnv(process.env.VITE_TAURI)
     const deviceApiBase = resolveDeviceApiBase({
       deviceHost: process.env.PROMETHEUS_DEVICE_HOST,
       deviceProtocol: process.env.PROMETHEUS_DEVICE_PROTOCOL,
       apiPort: process.env.PROMETHEUS_API_PORT
     })
     const appEnv =
-      capacitorBuildEnabled && deviceApiBase
+      nativeBuildEnabled && deviceApiBase
         ? { ...process.env, VITE_API_BASE: process.env.VITE_API_BASE?.trim() || deviceApiBase }
         : process.env
     const baseAppConfig = resolveAppConfig(appEnv)
     const publicAppConfig =
-      capacitorBuildEnabled && deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
+      nativeBuildEnabled && deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
         ? { ...baseAppConfig, apiBase: deviceApiBase }
         : baseAppConfig
     const binding = await loadQwikBinding()
@@ -689,11 +686,10 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         }),
         ...(isBuildCommand
           ? [
-            ...(capacitorBuildEnabled ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })] : []),
-            ...(ssrInputs ? [capacitorSsrInputPlugin(ssrInputs)] : [])
+            ...(nativeBuildEnabled ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })] : [])
           ]
           : []),
-        ...(capacitorBuildEnabled && isBuildCommand
+        ...(nativeBuildEnabled && isBuildCommand
           ? []
           : [
             compression({
@@ -738,6 +734,12 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       oxc: false,
       resolve: {
         alias: [
+          ...(tauriDeepLinkPluginEntry
+            ? [{ find: '@tauri-apps/plugin-deep-link', replacement: tauriDeepLinkPluginEntry }]
+            : []),
+          ...(tauriShellPluginEntry
+            ? [{ find: '@tauri-apps/plugin-shell', replacement: tauriShellPluginEntry }]
+            : []),
           { find: '@', replacement: path.resolve(configRoot, 'src') },
           { find: /^@core$/, replacement: path.join(coreRoot, 'index.ts') },
           { find: /^@core\/(.*)$/, replacement: path.join(coreRoot, '$1') },

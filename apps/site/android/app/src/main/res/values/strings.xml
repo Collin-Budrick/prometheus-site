@@ -1,8 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Prometheus</string>
-    <string name="title_activity_main">Prometheus</string>
-    <string name="package_name">dev.prometheus.site</string>
-    <string name="custom_url_scheme">dev.prometheus.site</string>
-    <string name="push_default_channel_id">messages</string>
-</resources>

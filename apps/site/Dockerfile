@@ -12,7 +12,8 @@ COPY packages/features/lab/package.json packages/features/lab/package.json
 COPY packages/features/messaging/package.json packages/features/messaging/package.json
 COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --ignore-scripts --frozen-lockfile --filter site
+    bun install --ignore-scripts --filter site \
+    || (echo "Workspace-filtered site install failed; falling back to full workspace install" && bun install --ignore-scripts)
 
 FROM oven/bun:1.3.9 AS builder
 WORKDIR /app
@@ -68,10 +69,12 @@ ENV VITE_PUBLIC_BASE=$VITE_PUBLIC_BASE
 ENV VITE_DISABLE_SW=$VITE_DISABLE_SW
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build
+    bun run --cwd apps/site build \
+    && if [ -f apps/site/server/entry.preview.js ]; then cp apps/site/server/entry.preview.js /tmp/entry.preview.js; fi
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build -- --ssr
+    bun run --cwd apps/site build -- --ssr \
+    && if [ -f /tmp/entry.preview.js ]; then cp /tmp/entry.preview.js apps/site/server/entry.preview.js; fi
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app/apps/site

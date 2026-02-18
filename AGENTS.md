@@ -10,6 +10,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
 - **Features (`packages/features/*`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
+- **Tauri (`apps/tauri`):** Desktop and Android/iOS shell layer that consumes `apps/site/dist` for native builds and mobile packaging.
 - **API (platform entrypoint):** Thin Bun entry that boots the platform server and registers site fragment definitions.
 - **WebTransport (`apps/webtransport`):** Go HTTP/3 sidecar that upgrades CONNECT requests and streams fragment binaries from the API over WebTransport.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
@@ -21,14 +22,13 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 ## Dev and runtime flow
 
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddyfile, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
-- **Capacitor Android sync (dev/preview):** `bun run dev` and `bun run preview` run `cap sync android`. Dev defaults to the live dev host; preview uses bundled assets unless `CAPACITOR_SERVER_URL` is set. The scripts install site deps (`bun install --filter site`) if the CLI is missing. On Windows, the sync falls back to running the Capacitor CLI with Node for tar extraction compatibility.
+- **Tauri mode (`VITE_TAURI=1`):** `bun run dev:tauri` and `bun run preview:tauri` switch to `apps/tauri` via `tauri dev`/`tauri build`.
+- **Tauri targets (`VITE_TAURI_TARGET`):** use `android` or `ios` to run mobile builds (`tauri android dev|build`, `tauri ios dev|build`); any other value falls back to desktop.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
-- **Capacitor build:** `VITE_CAPACITOR=1` enables static generation for mobile builds (`bun run --cwd apps/site build:capacitor`).
-- **Capacitor server URL:** `CAPACITOR_SERVER_URL` overrides the Capacitor WebView host; if unset, it falls back to `PROMETHEUS_WEB_HOST` + `PROMETHEUS_HTTPS_PORT` when present.
-- **Capacitor device host:** `PROMETHEUS_DEVICE_HOST` (IP or `127.0.0.1` for `adb reverse`, auto-detected LAN IPv4 by default in dev/preview; set to `off` to disable) + optional `PROMETHEUS_DEVICE_WEB_PORT` (default `4173`) + `PROMETHEUS_DEVICE_PROTOCOL` (default `http`) override the live host in dev/preview; preview uses bundled assets unless `PROMETHEUS_DEVICE_HOST`/`CAPACITOR_SERVER_URL` are set. WebTransport flags default off in this mode unless explicitly set.
-- **Android auto-deploy:** `PROMETHEUS_ANDROID_AUTODEPLOY` (default on) runs `gradlew assembleDebug`, `adb install -r`, optional `adb reverse`, and launches the app. `PROMETHEUS_ANDROID_ANIMATION_SCALE` defaults to `1` in dev/preview for web parity and can be set to `0` for reduced-motion/perf sessions. Override with `PROMETHEUS_ANDROID_BUILD`, `PROMETHEUS_ANDROID_INSTALL`, `PROMETHEUS_ANDROID_LAUNCH`, `PROMETHEUS_ANDROID_REVERSE`, `PROMETHEUS_ANDROID_SERIAL`, and `PROMETHEUS_ADB_PATH`. USB wait can be toggled via `PROMETHEUS_ANDROID_WAIT` (default on) and `PROMETHEUS_ANDROID_WAIT_TIMEOUT_MS` (default `30000`).
+- **Tauri build flag:** `VITE_TAURI=1` enables static generation for Tauri builds (`bun run --cwd apps/site build:tauri`) and should be combined with `bun run --cwd apps/tauri tauri build` for packaging.
+- **Tauri wrapper controls:** `bun run dev:tauri` and `bun run preview:tauri` start the Tauri flow directly.
 - **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_WEBTRANSPORT_DATAGRAMS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_HIGHLIGHT_SESSION_RECORDING`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on. `VITE_ENABLE_FRAGMENT_STREAMING` defaults off; `VITE_FRAGMENT_VISIBILITY_MARGIN` defaults to `0px` and `VITE_FRAGMENT_VISIBILITY_THRESHOLD` defaults to `0`. `VITE_ENABLE_HIGHLIGHT` defaults off; `VITE_HIGHLIGHT_SAMPLE_RATE` defaults to `0.1` when unset.
 - **Fragment cache TTLs:** `FRAGMENT_PLAN_TTL` (seconds, default `180`), `FRAGMENT_PLAN_STALE_TTL` (seconds, default `300`), and `FRAGMENT_INITIAL_TTL` (seconds, default `180`) control fragment plan + initial payload cache lifetimes.
 - **WebTransport envs:** `WEBTRANSPORT_API_BASE` (defaults to `http://api:4000`), `WEBTRANSPORT_LISTEN_ADDR` (defaults to `:4444`), `WEBTRANSPORT_CERT_PATH`, `WEBTRANSPORT_KEY_PATH`, `WEBTRANSPORT_ALLOWED_ORIGINS`, `WEBTRANSPORT_ALLOW_ANY_ORIGIN`, `WEBTRANSPORT_ENABLE_DATAGRAMS` (defaults to on), `WEBTRANSPORT_MAX_DATAGRAM_SIZE` (defaults to `1200`), `PROMETHEUS_WEBTRANSPORT_PORT` (defaults to `4444` for host UDP), `VITE_WEBTRANSPORT_BASE` (optional client override).
@@ -56,7 +56,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site + packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
 
-- **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke Capacitor plugins in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
+- **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke native plugin paths in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
 - **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `packages/ui/src/global.css` and component patterns (Qwik components with `$` suffix).
 - **Git hooks:** `bun run hooks:install` sets `.githooks`; commit messages should be conventional and meaningful.
@@ -69,6 +69,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/valkey/valkey.conf`, `scripts/*.ts` (compose helpers, preview/dev).
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
+- **Tauri:** `apps/tauri/src-tauri/tauri.conf.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.
 
 ## Contribution dos and don’ts
 

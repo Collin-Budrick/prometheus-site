@@ -1,35 +1,35 @@
-import { ActionSheet, type ActionSheetOption } from '@capacitor/action-sheet'
-import { Dialog } from '@capacitor/dialog'
-import { Share } from '@capacitor/share'
-import { Toast } from '@capacitor/toast'
-import { isNativeCapacitorRuntime } from './runtime'
-
-export const showNativeToast = async (text: string, duration: 'short' | 'long' = 'short') => {
-  if (!isNativeCapacitorRuntime()) return false
-  await Toast.show({ text, duration })
-  return true
+export type ActionSheetOption = {
+  title: string
+  style?: 'default' | 'cancel' | 'destructive'
 }
 
+export const showNativeToast = async (_text: string, _duration: 'short' | 'long' = 'short') => false
+
 export const showNativeAlert = async (title: string, message: string) => {
-  if (!isNativeCapacitorRuntime()) return false
-  await Dialog.alert({ title, message })
+  if (typeof window === 'undefined') return false
+  const content = title.trim() ? `${title}\n\n${message}` : message
+  window.alert(content)
   return true
 }
 
 export const confirmNativeDialog = async (title: string, message: string) => {
-  if (!isNativeCapacitorRuntime()) return null
-  const result = await Dialog.confirm({ title, message })
-  return result.value
+  if (typeof window === 'undefined') return null
+  const content = title.trim() ? `${title}\n\n${message}` : message
+  return window.confirm(content)
 }
 
 export const shareNativeContent = async (payload: { title?: string; text?: string; url?: string }) => {
-  if (!isNativeCapacitorRuntime()) return false
-  await Share.share(payload)
-  return true
+  if (typeof navigator === 'undefined') return false
+  const maybeShare = navigator as Navigator & {
+    share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>
+  }
+  if (typeof maybeShare.share !== 'function') return false
+  try {
+    await maybeShare.share(payload)
+    return true
+  } catch {
+    return false
+  }
 }
 
-export const showNativeActionSheet = async (title: string, options: ActionSheetOption[]) => {
-  if (!isNativeCapacitorRuntime()) return null
-  const result = await ActionSheet.showActions({ title, options })
-  return result.index
-}
+export const showNativeActionSheet = async (_title: string, _options: ActionSheetOption[]) => null

@@ -32,14 +32,14 @@ docker build -f apps/site/Dockerfile \
   -t prometheus-site .
 ```
 
-## Native shell architecture (Capacitor)
+## Native shell architecture (Tauri)
 
-`src/native/native-shell.ts` is the only allowed entrypoint for Capacitor runtime lifecycle or plugin wiring in the site app.
+`src/native/native-shell.ts` is the only allowed entrypoint for native runtime lifecycle or plugin wiring in the site app.
 
 Rules:
 
 - Initialize once from `src/root.tsx` in the client `useVisibleTask$` startup path.
-- Keep all Capacitor event/listener registration in `initNativeShell()`.
+- Keep all native event/listener registration in `initNativeShell()`.
 - Include runtime guards so NativeShell is a no-op for web/PWA contexts.
 - Use HMR-safe setup/teardown so listeners are not duplicated during local development.
 
@@ -47,10 +47,10 @@ Rules:
 
 ### Android hardware/system back behavior
 
-`NativeShell` enforces this exact handling order in Capacitor runtime:
+`NativeShell` enforces this handling order in native runtime:
 
 1. Dismiss feature-level modal/sheet/overlay state (via `prometheus:native-back-intent` cancelable event, then close button/backdrop fallbacks).
-2. Close keyboard (blur active input + `Keyboard.hide()`).
+2. Close keyboard (blur active input).
 3. Navigate back (`history.back()`) when the user is not at root.
 4. Exit app only at root route (`/`) and only on a repeated back press guard window.
 

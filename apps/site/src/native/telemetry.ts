@@ -1,4 +1,4 @@
-import { isNativeCapacitorRuntime } from './runtime'
+import { isNativeShellRuntime } from './runtime'
 
 type TelemetryEvent = {
   metric:
@@ -127,7 +127,7 @@ let initialized = false
 export const initNativeFeelTelemetry = () => {
   if (initialized || typeof window === 'undefined') return
   initialized = true
-  if (!isNativeCapacitorRuntime()) return
+  if (!isNativeShellRuntime()) return
   setupStartupInteractiveTelemetry()
   setupLongTaskTelemetry()
   setupTransitionJankTelemetry()

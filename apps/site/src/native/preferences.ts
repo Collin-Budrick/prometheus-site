@@ -1,6 +1,3 @@
-import { Preferences } from '@capacitor/preferences'
-import { isNativeCapacitorRuntime } from './runtime'
-
 export type PreferenceKey =
   | 'theme'
   | 'locale'
@@ -60,19 +57,11 @@ export const preferenceAllowedKeys = Object.keys(DEFAULTS) as PreferenceKey[]
 
 export const getPreference = async <K extends PreferenceKey>(key: K): Promise<PreferenceSchema[K] | null> => {
   const storageKey = resolveStorageKey(key)
-  if (isNativeCapacitorRuntime()) {
-    const result = await Preferences.get({ key: storageKey })
-    return (result.value as PreferenceSchema[K] | null) ?? null
-  }
   return (readWebStorageValue(storageKey) as PreferenceSchema[K] | null) ?? null
 }
 
 export const setPreference = async <K extends PreferenceKey>(key: K, value: PreferenceSchema[K]) => {
   const storageKey = resolveStorageKey(key)
-  if (isNativeCapacitorRuntime()) {
-    await Preferences.set({ key: storageKey, value })
-    return
-  }
   writeWebStorageValue(storageKey, value)
 }
 
@@ -81,19 +70,9 @@ export const getPreferenceOrDefault = async <K extends PreferenceKey>(key: K): P
   return (value ?? DEFAULTS[key]) as PreferenceSchema[K]
 }
 
-const isMigrationComplete = async () => {
-  if (isNativeCapacitorRuntime()) {
-    const result = await Preferences.get({ key: MIGRATION_GUARD_KEY })
-    return result.value === '1'
-  }
-  return readWebStorageValue(MIGRATION_GUARD_KEY) === '1'
-}
+const isMigrationComplete = async () => readWebStorageValue(MIGRATION_GUARD_KEY) === '1'
 
 const setMigrationComplete = async () => {
-  if (isNativeCapacitorRuntime()) {
-    await Preferences.set({ key: MIGRATION_GUARD_KEY, value: '1' })
-    return
-  }
   writeWebStorageValue(MIGRATION_GUARD_KEY, '1')
 }
 
@@ -114,9 +93,7 @@ const copyLegacyKeys = async () => {
     }
 
     await setPreference(key, DEFAULTS[key])
-    if (!isNativeCapacitorRuntime()) {
-      writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
-    }
+    writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
     if (key === 'theme' || key === 'locale') {
       writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
     }

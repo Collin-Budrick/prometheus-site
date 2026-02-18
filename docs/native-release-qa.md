@@ -28,7 +28,7 @@ Any p95 breach is a release blocker unless explicitly waived in release notes wi
 
 ## Native configuration gates
 
-- Android: `google-services.json` present in `apps/site/android/app/` for release lanes.
+- Android: `google-services.json` present in the Tauri Android project for release lanes.
 - Android: FCM metadata and notification default channel (`messages`) configured.
 - iOS: APNs entitlement (`aps-environment`) and background modes (`remote-notification`, `fetch`) enabled.
 - iOS: foreground notification presentation uses banner/sound/badge.

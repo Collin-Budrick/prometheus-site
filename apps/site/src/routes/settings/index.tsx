@@ -25,8 +25,7 @@ import {
   setSensitivePrivacyView
 } from '../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
-import { isNativeCapacitorRuntime } from '../../native/runtime'
-import { clearNativeAuthCredentials, isNativeBiometricAuthSupported, requestNativeBiometricAuth } from '../../native/native-auth'
+import { clearNativeAuthCredentials } from '../../native/native-auth'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -214,16 +213,6 @@ export default component$(() => {
 
   const handleLogout = $(async () => {
     if (logoutBusy.value || typeof window === 'undefined') return
-    if (isNativeCapacitorRuntime()) {
-      const supportsBio = await isNativeBiometricAuthSupported()
-      if (supportsBio) {
-        const ok = await requestNativeBiometricAuth({ reason: 'Confirm sign out', title: 'Prometheus' })
-        if (!ok) {
-          logoutMessage.value = copy.value.settingsNativeUnavailable
-          return
-        }
-      }
-    }
     logoutBusy.value = true
     logoutMessage.value = null
     try {

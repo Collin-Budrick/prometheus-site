@@ -9,11 +9,11 @@ import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
 import { hideNativeSplashScreen, initNativeShell } from './native/native-shell'
-import { isNativeCapacitorRuntime } from './native/runtime'
+import { isNativeShellRuntime } from './native/runtime'
 
 const shouldEnableAmbientMotion = () => {
   if (typeof window === 'undefined') return false
-  if (isNativeCapacitorRuntime()) return true
+  if (isNativeShellRuntime()) return true
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false
 
   const nav = navigator as Navigator & {
@@ -144,7 +144,7 @@ export default component$(() => {
   const clientReady = useClientReady()
   useVisibleTask$(() => {
     if (typeof window !== 'undefined') {
-      (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime = isNativeCapacitorRuntime()
+      (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime = isNativeShellRuntime()
     }
     initNativeShell()
   })
@@ -167,7 +167,7 @@ export default component$(() => {
       const shouldEnable = shouldEnableAmbientMotion()
       const nativeRuntimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
       const isNativeShell =
-        isNativeCapacitorRuntime() ||
+        isNativeShellRuntime() ||
         nativeRuntimeFlag === true ||
         document.documentElement.dataset.nativeShell === 'native' ||
         document.documentElement.dataset.nativeShell === 'background'

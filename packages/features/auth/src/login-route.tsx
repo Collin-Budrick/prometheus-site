@@ -2,7 +2,6 @@ import { $, component$, useOnDocument, useSignal, useStyles$, useVisibleTask$ } 
 import { useNavigate } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
 import { attemptBootstrapSession, buildApiUrl } from '@site/shared/auth-bootstrap'
-import { isNativeCapacitorRuntime } from '@site/native/runtime'
 import {
   canUseNativeBiometricQuickLogin,
   clearNativeAuthCredentials,
@@ -257,7 +256,7 @@ export const LoginRoute = component$<{
   })
 
   useVisibleTask$(async () => {
-    if (!isNativeCapacitorRuntime() || typeof window === 'undefined') return
+    if (typeof window === 'undefined') return
     const providers = await resolveNativeSocialProviders()
     if (providers.length === 0) return
     const normalized = [...new Set(providers.map(normalizeProviderId))].filter((provider) => provider.length > 0)
@@ -636,7 +635,7 @@ export const LoginRoute = component$<{
   })
 
   const handleSocialLogin = $(async (provider: string) => {
-    if (!isNativeCapacitorRuntime() || socialBusy.value || biometricBusy.value || busy || typeof window === 'undefined') return
+    if (socialBusy.value || biometricBusy.value || busy || typeof window === 'undefined') return
     const normalized = normalizeProviderId(provider)
     if (!normalized) return
 
@@ -648,18 +647,16 @@ export const LoginRoute = component$<{
     state.value = 'idle'
     passkeyState.value = 'idle'
     try {
-      if (isNativeCapacitorRuntime()) {
-        const nativeSuccess = await nativeSocialLogin(normalized)
-        if (nativeSuccess) {
-          const bootstrapped = await attemptBootstrapSession(origin, apiBase)
-          if (bootstrapped) {
-            await goToProfile()
-            return
-          }
-          statusTone.value = 'success'
-          statusMessage.value = 'Continuing sign-in in browser.'
+      const nativeSuccess = await nativeSocialLogin(normalized)
+      if (nativeSuccess) {
+        const bootstrapped = await attemptBootstrapSession(origin, apiBase)
+        if (bootstrapped) {
+          await goToProfile()
           return
         }
+        statusTone.value = 'success'
+        statusMessage.value = 'Continuing sign-in in browser.'
+        return
       }
 
       statusTone.value = 'neutral'

@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
-import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -142,27 +142,6 @@ if (resolvedDeviceHost) {
   process.env.PROMETHEUS_DEVICE_HOST = ''
 }
 
-const resolveCapacitorServerUrl = (host: string, httpsPort: string) => {
-  const explicit = process.env.CAPACITOR_SERVER_URL?.trim()
-  if (explicit) return explicit
-  const deviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
-  if (deviceHost) {
-    if (deviceHost.startsWith('http://') || deviceHost.startsWith('https://')) return deviceHost
-    const deviceProtocol = process.env.PROMETHEUS_DEVICE_PROTOCOL?.trim() || 'http'
-    const devicePort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
-    const defaultPort = deviceProtocol === 'https' ? '443' : '80'
-    const portSuffix = devicePort && devicePort !== defaultPort ? `:${devicePort}` : ''
-    return `${deviceProtocol}://${deviceHost}${portSuffix}`
-  }
-  const trimmedHost = host.trim()
-  if (!trimmedHost) return undefined
-  if (trimmedHost.startsWith('http://') || trimmedHost.startsWith('https://')) return trimmedHost
-  const portSuffix = httpsPort && httpsPort !== '443' ? `:${httpsPort}` : ''
-  return `https://${trimmedHost}${portSuffix}`
-}
-
-const resolveNodeBin = () => process.env.PROMETHEUS_NODE_BINARY?.trim() || 'node'
-
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
 const falsyValues = new Set(['0', 'false', 'no', 'off', 'disabled'])
 const resolveBoolean = (value: string | undefined, fallback: boolean) => {
@@ -172,6 +151,17 @@ const resolveBoolean = (value: string | undefined, fallback: boolean) => {
   if (falsyValues.has(normalized)) return false
   return fallback
 }
+const isTauriMode = resolveBoolean(process.env.VITE_TAURI, true)
+type TauriTarget = 'desktop' | 'android' | 'ios'
+const resolveTauriTarget = (value: string | undefined) => {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'android' || normalized === 'ios') return normalized
+  if (normalized && normalized !== 'desktop') {
+    console.warn(`[dev] Unknown VITE_TAURI_TARGET '${normalized}'. Falling back to desktop.`)
+  }
+  return 'desktop'
+}
+const tauriTarget = resolveTauriTarget(process.env.VITE_TAURI_TARGET)
 const resolvePositiveInt = (value: string | undefined, fallback: string) => {
   const parsed = Number.parseInt(value ?? '', 10)
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
@@ -538,198 +528,6 @@ const optimizeAndroidDevice = (adbBin: string, serial: string) => {
   for (const cmd of animationCommands) runAdb(adbBin, [...serialPrefix, 'shell', ...cmd])
 }
 
-const hasCapacitorCli = (siteRoot: string) => {
-  const binNames = ['cap', 'cap.cmd', 'cap.ps1']
-  const binDirs = [
-    path.resolve(siteRoot, 'node_modules', '.bin'),
-    path.resolve(root, 'node_modules', '.bin')
-  ]
-  const cliCandidates = [
-    path.resolve(siteRoot, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor'),
-    path.resolve(root, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor')
-  ]
-  const candidates = binDirs.flatMap((dir) => binNames.map((name) => path.join(dir, name))).concat(cliCandidates)
-  return candidates.some((candidate) => existsSync(candidate))
-}
-
-const ensureCapacitorCli = (bunBin: string, siteRoot: string) => {
-  if (hasCapacitorCli(siteRoot)) return true
-  const result = spawnSync(bunBin, ['install', '--filter', 'site'], {
-    stdio: 'inherit',
-    cwd: root,
-    env: process.env
-  })
-  if (result.status !== 0) {
-    console.warn('[capacitor] Dependency install failed; skipping Android sync.')
-    return false
-  }
-  if (!hasCapacitorCli(siteRoot)) {
-    console.warn('[capacitor] CLI not found after install; skipping Android sync.')
-    return false
-  }
-  return true
-}
-
-const clearCapacitorAndroidPublicAssets = (androidRoot: string) => {
-  const publicAssetsRoot = path.join(androidRoot, 'app', 'src', 'main', 'assets', 'public')
-  try {
-    rmSync(publicAssetsRoot, { recursive: true, force: true })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`[capacitor] Failed to clean Android web assets at ${publicAssetsRoot}: ${message}`)
-  }
-}
-
-type CapacitorRunner = {
-  command: string
-  args: string[]
-  label: 'bun' | 'node'
-}
-
-const resolveCapacitorRunner = (bunBin: string, siteRoot: string, preferNode: boolean): CapacitorRunner => {
-  if (preferNode) {
-    const cliCandidates = [
-      path.resolve(siteRoot, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor'),
-      path.resolve(root, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor')
-    ]
-    const cliBin = cliCandidates.find((candidate) => existsSync(candidate))
-    if (cliBin) {
-      return { command: resolveNodeBin(), args: [cliBin], label: 'node' }
-    }
-  }
-  return { command: bunBin, args: ['x', '--bun', 'cap'], label: 'bun' }
-}
-
-const syncCapacitorAndroid = (bunBin: string, serverUrl?: string) => {
-  if (!serverUrl) return
-  const siteRoot = path.resolve(root, 'apps', 'site')
-  const androidRoot = path.join(siteRoot, 'android')
-  if (!existsSync(androidRoot)) return
-  clearCapacitorAndroidPublicAssets(androidRoot)
-  if (!ensureCapacitorCli(bunBin, siteRoot)) return
-  const runAndroidPatches = () => {
-    const patchResult = spawnSync(bunBin, ['run', 'patch:android'], {
-      stdio: 'inherit',
-      cwd: root,
-      env: process.env
-    })
-    if (patchResult.status !== 0) {
-      console.warn('[android] Capacitor Android patching failed; continuing with existing plugin configs.')
-      return false
-    }
-    return true
-  }
-  runAndroidPatches()
-  const preferNode = process.platform === 'win32'
-  const runSync = (runner: CapacitorRunner) =>
-    spawnSync(runner.command, [...runner.args, 'sync', 'android'], {
-      stdio: 'inherit',
-      cwd: siteRoot,
-      env: {
-        ...process.env,
-        CAPACITOR_SERVER_URL: serverUrl
-      }
-    })
-
-  const primary = resolveCapacitorRunner(bunBin, siteRoot, preferNode)
-  const secondary = resolveCapacitorRunner(bunBin, siteRoot, !preferNode)
-  const result = runSync(primary)
-  if (result.status === 0) {
-    runAndroidPatches()
-    return
-  }
-
-  if (secondary.label !== primary.label) {
-    const fallback = runSync(secondary)
-    if (fallback.status === 0) {
-      runAndroidPatches()
-      return
-    }
-    console.warn(`[capacitor] Android sync failed (exit ${fallback.status ?? 'unknown'}).`)
-    return
-  }
-
-  console.warn(`[capacitor] Android sync failed (exit ${result.status ?? 'unknown'}).`)
-}
-
-const autoDeployAndroid = (deviceHost: string | undefined, devicePort: string) => {
-  const autoDeploy = resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTODEPLOY, true)
-  const buildEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_BUILD, autoDeploy)
-  const installEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_INSTALL, autoDeploy)
-  const launchEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_LAUNCH, autoDeploy)
-  const gradleConfigurationCacheEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_GRADLE_CONFIGURATION_CACHE, true)
-  const loopback = (() => {
-    const host = normalizeHost(deviceHost)
-    return host === '127.0.0.1' || host === 'localhost' || host === '::1'
-  })()
-  const reverseEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_REVERSE, autoDeploy && loopback)
-  const waitEnabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_WAIT, autoDeploy)
-  const waitTimeoutRaw = process.env.PROMETHEUS_ANDROID_WAIT_TIMEOUT_MS?.trim() || ''
-  const waitTimeoutParsed = Number.parseInt(waitTimeoutRaw, 10)
-  const waitTimeoutMs = Number.isFinite(waitTimeoutParsed) && waitTimeoutParsed > 0 ? waitTimeoutParsed : 120000
-  const shouldRun = buildEnabled || installEnabled || launchEnabled || reverseEnabled
-  if (!shouldRun) return
-
-  const adbBin = resolveAdbBinary()
-  const serial = resolveAdbSerial(adbBin, process.env.PROMETHEUS_ANDROID_SERIAL?.trim(), waitEnabled, waitTimeoutMs)
-  if (!serial) return
-  if (!waitForAndroidBoot(adbBin, serial, waitTimeoutMs)) {
-    console.warn('[android] Device did not finish booting in time. Skipping Android auto-deploy to avoid unstable state.')
-    return
-  }
-  const adbPrefix = serial ? ['-s', serial] : []
-  optimizeAndroidDevice(adbBin, serial)
-
-  if (reverseEnabled) {
-    if (!runAdb(adbBin, [...adbPrefix, 'reverse', `tcp:${devicePort}`, `tcp:${devicePort}`])) return
-  }
-
-  const androidRoot = path.resolve(root, 'apps', 'site', 'android')
-  if (!existsSync(androidRoot)) {
-    console.warn('[android] Android project not found; skipping Android auto-deploy.')
-    return
-  }
-
-  const apkPath = path.join(androidRoot, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
-  const gradleCmd = process.platform === 'win32' ? path.join(androidRoot, 'gradlew.bat') : path.join(androidRoot, 'gradlew')
-  if (buildEnabled || (installEnabled && !existsSync(apkPath))) {
-    if (!existsSync(gradleCmd)) {
-      console.warn('[android] Gradle wrapper not found; skipping Android build.')
-      return
-    }
-    const gradleRunner =
-      process.platform === 'win32'
-        ? {
-            command: gradleCmd,
-            args: ['assembleDebug', ...(gradleConfigurationCacheEnabled ? ['--configuration-cache'] : [])]
-          }
-        : {
-            command: 'bash',
-            args: [gradleCmd, 'assembleDebug', ...(gradleConfigurationCacheEnabled ? ['--configuration-cache'] : [])]
-          }
-    const result = spawnSync(gradleRunner.command, gradleRunner.args, { stdio: 'inherit', cwd: androidRoot })
-    if (result.error) {
-      console.warn('[android] Gradle failed to start; skipping Android install/launch.')
-      return
-    }
-    if (result.status !== 0) {
-      console.warn(`[android] Gradle exited with ${result.status ?? 'unknown'}; skipping Android install/launch.`)
-      return
-    }
-  }
-
-  if (installEnabled) {
-    if (!existsSync(apkPath)) {
-      console.warn('[android] APK not found; skipping Android install.')
-      return
-    }
-    if (!runAdb(adbBin, [...adbPrefix, 'install', '-r', apkPath])) return
-  }
-
-  if (launchEnabled) {
-    runAdb(adbBin, [...adbPrefix, 'shell', 'am', 'start', '-n', 'dev.prometheus.site/.MainActivity'])
-  }
-}
 
 const { command, prefix } = resolveComposeCommand()
 
@@ -950,6 +748,9 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_HIGHLIGHT_SAMPLE_RATE: devHighlightSampleRate,
   API_BASE: `http://127.0.0.1:${devApiPort}`
 }
+if (isTauriMode) {
+  webEnv.VITE_TAURI = '1'
+}
 
 if (!useDeviceHost) {
   webEnv.VITE_DEV_HTTPS = '1'
@@ -962,8 +763,6 @@ if (!useDeviceHost) {
   // Let Vite infer HMR host/protocol from the page origin in device mode.
 }
 
-syncCapacitorAndroid(bunBin, resolveCapacitorServerUrl(devWebHost, devHttpsPort))
-
 if (enablePollingWatch) {
   webEnv.CHOKIDAR_USEPOLLING = webEnv.CHOKIDAR_USEPOLLING || '1'
   webEnv.CHOKIDAR_INTERVAL = webEnv.CHOKIDAR_INTERVAL || '100'
@@ -974,14 +773,20 @@ if (!bunRuntime) {
   throw new Error('Bun runtime is required to run the dev server.')
 }
 
-const web = bunRuntime.spawn([bunBin, 'run', '--cwd', 'apps/site', 'dev'], {
+const webCommand = isTauriMode
+  ? (() => {
+      const base = [bunBin, 'run', '--cwd', 'apps/tauri', 'tauri']
+      if (tauriTarget === 'android') return [...base, 'android', 'dev']
+      if (tauriTarget === 'ios') return [...base, 'ios', 'dev']
+      return [...base, 'dev']
+    })()
+  : [bunBin, 'run', '--cwd', 'apps/site', 'dev']
+const web = bunRuntime.spawn(webCommand, {
   stdin: 'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
   env: webEnv
 })
-
-autoDeployAndroid(devDeviceHost, devDeviceWebPort)
 
 try {
   const resolved = await lookup(devWebHost, { all: true })

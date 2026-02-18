@@ -1,7 +1,6 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
-import { isNativeCapacitorRuntime } from '../native/runtime'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 
 type StoreCreateFormProps = {
@@ -291,12 +290,6 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         if (candidate.disabled || candidate.readOnly) return
       }
       candidate.focus()
-      if (!isNativeCapacitorRuntime()) return
-      void import('@capacitor/keyboard')
-        .then(({ Keyboard }) => Keyboard.show())
-        .catch(() => {
-          // Keyboard.show is best-effort across platforms.
-        })
     })
 
     const resolvedNameLabel = normalizeLabel(nameLabel ? resolve(nameLabel) : undefined, resolve('Item name'))

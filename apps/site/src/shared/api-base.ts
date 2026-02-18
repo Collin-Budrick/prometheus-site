@@ -11,7 +11,7 @@ const isTruthyEnv = (value?: string) => {
 }
 const allowLocalApiBase = () => {
   if (typeof process === 'undefined' || typeof process.env !== 'object') return false
-  return isTruthyEnv(process.env.VITE_CAPACITOR)
+  return isTruthyEnv(process.env.VITE_TAURI)
 }
 
 const readForwardedHeader = (value: string | null) => value?.split(',')[0]?.trim() ?? ''

@@ -114,20 +114,8 @@ const isNativeShell = () => {
   const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
   if (runtimeFlag === true) return true
   if (runtimeFlag === false) return false
-  const capacitor = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
-  if (typeof capacitor?.isNativePlatform === 'function' && capacitor.isNativePlatform()) {
-    return true
-  }
-  if (typeof capacitor?.getPlatform === 'function' && capacitor.getPlatform() !== 'web') {
-    return true
-  }
-  if (window.location.protocol === 'capacitor:') return true
-  if (
-    window.location.host === 'localhost' &&
-    window.location.pathname.startsWith('/__capacitor')
-  ) {
-    return true
-  }
+  if (window.location.protocol === 'tauri:' || window.location.protocol === 'ipc:') return true
+  if (window.navigator.userAgent.toLowerCase().includes('tauri')) return true
   if (navigator.userAgent.toLowerCase().includes('wv')) return true
   const shellMode = document.documentElement.dataset.nativeShell
   return shellMode === 'native' || shellMode === 'background'

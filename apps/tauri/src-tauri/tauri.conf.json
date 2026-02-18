@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prometheus",
+  "version": "0.1.0",
+  "identifier": "com.prometheus.site",
+  "build": {
+    "beforeBuildCommand": "bun --cwd ../site build:tauri",
+    "beforeDevCommand": "bun --cwd ../site dev --port 4173",
+    "devUrl": "http://127.0.0.1:4173",
+    "frontendDist": "../site/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Prometheus",
+        "width": 1200,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: data:; connect-src 'self' http://127.0.0.1:* https://127.0.0.1:* http://localhost:* https://localhost:*; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "msi", "nsis", "dmg", "app"],
+    "icon": [
+      "icons/icon.ico",
+      "../site/public/icons/icon-512.png",
+      "../site/public/icons/icon-192.png"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["dev.prometheus.site"]
+      },
+      "mobile": [
+        {
+          "host": "dev.prometheus.site"
+        }
+      ]
+    },
+    "updater": {
+      "active": false
+    }
+  }
+}

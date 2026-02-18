@@ -1,14 +1,11 @@
 import { signal } from '@preact/signals-core'
-import { type PluginListenerHandle } from '@capacitor/core'
-import { Network, type ConnectionStatus } from '@capacitor/network'
-import { isNativeCapacitorRuntime } from './runtime'
 
-type ConnectivitySource = 'navigator' | 'network-plugin' | 'event'
+type ConnectivitySource = 'navigator' | 'event'
 
 export type ConnectivityState = {
   online: boolean
   connected: boolean
-  connectionType: ConnectionStatus['connectionType'] | 'unknown'
+  connectionType: 'unknown'
   source: ConnectivitySource
 }
 
@@ -24,7 +21,6 @@ const initialState: ConnectivityState = {
 export const connectivityState = signal<ConnectivityState>(initialState)
 
 let initialized = false
-let networkHandle: PluginListenerHandle | null = null
 
 const emitConnectivityEvent = (state: ConnectivityState) => {
   if (typeof window === 'undefined') return
@@ -47,7 +43,7 @@ const handleWebOnline = () => {
   updateConnectivity({
     online: true,
     connected: true,
-    connectionType: connectivityState.value.connectionType,
+    connectionType: 'unknown',
     source: 'event'
   })
 }
@@ -56,27 +52,8 @@ const handleWebOffline = () => {
   updateConnectivity({
     online: false,
     connected: false,
-    connectionType: connectivityState.value.connectionType,
+    connectionType: 'unknown',
     source: 'event'
-  })
-}
-
-const hydrateFromNetworkPlugin = async () => {
-  const status = await Network.getStatus()
-  updateConnectivity({
-    online: status.connected,
-    connected: status.connected,
-    connectionType: status.connectionType,
-    source: 'network-plugin'
-  })
-
-  networkHandle = await Network.addListener('networkStatusChange', (event) => {
-    updateConnectivity({
-      online: event.connected,
-      connected: event.connected,
-      connectionType: event.connectionType,
-      source: 'network-plugin'
-    })
   })
 }
 
@@ -86,12 +63,6 @@ export const initConnectivityStore = async () => {
 
   window.addEventListener('online', handleWebOnline)
   window.addEventListener('offline', handleWebOffline)
-
-  if (isNativeCapacitorRuntime()) {
-    await hydrateFromNetworkPlugin()
-    return
-  }
-
   updateConnectivity({
     online: fallbackOnline(),
     connected: fallbackOnline(),
@@ -108,9 +79,5 @@ export const resetConnectivityForTests = async () => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('online', handleWebOnline)
     window.removeEventListener('offline', handleWebOffline)
-  }
-  if (networkHandle) {
-    await networkHandle.remove()
-    networkHandle = null
   }
 }
