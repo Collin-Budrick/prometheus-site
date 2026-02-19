@@ -1,5 +1,7 @@
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
+#[cfg(desktop)]
+use tauri::Manager;
 
 fn resolve_platform() -> &'static str {
     if cfg!(target_os = "android") {
@@ -18,20 +20,25 @@ pub async fn native_privacy_screen_set<R: Runtime>(
     source: Option<String>,
 ) -> bool {
     let platform = resolve_platform();
-    let mut applied = true;
-    let mut mode = "native-protected";
-
-    // Desktop keeps web behavior unchanged and reports success telemetry without
-    // applying OS-level privacy overlays by default.
-    if platform == "desktop" {
-        mode = "desktop-noop";
-    } else if let Some(window) = app.get_webview_window("main") {
-        if window.set_content_protected(enabled).is_err() {
-            applied = false;
+    #[cfg(desktop)]
+    let (applied, mode) = {
+        // Desktop keeps web behavior unchanged and reports success telemetry without
+        // applying OS-level privacy overlays by default.
+        if platform == "desktop" {
+            (true, "desktop-noop")
+        } else if let Some(window) = app.get_webview_window("main") {
+            if window.set_content_protected(enabled).is_err() {
+                (false, "native-protected")
+            } else {
+                (true, "native-protected")
+            }
+        } else {
+            (false, "native-protected")
         }
-    } else {
-        applied = false;
-    }
+    };
+
+    #[cfg(not(desktop))]
+    let (applied, mode) = (true, "mobile-noop");
 
     let _ = app.emit(
         "prom:native-privacy-screen",

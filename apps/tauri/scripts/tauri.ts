@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 
 const args = process.argv.slice(2);
 const env = { ...process.env };
+const cliArgs = [...args];
 const tauriRoot = process.cwd();
 const siteRoot = join(tauriRoot, "../site");
 const workspaceRoot = join(tauriRoot, "../..");
@@ -113,6 +114,29 @@ if (isDevCommand && overrideDevUrl) {
   });
 }
 
+const skipBeforeDevCommand =
+  isDevCommand && env.PROMETHEUS_TAURI_SKIP_BEFORE_DEV_COMMAND?.trim() === "1";
+if (skipBeforeDevCommand) {
+  const build = isRecord(generatedConfig.build) ? { ...generatedConfig.build } : {};
+  const noopBeforeDevCommand = process.platform === "win32" ? "cmd /c exit 0" : "true";
+  generatedConfig = deepMerge(generatedConfig, { build });
+  generatedConfig = deepMerge(generatedConfig, {
+    build: {
+      ...build,
+      beforeDevCommand: noopBeforeDevCommand,
+    },
+  });
+  cliArgs.push(
+    "--config",
+    JSON.stringify({
+      build: {
+        beforeDevCommand: noopBeforeDevCommand,
+      },
+    }),
+  );
+  console.info("[tauri] Reusing existing dev server; skipping beforeDevCommand.");
+}
+
 if (tauriProfile === "prod") {
   const endpoints = parseList(env.PROMETHEUS_TAURI_UPDATER_ENDPOINTS);
   const defaultEndpoint =
@@ -202,7 +226,7 @@ if (process.platform === "win32" && !env.CARGO_TARGET_DIR) {
 
 const child = spawn(
   process.execPath,
-  ["x", "--bun", "@tauri-apps/cli", ...args],
+  ["x", "--bun", "@tauri-apps/cli", ...cliArgs],
   {
     cwd: tauriRoot,
     env,

@@ -6,28 +6,42 @@ mod tray;
 
 use tauri::{Emitter, Manager};
 
+fn init_tls_provider() {
+    // Required by rustls 0.23+/reqwest on Android to avoid "No provider set"
+    // panics from WebView request interception.
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tls_provider();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build());
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder = builder
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
         .setup(|app| {
-            menu::install_menu(app.handle())?;
-            tray::install_tray(app.handle())?;
-            app.handle().on_menu_event(menu::handle_menu_event);
+            #[cfg(desktop)]
+            {
+                menu::install_menu(app.handle())?;
+                tray::install_tray(app.handle())?;
+                app.handle().on_menu_event(menu::handle_menu_event);
+            }
 
             if let Some(window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();

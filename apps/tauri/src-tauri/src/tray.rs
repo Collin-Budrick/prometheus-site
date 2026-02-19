@@ -2,9 +2,11 @@
 use std::sync::Mutex;
 #[cfg(desktop)]
 use tauri::{
+    AppHandle,
+    Runtime,
     menu::MenuBuilder,
     tray::{TrayIcon, TrayIconBuilder},
-    AppHandle, Manager, Runtime,
+    Manager,
 };
 
 #[cfg(desktop)]
@@ -34,10 +36,5 @@ pub fn install_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     let tray = builder.build(app)?;
     app.manage(ManagedTray(Mutex::new(Some(tray))));
-    Ok(())
-}
-
-#[cfg(not(desktop))]
-pub fn install_tray<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }

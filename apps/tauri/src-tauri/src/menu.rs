@@ -1,13 +1,21 @@
+#[cfg(desktop)]
 use serde_json::json;
-use tauri::{
-    menu::{MenuBuilder, MenuEvent, SubmenuBuilder},
-    AppHandle, Emitter, Manager, Runtime,
-};
+#[cfg(desktop)]
+use tauri::menu::{MenuBuilder, MenuEvent, SubmenuBuilder};
+#[cfg(desktop)]
+use tauri::{Emitter, Manager};
+#[cfg(desktop)]
+use tauri::{AppHandle, Runtime};
 
+#[cfg(desktop)]
 pub const MENU_EVENT_SHOW: &str = "app_show";
+#[cfg(desktop)]
 pub const MENU_EVENT_ABOUT: &str = "app_about";
+#[cfg(desktop)]
 pub const MENU_EVENT_PREFERENCES: &str = "app_preferences";
+#[cfg(desktop)]
 pub const MENU_EVENT_CHECK_UPDATES: &str = "app_check_updates";
+#[cfg(desktop)]
 pub const MENU_EVENT_QUIT: &str = "app_quit";
 
 #[cfg(desktop)]
@@ -26,11 +34,7 @@ pub fn install_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg(not(desktop))]
-pub fn install_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> {
-    Ok(())
-}
-
+#[cfg(desktop)]
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref().to_string();
     let _ = app.emit("prom:native-menu", json!({ "id": id.clone() }));

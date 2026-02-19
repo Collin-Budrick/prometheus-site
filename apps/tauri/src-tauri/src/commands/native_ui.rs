@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
+#[cfg(desktop)]
+use tauri::Manager;
 #[cfg(desktop)]
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogResult};
 use tauri_plugin_notification::NotificationExt;
@@ -22,11 +24,16 @@ pub fn app_version() -> String {
 
 #[tauri::command]
 pub fn hide_native_splash<R: Runtime>(app: AppHandle<R>) -> bool {
-    let mut hidden = false;
-    if let Some(window) = app.get_webview_window("main") {
+    #[cfg(desktop)]
+    let hidden = if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
-        hidden = true;
-    }
+        true
+    } else {
+        false
+    };
+
+    #[cfg(not(desktop))]
+    let hidden = true;
 
     let _ = app.emit(
         "prom:native-splash-hidden",

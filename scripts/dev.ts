@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,6 +63,108 @@ if (androidSdkHome && !process.env.ANDROID_HOME) process.env.ANDROID_HOME = andr
 if (androidSdkHome && !process.env.ANDROID_SDK_ROOT) process.env.ANDROID_SDK_ROOT = androidSdkHome
 if (androidSdkHome) {
   console.info(`[android] Using SDK: ${androidSdkHome}`)
+}
+
+const parseJavaMajor = (rawVersion: string) => {
+  const match = rawVersion.match(/version\s+"([^"]+)"/i)
+  if (!match) return undefined
+  const version = match[1].trim()
+  if (!version) return undefined
+
+  const [first = '', second = ''] = version.split('.')
+  const major =
+    first === '1' && second
+      ? Number.parseInt(second, 10)
+      : Number.parseInt(first.replace(/[^0-9].*$/, ''), 10)
+  if (!Number.isFinite(major)) return undefined
+  return major
+}
+
+const resolveJavaExe = (javaHome: string) =>
+  path.join(javaHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
+
+const resolveJavaMajorForHome = (javaHome: string) => {
+  const javaExe = resolveJavaExe(javaHome)
+  if (!existsSync(javaExe)) return undefined
+
+  const result = spawnSync(javaExe, ['-version'], { encoding: 'utf8' })
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`
+  return parseJavaMajor(output)
+}
+
+const resolveJavaMajorFromPath = () => {
+  const result = spawnSync('java', ['-version'], { encoding: 'utf8' })
+  if (result.error || result.status !== 0) return undefined
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`
+  return parseJavaMajor(output)
+}
+
+const collectChildDirs = (parent: string | undefined) => {
+  if (!parent) return []
+  const resolvedParent = resolveExistingPath(parent)
+  if (!resolvedParent) return []
+  try {
+    return readdirSync(resolvedParent, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(resolvedParent, entry.name))
+  } catch {
+    return []
+  }
+}
+
+const resolveSupportedAndroidJavaHome = () => {
+  const minJava = 17
+  const maxJava = 23
+  const isSupported = (major: number | undefined) => Number.isFinite(major) && major >= minJava && major <= maxJava
+
+  const explicit = resolveExistingPath(process.env.PROMETHEUS_ANDROID_JAVA_HOME?.trim())
+  if (explicit) {
+    const major = resolveJavaMajorForHome(explicit)
+    if (isSupported(major)) return { home: explicit, major: major as number, source: 'PROMETHEUS_ANDROID_JAVA_HOME' }
+    console.warn(
+      `[android] PROMETHEUS_ANDROID_JAVA_HOME points to Java ${major ?? 'unknown'}, but Android builds require Java ${minJava}-${maxJava}.`
+    )
+  }
+
+  const candidates = [
+    resolveExistingPath(process.env.JAVA_HOME?.trim()),
+    ...collectChildDirs(
+      process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()
+        ? path.join(process.env.LOCALAPPDATA, 'mise', 'installs', 'java')
+        : undefined
+    ),
+    ...collectChildDirs(
+      process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()
+        ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Android Studio')
+        : undefined
+    ).map((dir) => path.join(dir, 'jbr')),
+    ...(process.platform === 'win32'
+      ? [
+          path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Android', 'Android Studio', 'jbr'),
+          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Java')),
+          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Eclipse Adoptium')),
+          ...collectChildDirs(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Microsoft'))
+        ]
+      : [])
+  ]
+
+  const seen = new Set<string>()
+  const supported: Array<{ home: string; major: number }> = []
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const resolved = resolveExistingPath(candidate)
+    if (!resolved || seen.has(resolved)) continue
+    seen.add(resolved)
+
+    const major = resolveJavaMajorForHome(resolved)
+    if (isSupported(major)) {
+      supported.push({ home: resolved, major: major as number })
+    }
+  }
+
+  if (!supported.length) return undefined
+  supported.sort((a, b) => b.major - a.major)
+  return { ...supported[0], source: 'auto-detected' as const }
 }
 
 const resolveAndroidBinary = (binary: 'emulator' | 'adb') => {
@@ -162,10 +264,52 @@ const resolveTauriTarget = (value: string | undefined) => {
   return 'desktop'
 }
 const tauriTarget = resolveTauriTarget(process.env.VITE_TAURI_TARGET)
+
+if (isTauriMode && tauriTarget === 'android') {
+  const supportedJava = resolveSupportedAndroidJavaHome()
+  if (!supportedJava) {
+    const currentJavaHome = resolveExistingPath(process.env.JAVA_HOME?.trim())
+    const currentMajor = currentJavaHome ? resolveJavaMajorForHome(currentJavaHome) : resolveJavaMajorFromPath()
+    console.error(
+      `[android] No compatible Java runtime found for Gradle (required: 17-23, detected: ${
+        currentMajor ?? 'unknown'
+      }). Install Java 21 and set JAVA_HOME (or PROMETHEUS_ANDROID_JAVA_HOME).`
+    )
+    process.exit(1)
+  }
+
+  process.env.JAVA_HOME = supportedJava.home
+  const javaBin = path.join(supportedJava.home, 'bin')
+  const separator = process.platform === 'win32' ? ';' : ':'
+  const pathEntries = (process.env.PATH || '').split(separator).filter(Boolean)
+  if (!pathEntries.some((entry) => entry.toLowerCase() === javaBin.toLowerCase())) {
+    process.env.PATH = process.env.PATH ? `${javaBin}${separator}${process.env.PATH}` : javaBin
+  }
+
+  console.info(
+    `[android] Using Java ${supportedJava.major} from ${supportedJava.home} (${supportedJava.source}) for Android tooling.`
+  )
+}
+
 const resolvePositiveInt = (value: string | undefined, fallback: string) => {
   const parsed = Number.parseInt(value ?? '', 10)
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback
   return `${parsed}`
+}
+const probeHttpEndpoint = async (url: string, timeoutMs: number) => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal
+    })
+    return response.ok || response.status < 500
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 const ensureDefault = (name: string, value: string) => {
   const current = process.env[name]?.trim()
@@ -503,6 +647,110 @@ const waitForAndroidBoot = (adbBin: string, serial: string, timeoutMs: number) =
   }
   return false
 }
+const ensureAdbDeviceOnline = (adbBin: string, serial: string, timeoutMs: number) => {
+  const serialPrefix = ['-s', serial]
+  const deadline = Date.now() + Math.max(5000, timeoutMs)
+  while (Date.now() < deadline) {
+    spawnSync(adbBin, [...serialPrefix, 'wait-for-device'], { timeout: 5000 })
+    const state = spawnSync(adbBin, [...serialPrefix, 'get-state'], { encoding: 'utf8' })
+    if (state.status === 0 && state.stdout?.trim() === 'device') return true
+
+    spawnSync(adbBin, ['reconnect'], { encoding: 'utf8' })
+    sleepSync(1000)
+  }
+  return false
+}
+const resolveTauriAndroidDevice = (adbBin: string, serial: string) => {
+  const explicit = process.env.PROMETHEUS_TAURI_ANDROID_DEVICE?.trim()
+  if (explicit) return explicit
+  if (!serial.startsWith('emulator-')) return serial
+
+  const avdName = spawnSync(adbBin, ['-s', serial, 'emu', 'avd', 'name'], { encoding: 'utf8' })
+  if (avdName.status === 0) {
+    const resolved = (avdName.stdout || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && line.toUpperCase() !== 'OK')
+    if (resolved) return resolved
+  }
+
+  console.warn(`[android] Could not resolve AVD name for ${serial}; passing serial to tauri.`)
+  return serial
+}
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const resolveAndroidAbi = (adbBin: string, serial: string) => {
+  const result = spawnSync(adbBin, ['-s', serial, 'shell', 'getprop', 'ro.product.cpu.abi'], { encoding: 'utf8' })
+  const abi = result.status === 0 ? result.stdout?.trim() : ''
+  if (abi) return abi
+  return process.env.PROMETHEUS_ANDROID_APK_ABI?.trim() || 'x86_64'
+}
+const resolveAndroidDebugApkPath = (abi: string) =>
+  path.join(
+    root,
+    'apps',
+    'tauri',
+    'src-tauri',
+    'gen',
+    'android',
+    'app',
+    'build',
+    'outputs',
+    'apk',
+    abi,
+    'debug',
+    `app-${abi}-debug.apk`
+  )
+const resolveAndroidLaunchComponent = (appId: string, activity: string) => {
+  const normalizedActivity = activity.trim()
+  if (!normalizedActivity) return `${appId}/.MainActivity`
+  if (normalizedActivity.includes('/')) return normalizedActivity
+  if (normalizedActivity.startsWith('.')) return `${appId}/${normalizedActivity}`
+  if (normalizedActivity.includes('.')) return `${appId}/${normalizedActivity}`
+  return `${appId}/.${normalizedActivity}`
+}
+const autoInstallAndLaunchAndroidApp = async (
+  adbBin: string,
+  serial: string,
+  apkPath: string,
+  appId: string,
+  activity: string,
+  timeoutMs: number
+) => {
+  const pollMs = Number.parseInt(resolvePositiveInt(process.env.PROMETHEUS_ANDROID_APK_POLL_MS, '2000'), 10)
+  const stablePolls = Number.parseInt(resolvePositiveInt(process.env.PROMETHEUS_ANDROID_APK_STABLE_POLLS, '2'), 10)
+  const minStablePolls = Math.max(1, stablePolls)
+  const deadline = Date.now() + Math.max(10000, timeoutMs)
+
+  let lastMtimeMs = -1
+  let stableCount = 0
+
+  while (Date.now() < deadline) {
+    if (existsSync(apkPath)) {
+      const mtimeMs = statSync(apkPath).mtimeMs
+      if (mtimeMs === lastMtimeMs) {
+        stableCount += 1
+      } else {
+        lastMtimeMs = mtimeMs
+        stableCount = 0
+      }
+
+      if (stableCount >= minStablePolls) {
+        console.info(`[android] Installing ${path.basename(apkPath)} on ${serial}.`)
+        if (!runAdb(adbBin, ['-s', serial, 'install', '-r', apkPath])) return
+
+        const component = resolveAndroidLaunchComponent(appId, activity)
+        if (!runAdb(adbBin, ['-s', serial, 'shell', 'am', 'start', '-n', component])) return
+
+        console.info(`[android] Launched ${component} on ${serial}.`)
+        return
+      }
+    }
+
+    await sleep(pollMs)
+  }
+
+  console.warn(`[android] Timed out waiting for APK output at ${apkPath}.`)
+}
 const optimizeAndroidDevice = (adbBin: string, serial: string) => {
   const serialPrefix = ['-s', serial]
   const enabled = resolveBoolean(process.env.PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE, true)
@@ -774,10 +1022,49 @@ if (!bunRuntime) {
   throw new Error('Bun runtime is required to run the dev server.')
 }
 
+let androidSerial: string | undefined
+let androidDeviceForTauri: string | undefined
+if (isTauriMode && tauriTarget === 'android' && resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTODEPLOY, true)) {
+  const adbBin = resolveAdbBinary()
+  const explicitSerial = process.env.PROMETHEUS_ANDROID_SERIAL?.trim() || undefined
+  const waitTimeoutMs = Number.parseInt(resolvePositiveInt(process.env.PROMETHEUS_ANDROID_DEVICE_WAIT_MS, '180000'), 10)
+  androidSerial = resolveAdbSerial(adbBin, explicitSerial, true, waitTimeoutMs)
+  if (androidSerial) {
+    if (waitForAndroidBoot(adbBin, androidSerial, waitTimeoutMs)) {
+      optimizeAndroidDevice(adbBin, androidSerial)
+    } else {
+      console.warn(`[android] Timed out waiting for ${androidSerial} boot completion.`)
+    }
+    if (!ensureAdbDeviceOnline(adbBin, androidSerial, waitTimeoutMs)) {
+      console.warn(`[android] ${androidSerial} is not online yet; tauri install may fail until adb reconnects.`)
+    }
+    androidDeviceForTauri = resolveTauriAndroidDevice(adbBin, androidSerial)
+    if (androidDeviceForTauri !== androidSerial) {
+      console.info(`[android] Using AVD '${androidDeviceForTauri}' for Tauri device selection.`)
+    }
+    console.info(`[android] Using device '${androidSerial}' for Tauri Android dev run.`)
+  }
+}
+
+if (isTauriMode && tauriTarget === 'android' && !webEnv.PROMETHEUS_TAURI_DEV_URL?.trim()) {
+  const tauriDevHost = devDeviceHost || '10.0.2.2'
+  webEnv.PROMETHEUS_TAURI_DEV_URL = `http://${tauriDevHost}:${devDeviceWebPort}`
+}
+
+if (isTauriMode && resolveBoolean(process.env.PROMETHEUS_TAURI_REUSE_DEV_SERVER, true)) {
+  const localDevUrl = `http://127.0.0.1:${devDeviceWebPort}`
+  if (await probeHttpEndpoint(localDevUrl, 1500)) {
+    webEnv.PROMETHEUS_TAURI_SKIP_BEFORE_DEV_COMMAND = '1'
+    console.info(`[tauri] Reusing existing dev server at ${localDevUrl}.`)
+  }
+}
+
 const webCommand = isTauriMode
   ? (() => {
       const base = [bunBin, 'run', '--cwd', 'apps/tauri', 'tauri']
-      if (tauriTarget === 'android') return [...base, 'android', 'dev']
+      if (tauriTarget === 'android') {
+        return androidDeviceForTauri ? [...base, 'android', 'dev', androidDeviceForTauri] : [...base, 'android', 'dev']
+      }
       if (tauriTarget === 'ios') return [...base, 'ios', 'dev']
       return [...base, 'dev']
     })()
@@ -788,6 +1075,17 @@ const web = bunRuntime.spawn(webCommand, {
   stderr: 'inherit',
   env: webEnv
 })
+
+if (isTauriMode && tauriTarget === 'android' && androidSerial && resolveBoolean(process.env.PROMETHEUS_ANDROID_AUTODEPLOY, true)) {
+  const adbBin = resolveAdbBinary()
+  const androidAbi = resolveAndroidAbi(adbBin, androidSerial)
+  const apkPath = resolveAndroidDebugApkPath(androidAbi)
+  const appId = process.env.PROMETHEUS_ANDROID_APP_ID?.trim() || 'com.prometheus.site'
+  const mainActivity = process.env.PROMETHEUS_ANDROID_MAIN_ACTIVITY?.trim() || '.MainActivity'
+  const installWaitMs = Number.parseInt(resolvePositiveInt(process.env.PROMETHEUS_ANDROID_INSTALL_WAIT_MS, '240000'), 10)
+
+  void autoInstallAndLaunchAndroidApp(adbBin, androidSerial, apkPath, appId, mainActivity, installWaitMs)
+}
 
 try {
   const resolved = await lookup(devWebHost, { all: true })
