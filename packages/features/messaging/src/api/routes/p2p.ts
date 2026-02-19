@@ -17,7 +17,15 @@ import {
 } from '../constants'
 import { ensureContacts } from '../queries/contacts'
 import { loadUserDevices, resolveDeviceEntry, resolvePrekeyBundle, trimMailbox } from '../queries/p2p'
-import { configureWebPush, removePushSubscription, resolvePushSubscription, sendPushNotification } from '../push'
+import {
+  configureWebPush,
+  removePushSubscription,
+  resolveApnsPushEnabled,
+  resolveFcmPushEnabled,
+  resolvePushSubscription,
+  resolveWebPushEnabled,
+  sendPushNotification
+} from '../push'
 import type {
   ContactInvitesTable,
   MessagingRouteOptions,
@@ -48,11 +56,32 @@ type P2pRoutesContext = {
   pushEnabled: boolean
 }
 
+const normalizePushSubscribeBody = (body: unknown) => {
+  if (!isRecord(body)) return body
+  if (typeof body.channel === 'string') return body
+  if (isRecord(body.subscription)) {
+    return { ...body, channel: 'webpush' }
+  }
+  if (isRecord(body.native)) {
+    return { ...body, channel: 'native' }
+  }
+  return body
+}
+
+const normalizePushUnsubscribeBody = (body: unknown) => {
+  if (!isRecord(body)) return body
+  if (typeof body.channel === 'string') return body
+  return { ...body, channel: 'webpush' }
+}
+
 export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesContext) => {
   const { options, contactInvitesTable, resolveSessionUser, pushConfig } = ctx
   const pushEnabled = ctx.pushEnabled
+  const webPushEnabled = resolveWebPushEnabled(pushConfig)
+  const androidPushEnabled = resolveFcmPushEnabled(pushConfig)
+  const iosPushEnabled = resolveApnsPushEnabled(pushConfig)
 
-  if (pushEnabled) {
+  if (webPushEnabled) {
     configureWebPush(pushConfig)
   }
 
@@ -155,7 +184,7 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
       return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
     }
 
-    if (!pushEnabled) {
+    if (!webPushEnabled) {
       return { enabled: false }
     }
 
@@ -183,26 +212,51 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
       return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
     }
 
-    const parsed = p2pPushSubscribeSchema.safeParse(body)
+    const parsed = p2pPushSubscribeSchema.safeParse(normalizePushSubscribeBody(body))
     if (!parsed.success) {
       return attachRateLimitHeaders(options.jsonError(400, 'Invalid push subscription'), rateLimit.headers)
     }
 
-    const { deviceId, subscription } = parsed.data
+    const { deviceId, channel } = parsed.data
     const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
     const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
     if (!device || device.userId !== session.id) {
       return attachRateLimitHeaders(options.jsonError(403, 'Device required'), rateLimit.headers)
     }
 
-    const now = new Date().toISOString()
-    const entry: P2pPushSubscription = {
-      deviceId,
-      userId: session.id,
-      subscription,
-      createdAt: now,
-      updatedAt: now
+    if (channel === 'webpush' && !webPushEnabled) {
+      return attachRateLimitHeaders(options.jsonError(503, 'Web push is unavailable'), rateLimit.headers)
     }
+
+    if (channel === 'native') {
+      const platform = parsed.data.native.platform
+      if (platform === 'android' && !androidPushEnabled) {
+        return attachRateLimitHeaders(options.jsonError(503, 'Android push is unavailable'), rateLimit.headers)
+      }
+      if (platform === 'ios' && !iosPushEnabled) {
+        return attachRateLimitHeaders(options.jsonError(503, 'iOS push is unavailable'), rateLimit.headers)
+      }
+    }
+
+    const now = new Date().toISOString()
+    const entry: P2pPushSubscription =
+      channel === 'webpush'
+        ? {
+            deviceId,
+            userId: session.id,
+            channel: 'webpush',
+            webpush: parsed.data.subscription,
+            createdAt: now,
+            updatedAt: now
+          }
+        : {
+            deviceId,
+            userId: session.id,
+            channel: 'native',
+            native: parsed.data.native,
+            createdAt: now,
+            updatedAt: now
+          }
 
     try {
       const userKey = buildPushUserKey(session.id)
@@ -214,7 +268,7 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
       return attachRateLimitHeaders(options.jsonError(503, 'Push subscription failed'), rateLimit.headers)
     }
 
-    return { deviceId }
+    return { deviceId, channel: entry.channel }
   })
 
   app.post('/chat/p2p/push/unsubscribe', async ({ body, request, set }) => {
@@ -238,12 +292,12 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
       return attachRateLimitHeaders(options.jsonError(401, 'Authentication required'), rateLimit.headers)
     }
 
-    const parsed = p2pPushUnsubscribeSchema.safeParse(body)
+    const parsed = p2pPushUnsubscribeSchema.safeParse(normalizePushUnsubscribeBody(body))
     if (!parsed.success) {
       return attachRateLimitHeaders(options.jsonError(400, 'Invalid push subscription'), rateLimit.headers)
     }
 
-    const { deviceId } = parsed.data
+    const { deviceId, channel } = parsed.data
     const deviceRaw = await options.valkey.get(buildDeviceKey(deviceId))
     const device = resolveDeviceEntry(typeof deviceRaw === 'string' ? deviceRaw : null)
     if (!device || device.userId !== session.id) {
@@ -251,7 +305,7 @@ export const registerP2pRoutes = <App extends Elysia>(app: App, ctx: P2pRoutesCo
     }
 
     await removePushSubscription({ deviceId, userId: session.id }, options)
-    return { deviceId }
+    return { deviceId, channel }
   })
 
   app.post('/chat/p2p/prekeys', async ({ body, request, set }) => {

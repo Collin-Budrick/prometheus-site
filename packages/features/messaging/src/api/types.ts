@@ -4,10 +4,35 @@ import type { DatabaseClient } from '@platform/db'
 import type { RateLimitResult } from '@platform/rate-limit'
 import type { ValidateSessionHandler } from '@features/auth/server'
 
+export type PushNativePlatform = 'android' | 'ios'
+
+export type WebPushSubscriptionPayload = {
+  endpoint: string
+  expirationTime?: number | null
+  keys: {
+    p256dh: string
+    auth: string
+  }
+}
+
+export type NativePushTokenPayload = {
+  platform: PushNativePlatform
+  token: string
+  bundleId: string
+}
+
 export type PushConfig = {
   vapidPublicKey?: string
   vapidPrivateKey?: string
   subject?: string
+  fcmProjectId?: string
+  fcmClientEmail?: string
+  fcmPrivateKey?: string
+  apnsKeyId?: string
+  apnsTeamId?: string
+  apnsBundleId?: string
+  apnsPrivateKey?: string
+  apnsUseSandbox?: boolean
 }
 
 export type MessagingRouteOptions = {
@@ -111,20 +136,25 @@ export type P2pPrekeyBundle = {
   updatedAt: string
 }
 
-export type P2pPushSubscription = {
+export type P2pWebPushSubscription = {
   deviceId: string
   userId: string
-  subscription: {
-    endpoint: string
-    expirationTime?: number | null
-    keys: {
-      p256dh: string
-      auth: string
-    }
-  }
+  channel: 'webpush'
+  webpush: WebPushSubscriptionPayload
   createdAt: string
   updatedAt: string
 }
+
+export type P2pNativePushSubscription = {
+  deviceId: string
+  userId: string
+  channel: 'native'
+  native: NativePushTokenPayload
+  createdAt: string
+  updatedAt: string
+}
+
+export type P2pPushSubscription = P2pWebPushSubscription | P2pNativePushSubscription
 
 export type PushBroadcastOptions = {
   valkey: ValkeyClientType

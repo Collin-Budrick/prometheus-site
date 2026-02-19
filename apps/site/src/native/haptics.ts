@@ -1,3 +1,6 @@
+import { invokeNativeCommand } from './bridge'
+import { isNativeShellRuntime } from './runtime'
+
 let userActionScopeDepth = 0
 
 const vibrate = (pattern: number | number[]) => {
@@ -9,9 +12,15 @@ const vibrate = (pattern: number | number[]) => {
   }
 }
 
-const runIfUserAction = async (operation: () => void) => {
+const runIfUserAction = async (operation: () => Promise<void> | void) => {
   if (userActionScopeDepth <= 0) return
-  operation()
+  await operation()
+}
+
+const runNativeHaptic = async (kind: 'tap' | 'selection' | 'success' | 'warning' | 'error') => {
+  if (!isNativeShellRuntime()) return false
+  const applied = await invokeNativeCommand<boolean>('native_haptic', { kind })
+  return applied === true
 }
 
 export const withUserActionHaptics = async <T>(operation: () => T | Promise<T>) => {
@@ -24,15 +33,23 @@ export const withUserActionHaptics = async <T>(operation: () => T | Promise<T>) 
 }
 
 export const triggerHapticTap = async () => {
-  await runIfUserAction(() => vibrate(10))
+  await runIfUserAction(async () => {
+    const handled = await runNativeHaptic('tap')
+    if (!handled) vibrate(10)
+  })
 }
 
 export const triggerHapticSelection = async () => {
-  await runIfUserAction(() => vibrate([8, 16, 8]))
+  await runIfUserAction(async () => {
+    const handled = await runNativeHaptic('selection')
+    if (!handled) vibrate([8, 16, 8])
+  })
 }
 
 export const triggerHapticConfirmation = async (kind: 'success' | 'warning' | 'error' = 'success') => {
-  await runIfUserAction(() => {
+  await runIfUserAction(async () => {
+    const handled = await runNativeHaptic(kind)
+    if (handled) return
     if (kind === 'error') {
       vibrate([20, 40, 20])
       return

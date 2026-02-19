@@ -1,0 +1,130 @@
+name: Native Mobile Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: 'Release channel label (store/internal/beta)'
+        required: false
+        default: store
+      release_track:
+        description: 'Android track (internal/alpha/beta/production)'
+        required: false
+        default: internal
+
+concurrency:
+  group: native-mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mobile-release:
+    runs-on: macos-latest
+    env:
+      VITE_TAURI: '1'
+      PROMETHEUS_TAURI_PROFILE: prod
+      PROMETHEUS_RELEASE_CHANNEL: ${{ github.event.inputs.release_channel || 'store' }}
+      PROMETHEUS_RELEASE_TRACK: ${{ github.event.inputs.release_track || 'internal' }}
+      VITE_API_BASE: ${{ secrets.VITE_API_BASE_PROD }}
+      PROMETHEUS_TAURI_UPDATER_PUBKEY: ${{ secrets.PROMETHEUS_TAURI_UPDATER_PUBKEY }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          missing=0
+          for name in \
+            VITE_API_BASE \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD \
+            APPLE_CERT_BASE64 \
+            APPLE_CERT_PASSWORD \
+            APPLE_PROVISIONING_PROFILE_BASE64 \
+            APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Initialize mobile projects
+        run: bun run tauri:mobile:init
+
+      - name: Decode Android keystore
+        shell: bash
+        run: |
+          mkdir -p apps/tauri/src-tauri/gen/android
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > apps/tauri/src-tauri/gen/android/release.keystore
+
+      - name: Build Android release artifacts
+        run: |
+          echo "Building Android release for channel=${PROMETHEUS_RELEASE_CHANNEL} track=${PROMETHEUS_RELEASE_TRACK}"
+          bun run --cwd apps/tauri tauri android build
+
+      - name: Import Apple signing certificate
+        shell: bash
+        run: |
+          CERT_PATH="$RUNNER_TEMP/prometheus-signing.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/prometheus-signing.keychain-db"
+
+          echo "$APPLE_CERT_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$APPLE_CERT_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$APPLE_CERT_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_CERT_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+
+      - name: Import Apple provisioning profile
+        shell: bash
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/prometheus.mobileprovision"
+
+      - name: Build iOS release artifacts
+        run: |
+          echo "Building iOS release for channel=${PROMETHEUS_RELEASE_CHANNEL}"
+          bun run --cwd apps/tauri tauri ios build
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-${{ github.run_id }}-${{ env.PROMETHEUS_RELEASE_TRACK }}
+          path: |
+            apps/tauri/src-tauri/gen/android/app/build/outputs/**/*
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-${{ github.run_id }}-${{ env.PROMETHEUS_RELEASE_CHANNEL }}
+          path: |
+            apps/tauri/src-tauri/gen/apple/build/**/*

@@ -750,6 +750,7 @@ const webEnv: NodeJS.ProcessEnv = {
 }
 if (isTauriMode) {
   webEnv.VITE_TAURI = '1'
+  webEnv.PROMETHEUS_TAURI_PROFILE = process.env.PROMETHEUS_TAURI_PROFILE?.trim() || 'dev'
 }
 
 if (!useDeviceHost) {

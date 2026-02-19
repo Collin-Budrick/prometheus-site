@@ -47,6 +47,14 @@ export type PushConfig = {
   vapidPublicKey?: string
   vapidPrivateKey?: string
   subject?: string
+  fcmProjectId?: string
+  fcmClientEmail?: string
+  fcmPrivateKey?: string
+  apnsKeyId?: string
+  apnsTeamId?: string
+  apnsBundleId?: string
+  apnsPrivateKey?: string
+  apnsUseSandbox?: boolean
 }
 
 export type ServerConfig = {
@@ -120,6 +128,14 @@ const platformEnvSchema = {
   PUSH_VAPID_PUBLIC_KEY: 'string?',
   PUSH_VAPID_PRIVATE_KEY: 'string?',
   PUSH_VAPID_SUBJECT: 'string?',
+  PUSH_FCM_PROJECT_ID: 'string?',
+  PUSH_FCM_CLIENT_EMAIL: 'string?',
+  PUSH_FCM_PRIVATE_KEY: 'string?',
+  PUSH_APNS_KEY_ID: 'string?',
+  PUSH_APNS_TEAM_ID: 'string?',
+  PUSH_APNS_BUNDLE_ID: 'string?',
+  PUSH_APNS_PRIVATE_KEY: 'string?',
+  PUSH_APNS_USE_SANDBOX: 'string?',
   LOG_LEVEL: 'string?',
   LOG_FORMAT: 'string?'
 } as const
@@ -425,7 +441,15 @@ const buildConnectionString = (env: Env) => {
 const resolvePushConfig = (env: Env): PushConfig => ({
   vapidPublicKey: normalizeOptionalString(env.PUSH_VAPID_PUBLIC_KEY),
   vapidPrivateKey: normalizeOptionalString(env.PUSH_VAPID_PRIVATE_KEY),
-  subject: normalizeOptionalString(env.PUSH_VAPID_SUBJECT)
+  subject: normalizeOptionalString(env.PUSH_VAPID_SUBJECT),
+  fcmProjectId: normalizeOptionalString(env.PUSH_FCM_PROJECT_ID),
+  fcmClientEmail: normalizeOptionalString(env.PUSH_FCM_CLIENT_EMAIL),
+  fcmPrivateKey: normalizeOptionalString(env.PUSH_FCM_PRIVATE_KEY),
+  apnsKeyId: normalizeOptionalString(env.PUSH_APNS_KEY_ID),
+  apnsTeamId: normalizeOptionalString(env.PUSH_APNS_TEAM_ID),
+  apnsBundleId: normalizeOptionalString(env.PUSH_APNS_BUNDLE_ID),
+  apnsPrivateKey: normalizeOptionalString(env.PUSH_APNS_PRIVATE_KEY),
+  apnsUseSandbox: parseBooleanFlag(env.PUSH_APNS_USE_SANDBOX, false, 'PUSH_APNS_USE_SANDBOX')
 })
 
 const resolveServerConfig = (env: Env): ServerConfig => ({

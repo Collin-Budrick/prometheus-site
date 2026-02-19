@@ -47,14 +47,42 @@ export const pushSubscriptionSchema = z.object({
   })
 })
 
-export const p2pPushSubscribeSchema = z.object({
+export const nativePushTokenSchema = z.object({
+  platform: z.enum(['android', 'ios']),
+  token: z.string().min(16),
+  bundleId: z.string().min(3).max(200)
+})
+
+const webPushSubscribeSchema = z.object({
+  channel: z.literal('webpush'),
   deviceId: z.string().min(8),
   subscription: pushSubscriptionSchema
 })
 
-export const p2pPushUnsubscribeSchema = z.object({
+const nativePushSubscribeSchema = z.object({
+  channel: z.literal('native'),
+  deviceId: z.string().min(8),
+  native: nativePushTokenSchema
+})
+
+export const p2pPushSubscribeSchema = z.discriminatedUnion('channel', [webPushSubscribeSchema, nativePushSubscribeSchema])
+
+const webPushUnsubscribeSchema = z.object({
+  channel: z.literal('webpush'),
   deviceId: z.string().min(8)
 })
+
+const nativePushUnsubscribeSchema = z.object({
+  channel: z.literal('native'),
+  deviceId: z.string().min(8),
+  platform: z.enum(['android', 'ios']).optional(),
+  token: z.string().min(16).optional()
+})
+
+export const p2pPushUnsubscribeSchema = z.discriminatedUnion('channel', [
+  webPushUnsubscribeSchema,
+  nativePushUnsubscribeSchema
+])
 
 export const p2pMailboxSendSchema = z.object({
   recipientId: z.string().min(6),

@@ -799,7 +799,12 @@ const buildNativeBundle = async () => {
     VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
     VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
     VITE_DISABLE_SW: previewDisableSw,
-    ...(isTauriMode ? { VITE_TAURI: '1' } : {})
+    ...(isTauriMode
+      ? {
+          VITE_TAURI: '1',
+          PROMETHEUS_TAURI_PROFILE: process.env.PROMETHEUS_TAURI_PROFILE?.trim() || 'prod'
+        }
+      : {})
   }
   const runViteBuild = (args: string[]) =>
     spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', ...args], {

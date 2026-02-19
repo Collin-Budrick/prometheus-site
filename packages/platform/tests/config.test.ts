@@ -18,6 +18,11 @@ describe('configuration validation', () => {
     expect(cfg.rateLimit.unkey.rootKey).toBeUndefined()
     expect(cfg.rateLimit.unkey.namespace).toBe('prometheus-api')
     expect(cfg.rateLimit.unkey.baseUrl).toBe('https://api.unkey.com')
+
+    expect(cfg.push.vapidPublicKey).toBeUndefined()
+    expect(cfg.push.fcmProjectId).toBeUndefined()
+    expect(cfg.push.apnsKeyId).toBeUndefined()
+    expect(cfg.push.apnsUseSandbox).toBe(false)
   })
 
   it('uses custom values when provided', () => {
@@ -34,7 +39,18 @@ describe('configuration validation', () => {
       VALKEY_PORT: '6380',
       UNKEY_ROOT_KEY: 'unkey_root_123',
       UNKEY_RATELIMIT_NAMESPACE: 'api',
-      UNKEY_RATELIMIT_BASE_URL: 'https://unkey.example.com'
+      UNKEY_RATELIMIT_BASE_URL: 'https://unkey.example.com',
+      PUSH_VAPID_PUBLIC_KEY: 'vapid-public',
+      PUSH_VAPID_PRIVATE_KEY: 'vapid-private',
+      PUSH_VAPID_SUBJECT: 'mailto:notifications@prometheus.dev',
+      PUSH_FCM_PROJECT_ID: 'prometheus-prod',
+      PUSH_FCM_CLIENT_EMAIL: 'firebase-adminsdk@example.iam.gserviceaccount.com',
+      PUSH_FCM_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
+      PUSH_APNS_KEY_ID: 'ABCD1234',
+      PUSH_APNS_TEAM_ID: 'TEAM123456',
+      PUSH_APNS_BUNDLE_ID: 'com.prometheus.app',
+      PUSH_APNS_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
+      PUSH_APNS_USE_SANDBOX: 'true'
     })
 
     expect(cfg.postgres.connectionString).toBe(
@@ -50,6 +66,18 @@ describe('configuration validation', () => {
     expect(cfg.rateLimit.unkey.rootKey).toBe('unkey_root_123')
     expect(cfg.rateLimit.unkey.namespace).toBe('api')
     expect(cfg.rateLimit.unkey.baseUrl).toBe('https://unkey.example.com')
+
+    expect(cfg.push.vapidPublicKey).toBe('vapid-public')
+    expect(cfg.push.vapidPrivateKey).toBe('vapid-private')
+    expect(cfg.push.subject).toBe('mailto:notifications@prometheus.dev')
+    expect(cfg.push.fcmProjectId).toBe('prometheus-prod')
+    expect(cfg.push.fcmClientEmail).toBe('firebase-adminsdk@example.iam.gserviceaccount.com')
+    expect(cfg.push.fcmPrivateKey).toBe('-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----')
+    expect(cfg.push.apnsKeyId).toBe('ABCD1234')
+    expect(cfg.push.apnsTeamId).toBe('TEAM123456')
+    expect(cfg.push.apnsBundleId).toBe('com.prometheus.app')
+    expect(cfg.push.apnsPrivateKey).toBe('-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----')
+    expect(cfg.push.apnsUseSandbox).toBe(true)
   })
 
   it('rejects invalid numeric values', () => {
@@ -62,5 +90,6 @@ describe('configuration validation', () => {
   it('rejects invalid booleans and URLs', () => {
     expect(() => loadConfig({ POSTGRES_SSL: 'maybe' })).toThrow(/POSTGRES_SSL/)
     expect(() => loadConfig({ DATABASE_URL: 'not-a-url' })).toThrow(/DATABASE_URL/)
+    expect(() => loadConfig({ PUSH_APNS_USE_SANDBOX: 'maybe' })).toThrow(/PUSH_APNS_USE_SANDBOX/)
   })
 })

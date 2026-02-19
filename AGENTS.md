@@ -29,11 +29,13 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
 - **Tauri build flag:** `VITE_TAURI=1` enables static generation for Tauri builds (`bun run --cwd apps/site build:tauri`) and should be combined with `bun run --cwd apps/tauri tauri build` for packaging.
 - **Tauri wrapper controls:** `bun run dev:tauri` and `bun run preview:tauri` start the Tauri flow directly.
+- **Tauri config overlays:** `apps/tauri/scripts/tauri.ts` merges `tauri.conf.base.json` + `tauri.conf.dev.json|tauri.conf.prod.json` into runtime `TAURI_CONFIG`; set `PROMETHEUS_TAURI_PROFILE=dev|prod` to override auto profile selection (`dev` for `tauri dev`, `prod` for `tauri build`).
+- **Desktop updater envs:** `PROMETHEUS_TAURI_UPDATER_PUBKEY` (required for production desktop builds), `PROMETHEUS_TAURI_UPDATER_ENDPOINTS` (optional comma/newline list; defaults to GitHub Releases latest JSON URL). Updater is disabled for Android/iOS targets.
 - **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_WEBTRANSPORT_DATAGRAMS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_HIGHLIGHT_SESSION_RECORDING`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on. `VITE_ENABLE_FRAGMENT_STREAMING` defaults off; `VITE_FRAGMENT_VISIBILITY_MARGIN` defaults to `0px` and `VITE_FRAGMENT_VISIBILITY_THRESHOLD` defaults to `0`. `VITE_ENABLE_HIGHLIGHT` defaults off; `VITE_HIGHLIGHT_SAMPLE_RATE` defaults to `0.1` when unset.
 - **Fragment cache TTLs:** `FRAGMENT_PLAN_TTL` (seconds, default `180`), `FRAGMENT_PLAN_STALE_TTL` (seconds, default `300`), and `FRAGMENT_INITIAL_TTL` (seconds, default `180`) control fragment plan + initial payload cache lifetimes.
 - **WebTransport envs:** `WEBTRANSPORT_API_BASE` (defaults to `http://api:4000`), `WEBTRANSPORT_LISTEN_ADDR` (defaults to `:4444`), `WEBTRANSPORT_CERT_PATH`, `WEBTRANSPORT_KEY_PATH`, `WEBTRANSPORT_ALLOWED_ORIGINS`, `WEBTRANSPORT_ALLOW_ANY_ORIGIN`, `WEBTRANSPORT_ENABLE_DATAGRAMS` (defaults to on), `WEBTRANSPORT_MAX_DATAGRAM_SIZE` (defaults to `1200`), `PROMETHEUS_WEBTRANSPORT_PORT` (defaults to `4444` for host UDP), `VITE_WEBTRANSPORT_BASE` (optional client override).
 - **P2P relay + ICE envs:** `VITE_P2P_RELAY_BASES`/`P2P_RELAY_BASES` (comma/newline list of API bases for mailbox relays; defaults to resolved API base), `VITE_P2P_NOSTR_RELAYS`/`P2P_NOSTR_RELAYS` (comma/newline list of `ws(s)` Nostr relays), `VITE_P2P_WAKU_RELAYS`/`P2P_WAKU_RELAYS` (comma/newline list of Waku bootstrap multiaddrs, optionally prefixed with `waku:`), `VITE_P2P_CRDT_SIGNALING`/`P2P_CRDT_SIGNALING` (comma/newline list of y-webrtc signaling URLs), `VITE_P2P_PEERJS_SERVER`/`P2P_PEERJS_SERVER` (PeerJS server URL), and `VITE_P2P_ICE_SERVERS`/`P2P_ICE_SERVERS` (JSON array or comma list of ICE URLs).
-- **Push envs:** `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT` (enable web push notifications for P2P mailbox updates).
+- **Push envs:** `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT` (web push), `PUSH_FCM_PROJECT_ID`, `PUSH_FCM_CLIENT_EMAIL`, `PUSH_FCM_PRIVATE_KEY` (Android FCM), and `PUSH_APNS_KEY_ID`, `PUSH_APNS_TEAM_ID`, `PUSH_APNS_BUNDLE_ID`, `PUSH_APNS_PRIVATE_KEY`, `PUSH_APNS_USE_SANDBOX` (iOS APNs).
 - **Auth bootstrap envs:** `AUTH_BOOTSTRAP_PRIVATE_KEY` (ES256 JWK used by the API to sign offline bootstrap tokens), `VITE_AUTH_BOOTSTRAP_PUBLIC_KEY`/`AUTH_BOOTSTRAP_PUBLIC_KEY` (public JWK used by the client to verify offline bootstrap tokens).
 - **API base resolution:** Frontend resolves API origin via `API_BASE`/`VITE_API_BASE` (absolute URL or `/api` prefix). Default dev fallback is `http://127.0.0.1:4000`. Set the envs explicitly when front/back aren’t co-located.
 - **Public base (IPFS/PWA):** `VITE_PUBLIC_BASE` controls the Vite `base` path (use `./` for IPFS/gateway hosting so assets resolve under the CID path).
@@ -50,11 +52,14 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Rate limits and payload limits:** Respect API constraints in `packages/platform/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
 - **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/caddy/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
+- **Native service worker policy:** Native builds (`VITE_TAURI=1`) do not generate/register the service worker. Keep SW behavior only for browser/PWA builds.
 
 ## Repo conventions and checks
 
 - **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
+- **Native release workflows:** `.github/workflows/native-desktop-release.yml`, `.github/workflows/native-mobile-release.yml`, and `.github/workflows/native-pr-smoke.yml` define desktop/mobile release + PR smoke lanes.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site + packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
+- **Native docs:** Native release checklists and runbooks live in `docs/native-release-qa.md`, `docs/native-release-runbook.md`, and `docs/native-config.md`.
 
 - **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke native plugin paths in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
 - **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
@@ -69,7 +74,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/valkey/valkey.conf`, `scripts/*.ts` (compose helpers, preview/dev).
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
-- **Tauri:** `apps/tauri/src-tauri/tauri.conf.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.
+- **Tauri:** `apps/tauri/src-tauri/tauri.conf.base.json`, `apps/tauri/src-tauri/tauri.conf.dev.json`, `apps/tauri/src-tauri/tauri.conf.prod.json`, `apps/tauri/src-tauri/capabilities/*.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.
 
 ## Contribution dos and don’ts
 

@@ -1,15 +1,8 @@
 import { decodeFragmentPayload, type FragmentPayloadMap, type FragmentPlan } from '@core/fragments'
 import { appConfig } from '../app-config'
 import { fragmentPlanCache } from '../fragment/plan-cache'
+import { invokeNativeCommand } from './bridge'
 import { isNativeShellRuntime } from './runtime'
-
-type BackgroundRunnerPlugin = {
-  dispatchEvent: <T = unknown>(options: {
-    label: string
-    event: string
-    details: Record<string, unknown>
-  }) => Promise<T>
-}
 
 type RunnerDispatchOverride = (event: string, details: Record<string, unknown>) => Promise<unknown | null>
 
@@ -100,23 +93,17 @@ const isNativeRuntime = () => {
   return isNativeShellRuntime()
 }
 
-const loadBackgroundRunner = async (): Promise<BackgroundRunnerPlugin | null> => {
-  if (!isNativeRuntime() || typeof window === 'undefined') return null
-  return null
-}
-
 const dispatchRunnerEvent = async <T = unknown>(event: string, details: Record<string, unknown> = {}) => {
   if (dispatchOverride) {
     return (await dispatchOverride(event, details)) as T | null
   }
-  const plugin = await loadBackgroundRunner()
-  if (!plugin) return null
+  if (!isNativeRuntime()) return null
   try {
-    return (await plugin.dispatchEvent({
+    return (await invokeNativeCommand<T>('native_background_dispatch', {
       label: BACKGROUND_RUNNER_LABEL,
       event,
       details
-    })) as T
+    })) as T | null
   } catch {
     return null
   }

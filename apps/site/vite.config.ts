@@ -26,7 +26,12 @@ const resolveOptionalPackageEntry = (id: string) => {
   }
 }
 const tauriDeepLinkPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-deep-link')
+const tauriDialogPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-dialog')
+const tauriGlobalShortcutPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-global-shortcut')
+const tauriNotificationPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-notification')
+const tauriSqlPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-sql')
 const tauriShellPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-shell')
+const tauriUpdaterPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-updater')
 
 const truthyEnvValues = new Set(['1', 'true', 'yes', 'on'])
 const isTruthyEnv = (value?: string) => {
@@ -703,14 +708,18 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             }),
             compression({ algorithms: ['gzip'] })
           ]),
-        serwist({
-          swSrc: 'src/service-worker.ts',
-          swDest: 'service-worker.js',
-          globDirectory: 'dist',
-          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
-          additionalPrecacheEntries: pwaPrecacheEntries,
-          swUrl: withBase('/service-worker.js')
-        })
+        ...(nativeBuildEnabled
+          ? []
+          : [
+              serwist({
+                swSrc: 'src/service-worker.ts',
+                swDest: 'service-worker.js',
+                globDirectory: 'dist',
+                globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
+                additionalPrecacheEntries: pwaPrecacheEntries,
+                swUrl: withBase('/service-worker.js')
+              })
+            ])
       ],
       optimizeDeps: {
         include: ['extend'],
@@ -737,8 +746,23 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
           ...(tauriDeepLinkPluginEntry
             ? [{ find: '@tauri-apps/plugin-deep-link', replacement: tauriDeepLinkPluginEntry }]
             : []),
+          ...(tauriDialogPluginEntry
+            ? [{ find: '@tauri-apps/plugin-dialog', replacement: tauriDialogPluginEntry }]
+            : []),
+          ...(tauriGlobalShortcutPluginEntry
+            ? [{ find: '@tauri-apps/plugin-global-shortcut', replacement: tauriGlobalShortcutPluginEntry }]
+            : []),
+          ...(tauriNotificationPluginEntry
+            ? [{ find: '@tauri-apps/plugin-notification', replacement: tauriNotificationPluginEntry }]
+            : []),
+          ...(tauriSqlPluginEntry
+            ? [{ find: '@tauri-apps/plugin-sql', replacement: tauriSqlPluginEntry }]
+            : []),
           ...(tauriShellPluginEntry
             ? [{ find: '@tauri-apps/plugin-shell', replacement: tauriShellPluginEntry }]
+            : []),
+          ...(tauriUpdaterPluginEntry
+            ? [{ find: '@tauri-apps/plugin-updater', replacement: tauriUpdaterPluginEntry }]
             : []),
           { find: '@', replacement: path.resolve(configRoot, 'src') },
           { find: /^@core$/, replacement: path.join(coreRoot, 'index.ts') },

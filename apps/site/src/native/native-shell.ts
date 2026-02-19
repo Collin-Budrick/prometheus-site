@@ -10,6 +10,7 @@ import {
   runNativeAutomaticAppActionsOnResume
 } from './native-app-extras'
 import { isNativeShellRuntime, isNativeTauriRuntime } from './runtime'
+import { invokeNativeCommand } from './bridge'
 import { initNativeTextZoom } from './text-zoom'
 import { type NavLabelKey } from '../config'
 import { getLanguagePack } from '../lang'
@@ -96,7 +97,11 @@ export const initNativeShell = () => {
     const onFocus = () => {
       void runNativeAutomaticAppActionsOnResume()
     }
+    const onNativeResume = () => {
+      void runNativeAutomaticAppActionsOnResume()
+    }
     window.addEventListener('focus', onFocus)
+    window.addEventListener('prom:native-resume', onNativeResume as EventListener)
     void initializeTauriOpenUrlListener().then((removeListener) => {
       removeTauriListener = removeListener
     })
@@ -104,6 +109,7 @@ export const initNativeShell = () => {
 
     state.cleanup = () => {
       window.removeEventListener('focus', onFocus)
+      window.removeEventListener('prom:native-resume', onNativeResume as EventListener)
       removeTauriListener()
       disposeNativeAutomaticAppActions()
       setKeyboardHeight(0)
@@ -119,7 +125,9 @@ export const initNativeShell = () => {
 }
 
 export const hideNativeSplashScreen = async () => {
-  // no-op
+  if (!isNativeTauriRuntime()) return false
+  const hidden = await invokeNativeCommand<boolean>('hide_native_splash')
+  return hidden === true
 }
 
 if (import.meta.hot) {

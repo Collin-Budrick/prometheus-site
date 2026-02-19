@@ -12,6 +12,7 @@ import {
 import Root from './root'
 import { initConnectivityStore, isOnline } from './native/connectivity'
 import { initNativeFeelTelemetry } from './native/telemetry'
+import { isNativeShellRuntime } from './native/runtime'
 
 declare global {
   interface Window {
@@ -37,8 +38,9 @@ if (import.meta.hot) {
 
 export default function (opts: RenderOptions) {
   void render(document, <Root />, opts)
+  const nativeRuntime = isNativeShellRuntime()
 
-  if ('serviceWorker' in navigator) {
+  if (!nativeRuntime && 'serviceWorker' in navigator) {
     setupServiceWorkerBridge()
   }
 
@@ -51,7 +53,7 @@ export default function (opts: RenderOptions) {
     setupServerHealthProbe()
   })
 
-  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  if (!nativeRuntime && import.meta.env.PROD && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       const shouldSkipServiceWorker = isServiceWorkerDisabled() || isServiceWorkerOptedOut()
       const shouldRunCleanup = shouldForceServiceWorkerCleanup() || !hasRunCleanupForVersion()

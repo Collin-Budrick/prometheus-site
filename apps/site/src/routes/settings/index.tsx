@@ -26,6 +26,7 @@ import {
 } from '../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../native/native-auth'
+import { isNativeShellRuntime } from '../../native/runtime'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -144,6 +145,7 @@ export default component$(() => {
   const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })
   const swOptOut = useSignal(Boolean(data.value.swOptOut))
   const swStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const nativeRuntime = useSignal(false)
   const friendCode = useSignal('')
   const friendCodeStatus = useSignal<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const privacyAlwaysOn = useSignal(false)
@@ -170,6 +172,7 @@ export default component$(() => {
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
+    nativeRuntime.value = isNativeShellRuntime()
     const friendUser = resolveFriendCodeUser(user)
     if (!friendUser) return
     friendCode.value = ensureFriendCode(friendUser)
@@ -177,6 +180,7 @@ export default component$(() => {
 
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
+    if (isNativeShellRuntime()) return
     const handleCacheRefreshed = () => {
       swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
     }
@@ -239,6 +243,7 @@ export default component$(() => {
 
   const toggleOfflineCache = $(() => {
     if (typeof window === 'undefined') return
+    if (nativeRuntime.value) return
     const next = !swOptOut.value
     swOptOut.value = next
     try {
@@ -257,12 +262,14 @@ export default component$(() => {
 
   const handleOfflineRefresh = $(() => {
     if (typeof window === 'undefined') return
+    if (nativeRuntime.value) return
     window.dispatchEvent(new CustomEvent('prom:sw-refresh-cache'))
     swStatus.value = { tone: 'info', message: copy.value.settingsOfflineRefreshPending }
   })
 
   const handleOfflineCleanup = $(() => {
     if (typeof window === 'undefined') return
+    if (nativeRuntime.value) return
     window.dispatchEvent(new CustomEvent('prom:sw-clear-cache'))
     swStatus.value = { tone: 'info', message: copy.value.settingsOfflineCleanupPending }
   })
@@ -397,53 +404,55 @@ export default component$(() => {
           </div>
         ) : null}
       </section>
-      <section class="settings-panel">
-        <div class="settings-panel-header">
-          <span class="settings-panel-title">{copy.value.settingsOfflineTitle}</span>
-          <p class="settings-panel-description">{copy.value.settingsOfflineDescription}</p>
-        </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-label">
-            <span class="settings-toggle-title">{copy.value.settingsOfflineToggleLabel}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsOfflineToggleHint}</span>
+      {!nativeRuntime.value ? (
+        <section class="settings-panel">
+          <div class="settings-panel-header">
+            <span class="settings-panel-title">{copy.value.settingsOfflineTitle}</span>
+            <p class="settings-panel-description">{copy.value.settingsOfflineDescription}</p>
           </div>
-          <button
-            type="button"
-            class="chat-settings-toggle"
-            data-active={!swOptOut.value ? 'true' : 'false'}
-            role="switch"
-            aria-checked={!swOptOut.value}
-            onClick$={toggleOfflineCache}
-          >
-            <span class="chat-settings-toggle-track">
-              <span class="chat-settings-toggle-knob" />
-            </span>
-          </button>
-        </div>
-        <div class="settings-action-row">
-          <div class="settings-action-label">
-            <span class="settings-toggle-title">{copy.value.settingsOfflineRefreshLabel}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsOfflineRefreshHint}</span>
+          <div class="settings-toggle-row">
+            <div class="settings-toggle-label">
+              <span class="settings-toggle-title">{copy.value.settingsOfflineToggleLabel}</span>
+              <span class="settings-toggle-hint">{copy.value.settingsOfflineToggleHint}</span>
+            </div>
+            <button
+              type="button"
+              class="chat-settings-toggle"
+              data-active={!swOptOut.value ? 'true' : 'false'}
+              role="switch"
+              aria-checked={!swOptOut.value}
+              onClick$={toggleOfflineCache}
+            >
+              <span class="chat-settings-toggle-track">
+                <span class="chat-settings-toggle-knob" />
+              </span>
+            </button>
           </div>
-          <button type="button" class="settings-action-button" onClick$={handleOfflineRefresh}>
-            {copy.value.settingsOfflineRefreshAction}
-          </button>
-        </div>
-        <div class="settings-action-row">
-          <div class="settings-action-label">
-            <span class="settings-toggle-title">{copy.value.settingsOfflineCleanupLabel}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsOfflineCleanupHint}</span>
+          <div class="settings-action-row">
+            <div class="settings-action-label">
+              <span class="settings-toggle-title">{copy.value.settingsOfflineRefreshLabel}</span>
+              <span class="settings-toggle-hint">{copy.value.settingsOfflineRefreshHint}</span>
+            </div>
+            <button type="button" class="settings-action-button" onClick$={handleOfflineRefresh}>
+              {copy.value.settingsOfflineRefreshAction}
+            </button>
           </div>
-          <button type="button" class="settings-action-button" onClick$={handleOfflineCleanup}>
-            {copy.value.settingsOfflineCleanupAction}
-          </button>
-        </div>
-        {swStatus.value ? (
-          <div class="auth-status" role="status" aria-live="polite" data-tone={swStatus.value.tone}>
-            {swStatus.value.message}
+          <div class="settings-action-row">
+            <div class="settings-action-label">
+              <span class="settings-toggle-title">{copy.value.settingsOfflineCleanupLabel}</span>
+              <span class="settings-toggle-hint">{copy.value.settingsOfflineCleanupHint}</span>
+            </div>
+            <button type="button" class="settings-action-button" onClick$={handleOfflineCleanup}>
+              {copy.value.settingsOfflineCleanupAction}
+            </button>
           </div>
-        ) : null}
-      </section>
+          {swStatus.value ? (
+            <div class="auth-status" role="status" aria-live="polite" data-tone={swStatus.value.tone}>
+              {swStatus.value.message}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section class="settings-panel">
         <div class="settings-panel-header">

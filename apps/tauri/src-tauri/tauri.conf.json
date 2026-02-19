@@ -6,7 +6,7 @@
   "build": {
     "beforeBuildCommand": "bun --cwd ../site build:tauri",
     "beforeDevCommand": "bun --cwd ../site dev --port 4173",
-    "devUrl": "http://127.0.0.1:4173",
+    "devUrl": "https://prometheus.dev",
     "frontendDist": "../site/dist"
   },
   "app": {
@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data:; connect-src 'self' http://127.0.0.1:* https://127.0.0.1:* http://localhost:* https://localhost:*; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; img-src 'self' asset: data:; connect-src 'self' http://127.0.0.1:* https://127.0.0.1:* http://localhost:* https://localhost:* https://prometheus.dev https://prometheus.prod; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
@@ -28,8 +28,13 @@
     "targets": ["deb", "appimage", "msi", "nsis", "dmg", "app"],
     "icon": [
       "icons/icon.ico",
-      "../site/public/icons/icon-512.png",
-      "../site/public/icons/icon-192.png"
+      "icons/icon.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon-192.png",
+      "icons/icon-512.png",
+      "icons/Square44x44Logo.png",
+      "icons/Square310x310Logo.png"
     ]
   },
   "plugins": {
@@ -39,12 +44,14 @@
       },
       "mobile": [
         {
+          "schemes": ["dev.prometheus.site"],
           "host": "dev.prometheus.site"
         }
       ]
     },
     "updater": {
-      "active": false
+      "active": false,
+      "pubkey": ""
     }
   }
 }
