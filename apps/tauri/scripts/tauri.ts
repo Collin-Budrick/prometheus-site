@@ -14,6 +14,7 @@ const isDevCommand = args.includes("dev");
 const isBuildCommand = args.includes("build");
 const isAndroidTarget = args.includes("android");
 const isIosTarget = args.includes("ios");
+const isAndroidStudioScript = args.includes("android-studio-script");
 const tauriTarget = isAndroidTarget ? "android" : isIosTarget ? "ios" : "desktop";
 
 type JsonRecord = Record<string, unknown>;
@@ -82,6 +83,16 @@ const normalizeProfile = (value: string | undefined) => {
   return normalized;
 };
 
+const parseHostFromUrl = (value: string | undefined) => {
+  const raw = value?.trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
 const explicitProfile = normalizeProfile(env.PROMETHEUS_TAURI_PROFILE);
 const tauriProfile = explicitProfile === "prod" || explicitProfile === "dev"
   ? explicitProfile
@@ -101,17 +112,6 @@ if (tauriProfile === "prod" && isBuildCommand) {
     );
     process.exit(1);
   }
-}
-
-const overrideDevUrl = env.PROMETHEUS_TAURI_DEV_URL?.trim();
-if (isDevCommand && overrideDevUrl) {
-  const build = isRecord(generatedConfig.build) ? generatedConfig.build : {};
-  generatedConfig = deepMerge(generatedConfig, {
-    build: {
-      ...build,
-      devUrl: overrideDevUrl,
-    },
-  });
 }
 
 const skipBeforeDevCommand =
@@ -172,10 +172,36 @@ if (tauriProfile === "prod") {
 }
 
 generatedConfig = deepMerge(generatedConfig, resolveTauriConfig());
+const explicitOverrideDevUrl = env.PROMETHEUS_TAURI_DEV_URL?.trim();
+let effectiveDevUrl = explicitOverrideDevUrl || "";
+const isAndroidDevFlow = tauriTarget === "android" && (isDevCommand || isAndroidStudioScript);
+if (!effectiveDevUrl && isAndroidDevFlow) {
+  const build = isRecord(generatedConfig.build) ? generatedConfig.build : {};
+  const currentDevUrl = typeof build.devUrl === "string" ? build.devUrl : "";
+  const currentHost = parseHostFromUrl(currentDevUrl);
+  const shouldRewriteAndroidDevUrl =
+    !currentHost || currentHost === "prometheus.dev" || currentHost === "prometheus.prod";
+  if (shouldRewriteAndroidDevUrl) {
+    const rawHost = (env.TAURI_DEV_HOST || env.PROMETHEUS_DEVICE_HOST || "").trim();
+    const disabledHost = new Set(["0", "off", "false", "disabled", "none"]);
+    const host = rawHost && !disabledHost.has(rawHost.toLowerCase()) ? rawHost : "10.0.2.2";
+    const port = (env.PROMETHEUS_DEVICE_WEB_PORT || "4173").trim() || "4173";
+    effectiveDevUrl = `http://${host}:${port}`;
+  }
+}
+if (effectiveDevUrl && (isDevCommand || isAndroidStudioScript)) {
+  const build = isRecord(generatedConfig.build) ? generatedConfig.build : {};
+  generatedConfig = deepMerge(generatedConfig, {
+    build: {
+      ...build,
+      devUrl: effectiveDevUrl,
+    },
+  });
+}
 env.TAURI_CONFIG = JSON.stringify(generatedConfig);
 console.info(`[tauri] profile=${tauriProfile} target=${tauriTarget}`);
-if (isDevCommand && overrideDevUrl) {
-  console.info(`[tauri] Using devUrl override: ${overrideDevUrl}`);
+if (effectiveDevUrl && (isDevCommand || isAndroidStudioScript)) {
+  console.info(`[tauri] Using devUrl override: ${effectiveDevUrl}`);
 }
 
 const ensureSiteTauriClientDeps = () => {
