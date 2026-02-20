@@ -44,17 +44,17 @@
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "optionalDependencies": {
-    "@oxfmt/win32-arm64": "^0.28.0",
+    "@oxfmt/win32-arm64": "0.28.0",
     "lefthook-windows-arm64": "2.1.1"
   },
   "devDependencies": {
-    "@oxlint-tsgolint/linux-arm64": "^0.14.0",
-    "@oxlint-tsgolint/win32-arm64": "^0.14.0",
-    "@oxlint/win32-arm64": "^1.43.0",
-    "@playwright/test": "^1.59.0-alpha-2026-02-19",
-    "@types/web-push": "^3.6.4",
+    "@oxlint-tsgolint/linux-arm64": "0.14.1",
+    "@oxlint-tsgolint/win32-arm64": "0.14.1",
+    "@oxlint/win32-arm64": "1.43.0",
+    "@playwright/test": "1.59.0-alpha-2026-02-20",
+    "@types/web-push": "3.6.4",
     "lefthook": "^2.1.1",
-    "oxlint": "1.48.0",
-    "oxlint-tsgolint": "^0.14.0"
+    "oxlint": "1.49.0",
+    "oxlint-tsgolint": "0.14.1"
   }
 }
