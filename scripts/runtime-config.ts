@@ -1,0 +1,161 @@
+type ProcessEnv = NodeJS.ProcessEnv
+
+export type PrometheusRuntimeConfig = {
+  domains: {
+    web: string
+    webProd: string
+  }
+  ports: {
+    http: string
+    https: string
+    api: string
+    postgres: string
+    valkey: string
+    webtransport: string
+    deviceWeb: string
+  }
+  compose: {
+    projectName: string
+    profiles: string[]
+    includeOptionalServices: boolean
+    services: {
+      core: readonly string[]
+      web: readonly string[]
+      proxy: readonly string[]
+      optional: readonly string[]
+    }
+  }
+  caddy: {
+    certBasename: string
+    certPemPath: string
+    certKeyPath: string
+  }
+}
+
+const DEFAULT_DOMAINS = {
+  web: 'prometheus.dev',
+  webProd: 'prometheus.prod'
+} as const
+
+const DEFAULT_PORTS = {
+  http: '80',
+  https: '443',
+  api: '4000',
+  postgres: '5433',
+  valkey: '6379',
+  webtransport: '4444',
+  deviceWeb: '4173'
+} as const
+
+const DEFAULT_COMPOSE = {
+  projectName: 'prometheus',
+  services: {
+    core: ['postgres', 'valkey', 'api'],
+    web: ['web'],
+    proxy: ['caddy'],
+    optional: ['yjs-signaling', 'webtransport']
+  } as const
+} as const
+
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on'])
+
+const trim = (value: string | undefined) => {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+const readString = (env: ProcessEnv, key: string, fallback: string) => trim(env[key]) ?? fallback
+
+const readPort = (env: ProcessEnv, key: string, fallback: string) => {
+  const raw = trim(env[key])
+  const value = raw ?? fallback
+  const port = Number.parseInt(value, 10)
+  if (!Number.isFinite(port) || port < 1 || port > 65535) {
+    throw new Error(`[runtime-config] Invalid port for ${key}: ${raw ?? '(unset)'}`)
+  }
+  return `${port}`
+}
+
+const sanitizeHost = (value: string) => value.replace(/^https?:\/\//, '').split('/')[0]
+
+const readDomain = (env: ProcessEnv, key: string, fallback: string) => {
+  const value = sanitizeHost(readString(env, key, fallback))
+  if (!value.includes('.')) {
+    throw new Error(`[runtime-config] Invalid domain for ${key}: ${value}`)
+  }
+  return value
+}
+
+const parseProfiles = (env: ProcessEnv) => {
+  const raw = readString(env, 'PROMETHEUS_COMPOSE_PROFILE', '')
+  return raw ? Array.from(new Set(raw.split(',').map((part) => part.trim()).filter(Boolean))) : []
+}
+
+const readBool = (value: string | undefined, fallback: boolean) => {
+  const normalized = trim(value)
+  if (!normalized) return fallback
+  return TRUE_VALUES.has(normalized.toLowerCase())
+}
+
+const readIncludeOptionalServices = (env: ProcessEnv) => {
+  const profiles = parseProfiles(env)
+  const force = readBool(env.PROMETHEUS_ENABLE_REALTIME_SERVICES, false)
+  if (force) return true
+  if (profiles.includes('all')) return true
+  if (profiles.includes('full')) return true
+  if (profiles.includes('realtime')) return true
+  return false
+}
+
+const readProjectName = (env: ProcessEnv) => {
+  const value = readString(env, 'COMPOSE_PROJECT_NAME', DEFAULT_COMPOSE.projectName)
+  if (!/^[a-zA-Z][\w-]*$/.test(value)) {
+    throw new Error(`[runtime-config] Invalid COMPOSE_PROJECT_NAME: ${value}`)
+  }
+  return value
+}
+
+const computeCertBasename = (dev: string, prod: string) => `${dev}+${prod}`
+
+export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRuntimeConfig => {
+  const webHost = readDomain(env, 'PROMETHEUS_WEB_HOST', DEFAULT_DOMAINS.web)
+  const webProd = readDomain(env, 'PROMETHEUS_WEB_HOST_PROD', DEFAULT_DOMAINS.webProd)
+  const ports = {
+    http: readPort(env, 'PROMETHEUS_HTTP_PORT', DEFAULT_PORTS.http),
+    https: readPort(env, 'PROMETHEUS_HTTPS_PORT', DEFAULT_PORTS.https),
+    api: readPort(env, 'PROMETHEUS_API_PORT', DEFAULT_PORTS.api),
+    postgres: readPort(env, 'PROMETHEUS_POSTGRES_PORT', DEFAULT_PORTS.postgres),
+    valkey: readPort(env, 'PROMETHEUS_VALKEY_PORT', DEFAULT_PORTS.valkey),
+    webtransport: readPort(env, 'PROMETHEUS_WEBTRANSPORT_PORT', DEFAULT_PORTS.webtransport),
+    deviceWeb: readPort(env, 'PROMETHEUS_DEVICE_WEB_PORT', DEFAULT_PORTS.deviceWeb)
+  }
+  const certBasename = readString(env, 'PROMETHEUS_CADDY_CERT_BASENAME', computeCertBasename(webHost, webProd))
+  const includeOptionalServices = readIncludeOptionalServices(env)
+  const profiles = parseProfiles(env)
+  const projectName = readProjectName(env)
+
+  return {
+    domains: {
+      web: webHost,
+      webProd
+    },
+    ports,
+    compose: {
+      projectName,
+      profiles,
+      includeOptionalServices,
+      services: {
+        core: DEFAULT_COMPOSE.services.core,
+        web: DEFAULT_COMPOSE.services.web,
+        proxy: DEFAULT_COMPOSE.services.proxy,
+        optional: DEFAULT_COMPOSE.services.optional
+      }
+    },
+    caddy: {
+      certBasename,
+      certPemPath: `/etc/caddy/certs/${certBasename}.pem`,
+      certKeyPath: `/etc/caddy/certs/${certBasename}.key`
+    }
+  }
+}

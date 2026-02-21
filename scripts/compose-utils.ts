@@ -4,6 +4,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileS
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getRuntimeConfig } from './runtime-config'
 
 export const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -70,6 +71,8 @@ type CaddyConfigOptions = SiteCaddyConfigOptions & {
 }
 
 export const ensureCaddyConfig = (override?: string, prodOverride?: string, options: CaddyConfigOptions = {}) => {
+  const runtimeConfig = getRuntimeConfig(process.env)
+  const { domains, caddy } = runtimeConfig
   const localIp = resolveLocalIp()
   const devUpstream = override || (localIp ? `http://${localIp}:4173` : 'http://host.docker.internal:4173')
   const prodUpstream = prodOverride || devUpstream
@@ -87,15 +90,11 @@ export const ensureCaddyConfig = (override?: string, prodOverride?: string, opti
       : ''
     const staticCacheBlock = `\t@static_cache path_regexp static_cache ^/(?:build|assets|icons)/|^/favicon\\.[^/]+$|^/manifest\\.webmanifest$\n\thandle @static_cache {\n\t\theader Cache-Control "public, max-age=31536000, immutable"\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\theader_down -Cache-Control\n\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link "{http.reverse_proxy.header.X-Early-Hints}"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n\n`
 
-    return `${host} {\n\ttls /etc/caddy/certs/prometheus.dev+prometheus.prod.pem /etc/caddy/certs/prometheus.dev+prometheus.prod.key\n\theader {\n\t\talt-svc "h3=\\":443\\"; ma=2592000"\n\t}\n\n${encodeBlock}${staticBlock}${staticCacheBlock}\thandle /yjs {\n\t\treverse_proxy http://yjs-signaling:4444\n\t}\n\n\thandle_path /yjs/* {\n\t\treverse_proxy http://yjs-signaling:4444\n\t}\n\n\thandle_path /api/* {\n\t\treverse_proxy http://api:4000 {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy "same-origin"\n\t\t\tCross-Origin-Embedder-Policy "require-corp"\n\t\t}\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link "{http.reverse_proxy.header.X-Early-Hints}"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link "{http.reverse_proxy.header.X-Early-Hints}"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n}\n`
+    return `${host} {\n\ttls ${caddy.certPemPath} ${caddy.certKeyPath}\n\theader {\n\t\talt-svc "h3=\\":443\\"; ma=2592000"\n\t}\n\n${encodeBlock}${staticBlock}${staticCacheBlock}\thandle /yjs {\n\t\treverse_proxy http://yjs-signaling:4444\n\t}\n\n\thandle_path /yjs/* {\n\t\treverse_proxy http://yjs-signaling:4444\n\t}\n\n\thandle_path /api/* {\n\t\treverse_proxy http://api:4000 {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t}\n\t}\n\n\t@ai path_regexp ai ^/(?:[a-z]{2}/)?ai(?:/|$)\n\thandle @ai {\n\t\theader {\n\t\t\tCross-Origin-Opener-Policy "same-origin"\n\t\t\tCross-Origin-Embedder-Policy "require-corp"\n\t\t}\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link "{http.reverse_proxy.header.X-Early-Hints}"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n\n\thandle {\n\t\treverse_proxy ${upstream} {\n${stripAcceptEncoding}\t\t\tlb_try_duration 5s\n\t\t\tlb_try_interval 100ms\n\t\t\theader_down -X-Early-Hints\n\t\t\t@early_hints header X-Early-Hints *\n\t\t\thandle_response @early_hints {\n\t\t\t\theader Link "{http.reverse_proxy.header.X-Early-Hints}"\n\t\t\t\trespond 103\n\t\t\t\tcopy_response\n\t\t\t}\n\t\t}\n\t}\n}\n`
   }
 
   const config =
-    `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2 h3\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://prometheus.dev, http://prometheus.prod {\n\tredir https://{host}{uri}\n}\n\n${buildSite(
-      'https://prometheus.dev',
-      devUpstream,
-      devOptions
-    )}\n${buildSite('https://prometheus.prod', prodUpstream, prodOptions)}`
+    `{\n\tauto_https off\n\tservers :443 {\n\t\tprotocols h1 h2 h3\n\t}\n\tservers :80 {\n\t\tprotocols h1\n\t}\n}\nhttp://${domains.web}, http://${domains.webProd} {\n\tredir https://{host}{uri}\n}\n\n${buildSite(`https://${domains.web}`, devUpstream, devOptions)}\n${buildSite(`https://${domains.webProd}`, prodUpstream, prodOptions)}`
 
   const caddyDir = path.join(root, 'infra', 'caddy')
   mkdirSync(caddyDir, { recursive: true })

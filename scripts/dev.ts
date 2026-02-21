@@ -13,10 +13,14 @@ import {
   runSync,
   saveBuildCache
 } from './compose-utils'
+import { generateFragmentCss } from './fragment-css'
+import { getRuntimeConfig } from './runtime-config'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+const runtimeConfig = getRuntimeConfig(process.env)
+const runtimeCompose = runtimeConfig.compose
 
 const resolveExistingPath = (value: string | undefined) => {
   const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')
@@ -54,7 +58,6 @@ const resolveAndroidSdkHome = () => {
       const fallback = resolveExistingPath(path.join('/mnt', 'c', 'Users', user, 'AppData', 'Local', 'Android', 'Sdk'))
       if (fallback) return fallback
     }
-    return resolveExistingPath('/mnt/c/Users/Collin/AppData/Local/Android/Sdk')
   }
   return undefined
 }
@@ -264,6 +267,11 @@ const resolveTauriTarget = (value: string | undefined) => {
   return 'desktop'
 }
 const tauriTarget = resolveTauriTarget(process.env.VITE_TAURI_TARGET)
+if (isTauriMode && tauriTarget === 'android' && !androidSdkHome) {
+  console.error(
+    '[android] No Android SDK found. Set ANDROID_HOME or ANDROID_SDK_ROOT before running Android targets; see .env.example for fallback guidance.'
+  )
+}
 
 if (isTauriMode && tauriTarget === 'android') {
   const supportedJava = resolveSupportedAndroidJavaHome()
@@ -778,15 +786,16 @@ const optimizeAndroidDevice = (adbBin: string, serial: string) => {
 
 
 const { command, prefix } = resolveComposeCommand()
+generateFragmentCss()
 
-const devHttpPort = process.env.PROMETHEUS_HTTP_PORT?.trim() || '80'
-const devHttpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
-const devApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
-const devPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
-const devValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
-const devWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
-const devProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
-const devWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
+const devHttpPort = runtimeConfig.ports.http
+const devHttpsPort = runtimeConfig.ports.https
+const devApiPort = runtimeConfig.ports.api
+const devPostgresPort = runtimeConfig.ports.postgres
+const devValkeyPort = runtimeConfig.ports.valkey
+const devWebTransportPort = runtimeConfig.ports.webtransport
+const devProject = runtimeCompose.projectName
+const devWebHost = runtimeConfig.domains.web
 const devDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const devDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
 const useDeviceHost = Boolean(devDeviceHost)
@@ -813,12 +822,15 @@ const enablePollingWatch = isWsl && isWindowsMount
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: devProject,
+  ...(runtimeCompose.includeOptionalServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
   PROMETHEUS_POSTGRES_PORT: devPostgresPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
+  PROMETHEUS_WEB_HOST: runtimeConfig.domains.web,
+  PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
   RUN_MIGRATIONS: devRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
@@ -861,35 +873,40 @@ const buildTargets: BuildTarget[] = [
     ]
   },
   {
-    service: 'yjs-signaling',
-    cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
-    inputs: [
-      'infra/yjs-signaling/Dockerfile',
-      'package.json',
-      'bun.lock',
-      'apps/site/package.json',
-      'packages/core/package.json',
-      'packages/platform/package.json',
-      'packages/ui/package.json',
-      'packages/features/auth/package.json',
-      'packages/features/lab/package.json',
-      'packages/features/messaging/package.json',
-      'packages/features/store/package.json'
-    ]
-  },
-  {
-    service: 'webtransport',
-    cacheKey: `${cacheKeyPrefix}:webtransport`,
-    inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
-  },
-  {
     service: 'caddy',
     cacheKey: `${cacheKeyPrefix}:caddy`,
     inputs: ['infra/caddy/Dockerfile']
   }
 ]
+const optionalBuildTargets: BuildTarget[] = runtimeCompose.includeOptionalServices
+  ? [
+      {
+        service: 'yjs-signaling',
+        cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
+        inputs: [
+          'infra/yjs-signaling/Dockerfile',
+          'package.json',
+          'bun.lock',
+          'apps/site/package.json',
+          'packages/core/package.json',
+          'packages/platform/package.json',
+          'packages/ui/package.json',
+          'packages/features/auth/package.json',
+          'packages/features/lab/package.json',
+          'packages/features/messaging/package.json',
+          'packages/features/store/package.json'
+        ]
+      },
+      {
+        service: 'webtransport',
+        cacheKey: `${cacheKeyPrefix}:webtransport`,
+        inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
+      }
+    ]
+  : []
 
-const buildResults = buildTargets.map((target) => {
+const activeBuildTargets = [...buildTargets, ...optionalBuildTargets]
+const buildResults = activeBuildTargets.map((target) => {
   const fingerprint = computeFingerprint(target.inputs, target.extra)
   const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
@@ -901,10 +918,11 @@ if (buildServices.length) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const baseServices = ['postgres', 'valkey', 'api', 'webtransport', 'yjs-signaling']
+const optionalServices = runtimeCompose.includeOptionalServices ? runtimeCompose.services.optional : []
+const baseServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices]
 const running = getRunningServices(command, prefix, composeEnv)
 const baseRunning = baseServices.every((service) => running.has(service))
-const baseNeedsBuild = buildServices.some((service) => service === 'api' || service === 'webtransport')
+const baseNeedsBuild = buildServices.some((service) => service === 'api' || optionalServices.includes(service))
 const needsBaseUp = baseNeedsBuild || !baseRunning
 
 if (needsBaseUp) {

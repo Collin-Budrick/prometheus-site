@@ -17,11 +17,12 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the WebTransport sidecar for HTTP/3 WebTransport sessions.
   - Postgres 16 + Valkey 8 containers with healthchecks and persistent volumes.
-  - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`).
+  - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`, controlled by `scripts/runtime-config.ts`).
 
 ## Dev and runtime flow
 
-- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddyfile, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
+- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
+- **Runtime defaults:** canonical host/port/profile defaults live in `scripts/runtime-config.ts`.
 - **Tauri mode (`VITE_TAURI=1`):** `bun run dev:tauri` and `bun run preview:tauri` switch to `apps/tauri` via `tauri dev`/`tauri build`.
 - **Tauri targets (`VITE_TAURI_TARGET`):** use `android` or `ios` to run mobile builds (`tauri android dev|build`, `tauri ios dev|build`); any other value falls back to desktop.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
@@ -73,6 +74,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/db/schema.ts` (schema), `packages/platform/src/cache.ts` (Valkey), `packages/platform/src/server/fragments.ts` (fragment routes).
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/valkey/valkey.conf`, `scripts/*.ts` (compose helpers, preview/dev).
+- **Runtime config:** `scripts/runtime-config.ts`.
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
 - **Tauri:** `apps/tauri/src-tauri/tauri.conf.base.json`, `apps/tauri/src-tauri/tauri.conf.dev.json`, `apps/tauri/src-tauri/tauri.conf.prod.json`, `apps/tauri/src-tauri/capabilities/*.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.
 
@@ -81,6 +83,11 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Do** keep frontend/API contracts in sync, especially fragment schemas and cache headers.
 - **Do** prefer HTTPS + Caddy flow for testing view transitions and HMR in dev.
 - **Do** document new env vars and update this file when site behavior or compatibility assumptions change.
+- **Do** treat generated artifacts as build outputs:
+  - `apps/site/public/fragments/`
+  - `apps/site/src/fragment/fragment-css.generated.ts`
+  - `apps/tauri/src-tauri/gen/**`
+  - `infra/caddy/Caddyfile`
 - **Don’t** replace Bun tooling with npm/yarn or add global installs when a Bun script exists.
 - **Don’t** bypass rate limiting, cache invalidation hooks, or fragment sanitization paths.
 

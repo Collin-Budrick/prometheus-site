@@ -1,0 +1,51 @@
+# This is a template for the generated `infra/caddy/Caddyfile`.
+# Regenerated automatically by `scripts/compose-utils.ts`.
+{
+  auto_https off
+  servers :443 {
+    protocols h1 h2 h3
+  }
+  servers :80 {
+    protocols h1
+  }
+}
+
+http://{{WEB_HOST}}, http://{{WEB_HOST_PROD}} {
+  redir https://{host}{uri}
+}
+
+https://{{WEB_HOST}} {
+  tls /etc/caddy/certs/{{CERT_BASENAME}}.pem /etc/caddy/certs/{{CERT_BASENAME}}.key
+  header {
+    alt-svc "h3=\":443\"; ma=2592000"
+  }
+  include _fragment
+}
+
+https://{{WEB_HOST_PROD}} {
+  tls /etc/caddy/certs/{{CERT_BASENAME}}.pem /etc/caddy/certs/{{CERT_BASENAME}}.key
+  header {
+    alt-svc "h3=\":443\"; ma=2592000"
+  }
+  include _fragment
+}
+
+(fragment) {
+  header {
+    Cache-Control "public, max-age=31536000, immutable"
+  }
+
+  encode br gzip
+
+  handle /yjs {
+    reverse_proxy http://yjs-signaling:4444
+  }
+
+  handle_path /yjs/* {
+    reverse_proxy http://yjs-signaling:4444
+  }
+
+  handle_path /api/* {
+    reverse_proxy http://api:4000
+  }
+}

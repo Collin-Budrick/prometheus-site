@@ -13,10 +13,14 @@ import {
   runSync,
   saveBuildCache
 } from './compose-utils'
+import { generateFragmentCss } from './fragment-css'
+import { getRuntimeConfig } from './runtime-config'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
+const runtimeConfig = getRuntimeConfig(process.env)
+const runtimeCompose = runtimeConfig.compose
 
 const resolveExistingPath = (value: string | undefined) => {
   const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')
@@ -54,7 +58,6 @@ const resolveAndroidSdkHome = () => {
       const fallback = resolveExistingPath(path.join('/mnt', 'c', 'Users', user, 'AppData', 'Local', 'Android', 'Sdk'))
       if (fallback) return fallback
     }
-    return resolveExistingPath('/mnt/c/Users/Collin/AppData/Local/Android/Sdk')
   }
 
   return undefined
@@ -202,6 +205,11 @@ const resolveTauriTarget = (value: string | undefined) => {
   return 'desktop'
 }
 const tauriTarget = resolveTauriTarget(process.env.VITE_TAURI_TARGET?.trim())
+if (isTauriMode && tauriTarget === 'android' && !androidSdkHome) {
+  console.error(
+    '[android] No Android SDK found. Set ANDROID_HOME or ANDROID_SDK_ROOT before running Android targets; see .env.example for fallback guidance.'
+  )
+}
 const resolveTauriLaunchCommand = (target: TauriTarget) => {
   if (target === 'android') return ['tauri', 'android', 'dev']
   if (target === 'ios') return ['tauri', 'ios', 'dev']
@@ -612,15 +620,16 @@ const optimizeAndroidDevice = (adbBin: string, serial: string) => {
 }
 
 const { command, prefix } = resolveComposeCommand()
+generateFragmentCss()
 
-const previewHttpPort = process.env.PROMETHEUS_HTTP_PORT?.trim() || '80'
-const previewHttpsPort = process.env.PROMETHEUS_HTTPS_PORT?.trim() || '443'
-const previewApiPort = process.env.PROMETHEUS_API_PORT?.trim() || '4000'
-const previewPostgresPort = process.env.PROMETHEUS_POSTGRES_PORT?.trim() || '5433'
-const previewValkeyPort = process.env.PROMETHEUS_VALKEY_PORT?.trim() || '6379'
-const previewWebTransportPort = process.env.PROMETHEUS_WEBTRANSPORT_PORT?.trim() || '4444'
-const previewProject = process.env.COMPOSE_PROJECT_NAME?.trim() || 'prometheus'
-const previewWebHost = process.env.PROMETHEUS_WEB_HOST?.trim() || 'prometheus.dev'
+const previewHttpPort = runtimeConfig.ports.http
+const previewHttpsPort = runtimeConfig.ports.https
+const previewApiPort = runtimeConfig.ports.api
+const previewPostgresPort = runtimeConfig.ports.postgres
+const previewValkeyPort = runtimeConfig.ports.valkey
+const previewWebTransportPort = runtimeConfig.ports.webtransport
+const previewProject = runtimeConfig.compose.projectName
+const previewWebHost = runtimeConfig.domains.web
 const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const previewDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
 const useDeviceHost = Boolean(previewDeviceHost)
@@ -705,6 +714,7 @@ const previewWebTransportBase =
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: previewProject,
+  ...(runtimeCompose.includeOptionalServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,
@@ -712,6 +722,7 @@ const composeEnv = {
   PROMETHEUS_VALKEY_PORT: previewValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
   PROMETHEUS_WEB_HOST: previewWebHost,
+  PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
   PROMETHEUS_VITE_API_BASE: '/api',
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
   VITE_ENABLE_PREFETCH: previewEnablePrefetch,
@@ -882,23 +893,6 @@ const buildTargets: BuildTarget[] = [
     ]
   },
   {
-    service: 'yjs-signaling',
-    cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
-    inputs: [
-      'infra/yjs-signaling/Dockerfile',
-      'package.json',
-      'bun.lock',
-      'apps/site/package.json',
-      'packages/core/package.json',
-      'packages/platform/package.json',
-      'packages/ui/package.json',
-      'packages/features/auth/package.json',
-      'packages/features/lab/package.json',
-      'packages/features/messaging/package.json',
-      'packages/features/store/package.json'
-    ]
-  },
-  {
     service: 'web',
     cacheKey: `${cacheKeyPrefix}:web`,
     inputs: [
@@ -931,18 +925,39 @@ const buildTargets: BuildTarget[] = [
     }
   },
   {
-    service: 'webtransport',
-    cacheKey: `${cacheKeyPrefix}:webtransport`,
-    inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
-  },
-  {
     service: 'caddy',
     cacheKey: `${cacheKeyPrefix}:caddy`,
     inputs: ['infra/caddy/Dockerfile']
   }
 ]
+const optionalBuildTargets: BuildTarget[] = runtimeCompose.includeOptionalServices
+  ? [
+      {
+        service: 'yjs-signaling',
+        cacheKey: `${cacheKeyPrefix}:yjs-signaling`,
+        inputs: [
+          'infra/yjs-signaling/Dockerfile',
+          'package.json',
+          'bun.lock',
+          'apps/site/package.json',
+          'packages/core/package.json',
+          'packages/platform/package.json',
+          'packages/ui/package.json',
+          'packages/features/auth/package.json',
+          'packages/features/lab/package.json',
+          'packages/features/messaging/package.json',
+          'packages/features/store/package.json'
+        ]
+      },
+      {
+        service: 'webtransport',
+        cacheKey: `${cacheKeyPrefix}:webtransport`,
+        inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
+      }
+    ]
+  : []
 
-const activeBuildTargets = buildTargets
+const activeBuildTargets = [...buildTargets, ...optionalBuildTargets]
 const buildResults = activeBuildTargets.map((target) => {
   const fingerprint = computeFingerprint(target.inputs, target.extra)
   const forceBuild = isTauriMode && target.service === 'web'
@@ -968,7 +983,8 @@ if (buildServices.length) {
   }
 }
 
-const previewServices = ['postgres', 'valkey', 'api', 'web', 'webtransport', 'yjs-signaling', 'caddy']
+const optionalServices = runtimeCompose.includeOptionalServices ? runtimeCompose.services.optional : []
+const previewServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices, 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))
 const needsFullUp = !allRunning
@@ -1016,7 +1032,8 @@ try {
   console.warn(`${previewWebHost} is not resolvable. Add it to your hosts file to use HTTPS routing.`)
 }
 
-const logs = spawn(command, [...prefix, 'logs', '-f', 'web', 'api', 'caddy', 'webtransport', 'yjs-signaling'], {
+const logsServices = ['web', 'api', 'caddy', ...optionalServices]
+const logs = spawn(command, [...prefix, 'logs', '-f', ...logsServices], {
   stdio: 'inherit',
   cwd: root,
   shell: false,
