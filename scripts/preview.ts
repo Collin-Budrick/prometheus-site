@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import {
@@ -193,6 +193,46 @@ const resolveBoolean = (value: string | undefined, fallback: boolean) => {
   if (truthyValues.has(normalized)) return true
   if (falsyValues.has(normalized)) return false
   return fallback
+}
+
+const ensureLocalGradleCommand = () => {
+  if (process.platform !== 'win32') return
+
+  const separator = path.delimiter
+  const testGradle = () => {
+    const result = spawnSync('gradle.bat', ['--version'], { encoding: 'utf8' })
+    return !result.error
+  }
+  if (testGradle()) return
+
+  const genDir = path.join(root, 'apps', 'tauri', 'src-tauri', 'gen', 'android')
+  const gradlew = path.join(genDir, 'gradlew.bat')
+  if (!existsSync(gradlew)) {
+    console.warn('[android] Android Gradle wrapper not found in src-tauri/gen/android. Run `bun run tauri:mobile:init` first.')
+    return
+  }
+
+  const shim = path.join(genDir, 'gradle.bat')
+  if (!existsSync(shim)) {
+    try {
+      const shimContent = '@echo off\r\ncall "%~dp0gradlew.bat" %*\r\n'
+      writeFileSync(shim, shimContent)
+      console.info('[android] Created gradle shim for local wrapper fallback.')
+    } catch {
+      console.warn('[android] Could not create gradle shim for wrapper fallback.')
+      return
+    }
+  }
+
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter((entry) => entry)
+  const normalizedShimDir = path.resolve(genDir).toLowerCase()
+  if (!pathEntries.some((entry) => path.resolve(entry).toLowerCase() === normalizedShimDir)) {
+    process.env.PATH = `${genDir}${separator}${process.env.PATH || ''}`
+  }
+
+  if (!testGradle()) {
+    console.warn('[android] Could not execute gradle.bat even after shim setup. Ensure Gradle is available to Android tools.')
+  }
 }
 const isTauriMode = resolveBoolean(process.env.VITE_TAURI, true)
 type TauriTarget = 'desktop' | 'android' | 'ios'
@@ -837,6 +877,7 @@ const buildNativeBundle = async () => {
   }
 
   if (isTauriMode) {
+    ensureLocalGradleCommand()
     const tauriLaunchArgs = resolveTauriLaunchCommand(tauriTarget)
     const tauriResult = spawnSync(
       bunBin,

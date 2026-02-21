@@ -20,6 +20,15 @@ bun run lint     # lint workspace
 bun run typecheck # generated fragment manifest + TS typecheck
 ```
 
+### Android (Tauri) quick setup (Windows)
+
+```bash
+bun run setup:tauri:android   # sets ANDROID_HOME/JAVA_HOME/path and creates a local gradle.bat shim
+bun run dev:tauri:android      # starts Android dev flow
+```
+
+If the setup script reports missing Android SDK paths, set `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) and rerun the script.
+
 ## Environments and generated artifacts
 
 Fragments and several platform artifacts are now generated at build/runtime, not committed:
