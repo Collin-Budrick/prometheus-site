@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
@@ -69,6 +69,84 @@ const parseList = (raw: string | undefined) =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+const commandExecutableName = (command: string) => `${command}${process.platform === "win32" ? ".exe" : ""}`;
+
+const hasCommand = (command: string) => {
+  const separator = process.platform === "win32" ? ";" : ":";
+  const executable = commandExecutableName(command);
+  const pathEntries = (env.PATH || "").split(separator).filter(Boolean);
+  if (pathEntries.some((entry) => existsSync(join(entry, executable)))) return true;
+
+  const probe = spawnSync(command, ["--version"], { encoding: "utf8", stdio: "ignore" });
+  return !probe.error;
+};
+
+const ensureBunOnPath = () => {
+  if (hasCommand("bun")) return;
+
+  const separator = process.platform === "win32" ? ";" : ":";
+  const bunBinDir = dirname(process.execPath);
+  const currentPath = (env.PATH || "").split(separator).filter(Boolean);
+  if (!currentPath.some((entry) => entry.toLowerCase() === bunBinDir.toLowerCase())) {
+    env.PATH = `${bunBinDir}${separator}${env.PATH || ""}`;
+  }
+
+  if (!hasCommand("bun")) {
+    console.error(
+      "[tauri] Could not resolve 'bun' for spawned child commands. Install Bun and ensure it is on PATH."
+    );
+    process.exit(1);
+  }
+};
+
+const resolveCargoBinaryFromHome = (home: string | undefined) => {
+  if (!home) return undefined;
+  const binDir = join(home, "bin");
+  const candidate = join(binDir, process.platform === "win32" ? "cargo.exe" : "cargo");
+  return existsSync(candidate) ? candidate : undefined;
+};
+
+const ensureCargoAvailable = () => {
+  if (hasCommand("cargo")) return;
+
+  const separator = process.platform === "win32" ? ";" : ":";
+  const candidateHomes = [
+    env.CARGO_HOME?.trim(),
+    process.env.USERPROFILE && join(process.env.USERPROFILE, ".cargo"),
+    process.env.HOME && join(process.env.HOME, ".cargo"),
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Programs", "Rust"),
+  ];
+
+  for (const home of candidateHomes) {
+    const normalized = home?.trim();
+    if (!normalized) continue;
+    const binary = resolveCargoBinaryFromHome(normalized);
+    if (!binary) continue;
+
+    const binDir = join(normalized, "bin");
+    const currentPath = (env.PATH || "").split(separator).filter(Boolean);
+    if (!currentPath.some((entry) => entry.toLowerCase() === binDir.toLowerCase())) {
+      env.PATH = `${binDir}${separator}${env.PATH || ""}`;
+    }
+    env.CARGO_HOME = normalized;
+    console.info(`[tauri] Found Cargo at ${binary}. Added ${binDir} to PATH for this run.`);
+    return;
+  }
+
+  console.error(
+    "[tauri] Missing 'cargo'. Install Rust (https://rustup.rs/) and ensure cargo is on PATH, " +
+      "or set CARGO_HOME to a directory containing `.cargo/bin/cargo` before running Tauri."
+  );
+  process.exit(1);
+};
+
+const requiresCargo =
+  cliArgs.includes("dev") || cliArgs.includes("build") || isAndroidTarget || isIosTarget || cliArgs.includes("android-studio-script");
+if (requiresCargo) {
+  ensureCargoAvailable();
+  ensureBunOnPath();
+}
+
 const isLocalApiBase = (value: string) => {
   if (!value) return true;
   if (value.startsWith("/")) return true;
@@ -93,6 +171,13 @@ const parseHostFromUrl = (value: string | undefined) => {
   }
 };
 
+const shellCommandForBun = (suffix: string) => {
+  const executable = process.execPath.includes(" ")
+    ? JSON.stringify(process.execPath)
+    : process.execPath;
+  return `${executable} ${suffix}`;
+};
+
 const explicitProfile = normalizeProfile(env.PROMETHEUS_TAURI_PROFILE);
 const tauriProfile = explicitProfile === "prod" || explicitProfile === "dev"
   ? explicitProfile
@@ -102,6 +187,25 @@ const tauriProfile = explicitProfile === "prod" || explicitProfile === "dev"
 const profileConfigFile = tauriProfile === "prod" ? "tauri.conf.prod.json" : "tauri.conf.dev.json";
 
 let generatedConfig = deepMerge(readJsonConfig("tauri.conf.base.json"), readJsonConfig(profileConfigFile));
+const resolvedBuild = isRecord(generatedConfig.build) ? generatedConfig.build : {};
+const currentBeforeDevCommand = typeof resolvedBuild.beforeDevCommand === "string" ? resolvedBuild.beforeDevCommand : undefined;
+const currentBeforeBuildCommand = typeof resolvedBuild.beforeBuildCommand === "string" ? resolvedBuild.beforeBuildCommand : undefined;
+
+if (currentBeforeDevCommand && /\bbun\b/.test(currentBeforeDevCommand)) {
+  generatedConfig = deepMerge(generatedConfig, {
+    build: {
+      beforeDevCommand: shellCommandForBun("--cwd ../site dev --port 4173"),
+    },
+  });
+}
+
+if (currentBeforeBuildCommand && /\bbun\b/.test(currentBeforeBuildCommand)) {
+  generatedConfig = deepMerge(generatedConfig, {
+    build: {
+      beforeBuildCommand: shellCommandForBun("--cwd ../site build:tauri"),
+    },
+  });
+}
 
 if (tauriProfile === "prod" && isBuildCommand) {
   const rawApiBase = (env.VITE_API_BASE ?? "").trim();

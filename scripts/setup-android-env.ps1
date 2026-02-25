@@ -80,6 +80,24 @@ $requiredPathEntries = @(
 if ($javaHome) {
   $requiredPathEntries += (Join-Path $javaHome 'bin')
 }
+$bunCandidates = @(
+  (& $resolveIfExists (Join-Path $env:USERPROFILE '.bun\\bin')),
+  (& $resolveIfExists (Join-Path $env:LOCALAPPDATA 'bun\\bin'))
+)
+$bunHome = $bunCandidates | Where-Object { $_ } | Select-Object -First 1
+if ($bunHome) {
+  $requiredPathEntries += $bunHome
+}
+
+$cargoCandidates = @(
+  (& $resolveIfExists (Join-Path $env:USERPROFILE '.cargo\\bin')),
+  (& $resolveIfExists (Join-Path $env:HOME '.cargo\\bin')),
+  (& $resolveIfExists (Join-Path $env:LOCALAPPDATA 'Programs\\Rust\\bin'))
+)
+$cargoHome = $cargoCandidates | Where-Object { $_ } | Select-Object -First 1
+if ($cargoHome) {
+  $requiredPathEntries += $cargoHome
+}
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $pathEntries = @()
@@ -141,6 +159,14 @@ if (Test-Path (Join-Path $tauriAndroidProject 'gradlew.bat')) {
 Write-Host ''
 Write-Host 'Verification checks:'
 foreach ($command in @('gradle.bat', 'gradlew.bat', 'adb', 'java')) {
+  $match = Get-Command $command -ErrorAction SilentlyContinue
+  if ($match) {
+    Write-Host "  OK   $command -> $($match.Source)"
+  } else {
+    Write-Host "  MISSING $command"
+  }
+}
+foreach ($command in @('bun', 'cargo')) {
   $match = Get-Command $command -ErrorAction SilentlyContinue
   if ($match) {
     Write-Host "  OK   $command -> $($match.Source)"
