@@ -1,4 +1,4 @@
-import { parse as arkenvParse } from 'arkenv/arktype'
+import { createEnv as arkenvParse } from 'arkenv'
 
 export type AppEnv = Record<string, string | boolean | undefined>
 

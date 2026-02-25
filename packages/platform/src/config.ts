@@ -1,4 +1,4 @@
-import { parse as arkenvParse } from 'arkenv/arktype'
+import { createEnv as arkenvParse } from 'arkenv'
 import type { LogLevel } from '@logtape/logtape'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
