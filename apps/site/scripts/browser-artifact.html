@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fragment Prime Browser Artifact Probe</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      main {
+        max-width: 36rem;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        background: rgba(30, 41, 59, 0.88);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      }
+      code {
+        display: inline-block;
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.35rem;
+        background: rgba(148, 163, 184, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Fragment Prime Browser Artifact Probe</h1>
+      <p>
+        This file is built intentionally for <code>bun build --compile --target=browser</code> smoke checks.
+      </p>
+      <script type="module">
+        const loadedAt = new Date().toISOString()
+        console.info('[browser-artifact] loadedAt=', loadedAt)
+      </script>
+    </main>
+  </body>
+</html>
