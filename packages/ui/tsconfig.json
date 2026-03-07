@@ -11,8 +11,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "types": ["bun-types", "node", "vite/client"]
+    "skipLibCheck": true
   },
   "include": ["src"]
 }

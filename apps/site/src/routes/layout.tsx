@@ -1,13 +1,12 @@
-import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
-import { manifest } from '@qwik-client-manifest'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, initTheme, readThemeFromCookie } from '@prometheus/ui'
+import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
-import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS, TOPBAR_ROUTE_ORDER } from '../shared/nav-order'
+import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
@@ -16,9 +15,7 @@ import { appConfig } from '../app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
-import { connectivityState, initConnectivityStore } from '../native/connectivity'
-import { isNativeShellRuntime } from '../native/runtime'
-import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
+import { setPreference } from '../native/preferences'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -33,9 +30,6 @@ const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCriticalLiteClearDelayMs = 1200
 const LANG_PREFETCH_PARAM = 'lang'
-const THEME_STORAGE_KEY = 'prometheus-theme'
-const LIGHT_THEME_COLOR = '#f97316'
-const DARK_THEME_COLOR = '#0f172a'
 
 const initialFadeStyle = `:root[data-initial-fade='ready'] .layout-shell {
   opacity: 0;
@@ -103,63 +97,13 @@ const themeBootstrapScript = `(function () {
   if (typeof window === 'undefined') return;
   var root = document.documentElement;
   if (!root) return;
-  var themeStorageKey = '${THEME_STORAGE_KEY}';
-  var parseTheme = function (value) {
-    if (value === 'light' || value === 'dark') return value;
-    return null;
-  };
-  var theme = null;
-  try {
-    var cookieMatch = document.cookie.match(/(?:^|; )prometheus-theme=([^;]*)/);
-    theme = parseTheme(cookieMatch ? decodeURIComponent(cookieMatch[1] || '') : null);
-  } catch {}
-  if (!theme) {
-    try {
-      theme = parseTheme(window.localStorage.getItem(themeStorageKey) || '');
-    } catch {}
-  }
-  if (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    theme = 'dark';
-  }
-  if (!theme) {
-    theme = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-  }
+  var theme = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
   if (root.getAttribute('data-theme') !== theme) {
     root.setAttribute('data-theme', theme);
   }
   root.style.colorScheme = theme;
-  var metaColor = theme === 'dark' ? '${DARK_THEME_COLOR}' : '${LIGHT_THEME_COLOR}';
-  document
-    .querySelectorAll('meta[name="theme-color"]')
-    .forEach(function (meta) {
-      if (meta.media === '(prefers-color-scheme: dark)') {
-        meta.setAttribute('content', '${DARK_THEME_COLOR}');
-        return;
-      }
-      meta.setAttribute('content', metaColor);
-    });
 })();`
 const buildThemeBootstrapScriptMarkup = () => `<script>${themeBootstrapScript}</script>`
-
-const normalizeBase = (base: string) => {
-  const trimmed = base.trim()
-  if (!trimmed) return '/'
-  if (trimmed === '.' || trimmed === './') return './'
-  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
-}
-
-const withBasePath = (base: string, path: string) => {
-  const normalizedBase = normalizeBase(base)
-  const trimmed = path.replace(/^\/+/, '')
-  if (normalizedBase === './') return `./${trimmed}`
-  return `${normalizedBase}${trimmed}`
-}
-
-type ClientManifest = {
-  core?: string
-  preloader?: string
-  bundles?: Record<string, { imports?: string[] }>
-}
 
 type EarlyHint = {
   href: string
@@ -169,99 +113,11 @@ type EarlyHint = {
   crossorigin?: boolean
 }
 
-let clientManifestPromise: Promise<ClientManifest | null> | null = null
-
-const isClientManifest = (value: unknown): value is ClientManifest => typeof value === 'object' && value !== null
-
-const resolveClientManifest = (value?: ClientManifest | null) => {
-  if (isClientManifest(value)) return value
-  const fallback = manifest as ClientManifest | null
-  return isClientManifest(fallback) ? fallback : null
-}
-
-const loadClientManifest = async (): Promise<ClientManifest | null> => {
-  if (!import.meta.env.SSR) return null
-  if (clientManifestPromise) return clientManifestPromise
-  clientManifestPromise = (async () => {
-    try {
-      const { readFileSync, existsSync } = await import('node:fs')
-      const path = await import('node:path')
-      const cwd = process.cwd()
-      const candidates = [
-        path.join(cwd, 'dist', 'q-manifest.json'),
-        path.join(cwd, 'apps/site/dist/q-manifest.json')
-      ]
-      const manifestPath = candidates.find((candidate) => existsSync(candidate))
-      if (!manifestPath) return null
-      const raw = readFileSync(manifestPath, 'utf8')
-      return JSON.parse(raw) as ClientManifest
-    } catch (error) {
-      console.warn('Failed to read client manifest for preloads:', error)
-      return null
-    }
-  })()
-  return clientManifestPromise
-}
-
-const buildModulePreloadLinks = (basePath: string, clientManifest: ClientManifest) => {
-  const links: string[] = []
-  const seen = new Set<string>()
-  const maxLinks = 2
-  const resolvedManifest = clientManifest
-
-  const pushLink = (bundle: string, crossorigin?: boolean) => {
-    if (!bundle || seen.has(bundle) || links.length >= maxLinks) return
-    const href = withBasePath(basePath, `build/${bundle}`)
-    let value = `<${href}>; rel=modulepreload`
-    if (crossorigin) value += '; crossorigin'
-    links.push(value)
-    seen.add(bundle)
-  }
-
-  const addBundle = (bundle: string | undefined, options?: { crossorigin?: boolean }) => {
-    if (!bundle) return
-    pushLink(bundle, options?.crossorigin)
-  }
-
-  addBundle(resolvedManifest.core)
-  if (resolvedManifest.preloader && resolvedManifest.preloader !== resolvedManifest.core) {
-    addBundle(resolvedManifest.preloader, { crossorigin: true })
-  }
-  return links
-}
-
-const buildModulePrefetchLinks = (basePath: string, clientManifest: ClientManifest) => {
-  const resolvedManifest = clientManifest
-  const reserved = new Set<string>()
-  if (resolvedManifest.core) reserved.add(resolvedManifest.core)
-  if (resolvedManifest.preloader) reserved.add(resolvedManifest.preloader)
-  const bundleEntries = Object.keys(resolvedManifest.bundles ?? {}).filter((bundle) => {
-    if (reserved.has(bundle)) return false
-    return /\.m?js$/i.test(bundle)
-  })
-  const maxPrefetch = 6
-  return bundleEntries.slice(0, maxPrefetch).map((bundle) => withBasePath(basePath, `build/${bundle}`))
-}
-
-let cachedModulePreloads: string[] | null = null
-let cachedModulePreloadBase = ''
-
-const getModulePreloadLinks = async (basePath: string) => {
-  if (cachedModulePreloads && cachedModulePreloadBase === basePath) return cachedModulePreloads
-  cachedModulePreloadBase = basePath
-  const resolvedManifest = resolveClientManifest(await loadClientManifest())
-  if (!resolvedManifest) {
-    cachedModulePreloads = []
-    return cachedModulePreloads
-  }
-  cachedModulePreloads = buildModulePreloadLinks(basePath, resolvedManifest)
-  return cachedModulePreloads
-}
-
 const shouldSkipEarlyHint = (hint: EarlyHint) => {
   const href = hint.href?.trim()
   if (!href) return true
   if (href.includes('/fragments') || href.includes('webtransport')) return true
+  if (hint.rel === 'modulepreload') return true
   return false
 }
 
@@ -336,15 +192,8 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
   return fallbackOrigin
 }
 
-const TRACKING_CONSENT_KEY = 'prom:tracking-consent'
-const backgroundPrefetchPublicRoutes = ['/', '/store', '/lab', '/login', '/offline'] as const
-const backgroundPrefetchAuthRoutes = ['/chat', '/profile', '/settings', '/dashboard'] as const
-const backgroundPrefetchFragmentRoutes = ['/', '/store', '/lab', '/login', '/chat'] as const
-
 const loadNativeHaptics = () => import('../native/haptics')
 const loadNativeAffordances = () => import('../native/affordances')
-const loadNativeAppExtras = () => import('../native/native-app-extras')
-const loadBackgroundRunner = () => import('../native/background-runner')
 
 const withUserActionHapticsDeferred = async <T,>(operation: () => Promise<T> | T) => {
   const haptics = await loadNativeHaptics()
@@ -361,41 +210,9 @@ const triggerHapticSelectionDeferred = async () => {
   await haptics.triggerHapticSelection()
 }
 
-const showNativeToastDeferred = async (text: string) => {
-  const affordances = await loadNativeAffordances()
-  return affordances.showNativeToast(text)
-}
-
 const showNativeActionSheetDeferred = async (title: string, options: Array<{ title: string }>) => {
   const affordances = await loadNativeAffordances()
   return affordances.showNativeActionSheet(title, options)
-}
-
-const isExternalHttpUrl = (raw: string) => {
-  if (typeof window === 'undefined') return false
-  try {
-    const parsed = new URL(raw, window.location.href)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-    return parsed.origin !== window.location.origin
-  } catch {
-    return false
-  }
-}
-
-const openExternalUrlDeferred = async (href: string) => {
-  const nativeAppExtras = await loadNativeAppExtras()
-  return nativeAppExtras.openExternalUrl(href)
-}
-
-const hasTrackingConsent = () => {
-  if (typeof window === 'undefined') return false
-  try {
-    const raw = window.localStorage.getItem(TRACKING_CONSENT_KEY) ?? ''
-    return ['1', 'true', 'yes', 'on', 'granted'].includes(raw.trim().toLowerCase())
-  } catch (error) {
-    console.warn('Failed to read tracking consent:', error)
-    return false
-  }
 }
 
 const buildTrackingOrigins = (currentOrigin: string | null) => {
@@ -437,56 +254,6 @@ const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: b
   return Array.from(origins)
 }
 
-const scheduleLowPriorityPrefetch = (hrefs: string[]) => {
-  if (typeof document === 'undefined' || hrefs.length === 0) return
-  const head = document.head
-  if (!head) return
-
-  const addLinks = () => {
-    hrefs.forEach((href) => {
-      if (document.querySelector(`link[rel="prefetch"][href="${href}"]`)) return
-      const link = document.createElement('link')
-      link.rel = 'prefetch'
-      link.as = 'script'
-      link.fetchPriority = 'low'
-      link.href = href
-      head.appendChild(link)
-    })
-  }
-
-  const scheduleIdle = () => {
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => addLinks(), { timeout: 2000 })
-    } else {
-      setTimeout(addLinks, 1500)
-    }
-  }
-
-  let scheduled = false
-  const scheduleOnce = () => {
-    if (scheduled) return
-    scheduled = true
-    scheduleIdle()
-  }
-
-  if (typeof PerformanceObserver !== 'undefined') {
-    try {
-      const observer = new PerformanceObserver((list) => {
-        if (list.getEntries().length === 0) return
-        observer.disconnect()
-        scheduleOnce()
-      })
-      observer.observe({ type: 'largest-contentful-paint', buffered: true })
-      setTimeout(scheduleOnce, 3500)
-      return
-    } catch (error) {
-      console.warn('Failed to initialize low-priority prefetch observer:', error)
-    }
-  }
-
-  setTimeout(scheduleOnce, 1500)
-}
-
 const DOCK_ICONS: Record<NavLabelKey, typeof InHomeSimple> = {
   navHome: InHomeSimple,
   navStore: InShop,
@@ -520,7 +287,7 @@ export const useInitialFadeState = routeLoader$((_event) => {
   return { initialFade, criticalLite }
 })
 
-export const onRequest: RequestHandler = async ({ headers, method, basePathname, request }) => {
+export const onRequest: RequestHandler = async ({ headers, method, request }) => {
   const isCacheableMethod = method === 'GET' || method === 'HEAD'
   const isHtmlRequest = isCacheableMethod && headers.get('Accept')?.includes('text/html')
 
@@ -531,9 +298,6 @@ export const onRequest: RequestHandler = async ({ headers, method, basePathname,
   }
 
   if (isHtmlRequest) {
-    const basePath = basePathname || '/'
-    const preloadLinks = await getModulePreloadLinks(basePath)
-    preloadLinks.forEach((link) => headers.append('Link', link))
     const pathName = request ? new URL(request.url).pathname : '/'
     const planHints = getPlanEarlyHints(pathName, request ?? null)
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
@@ -547,59 +311,11 @@ export const RouterHead = component$(() => {
   const location = useLocation()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const currentOrigin = location.url?.origin ?? null
-  const trackingReady = useSignal(false)
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
-  const preconnectOrigins = buildPreconnectOrigins(currentOrigin, trackingReady.value)
+  const preconnectOrigins = buildPreconnectOrigins(currentOrigin, false)
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
-
-  useVisibleTask$(() => {
-    if (typeof window === 'undefined') return
-    if (trackingReady.value || trackingOrigins.length === 0) return
-    if (hasTrackingConsent()) {
-      trackingReady.value = true
-      return
-    }
-
-    const enableTracking = () => {
-      if (trackingReady.value) return
-      trackingReady.value = true
-      cleanup()
-    }
-
-    const handleInteraction = () => {
-      enableTracking()
-    }
-
-    const handleConsentEvent = () => {
-      if (hasTrackingConsent()) {
-        enableTracking()
-      }
-    }
-
-    const cleanup = () => {
-      window.removeEventListener('pointerdown', handleInteraction)
-      window.removeEventListener('keydown', handleInteraction)
-      window.removeEventListener('touchstart', handleInteraction)
-      window.removeEventListener('prom:tracking-consent', handleConsentEvent as EventListener)
-    }
-
-    window.addEventListener('pointerdown', handleInteraction, { once: true, passive: true })
-    window.addEventListener('keydown', handleInteraction, { once: true })
-    window.addEventListener('touchstart', handleInteraction, { once: true, passive: true })
-    window.addEventListener('prom:tracking-consent', handleConsentEvent as EventListener)
-
-    return () => cleanup()
-  })
-
-  useVisibleTask$(() => {
-    if (typeof window === 'undefined') return
-    const resolvedManifest = resolveClientManifest(manifest as ClientManifest | null)
-    if (!resolvedManifest) return
-    const prefetchLinks = buildModulePrefetchLinks(base, resolvedManifest)
-    scheduleLowPriorityPrefetch(prefetchLinks)
-  })
 
   return (
     <>
@@ -670,14 +386,11 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 
 export default component$(() => {
   const shellPreferences = useShellPreferences()
-  const location = useLocation()
   const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
   const authSession = useAuthSession()
   const isAuthenticated = authSession.value.status === 'authenticated'
-  const bannerMode = useSignal<'offline' | 'online' | 'sync' | 'cache-refreshed' | 'cache-cleared' | null>(null)
-  const bannerTimeoutId = useSignal<number | null>(null)
   const settingsOpen = useSignal(false)
   const settingsRef = useSignal<HTMLDivElement>()
   const langMenuOpen = useSignal(false)
@@ -722,87 +435,6 @@ export default component$(() => {
     )
   })
 
-
-  useVisibleTask$(
-    (ctx) => {
-      const search = ctx.track(() => location.url.search)
-      if (!search) return
-      const next = resolveLangParam(new URLSearchParams(search).get(LANG_PREFETCH_PARAM))
-      if (!next || next === langSignal.value) return
-      const root = document.querySelector('.layout-shell') ?? document.body
-      void runLangViewTransition(
-        () => {
-          langSignal.value = next
-          applyLang(next)
-        },
-        {
-          mutationRoot: root,
-          timeoutMs: 420,
-          variant: 'ui'
-        }
-      )
-    },
-    { strategy: 'document-ready' }
-  )
-
-
-
-  useVisibleTask$(async () => {
-    await migratePreferencesFromLegacy()
-    void initConnectivityStore()
-    const resolvedTheme = initTheme()
-    await setPreference('theme', resolvedTheme)
-    const preferredLocale = await getPreference('locale')
-    if (preferredLocale) {
-      const normalized = resolveLangParam(preferredLocale) ?? shellPreferences.value.lang
-      if (normalized !== langSignal.value) {
-        langSignal.value = normalized
-        applyLang(normalized)
-      }
-    }
-  }, { strategy: 'document-idle' })
-
-  useVisibleTask$(
-    (ctx) => {
-      if (typeof window === 'undefined') return
-      if (!isNativeShellRuntime()) return
-      const lang = ctx.track(() => langSignal.value)
-      const authStatus = ctx.track(() => authSession.value.status)
-      const authenticated = authStatus === 'authenticated'
-      let cancelled = false
-
-      const configurePrefetch = async (reason: string) => {
-        const backgroundRunner = await loadBackgroundRunner()
-        if (cancelled) return
-        const configured = await backgroundRunner.configureBackgroundPrefetch({
-          origin: window.location.origin,
-          apiBase: appConfig.apiBase,
-          lang,
-          isAuthenticated: authenticated,
-          publicRoutes: Array.from(backgroundPrefetchPublicRoutes),
-          authRoutes: Array.from(backgroundPrefetchAuthRoutes),
-          fragmentRoutes: Array.from(backgroundPrefetchFragmentRoutes)
-        })
-        if (!configured || cancelled) return
-        await backgroundRunner.hydrateBackgroundPrefetchCache()
-        if (cancelled) return
-        await backgroundRunner.runBackgroundPrefetchNow(reason)
-      }
-
-      void configurePrefetch('layout-config')
-      const handleResume = () => {
-        void configurePrefetch('resume')
-      }
-      window.addEventListener('resume', handleResume)
-
-      ctx.cleanup(() => {
-        cancelled = true
-        window.removeEventListener('resume', handleResume)
-      })
-    },
-    { strategy: 'document-idle' }
-  )
-
   useOnDocument(
     'click',
     $((event: MouseEvent) => {
@@ -827,181 +459,8 @@ export default component$(() => {
     })
   )
 
-  const setBanner = $((mode: typeof bannerMode.value, durationMs?: number) => {
-    if (typeof window === 'undefined') return
-    if (bannerTimeoutId.value) {
-      window.clearTimeout(bannerTimeoutId.value)
-      bannerTimeoutId.value = null
-    }
-    bannerMode.value = mode
-    if (mode && durationMs && durationMs > 0) {
-      bannerTimeoutId.value = window.setTimeout(() => {
-        bannerMode.value = null
-        bannerTimeoutId.value = null
-      }, durationMs)
-    }
-  })
-
-  const handleRetrySync = $(async () => {
-    if (typeof window === 'undefined') return
-    await withUserActionHapticsDeferred(async () => {
-      await triggerHapticTapDeferred()
-      window.dispatchEvent(new CustomEvent('prom:sw-manual-sync'))
-      await showNativeToastDeferred(copy.value.networkSyncQueued)
-    })
-    void setBanner('sync', 3200)
-  })
-
-  useVisibleTask$((ctx) => {
-    const orderedRoutes: readonly string[] = TOPBAR_ROUTE_ORDER
-    const normalizePath = (value: string) => value.replace(/\/+$/, '') || '/'
-
-    const handleClick = (event: Event) => {
-      if (!(event.target instanceof Element)) return
-      const anyAnchor = event.target.closest('a[href]')
-      if (anyAnchor instanceof HTMLAnchorElement) {
-        const anyHref = anyAnchor.getAttribute('href')
-        if (anyHref && isNativeShellRuntime() && isExternalHttpUrl(anyHref)) {
-          event.preventDefault()
-          void openExternalUrlDeferred(anyHref)
-          return
-        }
-      }
-
-      const anchor = event.target.closest('a[data-fragment-link]')
-      if (!(anchor instanceof HTMLAnchorElement)) return
-      const href = anchor.getAttribute('href')
-      if (!href) return
-
-      let targetPath = href
-      try {
-        targetPath = new URL(href, window.location.href).pathname
-    } catch (error) {
-      console.warn('Failed to parse clicked route href:', href, error)
-      return
-    }
-
-      const currentPath = normalizePath(window.location.pathname)
-      const nextPath = normalizePath(targetPath)
-      const currentIndex = orderedRoutes.indexOf(currentPath)
-      const targetIndex = orderedRoutes.indexOf(nextPath)
-      const root = document.documentElement
-      if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) {
-        delete root.dataset.navDirection
-      } else {
-        root.dataset.navDirection = targetIndex > currentIndex ? 'forward' : 'back'
-      }
-    }
-
-    document.addEventListener('click', handleClick, { capture: true })
-    ctx.cleanup(() => {
-      document.removeEventListener('click', handleClick, { capture: true })
-    })
-  })
-
-  useVisibleTask$((ctx) => {
-    if (typeof window === 'undefined') return
-    void initConnectivityStore()
-    if (!connectivityState.value.online) {
-      void setBanner('offline')
-    }
-
-    const handleOnline = () => {
-      void setBanner('online', 4200)
-    }
-    const handleOffline = () => {
-      void setBanner('offline')
-    }
-    const handleNetworkStatus = (event: Event) => {
-      if (!(event instanceof CustomEvent)) return
-      const detail = event.detail as { online?: boolean } | undefined
-      if (detail?.online === false) {
-        handleOffline()
-      } else if (detail?.online === true) {
-        handleOnline()
-      }
-    }
-    const handleCacheRefreshed = () => {
-      void setBanner('cache-refreshed', 4200)
-    }
-    const handleCacheCleared = () => {
-      void setBanner('cache-cleared', 4200)
-    }
-    const handleSyncRequested = () => {
-      void setBanner('sync', 3200)
-    }
-
-    window.addEventListener('prom:network-status', handleNetworkStatus)
-    window.addEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-    window.addEventListener('prom:sw-cache-cleared', handleCacheCleared)
-    window.addEventListener('prom:sw-sync-requested', handleSyncRequested)
-
-    ctx.cleanup(() => {
-      window.removeEventListener('prom:network-status', handleNetworkStatus)
-      window.removeEventListener('prom:sw-cache-refreshed', handleCacheRefreshed)
-      window.removeEventListener('prom:sw-cache-cleared', handleCacheCleared)
-      window.removeEventListener('prom:sw-sync-requested', handleSyncRequested)
-    })
-  })
-
-  const bannerConfig = (() => {
-    if (!bannerMode.value) return null
-    switch (bannerMode.value) {
-      case 'offline':
-        return {
-          tone: 'offline',
-          title: copy.value.networkOfflineTitle,
-          message: copy.value.networkOfflineHint,
-          showAction: true
-        }
-      case 'online':
-        return {
-          tone: 'online',
-          title: copy.value.networkOnlineTitle,
-          message: copy.value.networkOnlineHint,
-          showAction: true
-        }
-      case 'sync':
-        return {
-          tone: 'info',
-          title: copy.value.networkSyncTitle,
-          message: copy.value.networkSyncQueued,
-          showAction: false
-        }
-      case 'cache-refreshed':
-        return {
-          tone: 'info',
-          title: copy.value.networkCacheRefreshed,
-          message: copy.value.networkCacheRefreshedHint,
-          showAction: false
-        }
-      case 'cache-cleared':
-        return {
-          tone: 'warning',
-          title: copy.value.networkCacheCleared,
-          message: copy.value.networkCacheClearedHint,
-          showAction: false
-        }
-      default:
-        return null
-    }
-  })()
-
   return (
     <div class="layout-shell">
-      {bannerConfig ? (
-        <div class="connection-banner" data-tone={bannerConfig.tone} role="status" aria-live="polite">
-          <div class="connection-banner-content">
-            <strong>{bannerConfig.title}</strong>
-            <span>{bannerConfig.message}</span>
-          </div>
-          {bannerConfig.showAction ? (
-            <button type="button" class="connection-banner-action" onClick$={handleRetrySync}>
-              {copy.value.networkRetrySync}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       <header class="topbar" data-view-transition="shell-header">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true" />
@@ -1032,70 +491,74 @@ export default component$(() => {
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
               <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
-                <div class="settings-controls">
-                  <div
-                    class="fragment-status"
-                    data-state={fragmentStatus.value}
-                    role="status"
-                    aria-live="polite"
-                    aria-label={statusLabel}
-                  >
-                    <span class="dot" aria-hidden="true" />
-                  </div>
-                  {hasMultipleLangs ? (
-                    <LanguageToggle
-                      class="settings-lang-trigger"
-                      lang={langSignal}
-                      ariaLabel={copy.value.languageToggleLabel}
-                      pressed={langMenuOpen.value}
-                      onToggle$={$(() => withUserActionHapticsDeferred(async () => {
-                        await triggerHapticSelectionDeferred()
-                        const selectedIndex = await showNativeActionSheetDeferred(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
-                        if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
-                          const selected = supportedLangs[selectedIndex] as Lang
-                          void applyLangChoice(selected)
-                          return
-                        }
-                        langMenuOpen.value = !langMenuOpen.value
-                      }))}
-                    />
-                  ) : null}
-                  <ThemeToggle
-                    initialTheme={shellPreferences.value.theme}
-                    labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
-                    onToggle$={$((nextTheme) => {
-                      void withUserActionHapticsDeferred(async () => {
-                        await triggerHapticTapDeferred()
-                        await setPreference('theme', nextTheme)
-                      })
-                    })}
-                  />
-                </div>
-                {hasMultipleLangs ? (
-                  <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
-                    <div class="settings-lang-list" role="menu">
-                      {supportedLangs.map((langOption) => {
-                        const langValue = langOption as Lang
-                        const isActive = langSignal.value === langValue
-                        return (
-                          <button
-                            key={langOption}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={isActive}
-                            class="settings-lang-option"
-                            data-active={isActive ? 'true' : 'false'}
-                            onClick$={$(() => {
-                              void applyLangChoice(langValue)
-                              langMenuOpen.value = false
-                            })}
-                          >
-                            <span class="settings-lang-code">{getLangLabel(langOption)}</span>
-                          </button>
-                        )
-                      })}
+                {settingsOpen.value ? (
+                  <>
+                    <div class="settings-controls">
+                      <div
+                        class="fragment-status"
+                        data-state={fragmentStatus.value}
+                        role="status"
+                        aria-live="polite"
+                        aria-label={statusLabel}
+                      >
+                        <span class="dot" aria-hidden="true" />
+                      </div>
+                      {hasMultipleLangs ? (
+                        <LanguageToggle
+                          class="settings-lang-trigger"
+                          lang={langSignal}
+                          ariaLabel={copy.value.languageToggleLabel}
+                          pressed={langMenuOpen.value}
+                          onToggle$={$(() => withUserActionHapticsDeferred(async () => {
+                            await triggerHapticSelectionDeferred()
+                            const selectedIndex = await showNativeActionSheetDeferred(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
+                            if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
+                              const selected = supportedLangs[selectedIndex] as Lang
+                              void applyLangChoice(selected)
+                              return
+                            }
+                            langMenuOpen.value = !langMenuOpen.value
+                          }))}
+                        />
+                      ) : null}
+                      <ThemeToggle
+                        initialTheme={shellPreferences.value.theme}
+                        labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
+                        onToggle$={$((nextTheme) => {
+                          void withUserActionHapticsDeferred(async () => {
+                            await triggerHapticTapDeferred()
+                            await setPreference('theme', nextTheme)
+                          })
+                        })}
+                      />
                     </div>
-                  </div>
+                    {hasMultipleLangs ? (
+                      <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
+                        <div class="settings-lang-list" role="menu">
+                          {supportedLangs.map((langOption) => {
+                            const langValue = langOption as Lang
+                            const isActive = langSignal.value === langValue
+                            return (
+                              <button
+                                key={langOption}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={isActive}
+                                class="settings-lang-option"
+                                data-active={isActive ? 'true' : 'false'}
+                                onClick$={$(() => {
+                                  void applyLangChoice(langValue)
+                                  langMenuOpen.value = false
+                                })}
+                              >
+                                <span class="settings-lang-code">{getLangLabel(langOption)}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </div>

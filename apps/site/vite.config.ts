@@ -209,17 +209,8 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values())
 }
 
-const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
-  if (!manifest) return []
-  const hints: EarlyHint[] = []
-
-  if (manifest.core) {
-    hints.push({ href: withBase(`/build/${manifest.core}`), rel: 'modulepreload' })
-  }
-  if (manifest.preloader && manifest.preloader !== manifest.core) {
-    hints.push({ href: withBase(`/build/${manifest.preloader}`), rel: 'modulepreload', crossorigin: true })
-  }
-  return hints
+const buildManifestHints = (_manifest: QwikManifest | null): EarlyHint[] => {
+  return []
 }
 
 const isProtobufEvalWarning = (warning: RollupLog) => {
@@ -689,10 +680,8 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(isBuildCommand
-          ? [
-            ...(nativeBuildEnabled ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })] : [])
-          ]
+        ...(isBuildCommand && nativeBuildEnabled
+          ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })]
           : []),
         ...(nativeBuildEnabled && isBuildCommand
           ? []

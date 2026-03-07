@@ -44,20 +44,28 @@ export default function (opts: RenderOptions) {
   const nativeRuntime = isNativeShellRuntime()
 
   if (!nativeRuntime && 'serviceWorker' in navigator) {
-    setupServiceWorkerBridge()
-  }
-
-  void initConnectivityStore()
-  if (nativeRuntime) {
-    runNonCriticalSetup(() => {
-      void initNativeFeelTelemetryDeferred()
+    runAfterIntent(() => {
+      setupServiceWorkerBridge()
     })
   }
 
-  runNonCriticalSetup(() => {
-    setupWebSocketBackoffMonitor()
-    setupOfflineErrorFilters()
-    setupServerHealthProbe()
+  runAfterIntent(() => {
+    void initConnectivityStore()
+  })
+  if (nativeRuntime) {
+    runAfterIntent(() => {
+      runNonCriticalSetup(() => {
+        void initNativeFeelTelemetryDeferred()
+      })
+    })
+  }
+
+  runAfterIntent(() => {
+    runNonCriticalSetup(() => {
+      setupWebSocketBackoffMonitor()
+      setupOfflineErrorFilters()
+      setupServerHealthProbe()
+    })
   })
 
   if (!nativeRuntime && import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -90,10 +98,57 @@ export default function (opts: RenderOptions) {
 function runNonCriticalSetup(callback: () => void) {
   if (typeof window === 'undefined') return
   if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(callback, { timeout: 2000 })
+    requestIdleCallback(callback, { timeout: 4000 })
   } else {
-    setTimeout(callback, 0)
+    setTimeout(callback, 1200)
   }
+}
+
+let intentGateReady = false
+let intentGateInstalled = false
+const intentQueue: Array<() => void> = []
+
+function flushIntentQueue() {
+  if (intentGateReady) return
+  intentGateReady = true
+  const pending = intentQueue.splice(0, intentQueue.length)
+  pending.forEach((task) => task())
+}
+
+function installIntentGate(timeoutMs = 7000) {
+  if (intentGateInstalled || typeof window === 'undefined') return
+  intentGateInstalled = true
+  let timeoutHandle: number | null = null
+
+  const cleanup = () => {
+    if (timeoutHandle !== null) {
+      window.clearTimeout(timeoutHandle)
+      timeoutHandle = null
+    }
+    window.removeEventListener('pointerdown', handleIntent)
+    window.removeEventListener('keydown', handleIntent)
+    window.removeEventListener('touchstart', handleIntent)
+  }
+
+  const handleIntent = () => {
+    cleanup()
+    flushIntentQueue()
+  }
+
+  window.addEventListener('pointerdown', handleIntent, { once: true, passive: true })
+  window.addEventListener('keydown', handleIntent, { once: true })
+  window.addEventListener('touchstart', handleIntent, { once: true, passive: true })
+  timeoutHandle = window.setTimeout(handleIntent, timeoutMs)
+}
+
+function runAfterIntent(callback: () => void) {
+  if (typeof window === 'undefined') return
+  if (intentGateReady) {
+    callback()
+    return
+  }
+  intentQueue.push(callback)
+  installIntentGate()
 }
 
 function setupOfflineErrorFilters() {
