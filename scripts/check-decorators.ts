@@ -5,8 +5,13 @@ const ROOT = process.cwd()
 const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts'])
 const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'android', 'coverage'])
 const LEGACY_DECORATOR_FLAG = 'experimentalDecorators'
+type TsConfigJson = {
+  compilerOptions?: Record<string, unknown>
+}
 
-const collectFiles = async (dir: string, acc: string[] = []) => {
+const isNonNullable = <T>(value: T): value is NonNullable<T> => value != null
+
+const collectFiles = async (dir: string, acc: string[] = []): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
     if (entry.isDirectory()) {
@@ -27,7 +32,7 @@ const hasLegacyDecoratorFlag = async (filePath: string) => {
   if (!raw.includes(LEGACY_DECORATOR_FLAG)) return false
   if (/\s*"experimentalDecorators"\s*:\s*true/.test(raw)) return true
   try {
-    const config = JSON.parse(raw) as { compilerOptions?: Record<string, unknown> }
+    const config: TsConfigJson = JSON.parse(raw)
     return config.compilerOptions?.[LEGACY_DECORATOR_FLAG] === true
   } catch {
     return false
@@ -86,7 +91,7 @@ const hasDecoratorSyntax = async (filePath: string) => {
       if (!inSingle && !inDouble && ch === '@') {
         const previous = prev
         const tail = line.slice(j)
-        const boundary = previous === '' || /\s|[({\[:,;]/.test(previous)
+        const boundary = previous === '' || /\s|[({[:,;]/.test(previous)
         if (boundary && decoratorTokenPattern.test(tail)) {
           lineHasDecorator = true
           break
@@ -113,8 +118,8 @@ const main = async () => {
     return TS_EXTENSIONS.has(ext)
   })
 
-  const configOffenders = (await Promise.all(tsConfigFiles.map(async (file) => (await hasLegacyDecoratorFlag(file) ? file : null)))).filter(Boolean) as string[]
-  const decoratorOffenders = (await Promise.all(tsFiles.map(async (file) => (await hasDecoratorSyntax(file) ? file : null)))).filter(Boolean) as string[]
+  const configOffenders = (await Promise.all(tsConfigFiles.map(async (file) => (await hasLegacyDecoratorFlag(file) ? file : null)))).filter(isNonNullable)
+  const decoratorOffenders = (await Promise.all(tsFiles.map(async (file) => (await hasDecoratorSyntax(file) ? file : null)))).filter(isNonNullable)
 
   if (configOffenders.length === 0 && decoratorOffenders.length === 0) {
     console.log('[decorator-check] legacy decorator config and decorator syntax checks passed')
@@ -139,4 +144,4 @@ const main = async () => {
   process.exit(1)
 }
 
-await main()
+void main()
