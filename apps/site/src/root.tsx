@@ -1,4 +1,4 @@
-import { component$, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
 import { ClientExtras, useClientReady, type ClientExtrasConfig } from '@core'
 import { createClientErrorReporter, initHighlight } from '@platform/logging'
@@ -8,7 +8,6 @@ import globalStyles from '@prometheus/ui/global.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { appConfig } from './app-config'
-import { hideNativeSplashScreen, initNativeShell } from './native/native-shell'
 import { isNativeShellRuntime } from './native/runtime'
 
 const shouldEnableAmbientMotion = () => {
@@ -49,6 +48,8 @@ const waitForClientAppReady = async () => {
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
   await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
 }
+
+const loadNativeShell = () => import('./native/native-shell')
 
 const viewportFadeHeadStyle = `
   .viewport-fade {
@@ -142,11 +143,18 @@ export default component$(() => {
   useStyles$(globalCriticalStyles)
   useStyles$(globalStyles)
   const clientReady = useClientReady()
+  const nonCriticalUiReady = useSignal(false)
   useVisibleTask$(() => {
     if (typeof window !== 'undefined') {
-      (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime = isNativeShellRuntime()
+      const isNativeRuntime = isNativeShellRuntime()
+      const runtimeWindow = window as { __prometheusNativeRuntime?: boolean }
+      runtimeWindow.__prometheusNativeRuntime = isNativeRuntime
+      if (isNativeRuntime) {
+        void loadNativeShell().then((mod) => {
+          mod.initNativeShell()
+        })
+      }
     }
-    initNativeShell()
   })
   useVisibleTask$(
     (ctx) => {
@@ -158,6 +166,51 @@ export default component$(() => {
         },
         { timeoutMs: 3000 }
       )
+    },
+    { strategy: 'document-idle' }
+  )
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+
+      let timeoutHandle: number | null = null
+      let idleHandle: number | null = null
+      const idleApi = window as typeof window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+        cancelIdleCallback?: (handle: number) => void
+      }
+
+      const markReady = () => {
+        if (nonCriticalUiReady.value) return
+        nonCriticalUiReady.value = true
+      }
+
+      const queueReady = () => {
+        if (typeof idleApi.requestIdleCallback === 'function') {
+          idleHandle = idleApi.requestIdleCallback(() => markReady(), { timeout: 1500 })
+          return
+        }
+        timeoutHandle = window.setTimeout(markReady, 350)
+      }
+
+      setupLcpGate(
+        ctx,
+        () => {
+          queueReady()
+        },
+        { timeoutMs: 3500 }
+      )
+
+      ctx.cleanup(() => {
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle)
+          timeoutHandle = null
+        }
+        if (idleHandle !== null && typeof idleApi.cancelIdleCallback === 'function') {
+          idleApi.cancelIdleCallback(idleHandle)
+          idleHandle = null
+        }
+      })
     },
     { strategy: 'document-idle' }
   )
@@ -210,7 +263,11 @@ export default component$(() => {
   useVisibleTask$(({ track }) => {
     const isClientReady = track(() => clientReady.value)
     if (!isClientReady) return
-    void waitForClientAppReady().then(() => hideNativeSplashScreen())
+    void waitForClientAppReady().then(async () => {
+      if (!isNativeShellRuntime()) return
+      const nativeShell = await loadNativeShell()
+      await nativeShell.hideNativeSplashScreen()
+    })
   })
   const clientExtrasConfig: ClientExtrasConfig = {
     apiBase: appConfig.apiBase,
@@ -228,7 +285,7 @@ export default component$(() => {
       </head>
       <body class="app-shell" data-client-ready={clientReady.value ? 'true' : 'false'}>
         <div class="client-runtime-layer">
-          {clientReady.value ? (
+          {clientReady.value && nonCriticalUiReady.value ? (
             <>
               <ClientExtras config={clientExtrasConfig} />
               <RouteMotion />

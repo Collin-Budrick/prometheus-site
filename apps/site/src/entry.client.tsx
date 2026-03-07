@@ -11,7 +11,6 @@ import {
 } from './shared/service-worker-seed'
 import Root from './root'
 import { initConnectivityStore, isOnline } from './native/connectivity'
-import { initNativeFeelTelemetry } from './native/telemetry'
 import { isNativeShellRuntime } from './native/runtime'
 
 declare global {
@@ -24,6 +23,10 @@ declare global {
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
+const initNativeFeelTelemetryDeferred = async () => {
+  const telemetry = await import('./native/telemetry')
+  telemetry.initNativeFeelTelemetry()
+}
 
 const dispatchSwEvent = (name: string, detail?: Record<string, unknown>) => {
   if (typeof window === 'undefined') return
@@ -45,7 +48,11 @@ export default function (opts: RenderOptions) {
   }
 
   void initConnectivityStore()
-  initNativeFeelTelemetry()
+  if (nativeRuntime) {
+    runNonCriticalSetup(() => {
+      void initNativeFeelTelemetryDeferred()
+    })
+  }
 
   runNonCriticalSetup(() => {
     setupWebSocketBackoffMonitor()

@@ -17,19 +17,8 @@ import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
 import { connectivityState, initConnectivityStore } from '../native/connectivity'
-import { showNativeActionSheet, showNativeToast } from '../native/affordances'
 import { isNativeShellRuntime } from '../native/runtime'
 import { getPreference, migratePreferencesFromLegacy, setPreference } from '../native/preferences'
-import { isExternalHttpUrl, openExternalUrl } from '../native/native-app-extras'
-import { triggerHapticSelection, triggerHapticTap, withUserActionHaptics } from '../native/haptics'
-import {
-  backgroundPrefetchAuthRoutes,
-  backgroundPrefetchFragmentRoutes,
-  backgroundPrefetchPublicRoutes,
-  configureBackgroundPrefetch,
-  hydrateBackgroundPrefetchCache,
-  runBackgroundPrefetchNow
-} from '../native/background-runner'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -348,6 +337,55 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
 }
 
 const TRACKING_CONSENT_KEY = 'prom:tracking-consent'
+const backgroundPrefetchPublicRoutes = ['/', '/store', '/lab', '/login', '/offline'] as const
+const backgroundPrefetchAuthRoutes = ['/chat', '/profile', '/settings', '/dashboard'] as const
+const backgroundPrefetchFragmentRoutes = ['/', '/store', '/lab', '/login', '/chat'] as const
+
+const loadNativeHaptics = () => import('../native/haptics')
+const loadNativeAffordances = () => import('../native/affordances')
+const loadNativeAppExtras = () => import('../native/native-app-extras')
+const loadBackgroundRunner = () => import('../native/background-runner')
+
+const withUserActionHapticsDeferred = async <T,>(operation: () => Promise<T> | T) => {
+  const haptics = await loadNativeHaptics()
+  return haptics.withUserActionHaptics(operation)
+}
+
+const triggerHapticTapDeferred = async () => {
+  const haptics = await loadNativeHaptics()
+  await haptics.triggerHapticTap()
+}
+
+const triggerHapticSelectionDeferred = async () => {
+  const haptics = await loadNativeHaptics()
+  await haptics.triggerHapticSelection()
+}
+
+const showNativeToastDeferred = async (text: string) => {
+  const affordances = await loadNativeAffordances()
+  return affordances.showNativeToast(text)
+}
+
+const showNativeActionSheetDeferred = async (title: string, options: Array<{ title: string }>) => {
+  const affordances = await loadNativeAffordances()
+  return affordances.showNativeActionSheet(title, options)
+}
+
+const isExternalHttpUrl = (raw: string) => {
+  if (typeof window === 'undefined') return false
+  try {
+    const parsed = new URL(raw, window.location.href)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    return parsed.origin !== window.location.origin
+  } catch {
+    return false
+  }
+}
+
+const openExternalUrlDeferred = async (href: string) => {
+  const nativeAppExtras = await loadNativeAppExtras()
+  return nativeAppExtras.openExternalUrl(href)
+}
 
 const hasTrackingConsent = () => {
   if (typeof window === 'undefined') return false
@@ -722,18 +760,21 @@ export default component$(() => {
         applyLang(normalized)
       }
     }
-  }, { strategy: 'document-ready' })
+  }, { strategy: 'document-idle' })
 
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      if (!isNativeShellRuntime()) return
       const lang = ctx.track(() => langSignal.value)
       const authStatus = ctx.track(() => authSession.value.status)
       const authenticated = authStatus === 'authenticated'
       let cancelled = false
 
       const configurePrefetch = async (reason: string) => {
-        const configured = await configureBackgroundPrefetch({
+        const backgroundRunner = await loadBackgroundRunner()
+        if (cancelled) return
+        const configured = await backgroundRunner.configureBackgroundPrefetch({
           origin: window.location.origin,
           apiBase: appConfig.apiBase,
           lang,
@@ -743,9 +784,9 @@ export default component$(() => {
           fragmentRoutes: Array.from(backgroundPrefetchFragmentRoutes)
         })
         if (!configured || cancelled) return
-        await hydrateBackgroundPrefetchCache()
+        await backgroundRunner.hydrateBackgroundPrefetchCache()
         if (cancelled) return
-        await runBackgroundPrefetchNow(reason)
+        await backgroundRunner.runBackgroundPrefetchNow(reason)
       }
 
       void configurePrefetch('layout-config')
@@ -759,7 +800,7 @@ export default component$(() => {
         window.removeEventListener('resume', handleResume)
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useOnDocument(
@@ -803,10 +844,10 @@ export default component$(() => {
 
   const handleRetrySync = $(async () => {
     if (typeof window === 'undefined') return
-    await withUserActionHaptics(async () => {
-      await triggerHapticTap()
+    await withUserActionHapticsDeferred(async () => {
+      await triggerHapticTapDeferred()
       window.dispatchEvent(new CustomEvent('prom:sw-manual-sync'))
-      await showNativeToast(copy.value.networkSyncQueued)
+      await showNativeToastDeferred(copy.value.networkSyncQueued)
     })
     void setBanner('sync', 3200)
   })
@@ -822,7 +863,7 @@ export default component$(() => {
         const anyHref = anyAnchor.getAttribute('href')
         if (anyHref && isNativeShellRuntime() && isExternalHttpUrl(anyHref)) {
           event.preventDefault()
-          void openExternalUrl(anyHref)
+          void openExternalUrlDeferred(anyHref)
           return
         }
       }
@@ -979,8 +1020,8 @@ export default component$(() => {
                 aria-expanded={settingsOpen.value ? 'true' : 'false'}
                 aria-label={copy.value.navSettings}
                 aria-controls="topbar-settings-menu"
-                onClick$={$(() => withUserActionHaptics(async () => {
-                  await triggerHapticTap()
+                onClick$={$(() => withUserActionHapticsDeferred(async () => {
+                  await triggerHapticTapDeferred()
                   const next = !settingsOpen.value
                   settingsOpen.value = next
                   if (!next) {
@@ -1007,9 +1048,9 @@ export default component$(() => {
                       lang={langSignal}
                       ariaLabel={copy.value.languageToggleLabel}
                       pressed={langMenuOpen.value}
-                      onToggle$={$(() => withUserActionHaptics(async () => {
-                        await triggerHapticSelection()
-                        const selectedIndex = await showNativeActionSheet(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
+                      onToggle$={$(() => withUserActionHapticsDeferred(async () => {
+                        await triggerHapticSelectionDeferred()
+                        const selectedIndex = await showNativeActionSheetDeferred(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
                         if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
                           const selected = supportedLangs[selectedIndex] as Lang
                           void applyLangChoice(selected)
@@ -1023,8 +1064,8 @@ export default component$(() => {
                     initialTheme={shellPreferences.value.theme}
                     labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
                     onToggle$={$((nextTheme) => {
-                      void withUserActionHaptics(async () => {
-                        await triggerHapticTap()
+                      void withUserActionHapticsDeferred(async () => {
+                        await triggerHapticTapDeferred()
                         await setPreference('theme', nextTheme)
                       })
                     })}

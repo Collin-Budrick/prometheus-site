@@ -135,6 +135,11 @@ export const RouteMotion = component$(() => {
   useVisibleTask$(
     (ctx) => {
       ctx.track(() => location.url.pathname + location.url.search)
+      const runtimeWindow = window as typeof window & { __PROM_ROUTE_MOTION_BOOTSTRAPPED__?: boolean }
+      if (!runtimeWindow.__PROM_ROUTE_MOTION_BOOTSTRAPPED__) {
+        runtimeWindow.__PROM_ROUTE_MOTION_BOOTSTRAPPED__ = true
+        return
+      }
       const motionRunId = nextMotionRunId()
       if (!acquireMotionPipeline(motionRunId)) {
         return

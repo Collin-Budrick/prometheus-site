@@ -853,7 +853,7 @@ const buildNativeBundle = async () => {
     ...(isTauriMode
       ? {
           VITE_TAURI: '1',
-          PROMETHEUS_TAURI_PROFILE: process.env.PROMETHEUS_TAURI_PROFILE?.trim() || 'prod'
+          PROMETHEUS_TAURI_PROFILE: process.env.PROMETHEUS_TAURI_PROFILE?.trim() || 'dev'
         }
       : {})
   }
@@ -877,7 +877,9 @@ const buildNativeBundle = async () => {
   }
 
   if (isTauriMode) {
-    ensureLocalGradleCommand()
+    if (tauriTarget === 'android') {
+      ensureLocalGradleCommand()
+    }
     const tauriLaunchArgs = resolveTauriLaunchCommand(tauriTarget)
     const tauriResult = spawnSync(
       bunBin,

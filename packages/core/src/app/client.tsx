@@ -247,6 +247,9 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
 
       let stopPrefetch: (() => void) | undefined
       let cancelled = false
+      let started = false
+      let stopIdle = () => {}
+      let fallbackHandle: number | null = null
 
       const startPrefetch = () => {
         if (cancelled) return
@@ -262,10 +265,33 @@ const PrefetchSignals = component$(({ config }: { config: ClientExtrasConfig }) 
           .catch(() => {})
       }
 
-      const stopIdle = scheduleIdleTask(startPrefetch, 800, 'background')
+      const startAfterIntent = () => {
+        if (cancelled || started) return
+        started = true
+        window.removeEventListener('pointerdown', startAfterIntent)
+        window.removeEventListener('keydown', startAfterIntent)
+        window.removeEventListener('touchstart', startAfterIntent)
+        if (fallbackHandle !== null) {
+          window.clearTimeout(fallbackHandle)
+          fallbackHandle = null
+        }
+        stopIdle = scheduleIdleTask(startPrefetch, 1200, 'background')
+      }
+
+      window.addEventListener('pointerdown', startAfterIntent, { once: true, passive: true })
+      window.addEventListener('keydown', startAfterIntent, { once: true })
+      window.addEventListener('touchstart', startAfterIntent, { once: true, passive: true })
+      fallbackHandle = window.setTimeout(startAfterIntent, 6000)
 
       ctx.cleanup(() => {
         cancelled = true
+        window.removeEventListener('pointerdown', startAfterIntent)
+        window.removeEventListener('keydown', startAfterIntent)
+        window.removeEventListener('touchstart', startAfterIntent)
+        if (fallbackHandle !== null) {
+          window.clearTimeout(fallbackHandle)
+          fallbackHandle = null
+        }
         stopIdle()
         stopPrefetch?.()
       })
