@@ -1,19 +1,23 @@
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
 const apiRoot = path.join(root, 'packages', 'platform')
 
-const isWindowsArm64 = process.platform === 'win32' && process.arch === 'arm64'
-const bindingFile = path.join(apiRoot, 'node_modules', 'oxlint', 'dist', 'oxlint.win32-arm64-msvc.node')
-const bindingPackage = path.join(apiRoot, 'node_modules', '@oxlint', 'win32-arm64')
+const oxlintProbe = Bun.spawnSync(['bun', 'x', 'oxlint', '--version'], {
+  cwd: apiRoot,
+  stdio: ['ignore', 'ignore', 'pipe']
+})
 
-if (isWindowsArm64 && !existsSync(bindingFile) && !existsSync(bindingPackage)) {
-  console.warn('[lefthook] oxlint native binding missing; skipping lint for pre-commit.')
-  process.exit(0)
+if ((oxlintProbe.exitCode ?? 1) !== 0) {
+  const errorOutput = oxlintProbe.stderr.toString()
+  if (errorOutput.includes('Cannot find native binding') || errorOutput.includes('MODULE_NOT_FOUND')) {
+    console.warn('[lefthook] oxlint native binding missing; skipping lint for pre-commit.')
+    process.exit(0)
+  }
 }
 
-const result = Bun.spawnSync(['bun', 'run', '--cwd', 'packages/platform', 'lint'], {
+const result = Bun.spawnSync(['bun', 'x', 'oxlint', '.'], {
+  cwd: apiRoot,
   stdio: ['inherit', 'inherit', 'inherit']
 })
 

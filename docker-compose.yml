@@ -39,7 +39,7 @@ services:
       retries: 10
 
   valkey:
-    image: valkey/valkey-bundle:9.0.0-alpine
+    image: valkey/valkey-bundle:9.0.1-alpine
     command: ["valkey-server", "/etc/valkey/valkey.conf"]
     ports:
       - "${PROMETHEUS_VALKEY_PORT:-6379}:6379"
@@ -81,7 +81,7 @@ services:
       WEB_PORT: 443
       WEB_HOST: ${PROMETHEUS_WEB_HOST:-prometheus.dev}
       WEB_HOST_PROD: ${PROMETHEUS_WEB_HOST_PROD:-prometheus.prod}
-      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       ENABLE_WEBTRANSPORT_FRAGMENTS: ${ENABLE_WEBTRANSPORT_FRAGMENTS:-1}
       BETTER_AUTH_COOKIE_SECRET: dev-cookie-secret-please-change-32
     ports:

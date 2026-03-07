@@ -19,12 +19,9 @@ call_lefthook()
   elif lefthook.bat -h >/dev/null 2>&1
   then
     lefthook.bat "$@"
-  elif bunx --bun lefthook -h >/dev/null 2>&1
+  elif bun x lefthook -h >/dev/null 2>&1
   then
-    bunx --bun lefthook "$@"
-  elif bunx lefthook -h >/dev/null 2>&1
-  then
-    bunx lefthook "$@"
+    bun x lefthook "$@"
   else
     dir="$(git rev-parse --show-toplevel)"
     osArch=$(uname | tr '[:upper:]' '[:lower:]')
