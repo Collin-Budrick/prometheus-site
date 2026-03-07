@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.5
-FROM golang:1.25.6-alpine AS build
+FROM golang:1.26.1-alpine AS build
 WORKDIR /app
 COPY apps/webtransport/go.mod apps/webtransport/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \

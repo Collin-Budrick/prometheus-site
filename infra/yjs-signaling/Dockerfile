@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.5
-FROM oven/bun:1.3.9 AS deps
+FROM oven/bun:1.3.10-alpine AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --ignore-scripts --filter site \
     || (echo "Workspace-filtered site install failed; falling back to full workspace install" && bun install --ignore-scripts)
 
-FROM oven/bun:1.3.9 AS runner
+FROM oven/bun:1.3.10-alpine AS runner
 WORKDIR /app
 
 ENV PORT=4444

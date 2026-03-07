@@ -23,7 +23,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.3-alpine
     environment:
       POSTGRES_USER: prometheus
       POSTGRES_PASSWORD: prometheus

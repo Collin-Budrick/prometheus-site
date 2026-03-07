@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@bokuweb/zstd-wasm": "0.0.27",
-    "@builder.io/qwik": "1.19.0",
-    "@builder.io/qwik-city": "1.19.0",
+    "@builder.io/qwik": "1.19.1",
+    "@builder.io/qwik-city": "1.19.1",
     "@preact/signals-core": "1.13.0",
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
@@ -30,26 +30,26 @@
     "@tauri-apps/plugin-sql": "2.3.2",
     "@tauri-apps/plugin-updater": "2.10.0",
     "gridstack": "12.4.2",
-    "nostr-tools": "2.23.1",
+    "nostr-tools": "2.23.3",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121",
     "y-webrtc": "10.3.0",
     "yjs": "13.6.29"
   },
   "devDependencies": {
-    "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.5",
-    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.5",
+    "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.7",
+    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.7",
     "@serwist/vite": "9.5.6",
-    "@tailwindcss/vite": "4.2.0",
-    "@types/node": "25.3.0",
+    "@tailwindcss/vite": "4.2.1",
+    "@types/node": "25.3.5",
     "lightningcss": "1.31.1",
-    "oxlint": "1.49.0",
-    "rollup-plugin-visualizer": "7.0.0",
+    "oxlint": "1.51.0",
+    "rollup-plugin-visualizer": "7.0.1",
     "serwist": "10.0.0-preview.14",
-    "tailwindcss": "4.2.0",
-    "typescript": "6.0.0-dev.20260220",
-    "vite": "8.0.0-beta.15",
-    "vite-plugin-compression2": "2.4.0"
+    "tailwindcss": "4.2.1",
+    "typescript": "6.0.1-rc",
+    "vite": "8.0.0-beta.16",
+    "vite-plugin-compression2": "2.5.0"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "1.43.0"
