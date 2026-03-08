@@ -51,6 +51,12 @@ type HomeControllerState = {
   destroyed: boolean
 }
 
+type HomeDemoRootSnapshot = {
+  className: string
+  innerHTML: string
+  attrs: Record<string, string | null>
+}
+
 const moonIconMarkup = `<svg class="theme-toggle-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z"></path></svg>`
 const sunIconMarkup = `<svg class="theme-toggle-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M4.22 4.22l2.12 2.12"></path><path d="M17.66 17.66l2.12 2.12"></path><path d="M2 12h3"></path><path d="M19 12h3"></path><path d="M4.22 19.78l2.12-2.12"></path><path d="M17.66 6.34l2.12-2.12"></path></svg>`
 const LEGACY_HOME_CLEANUP_SESSION_KEY = 'prom-static-home-cleanup:v1'
@@ -264,6 +270,30 @@ const parseDemoProps = (value: string | null) => {
   }
 }
 
+const captureDemoRootSnapshot = (root: HTMLElement): HomeDemoRootSnapshot => ({
+  className: root.className,
+  innerHTML: root.innerHTML,
+  attrs: {
+    'data-home-preview': root.getAttribute('data-home-preview'),
+    'data-home-demo-active': root.getAttribute('data-home-demo-active'),
+    'data-preview': root.getAttribute('data-preview'),
+    'data-stage': root.getAttribute('data-stage'),
+    'data-running': root.getAttribute('data-running')
+  }
+})
+
+const restoreDemoRootSnapshot = (root: HTMLElement, snapshot: HomeDemoRootSnapshot) => {
+  root.className = snapshot.className
+  for (const [name, value] of Object.entries(snapshot.attrs)) {
+    if (value === null) {
+      root.removeAttribute(name)
+    } else {
+      root.setAttribute(name, value)
+    }
+  }
+  root.innerHTML = snapshot.innerHTML
+}
+
 const bindDemoActivation = (controller: HomeControllerState, root: ParentNode = document) => {
   root.querySelectorAll<HTMLButtonElement>('[data-demo-activate]').forEach((button) => {
     if (button.dataset.demoBound === 'true') return
@@ -277,7 +307,7 @@ const bindDemoActivation = (controller: HomeControllerState, root: ParentNode = 
 
       button.disabled = true
       card.setAttribute(STATIC_FRAGMENT_LOCKED_ATTR, 'true')
-      const previousHtml = root.innerHTML
+      const snapshot = captureDemoRootSnapshot(root)
       try {
         const { activateHomeDemo } = await import('./home-demo-activate')
         if (controller.destroyed) return
@@ -290,7 +320,8 @@ const bindDemoActivation = (controller: HomeControllerState, root: ParentNode = 
         controller.demoRenders.set(root, result)
       } catch (error) {
         console.error(`Failed to activate home demo: ${kind}`, error)
-        root.innerHTML = previousHtml
+        restoreDemoRootSnapshot(root, snapshot)
+        bindDemoActivation(controller, root)
         card.removeAttribute(STATIC_FRAGMENT_LOCKED_ATTR)
         button.disabled = false
       }

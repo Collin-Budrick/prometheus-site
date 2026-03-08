@@ -21,6 +21,8 @@ type HomeDemoActivationResult = {
 const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
 const plannerStepDelayMs = 720
 const preactCountdownSeconds = 60
+const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
+const reactDomPreview = '<section> <h2> <p> <div.badge>'
 
 const getCurrentLang = (): Lang => {
   const value = document.documentElement.lang?.trim().toLowerCase()
@@ -77,8 +79,187 @@ const setReactStepLabel = (button: HTMLButtonElement, label: string) => {
   button.append(document.createTextNode(label))
 }
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: string) => {
+  root.className = className
+  root.setAttribute('data-home-demo-active', 'true')
+  root.removeAttribute('data-home-preview')
+  root.innerHTML = html
+}
+
+const renderPlannerDemoMarkup = (copy: PlannerDemoCopy) => `
+  <div class="planner-demo-header">
+    <div class="planner-demo-title"></div>
+    <div class="planner-demo-controls">
+      <button class="planner-demo-action" type="button"></button>
+      <button class="planner-demo-secondary" type="button"></button>
+    </div>
+  </div>
+  <div class="planner-demo-status" aria-live="polite"></div>
+  <div class="planner-demo-steps" role="list">
+    ${copy.steps.map(() => '<div class="planner-demo-step" role="listitem"></div>').join('')}
+  </div>
+  <div class="planner-demo-grid">
+    ${copy.fragments
+      .map(
+        () => `
+          <div class="planner-demo-card" data-cache="hit" data-render="idle" data-revalidate="idle">
+            <div class="planner-demo-row">
+              <span class="planner-demo-value"></span>
+              <span class="planner-demo-pill" data-state="idle"></span>
+            </div>
+            <div class="planner-demo-row">
+              <button class="planner-demo-toggle" type="button" data-state="hit"></button>
+              <span class="planner-demo-pill" data-state="idle"></span>
+            </div>
+            <div class="planner-demo-row">
+              <span class="planner-demo-pill" data-state="idle"></span>
+            </div>
+            <div class="planner-demo-outcomes">
+              <div class="planner-demo-outcome" data-state="idle"></div>
+              <div class="planner-demo-outcome is-muted" data-state="idle"></div>
+            </div>
+          </div>
+        `
+      )
+      .join('')}
+  </div>
+`
+
+const renderWasmRendererDemoMarkup = () => `
+  <div class="wasm-demo-header">
+    <div class="wasm-demo-title"></div>
+    <button class="wasm-demo-action" type="button"></button>
+  </div>
+  <div class="wasm-demo-subtitle"></div>
+  <div class="wasm-demo-grid">
+    <div class="wasm-demo-panel" data-panel="inputs">
+      <div class="wasm-demo-panel-title"></div>
+      <div class="wasm-demo-input">
+        <span class="wasm-demo-label">A</span>
+        <button class="wasm-demo-step" type="button"></button>
+        <span class="wasm-demo-value"></span>
+        <button class="wasm-demo-step" type="button"></button>
+      </div>
+      <div class="wasm-demo-input">
+        <span class="wasm-demo-label">B</span>
+        <button class="wasm-demo-step" type="button"></button>
+        <span class="wasm-demo-value"></span>
+        <button class="wasm-demo-step" type="button"></button>
+      </div>
+      <div class="wasm-demo-note"></div>
+    </div>
+    <div class="wasm-demo-panel" data-panel="wasm">
+      <div class="wasm-demo-panel-title"></div>
+      <div class="wasm-demo-core">
+        <div class="wasm-demo-core-value" aria-live="polite"></div>
+        <div class="wasm-demo-core-hash"></div>
+      </div>
+      <div class="wasm-demo-bits"></div>
+      <div class="wasm-demo-note"></div>
+    </div>
+    <div class="wasm-demo-panel" data-panel="fragment">
+      <div class="wasm-demo-panel-title"></div>
+      <div class="wasm-demo-metrics">
+        <div class="wasm-demo-metric" role="group"></div>
+        <div class="wasm-demo-metric" role="group"></div>
+      </div>
+      <div class="wasm-demo-bar">
+        <div class="wasm-demo-bar-fill"></div>
+      </div>
+      <div class="wasm-demo-history"></div>
+      <div class="wasm-demo-note"></div>
+    </div>
+  </div>
+  <div class="wasm-demo-footer">
+    <span class="wasm-demo-chip"></span>
+    <span class="wasm-demo-chip"></span>
+    <span class="wasm-demo-chip"></span>
+  </div>
+`
+
+const renderReactBinaryDemoMarkup = (copy: ReactBinaryDemoCopy) => `
+  <div class="react-binary-header">
+    <div class="react-binary-controls">
+      <div class="react-binary-title">${escapeHtml(copy.title)}</div>
+      <button class="react-binary-action" type="button"></button>
+    </div>
+    <div class="react-binary-status" aria-live="polite"></div>
+  </div>
+  <div class="react-binary-steps" role="tablist" aria-label="${escapeHtml(copy.ariaStages)}">
+    ${copy.stages
+      .map(
+        (_, index) =>
+          `<button class="react-binary-step" type="button" role="tab" aria-selected="${
+            index === 0 ? 'true' : 'false'
+          }"></button>`
+      )
+      .join('')}
+  </div>
+  <div class="react-binary-track">
+    <div class="react-binary-panel" data-panel="react">
+      <div class="react-binary-panel-title"></div>
+      <div class="react-binary-node-tree">
+        <div class="react-binary-node"></div>
+        <div class="react-binary-node is-child"></div>
+        <div class="react-binary-node is-child"></div>
+        <div class="react-binary-node is-child"></div>
+        <div class="react-binary-node is-child"></div>
+      </div>
+      <div class="react-binary-caption"></div>
+    </div>
+    <div class="react-binary-connector" aria-hidden="true"></div>
+    <div class="react-binary-panel" data-panel="binary">
+      <div class="react-binary-panel-title"></div>
+      <div class="react-binary-bits" role="group" aria-label="${escapeHtml(copy.footer.binaryStream)}">
+        <span data-anim="false"></span>
+      </div>
+      <div class="react-binary-caption"></div>
+    </div>
+    <div class="react-binary-connector" aria-hidden="true"></div>
+    <div class="react-binary-panel" data-panel="qwik">
+      <div class="react-binary-panel-title"></div>
+      <div class="react-binary-dom">
+        <span></span>
+      </div>
+      <div class="react-binary-caption"></div>
+    </div>
+  </div>
+  <div class="react-binary-footer">
+    <span class="react-binary-chip"></span>
+    <span class="react-binary-chip"></span>
+  </div>
+`
+
+const renderPreactIslandDemoMarkup = () => `
+  <div class="preact-island-label"></div>
+  <div class="preact-island-timer" aria-live="polite"></div>
+  <div class="preact-island-stage">
+    <svg class="preact-island-dial" viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="preact-island-dial-track" cx="60" cy="60" r="48"></circle>
+      <circle class="preact-island-dial-ticks" cx="60" cy="60" r="48"></circle>
+      <circle class="preact-island-dial-progress" cx="60" cy="60" r="48"></circle>
+      <line class="preact-island-dial-hand" x1="60" y1="60" x2="60" y2="16"></line>
+      <circle class="preact-island-dial-center-dot" cx="60" cy="60" r="4"></circle>
+    </svg>
+    <div class="preact-island-stage-title"></div>
+    <div class="preact-island-stage-time" aria-live="polite"></div>
+    <div class="preact-island-stage-sub"></div>
+  </div>
+  <button class="preact-island-action" type="button"></button>
+`
+
 const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getPlannerDemoCopy(getCurrentLang())
+  prepareActiveDemoRoot(root, 'planner-demo', renderPlannerDemoMarkup(copy))
+  const title = root.querySelector<HTMLElement>('.planner-demo-title')
   const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
   const shuffleButton = root.querySelector<HTMLButtonElement>('.planner-demo-secondary')
   const status = root.querySelector<HTMLElement>('.planner-demo-status')
@@ -174,6 +355,9 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     const stage = stageIndex >= 0 ? copy.steps[stageIndex] : null
     root.dataset.preview = 'false'
     root.dataset.stage = stage?.id ?? 'idle'
+    if (title) {
+      title.textContent = copy.title
+    }
 
     if (runButton) {
       runButton.disabled = isRunning
@@ -259,6 +443,8 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 
 const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getWasmRendererDemoCopy(getCurrentLang())
+  prepareActiveDemoRoot(root, 'wasm-demo', renderWasmRendererDemoMarkup())
+  const title = root.querySelector<HTMLElement>('.wasm-demo-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
   const subtitle = root.querySelector<HTMLElement>('.wasm-demo-subtitle')
   const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-panel-title'))
@@ -283,6 +469,9 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
     const progress = Math.min(100, Math.max(0, metrics.hotPath))
 
     root.dataset.preview = 'false'
+    if (title) {
+      title.textContent = copy.title
+    }
     setButtonLabel(actionButton, copy.run)
     actionButton?.removeAttribute('data-demo-activate')
     actionButton?.setAttribute('data-action', 'run')
@@ -300,21 +489,25 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
       stepButtons[0].disabled = false
       stepButtons[0].dataset.action = 'a-dec'
       stepButtons[0].setAttribute('aria-label', copy.aria.decreaseA)
+      stepButtons[0].textContent = '-'
     }
     if (stepButtons[1]) {
       stepButtons[1].disabled = false
       stepButtons[1].dataset.action = 'a-inc'
       stepButtons[1].setAttribute('aria-label', copy.aria.increaseA)
+      stepButtons[1].textContent = '+'
     }
     if (stepButtons[2]) {
       stepButtons[2].disabled = false
       stepButtons[2].dataset.action = 'b-dec'
       stepButtons[2].setAttribute('aria-label', copy.aria.decreaseB)
+      stepButtons[2].textContent = '-'
     }
     if (stepButtons[3]) {
       stepButtons[3].disabled = false
       stepButtons[3].dataset.action = 'b-inc'
       stepButtons[3].setAttribute('aria-label', copy.aria.increaseB)
+      stepButtons[3].textContent = '+'
     }
 
     if (coreValue) coreValue.textContent = `${metrics.mixed}`
@@ -408,13 +601,16 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
 
 const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getReactBinaryDemoCopy(getCurrentLang())
+  prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
   const status = root.querySelector<HTMLElement>('.react-binary-status')
   const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
   const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-panel-title'))
   const captions = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-caption'))
   const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-chip'))
+  const nodeElements = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-node'))
   const bits = root.querySelector<HTMLElement>('.react-binary-bits span')
+  const domPreview = root.querySelector<HTMLElement>('.react-binary-dom span')
   let stageIndex = 0
   let binaryChunks = [...initialBinaryChunks]
   let timeoutHandle = 0
@@ -479,6 +675,12 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     captions[2] && (captions[2].textContent = copy.panels.qwikCaption)
     footerChips[0] && (footerChips[0].textContent = copy.footer.hydrationSkipped)
     footerChips[1] && (footerChips[1].textContent = copy.footer.binaryStream)
+    nodeElements.forEach((element, index) => {
+      element.textContent = reactNodeLabels[index] ?? ''
+    })
+    if (domPreview) {
+      domPreview.textContent = reactDomPreview
+    }
 
     if (bits) {
       bits.dataset.anim = stage.id === 'binary' ? 'true' : 'false'
@@ -538,8 +740,10 @@ const activatePreactIslandDemo = (
 ): HomeDemoActivationResult => {
   const copy = getPreactIslandCopy(getCurrentLang())
   const label = typeof props.label === 'string' && props.label.trim() ? props.label : copy.label
+  prepareActiveDemoRoot(root, 'preact-island-ui', renderPreactIslandDemoMarkup())
   const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
   const timer = root.querySelector<HTMLElement>('.preact-island-timer')
+  const stageTitle = root.querySelector<HTMLElement>('.preact-island-stage-title')
   const stageTime = root.querySelector<HTMLElement>('.preact-island-stage-time')
   const stageSub = root.querySelector<HTMLElement>('.preact-island-stage-sub')
   const actionButton = root.querySelector<HTMLButtonElement>('.preact-island-action')
@@ -577,6 +781,7 @@ const activatePreactIslandDemo = (
     root.dataset.preview = 'false'
     root.dataset.running = remaining > 0 ? 'true' : 'false'
     labelElement && (labelElement.textContent = label)
+    stageTitle && (stageTitle.textContent = copy.countdown)
     timer && (timer.textContent = remaining === 0 ? copy.ready : `${minutes}:${seconds}`)
     stageTime && (stageTime.textContent = remaining === 0 ? '0:00' : `${minutes}:${seconds}`)
     stageSub && (stageSub.textContent = remaining === 0 ? copy.readySub : copy.activeSub)

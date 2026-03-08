@@ -1,4 +1,87 @@
 @layer components {
+  .home-demo-compact {
+    @apply mt-4 rounded-2xl border p-4;
+    display: grid;
+    gap: 12px;
+    border-color: rgb(var(--stroke) / 0.72);
+    background-color: rgb(var(--surface-soft) / 0.58);
+  }
+
+  .home-demo-compact-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .home-demo-compact-kicker {
+    @apply font-mono text-[11px] uppercase tracking-[0.35em];
+    color: rgb(var(--muted-soft));
+  }
+
+  .home-demo-compact-copy {
+    @apply text-sm leading-6;
+    margin: 0;
+    color: rgb(var(--muted));
+  }
+
+  .home-demo-compact-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .home-demo-compact-badge-wrap {
+    display: flex;
+  }
+
+  .home-demo-compact-badge {
+    @apply inline-flex items-center rounded-full border px-3 py-1;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
+    justify-content: center;
+    line-height: 1;
+    background-color: rgb(var(--surface) / 0.92);
+    border-color: rgb(var(--stroke) / 0.72);
+    color: rgb(var(--muted));
+  }
+
+  .home-demo-compact-action {
+    @apply inline-flex items-center rounded-full border px-4 py-2;
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
+    justify-content: center;
+    line-height: 1;
+    white-space: nowrap;
+    background-color: rgb(var(--surface) / 0.96);
+    border-color: rgb(var(--accent) / 0.28);
+    color: rgb(var(--accent-strong));
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .home-demo-compact-action:hover {
+    transform: translateY(-1px);
+    background-color: rgb(var(--surface));
+    border-color: rgb(var(--accent) / 0.42);
+  }
+
+  .home-demo-compact-action:focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 640px) {
+    .home-demo-compact-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .home-demo-compact-action {
+      width: 100%;
+    }
+  }
+
   .preact-island {
     @apply mt-4 rounded-2xl border border-teal-200/80 bg-white/70 p-4;
     position: relative;
