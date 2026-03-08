@@ -88,15 +88,8 @@ const copyLegacyKeys = async () => {
       continue
     }
 
-    if (key === 'locale') {
-      continue
-    }
-
     await setPreference(key, DEFAULTS[key])
     writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
-    if (key === 'theme' || key === 'locale') {
-      writeWebStorageValue(LEGACY_STORAGE_KEYS[key], DEFAULTS[key])
-    }
     if (key === 'theme' && typeof document !== 'undefined') {
       document.cookie = `prometheus-theme=${encodeURIComponent(DEFAULTS.theme)}; path=/; max-age=31536000; samesite=lax`
     }

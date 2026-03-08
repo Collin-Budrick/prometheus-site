@@ -26,6 +26,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Tauri mode (`VITE_TAURI=1`):** `bun run dev:tauri` and `bun run preview:tauri` switch to `apps/tauri` via `tauri dev`/`tauri build`.
 - **Tauri targets (`VITE_TAURI_TARGET`):** use `android` or `ios` to run mobile builds (`tauri android dev|build`, `tauri ios dev|build`); any other value falls back to desktop.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
+- **Storybook:** `bun run dev:storybook` starts the Qwik Storybook from `apps/site/.storybook`; `bun run build:storybook` builds it to `apps/site/storybook-static`. The single Storybook instance covers stories in both `apps/site/src/**/*.stories.*` and `packages/ui/src/**/*.stories.*`.
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
 - **Tauri build flag:** `VITE_TAURI=1` enables static generation for Tauri builds (`bun run --cwd apps/site build:tauri`) and should be combined with `bun run --cwd apps/tauri tauri build` for packaging.
@@ -57,9 +58,9 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## Repo conventions and checks
 
-- **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
+- **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`, `dev:storybook`, `build:storybook`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
 - **Native release workflows:** `.github/workflows/native-desktop-release.yml`, `.github/workflows/native-mobile-release.yml`, and `.github/workflows/native-pr-smoke.yml` define desktop/mobile release + PR smoke lanes.
-- **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site + packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
+- **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
 - **Native docs:** Native release checklists and runbooks live in `docs/native-release-qa.md`, `docs/native-release-runbook.md`, and `docs/native-config.md`.
 
 - **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke native plugin paths in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
@@ -69,7 +70,8 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## File map (quick pointers)
 
-- **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragments/` (site fragment definitions).
+- **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/.storybook/` (Storybook config), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragments/` (site fragment definitions).
+- **Stories:** `apps/site/src/**/*.stories.tsx` and `packages/ui/src/**/*.stories.tsx` feed the shared Storybook instance; prefer real component stories over generated onboarding samples.
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
 - **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/db/schema.ts` (schema), `packages/platform/src/cache.ts` (Valkey), `packages/platform/src/server/fragments.ts` (fragment routes).
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.

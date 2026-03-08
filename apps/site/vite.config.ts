@@ -16,22 +16,9 @@ import { constants } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
 import { generateFragmentCss } from '../../scripts/fragment-css.ts'
+import { createSiteResolveAliases, siteConfigRoot as configRoot, siteWorkspaceRoot as workspaceRoot } from './scripts/vite.shared.ts'
 
 const require = createRequire(import.meta.url)
-const resolveOptionalPackageEntry = (id: string) => {
-  try {
-    return require.resolve(id)
-  } catch {
-    return null
-  }
-}
-const tauriDeepLinkPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-deep-link')
-const tauriDialogPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-dialog')
-const tauriGlobalShortcutPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-global-shortcut')
-const tauriNotificationPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-notification')
-const tauriSqlPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-sql')
-const tauriShellPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-shell')
-const tauriUpdaterPluginEntry = resolveOptionalPackageEntry('@tauri-apps/plugin-updater')
 
 const truthyEnvValues = new Set(['1', 'true', 'yes', 'on'])
 const isTruthyEnv = (value?: string) => {
@@ -46,16 +33,6 @@ const nativeBindingMap: Record<string, string> = {
   'win32-x64': 'qwik.win32-x64-msvc.node'
 }
 const bindingsDir = path.resolve(path.dirname(require.resolve('@builder.io/qwik/optimizer')), '..', 'bindings')
-const configRoot = path.dirname(fileURLToPath(import.meta.url))
-const workspaceRoot = path.resolve(configRoot, '../..')
-const coreRoot = path.resolve(workspaceRoot, 'packages/core/src')
-const platformRoot = path.resolve(workspaceRoot, 'packages/platform/src')
-const uiRoot = path.resolve(workspaceRoot, 'packages/ui/src')
-const siteRoot = path.resolve(workspaceRoot, 'apps/site/src')
-const featureAuthRoot = path.resolve(workspaceRoot, 'packages/features/auth/src')
-const featureStoreRoot = path.resolve(workspaceRoot, 'packages/features/store/src')
-const featureMessagingRoot = path.resolve(workspaceRoot, 'packages/features/messaging/src')
-const featureLabRoot = path.resolve(workspaceRoot, 'packages/features/lab/src')
 
 const loadQwikBinding = async () => {
   const key = `${process.platform}-${process.arch}`
@@ -731,48 +708,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       },
       oxc: false,
       resolve: {
-        alias: [
-          ...(tauriDeepLinkPluginEntry
-            ? [{ find: '@tauri-apps/plugin-deep-link', replacement: tauriDeepLinkPluginEntry }]
-            : []),
-          ...(tauriDialogPluginEntry
-            ? [{ find: '@tauri-apps/plugin-dialog', replacement: tauriDialogPluginEntry }]
-            : []),
-          ...(tauriGlobalShortcutPluginEntry
-            ? [{ find: '@tauri-apps/plugin-global-shortcut', replacement: tauriGlobalShortcutPluginEntry }]
-            : []),
-          ...(tauriNotificationPluginEntry
-            ? [{ find: '@tauri-apps/plugin-notification', replacement: tauriNotificationPluginEntry }]
-            : []),
-          ...(tauriSqlPluginEntry
-            ? [{ find: '@tauri-apps/plugin-sql', replacement: tauriSqlPluginEntry }]
-            : []),
-          ...(tauriShellPluginEntry
-            ? [{ find: '@tauri-apps/plugin-shell', replacement: tauriShellPluginEntry }]
-            : []),
-          ...(tauriUpdaterPluginEntry
-            ? [{ find: '@tauri-apps/plugin-updater', replacement: tauriUpdaterPluginEntry }]
-            : []),
-          { find: '@', replacement: path.resolve(configRoot, 'src') },
-          { find: /^@core$/, replacement: path.join(coreRoot, 'index.ts') },
-          { find: /^@core\/(.*)$/, replacement: path.join(coreRoot, '$1') },
-          { find: /^@platform$/, replacement: path.join(platformRoot, 'index.ts') },
-          { find: /^@platform\/(.*)$/, replacement: path.join(platformRoot, '$1') },
-          { find: /^@ui$/, replacement: path.join(uiRoot, 'index.ts') },
-          { find: /^@ui\/(.*)$/, replacement: path.join(uiRoot, '$1') },
-          { find: /^@prometheus\/ui$/, replacement: path.join(uiRoot, 'index.ts') },
-          { find: /^@prometheus\/ui\/(.*)$/, replacement: path.join(uiRoot, '$1') },
-          { find: /^@site$/, replacement: path.join(siteRoot, 'index.ts') },
-          { find: /^@site\/(.*)$/, replacement: path.join(siteRoot, '$1') },
-          { find: /^@features\/auth$/, replacement: path.join(featureAuthRoot, 'index.ts') },
-          { find: /^@features\/auth\/(.*)$/, replacement: path.join(featureAuthRoot, '$1') },
-          { find: /^@features\/store$/, replacement: path.join(featureStoreRoot, 'index.ts') },
-          { find: /^@features\/store\/(.*)$/, replacement: path.join(featureStoreRoot, '$1') },
-          { find: /^@features\/messaging$/, replacement: path.join(featureMessagingRoot, 'index.ts') },
-          { find: /^@features\/messaging\/(.*)$/, replacement: path.join(featureMessagingRoot, '$1') },
-          { find: /^@features\/lab$/, replacement: path.join(featureLabRoot, 'index.ts') },
-          { find: /^@features\/lab\/(.*)$/, replacement: path.join(featureLabRoot, '$1') }
-        ]
+        alias: createSiteResolveAliases()
       },
       css: {
         transformer: 'lightningcss'

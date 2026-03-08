@@ -14,3 +14,13 @@ command = "docker compose -d"
 name = "Preview"
 icon = "tool"
 command = "bun run preview"
+
+[[actions]]
+name = "Storybook Build"
+icon = "test"
+command = "bun run build:storybook"
+
+[[actions]]
+name = "Storybook"
+icon = "run"
+command = "bun run dev:storybook"
