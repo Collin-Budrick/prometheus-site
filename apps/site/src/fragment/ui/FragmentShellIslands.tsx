@@ -1,4 +1,11 @@
 import { component$, render, useVisibleTask$, type RenderResult, type Signal } from '@builder.io/qwik'
+import {
+  beginInitialTask,
+  failInitialTask,
+  finishInitialTask,
+  getFragmentInitialTaskKey,
+  resolveFragmentInitialTaskHost
+} from './initial-settle'
 
 type FragmentShellIslandsProps = {
   gridRef: Signal<HTMLDivElement | undefined>
@@ -205,6 +212,7 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
 
       const registerIsland = (element: HTMLElement) => {
         const host = resolveIslandHost(element)
+        beginInitialTask(host, getFragmentInitialTaskKey('island', element))
         let set = islandsByHost.get(host)
         if (!set) {
           set = new Set()
@@ -237,6 +245,10 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
 
       const cleanupIslands = (root: ParentNode) => {
         resolveIslands(root).forEach((element) => {
+          const host = resolveFragmentInitialTaskHost(element)
+          if (host) {
+            failInitialTask(host, getFragmentInitialTaskKey('island', element))
+          }
           const result = mounted.get(element)
           if (result) {
             result.cleanup()
@@ -244,15 +256,15 @@ export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIsland
           }
           pending.delete(element)
           element.removeAttribute('data-fragment-island-mounted')
-          const host = resolveIslandHost(element)
-          const set = islandsByHost.get(host)
+          const islandHost = resolveIslandHost(element)
+          const set = islandsByHost.get(islandHost)
           if (set) {
             set.delete(element)
             if (!set.size) {
-              islandsByHost.delete(host)
-              if (observedHosts.has(host)) {
-                observer.unobserve(host)
-                observedHosts.delete(host)
+              islandsByHost.delete(islandHost)
+              if (observedHosts.has(islandHost)) {
+                observer.unobserve(islandHost)
+                observedHosts.delete(islandHost)
               }
             }
           }
@@ -317,12 +329,17 @@ const mountIsland = async (
   if (!definition) return
   pending.add(element)
   element.dataset.fragmentIslandMounted = 'pending'
+  const host = resolveFragmentInitialTaskHost(element)
+  const taskKey = getFragmentInitialTaskKey('island', element)
 
   try {
     const Component = await definition.load()
     if (!element.isConnected) {
       element.removeAttribute('data-fragment-island-mounted')
       pending.delete(element)
+      if (host) {
+        failInitialTask(host, taskKey)
+      }
       return
     }
     const props = definition.readProps ? definition.readProps(element) : {}
@@ -331,14 +348,23 @@ const mountIsland = async (
       result.cleanup()
       element.removeAttribute('data-fragment-island-mounted')
       pending.delete(element)
+      if (host) {
+        failInitialTask(host, taskKey)
+      }
       return
     }
     mounted.set(element, result)
     element.dataset.fragmentIslandMounted = 'true'
     pending.delete(element)
+    if (host) {
+      finishInitialTask(host, taskKey)
+    }
   } catch (error) {
     element.dataset.fragmentIslandMounted = 'error'
     pending.delete(element)
+    if (host) {
+      failInitialTask(host, taskKey)
+    }
     console.error(`[FragmentShellIslands] Failed to mount ${tagName}`, error)
   }
 }

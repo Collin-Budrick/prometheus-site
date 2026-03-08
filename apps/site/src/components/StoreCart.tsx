@@ -1,5 +1,6 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getLanguagePack } from '../lang'
+import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
 import {
@@ -44,6 +45,7 @@ export const StoreCart = component$<StoreCartProps>(
     const cartItems = useSignal<CartLine[]>(seedItems)
     const removingIds = useSignal<number[]>([])
     const dragActive = useSignal(false)
+    const rootRef = useSignal<HTMLElement>()
     const listRef = useSignal<HTMLElement>()
     const totalRef = useSignal<HTMLElement>()
     const lastTotal = useSignal<number | null>(null)
@@ -149,6 +151,18 @@ export const StoreCart = component$<StoreCartProps>(
         void addItem(item)
       }
     })
+
+    useVisibleTask$(
+      (ctx) => {
+        const root = rootRef.value
+        ctx.track(() => rootRef.value)
+        if (!root) return
+        const host = resolveFragmentInitialTaskHost(root)
+        if (!host) return
+        markInitialTasksComplete(host)
+      },
+      { strategy: 'document-ready' }
+    )
 
     useVisibleTask$(
       (ctx) => {
@@ -266,7 +280,7 @@ export const StoreCart = component$<StoreCartProps>(
     )
 
     return (
-      <div class={rootClass.value} data-state={cartItems.value.length > 0 ? 'filled' : 'empty'}>
+      <div ref={rootRef} class={rootClass.value} data-state={cartItems.value.length > 0 ? 'filled' : 'empty'}>
         <div class="store-cart-header">
           <div>
             <p class="store-cart-title">{resolvedTitle}</p>

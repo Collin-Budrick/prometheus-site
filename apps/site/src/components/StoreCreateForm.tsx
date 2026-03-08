@@ -1,5 +1,6 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
+import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { getLanguagePack } from '../lang'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 
@@ -116,6 +117,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     const digitalProduct = useSignal(initialState.digital)
     const state = useSignal<CreateState>('idle')
     const statusMessage = useSignal<string | null>(null)
+    const rootRef = useSignal<HTMLElement>()
 
     useVisibleTask$(() => {
       const browserCookies = document.cookie || null
@@ -246,6 +248,18 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       }
     })
 
+    useVisibleTask$(
+      (ctx) => {
+        const root = rootRef.value
+        ctx.track(() => rootRef.value)
+        if (!root) return
+        const host = resolveFragmentInitialTaskHost(root)
+        if (!host) return
+        markInitialTasksComplete(host)
+      },
+      { strategy: 'document-ready' }
+    )
+
     const handleQuantityInput = $((event: Event) => {
       const value = (event.target as HTMLInputElement).value
       quantity.value = value
@@ -310,7 +324,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
     const quantityDisplay = useComputed$(() => (digitalProduct.value ? infinitySymbol : quantity.value))
 
     return (
-      <div class={rootClass.value} data-state={state.value}>
+      <div ref={rootRef} class={rootClass.value} data-state={state.value}>
         <form class="store-create-form" preventdefault:submit onSubmit$={handleSubmit}>
           <div class="store-create-grid">
             <label class="store-create-input">

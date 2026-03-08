@@ -2,6 +2,14 @@ import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } 
 import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { getLanguagePack } from '../lang'
+import {
+  beginInitialTask,
+  failInitialTask,
+  finishInitialTask,
+  getFragmentInitialTaskKey,
+  markInitialTasksComplete,
+  resolveFragmentInitialTaskHost
+} from '../fragment/ui/initial-settle'
 import { isOnline } from '../native/connectivity'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
@@ -189,6 +197,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const sortMenuRef = useSignal<HTMLElement>()
   const panelRef = useSignal<HTMLElement>()
   const loadMoreRef = useSignal<HTMLDivElement>()
+  const initialTaskKey = useSignal<string | null>(null)
+  const initialTaskSettled = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
 
   const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
   const copy = fragmentCopy.value
@@ -827,10 +837,16 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             searchMeta.value = null
           }
           searchState.value = 'idle'
+          if (!initialTaskSettled.value) {
+            void settleInitialTask()
+          }
         } catch (error) {
           if ((error as Error)?.name === 'AbortError') return
           searchState.value = 'error'
           searchError.value = error instanceof Error ? error.message : resolve('Search unavailable')
+          if (!initialTaskSettled.value) {
+            void settleInitialTask()
+          }
         }
       }, delay)
 
@@ -909,6 +925,40 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     if (visibleCount.value > length) {
       visibleCount.value = length
     }
+  })
+
+  useVisibleTask$(
+    (ctx) => {
+      const root = rootRef.value
+      ctx.track(() => rootRef.value)
+      if (!root) return
+      const host = resolveFragmentInitialTaskHost(root)
+      if (!host) return
+      if (initialTaskSettled.value) {
+        markInitialTasksComplete(host)
+        return
+      }
+      const key = getFragmentInitialTaskKey('store-stream:initial', root)
+      initialTaskKey.value = key
+      beginInitialTask(host, key)
+      ctx.cleanup(() => {
+        if (!initialTaskSettled.value) {
+          failInitialTask(host, key)
+        }
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  const settleInitialTask = $(() => {
+    if (initialTaskSettled.value) return
+    initialTaskSettled.value = true
+    const root = rootRef.value
+    const key = initialTaskKey.value
+    const host = root ? resolveFragmentInitialTaskHost(root) : null
+    if (!host || !key) return
+    finishInitialTask(host, key)
+    markInitialTasksComplete(host)
   })
 
   useVisibleTask$((ctx) => {

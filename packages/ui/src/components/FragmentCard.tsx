@@ -8,6 +8,17 @@ const previousRadii = new WeakMap<HTMLElement, string>()
 const activeAnimations = new WeakMap<HTMLElement, Animation>()
 const pendingRects = new WeakMap<HTMLElement, DOMRect>()
 const pendingRadii = new WeakMap<HTMLElement, string>()
+const INITIAL_TASKS_EVENT = 'prom:fragment-initial-tasks'
+const STABLE_HEIGHT_EVENT = 'prom:fragment-stable-height'
+const INITIAL_REVEAL_TIMEOUT_MS = 1800
+
+type FragmentInitialStage =
+  | 'waiting-payload'
+  | 'waiting-css'
+  | 'waiting-islands'
+  | 'waiting-client-tasks'
+  | 'waiting-assets'
+  | 'ready'
 
 export type FragmentCardProps = {
   id: string
@@ -20,6 +31,9 @@ export type FragmentCardProps = {
   disableMotion?: boolean
   fragmentLoaded?: boolean
   fragmentHasCss?: boolean
+  fragmentStage?: FragmentInitialStage
+  reservedHeight?: number | null
+  revealLocked?: boolean
   expandable?: boolean
   draggable?: boolean
   fullWidth?: boolean
@@ -89,7 +103,17 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const visibilityTick = useSignal(0)
     const isExpanded = expandedId.value === id
     const layoutVersion = layoutTick.value
-    const fragmentReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
+    const bodyRef = useSignal<HTMLDivElement>()
+    const fragmentReady = useSignal(false)
+    const currentStage = useSignal<FragmentInitialStage>(props.fragmentStage ?? 'waiting-payload')
+    const revealLocked = useSignal(props.revealLocked !== false)
+    const finalMeasuredHeight = useSignal<number | null>(null)
+    const lockedHeight = useSignal<number | null>(props.reservedHeight ?? null)
+    const hasSettledOnce = useSignal(false)
+    const forceReveal = useSignal(false)
+    const cssReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
+    const pendingTaskKeys = useSignal<string[]>([])
+    const pendingTaskCount = useSignal(0)
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
@@ -472,14 +496,14 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         const activeId = ctx.track(() => props.fragmentId)
         if (!activeId) return
         if (!loaded) {
-          fragmentReady.value = false
+          cssReady.value = false
           return
         }
         if (!hasCss) {
-          fragmentReady.value = true
+          cssReady.value = true
           return
         }
-        if (fragmentReady.value) return
+        if (cssReady.value) return
         if (typeof document === 'undefined') return
         const escapeId =
           typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
@@ -496,11 +520,11 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           if (!node) return false
           if (node instanceof HTMLLinkElement) {
             if (node.rel === 'stylesheet' || node.sheet) {
-              fragmentReady.value = true
+              cssReady.value = true
               return true
             }
             const handle = () => {
-              fragmentReady.value = true
+              cssReady.value = true
             }
             node.addEventListener('load', handle, { once: true })
             node.addEventListener('error', handle, { once: true })
@@ -510,7 +534,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
             }
             return true
           }
-          fragmentReady.value = true
+          cssReady.value = true
           return true
         }
         if (checkCss()) {
@@ -533,12 +557,193 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       { strategy: 'document-ready' }
     )
 
+    useVisibleTask$(
+      (ctx) => {
+        const card = cardRef.value
+        if (!card) return
+        const syncSnapshot = (event?: Event) => {
+          const detail = (event as CustomEvent<{ pendingCount?: number; pendingKeys?: string[] }> | undefined)?.detail
+          pendingTaskCount.value =
+            typeof detail?.pendingCount === 'number' ? detail.pendingCount : Number(card.dataset.initialTaskCount ?? '0')
+          pendingTaskKeys.value = Array.isArray(detail?.pendingKeys)
+            ? detail.pendingKeys
+            : (card.dataset.initialTaskKeys ?? '')
+                .split('|')
+                .filter((value) => value.length > 0)
+        }
+        syncSnapshot()
+        card.addEventListener(INITIAL_TASKS_EVENT, syncSnapshot as EventListener)
+        ctx.cleanup(() => {
+          card.removeEventListener(INITIAL_TASKS_EVENT, syncSnapshot as EventListener)
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
+        const activeId = ctx.track(() => props.fragmentId)
+        const settled = ctx.track(() => hasSettledOnce.value)
+        if (!activeId || !loaded || settled) {
+          forceReveal.value = false
+          return
+        }
+        const timeoutId = window.setTimeout(() => {
+          if (import.meta.env.DEV && pendingTaskKeys.value.length) {
+            console.warn(
+              `[fragment-card] forcing reveal for ${activeId}; pending initial tasks: ${pendingTaskKeys.value.join(', ')}`
+            )
+          }
+          forceReveal.value = true
+        }, INITIAL_REVEAL_TIMEOUT_MS)
+        ctx.cleanup(() => {
+          window.clearTimeout(timeoutId)
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        const baseStage = ctx.track(() => props.fragmentStage ?? 'waiting-payload')
+        const reservedHeight = ctx.track(() => props.reservedHeight ?? null)
+        const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
+        const cssSettled = ctx.track(() => cssReady.value)
+        const taskCount = ctx.track(() => pendingTaskCount.value)
+        const taskKeys = ctx.track(() => pendingTaskKeys.value.join('|'))
+        const forced = ctx.track(() => forceReveal.value)
+        const settled = ctx.track(() => hasSettledOnce.value)
+        const card = cardRef.value
+        if (!card) return
+
+        if (settled) {
+          currentStage.value = 'ready'
+          fragmentReady.value = true
+          return
+        }
+
+        revealLocked.value = props.revealLocked !== false
+        if (finalMeasuredHeight.value === null) {
+          lockedHeight.value = reservedHeight
+        }
+
+        if (baseStage === 'waiting-payload' || !loaded) {
+          currentStage.value = 'waiting-payload'
+          fragmentReady.value = false
+          return
+        }
+
+        if (!cssSettled && !forced) {
+          currentStage.value = 'waiting-css'
+          fragmentReady.value = false
+          return
+        }
+
+        if (!forced && taskCount > 0) {
+          currentStage.value = taskKeys.includes('island:') ? 'waiting-islands' : 'waiting-client-tasks'
+          fragmentReady.value = false
+          return
+        }
+
+        currentStage.value = forced ? 'ready' : 'waiting-assets'
+        fragmentReady.value = false
+
+        let cancelled = false
+        let fadeTimer = 0
+        const images = Array.from(card.querySelectorAll<HTMLImageElement>('img'))
+        const pendingImages = forced
+          ? []
+          : images.filter((image) => !(image.complete && image.naturalWidth >= 0))
+        const finalizeReveal = () => {
+          if (cancelled) return
+          const measured = Math.max(
+            Math.ceil(card.scrollHeight),
+            Math.ceil(card.getBoundingClientRect().height),
+            reservedHeight ?? 0
+          )
+          finalMeasuredHeight.value = measured > 0 ? measured : reservedHeight
+          lockedHeight.value = finalMeasuredHeight.value
+          currentStage.value = 'ready'
+          fragmentReady.value = true
+          hasSettledOnce.value = true
+          forceReveal.value = false
+          card.dispatchEvent(
+            new CustomEvent(STABLE_HEIGHT_EVENT, {
+              bubbles: true,
+              detail: { fragmentId: props.fragmentId, height: finalMeasuredHeight.value }
+            })
+          )
+          fadeTimer = window.setTimeout(() => {
+            revealLocked.value = false
+            lockedHeight.value = null
+          }, 240)
+        }
+
+        const waitForStableFrames = (remaining = 2, lastHeight = -1) => {
+          if (cancelled) return
+          requestAnimationFrame(() => {
+            if (cancelled) return
+            const nextHeight = Math.max(
+              Math.ceil(card.scrollHeight),
+              Math.ceil(card.getBoundingClientRect().height),
+              reservedHeight ?? 0
+            )
+            if (lastHeight >= 0 && Math.abs(nextHeight - lastHeight) <= 1) {
+              if (remaining <= 1) {
+                finalizeReveal()
+                return
+              }
+              waitForStableFrames(remaining - 1, nextHeight)
+              return
+            }
+            waitForStableFrames(2, nextHeight)
+          })
+        }
+
+        const waitForImages = () => {
+          if (!pendingImages.length) {
+            waitForStableFrames()
+            return
+          }
+          let remaining = pendingImages.length
+          const handleDone = () => {
+            remaining -= 1
+            if (remaining <= 0) {
+              waitForStableFrames()
+            }
+          }
+          pendingImages.forEach((image) => {
+            image.addEventListener('load', handleDone, { once: true })
+            image.addEventListener('error', handleDone, { once: true })
+          })
+          ctx.cleanup(() => {
+            pendingImages.forEach((image) => {
+              image.removeEventListener('load', handleDone)
+              image.removeEventListener('error', handleDone)
+            })
+          })
+        }
+
+        waitForImages()
+
+        ctx.cleanup(() => {
+          cancelled = true
+          if (fadeTimer) {
+            window.clearTimeout(fadeTimer)
+          }
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
     const resolvedRow = row
     const cardStyle = {
       gridColumn: resolvedColumn,
       gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
-      '--layout-version': `${layoutVersion}`
+      '--layout-version': `${layoutVersion}`,
+      ...(lockedHeight.value ? { height: `${lockedHeight.value}px` } : {})
     } as Record<string, string>
 
     const placeholderStyle = {
@@ -563,10 +768,12 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-fragment-id={fragmentId}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
+          data-fragment-stage={currentStage.value}
+          data-reveal-locked={revealLocked.value ? 'true' : 'false'}
           onClick$={handleToggle}
         >
           {isDraggable ? <span class="fragment-card-drag" data-drag-handle aria-hidden="true" /> : null}
-          <div class="fragment-card-body">
+          <div ref={bodyRef} class="fragment-card-body">
             <Slot />
             {isExpanded ? (
               <button

@@ -1,5 +1,13 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { buildApiUrl } from './api'
+import {
+  beginInitialTask,
+  failInitialTask,
+  finishInitialTask,
+  getFragmentInitialTaskKey,
+  markInitialTasksComplete,
+  resolveFragmentInitialTaskHost
+} from '../../fragment/ui/initial-settle'
 import { useContactInvitesSeed } from '../../shared/contact-invites-seed'
 import {
   emptyInviteGroups,
@@ -74,6 +82,9 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const searchResults = useSignal<ContactSearchResult[]>([])
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
   const searchError = useSignal<string | null>(null)
+  const rootRef = useSignal<HTMLElement>()
+  const initialTaskKey = useSignal<string | null>(null)
+  const initialTaskSettled = useSignal(hasSeed)
 
   const refreshInvites = $(async () => {
     if (typeof window === 'undefined') return
@@ -187,9 +198,47 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     popoverOpen.value = !popoverOpen.value
   })
 
+  useVisibleTask$(
+    (ctx) => {
+      const root = rootRef.value
+      ctx.track(() => rootRef.value)
+      if (!root) return
+      const host = resolveFragmentInitialTaskHost(root)
+      if (!host) return
+      if (initialTaskSettled.value) {
+        markInitialTasksComplete(host)
+        return
+      }
+      const key = getFragmentInitialTaskKey('contact-invites:initial', root)
+      initialTaskKey.value = key
+      beginInitialTask(host, key)
+      ctx.cleanup(() => {
+        if (!initialTaskSettled.value) {
+          failInitialTask(host, key)
+        }
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  const settleInitialTask = $(() => {
+    if (initialTaskSettled.value) return
+    initialTaskSettled.value = true
+    const root = rootRef.value
+    const key = initialTaskKey.value
+    const host = root ? resolveFragmentInitialTaskHost(root) : null
+    if (!host || !key) return
+    finishInitialTask(host, key)
+    markInitialTasksComplete(host)
+  })
+
   useVisibleTask$(() => {
     if (hasSeed) return
-    void refreshInvites()
+    void refreshInvites().finally(() => {
+      if (!initialTaskSettled.value) {
+        void settleInitialTask()
+      }
+    })
   })
 
   const incomingCount = invites.value.incoming.length
@@ -198,7 +247,7 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const pendingCount = incomingCount + outgoingCount
 
   return (
-    <div class={buildRootClass(props.class)}>
+    <div ref={rootRef} class={buildRootClass(props.class)}>
       <div class="chat-invites-header">
         <div>
           <div class="chat-invites-title">{props.title ?? 'Contact invites'}</div>

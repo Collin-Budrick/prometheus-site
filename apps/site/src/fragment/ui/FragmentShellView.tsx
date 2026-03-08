@@ -5,6 +5,7 @@ import type { Lang } from '../../shared/lang-store'
 import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
+import { type FragmentInitialStage, readFragmentStableHeight, writeFragmentStableHeight } from './initial-settle'
 import { applyHeaderOverride } from './header-overrides'
 import {
   GRIDSTACK_CELL_HEIGHT,
@@ -18,6 +19,8 @@ type FragmentShellCopy = {
   fragmentClose: string
   fragmentLoading: string
 }
+
+const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
 type FragmentShellViewProps = {
   hasIntro: boolean
@@ -124,6 +127,31 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     { strategy: 'document-idle' }
   )
 
+  useVisibleTask$(
+    (ctx) => {
+      const grid = gridRef.value
+      ctx.track(() => gridRef.value)
+      if (!grid) return
+      const handleStableHeight = (event: Event) => {
+        const detail = (event as CustomEvent<{ fragmentId?: string; height?: number }>).detail
+        if (!detail?.fragmentId || typeof detail.height !== 'number' || !Number.isFinite(detail.height)) return
+        writeFragmentStableHeight(
+          {
+            fragmentId: detail.fragmentId,
+            path: window.location.pathname,
+            lang: langSignal.value
+          },
+          detail.height
+        )
+      }
+      grid.addEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
+      ctx.cleanup(() => {
+        grid.removeEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
   return (
     <>
       {(() => {
@@ -191,14 +219,24 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               ? Math.max(0, entry.layout.minHeight)
               : null
           const hasLoadedContent = Boolean(fragment || useFallbackHtml)
-          const applyMinHeight = Boolean(!hasLoadedContent && minHeight && minHeight > 0)
+          const stableHeight =
+            typeof window !== 'undefined' && entry
+              ? readFragmentStableHeight({
+                  fragmentId: entry.id,
+                  path: window.location.pathname,
+                  lang: langSignal.value
+                })
+              : null
+          const reservedHeight = stableHeight ?? minHeight ?? DEFAULT_RESERVED_CARD_HEIGHT
+          const applyMinHeight = Boolean(reservedHeight && reservedHeight > 0)
+          const fragmentStage: FragmentInitialStage = hasLoadedContent ? 'waiting-css' : 'waiting-payload'
           const minHeightRows =
-            applyMinHeight && minHeight !== null
-              ? Math.max(1, Math.ceil((minHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
+            applyMinHeight && reservedHeight !== null
+              ? Math.max(1, Math.ceil((reservedHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
               : gridMetrics.h
-          const gridItemStyle = minHeight
+          const gridItemStyle = reservedHeight
             ? applyMinHeight
-              ? { '--fragment-min-height': `${minHeight}px` }
+              ? { '--fragment-min-height': `${reservedHeight}px` }
               : undefined
             : undefined
           const gridItemAttrs = {
@@ -238,8 +276,11 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       expandedId={expandedId}
                       layoutTick={layoutTick}
                       closeLabel={copy.value.fragmentClose}
-                      fragmentLoaded={Boolean(fragment)}
+                      fragmentLoaded={hasLoadedContent}
                       fragmentHasCss={fragmentHasCss}
+                      fragmentStage={fragmentStage}
+                      reservedHeight={reservedHeight}
+                      revealLocked={true}
                       critical={isCritical}
                       expandable={entry.expandable}
                       fullWidth={entry.fullWidth}

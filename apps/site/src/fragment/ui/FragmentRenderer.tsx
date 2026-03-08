@@ -1,4 +1,4 @@
-import { Resource, component$, useResource$ } from '@builder.io/qwik'
+import { Resource, component$, useResource$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { Component } from '@builder.io/qwik'
 import type { RenderNode } from '@core/fragments'
 import { sanitizeAttributes } from '@core/fragments'
@@ -6,6 +6,14 @@ import { StoreStream } from '../../components/StoreStream'
 import { StoreCreateForm } from '../../components/StoreCreateForm'
 import { StoreCart } from '../../components/StoreCart'
 import { ContactInvites } from '../../components/ContactInvites'
+import {
+  beginInitialTask,
+  failInitialTask,
+  finishInitialTask,
+  getFragmentInitialTaskKey,
+  markInitialTasksComplete,
+  resolveFragmentInitialTaskHost
+} from './initial-settle'
 
 type NodeProps = {
   node: RenderNode
@@ -64,21 +72,76 @@ const LazyFragmentComponent = component$<{
   loader: LazyComponentLoader<any>
   props?: Record<string, unknown>
 }>(({ loader, props }) => {
+  const rootRef = useSignal<HTMLElement>()
+  const taskKey = useSignal<string | null>(null)
+  const loadState = useSignal<'pending' | 'ready' | 'error'>('pending')
   const resource = useResource$<Component<any>>(async ({ track }) => {
     track(() => loader)
-    return loader()
+    loadState.value = 'pending'
+    try {
+      const resolved = await loader()
+      loadState.value = 'ready'
+      return resolved
+    } catch (error) {
+      loadState.value = 'error'
+      throw error
+    }
   })
 
+  useVisibleTask$(
+    (ctx) => {
+      const root = rootRef.value
+      ctx.track(() => rootRef.value)
+      if (!root) return
+      const host = resolveFragmentInitialTaskHost(root)
+      if (!host) return
+      const key = getFragmentInitialTaskKey('lazy', root)
+      taskKey.value = key
+      if (loadState.value === 'pending') {
+        beginInitialTask(host, key)
+      } else {
+        markInitialTasksComplete(host)
+      }
+      ctx.cleanup(() => {
+        if (loadState.value !== 'ready' && loadState.value !== 'error') {
+          failInitialTask(host, key)
+        }
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      const state = ctx.track(() => loadState.value)
+      const root = rootRef.value
+      const key = taskKey.value
+      if (!root || !key) return
+      const host = resolveFragmentInitialTaskHost(root)
+      if (!host) return
+      if (state === 'ready') {
+        finishInitialTask(host, key)
+        markInitialTasksComplete(host)
+      } else if (state === 'error') {
+        failInitialTask(host, key)
+        markInitialTasksComplete(host)
+      }
+    },
+    { strategy: 'document-ready' }
+  )
+
   return (
-    <Resource
-      value={resource}
-      onPending={() => (
-        <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
-          <div class="loader" aria-hidden="true" />
-        </div>
-      )}
-      onResolved={(ResolvedComponent) => <ResolvedComponent {...props} />}
-    />
+    <div ref={rootRef} class="fragment-lazy-root" data-fragment-lazy-state={loadState.value}>
+      <Resource
+        value={resource}
+        onPending={() => (
+          <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
+            <div class="loader" aria-hidden="true" />
+          </div>
+        )}
+        onResolved={(ResolvedComponent) => <ResolvedComponent {...props} />}
+      />
+    </div>
   )
 })
 
