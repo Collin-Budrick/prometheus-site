@@ -8,9 +8,162 @@ const previousRadii = new WeakMap<HTMLElement, string>()
 const activeAnimations = new WeakMap<HTMLElement, Animation>()
 const pendingRects = new WeakMap<HTMLElement, DOMRect>()
 const pendingRadii = new WeakMap<HTMLElement, string>()
+const sharedVisibilityListeners = new Map<HTMLElement, Set<(visible: boolean) => void>>()
+const readyFragmentCssIds = new Set<string>()
+const fragmentCssReadyListeners = new Map<string, Set<() => void>>()
+let sharedVisibilityObserver: IntersectionObserver | null = null
+let sharedFragmentCssObserver: MutationObserver | null = null
 const INITIAL_TASKS_EVENT = 'prom:fragment-initial-tasks'
 const STABLE_HEIGHT_EVENT = 'prom:fragment-stable-height'
 const INITIAL_REVEAL_TIMEOUT_MS = 1800
+
+const getSharedVisibilityObserver = () => {
+  if (sharedVisibilityObserver || typeof IntersectionObserver === 'undefined') {
+    return sharedVisibilityObserver
+  }
+
+  sharedVisibilityObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        const listeners = sharedVisibilityListeners.get(entry.target as HTMLElement)
+        if (!listeners?.size) return
+        const visible = Boolean(entry.isIntersecting)
+        listeners.forEach((listener) => {
+          listener(visible)
+        })
+      })
+    },
+    { rootMargin: '20% 0px' }
+  )
+
+  return sharedVisibilityObserver
+}
+
+const observeCardVisibility = (element: HTMLElement, listener: (visible: boolean) => void) => {
+  const observer = getSharedVisibilityObserver()
+  if (!observer) {
+    listener(true)
+    return () => {}
+  }
+
+  let listeners = sharedVisibilityListeners.get(element)
+  if (!listeners) {
+    listeners = new Set()
+    sharedVisibilityListeners.set(element, listeners)
+    observer.observe(element)
+  }
+
+  listeners.add(listener)
+
+  return () => {
+    const active = sharedVisibilityListeners.get(element)
+    if (!active) return
+    active.delete(listener)
+    if (active.size) return
+    sharedVisibilityListeners.delete(element)
+    observer.unobserve(element)
+  }
+}
+
+const markFragmentCssReady = (fragmentId: string) => {
+  const normalizedId = fragmentId.trim()
+  if (!normalizedId) return
+  readyFragmentCssIds.add(normalizedId)
+  const listeners = fragmentCssReadyListeners.get(normalizedId)
+  if (!listeners?.size) return
+  fragmentCssReadyListeners.delete(normalizedId)
+  listeners.forEach((listener) => {
+    listener()
+  })
+}
+
+const scanFragmentCssNodes = (root: ParentNode) => {
+  const consumeNode = (node: Element) => {
+    const ids = node.getAttribute('data-fragment-css')
+    if (!ids) return
+    ids
+      .split(/\s+/)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .forEach((value) => {
+        markFragmentCssReady(value)
+      })
+  }
+
+  if (root instanceof Element && root.hasAttribute('data-fragment-css')) {
+    consumeNode(root)
+  }
+
+  root.querySelectorAll?.('[data-fragment-css]').forEach((node) => {
+    consumeNode(node)
+  })
+}
+
+const ensureFragmentCssObserver = () => {
+  if (sharedFragmentCssObserver || typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+    return
+  }
+
+  scanFragmentCssNodes(document.head)
+
+  sharedFragmentCssObserver = new MutationObserver((records) => {
+    records.forEach((record) => {
+      record.addedNodes.forEach((node) => {
+        if (node instanceof Element) {
+          scanFragmentCssNodes(node)
+        }
+      })
+    })
+  })
+
+  sharedFragmentCssObserver.observe(document.head, { childList: true, subtree: true })
+}
+
+const isFragmentCssReady = (fragmentId: string) => {
+  const normalizedId = fragmentId.trim()
+  if (!normalizedId) return false
+  if (readyFragmentCssIds.has(normalizedId)) return true
+  if (typeof document === 'undefined') return false
+  const escapeId =
+    typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(normalizedId)
+      : normalizedId.replace(/["\\]/g, '\\$&')
+  const selector = `[data-fragment-css~="${escapeId}"]`
+  const ready = Boolean(document.querySelector(`style${selector}, link${selector}`))
+  if (ready) {
+    markFragmentCssReady(normalizedId)
+  }
+  return ready
+}
+
+const waitForFragmentCssReady = (fragmentId: string, listener: () => void) => {
+  const normalizedId = fragmentId.trim()
+  if (!normalizedId) {
+    listener()
+    return () => {}
+  }
+
+  ensureFragmentCssObserver()
+  if (isFragmentCssReady(normalizedId)) {
+    listener()
+    return () => {}
+  }
+
+  let listeners = fragmentCssReadyListeners.get(normalizedId)
+  if (!listeners) {
+    listeners = new Set()
+    fragmentCssReadyListeners.set(normalizedId, listeners)
+  }
+  listeners.add(listener)
+
+  return () => {
+    const active = fragmentCssReadyListeners.get(normalizedId)
+    if (!active) return
+    active.delete(listener)
+    if (active.size) return
+    fragmentCssReadyListeners.delete(normalizedId)
+  }
+}
 
 type FragmentInitialStage =
   | 'waiting-payload'
@@ -48,6 +201,86 @@ export type FragmentCardProps = {
     draggingId?: string | null
   } | null>
 }
+
+type FragmentCardOverflowEffectsProps = {
+  id: string
+  expandable?: boolean
+  resolvedSize?: 'small' | 'big' | 'tall'
+  cardRef: Signal<HTMLElement | undefined>
+  isInView: Signal<boolean>
+  layoutTick: Signal<number>
+  expandedId: Signal<string | null>
+  autoExpandable: Signal<boolean>
+}
+
+const FragmentCardOverflowEffects = component$<FragmentCardOverflowEffectsProps>((props) => {
+  const { id, expandable, resolvedSize, cardRef, isInView, layoutTick, expandedId, autoExpandable } = props
+
+  useVisibleTask$(
+    (ctx) => {
+      ctx.track(() => layoutTick.value)
+      ctx.track(() => expandedId.value)
+      const inView = ctx.track(() => isInView.value)
+      const card = cardRef.value
+      if (!card || !inView) return
+
+      let frame = 0
+      const updateOverflow = () => {
+        frame = 0
+        if (!resolvedSize || expandedId.value === id || expandable === false) {
+          autoExpandable.value = expandedId.value === id
+          return
+        }
+        const heightOverflow = card.scrollHeight - card.clientHeight
+        const widthOverflow = card.scrollWidth - card.clientWidth
+        autoExpandable.value = heightOverflow > 1 || widthOverflow > 1
+      }
+
+      const schedule = () => {
+        if (frame) return
+        frame = requestAnimationFrame(updateOverflow)
+      }
+
+      updateOverflow()
+
+      const mutationObserver =
+        typeof MutationObserver !== 'undefined'
+          ? new MutationObserver(() => {
+              schedule()
+            })
+          : null
+
+      if (mutationObserver) {
+        mutationObserver.observe(card, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true
+        })
+      }
+
+      const resizeObserver =
+        typeof ResizeObserver !== 'undefined'
+          ? new ResizeObserver(() => {
+              schedule()
+            })
+          : null
+
+      if (resizeObserver) {
+        resizeObserver.observe(card)
+      }
+
+      ctx.cleanup(() => {
+        if (frame) cancelAnimationFrame(frame)
+        mutationObserver?.disconnect()
+        resizeObserver?.disconnect()
+      })
+    },
+    { strategy: 'document-idle' }
+  )
+
+  return null
+})
 
 export const FragmentCard = component$<FragmentCardProps>((props) => {
   const {
@@ -97,11 +330,10 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const lastExpanded = useSignal(expandedId.value === id)
     const lastLayoutTick = useSignal(layoutTick.value)
     const lastInView = useSignal(true)
-    const maxHeight = useSignal<number | null>(null)
-    const lastWidth = useSignal<number | null>(null)
     const isInView = useSignal(typeof IntersectionObserver === 'undefined')
     const visibilityTick = useSignal(0)
     const isExpanded = expandedId.value === id
+    const canToggleExpand = expandable === true || (expandable !== false && autoExpandable.value) || isExpanded
     const layoutVersion = layoutTick.value
     const bodyRef = useSignal<HTMLDivElement>()
     const fragmentReady = useSignal(false)
@@ -114,13 +346,13 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const cssReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
     const pendingTaskKeys = useSignal<string[]>([])
     const pendingTaskCount = useSignal(0)
+    const revealScheduled = useSignal(false)
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
       if (dragInfo?.active) return
       if (dragInfo && dragInfo.suppressUntil > Date.now()) return
-      const canExpand =
-        expandable === true || (expandable !== false && autoExpandable.value) || expandedId.value === id
+      const canExpand = canToggleExpand
       if (!canExpand) return
       if (!(event.target instanceof HTMLElement)) return
       if (event.target.closest(INTERACTIVE_SELECTOR)) return
@@ -137,8 +369,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       const dragInfo = dragState?.value
       if (dragInfo?.active) return
       if (dragInfo && dragInfo.suppressUntil > Date.now()) return
-      const canExpand =
-        expandable === true || (expandable !== false && autoExpandable.value) || expandedId.value === id
+      const canExpand = canToggleExpand
       if (!canExpand) return
       const card = cardRef.value
       if (card) {
@@ -150,6 +381,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
+        if (disableMotion) return
         const expanded = ctx.track(() => expandedId.value === id)
         const tick = ctx.track(() => layoutTick.value)
         const inView = ctx.track(() => isInView.value)
@@ -330,160 +562,32 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
-        ctx.track(() => layoutTick.value)
-        ctx.track(() => expandedId.value)
-        const inView = ctx.track(() => isInView.value)
-        const card = cardRef.value
-        if (!card || !inView) return
-
-        let frame = 0
-        const updateOverflow = () => {
-          frame = 0
-          if (!resolvedSize || expandedId.value === id || expandable === false) {
-            autoExpandable.value = expandedId.value === id
-            return
-          }
-          const heightOverflow = card.scrollHeight - card.clientHeight
-          const widthOverflow = card.scrollWidth - card.clientWidth
-          autoExpandable.value = heightOverflow > 1 || widthOverflow > 1
-        }
-
-        const schedule = () => {
-          if (frame) return
-          frame = requestAnimationFrame(updateOverflow)
-        }
-
-        updateOverflow()
-
-        const mutationObserver =
-          typeof MutationObserver !== 'undefined'
-            ? new MutationObserver(() => {
-                schedule()
-              })
-            : null
-
-        if (mutationObserver) {
-          mutationObserver.observe(card, {
-            childList: true,
-            subtree: true,
-            characterData: true,
-            attributes: true
-          })
-        }
-
-        const resizeObserver =
-          typeof ResizeObserver !== 'undefined'
-            ? new ResizeObserver(() => {
-                schedule()
-              })
-            : null
-
-        if (resizeObserver) {
-          resizeObserver.observe(card)
-        }
-
-        ctx.cleanup(() => {
-          if (frame) cancelAnimationFrame(frame)
-          mutationObserver?.disconnect()
-          resizeObserver?.disconnect()
-        })
-      },
-      { strategy: 'document-idle' }
-    )
-
-    useVisibleTask$(
-      (ctx) => {
-        const inView = ctx.track(() => isInView.value)
-        if (!inView || typeof ResizeObserver !== 'undefined') return
         const card = cardRef.value
         if (!card) return
-        let frame = requestAnimationFrame(() => {
-          frame = 0
-          if (expandedId.value === id) return
-          const height = card.getBoundingClientRect().height
-          if (height > 0) {
-            maxHeight.value = Math.max(maxHeight.value ?? 0, height)
-          }
-        })
-        ctx.cleanup(() => {
-          if (frame) cancelAnimationFrame(frame)
-        })
-      },
-      { strategy: 'document-idle' }
-    )
-
-    useVisibleTask$(
-      (ctx) => {
-        const inView = ctx.track(() => isInView.value)
-        if (!inView) return
-        const card = cardRef.value
-        if (!card || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver((entries) => {
-          if (expandedId.value === id) return
-          const entry = entries[0]
-          const width = entry?.contentRect.width ?? 0
-          const height = entry?.contentRect.height ?? 0
-          const previousWidth = lastWidth.value
-          const widthChanged = typeof previousWidth === 'number' && Math.abs(previousWidth - width) > 1
-
-          if (previousWidth === null) {
-            lastWidth.value = width
-            if (height > 0) {
-              maxHeight.value = Math.max(maxHeight.value ?? 0, height)
-            }
-            return
-          }
-
-          if (widthChanged) {
-            lastWidth.value = width
-            maxHeight.value = height > 0 ? height : null
-            return
-          }
-
-          if (height > 0) {
-            maxHeight.value = Math.max(maxHeight.value ?? 0, height)
-          }
-        })
-        observer.observe(card)
-        ctx.cleanup(() => {
-          observer.disconnect()
-        })
-      },
-      { strategy: 'document-idle' }
-    )
-
-    useVisibleTask$(
-      (ctx) => {
-        const card = cardRef.value
-        if (!card) return
+        if (disableMotion) {
+          isInView.value = true
+          return
+        }
         if (typeof IntersectionObserver === 'undefined') {
           isInView.value = true
           return
         }
+        const cleanupObserver = observeCardVisibility(card, (intersecting) => {
+          isInView.value = intersecting
 
-        const observer = new IntersectionObserver(
-          (entries) => {
-            const entry = entries[0]
-            const intersecting = Boolean(entry?.isIntersecting)
-            isInView.value = intersecting
-
-            if (!intersecting) {
-              const current = activeAnimations.get(card)
-              if (current) {
-                current.cancel()
-                activeAnimations.delete(card)
-              }
-              return
+          if (!intersecting) {
+            const current = activeAnimations.get(card)
+            if (current) {
+              current.cancel()
+              activeAnimations.delete(card)
             }
+            return
+          }
 
-            visibilityTick.value++
-          },
-          { rootMargin: '20% 0px' }
-        )
-
-        observer.observe(card)
+          visibilityTick.value++
+        })
         ctx.cleanup(() => {
-          observer.disconnect()
+          cleanupObserver()
         })
       },
       { strategy: 'document-idle' }
@@ -504,54 +608,15 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           return
         }
         if (cssReady.value) return
-        if (typeof document === 'undefined') return
-        const escapeId =
-          typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-            ? CSS.escape(activeId)
-            : activeId.replace(/["\\]/g, '\\$&')
-        const selector = `[data-fragment-css~="${escapeId}"]`
-        const resolveCssNode = () =>
-          document.querySelector<HTMLStyleElement | HTMLLinkElement>(
-            `style${selector}, link${selector}`
-          )
-        let cleanupLink: (() => void) | null = null
-        const checkCss = () => {
-          const node = resolveCssNode()
-          if (!node) return false
-          if (node instanceof HTMLLinkElement) {
-            if (node.rel === 'stylesheet' || node.sheet) {
-              cssReady.value = true
-              return true
-            }
-            const handle = () => {
-              cssReady.value = true
-            }
-            node.addEventListener('load', handle, { once: true })
-            node.addEventListener('error', handle, { once: true })
-            cleanupLink = () => {
-              node.removeEventListener('load', handle)
-              node.removeEventListener('error', handle)
-            }
-            return true
-          }
+        if (isFragmentCssReady(activeId)) {
           cssReady.value = true
-          return true
-        }
-        if (checkCss()) {
-          ctx.cleanup(() => {
-            cleanupLink?.()
-          })
           return
         }
-        const observer = new MutationObserver(() => {
-          if (checkCss()) {
-            observer.disconnect()
-          }
+        const cleanupCssWait = waitForFragmentCssReady(activeId, () => {
+          cssReady.value = true
         })
-        observer.observe(document.head, { childList: true })
         ctx.cleanup(() => {
-          observer.disconnect()
-          cleanupLink?.()
+          cleanupCssWait()
         })
       },
       { strategy: 'document-ready' }
@@ -606,6 +671,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
+        const inView = ctx.track(() => isInView.value)
         const baseStage = ctx.track(() => props.fragmentStage ?? 'waiting-payload')
         const reservedHeight = ctx.track(() => props.reservedHeight ?? null)
         const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
@@ -620,6 +686,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         if (settled) {
           currentStage.value = 'ready'
           fragmentReady.value = true
+          revealScheduled.value = false
           return
         }
 
@@ -631,18 +698,27 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         if (baseStage === 'waiting-payload' || !loaded) {
           currentStage.value = 'waiting-payload'
           fragmentReady.value = false
+          revealScheduled.value = false
+          return
+        }
+
+        if (!inView) {
+          fragmentReady.value = false
+          revealScheduled.value = false
           return
         }
 
         if (!cssSettled && !forced) {
           currentStage.value = 'waiting-css'
           fragmentReady.value = false
+          revealScheduled.value = false
           return
         }
 
         if (!forced && taskCount > 0) {
           currentStage.value = taskKeys.includes('island:') ? 'waiting-islands' : 'waiting-client-tasks'
           fragmentReady.value = false
+          revealScheduled.value = false
           return
         }
 
@@ -651,6 +727,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
         let cancelled = false
         let fadeTimer = 0
+        let revealFrame = 0
+        let revealFrameTwo = 0
         const images = Array.from(card.querySelectorAll<HTMLImageElement>('img'))
         const pendingImages = forced
           ? []
@@ -664,20 +742,29 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           )
           finalMeasuredHeight.value = measured > 0 ? measured : reservedHeight
           lockedHeight.value = finalMeasuredHeight.value
-          currentStage.value = 'ready'
-          fragmentReady.value = true
-          hasSettledOnce.value = true
-          forceReveal.value = false
-          card.dispatchEvent(
-            new CustomEvent(STABLE_HEIGHT_EVENT, {
-              bubbles: true,
-              detail: { fragmentId: props.fragmentId, height: finalMeasuredHeight.value }
+          if (revealScheduled.value) return
+          revealScheduled.value = true
+          revealFrame = requestAnimationFrame(() => {
+            if (cancelled) return
+            revealFrameTwo = requestAnimationFrame(() => {
+              if (cancelled) return
+              currentStage.value = 'ready'
+              fragmentReady.value = true
+              hasSettledOnce.value = true
+              forceReveal.value = false
+              revealScheduled.value = false
+              card.dispatchEvent(
+                new CustomEvent(STABLE_HEIGHT_EVENT, {
+                  bubbles: true,
+                  detail: { fragmentId: props.fragmentId, height: finalMeasuredHeight.value }
+                })
+              )
+              fadeTimer = window.setTimeout(() => {
+                revealLocked.value = false
+                lockedHeight.value = null
+              }, 240)
             })
-          )
-          fadeTimer = window.setTimeout(() => {
-            revealLocked.value = false
-            lockedHeight.value = null
-          }, 240)
+          })
         }
 
         const waitForStableFrames = (remaining = 2, lastHeight = -1) => {
@@ -729,12 +816,19 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
         ctx.cleanup(() => {
           cancelled = true
+          revealScheduled.value = false
+          if (revealFrame) {
+            cancelAnimationFrame(revealFrame)
+          }
+          if (revealFrameTwo) {
+            cancelAnimationFrame(revealFrameTwo)
+          }
           if (fadeTimer) {
             window.clearTimeout(fadeTimer)
           }
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     const resolvedRow = row
@@ -754,6 +848,18 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     return (
       <>
+        {resolvedSize && expandable !== false ? (
+          <FragmentCardOverflowEffects
+            id={id}
+            expandable={expandable}
+            resolvedSize={resolvedSize}
+            cardRef={cardRef}
+            isInView={isInView}
+            layoutTick={layoutTick}
+            expandedId={expandedId}
+            autoExpandable={autoExpandable}
+          />
+        ) : null}
         <div ref={placeholderRef} class="fragment-card-placeholder" style={placeholderStyle} aria-hidden="true" />
         <article
           ref={cardRef}
@@ -770,7 +876,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           data-fragment-stage={currentStage.value}
           data-reveal-locked={revealLocked.value ? 'true' : 'false'}
-          onClick$={handleToggle}
+          onClick$={canToggleExpand ? handleToggle : undefined}
         >
           {isDraggable ? <span class="fragment-card-drag" data-drag-handle aria-hidden="true" /> : null}
           <div ref={bodyRef} class="fragment-card-body">

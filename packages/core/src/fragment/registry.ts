@@ -1,4 +1,4 @@
-import type { FragmentDefinition, FragmentPlan, FragmentPlanEntry } from './types'
+import type { FragmentBootMode, FragmentDefinition, FragmentPlan, FragmentPlanEntry } from './types'
 
 const normalizePlanPath = (path: string) => {
   const trimmed = path.trim()
@@ -49,11 +49,23 @@ export const clearFragmentPlanOverrides = () => {
 export const applyPlanOverrides = (plan: FragmentPlan): FragmentPlan =>
   planOverrides.reduce((current, override) => override(current), plan)
 
+export const resolveFragmentBootMode = (entry: Pick<FragmentPlanEntry, 'critical' | 'renderHtml' | 'bootMode'>): FragmentBootMode => {
+  if (entry.bootMode === 'html' || entry.bootMode === 'binary' || entry.bootMode === 'stream') {
+    return entry.bootMode
+  }
+  if (entry.critical) {
+    return entry.renderHtml === false ? 'binary' : 'html'
+  }
+  return 'stream'
+}
+
 export const normalizeAndApplyPlan = (plan: FragmentPlan): FragmentPlan => {
   const normalizedPath = normalizePlanPath(plan.path)
   const overridden = applyPlanOverrides({ ...plan, path: normalizedPath })
   const fragments = overridden.fragments.map((entry) =>
-    entry.renderHtml === undefined ? { ...entry, renderHtml: true } : entry
+    entry.renderHtml === undefined
+      ? { ...entry, renderHtml: true, bootMode: resolveFragmentBootMode({ ...entry, renderHtml: true }) }
+      : { ...entry, bootMode: resolveFragmentBootMode(entry) }
   )
   return { ...overridden, fragments }
 }

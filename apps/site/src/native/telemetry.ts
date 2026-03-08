@@ -1,4 +1,5 @@
 import { isNativeShellRuntime } from './runtime'
+import { isClientBootIntentReady } from '../shared/client-boot'
 
 type TelemetryEvent = {
   metric:
@@ -41,6 +42,11 @@ export const emitNativeFeatureTelemetry = (feature: string, status: 'success' | 
 const setupStartupInteractiveTelemetry = () => {
   const origin = performance.timeOrigin || Date.now() - performance.now()
   const startedAt = origin
+
+  if (isClientBootIntentReady()) {
+    emitTelemetry({ metric: 'startup-interactive-ms', value: Math.max(0, Math.round(performance.now())) })
+    return
+  }
 
   const complete = () => {
     const value = Math.max(0, Math.round(performance.now() + origin - startedAt))

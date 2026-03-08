@@ -6,10 +6,16 @@ import type {
   FragmentPlanResponse
 } from './types'
 import { decodeFragmentPayload } from './binary'
+import { parseFragmentFrames } from './frames'
 import { fragmentPlanCache } from './plan-cache'
 
 type FragmentPlanOptions = {
   includeInitial?: boolean
+  protocol?: 1 | 2
+}
+
+type FragmentFetchOptions = {
+  protocol?: 1 | 2
 }
 
 type FragmentPlanResult = {
@@ -23,6 +29,8 @@ const parseCacheUpdatedAt = (headers: Headers) => {
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : undefined
 }
+
+const resolveProtocol = (protocol?: 1 | 2) => (protocol === 2 ? 2 : 1)
 
 const attachCacheUpdatedAt = (fragments: FragmentPayloadMap | undefined, plan: FragmentPlan) => {
   if (!fragments) return fragments
@@ -50,6 +58,38 @@ const decodeInitialFragments = (raw: FragmentPlanInitialPayloads) => {
   return decoded
 }
 
+const decodeFragmentFramePayloads = (bytes: Uint8Array) =>
+  parseFragmentFrames(bytes).reduce<FragmentPayloadMap>((acc, frame) => {
+    try {
+      const payload = decodeFragmentPayload(frame.payloadBytes)
+      acc[frame.id] = { ...payload, id: frame.id }
+    } catch (error) {
+      console.error('Bootstrap fragment decode failed', { id: frame.id, error })
+    }
+    return acc
+  }, {})
+
+export const loadFragmentBootstrap = async (
+  path: string,
+  config: { apiBase: string },
+  lang?: string,
+  options?: FragmentFetchOptions
+) => {
+  const protocol = resolveProtocol(options?.protocol)
+  const params = new URLSearchParams({ path })
+  if (lang) {
+    params.set('lang', lang)
+  }
+  if (protocol === 2) {
+    params.set('protocol', '2')
+  }
+  const response = await fetch(`${config.apiBase}/fragments/bootstrap?${params.toString()}`)
+  if (!response.ok) {
+    throw new Error(`Fragment bootstrap failed: ${response.status}`)
+  }
+  return decodeFragmentFramePayloads(new Uint8Array(await response.arrayBuffer()))
+}
+
 export const loadFragmentPlan = async (
   path: string,
   config: { apiBase: string },
@@ -58,8 +98,12 @@ export const loadFragmentPlan = async (
 ): Promise<FragmentPlanResult> => {
   const api = config.apiBase
   const includeInitial = options?.includeInitial !== false
+  const protocol = resolveProtocol(options?.protocol)
   const cached = fragmentPlanCache.get(path, lang)
   const params = new URLSearchParams({ path })
+  if (protocol === 2) {
+    params.set('protocol', '2')
+  }
   if (includeInitial && !cached?.initialFragments) {
     params.set('includeInitial', '1')
   }
@@ -84,13 +128,17 @@ export const loadFragmentPlan = async (
   const etag = response.headers.get('etag')
   const canReuseCachedInitial =
     Boolean(cached?.initialFragments) && Boolean(etag) && cached?.etag === etag
-  const decoded =
-    includeInitial && hasInitialFragments
-      ? decodeInitialFragments(initialFragments ?? {})
-      : includeInitial && canReuseCachedInitial
-        ? cached?.initialFragments
-        : undefined
   const normalizedPlan = plan as FragmentPlan
+  const decoded =
+    includeInitial && protocol === 2
+      ? canReuseCachedInitial
+        ? cached?.initialFragments
+        : await loadFragmentBootstrap(path, config, lang, { protocol })
+      : includeInitial && hasInitialFragments
+        ? decodeInitialFragments(initialFragments ?? {})
+        : includeInitial && canReuseCachedInitial
+          ? cached?.initialFragments
+          : undefined
   const result: FragmentPlanResult = {
     plan: normalizedPlan,
     initialFragments: attachCacheUpdatedAt(decoded, normalizedPlan)
@@ -108,12 +156,36 @@ export const loadFragmentPlan = async (
 export const loadFragments = async (
   ids: string[],
   config: { apiBase: string },
-  lang?: string
+  lang?: string,
+  options?: FragmentFetchOptions
 ): Promise<Record<string, FragmentPayload>> => {
+  const protocol = resolveProtocol(options?.protocol)
   const api = config.apiBase
+  if (!ids.length) return {}
+  if (protocol === 2 && ids.length > 1) {
+    const params = new URLSearchParams({ protocol: '2' })
+    const response = await fetch(`${api}/fragments/batch?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(
+        ids.map((id) => ({
+          id,
+          lang
+        }))
+      )
+    })
+    if (!response.ok) {
+      throw new Error(`Fragment batch fetch failed: ${response.status}`)
+    }
+    return decodeFragmentFramePayloads(new Uint8Array(await response.arrayBuffer()))
+  }
+
   const entries = await Promise.all(
     ids.map(async (id) => {
       const params = new URLSearchParams({ id })
+      if (protocol === 2) {
+        params.set('protocol', '2')
+      }
       if (lang) {
         params.set('lang', lang)
       }

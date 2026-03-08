@@ -1,6 +1,7 @@
 import { navigateDeepLink } from './deep-links'
 import { loadNativePlugin } from './bridge'
 import { isNativeShellRuntime } from './runtime'
+import { runAfterClientIntentIdle } from '../shared/client-boot'
 
 let initialized = false
 
@@ -95,21 +96,10 @@ export const initNativeNotifications = async () => {
 
   if (!shouldPromptNow()) return
 
-  const requestPermissions = async () => {
+  runAfterClientIntentIdle(() => {
     markPrompted()
-    await requestNativeNotificationPermission()
-  }
-
-  const onIntentSignal = () => {
-    window.removeEventListener('pointerdown', onIntentSignal)
-    window.removeEventListener('keydown', onIntentSignal)
-    window.removeEventListener('touchstart', onIntentSignal)
-    void requestPermissions()
-  }
-
-  window.addEventListener('pointerdown', onIntentSignal, { once: true, passive: true })
-  window.addEventListener('keydown', onIntentSignal, { once: true })
-  window.addEventListener('touchstart', onIntentSignal, { once: true, passive: true })
+    void requestNativeNotificationPermission()
+  })
 }
 
 export const handleNativeNotificationOpen = (payload: unknown) => handleNotificationOpen(payload)

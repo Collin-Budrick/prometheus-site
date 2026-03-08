@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'bun:test'
 
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentMeta, HeadOp, RenderNode } from '@core/fragments'
+import { buildFragmentFrame } from '@core/fragment/frames'
+import { selectInitialFragmentIds } from './initial-selection'
 
 const FRAGMENT_MAGIC = 0x46524147
 const TREE_MAGIC = 0x54524545
@@ -227,5 +229,126 @@ describe('SSR fragment cache metadata', () => {
 
     const result = await loadFragments([id], { apiBase: 'http://api.test' }, 'en')
     expect(result[id]?.cacheUpdatedAt).toBe(updatedAt)
+  })
+
+  it('loads protocol 2 initial fragments from bootstrap frames', async () => {
+    const id = 'fragment://bootstrap-cache'
+    const bytes = encodeFragmentPayload(tree, buildMeta(id))
+    const updatedAt = 5151
+    const requests: string[] = []
+
+    globalThis.fetch = (async (input) => {
+      const url = typeof input === 'string' ? input : input.url
+      requests.push(url)
+
+      if (url.includes('/fragments/plan?')) {
+        return new Response(
+          JSON.stringify({
+            path: '/bootstrap-cache',
+            createdAt: 1,
+            fragments: [
+              {
+                id,
+                critical: true,
+                layout: { column: 'span 12' },
+                bootMode: 'html',
+                cache: {
+                  status: 'hit',
+                  updatedAt,
+                  staleAt: updatedAt + 1,
+                  expiresAt: updatedAt + 2
+                }
+              }
+            ],
+            initialHtml: {
+              [id]: '<section>hello</section>'
+            }
+          }),
+          { headers: { 'content-type': 'application/json' } }
+        )
+      }
+
+      if (url.includes('/fragments/bootstrap?')) {
+        return new Response(buildFragmentFrame(id, bytes), {
+          headers: { 'content-type': 'application/octet-stream' }
+        })
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+
+    const result = await loadFragmentPlan('/bootstrap-cache', { apiBase: 'http://api.test' }, 'en', {
+      protocol: 2
+    })
+    const planWithInitialHtml = result.plan as typeof result.plan & {
+      initialHtml?: Record<string, string>
+    }
+
+    expect(requests.some((url) => url.includes('/fragments/plan?') && url.includes('protocol=2'))).toBe(true)
+    expect(requests.some((url) => url.includes('/fragments/bootstrap?') && url.includes('protocol=2'))).toBe(true)
+    expect(result.initialFragments?.[id]?.cacheUpdatedAt).toBe(updatedAt)
+    expect(planWithInitialHtml.initialHtml?.[id]).toBe('<section>hello</section>')
+  })
+
+  it('loads protocol 2 batch payloads from framed responses', async () => {
+    const firstId = 'fragment://batch-a'
+    const secondId = 'fragment://batch-b'
+    const firstBytes = encodeFragmentPayload(tree, buildMeta(firstId))
+    const secondBytes = encodeFragmentPayload(tree, buildMeta(secondId))
+
+    globalThis.fetch = (async () =>
+      new Response(
+        new Uint8Array([
+          ...buildFragmentFrame(firstId, firstBytes),
+          ...buildFragmentFrame(secondId, secondBytes)
+        ]),
+        { headers: { 'content-type': 'application/octet-stream' } }
+      )) as unknown as typeof fetch
+
+    const result = await loadFragments([firstId, secondId], { apiBase: 'http://api.test' }, 'en', {
+      protocol: 2
+    })
+
+    expect(Object.keys(result)).toEqual([firstId, secondId])
+    expect(result[firstId]?.id).toBe(firstId)
+    expect(result[secondId]?.id).toBe(secondId)
+  })
+})
+
+describe('initial fragment selection', () => {
+  it('uses bootMode instead of fetchGroups when selecting initial store fragments', () => {
+    const ids = selectInitialFragmentIds({
+      path: '/store',
+      createdAt: 1,
+      fetchGroups: [[
+        'fragment://page/store/stream@v5',
+        'fragment://page/store/cart@v1',
+        'fragment://page/store/create@v1'
+      ]],
+      fragments: [
+        {
+          id: 'fragment://page/store/stream@v5',
+          critical: true,
+          bootMode: 'html',
+          layout: { column: 'span 8' }
+        },
+        {
+          id: 'fragment://page/store/cart@v1',
+          critical: true,
+          bootMode: 'binary',
+          layout: { column: 'span 4' }
+        },
+        {
+          id: 'fragment://page/store/create@v1',
+          critical: false,
+          bootMode: 'stream',
+          layout: { column: 'span 12' }
+        }
+      ]
+    })
+
+    expect(ids).toContain('fragment://page/store/stream@v5')
+    expect(ids).toContain('fragment://page/store/cart@v1')
+    expect(ids).not.toContain('fragment://page/store/create@v1')
   })
 })

@@ -1,12 +1,10 @@
 import type { RequestHandler } from '@builder.io/qwik-city'
+import { defaultLanguage, supportedLanguages } from '../lang/manifest'
 
 export type Lang = 'en' | 'ja' | 'ko'
 
 const STORAGE_KEY = 'prometheus-lang'
-const supportedLanguages: Lang[] = ['en', 'ja', 'ko']
 export const LANG_COOKIE_KEY = STORAGE_KEY
-
-const defaultLanguage: Lang = 'en'
 
 const parseLang = (value?: string | null): Lang | null => {
   if (!value) return null

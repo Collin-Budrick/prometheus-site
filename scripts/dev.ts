@@ -858,11 +858,18 @@ const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZ
 const devRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
 const isWindowsMount = root.startsWith('/mnt/')
 const enablePollingWatch = isWsl && isWindowsMount
+const includeRealtimeServices =
+  runtimeCompose.includeOptionalServices ||
+  (!useDeviceHost &&
+    (devEnableWebTransport === '1' ||
+      devEnableWebTransportDatagrams === '1' ||
+      devEnableApiWebTransport === '1' ||
+      devEnableWebTransportDatagramsServer === '1'))
 
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: devProject,
-  ...(runtimeCompose.includeOptionalServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
+  ...(includeRealtimeServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
@@ -918,7 +925,7 @@ const buildTargets: BuildTarget[] = [
     inputs: ['infra/caddy/Dockerfile']
   }
 ]
-const optionalBuildTargets: BuildTarget[] = runtimeCompose.includeOptionalServices
+const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
   ? [
       {
         service: 'yjs-signaling',
@@ -958,7 +965,7 @@ if (buildServices.length) {
   if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
-const optionalServices = runtimeCompose.includeOptionalServices ? runtimeCompose.services.optional : []
+const optionalServices = includeRealtimeServices ? runtimeCompose.services.optional : []
 const baseServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices]
 const running = getRunningServices(command, prefix, composeEnv)
 const baseRunning = baseServices.every((service) => running.has(service))

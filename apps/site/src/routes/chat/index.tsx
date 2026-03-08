@@ -2,8 +2,7 @@ import { component$, useContextProvider } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
-import { useLangCopy } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -20,27 +19,31 @@ import { ContactInvitesSeedContext, type ContactInvitesSeed } from '../../shared
 import { normalizeInviteGroups } from '../../components/contact-invites/data'
 import { appConfig } from '../../app-config'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
+import { chatLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
 
 type ProtectedRouteData = {
   lang: Lang
+  languageSeed: LanguageSeedPayload
 }
 
 export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { lang }
+  return { lang, languageSeed: createServerLanguageSeed(lang, chatLanguageSelection) }
 })
 
 type FragmentResource = {
-  plan: FragmentPlanValue
+  plan: FragmentPlanValue | null
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
   shellState: FragmentShellState | null
   contactInvitesSeed: ContactInvitesSeed | null
+  languageSeed: LanguageSeedPayload | null
 }
 
 const resolveChatApiBase = (request: Request) => {
@@ -78,24 +81,38 @@ const loadContactInvitesSeed = async (request: Request): Promise<ContactInvitesS
   }
 }
 
-export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
+export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const path = url.pathname || '/chat'
   const lang = resolveRequestLang(request)
   const contactInvitesSeed = await loadContactInvitesSeed(request)
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
       shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
-      contactInvitesSeed
+      contactInvitesSeed,
+      languageSeed: createServerLanguageSeed(
+        lang,
+        withFragmentHeaderSelection({ fragmentHeaders: [] }, fragmentHeaderIds)
+      )
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for chat', error)
-    return null
+    return {
+      plan: null,
+      fragments: {} as FragmentPayloadValue,
+      path,
+      lang,
+      shellState: null,
+      contactInvitesSeed,
+      languageSeed: null
+    }
   }
 })
 
@@ -105,7 +122,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useChatData)
   const fragmentData = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
-  const copy = getUiCopy(lang)
+  const copy = data?.languageSeed.ui
   const description = copy.protectedDescription.replace('{{label}}', copy.navChat)
 
   return {
@@ -127,6 +144,8 @@ export default component$(() => {
   const location = useLocation()
   const data = useChatData()
   const fragmentResource = useFragmentResource()
+  useLanguageSeed(data.value.lang, data.value.languageSeed)
+  useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
     ? {
@@ -135,7 +154,8 @@ export default component$(() => {
         path: cachedEntry.path,
         lang: cachedEntry.lang,
         shellState: null,
-        contactInvitesSeed: null
+        contactInvitesSeed: null,
+        languageSeed: fragmentResource.value.languageSeed
       }
     : null
   const fragmentData = fragmentResource.value ?? cachedData

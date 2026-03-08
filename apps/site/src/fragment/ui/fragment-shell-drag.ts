@@ -1,6 +1,8 @@
-import { useVisibleTask$, type Signal } from '@builder.io/qwik'
+import { useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import { GridStack } from 'gridstack'
-import type { FragmentDragState } from './fragment-shell-types'
+import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
+import { isStaticHomeShellMode } from './fragment-shell-mode'
+import type { FragmentDragState, FragmentShellMode } from './fragment-shell-types'
 import {
   GRIDSTACK_CELL_HEIGHT,
   GRIDSTACK_COLUMNS,
@@ -11,6 +13,7 @@ import {
 } from './fragment-shell-utils'
 
 type FragmentShellDragOptions = {
+  shellMode: FragmentShellMode
   orderIds: Signal<string[]>
   columnSplit: Signal<number>
   dragState: Signal<FragmentDragState>
@@ -123,14 +126,34 @@ const syncGridHeights = (gridEl: GridStackElement) => {
 }
 
 export const useFragmentShellDrag = ({
+  shellMode,
   orderIds,
   columnSplit,
   dragState,
   layoutTick,
   gridRef
 }: FragmentShellDragOptions) => {
+  const startupReady = useSignal(
+    typeof window !== 'undefined' ? isClientBootIntentReady() : false
+  )
+
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      if (typeof window === 'undefined' || startupReady.value) return
+      const cancel = runAfterClientIntentIdle(() => {
+        startupReady.value = true
+      })
+      ctx.cleanup(cancel)
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       if (typeof window === 'undefined') return
       ctx.track(() => gridRef.value)
       const gridEl = gridRef.value
@@ -712,6 +735,9 @@ export const useFragmentShellDrag = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       if (typeof window === 'undefined') return
       ctx.track(() => orderIds.value)
       ctx.track(() => dragState.value.active)

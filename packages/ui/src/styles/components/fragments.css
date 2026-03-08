@@ -42,6 +42,28 @@
     gap: 0;
   }
 
+  .fragment-grid-static-home {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
+  }
+
+  .fragment-grid-static-home > .fragment-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  @media (max-width: 1024px) {
+    .fragment-grid-static-home {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .fragment-grid-static-home > .fragment-card {
+      grid-column: 1 !important;
+    }
+  }
+
   .fragment-grid.grid-stack:not([data-drag-ready='true']) {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -287,6 +309,56 @@
     isolation: isolate;
   }
 
+  .layout-shell[data-static-route='home'] .fragment-grid-item,
+  .layout-shell[data-static-route='home'] .fragment-slot {
+    contain: layout;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-grid-static-home > .fragment-card {
+    contain: layout paint;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card-loader {
+    display: none;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card {
+    background-color: rgb(var(--surface) / 0.96);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card:not([data-critical='true']):not([data-variant='text']) {
+    content-visibility: auto;
+    contain: layout paint;
+    contain-intrinsic-size: auto 380px;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card::before,
+  .layout-shell[data-static-route='home'] .fragment-card::after {
+    display: none;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card-body {
+    transition: none;
+  }
+
+  .layout-shell[data-static-route='home'] .fragment-card [class*='backdrop-blur'] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .layout-shell[data-static-route='home'] .loader,
+  .layout-shell[data-static-route='home'] .planner-demo-action,
+  .layout-shell[data-static-route='home'] .preact-island-action,
+  .layout-shell[data-static-route='home'] .react-binary-action,
+  .layout-shell[data-static-route='home'] .react-binary-panel,
+  .layout-shell[data-static-route='home'] .wasm-demo-action,
+  .layout-shell[data-static-route='home'] .action-button {
+    box-shadow: none;
+  }
+
   .fragment-card-drag {
     position: absolute;
     top: 12px;
@@ -499,6 +571,7 @@
 
   .fragment-card[data-fragment-id][data-fragment-ready='true'] .fragment-card-loader {
     opacity: 0;
+    pointer-events: none;
   }
 
   .fragment-card::before {
@@ -737,6 +810,15 @@
     .fragment-card[data-variant='text'] {
       backdrop-filter: none;
       background-color: transparent;
+    }
+  }
+
+  @supports (backdrop-filter: blur(8px)) {
+    .layout-shell[data-static-route='home'] .fragment-card {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background-color: rgb(var(--surface) / 0.96);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
     }
   }
 

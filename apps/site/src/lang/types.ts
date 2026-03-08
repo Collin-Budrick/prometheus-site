@@ -20,6 +20,8 @@ export type UiCopy = {
   fragmentStatusIdle: string
   fragmentLoading: string
   fragmentClose: string
+  demoActivate: string
+  demoActivating: string
   homeIntroMarkdown: string
   storeMetaLine: string
   storeTitle: string

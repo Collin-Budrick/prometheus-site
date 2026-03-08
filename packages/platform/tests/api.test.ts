@@ -1,5 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { apiUrl, cacheKeysWritten, chatMessagesData, ensureApiReady, publishedMessages, resetTestState, storeItemsData } from './setup'
+import { decodeFragmentPayload } from '@core/fragment/binary'
+import { parseFragmentFrames } from '@core/fragment/frames'
+import { encodeFragmentKnownVersions } from '@core/fragment/known-versions'
 
 beforeAll(async () => {
   await ensureApiReady()
@@ -55,6 +58,90 @@ describe('fragment plan includeInitial', () => {
     expect(cacheControl).toContain('s-maxage=')
     expect(cacheControl).toContain('stale-while-revalidate=')
     expect(fragmentResponse.headers.get('x-fragment-cache')).toBeTruthy()
+  })
+
+  it('returns protocol 2 plans without base64 initial fragments', async () => {
+    const response = await fetch(`${apiUrl}/fragments/plan?path=/store&includeInitial=1&protocol=2`)
+    expect(response.status).toBe(200)
+
+    const payload = await response.json()
+    expect(payload.initialFragments).toBeUndefined()
+    expect(payload.initialHtml).toBeTruthy()
+    expect(
+      payload.fragments.some(
+        (fragment: { bootMode?: string }) =>
+          fragment.bootMode === 'html' || fragment.bootMode === 'binary'
+      )
+    ).toBe(true)
+  })
+
+  it('returns a protocol 2 bootstrap bundle', async () => {
+    const response = await fetch(`${apiUrl}/fragments/bootstrap?path=/store&protocol=2`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/octet-stream')
+
+    const frames = parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    expect(frames.length).toBeGreaterThan(0)
+
+    const [firstFrame] = frames
+    const payload = decodeFragmentPayload(firstFrame!.payloadBytes)
+    expect(payload.meta.cacheKey).toBe(firstFrame!.id)
+  })
+
+  it('filters already-known fragments from protocol 2 batch responses', async () => {
+    const planResponse = await fetch(`${apiUrl}/fragments/plan?path=/store&protocol=2`)
+    expect(planResponse.status).toBe(200)
+    const plan = await planResponse.json()
+
+    const known = encodeFragmentKnownVersions(
+      (plan.fragments as Array<{ id: string; cache?: { updatedAt?: number } }>).reduce<Record<string, number>>(
+        (acc, fragment) => {
+          if (typeof fragment.cache?.updatedAt === 'number') {
+            acc[fragment.id] = fragment.cache.updatedAt
+          }
+          return acc
+        },
+        {}
+      )
+    )
+
+    const batchResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${known}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(
+        plan.fragments.map((fragment: { id: string }) => ({
+          id: fragment.id
+        }))
+      )
+    })
+
+    expect(batchResponse.status).toBe(200)
+    const frames = parseFragmentFrames(new Uint8Array(await batchResponse.arrayBuffer()))
+    expect(frames.length).toBe(0)
+  })
+
+  it('filters already-known fragments from protocol 2 stream responses', async () => {
+    const planResponse = await fetch(`${apiUrl}/fragments/plan?path=/store&protocol=2`)
+    expect(planResponse.status).toBe(200)
+    const plan = await planResponse.json()
+
+    const known = encodeFragmentKnownVersions(
+      (plan.fragments as Array<{ id: string; cache?: { updatedAt?: number } }>).reduce<Record<string, number>>(
+        (acc, fragment) => {
+          if (typeof fragment.cache?.updatedAt === 'number') {
+            acc[fragment.id] = fragment.cache.updatedAt
+          }
+          return acc
+        },
+        {}
+      )
+    )
+
+    const streamResponse = await fetch(`${apiUrl}/fragments/stream?path=/store&protocol=2&known=${known}`)
+    expect(streamResponse.status).toBe(200)
+
+    const frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+    expect(frames.length).toBe(0)
   })
 })
 

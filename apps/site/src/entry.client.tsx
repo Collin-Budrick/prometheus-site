@@ -1,6 +1,6 @@
-import { render, type RenderOptions } from '@builder.io/qwik'
-import { buildApiUrl, resolveApiHost } from './components/contact-invites/api'
+import type { RenderOptions } from '@builder.io/qwik'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
+import { buildPublicApiUrl, resolvePublicApiHost } from './shared/public-api-url'
 import {
   CLEANUP_VERSION_KEY,
   FORCE_CLEANUP_KEY,
@@ -9,9 +9,10 @@ import {
   writeServiceWorkerCleanupVersionCookie,
   writeServiceWorkerOptOutCookie
 } from './shared/service-worker-seed'
-import Root from './root'
+import { runAfterClientIntent, runAfterClientIntentIdle } from './shared/client-boot'
 import { initConnectivityStore, isOnline } from './native/connectivity'
 import { isNativeShellRuntime } from './native/runtime'
+import { HOME_STATIC_ROUTE_KIND, STATIC_ROUTE_ATTR } from './static-shell/constants'
 
 declare global {
   interface Window {
@@ -40,32 +41,46 @@ if (import.meta.hot) {
 }
 
 export default function (opts: RenderOptions) {
-  void render(document, <Root />, opts)
+  const renderFullApp = async () => {
+    const [{ render }, { default: Root }] = await Promise.all([import('@builder.io/qwik'), import('./root')])
+    return render(document, <Root />, opts)
+  }
+
+  const staticRouteKind =
+    typeof document !== 'undefined'
+      ? document.querySelector<HTMLElement>(`[${STATIC_ROUTE_ATTR}]`)?.getAttribute(STATIC_ROUTE_ATTR) ?? null
+      : null
+
+  if (staticRouteKind === HOME_STATIC_ROUTE_KIND) {
+    void import('./static-shell/home-static-entry')
+      .catch((error) => {
+        console.error('Static home bootstrap failed; falling back to full app render.', error)
+        void renderFullApp()
+      })
+  } else {
+    void renderFullApp()
+  }
   const nativeRuntime = isNativeShellRuntime()
 
   if (!nativeRuntime && 'serviceWorker' in navigator) {
-    runAfterIntent(() => {
+    runAfterClientIntentIdle(() => {
       setupServiceWorkerBridge()
     })
   }
 
-  runAfterIntent(() => {
+  runAfterClientIntent(() => {
     void initConnectivityStore()
   })
   if (nativeRuntime) {
-    runAfterIntent(() => {
-      runNonCriticalSetup(() => {
-        void initNativeFeelTelemetryDeferred()
-      })
+    runAfterClientIntentIdle(() => {
+      void initNativeFeelTelemetryDeferred()
     })
   }
 
-  runAfterIntent(() => {
-    runNonCriticalSetup(() => {
-      setupWebSocketBackoffMonitor()
-      setupOfflineErrorFilters()
-      setupServerHealthProbe()
-    })
+  runAfterClientIntentIdle(() => {
+    setupWebSocketBackoffMonitor()
+    setupOfflineErrorFilters()
+    setupServerHealthProbe()
   })
 
   if (!nativeRuntime && import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -95,66 +110,10 @@ export default function (opts: RenderOptions) {
   }
 }
 
-function runNonCriticalSetup(callback: () => void) {
-  if (typeof window === 'undefined') return
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(callback, { timeout: 4000 })
-  } else {
-    setTimeout(callback, 1200)
-  }
-}
-
-let intentGateReady = false
-let intentGateInstalled = false
-const intentQueue: Array<() => void> = []
-
-function flushIntentQueue() {
-  if (intentGateReady) return
-  intentGateReady = true
-  const pending = intentQueue.splice(0, intentQueue.length)
-  pending.forEach((task) => task())
-}
-
-function installIntentGate(timeoutMs = 7000) {
-  if (intentGateInstalled || typeof window === 'undefined') return
-  intentGateInstalled = true
-  let timeoutHandle: number | null = null
-
-  const cleanup = () => {
-    if (timeoutHandle !== null) {
-      window.clearTimeout(timeoutHandle)
-      timeoutHandle = null
-    }
-    window.removeEventListener('pointerdown', handleIntent)
-    window.removeEventListener('keydown', handleIntent)
-    window.removeEventListener('touchstart', handleIntent)
-  }
-
-  const handleIntent = () => {
-    cleanup()
-    flushIntentQueue()
-  }
-
-  window.addEventListener('pointerdown', handleIntent, { once: true, passive: true })
-  window.addEventListener('keydown', handleIntent, { once: true })
-  window.addEventListener('touchstart', handleIntent, { once: true, passive: true })
-  timeoutHandle = window.setTimeout(handleIntent, timeoutMs)
-}
-
-function runAfterIntent(callback: () => void) {
-  if (typeof window === 'undefined') return
-  if (intentGateReady) {
-    callback()
-    return
-  }
-  intentQueue.push(callback)
-  installIntentGate()
-}
-
 function setupOfflineErrorFilters() {
   if (typeof window === 'undefined') return
   const windowHost = window.location.host
-  const apiHost = resolveApiHost(window.location.origin)
+  const apiHost = resolvePublicApiHost(window.location.origin)
   const isServerOffline = () => {
     if (!isOnline()) return true
     return getServerBackoffMs(windowHost) > 0 || getServerBackoffMs(apiHost) > 0
@@ -237,7 +196,7 @@ function setupWebSocketBackoffMonitor() {
   windowFlags[marker] = true
   if (typeof window.WebSocket !== 'function') return
   const windowHost = window.location.host
-  const apiHost = resolveApiHost(window.location.origin)
+  const apiHost = resolvePublicApiHost(window.location.origin)
   const resolveKnownHost = (host: string) => {
     if (!host) return ''
     if (host === windowHost) return host
@@ -368,7 +327,7 @@ function resolveServerKey() {
 
 function resolveHealthUrl() {
   if (typeof window === 'undefined') return ''
-  return buildApiUrl('/health', window.location.origin)
+  return buildPublicApiUrl('/health', window.location.origin)
 }
 
 async function triggerManualSync() {

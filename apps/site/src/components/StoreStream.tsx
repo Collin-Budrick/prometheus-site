@@ -1,7 +1,7 @@
 import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
-import { getLanguagePack } from '../lang'
+import { getFragmentTextCopy } from '../lang/client'
 import {
   beginInitialTask,
   failInitialTask,
@@ -134,6 +134,19 @@ const formatQuantity = (value: number) => (value < 0 ? infinitySymbol : String(v
 const interpolate = (value: string, params: Record<string, string | number>) =>
   value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
 
+const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
+  if (typeof window === 'undefined') {
+    callback()
+    return () => {}
+  }
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout: timeoutMs })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const handle = window.setTimeout(callback, Math.min(timeoutMs, 250))
+  return () => window.clearTimeout(handle)
+}
+
 const buildApiUrl = (path: string, origin: string) => {
   const base = appConfig.apiBase
   if (!base) return `${origin}${path}`
@@ -200,7 +213,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const initialTaskKey = useSignal<string | null>(null)
   const initialTaskSettled = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
 
-  const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
+  const fragmentCopy = useComputed$(() => getFragmentTextCopy(langSignal.value))
   const copy = fragmentCopy.value
   const searchAriaLabel = copy?.['Search store items'] ?? 'Search store items'
   const searchPlaceholder = placeholder
@@ -665,7 +678,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         })
       }
 
-      updateConnection()
+      const cancelStartup = scheduleIdleTask(() => {
+        updateConnection()
+      })
 
       const handleOnline = () => {
         if (!canConnect()) return
@@ -701,6 +716,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
 
       ctx.cleanup(() => {
         active = false
+        cancelStartup()
         clearReconnectTimer()
         setStoreCommandSender(null)
         window.removeEventListener('online', handleOnline)
@@ -726,7 +742,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       const refreshQueuedCount = async () => {
         queuedCount.value = await getStoreCartQueueSize()
       }
-      void refreshQueuedCount()
+      const cancelInitialQueueSync = scheduleIdleTask(() => {
+        void refreshQueuedCount()
+        if (!(queuedCount.value > 0 && !isOnline())) {
+          void flushStoreCartQueue(window.location.origin)
+        }
+      })
       const handleQueue = (event: Event) => {
         const detail = (event as CustomEvent).detail as { size?: unknown } | undefined
         const size = Number(detail?.size)
@@ -748,16 +769,14 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       window.addEventListener(storeCartQueueEvent, handleQueue)
       navigator.serviceWorker?.addEventListener('message', handleMessage)
       window.addEventListener('resume', handleResume)
-      if (!(queuedCount.value > 0 && !isOnline())) {
-        void flushStoreCartQueue(window.location.origin)
-      }
       ctx.cleanup(() => {
+        cancelInitialQueueSync()
         window.removeEventListener(storeCartQueueEvent, handleQueue)
         navigator.serviceWorker?.removeEventListener('message', handleMessage)
         window.removeEventListener('resume', handleResume)
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
@@ -902,7 +921,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         streamLayoutCache.delete(panel)
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(({ track }) => {

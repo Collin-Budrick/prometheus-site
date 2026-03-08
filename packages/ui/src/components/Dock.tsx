@@ -1,4 +1,5 @@
 import { Slot, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { shouldActivateDockMotion } from './dock-motion'
 
 type DockProps = {
   iconMagnification?: number
@@ -53,8 +54,10 @@ export const Dock = component$<DockProps>(
       let scales: number[] = []
       let velocities: number[] = []
 
-      let reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-      let prefersReducedMotion = reduceMotion.matches
+      let reduceMotion: MediaQueryList | null = null
+      let prefersReducedMotion = false
+      let resizeObserver: ResizeObserver | null = null
+      let activated = false
 
       const syncState = () => {
         if (scales.length === icons.length) return
@@ -221,23 +224,41 @@ export const Dock = component$<DockProps>(
         schedule()
       }
 
-      measure()
+      const activate = (event: PointerEvent) => {
+        if (activated) return
+        if (
+          !shouldActivateDockMotion({
+            hoverMatches: hoverQuery.matches,
+            pointerType: event.pointerType
+          })
+        ) {
+          return
+        }
 
-      const observer = new ResizeObserver(() => {
+        activated = true
+        reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+        prefersReducedMotion = reduceMotion.matches
         measure()
+        resizeObserver = new ResizeObserver(() => {
+          measure()
+          schedule()
+        })
+        resizeObserver.observe(dock)
+        dock.addEventListener('pointermove', handleMove)
+        dock.addEventListener('pointerleave', handleLeave)
+        reduceMotion.addEventListener('change', handleMotionPreference)
+        pointerX = event.clientX
         schedule()
-      })
-      observer.observe(dock)
+      }
 
-      dock.addEventListener('pointermove', handleMove)
-      dock.addEventListener('pointerleave', handleLeave)
-      reduceMotion.addEventListener('change', handleMotionPreference)
+      dock.addEventListener('pointerenter', activate)
 
       ctx.cleanup(() => {
+        dock.removeEventListener('pointerenter', activate)
         dock.removeEventListener('pointermove', handleMove)
         dock.removeEventListener('pointerleave', handleLeave)
-        reduceMotion.removeEventListener('change', handleMotionPreference)
-        observer.disconnect()
+        reduceMotion?.removeEventListener('change', handleMotionPreference)
+        resizeObserver?.disconnect()
         if (frame) cancelAnimationFrame(frame)
       })
     }, { strategy: 'document-idle' })

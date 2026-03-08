@@ -1,5 +1,5 @@
 import { effect, signal } from '@preact/signals-core'
-import { defaultLanguage, supportedLanguages, type Lang } from '../lang'
+import { defaultLanguage, supportedLanguages, type Lang } from '../lang/manifest'
 import { runLangViewTransition } from './view-transitions'
 import { getPreference, setPreference } from '../native/preferences'
 

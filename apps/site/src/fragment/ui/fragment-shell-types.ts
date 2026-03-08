@@ -2,6 +2,8 @@ import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../t
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentShellState as ShellState } from './shell-cache'
 
+export type FragmentShellMode = 'interactive' | 'static-home'
+
 export type FragmentShellProps = {
   plan: FragmentPlanValue
   initialFragments: FragmentPayloadValue

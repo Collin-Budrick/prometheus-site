@@ -2,6 +2,7 @@ import { $, useComputed$, useOnDocument, useSignal, useTask$, useVisibleTask$ } 
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import type { EarlyHint, FragmentPayloadMap, FragmentPlan } from '../types'
 import { useLangCopy, useSharedLangSignal } from '../../shared/lang-bridge'
+import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
 import { getFragmentHeaderCopy } from '../../shared/fragment-copy'
 import { createFragmentPlanCachePayload } from '../plan-cache'
 import { buildFragmentCssLinks } from '../fragment-css'
@@ -12,6 +13,7 @@ import {
   writeFragmentCriticalToCookie,
   writeFragmentShellStateToCookie
 } from './shell-cache'
+import { isStaticHomeShellMode, resolveFragmentShellMode } from './fragment-shell-mode'
 import { resolveFragments, resolvePlan } from './utils'
 import { useFragmentShellDrag } from './fragment-shell-drag'
 import { useFragmentShellLayout } from './fragment-shell-layout'
@@ -77,6 +79,8 @@ export const useFragmentShellState = ({
   const copy = useLangCopy(langSignal)
   const planValue = resolvePlan(plan)
   const normalizedPath = normalizeFragmentShellPath(path)
+  const shellMode = resolveFragmentShellMode(normalizedPath)
+  const isStaticHome = isStaticHomeShellMode(shellMode)
   const seedState =
     initialShellState && normalizeFragmentShellPath(initialShellState.path) === normalizedPath
       ? initialShellState
@@ -107,12 +111,12 @@ export const useFragmentShellState = ({
           initialHtml
         })
       : null
-  const cachedFragments = cachedEntry?.fragments
+  const cachedFragments = isStaticHome ? undefined : cachedEntry?.fragments
   const fragments = useSignal<FragmentPayloadMap>(
     cachedFragments ? { ...lcpFragments, ...cachedFragments } : lcpFragments
   )
   const status = useSharedFragmentStatusSignal()
-  const seedExpandedId = seedState?.expandedId ?? cachedEntry?.expandedId ?? null
+  const seedExpandedId = isStaticHome ? null : seedState?.expandedId ?? cachedEntry?.expandedId ?? null
   const cachedExpanded =
     seedExpandedId && planValue.fragments.some((entry) => entry.id === seedExpandedId) ? seedExpandedId : null
   const expandedId = useSignal<string | null>(cachedExpanded)
@@ -120,7 +124,8 @@ export const useFragmentShellState = ({
   const gridRef = useSignal<HTMLDivElement>()
   const dynamicCriticalIds = useSignal<string[]>([])
   const fragmentHeaders = useComputed$(() => getFragmentHeaderCopy(langSignal.value))
-  const cachedOrder = seedState?.orderIds?.length ? seedState.orderIds : cachedEntry?.orderIds ?? []
+  const cachedOrder =
+    isStaticHome ? [] : seedState?.orderIds?.length ? seedState.orderIds : cachedEntry?.orderIds ?? []
   const orderIds = useSignal<string[]>(cachedOrder.length ? buildOrderedIds(planValue.fragments, cachedOrder) : [])
   const defaultSplit = Math.ceil(planValue.fragments.length / 2)
   const columnSplit = useSignal<number>(defaultSplit)
@@ -129,9 +134,9 @@ export const useFragmentShellState = ({
     suppressUntil: 0,
     draggingId: null
   })
-  const lastScrollY = useSignal(seedState?.scrollY ?? cachedEntry?.scrollY ?? 0)
+  const lastScrollY = useSignal(isStaticHome ? 0 : seedState?.scrollY ?? cachedEntry?.scrollY ?? 0)
   const restoredState = useSignal(false)
-  const streamPaused = useSignal(Boolean(cachedEntry))
+  const streamPaused = useSignal(!isStaticHome && Boolean(cachedEntry))
   const orderedEntries = useComputed$(() => buildOrderedEntries(planValue.fragments, orderIds.value))
   const slottedEntries = useComputed$<SlottedEntry[]>(() => {
     const entries = orderedEntries.value
@@ -158,7 +163,10 @@ export const useFragmentShellState = ({
     (window as typeof window & { __PROM_CLIENT_READY?: boolean }).__PROM_CLIENT_READY === true
   const clientReady = useSignal(initialReady)
   const hasCache = Boolean(cachedEntry)
-  const skipCssGuard = Boolean(cachedEntry && preserveFragmentEffects)
+  const skipCssGuard = Boolean(!isStaticHome && cachedEntry && preserveFragmentEffects)
+  const deferredStartupReady = useSignal(
+    typeof window !== 'undefined' ? isClientBootIntentReady() : false
+  )
 
   useOnDocument(
     'client-ready',
@@ -178,6 +186,18 @@ export const useFragmentShellState = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (typeof window === 'undefined' || deferredStartupReady.value) return
+      const cancel = runAfterClientIntentIdle(() => {
+        deferredStartupReady.value = true
+      })
+      ctx.cleanup(cancel)
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (isStaticHome) return
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       ctx.track(() => gridRef.value)
@@ -221,6 +241,7 @@ export const useFragmentShellState = ({
       if (stored.length) {
         dynamicCriticalIds.value = stored
         lastSerialized = JSON.stringify(stored)
+        return
       }
 
       const capture = () => {
@@ -253,11 +274,12 @@ export const useFragmentShellState = ({
         if (secondFrame) window.cancelAnimationFrame(secondFrame)
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
     () => {
+      if (isStaticHome) return
       if (typeof window === 'undefined') return
       if (cachedOrder.length) return
       const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
@@ -268,11 +290,12 @@ export const useFragmentShellState = ({
         window.localStorage.setItem(storageKey, JSON.stringify(nextOrder))
       }
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
     () => {
+      if (isStaticHome) return
       if (typeof window === 'undefined') return
       const storageKey = `${ORDER_STORAGE_PREFIX}:columns:${path}`
       const raw = window.localStorage.getItem(storageKey)
@@ -284,11 +307,14 @@ export const useFragmentShellState = ({
         columnSplit.value = Math.min(maxSplit, Math.max(0, columnSplit.value))
       }
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHome) return
+      ctx.track(() => deferredStartupReady.value)
+      if (!deferredStartupReady.value) return
       ctx.track(() => orderIds.value)
       ctx.track(() => dragState.value.active)
       if (typeof window === 'undefined') return
@@ -297,11 +323,14 @@ export const useFragmentShellState = ({
       const storageKey = `${ORDER_STORAGE_PREFIX}:${path}`
       window.localStorage.setItem(storageKey, JSON.stringify(orderIds.value))
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHome) return
+      ctx.track(() => deferredStartupReady.value)
+      if (!deferredStartupReady.value) return
       ctx.track(() => columnSplit.value)
       ctx.track(() => orderIds.value.length)
       ctx.track(() => dragState.value.active)
@@ -315,7 +344,7 @@ export const useFragmentShellState = ({
       }
       window.localStorage.setItem(storageKey, String(nextSplit))
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$((ctx) => {
@@ -330,6 +359,9 @@ export const useFragmentShellState = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHome) return
+      ctx.track(() => deferredStartupReady.value)
+      if (!deferredStartupReady.value) return
       if (typeof window === 'undefined') return
       let frame = 0
 
@@ -353,7 +385,7 @@ export const useFragmentShellState = ({
         }
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
@@ -381,6 +413,7 @@ export const useFragmentShellState = ({
 
   useVisibleTask$(
     () => {
+      if (isStaticHome) return
       if (typeof window === 'undefined') return
       const restoreState = cachedEntry ?? seedState
       if (!restoreState || restoredState.value) return
@@ -404,6 +437,9 @@ export const useFragmentShellState = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHome) return
+      ctx.track(() => deferredStartupReady.value)
+      if (!deferredStartupReady.value) return
       if (typeof window === 'undefined') return
       const persistShellState = () => {
         writeFragmentShellStateToCookie({
@@ -434,22 +470,25 @@ export const useFragmentShellState = ({
         persistShellState()
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
   useVisibleTask$(
     (ctx) => {
+      ctx.track(() => deferredStartupReady.value)
+      if (!deferredStartupReady.value) return
       ctx.cleanup(() => {
         status.value = 'idle'
       })
     },
-    { strategy: 'document-ready' }
+    { strategy: 'document-idle' }
   )
 
-  useFragmentShellDrag({ orderIds, columnSplit, dragState, layoutTick, gridRef })
-  useFragmentShellLayout({ planValue, gridRef, layoutTick, expandedId })
+  useFragmentShellDrag({ shellMode, orderIds, columnSplit, dragState, layoutTick, gridRef })
+  useFragmentShellLayout({ shellMode, planValue, gridRef, layoutTick, expandedId })
 
   return {
+    shellMode,
     langSignal,
     copy,
     planValue,

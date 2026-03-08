@@ -1,0 +1,650 @@
+import {
+  getPlannerDemoCopy,
+  getPreactIslandCopy,
+  getReactBinaryDemoCopy,
+  getWasmRendererDemoCopy
+} from '../lang/client'
+import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../lang'
+
+type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
+
+type ActivateHomeDemoOptions = {
+  root: Element
+  kind: HomeDemoKind
+  props: Record<string, unknown>
+}
+
+type HomeDemoActivationResult = {
+  cleanup: () => void
+}
+
+const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
+const plannerStepDelayMs = 720
+const preactCountdownSeconds = 60
+
+const getCurrentLang = (): Lang => {
+  const value = document.documentElement.lang?.trim().toLowerCase()
+  return (value || 'en') as Lang
+}
+
+const getRootElement = (root: Element) => {
+  if (!(root instanceof HTMLElement)) {
+    throw new Error('Home demo activation requires an element root')
+  }
+  return root
+}
+
+const createTextSpan = (className: string, value: string) => {
+  const span = document.createElement('span')
+  span.className = className
+  span.textContent = value
+  return span
+}
+
+const randomBits = (length = 4) => {
+  let bits = ''
+  for (let index = 0; index < length; index += 1) {
+    bits += Math.random() > 0.5 ? '1' : '0'
+  }
+  return bits
+}
+
+const randomPlannerCache = (fragments: ReadonlyArray<{ id: string }>) =>
+  Object.fromEntries(fragments.map((fragment) => [fragment.id, Math.random() > 0.45])) as Record<string, boolean>
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+const computeWasmMetrics = (a: number, b: number) => {
+  const mixed = (a * 5 + b * 3) % 1024
+  const throughput = 120 + (mixed % 280)
+  const hotPath = 60 + (mixed % 40)
+  const hash = ((mixed * 2654435761) >>> 0).toString(16).padStart(8, '0')
+  return { mixed, throughput, hotPath, hash }
+}
+
+const setButtonLabel = (button: HTMLButtonElement | null, label: string) => {
+  if (!button) return
+  button.textContent = label
+}
+
+const setReactStepLabel = (button: HTMLButtonElement, label: string) => {
+  button.replaceChildren(createTextSpan('react-binary-step-dot', ''))
+  const dot = button.querySelector('.react-binary-step-dot')
+  if (dot) {
+    dot.setAttribute('aria-hidden', 'true')
+    dot.textContent = ''
+  }
+  button.append(document.createTextNode(label))
+}
+
+const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
+  const copy = getPlannerDemoCopy(getCurrentLang())
+  const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
+  const shuffleButton = root.querySelector<HTMLButtonElement>('.planner-demo-secondary')
+  const status = root.querySelector<HTMLElement>('.planner-demo-status')
+  const stepElements = Array.from(root.querySelectorAll<HTMLElement>('.planner-demo-step'))
+  const cardElements = Array.from(root.querySelectorAll<HTMLElement>('.planner-demo-card'))
+  let stageIndex = -1
+  let isRunning = false
+  let timeoutHandle = 0
+  let disposed = false
+  let cacheState = randomPlannerCache(copy.fragments)
+
+  const stopTimer = () => {
+    if (!timeoutHandle) return
+    window.clearTimeout(timeoutHandle)
+    timeoutHandle = 0
+  }
+
+  const showCache = () => stageIndex >= 1
+  const showRuntime = () => stageIndex >= 2
+  const showRender = () => stageIndex >= 3
+  const showRevalidate = () => stageIndex >= 4
+
+  const updateCard = (card: HTMLElement, fragment: PlannerDemoCopy['fragments'][number]) => {
+    const cacheHit = cacheState[fragment.id] ?? false
+    const renderState = showRender() ? (cacheHit ? 'skip' : 'render') : 'idle'
+    const revalidateState = showRevalidate() ? (cacheHit ? 'queued' : 'fresh') : 'idle'
+    const rows = Array.from(card.querySelectorAll<HTMLElement>('.planner-demo-row'))
+    const outcomes = Array.from(card.querySelectorAll<HTMLElement>('.planner-demo-outcome'))
+    const cacheButton = card.querySelector<HTMLButtonElement>('.planner-demo-toggle')
+
+    card.dataset.cache = cacheHit ? 'hit' : 'miss'
+    card.dataset.render = renderState
+    card.dataset.revalidate = revalidateState
+    card.dataset.title = fragment.label
+    card.dataset.meta = fragment.id
+
+    rows[0]?.setAttribute('data-label', copy.labels.dependencies)
+    rows[1]?.setAttribute('data-label', copy.labels.cache)
+    rows[2]?.setAttribute('data-label', copy.labels.runtime)
+
+    const dependencyValue = rows[0]?.querySelector<HTMLElement>('.planner-demo-value')
+    if (dependencyValue) {
+      dependencyValue.textContent = fragment.deps.length ? fragment.deps.join(' + ') : copy.root
+    }
+
+    const dependencyPill = rows[0]?.querySelector<HTMLElement>('.planner-demo-pill')
+    if (dependencyPill) {
+      dependencyPill.dataset.state = stageIndex >= 0 ? 'ready' : 'idle'
+      dependencyPill.textContent = stageIndex >= 0 ? copy.resolved : copy.pending
+    }
+
+    if (cacheButton) {
+      cacheButton.dataset.cacheId = fragment.id
+      cacheButton.dataset.state = cacheHit ? 'hit' : 'miss'
+      cacheButton.disabled = false
+      cacheButton.textContent = cacheHit ? copy.hit : copy.miss
+    }
+
+    const cachePill = rows[1]?.querySelector<HTMLElement>('.planner-demo-pill')
+    if (cachePill) {
+      cachePill.dataset.state = showCache() ? 'ready' : 'idle'
+      cachePill.textContent = showCache() ? copy.checked : copy.waitingCache
+    }
+
+    const runtimePill = rows[2]?.querySelector<HTMLElement>('.planner-demo-pill')
+    if (runtimePill) {
+      runtimePill.dataset.state = showRuntime() ? 'ready' : 'idle'
+      runtimePill.textContent = showRuntime() ? fragment.runtime : copy.selecting
+    }
+
+    if (outcomes[0]) {
+      outcomes[0].dataset.state = renderState
+      outcomes[0].textContent =
+        renderState === 'render'
+          ? copy.renderNow
+          : renderState === 'skip'
+            ? copy.skipRender
+            : copy.awaitRender
+    }
+
+    if (outcomes[1]) {
+      outcomes[1].dataset.state = revalidateState
+      outcomes[1].textContent =
+        revalidateState === 'queued'
+          ? copy.revalidateQueued
+          : revalidateState === 'fresh'
+            ? copy.freshRender
+            : copy.awaitRevalidate
+    }
+  }
+
+  const update = () => {
+    const stage = stageIndex >= 0 ? copy.steps[stageIndex] : null
+    root.dataset.preview = 'false'
+    root.dataset.stage = stage?.id ?? 'idle'
+
+    if (runButton) {
+      runButton.disabled = isRunning
+      runButton.dataset.action = 'run'
+      runButton.removeAttribute('data-demo-activate')
+      runButton.textContent = isRunning ? copy.running : copy.run
+    }
+
+    if (shuffleButton) {
+      shuffleButton.disabled = false
+      shuffleButton.dataset.action = 'shuffle'
+      shuffleButton.textContent = copy.shuffle
+    }
+
+    if (status) {
+      status.textContent = stage ? stage.hint : copy.waiting
+    }
+
+    stepElements.forEach((element, index) => {
+      element.classList.toggle('is-active', stageIndex === index)
+      element.classList.toggle('is-done', stageIndex > index)
+      element.textContent = copy.steps[index]?.label ?? ''
+    })
+
+    cardElements.forEach((card, index) => {
+      const fragment = copy.fragments[index]
+      if (!fragment) return
+      updateCard(card, fragment)
+    })
+  }
+
+  const runSequence = (nextIndex: number) => {
+    if (disposed) return
+    if (nextIndex >= copy.steps.length) {
+      isRunning = false
+      stopTimer()
+      update()
+      return
+    }
+    stageIndex = nextIndex
+    update()
+    timeoutHandle = window.setTimeout(() => {
+      timeoutHandle = 0
+      runSequence(nextIndex + 1)
+    }, plannerStepDelayMs)
+  }
+
+  const handleClick = (event: Event) => {
+    const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
+    if (!button || !root.contains(button)) return
+
+    const cacheId = button.dataset.cacheId
+    if (cacheId) {
+      cacheState = { ...cacheState, [cacheId]: !cacheState[cacheId] }
+      update()
+      return
+    }
+
+    const action = button.dataset.action
+    if (action === 'shuffle') {
+      cacheState = randomPlannerCache(copy.fragments)
+      update()
+      return
+    }
+
+    if (action !== 'run' || isRunning) return
+    isRunning = true
+    runSequence(0)
+    update()
+  }
+
+  root.addEventListener('click', handleClick)
+  update()
+
+  return {
+    cleanup: () => {
+      disposed = true
+      stopTimer()
+      root.removeEventListener('click', handleClick)
+    }
+  }
+}
+
+const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult => {
+  const copy = getWasmRendererDemoCopy(getCurrentLang())
+  const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
+  const subtitle = root.querySelector<HTMLElement>('.wasm-demo-subtitle')
+  const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-panel-title'))
+  const valueElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-value'))
+  const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.wasm-demo-step'))
+  const noteElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-note'))
+  const metricElements = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-metric'))
+  const barFill = root.querySelector<HTMLElement>('.wasm-demo-bar-fill')
+  const historyRoot = root.querySelector<HTMLElement>('.wasm-demo-history')
+  const core = root.querySelector<HTMLElement>('.wasm-demo-core')
+  const coreValue = root.querySelector<HTMLElement>('.wasm-demo-core-value')
+  const coreHash = root.querySelector<HTMLElement>('.wasm-demo-core-hash')
+  const bits = root.querySelector<HTMLElement>('.wasm-demo-bits')
+  const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.wasm-demo-chip'))
+  let inputA = 128
+  let inputB = 256
+  let history = [computeWasmMetrics(inputA, inputB).mixed]
+  let pulseTimer = 0
+
+  const update = () => {
+    const metrics = computeWasmMetrics(inputA, inputB)
+    const progress = Math.min(100, Math.max(0, metrics.hotPath))
+
+    root.dataset.preview = 'false'
+    setButtonLabel(actionButton, copy.run)
+    actionButton?.removeAttribute('data-demo-activate')
+    actionButton?.setAttribute('data-action', 'run')
+    if (actionButton) actionButton.disabled = false
+
+    if (subtitle) subtitle.textContent = copy.subtitle
+    panelTitles[0] && (panelTitles[0].textContent = copy.panels.inputs)
+    panelTitles[1] && (panelTitles[1].textContent = copy.panels.wasm)
+    panelTitles[2] && (panelTitles[2].textContent = copy.panels.fragment)
+
+    if (valueElements[0]) valueElements[0].textContent = `${inputA}`
+    if (valueElements[1]) valueElements[1].textContent = `${inputB}`
+
+    if (stepButtons[0]) {
+      stepButtons[0].disabled = false
+      stepButtons[0].dataset.action = 'a-dec'
+      stepButtons[0].setAttribute('aria-label', copy.aria.decreaseA)
+    }
+    if (stepButtons[1]) {
+      stepButtons[1].disabled = false
+      stepButtons[1].dataset.action = 'a-inc'
+      stepButtons[1].setAttribute('aria-label', copy.aria.increaseA)
+    }
+    if (stepButtons[2]) {
+      stepButtons[2].disabled = false
+      stepButtons[2].dataset.action = 'b-dec'
+      stepButtons[2].setAttribute('aria-label', copy.aria.decreaseB)
+    }
+    if (stepButtons[3]) {
+      stepButtons[3].disabled = false
+      stepButtons[3].dataset.action = 'b-inc'
+      stepButtons[3].setAttribute('aria-label', copy.aria.increaseB)
+    }
+
+    if (coreValue) coreValue.textContent = `${metrics.mixed}`
+    if (coreHash) coreHash.textContent = `hash ${metrics.hash}`
+    if (bits) bits.textContent = metrics.mixed.toString(2).padStart(12, '0')
+
+    noteElements[0] && (noteElements[0].textContent = copy.notes.inputs)
+    noteElements[1] && (noteElements[1].textContent = copy.notes.wasm)
+    noteElements[2] && (noteElements[2].textContent = copy.notes.fragment)
+
+    if (metricElements[0]) {
+      metricElements[0].dataset.label = copy.metrics.burst
+      metricElements[0].dataset.value = `${metrics.throughput} op/s`
+      metricElements[0].setAttribute('aria-label', `${copy.metrics.burst} ${metrics.throughput} op/s`)
+    }
+    if (metricElements[1]) {
+      metricElements[1].dataset.label = copy.metrics.hotPath
+      metricElements[1].dataset.value = `${metrics.hotPath} pts`
+      metricElements[1].setAttribute('aria-label', `${copy.metrics.hotPath} ${metrics.hotPath} pts`)
+    }
+
+    if (barFill) {
+      barFill.style.width = `${progress}%`
+    }
+
+    if (historyRoot) {
+      historyRoot.replaceChildren(...history.map((value) => createTextSpan('', `${value}`)))
+    }
+
+    footerChips[0] && (footerChips[0].textContent = copy.footer.edgeSafe)
+    footerChips[1] && (footerChips[1].textContent = copy.footer.deterministic)
+    footerChips[2] && (footerChips[2].textContent = copy.footer.htmlUntouched)
+  }
+
+  const pulse = () => {
+    core?.classList.add('is-active')
+    if (pulseTimer) {
+      window.clearTimeout(pulseTimer)
+    }
+    pulseTimer = window.setTimeout(() => {
+      pulseTimer = 0
+      core?.classList.remove('is-active')
+    }, 320)
+  }
+
+  const handleClick = (event: Event) => {
+    const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
+    if (!button || !root.contains(button)) return
+
+    switch (button.dataset.action) {
+      case 'a-dec':
+        inputA = clamp(inputA - 16, 32, 512)
+        update()
+        return
+      case 'a-inc':
+        inputA = clamp(inputA + 16, 32, 512)
+        update()
+        return
+      case 'b-dec':
+        inputB = clamp(inputB - 16, 32, 512)
+        update()
+        return
+      case 'b-inc':
+        inputB = clamp(inputB + 16, 32, 512)
+        update()
+        return
+      case 'run': {
+        const metrics = computeWasmMetrics(inputA, inputB)
+        history = [metrics.mixed, ...history].slice(0, 3)
+        update()
+        pulse()
+        return
+      }
+      default:
+        return
+    }
+  }
+
+  root.addEventListener('click', handleClick)
+  update()
+
+  return {
+    cleanup: () => {
+      if (pulseTimer) {
+        window.clearTimeout(pulseTimer)
+      }
+      root.removeEventListener('click', handleClick)
+    }
+  }
+}
+
+const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult => {
+  const copy = getReactBinaryDemoCopy(getCurrentLang())
+  const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
+  const status = root.querySelector<HTMLElement>('.react-binary-status')
+  const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
+  const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-panel-title'))
+  const captions = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-caption'))
+  const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-chip'))
+  const bits = root.querySelector<HTMLElement>('.react-binary-bits span')
+  let stageIndex = 0
+  let binaryChunks = [...initialBinaryChunks]
+  let timeoutHandle = 0
+
+  const stopTimer = () => {
+    if (!timeoutHandle) return
+    window.clearTimeout(timeoutHandle)
+    timeoutHandle = 0
+  }
+
+  const updateBits = () => {
+    binaryChunks = binaryChunks.map((chunk) => randomBits(chunk.length))
+    if (bits) {
+      bits.textContent = binaryChunks.join(' ')
+    }
+  }
+
+  const schedule = () => {
+    if (timeoutHandle) return
+    if (document.visibilityState !== 'visible') return
+    if (copy.stages[stageIndex]?.id !== 'binary') return
+    timeoutHandle = window.setTimeout(() => {
+      timeoutHandle = 0
+      updateBits()
+      schedule()
+    }, 700)
+  }
+
+  const update = () => {
+    const stage = copy.stages[stageIndex] ?? copy.stages[0]
+    const actionLabel = copy.actions[stage.id as keyof typeof copy.actions] ?? copy.actions.react
+
+    root.dataset.preview = 'false'
+    root.dataset.stage = stage.id
+
+    if (actionButton) {
+      actionButton.disabled = false
+      actionButton.dataset.action = 'advance'
+      actionButton.removeAttribute('data-demo-activate')
+      actionButton.textContent = actionLabel
+    }
+
+    if (status) {
+      status.textContent = stage.hint
+    }
+
+    stepButtons.forEach((button, index) => {
+      const step = copy.stages[index]
+      if (!step) return
+      button.disabled = false
+      button.dataset.stageIndex = `${index}`
+      button.setAttribute('aria-selected', index === stageIndex ? 'true' : 'false')
+      button.tabIndex = index === stageIndex ? 0 : -1
+      setReactStepLabel(button, step.label)
+    })
+
+    panelTitles[0] && (panelTitles[0].textContent = copy.panels.reactTitle)
+    panelTitles[1] && (panelTitles[1].textContent = copy.panels.binaryTitle)
+    panelTitles[2] && (panelTitles[2].textContent = copy.panels.qwikTitle)
+    captions[0] && (captions[0].textContent = copy.panels.reactCaption)
+    captions[1] && (captions[1].textContent = copy.panels.binaryCaption)
+    captions[2] && (captions[2].textContent = copy.panels.qwikCaption)
+    footerChips[0] && (footerChips[0].textContent = copy.footer.hydrationSkipped)
+    footerChips[1] && (footerChips[1].textContent = copy.footer.binaryStream)
+
+    if (bits) {
+      bits.dataset.anim = stage.id === 'binary' ? 'true' : 'false'
+      bits.textContent = binaryChunks.join(' ')
+    }
+
+    stopTimer()
+    if (stage.id === 'binary') {
+      updateBits()
+      schedule()
+    }
+  }
+
+  const handleClick = (event: Event) => {
+    const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
+    if (!button || !root.contains(button)) return
+
+    if (button.dataset.action === 'advance') {
+      stageIndex = (stageIndex + 1) % copy.stages.length
+      update()
+      return
+    }
+
+    if (typeof button.dataset.stageIndex === 'string') {
+      const parsed = Number.parseInt(button.dataset.stageIndex, 10)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed < copy.stages.length) {
+        stageIndex = parsed
+        update()
+      }
+    }
+  }
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      schedule()
+    } else {
+      stopTimer()
+    }
+  }
+
+  root.addEventListener('click', handleClick)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  update()
+
+  return {
+    cleanup: () => {
+      stopTimer()
+      root.removeEventListener('click', handleClick)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }
+}
+
+const activatePreactIslandDemo = (
+  root: HTMLElement,
+  props: Record<string, unknown>
+): HomeDemoActivationResult => {
+  const copy = getPreactIslandCopy(getCurrentLang())
+  const label = typeof props.label === 'string' && props.label.trim() ? props.label : copy.label
+  const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
+  const timer = root.querySelector<HTMLElement>('.preact-island-timer')
+  const stageTime = root.querySelector<HTMLElement>('.preact-island-stage-time')
+  const stageSub = root.querySelector<HTMLElement>('.preact-island-stage-sub')
+  const actionButton = root.querySelector<HTMLButtonElement>('.preact-island-action')
+  const progressCircle = root.querySelector<SVGCircleElement>('.preact-island-dial-progress')
+  const dialHand = root.querySelector<SVGLineElement>('.preact-island-dial-hand')
+  let remaining = preactCountdownSeconds
+  let timeoutHandle = 0
+
+  const clearTick = () => {
+    if (!timeoutHandle) return
+    window.clearTimeout(timeoutHandle)
+    timeoutHandle = 0
+  }
+
+  const scheduleTick = () => {
+    if (timeoutHandle) return
+    if (document.visibilityState !== 'visible') return
+    if (remaining <= 0) return
+    timeoutHandle = window.setTimeout(() => {
+      timeoutHandle = 0
+      remaining = Math.max(0, remaining - 1)
+      update()
+      scheduleTick()
+    }, 1000)
+  }
+
+  const update = () => {
+    const minutes = Math.floor(remaining / 60)
+    const seconds = String(remaining % 60).padStart(2, '0')
+    const progress = remaining / preactCountdownSeconds
+    const circumference = Math.round(2 * Math.PI * 48)
+    const offset = Math.round(circumference * (1 - progress))
+    const rotation = Math.round((1 - progress) * -360)
+
+    root.dataset.preview = 'false'
+    root.dataset.running = remaining > 0 ? 'true' : 'false'
+    labelElement && (labelElement.textContent = label)
+    timer && (timer.textContent = remaining === 0 ? copy.ready : `${minutes}:${seconds}`)
+    stageTime && (stageTime.textContent = remaining === 0 ? '0:00' : `${minutes}:${seconds}`)
+    stageSub && (stageSub.textContent = remaining === 0 ? copy.readySub : copy.activeSub)
+
+    if (actionButton) {
+      actionButton.disabled = false
+      actionButton.removeAttribute('data-demo-activate')
+      actionButton.textContent = copy.reset
+    }
+
+    if (progressCircle) {
+      progressCircle.style.strokeDasharray = `${circumference}`
+      progressCircle.style.strokeDashoffset = `${offset}`
+    }
+
+    if (dialHand) {
+      dialHand.style.transform = `rotate(${rotation}deg)`
+      dialHand.style.transformOrigin = '60px 60px'
+    }
+  }
+
+  const handleClick = (event: Event) => {
+    const button = (event.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null
+    if (!button || !root.contains(button)) return
+    remaining = preactCountdownSeconds
+    update()
+    scheduleTick()
+  }
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      scheduleTick()
+    } else {
+      clearTick()
+    }
+  }
+
+  root.addEventListener('click', handleClick)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  update()
+  scheduleTick()
+
+  return {
+    cleanup: () => {
+      clearTick()
+      root.removeEventListener('click', handleClick)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }
+}
+
+export const activateHomeDemo = async ({
+  root,
+  kind,
+  props
+}: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult> => {
+  const element = getRootElement(root)
+
+  switch (kind) {
+    case 'planner':
+      return activatePlannerDemo(element)
+    case 'wasm-renderer':
+      return activateWasmRendererDemo(element)
+    case 'react-binary':
+      return activateReactBinaryDemo(element)
+    case 'preact-island':
+      return activatePreactIslandDemo(element, props)
+    default:
+      throw new Error(`Unsupported home demo: ${kind satisfies never}`)
+  }
+}

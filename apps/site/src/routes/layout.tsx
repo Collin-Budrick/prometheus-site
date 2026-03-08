@@ -1,11 +1,11 @@
-import { $, component$, HTMLFragment, Slot, useOnDocument, useSignal } from '@builder.io/qwik'
+import { $, component$, HTMLFragment, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
-import { DockBar, DockIcon, LanguageToggle, ThemeToggle, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
+import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
-import { useLangCopy, useProvideLangSignal } from '../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useProvideLangSignal } from '../shared/lang-bridge'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
@@ -16,6 +16,10 @@ import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
 import { setPreference } from '../native/preferences'
+import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
+import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
+import { StaticShellLayout } from '../static-shell/StaticShellLayout'
+import { isHomeStaticPath } from '../static-shell/constants'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -273,12 +277,197 @@ const LANGUAGE_LABELS: Record<string, string> = {
 
 const getLangLabel = (value: string) => LANGUAGE_LABELS[value.toLowerCase()] ?? value.toUpperCase()
 
+type ShellTheme = 'light' | 'dark'
+
+const SunIcon = () => (
+  <svg
+    class="theme-toggle-icon"
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v3" />
+    <path d="M12 19v3" />
+    <path d="M4.22 4.22l2.12 2.12" />
+    <path d="M17.66 17.66l2.12 2.12" />
+    <path d="M2 12h3" />
+    <path d="M19 12h3" />
+    <path d="M4.22 19.78l2.12-2.12" />
+    <path d="M17.66 6.34l2.12-2.12" />
+  </svg>
+)
+
+const MoonIcon = () => (
+  <svg
+    class="theme-toggle-icon"
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z" />
+  </svg>
+)
+
+const TranslateIcon = () => (
+  <svg
+    class="lang-toggle-icon"
+    viewBox="0 0 24 24"
+    width="1em"
+    height="1em"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 5h12" />
+    <path d="M10 5a17.3 17.3 0 0 1-4 10" />
+    <path d="M6 15c1.8-1 3.6-2.7 5-5" />
+    <path d="M14 19l4-9 4 9" />
+    <path d="M15.5 16h5" />
+  </svg>
+)
+
+type ShellSettingsPanelProps = {
+  open: boolean
+  rootRef: Signal<HTMLDivElement | undefined>
+  copy: Record<string, string>
+  hasMultipleLangs: boolean
+  langSignal: Signal<Lang>
+  langMenuOpen: Signal<boolean>
+  themeSignal: Signal<ShellTheme>
+  onApplyLangChoice$: QRL<(next: Lang) => void>
+  onToggleThemeChoice$: QRL<() => void>
+  onToggleLanguageMenu$: QRL<() => void>
+  onClose$: QRL<() => void>
+}
+
+const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
+  const {
+    open,
+    rootRef,
+    copy,
+    hasMultipleLangs,
+    langSignal,
+    langMenuOpen,
+    themeSignal,
+    onApplyLangChoice$,
+    onToggleThemeChoice$,
+    onToggleLanguageMenu$,
+    onClose$
+  } = props
+
+  useVisibleTask$(
+    (ctx) => {
+      const isOpen = ctx.track(() => open)
+      if (!isOpen) return
+
+      const handlePointerDown = (event: PointerEvent) => {
+        const target = event.target as Node | null
+        const root = rootRef.value
+        if (!root || !target) return
+        if (root.contains(target)) return
+        onClose$()
+      }
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return
+        onClose$()
+      }
+
+      window.addEventListener('pointerdown', handlePointerDown)
+      window.addEventListener('keydown', handleKeyDown)
+      ctx.cleanup(() => {
+        window.removeEventListener('pointerdown', handlePointerDown)
+        window.removeEventListener('keydown', handleKeyDown)
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  if (!open) return null
+
+  return (
+    <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
+      <div class="settings-controls">
+        {hasMultipleLangs ? (
+          <button
+            type="button"
+            class="lang-toggle settings-lang-trigger"
+            data-lang={langSignal.value}
+            aria-pressed={langMenuOpen.value}
+            aria-label={copy.languageToggleLabel}
+            onClick$={onToggleLanguageMenu$}
+          >
+            <TranslateIcon />
+          </button>
+        ) : null}
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme={themeSignal.value}
+          aria-pressed={themeSignal.value === 'dark'}
+          aria-label={themeSignal.value === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark}
+          onClick$={onToggleThemeChoice$}
+        >
+          {themeSignal.value === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
+      </div>
+      {hasMultipleLangs ? (
+        <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
+          <div class="settings-lang-list" role="menu">
+            {supportedLangs.map((langOption) => {
+              const langValue = langOption as Lang
+              const isActive = langSignal.value === langValue
+              return (
+                <button
+                  key={langOption}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  class="settings-lang-option"
+                  data-active={isActive ? 'true' : 'false'}
+                  onClick$={$(() => {
+                    onApplyLangChoice$(langValue)
+                    langMenuOpen.value = false
+                  })}
+                >
+                  <span class="settings-lang-code">{getLangLabel(langOption)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+})
+
 export const useAuthSession = routeLoader$<AuthSessionState>(async ({ request }) => loadAuthSession(request))
 
-export const useShellPreferences = routeLoader$((event) => {
+export const useShellPreferences = routeLoader$(async (event) => {
+  const { createServerLanguageSeed } = await import('../lang/server')
   const lang = resolveRequestLang(event.request)
   const theme = readThemeFromCookie(event.request.headers.get('cookie')) ?? defaultTheme
-  return { lang, theme }
+  return {
+    lang,
+    theme,
+    languageSeed: createServerLanguageSeed(lang, shellLanguageSelection)
+  }
 })
 
 export const useInitialFadeState = routeLoader$((_event) => {
@@ -384,16 +573,24 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   }
 }
 
-export default component$(() => {
+const InteractiveShellLayout = component$(() => {
+  const location = useLocation()
   const shellPreferences = useShellPreferences()
+  useLanguageSeed(shellPreferences.value.lang, shellPreferences.value.languageSeed)
   const langSignal = useProvideLangSignal(shellPreferences.value.lang)
   const copy = useLangCopy(langSignal)
   const fragmentStatus = useSharedFragmentStatusSignal()
   const authSession = useAuthSession()
   const isAuthenticated = authSession.value.status === 'authenticated'
   const settingsOpen = useSignal(false)
+  const settingsPanelMounted = useSignal(false)
   const settingsRef = useSignal<HTMLDivElement>()
   const langMenuOpen = useSignal(false)
+  const themeSignal = useSignal<ShellTheme>(shellPreferences.value.theme === 'dark' ? 'dark' : 'light')
+  const currentLanguageSelection = mergeLanguageSelections(
+    shellLanguageSelection,
+    resolveRouteLanguageSelection(location.url.pathname)
+  )
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const dockItems = navItems.map((item) => {
     const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
@@ -406,8 +603,48 @@ export default component$(() => {
         ? copy.value.fragmentStatusStalled
         : copy.value.fragmentStatusIdle
   const hasMultipleLangs = supportedLangs.length > 1
-  const applyLangChoice = $((next: Lang) => {
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const pathName = ctx.track(() => location.url.pathname)
+      const currentLang = ctx.track(() => langSignal.value)
+      const selection = mergeLanguageSelections(shellLanguageSelection, resolveRouteLanguageSelection(pathName))
+      const otherLangs = supportedLangs.filter((value) => value !== currentLang)
+      if (!otherLangs.length) return
+
+      let cancelled = false
+      const prefetchAll = () => {
+        if (cancelled) return
+        otherLangs.forEach((value) => {
+          void prefetchLanguageResources(value, selection)
+        })
+      }
+
+      let timeoutHandle = 0
+      let idleHandle = 0
+      if (typeof window.requestIdleCallback === 'function') {
+        idleHandle = window.requestIdleCallback(prefetchAll, { timeout: 1600 })
+      } else {
+        timeoutHandle = window.setTimeout(prefetchAll, 220)
+      }
+
+      ctx.cleanup(() => {
+        cancelled = true
+        if (idleHandle) window.cancelIdleCallback(idleHandle)
+        if (timeoutHandle) window.clearTimeout(timeoutHandle)
+      })
+    },
+    { strategy: 'document-idle' }
+  )
+
+  const applyLangChoice = $(async (next: Lang) => {
     if (langSignal.value === next) return
+    try {
+      await loadLanguageResources(next, currentLanguageSelection)
+    } catch (error) {
+      console.warn('Failed to load target language resources:', next, error)
+      return
+    }
     if (typeof window !== 'undefined') {
       const currentParam = resolveLangParam(new URLSearchParams(window.location.search).get(LANG_PREFETCH_PARAM))
       if (currentParam !== next) {
@@ -422,10 +659,10 @@ export default component$(() => {
     }
     const root = document.querySelector('.layout-shell') ?? document.body
     void runLangViewTransition(
-      () => {
+      async () => {
         langSignal.value = next
         applyLang(next)
-        void setPreference('locale', next)
+        await setPreference('locale', next)
       },
       {
         mutationRoot: root,
@@ -434,30 +671,37 @@ export default component$(() => {
       }
     )
   })
-
-  useOnDocument(
-    'click',
-    $((event: MouseEvent) => {
-      if (!settingsOpen.value) return
-      const target = event.target as Node | null
-      const root = settingsRef.value
-      if (!root || !target) return
-      if (!root.contains(target)) {
-        settingsOpen.value = false
-        langMenuOpen.value = false
-      }
+  const toggleThemeChoice = $(() => {
+    void withUserActionHapticsDeferred(async () => {
+      await triggerHapticTapDeferred()
+      const currentTheme =
+        typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+      const nextTheme: ShellTheme = currentTheme === 'dark' ? 'light' : 'dark'
+      themeSignal.value = nextTheme
+      const { applyTheme } = await import('@prometheus/ui')
+      applyTheme(nextTheme)
+      await setPreference('theme', nextTheme)
     })
-  )
-
-  useOnDocument(
-    'keydown',
-    $((event: KeyboardEvent) => {
-      if (event.key === 'Escape' && settingsOpen.value) {
-        settingsOpen.value = false
-        langMenuOpen.value = false
+  })
+  const toggleLanguageMenu = $(() => {
+    void withUserActionHapticsDeferred(async () => {
+      await triggerHapticSelectionDeferred()
+      const selectedIndex = await showNativeActionSheetDeferred(
+        copy.value.languageToggleLabel,
+        supportedLangs.map((item) => ({ title: getLangLabel(item) }))
+      )
+      if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
+        const selected = supportedLangs[selectedIndex] as Lang
+        void applyLangChoice(selected)
+        return
       }
+      langMenuOpen.value = !langMenuOpen.value
     })
-  )
+  })
+  const closeSettingsPanel = $(() => {
+    settingsOpen.value = false
+    langMenuOpen.value = false
+  })
 
   return (
     <div class="layout-shell">
@@ -472,6 +716,15 @@ export default component$(() => {
         <div class="topbar-actions">
           <div class="topbar-controls">
             <div class="topbar-settings" ref={settingsRef} data-open={settingsOpen.value ? 'true' : 'false'}>
+              <div
+                class="fragment-status"
+                data-state={fragmentStatus.value}
+                role="status"
+                aria-live="polite"
+                aria-label={statusLabel}
+              >
+                <span class="dot" aria-hidden="true" />
+              </div>
               <button
                 class="settings-trigger"
                 type="button"
@@ -482,6 +735,9 @@ export default component$(() => {
                 onClick$={$(() => withUserActionHapticsDeferred(async () => {
                   await triggerHapticTapDeferred()
                   const next = !settingsOpen.value
+                  if (next) {
+                    settingsPanelMounted.value = true
+                  }
                   settingsOpen.value = next
                   if (!next) {
                     langMenuOpen.value = false
@@ -490,77 +746,21 @@ export default component$(() => {
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
-              <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
-                {settingsOpen.value ? (
-                  <>
-                    <div class="settings-controls">
-                      <div
-                        class="fragment-status"
-                        data-state={fragmentStatus.value}
-                        role="status"
-                        aria-live="polite"
-                        aria-label={statusLabel}
-                      >
-                        <span class="dot" aria-hidden="true" />
-                      </div>
-                      {hasMultipleLangs ? (
-                        <LanguageToggle
-                          class="settings-lang-trigger"
-                          lang={langSignal}
-                          ariaLabel={copy.value.languageToggleLabel}
-                          pressed={langMenuOpen.value}
-                          onToggle$={$(() => withUserActionHapticsDeferred(async () => {
-                            await triggerHapticSelectionDeferred()
-                            const selectedIndex = await showNativeActionSheetDeferred(copy.value.languageToggleLabel, supportedLangs.map((item) => ({ title: getLangLabel(item) })))
-                            if (selectedIndex !== null && selectedIndex >= 0 && selectedIndex < supportedLangs.length) {
-                              const selected = supportedLangs[selectedIndex] as Lang
-                              void applyLangChoice(selected)
-                              return
-                            }
-                            langMenuOpen.value = !langMenuOpen.value
-                          }))}
-                        />
-                      ) : null}
-                      <ThemeToggle
-                        initialTheme={shellPreferences.value.theme}
-                        labels={{ ariaToDark: copy.value.themeAriaToDark, ariaToLight: copy.value.themeAriaToLight }}
-                        onToggle$={$((nextTheme) => {
-                          void withUserActionHapticsDeferred(async () => {
-                            await triggerHapticTapDeferred()
-                            await setPreference('theme', nextTheme)
-                          })
-                        })}
-                      />
-                    </div>
-                    {hasMultipleLangs ? (
-                      <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
-                        <div class="settings-lang-list" role="menu">
-                          {supportedLangs.map((langOption) => {
-                            const langValue = langOption as Lang
-                            const isActive = langSignal.value === langValue
-                            return (
-                              <button
-                                key={langOption}
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={isActive}
-                                class="settings-lang-option"
-                                data-active={isActive ? 'true' : 'false'}
-                                onClick$={$(() => {
-                                  void applyLangChoice(langValue)
-                                  langMenuOpen.value = false
-                                })}
-                              >
-                                <span class="settings-lang-code">{getLangLabel(langOption)}</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
+              {settingsPanelMounted.value ? (
+                <ShellSettingsPanel
+                  open={settingsOpen.value}
+                  rootRef={settingsRef}
+                  copy={copy.value}
+                  hasMultipleLangs={hasMultipleLangs}
+                  langSignal={langSignal}
+                  langMenuOpen={langMenuOpen}
+                  themeSignal={themeSignal}
+                  onApplyLangChoice$={applyLangChoice}
+                  onToggleThemeChoice$={toggleThemeChoice}
+                  onToggleLanguageMenu$={toggleLanguageMenu}
+                  onClose$={closeSettingsPanel}
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -594,4 +794,24 @@ export default component$(() => {
       </DockBar>
     </div>
   )
+})
+
+export default component$(() => {
+  const location = useLocation()
+  const shellPreferences = useShellPreferences()
+
+  if (isHomeStaticPath(location.url.pathname)) {
+    return (
+      <StaticShellLayout
+        currentPath={location.url.pathname}
+        lang={shellPreferences.value.lang}
+        theme={shellPreferences.value.theme}
+        languageSeed={shellPreferences.value.languageSeed}
+      >
+        <Slot />
+      </StaticShellLayout>
+    )
+  }
+
+  return <InteractiveShellLayout />
 })

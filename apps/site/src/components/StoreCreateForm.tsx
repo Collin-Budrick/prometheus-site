@@ -1,7 +1,7 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { appConfig } from '../app-config'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
-import { getLanguagePack } from '../lang'
+import { getFragmentTextCopy } from '../lang/client'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 
 type StoreCreateFormProps = {
@@ -148,7 +148,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       digitalProduct.value = nextState.digital
     })
 
-    const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
+    const fragmentCopy = useComputed$(() => getFragmentTextCopy(langSignal.value))
     const copy = fragmentCopy.value
     const resolve = (value: string) => copy?.[value] ?? value
 

@@ -72,7 +72,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun run --cwd apps/site build
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
-    bun run --cwd apps/site build -- --ssr src/entry.preview.tsx
+    bun run --cwd apps/site scripts/vite-run.ts -- build --ssr src/entry.preview.tsx
 
 FROM oven/bun:1.3.10-alpine AS runner
 WORKDIR /app/apps/site

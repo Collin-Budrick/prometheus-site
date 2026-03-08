@@ -11,6 +11,10 @@
       transform 200ms ease;
   }
 
+  .layout-shell[data-static-route='home'] .dock-shell {
+    contain: paint;
+  }
+
   html[data-chat-dm-open="true"] .dock-shell {
     transform: translateX(-50%) translateY(140%);
     opacity: 0;
@@ -107,6 +111,19 @@
       inset 0 0 0 1px rgb(var(--surface-strong) / 0.5);
   }
 
+  .layout-shell[data-static-route='home'] .dock::before {
+    background-image: none;
+    background-color: rgb(var(--surface) / 0.92);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .layout-shell[data-static-route='home'] .dock-icon {
+    background-color: rgb(var(--surface) / 0.92);
+    box-shadow: none;
+  }
+
   .dock-link {
     position: absolute;
     inset: 0;
@@ -172,6 +189,15 @@
       backdrop-filter: blur(10px) saturate(1.15);
       background-color: rgb(var(--surface) / 0.1);
       box-shadow: var(--shadow);
+    }
+  }
+
+  @supports (backdrop-filter: blur(10px)) {
+    .layout-shell[data-static-route='home'] .dock::before {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background-color: rgb(var(--surface) / 0.92);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
     }
   }
 }

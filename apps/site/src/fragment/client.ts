@@ -1,16 +1,23 @@
 import { createFragmentClient } from '@core/fragments'
 import type { FragmentPayload } from './types'
-import { appConfig } from '../app-config'
 import { fragmentPlanCache } from './plan-cache'
 import { getFragmentCssHref } from './fragment-css'
+import {
+  getPublicFragmentApiBase,
+  getPublicWebTransportBase,
+  isPublicFragmentCompressionPreferred,
+  isPublicWebTransportDatagramsPreferred,
+  isPublicWebTransportPreferred
+} from '../shared/public-fragment-config'
 
 const client = createFragmentClient(
   {
-    getApiBase: () => appConfig.apiBase,
-    getWebTransportBase: () => appConfig.webTransportBase,
-    isFragmentCompressionPreferred: () => appConfig.preferFragmentCompression,
-    isWebTransportDatagramsPreferred: () => appConfig.preferWebTransportDatagrams,
-    isWebTransportPreferred: () => appConfig.preferWebTransport
+    getApiBase: getPublicFragmentApiBase,
+    getWebTransportBase: getPublicWebTransportBase,
+    getFragmentProtocol: () => 2,
+    isFragmentCompressionPreferred: isPublicFragmentCompressionPreferred,
+    isWebTransportDatagramsPreferred: isPublicWebTransportDatagramsPreferred,
+    isWebTransportPreferred: isPublicWebTransportPreferred
   },
   fragmentPlanCache
 )

@@ -51,6 +51,7 @@ export type FragmentServiceOptions = {
   fallbackDefinitionFactory?: (id: string) => FragmentDefinition
   planMemoLimit?: number
   planMemoTtlMs?: number
+  onFragmentRendered?: (event: { id: string; lang: FragmentLang; entry: StoredFragment }) => void
 }
 
 export type FragmentPlanOptions = {
@@ -84,7 +85,8 @@ export const createFragmentService = ({
   createTranslator: createTranslatorOption,
   fallbackDefinitionFactory = defaultFallbackDefinition,
   planMemoLimit = 64,
-  planMemoTtlMs = 10_000
+  planMemoTtlMs = 10_000,
+  onFragmentRendered
 }: FragmentServiceOptions) => {
   const fragmentPlanMemo = new Map<string, FragmentPlanMemoEntry>()
   const inflight = new Map<string, Promise<StoredFragment>>()
@@ -236,6 +238,7 @@ export const createFragmentService = ({
         }
         const entry = await renderDefinition(id, lang)
         await writeFragment(id, lang, entry)
+        onFragmentRendered?.({ id, lang, entry })
         return entry
       } catch (error) {
         const cached = await readFragment(id, lang)

@@ -3,8 +3,7 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../app-config'
-import { useLangCopy } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -27,6 +26,7 @@ import {
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../native/native-auth'
 import { isNativeShellRuntime } from '../../native/runtime'
+import { settingsLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -37,6 +37,7 @@ type ProtectedRouteData = {
   }
   chatSettings: ChatSettings
   swOptOut: boolean
+  languageSeed: LanguageSeedPayload
 }
 
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
@@ -102,6 +103,7 @@ const resolveFriendCodeUser = (user?: ProtectedRouteData['user']): FriendCodeUse
 }
 
 export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
@@ -111,7 +113,13 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   const chatSettings = readChatSettingsFromCookie(cookieHeader) ?? { ...defaultChatSettings }
   const swSeed = readServiceWorkerSeedFromCookie(cookieHeader)
   const swOptOut = Boolean(swSeed.optOut)
-  return { lang, user: session.user, chatSettings, swOptOut }
+  return {
+    lang,
+    user: session.user,
+    chatSettings,
+    swOptOut,
+    languageSeed: createServerLanguageSeed(lang, settingsLanguageSelection)
+  }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -119,7 +127,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useSettingsData)
   const lang = data?.lang ?? defaultLang
-  const copy = getUiCopy(lang)
+  const copy = data?.languageSeed.ui
   const description = copy.protectedDescription.replace('{{label}}', copy.navSettings)
 
   return {
@@ -139,6 +147,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 export default component$(() => {
   useStyles$(settingsStyles)
   const data = useSettingsData()
+  useLanguageSeed(data.value.lang, data.value.languageSeed)
   const copy = useLangCopy()
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)

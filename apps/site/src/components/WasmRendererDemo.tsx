@@ -1,5 +1,5 @@
 import { $, component$, useSignal } from '@builder.io/qwik'
-import { getLanguagePack } from '../lang'
+import { getWasmRendererDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -14,7 +14,7 @@ const computeMetrics = (a: number, b: number) => {
 
 export const WasmRendererDemo = component$(() => {
   const langSignal = useLangSignal()
-  const copy = getLanguagePack(langSignal.value).demos.wasmRenderer
+  const copy = getWasmRendererDemoCopy(langSignal.value)
   const inputA = useSignal(128)
   const inputB = useSignal(256)
   const initial = computeMetrics(inputA.value, inputB.value)
@@ -25,37 +25,47 @@ export const WasmRendererDemo = component$(() => {
   const history = useSignal<number[]>([initial.mixed])
   const pulse = useSignal(false)
 
-  const adjustAUp = $(() => {
-    inputA.value = clamp(inputA.value + 16, 32, 512)
-  })
-  const adjustADown = $(() => {
-    inputA.value = clamp(inputA.value - 16, 32, 512)
-  })
-  const adjustBUp = $(() => {
-    inputB.value = clamp(inputB.value + 16, 32, 512)
-  })
-  const adjustBDown = $(() => {
-    inputB.value = clamp(inputB.value - 16, 32, 512)
-  })
+  const handleClick = $((event: Event) => {
+    const target = event.target as HTMLElement | null
+    const button = target?.closest('button[data-action]') as HTMLButtonElement | null
+    if (!button) return
 
-  const runTransform = $(() => {
-    const metrics = computeMetrics(inputA.value, inputB.value)
-    output.value = metrics.mixed
-    throughput.value = metrics.throughput
-    hotPath.value = metrics.hotPath
-    hash.value = metrics.hash
-    history.value = [metrics.mixed, ...history.value].slice(0, 3)
-    pulse.value = !pulse.value
+    switch (button.dataset.action) {
+      case 'a-dec':
+        inputA.value = clamp(inputA.value - 16, 32, 512)
+        return
+      case 'a-inc':
+        inputA.value = clamp(inputA.value + 16, 32, 512)
+        return
+      case 'b-dec':
+        inputB.value = clamp(inputB.value - 16, 32, 512)
+        return
+      case 'b-inc':
+        inputB.value = clamp(inputB.value + 16, 32, 512)
+        return
+      case 'run': {
+        const metrics = computeMetrics(inputA.value, inputB.value)
+        output.value = metrics.mixed
+        throughput.value = metrics.throughput
+        hotPath.value = metrics.hotPath
+        hash.value = metrics.hash
+        history.value = [metrics.mixed, ...history.value].slice(0, 3)
+        pulse.value = !pulse.value
+        return
+      }
+      default:
+        return
+    }
   })
 
   const outputBits = output.value.toString(2).padStart(12, '0')
   const progress = Math.min(100, Math.max(0, hotPath.value))
 
   return (
-    <div class="wasm-demo">
+    <div class="wasm-demo" onClick$={handleClick}>
       <div class="wasm-demo-header">
         <div class="wasm-demo-title">{copy.title}</div>
-        <button class="wasm-demo-action" type="button" onClick$={runTransform}>
+        <button class="wasm-demo-action" type="button" data-action="run">
           {copy.run}
         </button>
       </div>
@@ -65,21 +75,21 @@ export const WasmRendererDemo = component$(() => {
           <div class="wasm-demo-panel-title">{copy.panels.inputs}</div>
           <div class="wasm-demo-input">
             <span class="wasm-demo-label">A</span>
-            <button class="wasm-demo-step" type="button" aria-label={copy.aria.decreaseA} onClick$={adjustADown}>
+            <button class="wasm-demo-step" type="button" aria-label={copy.aria.decreaseA} data-action="a-dec">
               -
             </button>
             <span class="wasm-demo-value">{inputA.value}</span>
-            <button class="wasm-demo-step" type="button" aria-label={copy.aria.increaseA} onClick$={adjustAUp}>
+            <button class="wasm-demo-step" type="button" aria-label={copy.aria.increaseA} data-action="a-inc">
               +
             </button>
           </div>
           <div class="wasm-demo-input">
             <span class="wasm-demo-label">B</span>
-            <button class="wasm-demo-step" type="button" aria-label={copy.aria.decreaseB} onClick$={adjustBDown}>
+            <button class="wasm-demo-step" type="button" aria-label={copy.aria.decreaseB} data-action="b-dec">
               -
             </button>
             <span class="wasm-demo-value">{inputB.value}</span>
-            <button class="wasm-demo-step" type="button" aria-label={copy.aria.increaseB} onClick$={adjustBUp}>
+            <button class="wasm-demo-step" type="button" aria-label={copy.aria.increaseB} data-action="b-inc">
               +
             </button>
           </div>

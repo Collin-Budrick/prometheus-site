@@ -1,5 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { getLanguagePack } from '../lang'
+import { getPlannerDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const randomCache = (fragments: ReadonlyArray<{ id: string }>) =>
@@ -62,7 +62,7 @@ const resolveCacheState = (cookieHeader: string | null, fragments: ReadonlyArray
 
 export const PlannerDemo = component$(() => {
   const langSignal = useLangSignal()
-  const copy = getLanguagePack(langSignal.value).demos.planner
+  const copy = getPlannerDemoCopy(langSignal.value)
   const steps = copy.steps
   const fragments = copy.fragments
   const cookieHeader = typeof document === 'undefined' ? null : document.cookie
@@ -84,10 +84,30 @@ export const PlannerDemo = component$(() => {
     if (nextCacheState && cacheState.value === seedCacheState) {
       cacheState.value = nextCacheState
     }
-  })
+  }, { strategy: 'document-idle' })
 
-  const runPlanner = $(async () => {
-    if (isRunning.value) return
+  const handleClick = $(async (event: Event) => {
+    const target = event.target as HTMLElement | null
+    const button = target?.closest('button[data-action], button[data-cache-id]') as HTMLButtonElement | null
+    if (!button) return
+
+    const cacheId = button.dataset.cacheId
+    if (cacheId) {
+      const nextCache = { ...cacheState.value, [cacheId]: !cacheState.value[cacheId] }
+      cacheState.value = nextCache
+      setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
+      return
+    }
+
+    const action = button.dataset.action
+    if (action === 'shuffle') {
+      const nextCache = randomCache(fragments)
+      cacheState.value = nextCache
+      setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
+      return
+    }
+
+    if (action !== 'run' || isRunning.value) return
     isRunning.value = true
     for (let i = 0; i < steps.length; i += 1) {
       stageIndex.value = i
@@ -97,18 +117,6 @@ export const PlannerDemo = component$(() => {
     isRunning.value = false
   })
 
-  const shuffleCache = $(() => {
-    const nextCache = randomCache(fragments)
-    cacheState.value = nextCache
-    setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
-  })
-
-  const toggleCache = $((id: string) => {
-    const nextCache = { ...cacheState.value, [id]: !cacheState.value[id] }
-    cacheState.value = nextCache
-    setCookie(CACHE_COOKIE, JSON.stringify(nextCache))
-  })
-
   const stage = stageIndex.value >= 0 ? steps[stageIndex.value] : null
   const showCache = stageIndex.value >= 1
   const showRuntime = stageIndex.value >= 2
@@ -116,14 +124,14 @@ export const PlannerDemo = component$(() => {
   const showRevalidate = stageIndex.value >= 4
 
   return (
-    <div class="planner-demo" data-stage={stage?.id ?? 'idle'}>
+    <div class="planner-demo" data-stage={stage?.id ?? 'idle'} onClick$={handleClick}>
       <div class="planner-demo-header">
         <div class="planner-demo-title">{copy.title}</div>
         <div class="planner-demo-controls">
-          <button class="planner-demo-action" type="button" onClick$={runPlanner} disabled={isRunning.value}>
+          <button class="planner-demo-action" type="button" data-action="run" disabled={isRunning.value}>
             {isRunning.value ? copy.running : copy.run}
           </button>
-          <button class="planner-demo-secondary" type="button" onClick$={shuffleCache}>
+          <button class="planner-demo-secondary" type="button" data-action="shuffle">
             {copy.shuffle}
           </button>
         </div>
@@ -174,7 +182,7 @@ export const PlannerDemo = component$(() => {
                   class="planner-demo-toggle"
                   type="button"
                   data-state={cacheHit ? 'hit' : 'miss'}
-                  onClick$={() => toggleCache(fragment.id)}
+                  data-cache-id={fragment.id}
                 >
                   {cacheHit ? copy.hit : copy.miss}
                 </button>

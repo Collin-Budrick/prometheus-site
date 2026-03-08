@@ -13,7 +13,7 @@ import { isNativeShellRuntime, isNativeTauriRuntime } from './runtime'
 import { invokeNativeCommand } from './bridge'
 import { initNativeTextZoom } from './text-zoom'
 import { type NavLabelKey } from '../config'
-import { getLanguagePack } from '../lang'
+import { getUiCopy } from '../lang/client'
 import { defaultLang, supportedLangs, type Lang } from '../shared/lang-store'
 
 type NativeShellState = {
@@ -58,7 +58,7 @@ const resolveNativeLabelResolver = () => {
   const raw = document.documentElement.lang || defaultLang
   const normalizedLang = raw.split(/[-_]/)[0] ?? raw
   const resolved = supportedLangs.includes(normalizedLang as Lang) ? (normalizedLang as Lang) : defaultLang
-  const ui = getLanguagePack(resolved).ui
+  const ui = getUiCopy(resolved)
   return (key: NavLabelKey) => {
     const value = (ui as Record<string, string>)[key]
     return typeof value === 'string' && value.trim() ? value : key

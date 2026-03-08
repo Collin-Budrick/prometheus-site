@@ -1,10 +1,14 @@
 import { useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import type { FragmentPlan } from '../types'
+import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
+import { isStaticHomeShellMode } from './fragment-shell-mode'
+import type { FragmentShellMode } from './fragment-shell-types'
 import { DESKTOP_MIN_WIDTH } from './fragment-shell-utils'
 
 const STACK_FREEZE_IDLE_MS = 1400
 
 type FragmentShellLayoutOptions = {
+  shellMode: FragmentShellMode
   planValue: FragmentPlan
   gridRef: Signal<HTMLDivElement | undefined>
   layoutTick: Signal<number>
@@ -12,15 +16,34 @@ type FragmentShellLayoutOptions = {
 }
 
 export const useFragmentShellLayout = ({
+  shellMode,
   planValue,
   gridRef,
   layoutTick,
   expandedId
 }: FragmentShellLayoutOptions) => {
   const stackScheduler = useSignal<(() => void) | null>(null)
+  const startupReady = useSignal(
+    typeof window !== 'undefined' ? isClientBootIntentReady() : false
+  )
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      if (typeof window === 'undefined' || startupReady.value) return
+      const cancel = runAfterClientIntentIdle(() => {
+        startupReady.value = true
+      })
+      ctx.cleanup(cancel)
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       if (!grid || !('ResizeObserver' in window) || planValue.fragments.length < 2) return
@@ -99,6 +122,9 @@ export const useFragmentShellLayout = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       if (typeof window === 'undefined') return
       const grid = gridRef.value
       if (!grid || typeof ResizeObserver === 'undefined' || planValue.fragments.length < 2) return
@@ -335,6 +361,9 @@ export const useFragmentShellLayout = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       ctx.track(() => expandedId.value)
       stackScheduler.value?.()
     },
@@ -343,6 +372,9 @@ export const useFragmentShellLayout = ({
 
   useVisibleTask$(
     (ctx) => {
+      if (isStaticHomeShellMode(shellMode)) return
+      ctx.track(() => startupReady.value)
+      if (!startupReady.value) return
       ctx.track(() => layoutTick.value)
       ctx.track(() => expandedId.value)
       if (typeof window === 'undefined') return

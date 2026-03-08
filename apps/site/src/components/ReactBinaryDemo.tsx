@@ -1,5 +1,5 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { getLanguagePack } from '../lang'
+import { getReactBinaryDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
 
 const randomBits = (length = 4) => {
@@ -16,7 +16,7 @@ const domNodes = ['section', 'h2', 'p', 'div.badge']
 
 export const ReactBinaryDemo = component$(() => {
   const langSignal = useLangSignal()
-  const copy = getLanguagePack(langSignal.value).demos.reactBinary
+  const copy = getReactBinaryDemoCopy(langSignal.value)
   const stageIndex = useSignal(0)
   const stage = copy.stages[stageIndex.value]
   const binaryChunks = useSignal(initialChunks)
@@ -25,8 +25,23 @@ export const ReactBinaryDemo = component$(() => {
   const binaryStream = binaryChunks.value.join(' ')
   const domPreview = domNodes.map((node) => `<${node}>`).join(' ')
 
-  const advance = $(() => {
-    stageIndex.value = (stageIndex.value + 1) % copy.stages.length
+  const handleClick = $((event: Event) => {
+    const target = event.target as HTMLElement | null
+    const button = target?.closest('button[data-action], button[data-stage-index]') as HTMLButtonElement | null
+    if (!button) return
+
+    const nextStageIndex = button.dataset.stageIndex
+    if (typeof nextStageIndex === 'string') {
+      const parsed = Number.parseInt(nextStageIndex, 10)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed < copy.stages.length) {
+        stageIndex.value = parsed
+      }
+      return
+    }
+
+    if (button.dataset.action === 'advance') {
+      stageIndex.value = (stageIndex.value + 1) % copy.stages.length
+    }
   })
 
   useVisibleTask$((ctx) => {
@@ -78,11 +93,11 @@ export const ReactBinaryDemo = component$(() => {
   })
 
   return (
-    <div class="react-binary-demo" data-stage={stage.id}>
+    <div class="react-binary-demo" data-stage={stage.id} onClick$={handleClick}>
       <div class="react-binary-header">
         <div class="react-binary-controls">
           <div class="react-binary-title">{copy.title}</div>
-          <button class="react-binary-action" type="button" onClick$={advance}>
+          <button class="react-binary-action" type="button" data-action="advance">
             {actionLabel}
           </button>
         </div>
@@ -106,9 +121,7 @@ export const ReactBinaryDemo = component$(() => {
               aria-selected={isActive}
               aria-controls={panelId}
               tabIndex={isActive ? 0 : -1}
-              onClick$={() => {
-                stageIndex.value = index
-              }}
+              data-stage-index={String(index)}
             >
               <span class="react-binary-step-dot" aria-hidden="true" />
               {item.label}

@@ -1,4 +1,5 @@
-import { component$, render, useVisibleTask$, type RenderResult, type Signal } from '@builder.io/qwik'
+import { component$, render, useSignal, useVisibleTask$, type RenderResult, type Signal } from '@builder.io/qwik'
+import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
 import {
   beginInitialTask,
   failInitialTask,
@@ -126,8 +127,24 @@ const resolveIslandHost = (element: HTMLElement) =>
   element.closest<HTMLElement>(fragmentHostSelector) ?? element
 
 export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIslandsProps) => {
+  const deferredMountReady = useSignal(typeof window !== 'undefined' ? isClientBootIntentReady() : false)
+
   useVisibleTask$(
     (ctx) => {
+      if (deferredMountReady.value) return
+      const cancel = runAfterClientIntentIdle(() => {
+        deferredMountReady.value = true
+      })
+      ctx.cleanup(() => {
+        cancel()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (!ctx.track(() => deferredMountReady.value)) return
       const grid = gridRef.value
       ctx.track(() => gridRef.value)
       if (!grid) return

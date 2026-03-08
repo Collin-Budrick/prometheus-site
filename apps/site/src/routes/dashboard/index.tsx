@@ -2,24 +2,26 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
-import { useLangCopy } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
+import { dashboardLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 
 type ProtectedRouteData = {
   lang: Lang
+  languageSeed: LanguageSeedPayload
 }
 
 export const useDashboardData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
-  return { lang }
+  return { lang, languageSeed: createServerLanguageSeed(lang, dashboardLanguageSelection) }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -27,7 +29,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useDashboardData)
   const lang = data?.lang ?? defaultLang
-  const copy = getUiCopy(lang)
+  const copy = data?.languageSeed.ui
   const description = copy.protectedDescription.replace('{{label}}', copy.navDashboard)
 
   return {
@@ -46,6 +48,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 
 export default component$(() => {
   const data = useDashboardData()
+  useLanguageSeed(data.value.lang, data.value.languageSeed)
   const copy = useLangCopy()
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navDashboard)

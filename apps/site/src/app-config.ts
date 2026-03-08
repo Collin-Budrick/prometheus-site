@@ -1,9 +1,7 @@
-import { normalizeApiBase, type AppConfig } from '@platform/env'
+import { normalizeApiBase, resolveAppConfig, type AppConfig } from '@platform/env'
 
-declare const __PUBLIC_APP_CONFIG__: AppConfig | undefined
-
-if (!__PUBLIC_APP_CONFIG__) {
-  throw new Error('Public app config is not available in this runtime.')
+type PublicAppConfigTarget = typeof globalThis & {
+  __PUBLIC_APP_CONFIG__?: AppConfig | undefined
 }
 
 const DEFAULT_FRAGMENT_VISIBILITY_MARGIN = '60% 0px'
@@ -22,17 +20,47 @@ const hasPublicEnvValue = (key: string) => {
   return typeof value === 'boolean'
 }
 
+const getPublicAppConfig = () => {
+  if (typeof globalThis !== 'object') return undefined
+  const config = (globalThis as PublicAppConfigTarget).__PUBLIC_APP_CONFIG__
+  return config && typeof config === 'object' ? config : undefined
+}
+
+const resolveImplicitWebTransportBase = () => {
+  if (typeof window === 'undefined' || window.location.protocol !== 'https:') {
+    return ''
+  }
+
+  const { hostname, port } = window.location
+  if (!hostname) return ''
+  if (!port || port === '443') {
+    return `https://${hostname}:4444`
+  }
+  return `https://${hostname}:${port}`
+}
+
+const buildFallbackAppConfig = (): AppConfig => {
+  const resolved = resolveAppConfig()
+  return {
+    ...resolved,
+    apiBase: normalizeApiBase(resolved.apiBase) || '/api',
+    webTransportBase: normalizeApiBase(resolved.webTransportBase) || resolveImplicitWebTransportBase()
+  }
+}
+
+const publicAppConfig = getPublicAppConfig() ?? buildFallbackAppConfig()
+
 const fragmentVisibilityMargin = hasPublicEnvValue('VITE_FRAGMENT_VISIBILITY_MARGIN')
-  ? __PUBLIC_APP_CONFIG__.fragmentVisibilityMargin
-  : __PUBLIC_APP_CONFIG__.fragmentVisibilityMargin === '0px'
+  ? publicAppConfig.fragmentVisibilityMargin
+  : publicAppConfig.fragmentVisibilityMargin === '0px'
     ? DEFAULT_FRAGMENT_VISIBILITY_MARGIN
-    : __PUBLIC_APP_CONFIG__.fragmentVisibilityMargin
+    : publicAppConfig.fragmentVisibilityMargin
 
 const fragmentVisibilityThreshold = hasPublicEnvValue('VITE_FRAGMENT_VISIBILITY_THRESHOLD')
-  ? __PUBLIC_APP_CONFIG__.fragmentVisibilityThreshold
-  : __PUBLIC_APP_CONFIG__.fragmentVisibilityThreshold === 0
+  ? publicAppConfig.fragmentVisibilityThreshold
+  : publicAppConfig.fragmentVisibilityThreshold === 0
     ? DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD
-    : __PUBLIC_APP_CONFIG__.fragmentVisibilityThreshold
+    : publicAppConfig.fragmentVisibilityThreshold
 
 const resolveServerApiBase = () => {
   if (typeof process === 'undefined' || typeof process.env !== 'object') return ''
@@ -43,10 +71,10 @@ const resolveServerApiBase = () => {
 
 const isServerRuntime = Boolean(publicEnv?.SSR)
 const serverApiBase = resolveServerApiBase()
-const apiBase = isServerRuntime && serverApiBase ? serverApiBase : __PUBLIC_APP_CONFIG__.apiBase
+const apiBase = isServerRuntime && serverApiBase ? serverApiBase : publicAppConfig.apiBase
 
 export const appConfig: AppConfig = {
-  ...__PUBLIC_APP_CONFIG__,
+  ...publicAppConfig,
   apiBase,
   fragmentVisibilityMargin,
   fragmentVisibilityThreshold

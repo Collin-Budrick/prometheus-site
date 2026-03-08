@@ -15,6 +15,8 @@ export type FragmentCacheStatus = {
   expiresAt?: number
 }
 
+export type FragmentBootMode = 'html' | 'binary' | 'stream'
+
 export type HeadOp =
   | { op: 'title'; value: string }
   | { op: 'meta'; name?: string; property?: string; content: string }
@@ -71,6 +73,7 @@ export type FragmentPlanEntry = {
   renderHtml?: boolean
   dependsOn?: string[]
   runtime?: 'edge' | 'node'
+  bootMode?: FragmentBootMode
   cache?: FragmentCacheStatus
 }
 

@@ -99,6 +99,10 @@ export const buildSpeculationRulesForPlan = (
     origin?: string
     documentRef?: PrefetchDocument | null
     currentPath?: string
+    initialLoad?: boolean
+    saveData?: boolean
+    effectiveType?: string | null
+    maxInitialPrefetchUrls?: number
   }
 ): SpeculationRulesProps | null => {
   const origin = toOrigin(options?.origin)
@@ -115,21 +119,41 @@ export const buildSpeculationRulesForPlan = (
   const currentPath =
     options?.currentPath ??
     (typeof window !== 'undefined' && window.location?.pathname ? window.location.pathname : null)
+  const isInitialLoad = options?.initialLoad === true
+  if (isInitialLoad) {
+    const effectiveType = options?.effectiveType?.trim().toLowerCase() ?? ''
+    if (options?.saveData || effectiveType === 'slow-2g' || effectiveType === '2g') {
+      return null
+    }
+  }
   const shouldSkipCurrentRouteSpeculation = Boolean(
     currentPath && plan.path === currentPath && (knownIds.size > 0 || options?.knownFragments)
   )
+  const isCurrentRoute = Boolean(currentPath && plan.path === currentPath)
 
   const criticalFragments = plan.fragments.filter((fragment) => fragment.critical)
   const fragmentsToPrefetch = criticalFragments.length ? criticalFragments : []
 
-  if (!shouldSkipCurrentRouteSpeculation && fragmentsToPrefetch.length > 0) {
+  if (
+    !isInitialLoad &&
+    !shouldSkipCurrentRouteSpeculation &&
+    fragmentsToPrefetch.length > 0
+  ) {
     urls.add(joinApiPath(absoluteApiBase, `/fragments/plan?path=${encodedPath}`))
     urls.add(joinApiPath(absoluteApiBase, `/fragments/stream?path=${encodedPath}`))
   }
 
   if (!shouldSkipCurrentRouteSpeculation) {
-    fragmentsToPrefetch.forEach(({ id }) => {
-      if (knownIds.has(id)) return
+    const maxInitialPrefetchUrls =
+      typeof options?.maxInitialPrefetchUrls === 'number' && Number.isFinite(options.maxInitialPrefetchUrls)
+        ? Math.max(0, Math.floor(options.maxInitialPrefetchUrls))
+        : 2
+    const missingCriticalFragments = fragmentsToPrefetch.filter(({ id }) => !knownIds.has(id))
+    const fragmentCandidates =
+      isInitialLoad && isCurrentRoute
+        ? missingCriticalFragments.slice(0, maxInitialPrefetchUrls)
+        : missingCriticalFragments
+    fragmentCandidates.forEach(({ id }) => {
       urls.add(joinApiPath(absoluteApiBase, `/fragments?id=${encodeURIComponent(id)}`))
     })
   }

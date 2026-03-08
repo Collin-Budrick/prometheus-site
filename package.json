@@ -34,6 +34,7 @@
     "preview:tauri": "VITE_TAURI=1 VITE_TAURI_TARGET=desktop PROMETHEUS_TAURI_PROFILE=dev PROMETHEUS_DEVICE_HOST=0 bun run scripts/preview.ts",
     "preview:tauri:android": "VITE_TAURI=1 VITE_TAURI_TARGET=android bun run scripts/preview.ts",
     "preview:tauri:ios": "VITE_TAURI=1 VITE_TAURI_TARGET=ios bun run scripts/preview.ts",
+    "bench:initial-route": "bun run scripts/benchmark-initial-route.ts",
     "lint:workspace": "bun x oxlint packages apps/site --config .oxlintrc.json",
     "lint:api": "bun run --cwd packages/platform lint",
     "lint:web": "bun run --cwd apps/site lint",

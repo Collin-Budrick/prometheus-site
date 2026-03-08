@@ -13,6 +13,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
   return (
     <section class="fragment-shell">
       <FragmentShellView
+        shellMode={shell.shellMode}
         hasIntro={shell.hasIntro}
         introMarkdown={props.introMarkdown}
         gridRef={shell.gridRef}
@@ -31,6 +32,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         dynamicCriticalIds={shell.dynamicCriticalIds}
       />
       <FragmentStreamController
+        shellMode={shell.shellMode}
         plan={props.plan}
         initialFragments={shell.initialFragments}
         path={props.path}

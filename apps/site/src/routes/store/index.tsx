@@ -2,8 +2,7 @@ import { component$, useContextProvider } from '@builder.io/qwik'
 import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
-import { useLangCopy } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { resolveRequestOrigin, resolveServerApiBase } from '../../shared/api-base'
 import {
@@ -20,18 +19,20 @@ import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '.
 import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
 import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../shared/store-sort'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
+import { storeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
 
 const featureStoreModule = await import('@features/store/pages/Store')
 const { StoreRoute: FeatureStoreRoute, StoreSkeleton: FeatureStoreSkeleton } = featureStoreModule
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
-  plan: FragmentPlanValue
+  plan: FragmentPlanValue | null
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
   shellState: FragmentShellState | null
   storeSeed: StoreSeed
+  languageSeed: LanguageSeedPayload
 }
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
@@ -141,22 +142,38 @@ const loadStoreSeed = async (
   }
 }
 
-export const useFragmentResource = routeLoader$<FragmentResource | null>(async ({ url, request }) => {
-  if (!storeEnabled) return null
+export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
   const sortParams = resolveStoreSort(url)
   const storeSeed = await loadStoreSeed(request, sortParams)
+  if (!storeEnabled) {
+    return {
+      plan: null,
+      fragments: {} as FragmentPayloadValue,
+      path,
+      lang,
+      shellState: null,
+      storeSeed,
+      languageSeed: createServerLanguageSeed(lang, storeLanguageSelection)
+    }
+  }
 
   try {
     const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
       shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
-      storeSeed
+      storeSeed,
+      languageSeed: createServerLanguageSeed(
+        lang,
+        withFragmentHeaderSelection(storeLanguageSelection, fragmentHeaderIds)
+      )
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for store', error)
@@ -181,7 +198,11 @@ export const useFragmentResource = routeLoader$<FragmentResource | null>(async (
       path,
       lang,
       shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path),
-      storeSeed
+      storeSeed,
+      languageSeed: createServerLanguageSeed(
+        lang,
+        withFragmentHeaderSelection(storeLanguageSelection, [fallbackId])
+      )
     }
   }
 })
@@ -221,7 +242,7 @@ export const StoreSkeleton = storeEnabled ? FeatureStoreSkeleton : StaticRouteSk
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
-  const copy = getUiCopy(lang)
+  const copy = data?.languageSeed.ui
   const title = storeEnabled ? copy.storeTitle : 'Feature disabled'
   const description = storeEnabled ? copy.storeDescription : 'This route is disabled in this site configuration.'
 
@@ -241,11 +262,12 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
+  const location = useLocation()
+  const fragmentResource = useFragmentResource()
+  useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
   if (!storeEnabled) {
     return <DisabledStoreRoute />
   }
-  const location = useLocation()
-  const fragmentResource = useFragmentResource()
   const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
   const cachedData = cachedEntry
     ? {
@@ -254,7 +276,8 @@ export default component$(() => {
         path: cachedEntry.path,
         lang: cachedEntry.lang,
         shellState: null,
-        storeSeed: {}
+        storeSeed: fragmentResource.value.storeSeed,
+        languageSeed: fragmentResource.value.languageSeed
       }
     : null
   const data = fragmentResource.value ?? cachedData

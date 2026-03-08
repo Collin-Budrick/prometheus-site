@@ -1,8 +1,12 @@
 import { Elysia, t } from 'elysia'
 import type { ValkeyClientType } from '@valkey/client'
+import { buildFragmentFrame, buildFragmentHeartbeatFrame } from '@core/fragment/frames'
+import { decodeFragmentKnownVersions } from '@core/fragment/known-versions'
+import { resolveFragmentBootMode } from '@core/fragment/registry'
 import { buildCacheStatus, createFragmentService } from '@core/fragment/service'
 import type { FragmentLang } from '@core/fragment/i18n'
 import { normalizeFragmentLang } from '@core/fragment/i18n'
+import { transformFragmentPayload } from '@core/fragment/binary'
 import type {
   EarlyHint,
   FragmentCacheStatus,
@@ -14,6 +18,7 @@ import type {
 import type { FragmentStore, StoredFragment } from '@core/fragment/store'
 import { buildFragmentCacheKey, createMemoryFragmentStore } from '@core/fragment/store'
 import { normalizePlanPath } from '@core/fragment/planner'
+import { fragmentCssManifest } from '@site/fragment/fragment-css.generated'
 import type { CacheClient } from '../cache'
 import {
   acquireCacheLock,
@@ -32,6 +37,7 @@ import {
   releaseCacheLock,
   writeCache
 } from '../cache-helpers'
+import type { FragmentUpdateBroadcaster, FragmentUpdateEvent } from './fragment-updates'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'
 import { createHash, randomUUID } from 'node:crypto'
@@ -42,17 +48,25 @@ export type FragmentRouteOptions = {
   cache: CacheClient
   service: FragmentService
   store: FragmentStore
+  updates: FragmentUpdateBroadcaster
   enableWebTransportFragments: boolean
   environment: string
 }
 
 type FragmentPlanInitialHtml = Record<string, string>
 type FragmentPlanInitialCachePayload = {
-  initialFragments: FragmentPlanInitialPayloads
+  initialFragments?: FragmentPlanInitialPayloads
+  initialHtml?: FragmentPlanInitialHtml
+}
+type FragmentPlanPayload = FragmentPlanResponse & {
   initialHtml?: FragmentPlanInitialHtml
 }
 
+type FragmentProtocol = 1 | 2
+type FragmentKnownVersions = Record<string, number>
+
 const fragmentStoreTimeoutMs = 300
+const fragmentStreamHeartbeatMs = 5_000
 
 const withValkeyTimeout = async <T>(
   cache: CacheClient,
@@ -141,11 +155,30 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
 const supportedEncodings = ['br', 'gzip', 'deflate'] as const
 type CompressionEncoding = (typeof supportedEncodings)[number]
 const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }
-const buildCompressedFragmentCacheKey = (cacheKey: string, encoding: CompressionEncoding) =>
-  `${cacheKey}:${encoding}`
+const buildCompressedFragmentCacheKey = (
+  cacheKey: string,
+  encoding: CompressionEncoding,
+  protocol: FragmentProtocol
+) => `${cacheKey}:${protocol}:${encoding}`
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
+
+const resolveFragmentProtocol = (value: string | undefined): FragmentProtocol =>
+  value?.trim() === '2' ? 2 : 1
+
+const hasFragmentCssAsset = (id: string) =>
+  Object.prototype.hasOwnProperty.call(fragmentCssManifest, id)
+
+const resolveKnownVersions = (value: string | undefined): FragmentKnownVersions =>
+  decodeFragmentKnownVersions(value)
+
+const isKnownFragmentVersion = (
+  id: string,
+  updatedAt: number | undefined,
+  knownVersions: FragmentKnownVersions,
+  refresh: boolean
+) => !refresh && typeof updatedAt === 'number' && knownVersions[id] === updatedAt
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string')
@@ -186,11 +219,18 @@ const isFragmentPlanEntry = (value: unknown): value is FragmentPlanEntry => {
   if (value.dependsOn !== undefined && !isStringArray(value.dependsOn)) return false
   if (value.runtime !== undefined && value.runtime !== 'edge' && value.runtime !== 'node') return false
   if (value.renderHtml !== undefined && typeof value.renderHtml !== 'boolean') return false
+  if (
+    value.bootMode !== undefined &&
+    value.bootMode !== 'html' &&
+    value.bootMode !== 'binary' &&
+    value.bootMode !== 'stream'
+  )
+    return false
   if (value.cache !== undefined && !isFragmentCacheStatus(value.cache)) return false
   return true
 }
 
-const isFragmentPlanResponse = (value: unknown): value is FragmentPlanResponse => {
+const isFragmentPlanResponse = (value: unknown): value is FragmentPlanPayload => {
   if (!isRecord(value)) return false
   if (typeof value.path !== 'string') return false
   if (typeof value.createdAt !== 'number') return false
@@ -219,12 +259,12 @@ const isFragmentInitialPayloads = (value: unknown): value is FragmentPlanInitial
 
 const isFragmentInitialCachePayload = (value: unknown): value is FragmentPlanInitialCachePayload => {
   if (!isRecord(value)) return false
-  if (!isFragmentInitialPayloads(value.initialFragments)) return false
+  if (value.initialFragments !== undefined && !isFragmentInitialPayloads(value.initialFragments)) return false
   if (value.initialHtml !== undefined) {
     if (!isRecord(value.initialHtml)) return false
     if (!Object.values(value.initialHtml).every((entry) => typeof entry === 'string')) return false
   }
-  return true
+  return value.initialFragments !== undefined || value.initialHtml !== undefined
 }
 
 const buildCacheHeaders = (entry: StoredFragment) => {
@@ -338,7 +378,7 @@ const buildCompressedResponse = (
   requestHeaders: Headers
 ) => {
   const { encoding, varyHeaders } = resolveRequestEncoding(requestHeaders)
-  let body: BodyInit = payload
+  let body: BodyInit = Buffer.from(payload)
   if (encoding !== null) {
     const compressed = compressFragmentStream(createSingleChunkStream(payload), encoding)
     if (compressed.encoding !== null) {
@@ -384,32 +424,53 @@ const compressFragmentPayload = async (
   return readStreamPayload(compressed.stream)
 }
 
-const fragmentResponse = async (entry: StoredFragment, request: Request, cache: CacheClient) => {
+const buildDeliveryPayload = (
+  id: string,
+  entry: StoredFragment,
+  protocol: FragmentProtocol,
+  options: {
+    includeHtml?: boolean
+  } = {}
+) =>
+  protocol === 2
+    ? transformFragmentPayload(entry.payload, {
+        includeCss: !hasFragmentCssAsset(id),
+        includeHtml: options.includeHtml ?? true
+      })
+    : entry.payload.slice()
+
+const fragmentResponse = async (
+  id: string,
+  entry: StoredFragment,
+  request: Request,
+  cache: CacheClient,
+  protocol: FragmentProtocol
+) => {
   const headers = buildCacheHeaders(entry)
-  const body = entry.payload.slice()
+  const body = buildDeliveryPayload(id, entry, protocol)
   const { encoding, varyHeaders } = resolveRequestEncoding(request.headers)
   if (encoding === null) {
-    return new Response(body, { headers })
+    return new Response(Buffer.from(body), { headers })
   }
 
-  const cacheKey = buildCompressedFragmentCacheKey(entry.meta.cacheKey, encoding)
+  const cacheKey = buildCompressedFragmentCacheKey(entry.meta.cacheKey, encoding, protocol)
   const cachedPayload = await readCompressedFragmentPayload(cache, cacheKey)
   if (cachedPayload !== null) {
     headers.set('content-encoding', encoding)
     mergeVaryHeader(headers, varyHeaders)
-    return new Response(cachedPayload, { headers })
+    return new Response(Buffer.from(cachedPayload), { headers })
   }
 
   const compressedPayload = await compressFragmentPayload(body, encoding)
   mergeVaryHeader(headers, varyHeaders)
   if (compressedPayload === null) {
-    return new Response(body, { headers })
+    return new Response(Buffer.from(body), { headers })
   }
 
   headers.set('content-encoding', encoding)
   const ttlSeconds = Math.max(1, Math.ceil(entry.meta.ttl))
   void writeCompressedFragmentPayload(cache, cacheKey, compressedPayload, ttlSeconds)
-  return new Response(compressedPayload, { headers })
+  return new Response(Buffer.from(compressedPayload), { headers })
 }
 
 const streamToAsyncIterable = (stream: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> => ({
@@ -509,7 +570,7 @@ const isTruthyParam = (value: string | undefined) => {
   return truthyValues.has(normalized)
 }
 
-const stripInitialFragments = (plan: FragmentPlanResponse) => {
+const stripInitialFragments = (plan: FragmentPlanPayload) => {
   const { initialFragments: _initialFragments, initialHtml: _initialHtml, ...rest } = plan
   return rest
 }
@@ -533,6 +594,7 @@ const normalizePlanForEtag = (plan: FragmentPlan) => ({
     layout: entry.layout,
     dependsOn: entry.dependsOn ?? [],
     runtime: entry.runtime ?? null,
+    bootMode: entry.bootMode ?? resolveFragmentBootMode(entry),
     renderHtml: entry.renderHtml === false ? false : true,
     cache: normalizeCacheStatus(entry.cache ?? null)
   })),
@@ -591,15 +653,18 @@ const matchesIfNoneMatch = (etag: string, headerValue: string | null) => {
 }
 
 const buildInitialFragments = async (
-  plan: FragmentPlanResponse,
+  plan: FragmentPlanPayload,
   lang: FragmentLang,
   store: FragmentStore,
   service: FragmentService,
+  protocol: FragmentProtocol,
   fragmentsByCacheKey?: Map<string, StoredFragment>
 ): Promise<FragmentPlanInitialCachePayload> => {
-  const { ids, criticalIds } = collectInitialFragmentIds(plan)
-  if (ids.length === 0) {
-    return { initialFragments: {}, initialHtml: {} }
+  const targets = protocol === 2 ? collectBootFragmentTargets(plan) : collectInitialFragmentIds(plan)
+  const ids = targets.ids
+  const htmlIds = 'htmlIds' in targets ? targets.htmlIds : targets.criticalIds
+  if (ids.length === 0 && htmlIds.length === 0) {
+    return {}
   }
   const base64ByCacheKey = new Map<string, string>()
 
@@ -637,6 +702,9 @@ const buildInitialFragments = async (
   const entries = await Promise.all(
     ids.map(async (id) => {
       const { cacheKey, fragment } = await resolveFragmentEntry(id)
+      if (protocol === 2) {
+        return [id, undefined] as const
+      }
       let encoded = base64ByCacheKey.get(cacheKey)
       if (encoded === undefined) {
         encoded = Buffer.from(fragment.payload).toString('base64')
@@ -645,12 +713,16 @@ const buildInitialFragments = async (
       return [id, encoded] as const
     })
   )
-  const initialFragments = entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
-    acc[id] = payload
-    return acc
-  }, {})
-  const htmlIds = criticalIds
-  const htmlEntries = await Promise.all(
+  const initialFragments =
+    protocol === 2
+      ? undefined
+      : entries.reduce<FragmentPlanInitialPayloads>((acc, [id, payload]) => {
+          if (payload) {
+            acc[id] = payload
+          }
+          return acc
+        }, {})
+  const htmlEntries: Array<readonly [string, string | undefined]> = await Promise.all(
     htmlIds.map(async (id) => {
       const { fragment } = await resolveFragmentEntry(id)
       return [id, fragment.html] as const
@@ -660,10 +732,13 @@ const buildInitialFragments = async (
     if (html) acc[id] = html
     return acc
   }, {})
-  return { initialFragments, initialHtml }
+  return {
+    ...(initialFragments && Object.keys(initialFragments).length ? { initialFragments } : {}),
+    ...(Object.keys(initialHtml).length ? { initialHtml } : {})
+  }
 }
 
-function collectInitialFragmentIds(plan: FragmentPlanResponse) {
+function collectInitialFragmentIds(plan: FragmentPlanPayload) {
   const group =
     plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
       ? plan.fetchGroups[0]
@@ -688,8 +763,35 @@ function collectInitialFragmentIds(plan: FragmentPlanResponse) {
   return { ids: Array.from(required), criticalIds, lcpIds }
 }
 
+const collectBootFragmentTargets = (plan: FragmentPlanPayload) => {
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const htmlIds = plan.fragments
+    .filter((entry) => resolveFragmentBootMode(entry) === 'html')
+    .map((entry) => entry.id)
+  const bootSeedIds = plan.fragments
+    .filter((entry) => resolveFragmentBootMode(entry) !== 'stream')
+    .map((entry) => entry.id)
+  const required = new Set<string>()
+  const stack = [...bootSeedIds]
+
+  while (stack.length) {
+    const id = stack.pop()
+    if (!id || required.has(id)) continue
+    required.add(id)
+    const deps = entryById.get(id)?.dependsOn ?? []
+    deps.forEach((dep) => {
+      if (!required.has(dep)) stack.push(dep)
+    })
+  }
+
+  return {
+    ids: Array.from(required),
+    htmlIds
+  }
+}
+
 const prefetchCriticalFragments = async (
-  plan: FragmentPlanResponse,
+  plan: FragmentPlanPayload,
   lang: FragmentLang,
   service: FragmentService,
   fragmentsByCacheKey?: Map<string, StoredFragment>
@@ -705,8 +807,278 @@ const prefetchCriticalFragments = async (
   await Promise.allSettled(pending.map((id) => service.getFragmentEntry(id, { lang })))
 }
 
+const getPlanKnownVersions = (
+  plan: FragmentPlanPayload,
+  knownVersions: FragmentKnownVersions,
+  refresh: boolean
+) =>
+  new Set(
+    plan.fragments
+      .filter((entry) => isKnownFragmentVersion(entry.id, entry.cache?.updatedAt, knownVersions, refresh))
+      .map((entry) => entry.id)
+  )
+
+const concatPayloads = (frames: Uint8Array[]) => {
+  if (!frames.length) return new Uint8Array(0)
+  const total = frames.reduce((sum, frame) => sum + frame.byteLength, 0)
+  const merged = new Uint8Array(total)
+  let offset = 0
+  frames.forEach((frame) => {
+    merged.set(frame, offset)
+    offset += frame.byteLength
+  })
+  return merged
+}
+
+type BuiltFragmentFrame = {
+  id: string
+  frame: Uint8Array
+  updatedAt?: number
+}
+
+const buildFragmentFrames = async (
+  ids: string[],
+  lang: FragmentLang,
+  getFragmentEntry: FragmentService['getFragmentEntry'],
+  protocol: FragmentProtocol,
+  knownVersions: FragmentKnownVersions = {},
+  plan?: FragmentPlanPayload,
+  refresh: boolean = false
+): Promise<BuiltFragmentFrame[]> => {
+  const knownFromPlan = plan ? getPlanKnownVersions(plan, knownVersions, refresh) : new Set<string>()
+  const planEntriesById = new Map(plan?.fragments.map((entry) => [entry.id, entry]) ?? [])
+  const frames = await Promise.all(
+    ids.map(async (id) => {
+      if (knownFromPlan.has(id)) return null
+      const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
+      if (isKnownFragmentVersion(id, entry.updatedAt, knownVersions, refresh)) {
+        return null
+      }
+      const planEntry = planEntriesById.get(id)
+      return {
+        id,
+        updatedAt: entry.updatedAt,
+        frame: buildFragmentFrame(
+          id,
+          buildDeliveryPayload(id, entry, protocol, {
+            includeHtml:
+              planEntry === undefined
+                ? true
+                : resolveFragmentBootMode(planEntry) !== 'html' && planEntry.renderHtml !== false
+          })
+        )
+      } satisfies BuiltFragmentFrame
+    })
+  )
+
+  return frames.reduce<BuiltFragmentFrame[]>((acc, frame) => {
+    if (frame !== null) {
+      acc.push(frame)
+    }
+    return acc
+  }, [])
+}
+
+const rememberKnownFragmentVersions = (
+  knownVersions: FragmentKnownVersions,
+  frames: BuiltFragmentFrame[]
+) => {
+  frames.forEach((frame) => {
+    if (typeof frame.updatedAt === 'number' && Number.isFinite(frame.updatedAt)) {
+      knownVersions[frame.id] = frame.updatedAt
+    }
+  })
+}
+
+const buildFragmentBundle = async (
+  ids: string[],
+  lang: FragmentLang,
+  getFragmentEntry: FragmentService['getFragmentEntry'],
+  protocol: FragmentProtocol,
+  knownVersions: FragmentKnownVersions = {},
+  plan?: FragmentPlanPayload,
+  refresh: boolean = false
+) => {
+  const frames = await buildFragmentFrames(ids, lang, getFragmentEntry, protocol, knownVersions, plan, refresh)
+  return concatPayloads(frames.map((frame) => frame.frame))
+}
+
+const buildFetchGroups = (plan: FragmentPlanPayload) =>
+  plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
+    ? plan.fetchGroups
+    : [plan.fragments.map((entry) => entry.id)]
+
+const createLiveFragmentStream = (options: {
+  path: string
+  lang: FragmentLang
+  protocol: FragmentProtocol
+  knownVersions?: FragmentKnownVersions
+  getFragmentPlan: FragmentService['getFragmentPlan']
+  getFragmentEntry: FragmentService['getFragmentEntry']
+  clearPlanMemo: FragmentService['clearPlanMemo']
+  updates: FragmentUpdateBroadcaster
+  signal?: AbortSignal
+}) => {
+  const {
+    path,
+    lang,
+    protocol,
+    getFragmentPlan,
+    getFragmentEntry,
+    clearPlanMemo,
+    updates,
+    signal
+  } = options
+  const knownVersions: FragmentKnownVersions = { ...(options.knownVersions ?? {}) }
+  const heartbeatFrame = buildFragmentHeartbeatFrame()
+
+  let cleanup = () => {}
+  let closed = false
+  let currentPlan: FragmentPlanPayload | null = null
+  let currentFragmentIds = new Set<string>()
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let unsubscribe = () => {}
+  let queued = Promise.resolve()
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const close = () => {
+        if (closed) return
+        closed = true
+        cleanup()
+        try {
+          controller.close()
+        } catch {
+          // ignore close errors from canceled streams
+        }
+      }
+
+      const fail = (error: unknown) => {
+        if (closed) return
+        closed = true
+        cleanup()
+        controller.error(error)
+      }
+
+      const enqueueFrameGroup = (frames: BuiltFragmentFrame[]) => {
+        if (closed || frames.length === 0) return
+        rememberKnownFragmentVersions(knownVersions, frames)
+        frames.forEach((frame) => {
+          controller.enqueue(frame.frame)
+        })
+      }
+
+      const sendPlan = async (plan: FragmentPlanPayload, refresh: boolean) => {
+        for (const group of buildFetchGroups(plan)) {
+          if (closed || group.length === 0) continue
+          const frames = await buildFragmentFrames(
+            group,
+            lang,
+            getFragmentEntry,
+            protocol,
+            knownVersions,
+            plan,
+            refresh
+          )
+          enqueueFrameGroup(frames)
+        }
+      }
+
+      const runSerial = (task: () => Promise<void>) => {
+        queued = queued
+          .then(async () => {
+            if (closed) return
+            await task()
+          })
+          .catch((error) => {
+            fail(error)
+          })
+      }
+
+      const handleUpdate = async (event: FragmentUpdateEvent) => {
+        if (closed || currentPlan === null) return
+        if (event.type === 'fragment') {
+          if (event.lang !== lang) return
+          if (!currentFragmentIds.has(event.id)) return
+          if (
+            typeof event.updatedAt === 'number' &&
+            Number.isFinite(event.updatedAt) &&
+            knownVersions[event.id] === event.updatedAt
+          ) {
+            return
+          }
+          const frames = await buildFragmentFrames(
+            [event.id],
+            lang,
+            getFragmentEntry,
+            protocol,
+            knownVersions,
+            currentPlan,
+            false
+          )
+          enqueueFrameGroup(frames)
+          return
+        }
+
+        if (event.path !== path) return
+        if (event.lang && event.lang !== lang) return
+        clearPlanMemo(path, lang)
+        const nextPlan = await getFragmentPlan(path, lang)
+        currentPlan = nextPlan
+        currentFragmentIds = new Set(nextPlan.fragments.map((entry) => entry.id))
+        await sendPlan(nextPlan, true)
+      }
+
+      if (signal?.aborted) {
+        close()
+        return
+      }
+
+      const onAbort = () => {
+        close()
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      heartbeatTimer = setInterval(() => {
+        if (closed) return
+        try {
+          controller.enqueue(heartbeatFrame.slice())
+        } catch (error) {
+          fail(error)
+        }
+      }, fragmentStreamHeartbeatMs)
+
+      unsubscribe = updates.subscribe((event) => {
+        runSerial(async () => {
+          await handleUpdate(event)
+        })
+      })
+
+      cleanup = () => {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer)
+          heartbeatTimer = null
+        }
+        unsubscribe()
+        signal?.removeEventListener('abort', onAbort)
+      }
+
+      runSerial(async () => {
+        const plan = await getFragmentPlan(path, lang)
+        currentPlan = plan
+        currentFragmentIds = new Set(plan.fragments.map((entry) => entry.id))
+        await sendPlan(plan, false)
+      })
+    },
+    cancel() {
+      closed = true
+      cleanup()
+    }
+  })
+}
+
 export const createFragmentRoutes = (options: FragmentRouteOptions) => {
-  const { cache, service, store } = options
+  const { cache, service, store, updates } = options
   const allowDevRefresh = options.environment !== 'production'
   const {
     clearPlanMemo,
@@ -721,6 +1093,36 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
   .post(
     '/batch',
     async ({ body, request }) => {
+      const searchParams = new URL(request.url).searchParams
+      const protocol = resolveFragmentProtocol(searchParams.get('protocol') ?? undefined)
+      const knownVersions = resolveKnownVersions(searchParams.get('known') ?? undefined)
+      if (protocol === 2) {
+        const frames = await Promise.all(
+          body.map(async (entry) => {
+            const lang = normalizeFragmentLang(entry.lang)
+            const refresh = Boolean(entry.refresh)
+            const fragment = await getFragmentEntry(entry.id, refresh ? { refresh: true, lang } : { lang })
+            if (isKnownFragmentVersion(entry.id, fragment.updatedAt, knownVersions, refresh)) {
+              return null
+            }
+            return buildFragmentFrame(entry.id, buildDeliveryPayload(entry.id, fragment, protocol))
+          })
+        )
+        const payload = concatPayloads(
+          frames.reduce<Uint8Array[]>((acc, frame) => {
+            if (frame !== null) {
+              acc.push(frame)
+            }
+            return acc
+          }, [])
+        )
+        const headers = new Headers({
+          'content-type': 'application/octet-stream',
+          'cache-control': buildCacheControlHeader(0, 0)
+        })
+        return buildCompressedResponse(payload, headers, request.headers)
+      }
+
       const inflight = new Map<string, Promise<string>>()
 
       const resolvePayload = async (id: string, lang: string, refresh: boolean) => {
@@ -762,7 +1164,11 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
           lang: t.Optional(t.String()),
           refresh: t.Optional(t.Boolean())
         })
-      )
+      ),
+      query: t.Object({
+        protocol: t.Optional(t.String()),
+        known: t.Optional(t.String())
+      })
     }
   )
   .get(
@@ -771,6 +1177,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const rawPath = typeof query.path === 'string' ? query.path : '/'
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+      const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
       const includeInitial = isTruthyParam(typeof query.includeInitial === 'string' ? query.includeInitial : undefined)
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
@@ -852,7 +1259,10 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       }
       let { initialFragments, initialHtml } = resolveInitialCache(cachedInitial)
 
-      if (initialFragments === null) {
+      const needsInitialPayload = protocol === 1 && initialFragments === null
+      const needsInitialHtml = initialHtml === undefined
+
+      if (needsInitialPayload || needsInitialHtml) {
         const lockKey = buildFragmentInitialLockKey(path, lang, etag)
         const lockToken = randomUUID()
         let hasLock = await acquireCacheLock(cache, lockKey, lockToken, initialLockTtlMs)
@@ -860,13 +1270,13 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
           await waitForLock()
           const retryCachedInitial = refresh ? null : await readCache(cache, initialCacheKey)
           ;({ initialFragments, initialHtml } = resolveInitialCache(retryCachedInitial))
-          if (initialFragments === null) {
+          if ((protocol === 1 && initialFragments === null) || initialHtml === undefined) {
             hasLock = await acquireCacheLock(cache, lockKey, lockToken, initialLockTtlMs)
           }
         }
-        if (initialFragments === null) {
+        if ((protocol === 1 && initialFragments === null) || initialHtml === undefined) {
           try {
-            const built = await buildInitialFragments(basePlan, lang, store, service, fragmentsByCacheKey)
+            const built = await buildInitialFragments(basePlan, lang, store, service, protocol, fragmentsByCacheKey)
             initialFragments = built.initialFragments
             initialHtml = built.initialHtml
             await writeCache(
@@ -885,7 +1295,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
 
       const payload: FragmentPlanResponse & { initialHtml?: FragmentPlanInitialHtml } = {
         ...basePlan,
-        initialFragments,
+        ...(protocol === 1 && initialFragments ? { initialFragments } : {}),
         ...(initialHtml && Object.keys(initialHtml).length ? { initialHtml } : {})
       }
       return buildCompressedResponse(
@@ -898,7 +1308,34 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       query: t.Object({
         path: t.Optional(t.String()),
         includeInitial: t.Optional(t.String()),
+        protocol: t.Optional(t.String()),
         refresh: t.Optional(t.String()),
+        lang: t.Optional(t.String())
+      })
+    }
+  )
+  .get(
+    '/bootstrap',
+    async ({ query, request }) => {
+      const rawPath = typeof query.path === 'string' ? query.path : '/'
+      const path = normalizePlanPath(rawPath)
+      const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+      const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
+      const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
+      const plan = await getFragmentPlan(path, lang)
+      const { ids } = collectBootFragmentTargets(plan)
+      const payload = await buildFragmentBundle(ids, lang, getFragmentEntry, protocol, knownVersions, plan)
+      const headers = new Headers({
+        'content-type': 'application/octet-stream',
+        'cache-control': buildCacheControlHeader(0, 0)
+      })
+      return buildCompressedResponse(payload, headers, request.headers)
+    },
+    {
+      query: t.Object({
+        path: t.Optional(t.String()),
+        protocol: t.Optional(t.String()),
+        known: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }
@@ -909,8 +1346,22 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const rawPath = typeof query.path === 'string' ? query.path : '/'
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
-      const encoding = resolveStreamEncoding(request)
-      const stream = await streamFragmentsForPath(path, lang)
+      const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
+      const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
+      const stream =
+        protocol === 2
+          ? createLiveFragmentStream({
+              path,
+              lang,
+              protocol,
+              knownVersions,
+              getFragmentPlan,
+              getFragmentEntry,
+              clearPlanMemo,
+              updates,
+              signal: request.signal
+            })
+          : await streamFragmentsForPath(path, lang)
       const headers = new Headers({
         'content-type': 'application/octet-stream',
         'cache-control': buildCacheControlHeader(0, 0),
@@ -918,6 +1369,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       })
       let body: FragmentStreamBody = stream
       let responseEncoding: CompressionEncoding | null = null
+      const encoding = protocol === 2 ? null : resolveStreamEncoding(request)
       if (encoding !== null) {
         const compressed = compressFragmentStream(stream, encoding)
         body = compressed.stream
@@ -931,13 +1383,15 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
     {
       query: t.Object({
         path: t.Optional(t.String()),
+        protocol: t.Optional(t.String()),
+        known: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }
   )
   .get(
     '/transport',
-    async ({ query }) => {
+    async ({ query, request }) => {
       if (!options.enableWebTransportFragments) {
         return new Response(
           JSON.stringify({
@@ -954,8 +1408,23 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const rawPath = typeof query.path === 'string' ? query.path : '/'
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+      const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
+      const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
       const start = performance.now()
-      const stream = await streamFragmentsForPath(path, lang)
+      const stream =
+        protocol === 2
+          ? createLiveFragmentStream({
+              path,
+              lang,
+              protocol,
+              knownVersions,
+              getFragmentPlan,
+              getFragmentEntry,
+              clearPlanMemo,
+              updates,
+              signal: request.signal
+            })
+          : await streamFragmentsForPath(path, lang)
       const elapsed = performance.now() - start
       void recordLatencySample(cache, 'fragment-transport-init', elapsed)
 
@@ -970,6 +1439,8 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
     {
       query: t.Object({
         path: t.Optional(t.String()),
+        protocol: t.Optional(t.String()),
+        known: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }
@@ -979,17 +1450,19 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
     async ({ query, request }) => {
       const id = typeof query.id === 'string' ? query.id : ''
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+      const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
       if (!id) {
         return new Response('Missing fragment id', { status: 400 })
       }
       const refresh =
         allowDevRefresh && isTruthyParam(typeof query.refresh === 'string' ? query.refresh : undefined)
       const entry = await getFragmentEntry(id, refresh ? { refresh: true, lang } : { lang })
-      return fragmentResponse(entry, request, cache)
+      return fragmentResponse(id, entry, request, cache, protocol)
     },
     {
       query: t.Object({
         id: t.String(),
+        protocol: t.Optional(t.String()),
         refresh: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
@@ -998,7 +1471,8 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
   .get('/:id', async ({ params, query, request }) => {
     const id = params.id
     const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
+    const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
     const entry = await getFragmentEntry(id, { lang })
-    return fragmentResponse(entry, request, cache)
+    return fragmentResponse(id, entry, request, cache, protocol)
   })
 }

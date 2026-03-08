@@ -1,10 +1,9 @@
 import { component$ } from '@builder.io/qwik'
-import { type DocumentHead, type DocumentHeadProps, routeLoader$, useLocation } from '@builder.io/qwik-city'
+import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
+import { loadFragments } from '@core/fragment/server'
 import { siteBrand } from '../config'
-import { FragmentShell, getFragmentShellCacheEntry, readFragmentShellStateFromCookie, type FragmentShellState } from '../fragment/ui'
 import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
-import { useLangCopy } from '../shared/lang-bridge'
 import { appConfig } from '../app-config'
 import type {
   FragmentPayload,
@@ -14,6 +13,9 @@ import type {
   RenderNode
 } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
+import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
+import { resolveServerApiBase } from '../shared/api-base'
+import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
 
@@ -67,29 +69,41 @@ type FragmentResource = {
   fragments: FragmentPayloadValue
   path: string
   lang: Lang
-  shellState: FragmentShellState | null
-  initialHtml?: Record<string, string>
+  languageSeed: LanguageSeedPayload
 }
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
+  const { createServerLanguageSeed } = await import('../lang/server')
   const path = url.pathname || '/'
   const lang = resolveRequestLang(request)
 
   try {
     const {
       plan,
-      fragments,
-      path: planPath,
-      initialHtml
+      fragments: initialFragments,
+      path: planPath
     } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const allFragmentIds = plan.fragments.map((entry) => entry.id)
+    const missingIds = allFragmentIds.filter((id) => !initialFragments[id])
+    const resolvedApiBase = resolveServerApiBase(appConfig.apiBase, request)
+    const fetchedFragments = missingIds.length
+      ? await loadFragments(missingIds, { apiBase: resolvedApiBase }, lang, { protocol: 2 })
+      : {}
+    const fragments = {
+      ...initialFragments,
+      ...fetchedFragments
+    }
 
+    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,
       fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
-      initialHtml
+      languageSeed: createServerLanguageSeed(
+        lang,
+        withFragmentHeaderSelection(homeLanguageSelection, fragmentHeaderIds)
+      )
     }
   } catch (error) {
     console.error('Fragment plan fetch failed', error)
@@ -113,42 +127,23 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       } as FragmentPayloadValue,
       path,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path),
-      initialHtml: undefined
+      languageSeed: createServerLanguageSeed(lang, homeLanguageSelection)
     }
   }
 })
 
-const readInitialHtmlFromPlan = (plan: FragmentPlanValue | undefined) =>
-  (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
-
 export default component$(() => {
-  const location = useLocation()
   const fragmentResource = useFragmentResource()
-  const copy = useLangCopy()
-  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
-  const cachedData = cachedEntry
-    ? {
-        plan: cachedEntry.plan,
-        fragments: cachedEntry.fragments,
-        path: cachedEntry.path,
-        lang: cachedEntry.lang,
-        shellState: null,
-        initialHtml: readInitialHtmlFromPlan(cachedEntry.plan)
-      }
-    : null
-  const data = fragmentResource.value ?? cachedData
+  const data = fragmentResource.value
   if (!data) return null
 
   return (
-    <FragmentShell
+    <StaticHomeRoute
       plan={data.plan}
-      initialFragments={data.fragments}
-      initialHtml={data.initialHtml}
-      path={data.path}
-      initialLang={data.lang}
-      initialShellState={data.shellState ?? undefined}
-      introMarkdown={copy.value.homeIntroMarkdown}
+      fragments={data.fragments}
+      lang={data.lang}
+      introMarkdown={data.languageSeed.ui?.homeIntroMarkdown ?? ''}
+      languageSeed={data.languageSeed}
     />
   )
 })

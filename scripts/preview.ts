@@ -343,6 +343,13 @@ const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
 const previewRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
+const includeRealtimeServices =
+  runtimeCompose.includeOptionalServices ||
+  (!useDeviceHost &&
+    (previewEnableWebTransport === '1' ||
+      previewEnableWebTransportDatagrams === '1' ||
+      previewEnableApiWebTransport === '1' ||
+      previewEnableWebTransportDatagramsServer === '1'))
 
 const normalizeBasePort = (value: string) => {
   try {
@@ -389,7 +396,7 @@ const previewWebTransportBase =
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: previewProject,
-  ...(runtimeCompose.includeOptionalServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
+  ...(includeRealtimeServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,
@@ -498,11 +505,22 @@ const buildNativeBundle = async () => {
       cwd: root,
       env: buildEnv
     })
+  const runStaticHomeBuild = () =>
+    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/build-static-home.ts'], {
+      stdio: 'inherit',
+      cwd: root,
+      env: buildEnv
+    })
   if (!isTauriMode) {
     const clientResult = runViteBuild([])
     if (clientResult.status !== 0) {
       logSpawnFailure('Vite client build', clientResult)
       process.exit(clientResult.status ?? 1)
+    }
+    const staticHomeResult = runStaticHomeBuild()
+    if (staticHomeResult.status !== 0) {
+      logSpawnFailure('Static home build', staticHomeResult)
+      process.exit(staticHomeResult.status ?? 1)
     }
     const ssrResult = runViteBuild(['--ssr', 'src/entry.preview.tsx'])
     if (ssrResult.status !== 0) {
@@ -608,7 +626,7 @@ const buildTargets: BuildTarget[] = [
     inputs: ['infra/caddy/Dockerfile']
   }
 ]
-const optionalBuildTargets: BuildTarget[] = runtimeCompose.includeOptionalServices
+const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
   ? [
       {
         service: 'yjs-signaling',
@@ -661,7 +679,7 @@ if (buildServices.length) {
   }
 }
 
-const optionalServices = runtimeCompose.includeOptionalServices ? runtimeCompose.services.optional : []
+const optionalServices = includeRealtimeServices ? runtimeCompose.services.optional : []
 const previewServices = [...runtimeCompose.services.core, ...runtimeCompose.services.web, ...optionalServices, 'caddy']
 const running = getRunningServices(command, prefix, composeEnv)
 const allRunning = previewServices.every((service) => running.has(service))

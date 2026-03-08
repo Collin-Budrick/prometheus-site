@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/vite-run.ts -- --port 4173",
-    "build": "bun run scripts/vite-run.ts -- build",
-    "build:tauri": "bun run build:fragment-css && VITE_TAURI=1 bun run scripts/vite-run.ts -- build && VITE_TAURI=1 bun run scripts/vite-run.ts -- build --ssr",
+    "build": "bun run scripts/vite-run.ts -- build && bun run scripts/build-static-home.ts",
+    "build:tauri": "bun run build:fragment-css && VITE_TAURI=1 bun run scripts/vite-run.ts -- build && bun run scripts/build-static-home.ts && VITE_TAURI=1 bun run scripts/vite-run.ts -- build --ssr",
     "build:browser-artifact": "bun build ./scripts/browser-artifact.html --compile --target=browser --outfile ./dist/browser-artifact.html",
     "analyze": "VISUALIZE_BUNDLE=1 bun run scripts/vite-run.ts -- build",
-    "preview": "bun run scripts/vite-run.ts -- build && bun run scripts/vite-run.ts -- build --ssr src/entry.preview.tsx && bun run scripts/vite-run.ts -- preview --port 4173",
+    "preview": "bun run scripts/vite-run.ts -- build && bun run scripts/build-static-home.ts && bun run scripts/vite-run.ts -- build --ssr src/entry.preview.tsx && bun run scripts/vite-run.ts -- preview --port 4173",
     "lint": "bun x oxlint ."
   },
   "dependencies": {

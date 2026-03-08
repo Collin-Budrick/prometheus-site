@@ -1,5 +1,5 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { getLanguagePack } from '../lang'
+import { getFragmentTextCopy } from '../lang/client'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { useSharedLangSignal } from '../shared/lang-bridge'
 import { useStoreSeed } from '../shared/store-seed'
@@ -30,6 +30,19 @@ const formatPrice = (value: number) => `$${value.toFixed(2)}`
 
 const cartLayoutCache = new WeakMap<HTMLElement, Map<number, DOMRect>>()
 
+const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
+  if (typeof window === 'undefined') {
+    callback()
+    return () => {}
+  }
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout: timeoutMs })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const handle = window.setTimeout(callback, Math.min(timeoutMs, 250))
+  return () => window.clearTimeout(handle)
+}
+
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? fallback : trimmed
@@ -50,7 +63,7 @@ export const StoreCart = component$<StoreCartProps>(
     const totalRef = useSignal<HTMLElement>()
     const lastTotal = useSignal<number | null>(null)
 
-    const fragmentCopy = useComputed$(() => getLanguagePack(langSignal.value).fragments ?? {})
+    const fragmentCopy = useComputed$(() => getFragmentTextCopy(langSignal.value))
     const copy = fragmentCopy.value
     const resolve = (value: string) => copy?.[value] ?? value
 
@@ -184,9 +197,13 @@ export const StoreCart = component$<StoreCartProps>(
       (ctx) => {
         if (typeof window === 'undefined') return
         ctx.track(() => cartItems.value.map((item) => `${item.id}:${item.qty}`).join(','))
-        void persistStoreCartSnapshot(cartItems.value)
+        const snapshot = [...cartItems.value]
+        const cancelPersist = scheduleIdleTask(() => {
+          void persistStoreCartSnapshot(snapshot)
+        })
+        ctx.cleanup(() => cancelPersist())
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -233,7 +250,7 @@ export const StoreCart = component$<StoreCartProps>(
           cartLayoutCache.delete(list)
         })
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     useVisibleTask$(
@@ -276,7 +293,7 @@ export const StoreCart = component$<StoreCartProps>(
 
         ctx.cleanup(() => window.clearTimeout(timeout))
       },
-      { strategy: 'document-ready' }
+      { strategy: 'document-idle' }
     )
 
     return (

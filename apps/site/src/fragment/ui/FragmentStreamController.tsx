@@ -18,15 +18,36 @@ import { runLangViewTransition } from '../../shared/view-transitions'
 import { appConfig } from '../../app-config'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
+import { shouldHoldStaticHomeStartup } from './fragment-shell-mode'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
+import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
+import type { FragmentShellMode } from './fragment-shell-types'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
 const FRAGMENT_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
 const FRAGMENT_THRESHOLD = appConfig.fragmentVisibilityThreshold
 const FRAGMENT_STREAMING_ENABLED = appConfig.enableFragmentStreaming
 
+type FragmentKnownVersions = Record<string, number>
+
+type FragmentStartupDebugEntry = {
+  at: number
+  kind: 'fetch' | 'stream-start'
+  shellMode: FragmentShellMode
+  startupReady: boolean
+  ids: string[]
+  nonCriticalIds: string[]
+}
+
+declare global {
+  interface Window {
+    __PROM_FRAGMENT_STARTUP_DEBUG__?: FragmentStartupDebugEntry[]
+  }
+}
+
 type FragmentStreamControllerProps = {
+  shellMode: FragmentShellMode
   plan: FragmentPlanValue
   initialFragments: FragmentPayloadValue
   path: string
@@ -42,8 +63,23 @@ type FragmentHmrEventPayload = {
   clearCaches?: boolean
 }
 
+const recordFragmentStartupDebug = (
+  entry: Omit<FragmentStartupDebugEntry, 'at'>
+) => {
+  if (typeof window === 'undefined') return
+  const at = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const nextEntry: FragmentStartupDebugEntry = {
+    at,
+    ...entry
+  }
+  const log = window.__PROM_FRAGMENT_STARTUP_DEBUG__ ?? []
+  log.push(nextEntry)
+  window.__PROM_FRAGMENT_STARTUP_DEBUG__ = log
+}
+
 export const FragmentStreamController = component$(
   ({
+    shellMode,
     plan,
     initialFragments,
     path,
@@ -57,6 +93,22 @@ export const FragmentStreamController = component$(
     const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(initialLang ?? null)
     const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
+    const deferredStartupReady = useSignal(
+      typeof window !== 'undefined' ? isClientBootIntentReady() : false
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        if (deferredStartupReady.value) return
+        const cancel = runAfterClientIntentIdle(() => {
+          deferredStartupReady.value = true
+        })
+        ctx.cleanup(() => {
+          cancel()
+        })
+      },
+      { strategy: 'document-ready' }
+    )
 
     useVisibleTask$(
       (ctx) => {
@@ -79,6 +131,7 @@ export const FragmentStreamController = component$(
         let hmrTimer: number | null = null
         let hmrClearCachesPending = false
         const activeLang = ctx.track(() => langSignal.value)
+        const allowDeferredStartup = ctx.track(() => deferredStartupReady.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
         const refreshIds = new Set<string>()
@@ -97,8 +150,37 @@ export const FragmentStreamController = component$(
           fetchControllers.delete(ctrl)
         }
 
+        const planValue = resolvePlan(plan)
+        if (langChanged) {
+          planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
+        }
+        const entryById = new Map(planValue.fragments.map((entry) => [entry.id, entry]))
+        const normalizePayload = (payload: FragmentPayload): FragmentPayload => {
+          if (payload.cacheUpdatedAt !== undefined) {
+            return payload
+          }
+          const cacheUpdatedAt = entryById.get(payload.id)?.cache?.updatedAt
+          if (typeof cacheUpdatedAt !== 'number') {
+            return payload
+          }
+          return { ...payload, cacheUpdatedAt }
+        }
+        const buildKnownVersions = (): FragmentKnownVersions =>
+          Object.values(fragments.value).reduce<FragmentKnownVersions>((acc, payload) => {
+            const normalized = normalizePayload(payload)
+            if (typeof normalized.cacheUpdatedAt === 'number') {
+              acc[normalized.id] = normalized.cacheUpdatedAt
+            }
+            return acc
+          }, {})
+
         if (!fragments.value || !Object.keys(fragments.value).length) {
-          fragments.value = resolveFragments(initialFragments) ?? {}
+          const resolvedInitial = resolveFragments(initialFragments) ?? {}
+          fragments.value = Object.values(resolvedInitial).reduce<FragmentPayloadMap>((acc, payload) => {
+            const normalized = normalizePayload(payload)
+            acc[normalized.id] = normalized
+            return acc
+          }, {})
         }
 
         if (isPaused) {
@@ -109,17 +191,21 @@ export const FragmentStreamController = component$(
           return
         }
 
-        const planValue = resolvePlan(plan)
-        if (langChanged) {
-          planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
-        }
-        const entryById = new Map(planValue.fragments.map((entry) => [entry.id, entry]))
         const allIds = planValue.fragments.map((entry) => entry.id)
         const staticCriticalIds = new Set(planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id))
+        const criticalIds = Array.from(staticCriticalIds)
         const dynamicCriticalSeed = dynamicCriticalIds?.value ?? []
         const dynamicCriticalSet = new Set<string>()
         const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
         const shouldDeferOffscreen = FRAGMENT_STREAMING_ENABLED && canObserve
+        const hasMissingCriticalFragments = criticalIds.some((id) => !fragments.value[id])
+        const deferFullStartup =
+          shellMode !== 'static-home' && !allowDeferredStartup && !langChanged && !hasMissingCriticalFragments
+        const holdStaticHomeStartup = shouldHoldStaticHomeStartup({
+          shellMode,
+          startupReady: allowDeferredStartup,
+          langChanged
+        })
 
         if (!canObserve) {
           Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
@@ -129,6 +215,15 @@ export const FragmentStreamController = component$(
               applyFragmentEffects(payload)
             }
           })
+        }
+
+        if (deferFullStartup) {
+          status.value = 'idle'
+          ctx.cleanup(() => {
+            active = false
+            dynamicCriticalUpdater.value = null
+          })
+          return
         }
 
         const scheduleIdle = (callback: () => void) => {
@@ -189,16 +284,17 @@ export const FragmentStreamController = component$(
 
         const queuePayload = (payload: FragmentPayload) => {
           if (!active) return
+          const normalized = normalizePayload(payload)
           if (refreshIds.has(payload.id)) {
             refreshIds.delete(payload.id)
             refreshQueue.add(payload.id)
           }
-          if (shouldDeferOffscreen && !isCriticalId(payload.id) && !visibleIds.has(payload.id)) {
-            deferred.set(payload.id, payload)
+          if (shouldDeferOffscreen && !isCriticalId(normalized.id) && !visibleIds.has(normalized.id)) {
+            deferred.set(normalized.id, normalized)
             scheduleIdleRelease()
             return
           }
-          enqueuePayload(payload)
+          enqueuePayload(normalized)
         }
 
         const flushQueued = () => {
@@ -321,6 +417,14 @@ export const FragmentStreamController = component$(
           })
           if (!fetchable.length) return
 
+          recordFragmentStartupDebug({
+            kind: 'fetch',
+            shellMode,
+            startupReady: allowDeferredStartup,
+            ids: fetchable,
+            nonCriticalIds: fetchable.filter((id) => !isCriticalId(id))
+          })
+
           fetchable.forEach((id) => {
             inFlight.add(id)
           })
@@ -348,7 +452,11 @@ export const FragmentStreamController = component$(
 
           if (useBatch) {
             const batchController = registerFetchController()
-            fetchFragmentBatch(batchable, { lang: activeLang, signal: batchController.signal })
+            fetchFragmentBatch(batchable, {
+              lang: activeLang,
+              knownVersions: buildKnownVersions(),
+              signal: batchController.signal
+            })
               .then((payloads) => {
                 Object.values(payloads).forEach(handlePayload)
               })
@@ -391,6 +499,48 @@ export const FragmentStreamController = component$(
           fetchMissing(Array.from(required))
         }
 
+        const cleanupController = () => {
+          active = false
+          dynamicCriticalUpdater.value = null
+          streamController?.abort()
+          fetchControllers.forEach((ctrl) => ctrl.abort())
+          fetchControllers.clear()
+          observer?.disconnect()
+          inFlight.clear()
+          pending.clear()
+          deferred.clear()
+          visibleIds.clear()
+          queued.clear()
+          if (flushHandle !== null) {
+            window.cancelAnimationFrame(flushHandle)
+            flushHandle = null
+          }
+          elementsById.clear()
+          if (hmrTimer) {
+            window.clearTimeout(hmrTimer)
+            hmrTimer = null
+          }
+          if (idleCancel) {
+            idleCancel()
+            idleCancel = null
+          }
+          if (import.meta.hot) {
+            import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
+          }
+          if (!preserveFragmentEffects) {
+            teardownFragmentEffects(Object.keys(fragments.value))
+          }
+        }
+
+        if (holdStaticHomeStartup) {
+          status.value = 'idle'
+          if (hasMissingCriticalFragments) {
+            requestFragments(Array.from(staticCriticalIds))
+          }
+          ctx.cleanup(cleanupController)
+          return
+        }
+
         const promoteDynamicCritical = (ids: string[]) => {
           if (!active || !ids.length) return
           const newlyCritical = ids.filter((id) => entryById.has(id) && !dynamicCriticalSet.has(id))
@@ -414,8 +564,24 @@ export const FragmentStreamController = component$(
         dynamicCriticalUpdater.value = promoteDynamicCritical
 
         if (FRAGMENT_STREAMING_ENABLED && streamController) {
+          recordFragmentStartupDebug({
+            kind: 'stream-start',
+            shellMode,
+            startupReady: allowDeferredStartup,
+            ids: allIds,
+            nonCriticalIds: allIds.filter((id) => !isCriticalId(id))
+          })
           setStreaming()
-          streamFragments(path, (payload) => queuePayload(payload), undefined, streamController.signal, activeLang)
+          streamFragments(
+            path,
+            (payload) => queuePayload(payload),
+            undefined,
+            {
+              signal: streamController.signal,
+              lang: activeLang,
+              knownVersions: buildKnownVersions()
+            }
+          )
             .then(() => {
               if (!active) return
               const missing = allIds.filter((id) => !fragments.value[id] && !pending.has(id) && !deferred.has(id))
@@ -503,36 +669,7 @@ export const FragmentStreamController = component$(
         }
 
         ctx.cleanup(() => {
-          active = false
-          dynamicCriticalUpdater.value = null
-          streamController?.abort()
-          fetchControllers.forEach((ctrl) => ctrl.abort())
-          fetchControllers.clear()
-          observer?.disconnect()
-          inFlight.clear()
-          pending.clear()
-          deferred.clear()
-          visibleIds.clear()
-          queued.clear()
-          if (flushHandle !== null) {
-            window.cancelAnimationFrame(flushHandle)
-            flushHandle = null
-          }
-          elementsById.clear()
-          if (hmrTimer) {
-            window.clearTimeout(hmrTimer)
-            hmrTimer = null
-          }
-          if (idleCancel) {
-            idleCancel()
-            idleCancel = null
-          }
-          if (import.meta.hot) {
-            import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
-          }
-          if (!preserveFragmentEffects) {
-            teardownFragmentEffects(Object.keys(fragments.value))
-          }
+          cleanupController()
         })
       },
       { strategy: 'document-ready' }
@@ -540,6 +677,7 @@ export const FragmentStreamController = component$(
 
     useVisibleTask$(
       (ctx) => {
+        if (!deferredStartupReady.value) return
         const ids = ctx.track(() => dynamicCriticalIds?.value ?? [])
         if (!ids.length) return
         dynamicCriticalUpdater.value?.(ids)

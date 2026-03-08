@@ -1,6 +1,6 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { effect } from '@preact/signals-core'
-import { getLanguagePack } from '../lang'
+import { getPreactIslandCopy } from '../lang/client'
 import { lang } from '../shared/lang-store'
 
 type PreactIslandProps = {
@@ -22,7 +22,7 @@ export const PreactIsland = component$(({ label }: PreactIslandProps) => {
       const target = host.value
       if (!target || !active) return
 
-      const getCopy = (value: string) => getLanguagePack(value).demos.preactIsland
+      const getCopy = (value: string) => getPreactIslandCopy(value)
 
       const useLangValue = () => {
         const [value, setValue] = useState(lang.value)

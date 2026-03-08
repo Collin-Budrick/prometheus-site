@@ -3,10 +3,12 @@ import { FragmentCard, FragmentMarkdownBlock } from '@prometheus/ui'
 import type { FragmentPayloadMap } from '../types'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
-import type { FragmentDragState, SlottedEntry } from './fragment-shell-types'
+import { isStaticHomeShellMode } from './fragment-shell-mode'
+import type { FragmentDragState, FragmentShellMode, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { type FragmentInitialStage, readFragmentStableHeight, writeFragmentStableHeight } from './initial-settle'
 import { applyHeaderOverride } from './header-overrides'
+import { requiresTreeRenderer } from './tree-render'
 import {
   GRIDSTACK_CELL_HEIGHT,
   GRIDSTACK_MARGIN,
@@ -23,6 +25,7 @@ type FragmentShellCopy = {
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
 type FragmentShellViewProps = {
+  shellMode: FragmentShellMode
   hasIntro: boolean
   introMarkdown?: string
   gridRef: Signal<HTMLDivElement | undefined>
@@ -43,6 +46,7 @@ type FragmentShellViewProps = {
 
 export const FragmentShellView = component$((props: FragmentShellViewProps) => {
   const {
+    shellMode,
     hasIntro,
     introMarkdown,
     gridRef,
@@ -60,6 +64,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     dragState,
     dynamicCriticalIds
   } = props
+  const isStaticHome = isStaticHomeShellMode(shellMode)
 
   useVisibleTask$(
     (ctx) => {
@@ -185,6 +190,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                 closeLabel={copy.value.fragmentClose}
                 markdown={introMarkdown ?? ''}
                 size="big"
+                disableMotion={isStaticHome}
               />
             </div>
           </div>
@@ -199,12 +205,13 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const renderNode = shouldOverrideHeaders
             ? applyHeaderOverride(fragment!.tree, headerCopy!)
             : fragment?.tree
+          const renderTreeOnly = requiresTreeRenderer(renderNode)
           const allowHtml = entry?.renderHtml !== false
           const html = fragment?.html?.trim()
           const fallbackHtml = entry ? initialHtml?.[entry.id]?.trim() : null
-          const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders)
+          const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders && !renderTreeOnly)
           const useFallbackHtml = Boolean(
-            allowHtml && fallbackHtml && !fragment && !shouldOverrideHeaders
+            allowHtml && fallbackHtml && !html && !shouldOverrideHeaders && !renderTreeOnly
           )
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
@@ -276,24 +283,24 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       expandedId={expandedId}
                       layoutTick={layoutTick}
                       closeLabel={copy.value.fragmentClose}
+                      disableMotion={isStaticHome}
                       fragmentLoaded={hasLoadedContent}
                       fragmentHasCss={fragmentHasCss}
                       fragmentStage={fragmentStage}
                       reservedHeight={reservedHeight}
                       revealLocked={true}
                       critical={isCritical}
-                      expandable={entry.expandable}
+                      expandable={isStaticHome ? false : entry.expandable}
                       fullWidth={entry.fullWidth}
+                      draggable={!isStaticHome}
                       dragState={dragState}
                     >
-                      {fragment ? (
-                        useHtml ? (
-                          <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
-                        ) : (
-                          <FragmentRenderer node={renderNode ?? fragment.tree} />
-                        )
+                      {useHtml ? (
+                        <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
                       ) : useFallbackHtml ? (
                         <div class="fragment-html" dangerouslySetInnerHTML={fallbackHtml ?? ''} />
+                      ) : fragment ? (
+                        <FragmentRenderer node={renderNode ?? fragment.tree} />
                       ) : (
                         <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                           <div class="loader" aria-hidden="true" />

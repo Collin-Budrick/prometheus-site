@@ -3,8 +3,7 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../app-config'
-import { useLangCopy } from '../../shared/lang-bridge'
-import { getUiCopy } from '../../shared/ui-copy'
+import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -22,6 +21,7 @@ import {
   type ProfilePayload
 } from '../../shared/profile-storage'
 import profileStyles from './profile.css?inline'
+import { profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 
 type ProfileData = {
   user: {
@@ -32,6 +32,7 @@ type ProfileData = {
   }
   lang: Lang
   localProfile: ProfilePayload | null
+  languageSeed: LanguageSeedPayload
 }
 
 const rgbToHex = (color: ProfileColor) => {
@@ -94,13 +95,19 @@ const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
 }
 
 export const useProfileData = routeLoader$<ProfileData>(async ({ request, redirect }) => {
+  const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
   }
   const localProfile = readLocalProfileFromCookie(request.headers.get('cookie'))
-  return { user: session.user, lang, localProfile }
+  return {
+    user: session.user,
+    lang,
+    localProfile,
+    languageSeed: createServerLanguageSeed(lang, profileLanguageSelection)
+  }
 })
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
@@ -108,7 +115,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useProfileData)
   const lang = data?.lang ?? defaultLang
-  const copy = getUiCopy(lang)
+  const copy = data?.languageSeed.ui
   const description = copy.protectedDescription.replace('{{label}}', copy.navProfile)
 
   return {
@@ -128,6 +135,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 export default component$(() => {
   useStyles$(profileStyles)
   const data = useProfileData()
+  useLanguageSeed(data.value.lang, data.value.languageSeed)
   const copy = useLangCopy()
   const user = data.value.user
   const localProfile = data.value.localProfile

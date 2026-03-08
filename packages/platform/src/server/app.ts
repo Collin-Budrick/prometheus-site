@@ -26,6 +26,7 @@ import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } fr
 import type { RateLimiter } from '../rate-limit'
 import { resolveBooleanFlag } from '../runtime'
 import { createPlatformServer, type PlatformServerContext } from './bun'
+import { createFragmentUpdateBroadcaster } from './fragment-updates'
 import { createFragmentRoutes, createFragmentStore } from './fragments'
 
 type FeatureFlags = {
@@ -148,6 +149,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
   let storeValkeyClient: CacheClient['client'] | null = null
   let storeValkeyReady = false
   let storeValkeyListenersAttached = false
+  const fragmentUpdates = createFragmentUpdateBroadcaster()
 
   const resolveStoreValkey = (cache: CacheClient) => {
     if (featureFlags.store && storeValkeyClient === null) {
@@ -185,13 +187,17 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     const fragmentStore = createFragmentStore(cache)
     const fragmentService = createFragmentService({
       store: fragmentStore,
-      createTranslator: options.fragment?.createTranslator
+      createTranslator: options.fragment?.createTranslator,
+      onFragmentRendered: ({ id, lang, entry }) => {
+        fragmentUpdates.notifyFragment({ id, lang, updatedAt: entry.updatedAt })
+      }
     })
 
     const fragmentRoutes = createFragmentRoutes({
       cache,
       service: fragmentService,
       store: fragmentStore,
+      updates: fragmentUpdates,
       enableWebTransportFragments: runtime.enableWebTransportFragments,
       environment: platformConfig.environment
     })
@@ -228,6 +234,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       storeRealtimeHandler = (event: StoreRealtimeEvent) => {
         const payload = JSON.stringify(event)
         void invalidateStoreItemsCache(storeValkey, isStoreValkeyReady)
+        fragmentUpdates.notifyPath('/store')
         if (!isStoreValkeyReady()) return
         void (async () => {
           try {

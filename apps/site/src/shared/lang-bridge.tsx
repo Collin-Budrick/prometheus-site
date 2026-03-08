@@ -9,6 +9,8 @@ import {
   useVisibleTask$,
   type Signal
 } from '@builder.io/qwik'
+import { seedLanguageResources } from '../lang/client'
+import type { LanguageSeedPayload } from '../lang/selection'
 import { getUiCopy } from './ui-copy'
 import { initLang, lang, subscribeLang, type Lang } from './lang-store'
 
@@ -47,6 +49,26 @@ export const useProvideLangSignal = (initialLang?: Lang) => {
   const langSignal = useLangSignal(initialLang)
   useContextProvider(LangSignalContext, langSignal)
   return langSignal
+}
+
+export const useLanguageSeed = (
+  seededLang: Lang | undefined,
+  payload: LanguageSeedPayload | null | undefined,
+  options: { full?: boolean } = {}
+) => {
+  if (seededLang && payload) {
+    seedLanguageResources(seededLang, payload, options)
+  }
+
+  useVisibleTask$(
+    (ctx) => {
+      const langValue = ctx.track(() => seededLang)
+      const nextPayload = ctx.track(() => payload)
+      if (!langValue || !nextPayload) return
+      seedLanguageResources(langValue, nextPayload, options)
+    },
+    { strategy: 'document-ready' }
+  )
 }
 
 type LangProviderProps = {

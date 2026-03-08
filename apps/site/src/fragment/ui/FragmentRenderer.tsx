@@ -1,11 +1,21 @@
-import { Resource, component$, useResource$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type { Component } from '@builder.io/qwik'
+import { $, Resource, component$, noSerialize, useResource$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import type { Component, NoSerialize, QRL } from '@builder.io/qwik'
 import type { RenderNode } from '@core/fragments'
 import { sanitizeAttributes } from '@core/fragments'
+import {
+  getPlannerDemoCopy,
+  getPreactIslandCopy,
+  getReactBinaryDemoCopy,
+  getUiCopy,
+  getWasmRendererDemoCopy
+} from '../../lang/client'
+import { HomeDemoPreview, type HomeDemoKind } from '../../components/HomeDemoPreview'
 import { StoreStream } from '../../components/StoreStream'
 import { StoreCreateForm } from '../../components/StoreCreateForm'
 import { StoreCart } from '../../components/StoreCart'
 import { ContactInvites } from '../../components/ContactInvites'
+import { useSharedLangSignal } from '../../shared/lang-bridge'
+import type { Lang } from '../../shared/lang-store'
 import {
   beginInitialTask,
   failInitialTask,
@@ -67,6 +77,45 @@ const loadWasmRendererDemo: LazyComponentLoader<Record<string, never>> = () =>
 
 const loadPlannerDemo: LazyComponentLoader<Record<string, never>> = () =>
   import('../../components/PlannerDemo').then((mod) => mod.PlannerDemo)
+
+const loadHomeDemoComponent = (kind: HomeDemoKind): Promise<Component<any>> => {
+  switch (kind) {
+    case 'preact-island':
+      return loadPreactIsland()
+    case 'react-binary':
+      return loadReactBinaryDemo()
+    case 'wasm-renderer':
+      return loadWasmRendererDemo()
+    case 'planner':
+      return loadPlannerDemo()
+  }
+}
+
+type HomeDemoPreviewProps = {
+  kind: HomeDemoKind
+  activating: boolean
+  lang: Lang
+  onActivate$: QRL<() => void>
+}
+
+const renderHomeDemoPreview = ({ kind, activating, lang, onActivate$ }: HomeDemoPreviewProps) => {
+  const ui = getUiCopy(lang)
+  return (
+    <HomeDemoPreview
+      kind={kind}
+      ui={{
+        demoActivate: ui.demoActivate,
+        demoActivating: ui.demoActivating
+      }}
+      planner={getPlannerDemoCopy(lang)}
+      wasmRenderer={getWasmRendererDemoCopy(lang)}
+      reactBinary={getReactBinaryDemoCopy(lang)}
+      preactIsland={getPreactIslandCopy(lang)}
+      activating={activating}
+      onActivate$={onActivate$}
+    />
+  )
+}
 
 const LazyFragmentComponent = component$<{
   loader: LazyComponentLoader<any>
@@ -145,25 +194,84 @@ const LazyFragmentComponent = component$<{
   )
 })
 
+const HomeDemoActivationBoundary = component$<{
+  kind: HomeDemoKind
+  label?: string
+}>(({ kind, label }) => {
+  const langSignal = useSharedLangSignal()
+  const active = useSignal(false)
+  const loadState = useSignal<'idle' | 'pending' | 'ready' | 'error'>('idle')
+  const resolvedComponent = useSignal<NoSerialize<Component<any>> | null>(null)
+  const handleActivate = $(() => {
+    if (loadState.value === 'pending') return
+    if (loadState.value === 'error') {
+      resolvedComponent.value = null
+      loadState.value = 'idle'
+    }
+    active.value = true
+  })
+
+  useVisibleTask$(
+    async (ctx) => {
+      const isActive = ctx.track(() => active.value)
+      const state = ctx.track(() => loadState.value)
+      let cancelled = false
+      ctx.cleanup(() => {
+        cancelled = true
+      })
+
+      if (!isActive || state === 'pending' || state === 'ready') {
+        return
+      }
+      loadState.value = 'pending'
+
+      try {
+        const component = await loadHomeDemoComponent(kind)
+        if (cancelled) return
+        resolvedComponent.value = noSerialize(component)
+        loadState.value = 'ready'
+      } catch (error) {
+        if (cancelled) return
+        active.value = false
+        loadState.value = 'error'
+        console.error(`Failed to load home demo component: ${kind}`, error)
+      }
+    },
+    { strategy: 'document-ready' }
+  )
+
+  const ResolvedComponent = resolvedComponent.value as Component<any> | null
+  if (loadState.value === 'ready' && ResolvedComponent) {
+    return kind === 'preact-island' ? <ResolvedComponent label={label} /> : <ResolvedComponent />
+  }
+
+  return renderHomeDemoPreview({
+    kind,
+    activating: loadState.value === 'pending',
+    lang: langSignal.value,
+    onActivate$: handleActivate
+  })
+})
+
 export const FragmentRenderer = component$(({ node }: NodeProps) => {
   if (node.type === 'text') {
     return <>{node.text ?? ''}</>
   }
 
   if (node.tag === 'preact-island') {
-    return <LazyFragmentComponent loader={loadPreactIsland} props={{ label: node.attrs?.label }} />
+    return <HomeDemoActivationBoundary kind="preact-island" label={node.attrs?.label} />
   }
 
   if (node.tag === 'react-binary-demo') {
-    return <LazyFragmentComponent loader={loadReactBinaryDemo} />
+    return <HomeDemoActivationBoundary kind="react-binary" />
   }
 
   if (node.tag === 'wasm-renderer-demo') {
-    return <LazyFragmentComponent loader={loadWasmRendererDemo} />
+    return <HomeDemoActivationBoundary kind="wasm-renderer" />
   }
 
   if (node.tag === 'planner-demo') {
-    return <LazyFragmentComponent loader={loadPlannerDemo} />
+    return <HomeDemoActivationBoundary kind="planner" />
   }
 
   if (node.tag === 'store-stream') {
