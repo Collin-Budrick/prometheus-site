@@ -5,9 +5,8 @@ import {
   getStaticHomeReactBinaryDemoCopy,
   getStaticHomeWasmRendererDemoCopy
 } from './home-copy-store'
-import { ensureHomeDemoActiveStyles } from '../components/home-demo-active-styles'
 
-type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
+export type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 
 type ActivateHomeDemoOptions = {
   root: Element
@@ -15,7 +14,7 @@ type ActivateHomeDemoOptions = {
   props: Record<string, unknown>
 }
 
-type HomeDemoActivationResult = {
+export type HomeDemoActivationResult = {
   cleanup: () => void
 }
 
@@ -839,7 +838,6 @@ export const activateHomeDemo = async ({
   kind,
   props
 }: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult> => {
-  ensureHomeDemoActiveStyles()
   const element = getRootElement(root)
 
   switch (kind) {

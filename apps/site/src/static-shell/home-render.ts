@@ -1,6 +1,7 @@
 import { h, renderToHtml, t } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
 import type {
+  FragmentHeaderCopy,
   PlannerDemoCopy,
   PreactIslandCopy,
   ReactBinaryDemoCopy,
@@ -16,7 +17,37 @@ export type HomeStaticCopyBundle = {
   preactIsland: PreactIslandCopy
 }
 
+export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island' | 'react' | 'dock' | 'unknown'
+export type HomeStaticRenderMode = 'rich' | 'shell'
+
+export type HomeStaticRenderOptions = {
+  mode?: HomeStaticRenderMode
+  fragmentId?: string
+  fragmentHeaders?: Record<string, FragmentHeaderCopy>
+}
+
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
+
+const HOME_FRAGMENT_KIND_BY_ID: Record<string, HomeStaticFragmentKind> = {
+  'fragment://page/home/manifest@v1': 'manifest',
+  'fragment://page/home/planner@v1': 'planner',
+  'fragment://page/home/ledger@v1': 'ledger',
+  'fragment://page/home/island@v1': 'island',
+  'fragment://page/home/react@v1': 'react',
+  'fragment://page/home/dock@v1': 'dock'
+}
+
+const joinMeta = (values: string[]) =>
+  values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(' \u00b7 ')
+
+const normalizeHeaderMeta = (value?: string | string[]) => {
+  if (!value) return ''
+  return Array.isArray(value) ? joinMeta(value) : value
+}
 
 const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   class: `home-demo-compact home-demo-compact--${kind}`,
@@ -26,48 +57,30 @@ const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
 })
 
-const buildActivateButton = (kind: DemoKind, label: string) =>
-  h(
-    'button',
-    {
-      class: 'home-demo-compact-action',
-      type: 'button',
-      'data-demo-activate': 'true',
-      'data-demo-kind': kind
-    },
-    [t(label)]
-  )
+const demoShellAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
+  ...demoRootAttrs(kind, props),
+  class: `home-demo-compact home-demo-compact--${kind} home-fragment-shell home-fragment-shell--${kind}`
+})
 
 const buildCompactDemoNode = (
   kind: DemoKind,
   title: string,
   summary: string,
   badges: string[],
-  copy: HomeStaticCopyBundle,
   props?: Record<string, string>
-) => {
-  const meta = badges
-    .filter((value) => value.trim().length > 0)
-    .slice(0, 3)
-    .join(' · ')
-
-  return h('div', demoRootAttrs(kind, props), [
-    h('div', { class: 'home-demo-compact-header' }, [
-      h('div', { class: 'home-demo-compact-kicker' }, [t(title)]),
-      buildActivateButton(kind, copy.ui.demoActivate)
-    ]),
+) =>
+  h('div', demoRootAttrs(kind, props), [
+    h('div', { class: 'home-demo-compact-header' }, [h('div', { class: 'home-demo-compact-kicker' }, [t(title)])]),
     h('p', { class: 'home-demo-compact-copy' }, [t(summary)]),
-    h('p', { class: 'home-demo-compact-meta' }, [t(meta)])
+    h('p', { class: 'home-demo-compact-meta' }, [t(joinMeta(badges))])
   ])
-}
 
 const buildPlannerPreviewNode = (copy: HomeStaticCopyBundle) =>
   buildCompactDemoNode(
     'planner',
     copy.planner.title,
     copy.planner.steps[0]?.hint || copy.planner.waiting,
-    [copy.planner.labels.dependencies, copy.planner.labels.cache, copy.planner.labels.runtime],
-    copy
+    [copy.planner.labels.dependencies, copy.planner.labels.cache, copy.planner.labels.runtime]
   )
 
 const buildWasmPreviewNode = (copy: HomeStaticCopyBundle) =>
@@ -79,8 +92,7 @@ const buildWasmPreviewNode = (copy: HomeStaticCopyBundle) =>
       copy.wasmRenderer.footer.edgeSafe,
       copy.wasmRenderer.footer.deterministic,
       copy.wasmRenderer.footer.htmlUntouched
-    ],
-    copy
+    ]
   )
 
 const buildReactBinaryPreviewNode = (copy: HomeStaticCopyBundle) => {
@@ -89,8 +101,7 @@ const buildReactBinaryPreviewNode = (copy: HomeStaticCopyBundle) => {
     'react-binary',
     copy.reactBinary.title,
     stage.hint,
-    [stage.label, copy.reactBinary.footer.hydrationSkipped, copy.reactBinary.footer.binaryStream],
-    copy
+    [stage.label, copy.reactBinary.footer.hydrationSkipped, copy.reactBinary.footer.binaryStream]
   )
 }
 
@@ -100,9 +111,97 @@ const buildPreactIslandPreviewNode = (copy: HomeStaticCopyBundle, label?: string
     label || copy.preactIsland.label,
     copy.preactIsland.activeSub,
     [copy.preactIsland.countdown, '1:00', copy.preactIsland.ready],
-    copy,
     label ? { label } : undefined
   )
+
+const getShellHeader = (
+  fragmentId: string,
+  fragmentHeaders: Record<string, FragmentHeaderCopy> | undefined,
+  fallbackTitle: string,
+  fallbackDescription: string
+): FragmentHeaderCopy => ({
+  heading: fragmentHeaders?.[fragmentId]?.heading ?? 'h2',
+  metaLine: fragmentHeaders?.[fragmentId]?.metaLine,
+  title: fragmentHeaders?.[fragmentId]?.title || fallbackTitle,
+  description: fragmentHeaders?.[fragmentId]?.description || fallbackDescription
+})
+
+const buildDemoShellNode = (
+  kind: DemoKind,
+  header: FragmentHeaderCopy,
+  summaryMeta: string[],
+  props?: Record<string, string>
+) =>
+  h('div', demoShellAttrs(kind, props), [
+    ...(normalizeHeaderMeta(header.metaLine)
+      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      : []),
+    h(header.heading ?? 'h2', null, [t(header.title)]),
+    ...(header.description ? [h('p', null, [t(header.description)])] : []),
+    h('div', { class: 'home-fragment-shell-footer' }, [h('p', { class: 'home-fragment-shell-meta' }, [t(joinMeta(summaryMeta))])])
+  ])
+
+const buildDockShellNode = (header: FragmentHeaderCopy) =>
+  h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
+    ...(normalizeHeaderMeta(header.metaLine)
+      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      : []),
+    h(header.heading ?? 'h2', null, [t(header.title)]),
+    ...(header.description ? [h('p', null, [t(header.description)])] : []),
+    h('p', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['GitHub', 'Google Drive', 'Notion', 'WhatsApp']))])
+  ])
+
+export const getHomeStaticFragmentKind = (fragmentId?: string): HomeStaticFragmentKind =>
+  (fragmentId ? HOME_FRAGMENT_KIND_BY_ID[fragmentId] : null) ?? 'unknown'
+
+const buildHomeStaticShellNode = (
+  fragmentId: string,
+  copy: HomeStaticCopyBundle,
+  fragmentHeaders?: Record<string, FragmentHeaderCopy>
+) => {
+  switch (getHomeStaticFragmentKind(fragmentId)) {
+    case 'planner':
+      return buildDemoShellNode(
+        'planner',
+        getShellHeader(
+          fragmentId,
+          fragmentHeaders,
+          copy.planner.title,
+          copy.planner.steps[0]?.hint || copy.planner.waiting
+        ),
+        [copy.planner.labels.dependencies, copy.planner.labels.cache, copy.planner.labels.runtime]
+      )
+    case 'ledger':
+      return buildDemoShellNode(
+        'wasm-renderer',
+        getShellHeader(fragmentId, fragmentHeaders, copy.wasmRenderer.title, copy.wasmRenderer.subtitle),
+        [
+          copy.wasmRenderer.footer.edgeSafe,
+          copy.wasmRenderer.footer.deterministic,
+          copy.wasmRenderer.footer.htmlUntouched
+        ]
+      )
+    case 'island':
+      return buildDemoShellNode(
+        'preact-island',
+        getShellHeader(fragmentId, fragmentHeaders, copy.preactIsland.label, copy.preactIsland.activeSub),
+        [copy.preactIsland.countdown, '1:00', copy.preactIsland.ready],
+        copy.preactIsland.label ? { label: copy.preactIsland.label } : undefined
+      )
+    case 'react': {
+      const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
+      return buildDemoShellNode(
+        'react-binary',
+        getShellHeader(fragmentId, fragmentHeaders, copy.reactBinary.title, stage.hint),
+        [stage.label, copy.reactBinary.footer.hydrationSkipped, copy.reactBinary.footer.binaryStream]
+      )
+    }
+    case 'dock':
+      return buildDockShellNode(getShellHeader(fragmentId, fragmentHeaders, 'Server-only dock.', ''))
+    default:
+      return null
+  }
+}
 
 const replaceDemoNodes = (node: RenderNode, copy: HomeStaticCopyBundle): RenderNode => {
   if (node.type !== 'element') return { ...node }
@@ -118,5 +217,17 @@ const replaceDemoNodes = (node: RenderNode, copy: HomeStaticCopyBundle): RenderN
   }
 }
 
-export const renderHomeStaticFragmentHtml = (node: RenderNode, copy: HomeStaticCopyBundle) =>
-  renderToHtml(replaceDemoNodes(node, copy))
+export const renderHomeStaticFragmentHtml = (
+  node: RenderNode,
+  copy: HomeStaticCopyBundle,
+  options: HomeStaticRenderOptions = {}
+) => {
+  if (options.mode === 'shell' && options.fragmentId) {
+    const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
+    if (shellNode) {
+      return renderToHtml(shellNode)
+    }
+  }
+
+  return renderToHtml(replaceDemoNodes(node, copy))
+}

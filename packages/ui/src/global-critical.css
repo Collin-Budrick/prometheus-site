@@ -645,6 +645,35 @@ body {
   outline-offset: 2px;
 }
 
+.home-fragment-shell {
+  gap: 0.875rem;
+}
+
+.fragment-card-static-home .home-fragment-shell {
+  margin-top: 0;
+}
+
+.home-fragment-shell-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-fragment-shell-meta {
+  margin: 0;
+  color: rgb(var(--muted));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.home-fragment-shell .home-demo-compact-action {
+  flex: none;
+}
+
 .layout-shell[data-static-route='home'] .fragment-slot {
   contain: layout;
 }
@@ -653,10 +682,40 @@ body {
   contain: layout paint;
 }
 
-.layout-shell[data-static-route='home'] .fragment-card:not([data-critical='true']):not([data-variant='text']) {
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='manifest'] {
+  contain: layout paint;
+  contain-intrinsic-size: auto var(--fragment-card-small-height);
+}
+
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='planner'] {
+  contain: layout paint;
+  contain-intrinsic-size: auto var(--fragment-card-big-height);
+}
+
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='ledger'] {
   content-visibility: auto;
   contain: layout paint;
-  contain-intrinsic-size: auto 380px;
+  contain-intrinsic-size: auto var(--fragment-card-tall-height);
+}
+
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='island'],
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='react'],
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home
+  > .fragment-card[data-static-home-fragment-kind='dock'] {
+  content-visibility: auto;
+  contain: layout paint;
+  contain-intrinsic-size: auto var(--fragment-card-small-height);
 }
 
 .dock-shell {
@@ -788,6 +847,11 @@ body {
   }
 
   .home-demo-compact-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-fragment-shell-footer {
     flex-direction: column;
     align-items: stretch;
   }

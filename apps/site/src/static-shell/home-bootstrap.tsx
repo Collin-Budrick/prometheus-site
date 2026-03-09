@@ -5,13 +5,18 @@ import {
   seedStaticHomeCopy
 } from './home-copy-store'
 import {
-  patchStaticHomeFragmentCard,
-  streamHomeFragments
+  activateHomeDemo,
+  type HomeDemoActivationResult,
+  type HomeDemoKind
+} from './home-demo-activate'
+import {
+  createStaticHomePatchQueue,
+  observeStaticHomePatchVisibility,
+  streamHomeFragments,
+  type StaticHomePatchQueue
 } from './home-stream'
 import type { StaticShellSeed } from './seed'
 import {
-  STATIC_FRAGMENT_CARD_ATTR,
-  STATIC_FRAGMENT_LOCKED_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
@@ -56,14 +61,10 @@ type HomeControllerState = {
   streamAbort: AbortController | null
   streamRetryTimer: number
   cleanupFns: Array<() => void>
-  demoRenders: Map<Element, { cleanup: () => void }>
+  demoRenders: Map<Element, HomeDemoActivationResult>
+  pendingDemoRoots: Set<Element>
+  patchQueue: StaticHomePatchQueue | null
   destroyed: boolean
-}
-
-type HomeDemoRootSnapshot = {
-  className: string
-  innerHTML: string
-  attrs: Record<string, string | null>
 }
 
 const moonIconMarkup = `<svg class="theme-toggle-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z"></path></svg>`
@@ -274,69 +275,84 @@ const parseDemoProps = (value: string | null) => {
   }
 }
 
-const captureDemoRootSnapshot = (root: HTMLElement): HomeDemoRootSnapshot => ({
-  className: root.className,
-  innerHTML: root.innerHTML,
-  attrs: {
-    'data-home-preview': root.getAttribute('data-home-preview'),
-    'data-home-demo-active': root.getAttribute('data-home-demo-active'),
-    'data-preview': root.getAttribute('data-preview'),
-    'data-stage': root.getAttribute('data-stage'),
-    'data-running': root.getAttribute('data-running')
-  }
-})
+export type HomeDemoController = Pick<HomeControllerState, 'demoRenders' | 'pendingDemoRoots' | 'destroyed'>
 
-const restoreDemoRootSnapshot = (root: HTMLElement, snapshot: HomeDemoRootSnapshot) => {
-  root.className = snapshot.className
-  for (const [name, value] of Object.entries(snapshot.attrs)) {
-    if (value === null) {
-      root.removeAttribute(name)
-    } else {
-      root.setAttribute(name, value)
-    }
-  }
-  root.innerHTML = snapshot.innerHTML
+type ActivateHomeDemosOptions = {
+  activate?: (options: {
+    root: Element
+    kind: HomeDemoKind
+    props: Record<string, unknown>
+  }) => Promise<HomeDemoActivationResult>
+  root?: ParentNode
 }
 
-const bindDemoActivation = (controller: HomeControllerState, root: ParentNode = document) => {
-  root.querySelectorAll<HTMLButtonElement>('[data-demo-activate]').forEach((button) => {
-    if (button.dataset.demoBound === 'true') return
-    button.dataset.demoBound = 'true'
-    const handleClick = async () => {
-      const root = button.closest<HTMLElement>('[data-home-demo-root]')
-      const card = button.closest<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`)
-      const kind = button.dataset.demoKind ?? root?.dataset.demoKind ?? ''
-      if (!root || !card || !kind) return
-      if (controller.demoRenders.has(root)) return
+const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
+  value === 'planner' || value === 'wasm-renderer' || value === 'react-binary' || value === 'preact-island'
 
-      button.disabled = true
-      card.setAttribute(STATIC_FRAGMENT_LOCKED_ATTR, 'true')
-      const snapshot = captureDemoRootSnapshot(root)
-      try {
-        const { activateHomeDemo } = await import('./home-demo-activate')
-        if (controller.destroyed) return
-        const props = parseDemoProps(root.getAttribute('data-demo-props'))
-        const result = await activateHomeDemo({
-          root,
-          kind: kind as 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island',
-          props
-        })
-        controller.demoRenders.set(root, result)
-      } catch (error) {
-        console.error(`Failed to activate home demo: ${kind}`, error)
-        restoreDemoRootSnapshot(root, snapshot)
-        bindDemoActivation(controller, root)
-        card.removeAttribute(STATIC_FRAGMENT_LOCKED_ATTR)
-        button.disabled = false
-      }
-    }
+const resolveHomeDemoKind = (root: Element) => {
+  const kind = (root as HTMLElement).dataset.demoKind ?? (root as HTMLElement).dataset.homeDemoRoot
+  return isHomeDemoKind(kind) ? kind : null
+}
 
-    button.addEventListener('click', handleClick)
-    controller.cleanupFns.push(() => {
-      button.removeEventListener('click', handleClick)
-      delete button.dataset.demoBound
-    })
+const isConnectedHomeDemoRoot = (root: Element) =>
+  (root as Element & { isConnected?: boolean }).isConnected !== false
+
+export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
+  Array.from(controller.demoRenders.entries()).forEach(([root, result]) => {
+    if (isConnectedHomeDemoRoot(root)) return
+    result.cleanup()
+    controller.demoRenders.delete(root)
   })
+
+  Array.from(controller.pendingDemoRoots).forEach((root) => {
+    if (isConnectedHomeDemoRoot(root)) return
+    controller.pendingDemoRoots.delete(root)
+  })
+}
+
+export const activateHomeDemos = async (
+  controller: HomeDemoController,
+  options: ActivateHomeDemosOptions = {}
+) => {
+  if (controller.destroyed) return
+
+  pruneDetachedHomeDemos(controller)
+
+  const root = options.root ?? (typeof document !== 'undefined' ? document : null)
+  if (!root) return
+
+  const activate = options.activate ?? activateHomeDemo
+  const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
+
+  for (const demoRoot of demoRoots) {
+    if (controller.destroyed) return
+    if (demoRoot.getAttribute('data-home-demo-active') === 'true') continue
+    if (controller.demoRenders.has(demoRoot) || controller.pendingDemoRoots.has(demoRoot)) continue
+
+    const kind = resolveHomeDemoKind(demoRoot)
+    if (!kind) continue
+
+    controller.pendingDemoRoots.add(demoRoot)
+
+    try {
+      const result = await activate({
+        root: demoRoot,
+        kind,
+        props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
+      })
+
+      if (controller.destroyed || !isConnectedHomeDemoRoot(demoRoot)) {
+        result.cleanup()
+        continue
+      }
+
+      controller.demoRenders.set(demoRoot, result)
+    } catch (error) {
+      console.error(`Failed to activate home demo: ${kind}`, error)
+    } finally {
+      controller.pendingDemoRoots.delete(demoRoot)
+    }
+  }
 }
 
 const applyShellLanguageSeed = (lang: Lang, shellSeed: LanguageSeedPayload, routeSeed: LanguageSeedPayload) => {
@@ -495,13 +511,7 @@ const startDeferredStream = async (controller: HomeControllerState) => {
       lang: controller.lang,
       signal: streamAbort.signal,
       onFragment: (payload) => {
-        patchStaticHomeFragmentCard({
-          lang: controller.lang,
-          payload,
-          onPatchedBody: (body) => {
-            bindDemoActivation(controller, body)
-          }
-        })
+        controller.patchQueue?.enqueue(payload)
       },
       onError: () => {
         updateFragmentStatus(controller.lang, 'error')
@@ -526,10 +536,12 @@ const destroyController = async (controller: HomeControllerState | null) => {
   controller.destroyed = true
   stopLiveHomeConnections(controller)
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
+  controller.patchQueue = null
   for (const result of controller.demoRenders.values()) {
     result.cleanup()
   }
   controller.demoRenders.clear()
+  controller.pendingDemoRoots.clear()
 }
 
 const swapStaticHomeLanguage = async (nextLang: Lang) => {
@@ -587,13 +599,28 @@ export const bootstrapStaticHome = async () => {
     streamRetryTimer: 0,
     cleanupFns: [],
     demoRenders: new Map(),
+    pendingDemoRoots: new Set(),
+    patchQueue: null,
     destroyed: false
   }
   activeController = controller
 
   await syncHomeDockIfNeeded(controller)
+  controller.patchQueue = createStaticHomePatchQueue({
+    lang: controller.lang,
+    onPatchedBody: (body) => {
+      pruneDetachedHomeDemos(controller)
+      void activateHomeDemos(controller, { root: body })
+    }
+  })
+  controller.cleanupFns.push(() => controller.patchQueue?.destroy())
+  controller.cleanupFns.push(
+    observeStaticHomePatchVisibility({
+      queue: controller.patchQueue
+    })
+  )
   bindShellControls(controller)
-  bindDemoActivation(controller)
+  await activateHomeDemos(controller)
   updateFragmentStatus(controller.lang, 'idle')
 
   const handlePageHide = () => {

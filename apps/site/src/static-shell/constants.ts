@@ -21,6 +21,8 @@ export const STATIC_FRAGMENT_CARD_ATTR = 'data-static-fragment-card'
 export const STATIC_FRAGMENT_BODY_ATTR = 'data-static-fragment-body'
 export const STATIC_FRAGMENT_VERSION_ATTR = 'data-fragment-version'
 export const STATIC_FRAGMENT_LOCKED_ATTR = 'data-static-fragment-locked'
+export const STATIC_HOME_FRAGMENT_KIND_ATTR = 'data-static-home-fragment-kind'
+export const STATIC_HOME_PATCH_STATE_ATTR = 'data-static-home-patch-state'
 export const STATIC_PAGE_ROOT_ATTR = 'data-static-page-root'
 
 export const STATIC_SHELL_HEADER_REGION = 'header'

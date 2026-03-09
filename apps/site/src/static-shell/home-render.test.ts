@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
+import { h, t } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
+import type { FragmentHeaderCopy } from '../lang'
 import {
   emptyPlannerDemoCopy,
   emptyPreactIslandCopy,
@@ -113,10 +115,19 @@ const copy: HomeStaticCopyBundle = {
   }
 }
 
+const fragmentHeaders: Record<string, FragmentHeaderCopy> = {
+  'fragment://page/home/planner@v1': {
+    heading: 'h2',
+    metaLine: 'fragment planner',
+    title: 'Planner executes before rendering.',
+    description: 'Dependency resolution, cache hit checks, and runtime selection happen up front.'
+  }
+}
+
 const render = (node: RenderNode) => renderHomeStaticFragmentHtml(node, copy)
 
 describe('renderHomeStaticFragmentHtml', () => {
-  it('renders compact demo previews for static home fragments', () => {
+  it('renders compact demo previews for rich home fragments', () => {
     const html = render({
       type: 'element',
       tag: 'section',
@@ -133,13 +144,40 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('data-demo-kind="wasm-renderer"')
     expect(html).toContain('data-demo-kind="react-binary"')
     expect(html).toContain('data-demo-kind="preact-island"')
-    expect(html).toContain('data-demo-activate="true"')
-    expect(html).toContain('Dependencies · Cache · Runtime')
+    expect(html).not.toContain('data-demo-activate')
+    expect(html).not.toContain('Activate demo')
+    expect(html).toContain('Dependencies \u00b7 Cache \u00b7 Runtime')
     expect(html).not.toContain('home-demo-compact-badge-wrap')
     expect(html).not.toContain('planner-demo-grid')
     expect(html).not.toContain('wasm-demo-grid')
     expect(html).not.toContain('react-binary-track')
     expect(html).not.toContain('preact-island-stage')
+  })
+
+  it('renders lightweight shell markup for non-critical home cards', () => {
+    const html = renderHomeStaticFragmentHtml(
+      h('section', null, [
+        h('div', { class: 'meta-line' }, [t('fragment planner')]),
+        h('h2', null, [t('Planner executes before rendering.')]),
+        h('p', null, [t('Full fragment description that should be collapsed in shell mode.')]),
+        { type: 'element', tag: 'planner-demo', attrs: {}, children: [] },
+        h('div', { class: 'matrix' }, [])
+      ]),
+      copy,
+      {
+        mode: 'shell',
+        fragmentId: 'fragment://page/home/planner@v1',
+        fragmentHeaders
+      }
+    )
+
+    expect(html).toContain('home-fragment-shell')
+    expect(html).toContain('fragment planner')
+    expect(html).toContain('Planner executes before rendering.')
+    expect(html).toContain('data-demo-kind="planner"')
+    expect(html).not.toContain('data-demo-activate')
+    expect(html).not.toContain('matrix')
+    expect(html).not.toContain('planner-demo-grid')
   })
 
   it('preserves demo props on compact preact previews', () => {

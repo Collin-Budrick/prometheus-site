@@ -16,9 +16,12 @@ import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_FRAGMENT_KIND_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
   getStaticShellRouteConfig
 } from './constants'
+import { getHomeStaticFragmentKind } from './home-render'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -37,6 +40,11 @@ const serializeJson = (value: unknown) =>
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
 export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragments, lang, introMarkdown, languageSeed }) => {
+  if (!plan) {
+    return null
+  }
+
+  const fragmentMap = fragments ?? {}
   const routeConfig = getStaticShellRouteConfig(plan.path)
   const copyBundle = {
     ui: {
@@ -63,13 +71,14 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
 
   const entries = plan.fragments
   const leftCount = Math.ceil(entries.length / 2)
+  const fragmentHeaders = languageSeed.fragmentHeaders ?? {}
 
   const inlineStyles = entries
-    .map((entry) => fragments[entry.id])
+    .map((entry) => fragmentMap[entry.id])
     .filter((fragment) => fragment?.css && !getFragmentCssHref(fragment.id)) as Array<{ id: string; css: string }>
 
   const fragmentVersions = entries.reduce<Record<string, number>>((acc, entry) => {
-    const value = fragments[entry.id]?.cacheUpdatedAt
+    const value = fragmentMap[entry.id]?.cacheUpdatedAt
     if (typeof value === 'number' && Number.isFinite(value)) {
       acc[entry.id] = value
     }
@@ -102,8 +111,15 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       </div>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {entries.map((entry, index) => {
-          const fragment = fragments[entry.id]
-          const html = fragment ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle) : ''
+          const fragment = fragmentMap[entry.id]
+          const fragmentKind = getHomeStaticFragmentKind(entry.id)
+          const html = fragment
+            ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
+                mode: fragmentKind === 'manifest' ? 'rich' : 'shell',
+                fragmentId: entry.id,
+                fragmentHeaders
+              })
+            : ''
           const reservedHeight =
             typeof entry.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
               ? Math.max(0, entry.layout.minHeight)
@@ -132,7 +148,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
               style={style}
               {...{
                 [STATIC_FRAGMENT_CARD_ATTR]: 'true',
-                [STATIC_FRAGMENT_VERSION_ATTR]: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined
+                [STATIC_FRAGMENT_VERSION_ATTR]: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
+                [STATIC_HOME_FRAGMENT_KIND_ATTR]: fragmentKind,
+                [STATIC_HOME_PATCH_STATE_ATTR]: fragmentKind === 'manifest' ? 'ready' : 'pending'
               }}
             >
               <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: entry.id }}>
