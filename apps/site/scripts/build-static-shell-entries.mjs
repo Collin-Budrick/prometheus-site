@@ -29,7 +29,6 @@ for (const entrypoint of entrypoints) {
       'browser',
       '--format',
       'esm',
-      '--splitting',
       '--minify',
       '--root',
       '.'

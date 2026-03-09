@@ -2,12 +2,16 @@ import type { Lang } from '../lang'
 import { getUiCopy, seedLanguageResources } from '../lang/client'
 import type { StaticShellSeed, StaticIslandRouteData, StaticIslandRouteKind } from './seed'
 import {
-  STATIC_DOCK_ROOT_ATTR,
   STATIC_ISLAND_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { createStaticIslandRouteData } from './island-static-data'
 import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
+import {
+  staticDockRootNeedsSync,
+  syncStaticDockRootState,
+  writeStaticShellSeed
+} from './seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -18,12 +22,12 @@ import {
 type Theme = 'light' | 'dark'
 
 type StaticIslandController = {
+  isAuthenticated: boolean
   lang: Lang
   path: string
   snapshotKey: string
   authPolicy: StaticShellSeed['authPolicy']
   cleanupFns: Array<() => void>
-  dockCleanup: { cleanup: () => void } | null
   islandCleanup: { cleanup: () => void } | null
   destroyed: boolean
   routeData: StaticIslandRouteData
@@ -94,28 +98,31 @@ const persistStaticLang = (value: Lang) => {
   setLangCookie(value)
 }
 
-const requestIdle = (callback: () => void, timeout: number) => {
-  const idleApi = window as Window & {
-    requestIdleCallback?: (cb: () => void, options?: { timeout?: number }) => number
-    cancelIdleCallback?: (handle: number) => void
+const syncStaticIslandDockIfNeeded = async (
+  controller: Pick<StaticIslandController, 'isAuthenticated' | 'lang' | 'path'>
+) => {
+  const dockState = {
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    lang: controller.lang
   }
 
-  if (typeof idleApi.requestIdleCallback === 'function') {
-    const handle = idleApi.requestIdleCallback(callback, { timeout })
-    return () => {
-      idleApi.cancelIdleCallback?.(handle)
-    }
+  if (!staticDockRootNeedsSync(dockState)) {
+    syncStaticDockRootState(dockState)
+    return
   }
 
-  const handle = window.setTimeout(callback, timeout)
-  return () => window.clearTimeout(handle)
-}
+  const dockRoot = syncStaticDockRootState(dockState)
+  if (!dockRoot) return
 
-const mountDock = async (lang: Lang, currentPath: string, options?: { skipAuthUpgrade?: boolean }) => {
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  if (!dockRoot) return null
-  const { mountStaticDock } = await import('./home-dock-dom')
-  return mountStaticDock({ root: dockRoot, lang, currentPath, skipAuthUpgrade: options?.skipAuthUpgrade })
+  const { syncStaticDockMarkup } = await import('./home-dock-dom')
+  syncStaticDockMarkup({
+    root: dockRoot,
+    lang: controller.lang,
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    force: true
+  })
 }
 
 const refreshThemeButton = (lang: Lang) => {
@@ -156,6 +163,7 @@ const swapStaticIslandLanguage = async (nextLang: Lang) => {
     await destroyController(activeController)
     activeController = null
     applyStaticShellSnapshot(snapshot)
+    writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
     await bootstrapStaticIslandShell()
@@ -247,57 +255,6 @@ const bindShellControls = (controller: StaticIslandController) => {
   refreshThemeButton(controller.lang)
 }
 
-const scheduleDockMount = (
-  controller: StaticIslandController,
-  delayMs = 12000,
-  options?: { skipAuthUpgrade?: boolean }
-) => {
-  const startMount = () => {
-    if (controller.destroyed || controller.dockCleanup) return
-    void mountDock(controller.lang, controller.path, options)
-      .then((dockCleanup) => {
-        if (!dockCleanup) return
-        if (controller.destroyed) {
-          dockCleanup.cleanup()
-          return
-        }
-        controller.dockCleanup = dockCleanup
-      })
-      .catch((error) => {
-        if (!controller.destroyed) {
-          console.error('Failed to mount static dock controller:', error)
-        }
-      })
-  }
-
-  if (delayMs <= 0) {
-    startMount()
-    return
-  }
-
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  const handleInteraction = () => {
-    cleanupInteractionListeners()
-    cancelIdle()
-    startMount()
-  }
-  const cleanupInteractionListeners = () => {
-    dockRoot?.removeEventListener('pointerenter', handleInteraction)
-    dockRoot?.removeEventListener('focusin', handleInteraction)
-    dockRoot?.removeEventListener('touchstart', handleInteraction)
-  }
-  dockRoot?.addEventListener('pointerenter', handleInteraction)
-  dockRoot?.addEventListener('focusin', handleInteraction)
-  dockRoot?.addEventListener('touchstart', handleInteraction)
-  controller.cleanupFns.push(cleanupInteractionListeners)
-
-  const idleTimer = window.setTimeout(() => {
-    cleanupInteractionListeners()
-    startMount()
-  }, delayMs)
-  controller.cleanupFns.push(() => window.clearTimeout(idleTimer))
-}
-
 const activateIslandController = async (
   controller: StaticIslandController,
   user: { id?: string; name?: string; email?: string }
@@ -333,10 +290,6 @@ const activateIslandController = async (
 const destroyController = async (controller: StaticIslandController | null) => {
   if (!controller) return
   controller.destroyed = true
-  if (controller.dockCleanup) {
-    controller.dockCleanup.cleanup()
-    controller.dockCleanup = null
-  }
   if (controller.islandCleanup) {
     controller.islandCleanup.cleanup()
     controller.islandCleanup = null
@@ -354,7 +307,8 @@ const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
           redirectProtectedStaticRouteToLogin(controller.lang)
           return
         }
-        scheduleDockMount(controller, 0)
+        controller.isAuthenticated = true
+        await syncStaticIslandDockIfNeeded(controller)
         await activateIslandController(controller, session.user)
       } catch (error) {
         if (!controller.destroyed) {
@@ -374,6 +328,7 @@ export const bootstrapStaticIslandShell = async () => {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
       applyStaticShellSnapshot(snapshot)
+      writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticIslandShell()
@@ -389,18 +344,19 @@ export const bootstrapStaticIslandShell = async () => {
 
   const routeData = readRouteData(shellSeed)
   const controller: StaticIslandController = {
+    isAuthenticated: shellSeed.isAuthenticated ?? false,
     lang: shellSeed.lang,
     path: shellSeed.currentPath || window.location.pathname,
     snapshotKey: shellSeed.snapshotKey,
     authPolicy: shellSeed.authPolicy,
     cleanupFns: [],
-    dockCleanup: null,
     islandCleanup: null,
     destroyed: false,
     routeData
   }
   activeController = controller
 
+  await syncStaticIslandDockIfNeeded(controller)
   bindShellControls(controller)
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -409,7 +365,7 @@ export const bootstrapStaticIslandShell = async () => {
       scheduleProtectedAuthUpgrade(controller)
       return
     }
-    scheduleDockMount(controller, 0)
+    void syncStaticIslandDockIfNeeded(controller)
   }
 
   window.addEventListener('pageshow', handlePageShow)
@@ -425,5 +381,4 @@ export const bootstrapStaticIslandShell = async () => {
     return
   }
 
-  scheduleDockMount(controller)
 }

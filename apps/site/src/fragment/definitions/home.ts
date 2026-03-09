@@ -133,12 +133,12 @@ export const homeFragments: FragmentPlanEntry[] = [
   },
   {
     id: 'fragment://page/home/planner@v1',
-    critical: true,
+    critical: false,
     layout: { column: 'span 5', size: 'big', minHeight: 640 }
   },
   {
     id: 'fragment://page/home/ledger@v1',
-    critical: true,
+    critical: false,
     layout: { column: 'span 7', size: 'tall', minHeight: 904 }
   },
   {

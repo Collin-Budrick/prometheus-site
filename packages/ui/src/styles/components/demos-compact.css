@@ -25,6 +25,12 @@
     color: rgb(var(--muted));
   }
 
+  .home-demo-compact-meta {
+    @apply font-mono text-[10px] uppercase tracking-[0.35em];
+    margin: 0;
+    color: rgb(var(--muted));
+  }
+
   .home-demo-compact-badges {
     display: flex;
     flex-wrap: wrap;
@@ -54,10 +60,7 @@
     background-color: rgb(var(--surface) / 0.96);
     border-color: rgb(var(--accent) / 0.28);
     color: rgb(var(--accent-strong));
-    transition:
-      transform 160ms ease,
-      border-color 160ms ease,
-      background-color 160ms ease;
+    transition: transform 160ms ease;
   }
 
   .home-demo-compact-action:hover {

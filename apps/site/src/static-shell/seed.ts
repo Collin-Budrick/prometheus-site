@@ -8,6 +8,7 @@ export type StaticShellSeed = {
   languageSeed: LanguageSeedPayload
   bootstrapMode: StaticShellBootstrapMode
   authPolicy: StaticShellAuthPolicy
+  isAuthenticated: boolean
   snapshotKey: string
 }
 

@@ -134,6 +134,8 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('data-demo-kind="react-binary"')
     expect(html).toContain('data-demo-kind="preact-island"')
     expect(html).toContain('data-demo-activate="true"')
+    expect(html).toContain('Dependencies · Cache · Runtime')
+    expect(html).not.toContain('home-demo-compact-badge-wrap')
     expect(html).not.toContain('planner-demo-grid')
     expect(html).not.toContain('wasm-demo-grid')
     expect(html).not.toContain('react-binary-track')

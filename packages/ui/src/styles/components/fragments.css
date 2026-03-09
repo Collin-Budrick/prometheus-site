@@ -1105,7 +1105,6 @@
 
   .inline-list span {
     @apply bg-amber-400 rounded-full w-2.5 h-2.5;
-    box-shadow: 0 0 12px rgba(249, 115, 22, 0.35);
   }
 
   .matrix {

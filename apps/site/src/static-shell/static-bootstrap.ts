@@ -4,7 +4,6 @@ import type { StaticFragmentRouteData } from './fragment-static-data'
 import type { StaticShellSeed } from './seed'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
 import {
-  STATIC_DOCK_ROOT_ATTR,
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
@@ -15,6 +14,12 @@ import {
 } from './constants'
 import { createStaticFragmentRouteData } from './static-fragment-model'
 import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
+import { scheduleStaticShellTask } from './scheduler'
+import {
+  staticDockRootNeedsSync,
+  syncStaticDockRootState,
+  writeStaticShellSeed
+} from './seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -26,6 +31,7 @@ import { shouldRetryFragmentStream } from './fragment-stream-error'
 type Theme = 'light' | 'dark'
 
 type StaticFragmentController = {
+  isAuthenticated: boolean
   lang: Lang
   path: string
   snapshotKey: string
@@ -33,7 +39,6 @@ type StaticFragmentController = {
   streamAbort: AbortController | null
   streamRetryTimer: number
   cleanupFns: Array<() => void>
-  dockCleanup: { cleanup: () => void } | null
   destroyed: boolean
   routeData: StaticFragmentRouteData
 }
@@ -110,23 +115,6 @@ const persistStaticLang = (value: Lang) => {
   setLangCookie(value)
 }
 
-const requestIdle = (callback: () => void, timeout: number) => {
-  const idleApi = window as Window & {
-    requestIdleCallback?: (cb: () => void, options?: { timeout?: number }) => number
-    cancelIdleCallback?: (handle: number) => void
-  }
-
-  if (typeof idleApi.requestIdleCallback === 'function') {
-    const handle = idleApi.requestIdleCallback(callback, { timeout })
-    return () => {
-      idleApi.cancelIdleCallback?.(handle)
-    }
-  }
-
-  const handle = window.setTimeout(callback, timeout)
-  return () => window.clearTimeout(handle)
-}
-
 const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error') => {
   const element = document.querySelector<HTMLElement>('[data-static-fragment-status]')
   if (!element) return
@@ -148,11 +136,31 @@ const loadFragmentStreamRuntime = () => {
   return fragmentStreamRuntimePromise
 }
 
-const mountDock = async (lang: Lang, currentPath: string, options?: { skipAuthUpgrade?: boolean }) => {
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  if (!dockRoot) return null
-  const { mountStaticDock } = await import('./home-dock-dom')
-  return mountStaticDock({ root: dockRoot, lang, currentPath, skipAuthUpgrade: options?.skipAuthUpgrade })
+const syncStaticFragmentDockIfNeeded = async (
+  controller: Pick<StaticFragmentController, 'isAuthenticated' | 'lang' | 'path'>
+) => {
+  const dockState = {
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    lang: controller.lang
+  }
+
+  if (!staticDockRootNeedsSync(dockState)) {
+    syncStaticDockRootState(dockState)
+    return
+  }
+
+  const dockRoot = syncStaticDockRootState(dockState)
+  if (!dockRoot) return
+
+  const { syncStaticDockMarkup } = await import('./home-dock-dom')
+  syncStaticDockMarkup({
+    root: dockRoot,
+    lang: controller.lang,
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    force: true
+  })
 }
 
 const refreshThemeButton = (lang: Lang) => {
@@ -187,6 +195,7 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
     await destroyController(activeController)
     activeController = null
     applyStaticShellSnapshot(snapshot)
+    writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
     await bootstrapStaticFragmentShell()
@@ -287,57 +296,6 @@ const stopConnections = (controller: StaticFragmentController) => {
     window.clearTimeout(controller.streamRetryTimer)
     controller.streamRetryTimer = 0
   }
-  if (controller.dockCleanup) {
-    controller.dockCleanup.cleanup()
-    controller.dockCleanup = null
-  }
-}
-
-const scheduleDockMount = (controller: StaticFragmentController, delayMs = 12000) => {
-  const startMount = () => {
-    if (controller.destroyed || controller.dockCleanup) return
-    void mountDock(controller.lang, controller.path)
-      .then((dockCleanup) => {
-        if (!dockCleanup) return
-        if (controller.destroyed) {
-          dockCleanup.cleanup()
-          return
-        }
-        controller.dockCleanup = dockCleanup
-      })
-      .catch((error) => {
-        if (!controller.destroyed) {
-          console.error('Failed to mount static dock controller:', error)
-        }
-      })
-  }
-
-  if (delayMs <= 0) {
-    startMount()
-    return
-  }
-
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  const handleInteraction = () => {
-    cleanupInteractionListeners()
-    cancelIdle()
-    startMount()
-  }
-  const cleanupInteractionListeners = () => {
-    dockRoot?.removeEventListener('pointerenter', handleInteraction)
-    dockRoot?.removeEventListener('focusin', handleInteraction)
-    dockRoot?.removeEventListener('touchstart', handleInteraction)
-  }
-  dockRoot?.addEventListener('pointerenter', handleInteraction)
-  dockRoot?.addEventListener('focusin', handleInteraction)
-  dockRoot?.addEventListener('touchstart', handleInteraction)
-  controller.cleanupFns.push(cleanupInteractionListeners)
-
-  const idleTimer = window.setTimeout(() => {
-    cleanupInteractionListeners()
-    startMount()
-  }, delayMs)
-  controller.cleanupFns.push(() => window.clearTimeout(idleTimer))
 }
 
 const scheduleStreamRetry = (controller: StaticFragmentController, delayMs: number) => {
@@ -388,11 +346,18 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
 
 const scheduleDeferredStreamStart = (controller: StaticFragmentController, delayMs = 1800) => {
   if (!hasStaticFragmentRoot()) return
-  const cancelIdle = requestIdle(() => {
-    if (controller.destroyed || document.visibilityState === 'hidden') return
-    void startDeferredStream(controller)
-  }, delayMs)
-  controller.cleanupFns.push(cancelIdle)
+  const cancelSchedule = scheduleStaticShellTask(
+    () => {
+      if (controller.destroyed || document.visibilityState === 'hidden') return
+      void startDeferredStream(controller)
+    },
+    {
+      delayMs,
+      priority: 'background',
+      timeoutMs: delayMs > 0 ? delayMs : 120
+    }
+  )
+  controller.cleanupFns.push(cancelSchedule)
 }
 
 const destroyController = async (controller: StaticFragmentController | null) => {
@@ -454,10 +419,11 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
           redirectProtectedStaticRouteToLogin(controller.lang)
           return
         }
+        controller.isAuthenticated = true
+        await syncStaticFragmentDockIfNeeded(controller)
         if (!hasStaticFragmentRoot()) {
           await hydrateProtectedStaticFragments(controller)
         }
-        scheduleDockMount(controller, 0)
         scheduleDeferredStreamStart(controller, 0)
       } catch (error) {
         if (!controller.destroyed) {
@@ -477,6 +443,7 @@ export const bootstrapStaticFragmentShell = async () => {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
       applyStaticShellSnapshot(snapshot)
+      writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticFragmentShell()
@@ -492,6 +459,7 @@ export const bootstrapStaticFragmentShell = async () => {
 
   const routeData = readRouteData(shellSeed)
   const controller: StaticFragmentController = {
+    isAuthenticated: shellSeed.isAuthenticated ?? false,
     lang: shellSeed.lang,
     path: shellSeed.currentPath || window.location.pathname,
     snapshotKey: shellSeed.snapshotKey,
@@ -499,12 +467,12 @@ export const bootstrapStaticFragmentShell = async () => {
     streamAbort: null,
     streamRetryTimer: 0,
     cleanupFns: [],
-    dockCleanup: null,
     destroyed: false,
     routeData
   }
   activeController = controller
 
+  await syncStaticFragmentDockIfNeeded(controller)
   bindShellControls(controller)
   updateFragmentStatus(controller.lang, 'idle')
 
@@ -519,7 +487,7 @@ export const bootstrapStaticFragmentShell = async () => {
       scheduleProtectedAuthUpgrade(controller)
       return
     }
-    scheduleDockMount(controller, 0)
+    void syncStaticFragmentDockIfNeeded(controller)
     scheduleDeferredStreamStart(controller, 0)
   }
 
@@ -533,7 +501,6 @@ export const bootstrapStaticFragmentShell = async () => {
     return
   }
 
-  scheduleDockMount(controller)
   scheduleDeferredStreamStart(controller)
 }
 

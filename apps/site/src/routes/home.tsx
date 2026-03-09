@@ -1,15 +1,13 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
-import { loadFragments } from '@core/fragment/server'
 import { siteBrand } from '../config'
-import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang } from './fragment-resource'
+import { loadStaticFragmentResource, resolveRequestLang } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
 import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
-import { isStaticShellBuild } from '../static-shell/build-mode'
 
 type FragmentResource = {
   plan: FragmentPlanValue
@@ -19,12 +17,18 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload
 }
 
+const HOME_CRITICAL_FRAGMENT_IDS = new Set(['fragment://page/home/manifest@v1'])
+
+const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => ({
+  ...plan,
+  fragments: plan.fragments.map((entry) => ({
+    ...entry,
+    critical: HOME_CRITICAL_FRAGMENT_IDS.has(entry.id)
+  }))
+})
+
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')
-  const [{ appConfig }, { resolveServerApiBase }] = await Promise.all([
-    import('../app-config.server'),
-    import('../shared/api-base.server')
-  ])
   const path = url.pathname || '/'
   const lang = resolveRequestLang(request)
 
@@ -33,24 +37,13 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       plan,
       fragments: initialFragments,
       path: planPath
-    } = isStaticShellBuild()
-      ? await loadStaticFragmentResource(path, lang, request)
-      : await loadHybridFragmentResource(path, appConfig, lang, request)
-    const allFragmentIds = plan.fragments.map((entry) => entry.id)
-    const missingIds = allFragmentIds.filter((id) => !initialFragments[id])
-    const resolvedApiBase = resolveServerApiBase(appConfig.apiBase, request)
-    const fetchedFragments = !isStaticShellBuild() && missingIds.length
-      ? await loadFragments(missingIds, { apiBase: resolvedApiBase }, lang, { protocol: 2 })
-      : {}
-    const fragments = {
-      ...initialFragments,
-      ...fetchedFragments
-    }
+    } = await loadStaticFragmentResource(path, lang, request)
+    const normalizedPlan = normalizeHomePlan(plan)
 
-    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
+    const fragmentHeaderIds = normalizedPlan.fragments.map((entry) => entry.id)
     return {
-      plan,
-      fragments: fragments as FragmentPayloadValue,
+      plan: normalizedPlan,
+      fragments: initialFragments as FragmentPayloadValue,
       path: planPath,
       lang,
       languageSeed: createServerLanguageSeed(

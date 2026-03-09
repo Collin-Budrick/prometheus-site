@@ -4,14 +4,23 @@ import {
   getStaticHomeUiCopy,
   seedStaticHomeCopy
 } from './home-copy-store'
+import {
+  patchStaticHomeFragmentCard,
+  streamHomeFragments
+} from './home-stream'
 import type { StaticShellSeed } from './seed'
 import {
-  STATIC_DOCK_ROOT_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_LOCKED_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
+import { scheduleStaticShellTask } from './scheduler'
+import {
+  staticDockRootNeedsSync,
+  syncStaticDockRootState,
+  writeStaticShellSeed
+} from './seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -32,6 +41,7 @@ type HomeStaticRouteData = {
 
 type HomeStaticBootstrapData = {
   currentPath: string
+  isAuthenticated: boolean
   snapshotKey: string
   lang: Lang
   shellSeed: LanguageSeedPayload
@@ -40,13 +50,12 @@ type HomeStaticBootstrapData = {
 }
 
 type HomeControllerState = {
+  isAuthenticated: boolean
   lang: Lang
   path: string
   streamAbort: AbortController | null
   streamRetryTimer: number
-  deferredStartTimer: number
   cleanupFns: Array<() => void>
-  dockCleanup: { cleanup: () => void } | null
   demoRenders: Map<Element, { cleanup: () => void }>
   destroyed: boolean
 }
@@ -79,7 +88,6 @@ const DARK_THEME_COLOR = '#0f172a'
 
 let activeController: HomeControllerState | null = null
 let languageSwapInFlight = false
-let homeStreamRuntimePromise: Promise<typeof import('./home-stream')> | null = null
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
@@ -208,29 +216,13 @@ const readBootstrapDataFromDocument = (): HomeStaticBootstrapData | null => {
   if (!shell || !route) return null
   return {
     currentPath: shell.currentPath || route.path || '/',
+    isAuthenticated: shell.isAuthenticated ?? false,
     snapshotKey: route.snapshotKey || shell.snapshotKey || shell.currentPath || route.path || '/',
     lang: route.lang || shell.lang,
     shellSeed: shell.languageSeed ?? {},
     routeSeed: route.languageSeed ?? {},
     fragmentVersions: route.fragmentVersions ?? {}
   }
-}
-
-const requestIdle = (callback: () => void, timeout: number) => {
-  const idleApi = window as Window & {
-    requestIdleCallback?: (cb: () => void, options?: { timeout?: number }) => number
-    cancelIdleCallback?: (handle: number) => void
-  }
-
-  if (typeof idleApi.requestIdleCallback === 'function') {
-    const handle = idleApi.requestIdleCallback(callback, { timeout })
-    return () => {
-      idleApi.cancelIdleCallback?.(handle)
-    }
-  }
-
-  const handle = window.setTimeout(callback, timeout)
-  return () => window.clearTimeout(handle)
 }
 
 const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error') => {
@@ -247,18 +239,29 @@ const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error')
   element.setAttribute('aria-label', label)
 }
 
-const loadHomeStreamRuntime = () => {
-  if (!homeStreamRuntimePromise) {
-    homeStreamRuntimePromise = import('./home-stream')
+const syncHomeDockIfNeeded = async (controller: Pick<HomeControllerState, 'isAuthenticated' | 'lang' | 'path'>) => {
+  const dockState = {
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    lang: controller.lang
   }
-  return homeStreamRuntimePromise
-}
 
-const mountDock = async (lang: Lang, currentPath: string, options?: { skipAuthUpgrade?: boolean }) => {
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  if (!dockRoot) return null
-  const { mountStaticDock } = await import('./home-dock-dom')
-  return mountStaticDock({ root: dockRoot, lang, currentPath, skipAuthUpgrade: options?.skipAuthUpgrade })
+  if (!staticDockRootNeedsSync(dockState)) {
+    syncStaticDockRootState(dockState)
+    return
+  }
+
+  const dockRoot = syncStaticDockRootState(dockState)
+  if (!dockRoot) return
+
+  const { syncStaticDockMarkup } = await import('./home-dock-dom')
+  syncStaticDockMarkup({
+    root: dockRoot,
+    lang: controller.lang,
+    currentPath: controller.path,
+    isAuthenticated: controller.isAuthenticated,
+    force: true
+  })
 }
 
 const parseDemoProps = (value: string | null) => {
@@ -457,89 +460,24 @@ const stopLiveHomeConnections = (controller: HomeControllerState) => {
     window.clearTimeout(controller.streamRetryTimer)
     controller.streamRetryTimer = 0
   }
-  if (controller.dockCleanup) {
-    controller.dockCleanup.cleanup()
-    controller.dockCleanup = null
-  }
 }
 
-const scheduleDockMount = (controller: HomeControllerState, delayMs = 12000) => {
-  const startMount = () => {
-    if (controller.destroyed || controller.dockCleanup) return
-    void mountDock(controller.lang, controller.path)
-      .then((dockCleanup) => {
-        if (!dockCleanup) return
-        if (controller.destroyed) {
-          dockCleanup.cleanup()
-          return
-        }
-        controller.dockCleanup = dockCleanup
-      })
-      .catch((error) => {
-        if (!controller.destroyed) {
-          console.error('Failed to mount static dock controller:', error)
-        }
-      })
-  }
-
-  if (delayMs <= 0) {
-    startMount()
-    return
-  }
-
-  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
-  const handleInteraction = () => {
-    cleanupInteractionListeners()
-    cancelIdle()
-    startMount()
-  }
-  const cleanupInteractionListeners = () => {
-    dockRoot?.removeEventListener('pointerenter', handleInteraction)
-    dockRoot?.removeEventListener('focusin', handleInteraction)
-    dockRoot?.removeEventListener('touchstart', handleInteraction)
-  }
-  dockRoot?.addEventListener('pointerenter', handleInteraction)
-  dockRoot?.addEventListener('focusin', handleInteraction)
-  dockRoot?.addEventListener('touchstart', handleInteraction)
-  controller.cleanupFns.push(cleanupInteractionListeners)
-
-  const idleTimer = window.setTimeout(() => {
-    cleanupInteractionListeners()
-    startMount()
-  }, delayMs)
-  controller.cleanupFns.push(() => window.clearTimeout(idleTimer))
-}
-
-const scheduleDeferredStreamStart = (controller: HomeControllerState, delayMs = 1800) => {
-  const queueDeferredStart = () => {
-    const startWhenIdle = () => {
-      const cancelIdle = requestIdle(() => {
-        if (controller.destroyed || document.visibilityState === 'hidden') return
-        void startDeferredStream(controller)
-      }, 1000)
-      controller.cleanupFns.push(cancelIdle)
+const scheduleDeferredStreamStart = (
+  controller: HomeControllerState,
+  options?: { waitForPaint?: boolean }
+) => {
+  const cancelSchedule = scheduleStaticShellTask(
+    () => {
+      if (controller.destroyed || document.visibilityState === 'hidden') return
+      void startDeferredStream(controller)
+    },
+    {
+      priority: 'user-visible',
+      timeoutMs: 120,
+      waitForPaint: options?.waitForPaint ?? true
     }
-
-    if (delayMs <= 0) {
-      startWhenIdle()
-      return
-    }
-
-    const delayTimer = window.setTimeout(startWhenIdle, delayMs)
-    controller.cleanupFns.push(() => window.clearTimeout(delayTimer))
-  }
-
-  if (document.readyState === 'complete') {
-    queueDeferredStart()
-    return
-  }
-
-  const handleLoad = () => {
-    queueDeferredStart()
-  }
-
-  window.addEventListener('load', handleLoad, { once: true })
-  controller.cleanupFns.push(() => window.removeEventListener('load', handleLoad))
+  )
+  controller.cleanupFns.push(cancelSchedule)
 }
 
 const startDeferredStream = async (controller: HomeControllerState) => {
@@ -552,13 +490,12 @@ const startDeferredStream = async (controller: HomeControllerState) => {
   updateFragmentStatus(controller.lang, 'streaming')
 
   try {
-    const runtime = await loadHomeStreamRuntime()
-    await runtime.streamHomeFragments({
+    await streamHomeFragments({
       path: controller.path,
       lang: controller.lang,
       signal: streamAbort.signal,
       onFragment: (payload) => {
-        runtime.patchStaticHomeFragmentCard({
+        patchStaticHomeFragmentCard({
           lang: controller.lang,
           payload,
           onPatchedBody: (body) => {
@@ -588,10 +525,6 @@ const destroyController = async (controller: HomeControllerState | null) => {
   if (!controller) return
   controller.destroyed = true
   stopLiveHomeConnections(controller)
-  if (controller.deferredStartTimer) {
-    window.clearTimeout(controller.deferredStartTimer)
-    controller.deferredStartTimer = 0
-  }
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
   for (const result of controller.demoRenders.values()) {
     result.cleanup()
@@ -612,6 +545,7 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
     activeController = null
 
     applyStaticShellSnapshot(snapshot)
+    writeStaticShellSeed({ isAuthenticated: current.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
 
@@ -631,6 +565,7 @@ export const bootstrapStaticHome = async () => {
     try {
       const snapshot = await loadStaticShellSnapshot(data.snapshotKey, preferredLang)
       applyStaticShellSnapshot(snapshot)
+      writeStaticShellSeed({ isAuthenticated: data.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticHome()
@@ -645,18 +580,18 @@ export const bootstrapStaticHome = async () => {
   await destroyController(activeController)
 
   const controller: HomeControllerState = {
+    isAuthenticated: data.isAuthenticated,
     lang: data.lang,
     path: data.currentPath,
     streamAbort: null,
     streamRetryTimer: 0,
-    deferredStartTimer: 0,
     cleanupFns: [],
-    dockCleanup: null,
     demoRenders: new Map(),
     destroyed: false
   }
   activeController = controller
 
+  await syncHomeDockIfNeeded(controller)
   bindShellControls(controller)
   bindDemoActivation(controller)
   updateFragmentStatus(controller.lang, 'idle')
@@ -668,8 +603,7 @@ export const bootstrapStaticHome = async () => {
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return
     updateFragmentStatus(controller.lang, 'idle')
-    scheduleDockMount(controller, 0)
-    scheduleDeferredStreamStart(controller, 0)
+    scheduleDeferredStreamStart(controller, { waitForPaint: false })
   }
 
   window.addEventListener('pagehide', handlePageHide)
@@ -677,6 +611,5 @@ export const bootstrapStaticHome = async () => {
   controller.cleanupFns.push(() => window.removeEventListener('pagehide', handlePageHide))
   controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
 
-  scheduleDockMount(controller)
   scheduleDeferredStreamStart(controller)
 }

@@ -23,6 +23,7 @@ import type { StaticShellSeed } from './seed'
 
 type StaticShellLayoutProps = {
   currentPath: string
+  isAuthenticated: boolean
   lang: Lang
   theme: Theme
   languageSeed: LanguageSeedPayload
@@ -39,6 +40,7 @@ const omitUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> 
 
 export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   currentPath,
+  isAuthenticated,
   lang,
   theme,
   languageSeed,
@@ -52,6 +54,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     languageSeed,
     bootstrapMode: routeConfig?.bootstrapMode ?? 'fragment-static',
     authPolicy: routeConfig?.authPolicy ?? 'public',
+    isAuthenticated,
     snapshotKey: routeConfig?.snapshotKey ?? currentPath
   }
   const copy = {
@@ -171,12 +174,15 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
           [STATIC_SHELL_REGION_ATTR]: STATIC_SHELL_DOCK_REGION,
           [STATIC_DOCK_ROOT_ATTR]: 'true'
         }}
+        data-static-dock-lang={lang}
+        data-static-dock-mode={isAuthenticated ? 'auth' : 'public'}
+        data-static-dock-path={currentPath}
       >
         <StaticDockMarkup
           lang={lang}
           currentPath={currentPath}
           copy={copy}
-          isAuthenticated={false}
+          isAuthenticated={isAuthenticated}
         />
       </div>
     </div>

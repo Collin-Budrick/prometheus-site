@@ -18,8 +18,6 @@ export type HomeStaticCopyBundle = {
 
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 
-const compactBadge = (value: string) => h('span', { class: 'home-demo-compact-badge' }, [t(value)])
-
 const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   class: `home-demo-compact home-demo-compact--${kind}`,
   'data-home-preview': 'compact',
@@ -47,22 +45,21 @@ const buildCompactDemoNode = (
   badges: string[],
   copy: HomeStaticCopyBundle,
   props?: Record<string, string>
-) =>
-  h('div', demoRootAttrs(kind, props), [
+) => {
+  const meta = badges
+    .filter((value) => value.trim().length > 0)
+    .slice(0, 3)
+    .join(' · ')
+
+  return h('div', demoRootAttrs(kind, props), [
     h('div', { class: 'home-demo-compact-header' }, [
       h('div', { class: 'home-demo-compact-kicker' }, [t(title)]),
       buildActivateButton(kind, copy.ui.demoActivate)
     ]),
     h('p', { class: 'home-demo-compact-copy' }, [t(summary)]),
-    h(
-      'div',
-      { class: 'home-demo-compact-badges', role: 'list' },
-      badges
-        .filter((value) => value.trim().length > 0)
-        .slice(0, 3)
-        .map((value) => h('div', { class: 'home-demo-compact-badge-wrap', role: 'listitem' }, [compactBadge(value)]))
-    )
+    h('p', { class: 'home-demo-compact-meta' }, [t(meta)])
   ])
+}
 
 const buildPlannerPreviewNode = (copy: HomeStaticCopyBundle) =>
   buildCompactDemoNode(

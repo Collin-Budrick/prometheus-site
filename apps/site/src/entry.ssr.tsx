@@ -78,11 +78,21 @@ const stripStaticQwikScripts = (html: string) =>
     .replace(/\s+(?:q|on-document):[\w:-]+=(["'])[\s\S]*?\1/gi, '')
     .replace(/\s+(?:q|on-document):[\w:-]+/gi, '')
 
+const stripBlockingDeferredStylesheet = (html: string) =>
+  html.replace(
+    /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*global-deferred\.css[^"']*["'][^>]*>\s*/gi,
+    ''
+  )
+
 const injectStaticBootstrap = (html: string, publicBase: string, pathname: string) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname)
   if (!bundlePath) return html
-  const scriptTag = `<script type="module" src="${publicBase}${bundlePath}"></script>`
-  return html.replace('</body>', `${scriptTag}</body>`)
+  const bundleHref = `${publicBase}${bundlePath}`
+  const preloadTag = `<link rel="modulepreload" href="${bundleHref}">`
+  const scriptTag = `<script type="module" src="${bundleHref}"></script>`
+  return html
+    .replace('</head>', `${preloadTag}</head>`)
+    .replace('</body>', `${scriptTag}</body>`)
 }
 
 const hasStaticOnlyMarker = (html: string) =>
@@ -143,7 +153,11 @@ export default function (opts: RenderToStreamOptions) {
 
       return {
         ...result,
-        html: injectStaticBootstrap(stripStaticQwikScripts(result.html), resolvePublicBase(renderOptions), pathname)
+        html: injectStaticBootstrap(
+          stripBlockingDeferredStylesheet(stripStaticQwikScripts(result.html)),
+          resolvePublicBase(renderOptions),
+          pathname
+        )
       }
     })
   }

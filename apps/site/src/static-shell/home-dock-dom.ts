@@ -1,14 +1,15 @@
 import { type NavLabelKey } from '../config'
 import type { Lang } from '../lang'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
-import { loadClientAuthSession } from './auth-client'
 import { getStaticHomeUiCopy } from './home-copy-store'
+import { syncStaticDockRootState } from './seed-client'
 
-type MountStaticDockOptions = {
+type SyncStaticDockOptions = {
   root: HTMLElement
   lang: Lang
   currentPath: string
-  skipAuthUpgrade?: boolean
+  isAuthenticated: boolean
+  force?: boolean
 }
 
 const dockIconMarkup: Record<NavLabelKey, string> = {
@@ -32,7 +33,9 @@ const dockIconMarkup: Record<NavLabelKey, string> = {
 
 const withLangParam = (href: string, langValue: Lang) => {
   if (!href || !href.startsWith('/')) return href
-  const url = new URL(href, window.location.origin)
+  const base =
+    typeof window === 'undefined' ? 'https://prometheus.test' : window.location.origin
+  const url = new URL(href, base)
   url.searchParams.set('lang', langValue)
   return `${url.pathname}${url.search}${url.hash}`
 }
@@ -50,7 +53,7 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
-const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
+export const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
   const copy = getStaticHomeUiCopy(lang)
   const navItems = authenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const items = navItems
@@ -66,34 +69,26 @@ const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean)
   return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${navItems.length}"><div class="dock" role="list" aria-label="${escapeHtml(copy.dockAriaLabel)}">${items}</div></div>`
 }
 
-export const mountStaticDock = ({ root, lang, currentPath, skipAuthUpgrade = false }: MountStaticDockOptions) => {
-  let cancelled = false
+export const syncStaticDockMarkup = ({
+  root,
+  lang,
+  currentPath,
+  isAuthenticated,
+  force = false
+}: SyncStaticDockOptions) => {
+  const nextMode = isAuthenticated ? 'auth' : 'public'
+  const shouldUpdate =
+    force ||
+    root.dataset.staticDockLang !== lang ||
+    root.dataset.staticDockMode !== nextMode ||
+    root.dataset.staticDockPath !== currentPath ||
+    !root.firstElementChild
 
-  if (!root.firstElementChild) {
-    root.innerHTML = renderDockHtml(lang, currentPath, false)
+  if (!shouldUpdate) {
+    return false
   }
 
-  if (skipAuthUpgrade) {
-    return {
-      cleanup() {
-        cancelled = true
-      }
-    }
-  }
-
-  void (async () => {
-    try {
-      const session = await loadClientAuthSession()
-      if (cancelled || session.status !== 'authenticated') return
-      root.innerHTML = renderDockHtml(lang, currentPath, true)
-    } catch {
-      // Leave the public dock in place when session checks fail.
-    }
-  })()
-
-  return {
-    cleanup() {
-      cancelled = true
-    }
-  }
+  root.innerHTML = renderDockHtml(lang, currentPath, isAuthenticated)
+  syncStaticDockRootState({ currentPath, isAuthenticated, lang })
+  return true
 }

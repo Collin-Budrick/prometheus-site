@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./global-critical.css": "./src/global-critical.css",
-    "./global.css": "./src/global.css"
+    "./global.css": "./src/global.css",
+    "./global-deferred.css": "./src/global-deferred.css",
+    "./global-enhancements.css": "./src/global-enhancements.css"
   },
   "types": "./src/index.ts",
   "dependencies": {

@@ -1,6 +1,7 @@
 import { $, component$, HTMLFragment, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
+import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -545,6 +546,12 @@ export const RouterHead = component$(() => {
       {head.meta.map((meta) => (
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
+      <HTMLFragment
+        dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(globalDeferredStylesheetHref)}
+      />
+      <noscript>
+        <link rel="stylesheet" href={globalDeferredStylesheetHref} />
+      </noscript>
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
           const fragmentId = (link as Record<string, string>)['data-fragment-css']
@@ -561,9 +568,9 @@ export const RouterHead = component$(() => {
 
         return <link key={`${link.rel}-${link.href}`} {...link} />
       })}
-      {preconnectOrigins.map((origin) => (
-        <link
-          key={`preconnect-${origin}`}
+        {preconnectOrigins.map((origin) => (
+          <link
+            key={`preconnect-${origin}`}
           rel="preconnect"
           href={origin}
           crossOrigin={origin !== currentOrigin ? 'anonymous' : undefined}
@@ -836,12 +843,14 @@ const InteractiveShellLayout = component$(() => {
 export default component$(() => {
   const location = useLocation()
   const shellPreferences = useShellPreferences()
+  const authSession = useAuthSession()
   const staticRouteConfig = getStaticShellRouteConfig(location.url.pathname)
 
   if (isStaticShellPath(location.url.pathname)) {
     return (
       <StaticShellLayout
         currentPath={location.url.pathname}
+        isAuthenticated={authSession.value.status === 'authenticated'}
         lang={shellPreferences.value.lang}
         theme={shellPreferences.value.theme}
         languageSeed={shellPreferences.value.languageSeed}
