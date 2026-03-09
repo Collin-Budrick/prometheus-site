@@ -1,10 +1,11 @@
-import {
-  getPlannerDemoCopy,
-  getPreactIslandCopy,
-  getReactBinaryDemoCopy,
-  getWasmRendererDemoCopy
-} from '../lang/client'
 import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../lang'
+import {
+  getStaticHomePlannerDemoCopy,
+  getStaticHomePreactIslandDemoCopy,
+  getStaticHomeReactBinaryDemoCopy,
+  getStaticHomeWasmRendererDemoCopy
+} from './home-copy-store'
+import { ensureHomeDemoActiveStyles } from '../components/home-demo-active-styles'
 
 type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 
@@ -257,7 +258,7 @@ const renderPreactIslandDemoMarkup = () => `
 `
 
 const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
-  const copy = getPlannerDemoCopy(getCurrentLang())
+  const copy = getStaticHomePlannerDemoCopy(getCurrentLang())
   prepareActiveDemoRoot(root, 'planner-demo', renderPlannerDemoMarkup(copy))
   const title = root.querySelector<HTMLElement>('.planner-demo-title')
   const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
@@ -442,7 +443,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 }
 
 const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult => {
-  const copy = getWasmRendererDemoCopy(getCurrentLang())
+  const copy = getStaticHomeWasmRendererDemoCopy(getCurrentLang())
   prepareActiveDemoRoot(root, 'wasm-demo', renderWasmRendererDemoMarkup())
   const title = root.querySelector<HTMLElement>('.wasm-demo-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
@@ -600,7 +601,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
 }
 
 const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult => {
-  const copy = getReactBinaryDemoCopy(getCurrentLang())
+  const copy = getStaticHomeReactBinaryDemoCopy(getCurrentLang())
   prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
   const status = root.querySelector<HTMLElement>('.react-binary-status')
@@ -738,7 +739,7 @@ const activatePreactIslandDemo = (
   root: HTMLElement,
   props: Record<string, unknown>
 ): HomeDemoActivationResult => {
-  const copy = getPreactIslandCopy(getCurrentLang())
+  const copy = getStaticHomePreactIslandDemoCopy(getCurrentLang())
   const label = typeof props.label === 'string' && props.label.trim() ? props.label : copy.label
   prepareActiveDemoRoot(root, 'preact-island-ui', renderPreactIslandDemoMarkup())
   const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
@@ -838,6 +839,7 @@ export const activateHomeDemo = async ({
   kind,
   props
 }: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult> => {
+  ensureHomeDemoActiveStyles()
   const element = getRootElement(root)
 
   switch (kind) {

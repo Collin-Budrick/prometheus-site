@@ -114,6 +114,31 @@ const themeBootstrapScript = `(function () {
   root.style.colorScheme = theme;
 })();`
 const buildThemeBootstrapScriptMarkup = () => `<script>${themeBootstrapScript}</script>`
+const buildDeferredManifestScript = (href: string) => {
+  const escapedHref = JSON.stringify(href)
+  return `<script>(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var appendManifest = function () {
+    if (document.head.querySelector('link[rel="manifest"]')) return;
+    var link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = ${escapedHref};
+    document.head.appendChild(link);
+  };
+  var schedule = function () {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(appendManifest, { timeout: 1500 });
+    } else {
+      window.setTimeout(appendManifest, 1200);
+    }
+  };
+  if (document.readyState === 'complete') {
+    schedule();
+    return;
+  }
+  window.addEventListener('load', schedule, { once: true });
+})();</script>`
+}
 
 type EarlyHint = {
   href: string
@@ -249,6 +274,7 @@ const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: b
   const addOrigin = (href: string | undefined) => {
     const origin = toPreconnectOrigin(href, currentOrigin)
     if (!origin) return
+    if (origin === currentOrigin) return
     origins.add(origin)
   }
 
@@ -505,6 +531,7 @@ export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
+  const shouldDeferManifest = isHomeStaticPath(location.url.pathname)
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
   const preconnectOrigins = buildPreconnectOrigins(currentOrigin, false)
@@ -554,7 +581,11 @@ export const RouterHead = component$(() => {
       <HTMLFragment dangerouslySetInnerHTML={buildThemeBootstrapScriptMarkup()} />
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
-      <link rel="manifest" href={withBase('manifest.webmanifest')} />
+      {shouldDeferManifest ? (
+        <HTMLFragment dangerouslySetInnerHTML={buildDeferredManifestScript(withBase('manifest.webmanifest'))} />
+      ) : (
+        <link rel="manifest" href={withBase('manifest.webmanifest')} />
+      )}
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <meta name="theme-color" content={siteBrand.themeColor} />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content={siteBrand.themeColor} />

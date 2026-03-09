@@ -1,5 +1,5 @@
 import type { Lang } from '../lang'
-import { resolveLangParam } from '../shared/lang-store'
+import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
 import {
   STATIC_SHELL_DOCK_REGION,
@@ -77,19 +77,19 @@ const replaceStaticShellRegionHtml = (region: string, html: string) => {
 
 export const resolvePreferredStaticShellLang = (fallback: Lang) => {
   const url = new URL(window.location.href)
-  const paramLang = resolveLangParam(url.searchParams.get('lang'))
+  const paramLang = resolveStaticShellLangParam(url.searchParams.get('lang'))
   if (paramLang) return paramLang
 
   for (const key of STATIC_LANG_STORAGE_KEYS) {
     try {
-      const stored = resolveLangParam(window.localStorage.getItem(key))
+      const stored = resolveStaticShellLangParam(window.localStorage.getItem(key))
       if (stored) return stored
     } catch {
       // Ignore storage access failures.
     }
   }
 
-  const cookieLang = resolveLangParam(readCookieValue(STATIC_LANG_COOKIE_KEY))
+  const cookieLang = resolveStaticShellLangParam(readCookieValue(STATIC_LANG_COOKIE_KEY))
   if (cookieLang) return cookieLang
   return fallback
 }

@@ -1,8 +1,8 @@
 import { type NavLabelKey } from '../config'
 import type { Lang } from '../lang'
-import { getUiCopy } from '../lang/client'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { loadClientAuthSession } from './auth-client'
+import { getStaticHomeUiCopy } from './home-copy-store'
 
 type MountStaticDockOptions = {
   root: HTMLElement
@@ -51,7 +51,7 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, '&#39;')
 
 const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
-  const copy = getUiCopy(lang)
+  const copy = getStaticHomeUiCopy(lang)
   const navItems = authenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   const items = navItems
     .map((item) => {

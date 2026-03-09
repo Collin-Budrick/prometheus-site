@@ -1,4 +1,4 @@
-import { component$, type QRL } from '@builder.io/qwik'
+import { component$, type QRL, useStyles$ } from '@builder.io/qwik'
 import type {
   PlannerDemoCopy,
   PreactIslandCopy,
@@ -6,6 +6,7 @@ import type {
   UiCopy,
   WasmRendererDemoCopy
 } from '../lang'
+import { homeDemoActiveStyles } from './home-demo-active-inline'
 
 export type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 
@@ -281,6 +282,8 @@ const renderPreactIslandPreview = (copy: PreactIslandCopy, ui: Pick<UiCopy, 'dem
 )
 
 export const HomeDemoPreview = component$<HomeDemoPreviewProps>((props) => {
+  useStyles$(homeDemoActiveStyles)
+
   switch (props.kind) {
     case 'planner':
       return renderPlannerPreview(props.planner!, props.ui, props.activating, props.onActivate$)

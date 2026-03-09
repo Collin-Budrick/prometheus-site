@@ -34,6 +34,8 @@ const serializeJson = (value: unknown) =>
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
+const omitUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
+  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>
 
 export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   currentPath,
@@ -54,7 +56,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   }
   const copy = {
     ...emptyUiCopy,
-    ...(languageSeed.ui ?? {})
+    ...omitUndefined(languageSeed.ui ?? {})
   }
 
   return (

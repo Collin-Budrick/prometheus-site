@@ -1,7 +1,13 @@
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { FragmentPayload } from '@core/fragment/types'
-import { getPlannerDemoCopy, getPreactIslandCopy, getReactBinaryDemoCopy, getUiCopy, getWasmRendererDemoCopy } from '../lang/client'
 import type { Lang } from '../lang'
+import {
+  getStaticHomePlannerDemoCopy,
+  getStaticHomePreactIslandDemoCopy,
+  getStaticHomeReactBinaryDemoCopy,
+  getStaticHomeUiCopy,
+  getStaticHomeWasmRendererDemoCopy
+} from './home-copy-store'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -26,13 +32,13 @@ type StreamHomeFragmentsOptions = {
 
 const createHomeCopyBundle = (lang: Lang) => ({
   ui: {
-    demoActivate: getUiCopy(lang).demoActivate,
-    homeIntroMarkdown: getUiCopy(lang).homeIntroMarkdown
+    demoActivate: getStaticHomeUiCopy(lang).demoActivate,
+    homeIntroMarkdown: getStaticHomeUiCopy(lang).homeIntroMarkdown
   },
-  planner: getPlannerDemoCopy(lang),
-  wasmRenderer: getWasmRendererDemoCopy(lang),
-  reactBinary: getReactBinaryDemoCopy(lang),
-  preactIsland: getPreactIslandCopy(lang)
+  planner: getStaticHomePlannerDemoCopy(lang),
+  wasmRenderer: getStaticHomeWasmRendererDemoCopy(lang),
+  reactBinary: getStaticHomeReactBinaryDemoCopy(lang),
+  preactIsland: getStaticHomePreactIslandDemoCopy(lang)
 })
 
 const collectKnownVersions = () => {

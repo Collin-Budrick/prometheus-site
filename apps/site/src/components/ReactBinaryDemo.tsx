@@ -1,6 +1,7 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { getReactBinaryDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
+import { homeDemoActiveStyles } from './home-demo-active-inline'
 
 const randomBits = (length = 4) => {
   let bits = ''
@@ -15,6 +16,8 @@ const initialChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '
 const domNodes = ['section', 'h2', 'p', 'div.badge']
 
 export const ReactBinaryDemo = component$(() => {
+  useStyles$(homeDemoActiveStyles)
+
   const langSignal = useLangSignal()
   const copy = getReactBinaryDemoCopy(langSignal.value)
   const stageIndex = useSignal(0)

@@ -1,6 +1,7 @@
-import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
 import { getPlannerDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
+import { homeDemoActiveStyles } from './home-demo-active-inline'
 
 const randomCache = (fragments: ReadonlyArray<{ id: string }>) =>
   Object.fromEntries(fragments.map((fragment) => [fragment.id, Math.random() > 0.45])) as Record<string, boolean>
@@ -61,6 +62,8 @@ const resolveCacheState = (cookieHeader: string | null, fragments: ReadonlyArray
 }
 
 export const PlannerDemo = component$(() => {
+  useStyles$(homeDemoActiveStyles)
+
   const langSignal = useLangSignal()
   const copy = getPlannerDemoCopy(langSignal.value)
   const steps = copy.steps

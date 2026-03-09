@@ -1,9 +1,9 @@
-import {
-  getUiCopy,
-  seedLanguageResources
-} from '../lang/client'
 import type { Lang } from '../lang'
 import type { LanguageSeedPayload } from '../lang/selection'
+import {
+  getStaticHomeUiCopy,
+  seedStaticHomeCopy
+} from './home-copy-store'
 import type { StaticShellSeed } from './seed'
 import {
   STATIC_DOCK_ROOT_ATTR,
@@ -236,7 +236,7 @@ const requestIdle = (callback: () => void, timeout: number) => {
 const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error') => {
   const element = document.querySelector<HTMLElement>('[data-static-fragment-status]')
   if (!element) return
-  const copy = getUiCopy(lang)
+  const copy = getStaticHomeUiCopy(lang)
   const label =
     state === 'streaming'
       ? copy.fragmentStatusStreaming
@@ -337,8 +337,7 @@ const bindDemoActivation = (controller: HomeControllerState, root: ParentNode = 
 }
 
 const applyShellLanguageSeed = (lang: Lang, shellSeed: LanguageSeedPayload, routeSeed: LanguageSeedPayload) => {
-  seedLanguageResources(lang, shellSeed)
-  seedLanguageResources(lang, routeSeed)
+  seedStaticHomeCopy(lang, shellSeed, routeSeed)
   setDocumentLang(lang)
 }
 
@@ -346,7 +345,7 @@ const refreshThemeButton = (lang: Lang) => {
   const button = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
   if (!button) return
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
-  const copy = getUiCopy(lang)
+  const copy = getStaticHomeUiCopy(lang)
   button.dataset.theme = theme
   button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
@@ -512,11 +511,35 @@ const scheduleDockMount = (controller: HomeControllerState, delayMs = 12000) => 
 }
 
 const scheduleDeferredStreamStart = (controller: HomeControllerState, delayMs = 1800) => {
-  const cancelIdle = requestIdle(() => {
-    if (controller.destroyed || document.visibilityState === 'hidden') return
-    void startDeferredStream(controller)
-  }, delayMs)
-  controller.cleanupFns.push(cancelIdle)
+  const queueDeferredStart = () => {
+    const startWhenIdle = () => {
+      const cancelIdle = requestIdle(() => {
+        if (controller.destroyed || document.visibilityState === 'hidden') return
+        void startDeferredStream(controller)
+      }, 1000)
+      controller.cleanupFns.push(cancelIdle)
+    }
+
+    if (delayMs <= 0) {
+      startWhenIdle()
+      return
+    }
+
+    const delayTimer = window.setTimeout(startWhenIdle, delayMs)
+    controller.cleanupFns.push(() => window.clearTimeout(delayTimer))
+  }
+
+  if (document.readyState === 'complete') {
+    queueDeferredStart()
+    return
+  }
+
+  const handleLoad = () => {
+    queueDeferredStart()
+  }
+
+  window.addEventListener('load', handleLoad, { once: true })
+  controller.cleanupFns.push(() => window.removeEventListener('load', handleLoad))
 }
 
 const startDeferredStream = async (controller: HomeControllerState) => {
