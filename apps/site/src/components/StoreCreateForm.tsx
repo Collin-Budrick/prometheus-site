@@ -1,5 +1,5 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { getFragmentTextCopy } from '../lang/client'
 import { useSharedLangSignal } from '../shared/lang-bridge'

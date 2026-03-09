@@ -1,5 +1,5 @@
 import { decodeFragmentPayload, type FragmentPayloadMap, type FragmentPlan } from '@core/fragments'
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import { invokeNativeCommand } from './bridge'
 import { isNativeShellRuntime } from './runtime'

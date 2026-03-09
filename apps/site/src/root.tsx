@@ -1,9 +1,10 @@
-import { component$, useStyles$ } from '@builder.io/qwik'
+import { component$ } from '@builder.io/qwik'
 import { QwikCityProvider, RouterOutlet } from '@builder.io/qwik-city'
-import globalCriticalStyles from '@prometheus/ui/global-critical.css?inline'
-import globalStyles from '@prometheus/ui/global.css?inline'
+import '@prometheus/ui/global-critical.css'
+import '@prometheus/ui/global.css'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
+import { useProvideLangSignal } from './shared/lang-bridge'
 
 const viewportFadeHeadStyle = `
   .viewport-fade {
@@ -37,8 +38,7 @@ const viewportFadeHeadStyle = `
 `
 
 export default component$(() => {
-  useStyles$(globalCriticalStyles)
-  useStyles$(globalStyles)
+  useProvideLangSignal()
 
   return (
     <QwikCityProvider>

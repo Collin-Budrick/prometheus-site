@@ -37,6 +37,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         initialFragments={shell.initialFragments}
         path={props.path}
         fragments={shell.fragments}
+        layoutTick={shell.layoutTick}
         status={shell.status}
         paused={shell.streamPaused}
         preserveFragmentEffects={props.preserveFragmentEffects}

@@ -15,7 +15,7 @@ import type {
 } from '../types'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
-import { appConfig } from '../../app-config'
+import { appConfig } from '../../public-app-config'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
 import { shouldHoldStaticHomeStartup } from './fragment-shell-mode'
@@ -52,6 +52,7 @@ type FragmentStreamControllerProps = {
   initialFragments: FragmentPayloadValue
   path: string
   fragments: Signal<FragmentPayloadMap>
+  layoutTick?: Signal<number>
   status: Signal<'idle' | 'streaming' | 'error'>
   paused?: Signal<boolean> | boolean
   preserveFragmentEffects?: boolean
@@ -84,6 +85,7 @@ export const FragmentStreamController = component$(
     initialFragments,
     path,
     fragments,
+    layoutTick,
     status,
     paused,
     preserveFragmentEffects,
@@ -337,6 +339,9 @@ export const FragmentStreamController = component$(
               void runLangViewTransition(
                 () => {
                   fragments.value = nextValue
+                  if (layoutTick) {
+                    layoutTick.value += 1
+                  }
                 },
                 {
                   mutationRoot: document.querySelector('[data-fragment-grid="main"]') ?? document.body,
@@ -348,6 +353,9 @@ export const FragmentStreamController = component$(
               })
             } else {
               fragments.value = nextValue
+              if (layoutTick) {
+                layoutTick.value += 1
+              }
             }
           }
         }

@@ -12,7 +12,12 @@ import {
 import { runAfterClientIntent, runAfterClientIntentIdle } from './shared/client-boot'
 import { initConnectivityStore, isOnline } from './native/connectivity'
 import { isNativeShellRuntime } from './native/runtime'
-import { HOME_STATIC_ROUTE_KIND, STATIC_ROUTE_ATTR } from './static-shell/constants'
+import {
+  STATIC_FRAGMENT_DATA_SCRIPT_ID,
+  STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_PAGE_ROOT_ATTR,
+  STATIC_ROUTE_ATTR
+} from './static-shell/constants'
 
 declare global {
   interface Window {
@@ -46,18 +51,28 @@ export default function (opts: RenderOptions) {
     return render(document, <Root />, opts)
   }
 
-  const staticRouteKind =
-    typeof document !== 'undefined'
-      ? document.querySelector<HTMLElement>(`[${STATIC_ROUTE_ATTR}]`)?.getAttribute(STATIC_ROUTE_ATTR) ?? null
-      : null
+  const hasStaticShell = typeof document !== 'undefined'
+    ? Boolean(document.querySelector<HTMLElement>(`[${STATIC_ROUTE_ATTR}]`))
+    : false
+  const hasStaticOnlyRoute = typeof document !== 'undefined'
+    ? Boolean(
+        document.getElementById(STATIC_HOME_DATA_SCRIPT_ID) ||
+          document.getElementById(STATIC_FRAGMENT_DATA_SCRIPT_ID) ||
+          document.querySelector<HTMLElement>(`[${STATIC_PAGE_ROOT_ATTR}]`)
+      )
+    : false
 
-  if (staticRouteKind === HOME_STATIC_ROUTE_KIND) {
+  if (hasStaticShell) {
     void import('./static-shell/home-static-entry')
       .catch((error) => {
-        console.error('Static home bootstrap failed; falling back to full app render.', error)
-        void renderFullApp()
+        console.error('Static shell bootstrap failed.', error)
+        if (hasStaticOnlyRoute) {
+          void renderFullApp()
+        }
       })
-  } else {
+  }
+
+  if (!hasStaticOnlyRoute) {
     void renderFullApp()
   }
   const nativeRuntime = isNativeShellRuntime()
@@ -322,7 +337,7 @@ function setupServerHealthProbe() {
 
 function resolveServerKey() {
   if (typeof window === 'undefined') return 'default'
-  return resolveApiHost(window.location.origin)
+  return resolvePublicApiHost(window.location.origin)
 }
 
 function resolveHealthUrl() {

@@ -1,36 +1,27 @@
-import { component$, useContextProvider } from '@builder.io/qwik'
-import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { component$ } from '@builder.io/qwik'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
-import { resolveRequestOrigin, resolveServerApiBase } from '../../shared/api-base'
-import {
-  FragmentShell,
-  getFragmentShellCacheEntry,
-  readFragmentShellStateFromCookie,
-  type FragmentShellState
-} from '../../fragment/ui'
-import type { FragmentPayload, FragmentPayloadValue, FragmentPlan, FragmentPlanValue, RenderNode } from '../../fragment/types'
-import { appConfig } from '../../app-config'
+import type { FragmentPayload, FragmentPlan, FragmentPlanValue, RenderNode } from '../../fragment/types'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
-import { StoreSeedContext, type StoreSeed } from '../../shared/store-seed'
+import type { StoreSeed } from '../../shared/store-seed'
 import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../shared/store-sort'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import { storeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
-
-const featureStoreModule = await import('@features/store/pages/Store')
-const { StoreRoute: FeatureStoreRoute, StoreSkeleton: FeatureStoreSkeleton } = featureStoreModule
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
+import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
   plan: FragmentPlanValue | null
-  fragments: FragmentPayloadValue
   path: string
   lang: Lang
-  shellState: FragmentShellState | null
+  staticRoute: StaticFragmentRouteModel | null
   storeSeed: StoreSeed
   languageSeed: LanguageSeedPayload
 }
@@ -82,7 +73,11 @@ export const buildOfflineShellFragment = (id: string, path: string): FragmentPay
   }
 }
 
-const resolveStoreApiBase = (request: Request) => {
+const resolveStoreApiBase = async (request: Request) => {
+  const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
+    import('../../app-config.server'),
+    import('../../shared/api-base.server')
+  ])
   const apiBase = resolveServerApiBase(appConfig.apiBase, request)
   if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
   const origin = resolveRequestOrigin(request)
@@ -115,7 +110,7 @@ const loadStoreSeed = async (
   let streamItems: unknown[] = []
 
   try {
-    const apiBase = resolveStoreApiBase(request)
+    const apiBase = await resolveStoreApiBase(request)
     const url = buildStoreApiUrl(
       apiBase,
       `/store/items?limit=${STORE_STREAM_LIMIT}&sort=${sortParams.sort}&dir=${sortParams.dir}`
@@ -144,6 +139,7 @@ const loadStoreSeed = async (
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
+  const { appConfig } = await import('../../app-config.server')
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
   const sortParams = resolveStoreSort(url)
@@ -151,24 +147,30 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   if (!storeEnabled) {
     return {
       plan: null,
-      fragments: {} as FragmentPayloadValue,
       path,
       lang,
-      shellState: null,
+      staticRoute: null,
       storeSeed,
       languageSeed: createServerLanguageSeed(lang, storeLanguageSelection)
     }
   }
 
   try {
-    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
     const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,
-      fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
+      staticRoute: plan.fragments.length
+        ? buildStaticFragmentRouteModel({
+            plan,
+            fragments,
+            lang,
+            initialHtml,
+            storeSeed
+          })
+        : null,
       storeSeed,
       languageSeed: createServerLanguageSeed(
         lang,
@@ -192,12 +194,16 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
 
     return {
       plan: plan as FragmentPlanValue,
-      fragments: {
-        [fallbackId]: buildOfflineShellFragment(fallbackId, path)
-      } as FragmentPayloadValue,
       path,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), path),
+      staticRoute: buildStaticFragmentRouteModel({
+        plan: plan as FragmentPlanValue,
+        fragments: {
+          [fallbackId]: buildOfflineShellFragment(fallbackId, path)
+        },
+        lang,
+        storeSeed
+      }),
       storeSeed,
       languageSeed: createServerLanguageSeed(
         lang,
@@ -222,22 +228,21 @@ const DisabledStoreRoute = component$(() => {
 
 const EnabledStoreRoute = component$(() => {
   const copy = useLangCopy()
+
   return (
-    <FeatureStoreRoute
-      copy={{
-        metaLine: copy.value.storeMetaLine,
-        title: copy.value.storeTitle,
-        description: copy.value.storeDescription,
-        actionLabel: copy.value.storeAction,
-        closeLabel: copy.value.fragmentClose
-      }}
+    <StaticRouteTemplate
+      metaLine={copy.value.storeMetaLine}
+      title={copy.value.storeTitle}
+      description={copy.value.storeDescription}
+      actionLabel={copy.value.storeAction}
+      closeLabel={copy.value.fragmentClose}
     />
   )
 })
 
 export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
 
-export const StoreSkeleton = storeEnabled ? FeatureStoreSkeleton : StaticRouteSkeleton
+export const StoreSkeleton = StaticRouteSkeleton
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
@@ -262,37 +267,26 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
-  const location = useLocation()
   const fragmentResource = useFragmentResource()
   useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
   if (!storeEnabled) {
-    return <DisabledStoreRoute />
-  }
-  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
-  const cachedData = cachedEntry
-    ? {
-        plan: cachedEntry.plan,
-        fragments: cachedEntry.fragments,
-        path: cachedEntry.path,
-        lang: cachedEntry.lang,
-        shellState: null,
-        storeSeed: fragmentResource.value.storeSeed,
-        languageSeed: fragmentResource.value.languageSeed
-      }
-    : null
-  const data = fragmentResource.value ?? cachedData
-  useContextProvider(StoreSeedContext, data?.storeSeed ?? null)
-  if (data?.plan?.fragments?.length) {
     return (
-      <FragmentShell
-        plan={data.plan}
-        initialFragments={data.fragments}
-        path={data.path}
-        initialLang={data.lang}
-        initialShellState={data.shellState ?? undefined}
-        preserveFragmentEffects
+      <StaticPageRoot>
+        <DisabledStoreRoute />
+      </StaticPageRoot>
+    )
+  }
+  const data = fragmentResource.value
+  if (data.staticRoute?.entries.length) {
+    return (
+      <StaticFragmentRoute
+        model={data.staticRoute}
       />
     )
   }
-  return <EnabledStoreRoute />
+  return (
+    <StaticPageRoot>
+      <EnabledStoreRoute />
+    </StaticPageRoot>
+  )
 })

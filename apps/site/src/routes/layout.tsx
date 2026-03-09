@@ -11,7 +11,7 @@ import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../share
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
 import { resolveRequestLang } from './fragment-resource'
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
@@ -19,7 +19,7 @@ import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
 import { StaticShellLayout } from '../static-shell/StaticShellLayout'
-import { isHomeStaticPath } from '../static-shell/constants'
+import { FRAGMENT_STATIC_ROUTE_KIND, HOME_STATIC_ROUTE_KIND, isHomeStaticPath, isStaticShellPath } from '../static-shell/constants'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -800,18 +800,23 @@ export default component$(() => {
   const location = useLocation()
   const shellPreferences = useShellPreferences()
 
-  if (isHomeStaticPath(location.url.pathname)) {
+  if (isStaticShellPath(location.url.pathname)) {
     return (
       <StaticShellLayout
         currentPath={location.url.pathname}
         lang={shellPreferences.value.lang}
         theme={shellPreferences.value.theme}
         languageSeed={shellPreferences.value.languageSeed}
+        routeKind={isHomeStaticPath(location.url.pathname) ? HOME_STATIC_ROUTE_KIND : FRAGMENT_STATIC_ROUTE_KIND}
       >
         <Slot />
       </StaticShellLayout>
     )
   }
 
-  return <InteractiveShellLayout />
+  return (
+    <InteractiveShellLayout>
+      <Slot />
+    </InteractiveShellLayout>
+  )
 })

@@ -1,4 +1,4 @@
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 
 type JsonObject = Record<string, string | number | boolean | null>
 

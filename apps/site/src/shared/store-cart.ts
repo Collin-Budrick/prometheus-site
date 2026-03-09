@@ -1,4 +1,4 @@
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 import {
   createStoreLocalRepo,
   parseStoreCartQueue,

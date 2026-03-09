@@ -224,8 +224,7 @@ const FragmentCardOverflowEffects = component$<FragmentCardOverflowEffectsProps>
       const card = cardRef.value
       if (!card || !inView) return
 
-      let frame = 0
-      const updateOverflow = () => {
+      let frame = requestAnimationFrame(() => {
         frame = 0
         if (!resolvedSize || expandedId.value === id || expandable === false) {
           autoExpandable.value = expandedId.value === id
@@ -234,46 +233,10 @@ const FragmentCardOverflowEffects = component$<FragmentCardOverflowEffectsProps>
         const heightOverflow = card.scrollHeight - card.clientHeight
         const widthOverflow = card.scrollWidth - card.clientWidth
         autoExpandable.value = heightOverflow > 1 || widthOverflow > 1
-      }
-
-      const schedule = () => {
-        if (frame) return
-        frame = requestAnimationFrame(updateOverflow)
-      }
-
-      updateOverflow()
-
-      const mutationObserver =
-        typeof MutationObserver !== 'undefined'
-          ? new MutationObserver(() => {
-              schedule()
-            })
-          : null
-
-      if (mutationObserver) {
-        mutationObserver.observe(card, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-          attributes: true
-        })
-      }
-
-      const resizeObserver =
-        typeof ResizeObserver !== 'undefined'
-          ? new ResizeObserver(() => {
-              schedule()
-            })
-          : null
-
-      if (resizeObserver) {
-        resizeObserver.observe(card)
-      }
+      })
 
       ctx.cleanup(() => {
         if (frame) cancelAnimationFrame(frame)
-        mutationObserver?.disconnect()
-        resizeObserver?.disconnect()
       })
     },
     { strategy: 'document-idle' }
@@ -363,6 +326,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         pendingRadii.set(card, window.getComputedStyle(card).borderRadius)
       }
       expandedId.value = expandedId.value === id ? null : id
+      layoutTick.value += 1
     })
 
     const handleClose = $(() => {
@@ -377,6 +341,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         pendingRadii.set(card, window.getComputedStyle(card).borderRadius)
       }
       expandedId.value = null
+      layoutTick.value += 1
     })
 
     useVisibleTask$(

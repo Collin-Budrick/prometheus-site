@@ -4,7 +4,12 @@ import { manifest } from '@qwik-client-manifest'
 import Root from './root'
 import { defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { readServiceWorkerSeedFromCookie } from './shared/service-worker-seed'
-import { HOME_STATIC_ROUTE_PATH } from './static-shell/constants'
+import {
+  STATIC_FRAGMENT_DATA_SCRIPT_ID,
+  STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_PAGE_ROOT_ATTR,
+  isStaticShellPath
+} from './static-shell/constants'
 import { existsSync } from 'node:fs'
 
 const HOME_STATIC_BUNDLE_PATH = 'build/static-home/src/static-shell/home-static-entry.js'
@@ -34,7 +39,7 @@ const resolvePublicBase = (opts: RenderOptions) => {
 
 const hasStaticHomeBundle = () => existsSync(HOME_STATIC_BUNDLE_URL)
 
-const stripHomeQwikScripts = (html: string) =>
+const stripStaticQwikScripts = (html: string) =>
   html
     .replace(/<script\b[^>]*type=["']qwik\/json["'][^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<script\b[^>]*q:func=["']qwik\/json["'][^>]*>[\s\S]*?<\/script>/gi, '')
@@ -42,10 +47,15 @@ const stripHomeQwikScripts = (html: string) =>
     .replace(/<script\b[^>]*>\s*\(window\.qwikevents\|\|\(window\.qwikevents=\[\]\)\)\.push[\s\S]*?<\/script>/gi, '')
     .replace(/<script\b[^>]*id=["']qwikloader["'][^>]*>[\s\S]*?<\/script>/gi, '')
 
-const injectHomeStaticBootstrap = (html: string, publicBase: string) => {
+const injectStaticBootstrap = (html: string, publicBase: string) => {
   const scriptTag = `<script type="module" src="${publicBase}${HOME_STATIC_BUNDLE_PATH}"></script>`
   return html.replace('</body>', `${scriptTag}</body>`)
 }
+
+const hasStaticOnlyMarker = (html: string) =>
+  html.includes(`id="${STATIC_HOME_DATA_SCRIPT_ID}"`) ||
+  html.includes(`id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}"`) ||
+  html.includes(STATIC_PAGE_ROOT_ATTR)
 
 export default function (opts: RenderToStreamOptions) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
@@ -85,22 +95,23 @@ export default function (opts: RenderToStreamOptions) {
     containerAttributes
   } satisfies RenderToStreamOptions
 
-  if (pathname === HOME_STATIC_ROUTE_PATH) {
-    if (!hasStaticHomeBundle()) {
-      console.warn('Missing static home bootstrap bundle; falling back to default Qwik startup.')
-      return renderToStream(<Root />, {
-        ...renderOptions
-      })
-    }
-
+  if (isStaticShellPath(pathname)) {
     return renderToString(<Root />, {
-      ...renderOptions,
-      preloader: false,
-      qwikLoader: 'never'
-    }).then((result) => ({
-      ...result,
-      html: injectHomeStaticBootstrap(stripHomeQwikScripts(result.html), resolvePublicBase(renderOptions))
-    }))
+      ...renderOptions
+    }).then((result) => {
+      if (!hasStaticOnlyMarker(result.html)) {
+        return result
+      }
+      if (!hasStaticHomeBundle()) {
+        console.warn('Missing static shell bootstrap bundle; falling back to default Qwik startup.')
+        return result
+      }
+
+      return {
+        ...result,
+        html: injectStaticBootstrap(stripStaticQwikScripts(result.html), resolvePublicBase(renderOptions))
+      }
+    })
   }
 
   return renderToStream(<Root />, {

@@ -10,6 +10,11 @@ type ManifestBundle = {
   symbols?: string[]
 }
 
+type ForbiddenChunkRule = {
+  label: string
+  patterns: RegExp[]
+}
+
 type ClientBootDebugState = {
   ready: boolean
   source: string
@@ -58,6 +63,10 @@ type RouteBenchmark = {
   loadedSettingsChunksBeforeInteraction: string[]
   loadedDemoChunksBeforeActivation: string[]
   loadedBootChunksBeforeInteraction: string[]
+  forbiddenChunkLoadsBeforeInteraction: Array<{
+    label: string
+    chunks: string[]
+  }>
 }
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173'
@@ -86,6 +95,20 @@ const BOOT_CHUNK_PATTERNS = [
   /telemetry/i,
   /server[-_]backoff/i,
   /connectivity/i
+]
+const FORBIDDEN_CHUNK_RULES: ForbiddenChunkRule[] = [
+  {
+    label: 'gridstack',
+    patterns: [/gridstack/i]
+  },
+  {
+    label: 'arkenv',
+    patterns: [/arkenv/i]
+  },
+  {
+    label: '@ark/schema',
+    patterns: [/@ark\/schema/i, /\bark[-_/]?schema\b/i]
+  }
 ]
 
 const parseArgs = () => {
@@ -155,11 +178,18 @@ const collectChunkNames = (patterns: RegExp[]) => {
   return names
 }
 
+const collectForbiddenChunkNames = (rules: ForbiddenChunkRule[]) =>
+  rules.map((rule) => ({
+    label: rule.label,
+    names: collectChunkNames(rule.patterns)
+  }))
+
 const run = async () => {
   const { baseUrl, routes, thresholdMs, observeWindowMs } = parseArgs()
   const settingsChunkNames = collectChunkNames(SETTINGS_CHUNK_PATTERNS)
   const demoChunkNames = collectChunkNames(DEMO_CHUNK_PATTERNS)
   const bootChunkNames = collectChunkNames(BOOT_CHUNK_PATTERNS)
+  const forbiddenChunkNames = collectForbiddenChunkNames(FORBIDDEN_CHUNK_RULES)
   const browser = await chromium.launch({ headless: true })
 
   try {
@@ -186,7 +216,7 @@ const run = async () => {
       await page.waitForTimeout(observeWindowMs)
 
       const result = await page.evaluate(
-        ({ settingsChunks, demoChunks, bootChunks, observeWindowMs }) => {
+        ({ settingsChunks, demoChunks, bootChunks, forbiddenChunks, observeWindowMs }) => {
           const longTasks = (
             (window as Window & { __promLongTasks?: Array<{ startTime: number; duration: number }> })
               .__promLongTasks ?? []
@@ -256,6 +286,17 @@ const run = async () => {
           const loadedBootChunksBeforeInteraction = loadedBuildChunksBeforeInteraction.filter((name) =>
             bootChunks.some((chunk) => name.endsWith(`/${chunk}`))
           )
+          const forbiddenChunkLoadsBeforeInteraction = forbiddenChunks.map(
+            (entry: { label: string; chunks: string[] }) => ({
+              label: entry.label,
+              chunks: loadedBuildChunksBeforeInteraction
+                .filter((name) => entry.chunks.some((chunk) => name.endsWith(`/${chunk}`)))
+                .map((name) => {
+                  const parts = name.split('/')
+                  return parts[parts.length - 1] ?? name
+                })
+            })
+          )
 
           return {
             finalPath: window.location.pathname,
@@ -295,13 +336,18 @@ const run = async () => {
             loadedBootChunksBeforeInteraction: loadedBootChunksBeforeInteraction.map((name) => {
               const parts = name.split('/')
               return parts[parts.length - 1] ?? name
-            })
+            }),
+            forbiddenChunkLoadsBeforeInteraction
           }
         },
         {
           settingsChunks: Array.from(settingsChunkNames),
           demoChunks: Array.from(demoChunkNames),
           bootChunks: Array.from(bootChunkNames),
+          forbiddenChunks: forbiddenChunkNames.map((entry) => ({
+            label: entry.label,
+            chunks: Array.from(entry.names)
+          })),
           observeWindowMs
         }
       )
@@ -319,12 +365,15 @@ const run = async () => {
     console.log(`Threshold: ${thresholdMs}ms`)
     console.log(`Observe Window: ${observeWindowMs}ms`)
     results.forEach((result) => {
+      const forbiddenSummary = result.forbiddenChunkLoadsBeforeInteraction
+        .map((entry) => `${entry.label}:${entry.chunks.join(', ') || 'none'}`)
+        .join('; ')
       console.log(
         `${result.route} [${result.scenario}] -> longTasks=${result.longTaskCount}, over50ms=${result.longTasksOver50ms}, total=${result.totalLongTaskDuration}ms, max=${result.maxLongTask}ms, unlock=${result.unlockSource}${result.unlockAt === null ? '' : `@${result.unlockAt}ms`}, fragmentBootstrapBytes=${result.fragmentBootstrapBytesBeforeUnlock}, fragmentStreamBytes=${result.fragmentStreamBytesBeforeUnlock}, duplicateStreamBytes=${result.duplicateFragmentBytesBeforeUnlock}, homePreUnlockNonCritical=${result.preUnlockHomeNonCriticalRequests.length}, settingsChunks=${
           result.loadedSettingsChunksBeforeInteraction.join(', ') || 'none'
         }, demoChunks=${result.loadedDemoChunksBeforeActivation.join(', ') || 'none'}, bootChunks=${
           result.loadedBootChunksBeforeInteraction.join(', ') || 'none'
-        }`
+        }, forbiddenChunks=${forbiddenSummary}`
       )
     })
     console.log(JSON.stringify({ baseUrl, thresholdMs, observeWindowMs, results }, null, 2))
@@ -342,12 +391,16 @@ const run = async () => {
     const hasDuplicateFragmentFailure = results.some(
       (result) => result.duplicateFragmentBytesBeforeUnlock > 0
     )
+    const hasForbiddenChunkFailure = results.some((result) =>
+      result.forbiddenChunkLoadsBeforeInteraction.some((entry) => entry.chunks.length > 0)
+    )
     if (
       hasLongTaskFailure ||
       hasSettingsChunkFailure ||
       hasDemoChunkFailure ||
       hasPreUnlockHomeFailure ||
-      hasDuplicateFragmentFailure
+      hasDuplicateFragmentFailure ||
+      hasForbiddenChunkFailure
     ) {
       process.exitCode = 1
     }

@@ -7,9 +7,11 @@ declare global {
 if (typeof window !== 'undefined') {
   window.__PROM_STATIC_HOME_ENTRY__ = true
 
-  void import('./home-bootstrap')
-    .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
+  void import('./static-entry')
+    .then(({ bootstrapStaticEntry }) => bootstrapStaticEntry())
     .catch((error) => {
-      console.error('Static home bootstrap failed:', error)
+      console.error('Static shell bootstrap failed:', error)
     })
 }
+
+export {}

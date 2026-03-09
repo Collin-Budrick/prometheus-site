@@ -1,7 +1,7 @@
 import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '@core/fragments'
 import type { FragmentPayloadMap, FragmentPlan } from '../types'
-import { appConfig } from '../../app-config'
+import { appConfig } from '../../public-app-config'
 
 const INITIAL_SPECULATION_IDLE_TIMEOUT_MS = 4000
 

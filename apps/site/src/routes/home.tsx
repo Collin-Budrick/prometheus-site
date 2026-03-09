@@ -4,7 +4,6 @@ import { loadFragments } from '@core/fragment/server'
 import { siteBrand } from '../config'
 import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
-import { appConfig } from '../app-config'
 import type {
   FragmentPayload,
   FragmentPayloadValue,
@@ -14,7 +13,6 @@ import type {
 } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
-import { resolveServerApiBase } from '../shared/api-base'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })
@@ -74,6 +72,10 @@ type FragmentResource = {
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')
+  const [{ appConfig }, { resolveServerApiBase }] = await Promise.all([
+    import('../app-config.server'),
+    import('../shared/api-base.server')
+  ])
   const path = url.pathname || '/'
   const lang = resolveRequestLang(request)
 

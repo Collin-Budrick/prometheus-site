@@ -1,6 +1,3 @@
-import { appConfig } from '../app-config'
-import { resolveRequestOrigin, resolveServerApiBase } from './api-base'
-
 type AuthSessionPayload = {
   session?: {
     userId?: string
@@ -28,6 +25,10 @@ export type AuthSessionState =
     }
 
 export const loadAuthSession = async (request: Request): Promise<AuthSessionState> => {
+  const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
+    import('../app-config.server'),
+    import('./api-base.server')
+  ])
   const apiBase = resolveServerApiBase(appConfig.apiBase, request)
   if (!apiBase) return { status: 'anonymous' }
   const requestOrigin = resolveRequestOrigin(request)

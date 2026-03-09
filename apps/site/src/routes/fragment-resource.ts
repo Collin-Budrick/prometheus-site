@@ -1,9 +1,7 @@
-import { type AppConfig } from '@platform/env'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type Lang } from '../shared/lang-store'
-import { resolveServerApiBase } from '../shared/api-base'
 import { readFragmentCriticalFromCookie } from '../fragment/ui/shell-cache'
 import { selectInitialFragmentIds } from '../fragment/initial-selection'
 import { isHomeStaticPath } from '../static-shell/constants'
@@ -44,10 +42,11 @@ const resolveViewportHint = (request: Request | undefined) => {
 
 export const loadHybridFragmentResource = async (
   path: string,
-  config: Pick<AppConfig, 'apiBase'>,
+  config: { apiBase: string },
   lang?: string,
   request?: Request
 ): Promise<HybridFragmentResource> => {
+  const { resolveServerApiBase } = await import('../shared/api-base.server')
   const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
   const viewport = resolveViewportHint(request)
   const dynamicCriticalIds = request && !isHomeStaticPath(path)

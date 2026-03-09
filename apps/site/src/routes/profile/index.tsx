@@ -2,7 +2,7 @@ import { $, component$, useComputed$, useSignal, useStyles$, useVisibleTask$ } f
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
-import { appConfig } from '../../app-config'
+import { appConfig } from '../../public-app-config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'

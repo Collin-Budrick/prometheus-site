@@ -1,6 +1,6 @@
 import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import type { NoSerialize } from '@builder.io/qwik'
-import { appConfig } from '../app-config'
+import { appConfig } from '../public-app-config'
 import { getFragmentTextCopy } from '../lang/client'
 import {
   beginInitialTask,

@@ -5,6 +5,7 @@ import { emptyUiCopy, type LanguageSeedPayload } from '../lang/selection'
 import type { Lang } from '../lang'
 import { supportedLanguages } from '../lang/manifest'
 import {
+  FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
   STATIC_DOCK_ROOT_ATTR,
   STATIC_ROUTE_ATTR,
@@ -22,6 +23,7 @@ type StaticShellLayoutProps = {
   lang: Lang
   theme: Theme
   languageSeed: LanguageSeedPayload
+  routeKind?: typeof HOME_STATIC_ROUTE_KIND | typeof FRAGMENT_STATIC_ROUTE_KIND
 }
 
 const serializeJson = (value: unknown) =>
@@ -30,7 +32,13 @@ const serializeJson = (value: unknown) =>
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
 
-export const StaticShellLayout = component$<StaticShellLayoutProps>(({ currentPath, lang, theme, languageSeed }) => {
+export const StaticShellLayout = component$<StaticShellLayoutProps>(({
+  currentPath,
+  lang,
+  theme,
+  languageSeed,
+  routeKind = FRAGMENT_STATIC_ROUTE_KIND
+}) => {
   const copy = {
     ...emptyUiCopy,
     ...(languageSeed.ui ?? {})
@@ -40,7 +48,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({ currentPa
     <div
       class="layout-shell"
       {...{
-        [STATIC_ROUTE_ATTR]: HOME_STATIC_ROUTE_KIND
+        [STATIC_ROUTE_ATTR]: routeKind
       }}
       data-static-lang={lang}
     >

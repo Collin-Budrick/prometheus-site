@@ -13,6 +13,15 @@ import {
   savePasswordIfSupported
 } from '@site/native/native-auth'
 import { openExternalUrl } from '@site/native/native-app-extras'
+import {
+  authEmailCookieKey,
+  authFormCookieMaxAge,
+  authNameCookieKey,
+  authRememberCookieKey,
+  readCookieValueRaw,
+  resolveAuthFormState,
+  type AuthFormState
+} from './auth-form-state'
 import authStyles from './auth.css?inline'
 
 export type AuthCopy = {
@@ -38,12 +47,6 @@ export type AuthCopy = {
   authBiometricLoginCredentialsExpired: string
   socialSectionLabel: string
   closeLabel: string
-}
-
-export type AuthFormState = {
-  email: string
-  name: string
-  remember: boolean
 }
 
 type AuthMode = 'login' | 'signup'
@@ -114,33 +117,6 @@ const isCredentialRejectionResponse = (status: number, message: string) => {
 }
 
 const authModeCookieKey = 'auth:mode'
-const authRememberCookieKey = 'auth:remember'
-const authEmailCookieKey = 'auth:email'
-const authNameCookieKey = 'auth:name'
-const authFormCookieMaxAge = 2592000
-
-const readCookieValueRaw = (cookieHeader: string | null, key: string) => {
-  if (!cookieHeader) return null
-  const parts = cookieHeader.split(';')
-  for (const part of parts) {
-    const [name, ...rest] = part.split('=')
-    if (!name) continue
-    if (name.trim() === key) {
-      return rest.join('=').trim()
-    }
-  }
-  return null
-}
-
-const readCookieValue = (cookieHeader: string | null, key: string) => {
-  const raw = readCookieValueRaw(cookieHeader, key)
-  if (raw === null) return null
-  try {
-    return decodeURIComponent(raw)
-  } catch {
-    return null
-  }
-}
 
 const readAuthModeCookie = (cookieHeader: string | null): AuthMode | null => {
   const value = readCookieValueRaw(cookieHeader, authModeCookieKey)
@@ -152,14 +128,6 @@ const writeAuthModeCookie = (mode: AuthMode) => {
   if (typeof document === 'undefined') return
   document.cookie = `${authModeCookieKey}=${mode}; path=/; max-age=2592000; samesite=lax`
 }
-
-const parseRememberCookie = (value: string | null) => value === '1' || value === 'true'
-
-export const resolveAuthFormState = (cookieHeader: string | null): AuthFormState => ({
-  email: readCookieValue(cookieHeader, authEmailCookieKey) ?? '',
-  name: readCookieValue(cookieHeader, authNameCookieKey) ?? '',
-  remember: parseRememberCookie(readCookieValue(cookieHeader, authRememberCookieKey))
-})
 
 const writeAuthFormCookie = (key: string, value: string) => {
   if (typeof document === 'undefined') return

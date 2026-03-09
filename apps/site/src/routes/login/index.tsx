@@ -1,33 +1,30 @@
-import { component$ } from '@builder.io/qwik'
-import { routeLoader$, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { component$, noSerialize, useSignal, useVisibleTask$ } from '@builder.io/qwik'
+import type { NoSerialize } from '@builder.io/qwik'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
-import {
-  FragmentShell,
-  getFragmentShellCacheEntry,
-  readFragmentShellStateFromCookie,
-  type FragmentShellState
-} from '../../fragment/ui'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../../fragment/types'
-import { appConfig } from '../../app-config'
+import type { FragmentPlanValue } from '../../fragment/types'
+import { appConfig } from '../../public-app-config'
 import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import { loginLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { resolveAuthFormState, type AuthFormState } from '@features/auth/auth-form-state'
+import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 
-const featureLoginModule = await import('@features/auth/pages/Login')
-const { LoginRoute: FeatureLoginRoute, LoginSkeleton: FeatureLoginSkeleton, resolveAuthFormState } = featureLoginModule
-type AuthFormState = import('@features/auth/pages/Login').AuthFormState
+type LoginClientModule = typeof import('@features/auth/pages/Login.client')
+type LoginClientRoute = LoginClientModule['LoginRoute']
 
 const loginEnabled = siteFeatures.login !== false
 type FragmentResource = {
   plan: FragmentPlanValue | null
-  fragments: FragmentPayloadValue
   path: string
   lang: Lang
-  shellState: FragmentShellState | null
+  staticRoute: StaticFragmentRouteModel | null
   languageSeed: LanguageSeedPayload
 }
 
@@ -37,28 +34,34 @@ export const useAuthFormState = routeLoader$<AuthFormState>(({ request }) =>
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
+  const { appConfig } = await import('../../app-config.server')
   const path = url.pathname || '/login'
   const lang = resolveRequestLang(request)
   if (!loginEnabled) {
     return {
       plan: null,
-      fragments: {} as FragmentPayloadValue,
       path,
       lang,
-      shellState: null,
+      staticRoute: null,
       languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
     }
   }
 
   try {
-    const { plan, fragments, path: planPath } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
     const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,
-      fragments: fragments as FragmentPayloadValue,
       path: planPath,
       lang,
-      shellState: readFragmentShellStateFromCookie(request.headers.get('cookie'), planPath),
+      staticRoute: plan.fragments.length
+        ? buildStaticFragmentRouteModel({
+            plan,
+            fragments,
+            lang,
+            initialHtml
+          })
+        : null,
       languageSeed: createServerLanguageSeed(
         lang,
         withFragmentHeaderSelection(loginLanguageSelection, fragmentHeaderIds)
@@ -68,10 +71,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
     console.error('Fragment plan fetch failed for login', error)
     return {
       plan: null,
-      fragments: {} as FragmentPayloadValue,
       path,
       lang,
-      shellState: null,
+      staticRoute: null,
       languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
     }
   }
@@ -90,9 +92,37 @@ const DisabledLoginRoute = component$(() => {
   )
 })
 
+const LoginFallbackSkeleton = component$(() => (
+  <section class="fragment-shell" aria-hidden="true">
+    <div class="fragment-grid" data-fragment-grid="main">
+      <article class="fragment-card" style={{ gridColumn: 'span 12' }} data-motion>
+        <span class="skeleton-line is-short" />
+        <span class="skeleton-line is-medium" />
+        <span class="skeleton-line is-long" />
+        <span class="skeleton-line is-button" />
+      </article>
+    </div>
+  </section>
+))
+
 const EnabledLoginRoute = component$(() => {
   const copy = useLangCopy()
   const authFormState = useAuthFormState()
+  const featureRoute = useSignal<NoSerialize<LoginClientRoute> | null>(null)
+
+  useVisibleTask$(
+    async () => {
+      if (featureRoute.value) return
+      const { LoginRoute } = await import('@features/auth/pages/Login.client')
+      featureRoute.value = noSerialize(LoginRoute)
+    },
+    { strategy: 'document-ready' }
+  )
+  const FeatureLoginRoute = featureRoute.value as LoginClientRoute | null
+  if (!FeatureLoginRoute) {
+    return <LoginFallbackSkeleton />
+  }
+
   return (
     <FeatureLoginRoute
       apiBase={appConfig.apiBase}
@@ -127,7 +157,7 @@ const EnabledLoginRoute = component$(() => {
 
 export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
 
-export const LoginSkeleton = loginEnabled ? FeatureLoginSkeleton : StaticRouteSkeleton
+export const LoginSkeleton = loginEnabled ? LoginFallbackSkeleton : StaticRouteSkeleton
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
@@ -156,30 +186,21 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute
 
 export default component$(() => {
-  const location = useLocation()
   const fragmentResource = useFragmentResource()
   useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
-  const cachedEntry = typeof window !== 'undefined' ? getFragmentShellCacheEntry(location.url.pathname) : undefined
-  const cachedData = cachedEntry
-    ? {
-        plan: cachedEntry.plan,
-        fragments: cachedEntry.fragments,
-        path: cachedEntry.path,
-        lang: cachedEntry.lang,
-        shellState: null,
-        languageSeed: fragmentResource.value.languageSeed
-      }
-    : null
-  const data = fragmentResource.value ?? cachedData
-  if (data?.plan?.fragments?.length) {
+  const data = fragmentResource.value
+  if (data.staticRoute?.entries.length) {
     return (
-      <FragmentShell
-        plan={data.plan}
-        initialFragments={data.fragments}
-        path={data.path}
-        initialLang={data.lang}
-        initialShellState={data.shellState ?? undefined}
+      <StaticFragmentRoute
+        model={data.staticRoute}
       />
+    )
+  }
+  if (!loginEnabled) {
+    return (
+      <StaticPageRoot>
+        <RouteComponent />
+      </StaticPageRoot>
     )
   }
   return <RouteComponent />

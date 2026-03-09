@@ -1,5 +1,6 @@
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { LoginRoute, LoginSkeleton, resolveAuthFormState, type AuthCopy, type AuthFormState } from '../login-route'
+import { LoginRoute, LoginSkeleton, type AuthCopy } from '../login-route'
+import { resolveAuthFormState, type AuthFormState } from '../auth-form-state'
 
 export type { AuthCopy, AuthFormState }
 export { LoginRoute, LoginSkeleton, resolveAuthFormState }

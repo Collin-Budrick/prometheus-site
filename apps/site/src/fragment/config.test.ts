@@ -1,95 +1,65 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 
-import { normalizeApiBase, resolveApiBase, resolveAppConfig } from '@platform/env'
+import { buildPublicApiUrl, resolvePublicAppConfig } from '../public-app-config'
 
-const originalApiBase = process.env.API_BASE
-const clearProcessApiBase = () => {
-  delete process.env.API_BASE
-}
+describe('resolvePublicAppConfig', () => {
+  it('falls back to client-friendly visibility defaults when platform defaults were injected', () => {
+    const config = resolvePublicAppConfig({
+      apiBase: '/api',
+      fragmentVisibilityMargin: '0px',
+      fragmentVisibilityThreshold: 0
+    })
 
-afterEach(() => {
-  if (typeof originalApiBase === 'undefined') {
-    delete process.env.API_BASE
-  } else {
-    process.env.API_BASE = originalApiBase
-  }
+    expect(config.fragmentVisibilityMargin).toBe('60% 0px')
+    expect(config.fragmentVisibilityThreshold).toBe(0.4)
+  })
+
+  it('preserves explicit visibility settings when env values were provided', () => {
+    const config = resolvePublicAppConfig(
+      {
+        apiBase: '/api',
+        fragmentVisibilityMargin: '0px',
+        fragmentVisibilityThreshold: 0
+      },
+      {
+        VITE_FRAGMENT_VISIBILITY_MARGIN: '0px',
+        VITE_FRAGMENT_VISIBILITY_THRESHOLD: '0'
+      }
+    )
+
+    expect(config.fragmentVisibilityMargin).toBe('0px')
+    expect(config.fragmentVisibilityThreshold).toBe(0)
+  })
+
+  it('normalizes browser-facing URLs and flags', () => {
+    const config = resolvePublicAppConfig({
+      apiBase: ' https://api.example.com/root/ ',
+      webTransportBase: ' https://wt.example.com/path/ ',
+      preferWebTransportDatagrams: true,
+      preferFragmentCompression: false,
+      enableFragmentStreaming: true,
+      authBootstrapPublicKey: '  key  '
+    })
+
+    expect(config.apiBase).toBe('https://api.example.com/root')
+    expect(config.webTransportBase).toBe('https://wt.example.com/path')
+    expect(config.preferWebTransportDatagrams).toBe(true)
+    expect(config.preferFragmentCompression).toBe(false)
+    expect(config.enableFragmentStreaming).toBe(true)
+    expect(config.authBootstrapPublicKey).toBe('key')
+  })
 })
 
-describe('resolveApiBase', () => {
-  it('normalizes absolute URLs and trims trailing slashes', () => {
-    clearProcessApiBase()
-    expect(resolveApiBase({ VITE_API_BASE: ' https://api.example.com/root/ ' })).toBe(
-      'https://api.example.com/root'
+describe('buildPublicApiUrl', () => {
+  it('joins same-origin relative API bases', () => {
+    expect(buildPublicApiUrl('/auth/session', 'https://app.example.com', '/api')).toBe(
+      'https://app.example.com/api/auth/session'
     )
   })
 
-  it('supports relative paths for same-origin APIs', () => {
-    clearProcessApiBase()
-    expect(resolveApiBase({ VITE_API_BASE: '/api' })).toBe('/api')
-    expect(normalizeApiBase('/api/')).toBe('/api')
-  })
-
-  it('omits localhost defaults in production when unset', () => {
-    clearProcessApiBase()
-    expect(resolveApiBase({ MODE: 'production' })).toBe('')
-  })
-
-  it('falls back to localhost in development', () => {
-    clearProcessApiBase()
-    expect(resolveApiBase({ DEV: true })).toBe('http://127.0.0.1:4000')
-  })
-
-  it('rejects unsupported protocols', () => {
-    clearProcessApiBase()
-    expect(resolveApiBase({ VITE_API_BASE: 'ftp://api.example.com' })).toBe('')
-  })
-})
-
-describe('resolveAppConfig', () => {
-  it('composes platform flags and URLs from the environment', () => {
-    const config = resolveAppConfig({
-      VITE_API_BASE: '/api',
-      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: 'true',
-      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: 'false',
-      VITE_ENABLE_FRAGMENT_COMPRESSION: 'true',
-      VITE_ENABLE_FRAGMENT_STREAMING: 'true',
-      VITE_FRAGMENT_VISIBILITY_MARGIN: '40% 0px',
-      VITE_FRAGMENT_VISIBILITY_THRESHOLD: '0.25',
-      VITE_ENABLE_PREFETCH: '1',
-      VITE_ENABLE_ANALYTICS: '1',
-      VITE_ANALYTICS_BEACON_URL: 'https://example.com/analytics',
-      VITE_ENABLE_HIGHLIGHT: '1',
-      VITE_HIGHLIGHT_PROJECT_ID: 'highlight-project-id',
-      VITE_HIGHLIGHT_PRIVACY: 'strict',
-      VITE_HIGHLIGHT_SESSION_RECORDING: '1',
-      VITE_HIGHLIGHT_CANVAS_SAMPLING: '2',
-      VITE_HIGHLIGHT_SAMPLE_RATE: '0.2',
-      MODE: 'production'
-    })
-
-    expect(config.apiBase).toBe('/api')
-    expect(config.webTransportBase).toBe('/api')
-    expect(config.preferWebTransport).toBe(true)
-    expect(config.preferWebTransportDatagrams).toBe(false)
-    expect(config.preferFragmentCompression).toBe(true)
-    expect(config.enableFragmentStreaming).toBe(true)
-    expect(config.fragmentVisibilityMargin).toBe('40% 0px')
-    expect(config.fragmentVisibilityThreshold).toBe(0.25)
-    expect(config.enablePrefetch).toBe(true)
-    expect(config.analytics).toEqual({
-      enabled: true,
-      beaconUrl: 'https://example.com/analytics'
-    })
-    expect(config.highlight).toEqual({
-      enabled: true,
-      projectId: 'highlight-project-id',
-      privacySetting: 'strict',
-      enableSessionRecording: true,
-      enableCanvasRecording: true,
-      canvasSampling: 2,
-      sampleRate: 0.2,
-      environment: 'production',
-      serviceName: 'site'
-    })
+  it('keeps absolute API hosts for /api-prefixed paths', () => {
+    expect(buildPublicApiUrl('/api/auth/session', 'https://app.example.com', 'https://api.example.com/api')).toBe(
+      'https://api.example.com/api/auth/session'
+    )
   })
 })

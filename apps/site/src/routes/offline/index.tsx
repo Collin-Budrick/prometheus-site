@@ -1,11 +1,12 @@
 import { component$ } from '@builder.io/qwik'
 import type { DocumentHead } from '@builder.io/qwik-city'
-import { FragmentShell } from '../../fragment/ui'
-import { type FragmentPlanValue, type FragmentPayloadValue } from '../../fragment/types'
+import { type FragmentPlanValue } from '../../fragment/types'
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../home'
 import { siteBrand } from '../../config'
 import { defaultLang } from '../../shared/lang-store'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
+import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
+import { buildStaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 
 const offlinePath = '/offline/'
 const offlinePlan: FragmentPlanValue = {
@@ -20,12 +21,16 @@ const offlinePlan: FragmentPlanValue = {
   ]
 }
 
-const offlineFragments: FragmentPayloadValue = {
+const offlineRoute = buildStaticFragmentRouteModel({
+  plan: offlinePlan,
+  fragments: {
   [offlineShellFragmentId]: buildOfflineShellFragment(offlineShellFragmentId, offlinePath)
-}
+  },
+  lang: defaultLang
+})
 
 export default component$(() => (
-  <FragmentShell plan={offlinePlan} initialFragments={offlineFragments} path={offlinePath} initialLang={defaultLang} />
+  <StaticFragmentRoute model={offlineRoute} />
 ))
 
 export const head: DocumentHead = () => ({

@@ -1,27 +1,44 @@
 import type { Preview } from 'storybook-framework-qwik'
-import { type AppConfig, resolveAppConfig } from '@platform/env'
+import type { PublicAppConfig } from '../src/public-app-config'
 import { defaultLanguage, getLanguagePack } from '../src/lang'
 import { seedLanguageResources } from '../src/lang/client'
 import { LangProvider } from '../src/shared/lang-bridge'
 import '@prometheus/ui/global.css'
 
 type StorybookGlobalTarget = typeof globalThis & {
-  __PUBLIC_APP_CONFIG__?: AppConfig | undefined
+  __PUBLIC_APP_CONFIG__?: PublicAppConfig | undefined
 }
 
-const storybookAppConfig = resolveAppConfig({
-  DEV: 'true',
-  MODE: 'development',
-  NODE_ENV: 'development',
-  VITE_API_BASE: '/api',
-  VITE_ENABLE_ANALYTICS: '0',
-  VITE_ENABLE_HIGHLIGHT: '0',
-  VITE_ENABLE_PREFETCH: '0',
-  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: '0',
-  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: '0',
-  VITE_ENABLE_FRAGMENT_COMPRESSION: '0',
-  VITE_ENABLE_FRAGMENT_STREAMING: '0'
-})
+const storybookAppConfig: PublicAppConfig = {
+  apiBase: '/api',
+  webTransportBase: '',
+  preferWebTransport: false,
+  preferWebTransportDatagrams: false,
+  preferFragmentCompression: false,
+  enableFragmentStreaming: false,
+  fragmentVisibilityMargin: '60% 0px',
+  fragmentVisibilityThreshold: 0.4,
+  enablePrefetch: false,
+  analytics: {
+    enabled: false,
+    beaconUrl: ''
+  },
+  highlight: {
+    enabled: false,
+    projectId: '',
+    privacySetting: 'strict',
+    enableSessionRecording: true,
+    enableCanvasRecording: false,
+    sampleRate: 0.1,
+    environment: 'development',
+    serviceName: 'site'
+  },
+  p2pRelayBases: [],
+  p2pNostrRelays: [],
+  p2pWakuRelays: [],
+  p2pCrdtSignaling: [],
+  p2pIceServers: []
+}
 
 ;(globalThis as StorybookGlobalTarget).__PUBLIC_APP_CONFIG__ = storybookAppConfig
 seedLanguageResources(defaultLanguage, getLanguagePack(defaultLanguage), { full: true })

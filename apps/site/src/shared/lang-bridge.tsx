@@ -16,6 +16,8 @@ import { initLang, lang, subscribeLang, type Lang } from './lang-store'
 
 const LangSignalContext = createContextId<Signal<Lang>>('lang-signal')
 
+const useFallbackLangSignal = (initialLang?: Lang) => useSignal<Lang>(initialLang ?? lang.value)
+
 export const useLangSignal = (initialLang?: Lang) => {
   const current = useSignal<Lang>(initialLang ?? lang.value)
 
@@ -80,7 +82,10 @@ export const LangProvider = component$<LangProviderProps>(({ initialLang }) => {
   return <Slot />
 })
 
-export const useSharedLangSignal = () => useContext(LangSignalContext) ?? useLangSignal()
+export const useSharedLangSignal = (initialLang?: Lang) => {
+  const fallback = useFallbackLangSignal(initialLang)
+  return useContext(LangSignalContext, fallback)
+}
 
 export const useLangCopy = (langSignal: Signal<Lang> = useSharedLangSignal()) =>
   useComputed$(() => getUiCopy(langSignal.value))

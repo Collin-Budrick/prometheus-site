@@ -17,6 +17,10 @@ import { isStaticHomeShellMode, resolveFragmentShellMode } from './fragment-shel
 import { resolveFragments, resolvePlan } from './utils'
 import { useFragmentShellDrag } from './fragment-shell-drag'
 import { useFragmentShellLayout } from './fragment-shell-layout'
+import {
+  createInitialLayoutSettleScheduler,
+  INITIAL_LAYOUT_SETTLE_FALLBACK_MS
+} from './layout-settle'
 import type { FragmentDragState, FragmentShellProps, SlottedEntry } from './fragment-shell-types'
 import {
   applyFieldSnapshots,
@@ -31,7 +35,7 @@ import {
 } from './fragment-shell-utils'
 
 const buildPlanEarlyHints = (planValue: FragmentPlan) => {
-  const criticalCss = buildFragmentCssLinks(planValue, { criticalOnly: true }).map((link) => ({
+  const criticalCss: EarlyHint[] = buildFragmentCssLinks(planValue, { criticalOnly: true }).map((link) => ({
     href: link.href,
     as: 'style' as const
   }))
@@ -134,6 +138,8 @@ export const useFragmentShellState = ({
     suppressUntil: 0,
     draggingId: null
   })
+  const initialLayoutSettled = useSignal(false)
+  const dynamicCriticalCaptureScheduled = useSignal(false)
   const lastScrollY = useSignal(isStaticHome ? 0 : seedState?.scrollY ?? cachedEntry?.scrollY ?? 0)
   const restoredState = useSignal(false)
   const streamPaused = useSignal(!isStaticHome && Boolean(cachedEntry))
@@ -179,6 +185,9 @@ export const useFragmentShellState = ({
     'keydown',
     $((event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (expandedId.value) {
+          layoutTick.value += 1
+        }
         expandedId.value = null
       }
     })
@@ -202,6 +211,8 @@ export const useFragmentShellState = ({
       const grid = gridRef.value
       ctx.track(() => gridRef.value)
       if (!grid) return
+      ctx.track(() => initialLayoutSettled.value)
+      if (!initialLayoutSettled.value) return
       let firstFrame = 0
       let secondFrame = 0
       let lastSerialized = ''
@@ -240,9 +251,12 @@ export const useFragmentShellState = ({
       const stored = readStored()
       if (stored.length) {
         dynamicCriticalIds.value = stored
+        dynamicCriticalCaptureScheduled.value = true
         lastSerialized = JSON.stringify(stored)
         return
       }
+      if (dynamicCriticalCaptureScheduled.value) return
+      dynamicCriticalCaptureScheduled.value = true
 
       const capture = () => {
         const ids = new Set<string>()
@@ -265,16 +279,86 @@ export const useFragmentShellState = ({
         }
       }
 
-      firstFrame = window.requestAnimationFrame(() => {
-        secondFrame = window.requestAnimationFrame(capture)
-      })
+      const idleApi = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+        cancelIdleCallback?: (handle: number) => void
+      }
+      let idleHandle: number | null = null
+      if (typeof idleApi.requestIdleCallback === 'function') {
+        idleHandle = idleApi.requestIdleCallback(capture, { timeout: 1200 })
+      } else {
+        firstFrame = window.requestAnimationFrame(() => {
+          secondFrame = window.requestAnimationFrame(capture)
+        })
+      }
 
       ctx.cleanup(() => {
+        if (idleHandle !== null) {
+          idleApi.cancelIdleCallback?.(idleHandle)
+        }
         if (firstFrame) window.cancelAnimationFrame(firstFrame)
         if (secondFrame) window.cancelAnimationFrame(secondFrame)
       })
     },
     { strategy: 'document-idle' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (isStaticHome) return
+      if (typeof window === 'undefined') return
+      ctx.track(() => gridRef.value)
+      const grid = gridRef.value
+      if (!grid || initialLayoutSettled.value) return
+
+      const settleScheduler = createInitialLayoutSettleScheduler({
+        setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+        clearTimeout: (handle) => window.clearTimeout(handle),
+        fallbackMs: INITIAL_LAYOUT_SETTLE_FALLBACK_MS,
+        isSettled: () => initialLayoutSettled.value,
+        onSettled: () => {
+          initialLayoutSettled.value = true
+          layoutTick.value += 1
+        }
+      })
+      settleScheduler.arm()
+
+      const handleStableHeight = () => {
+        settleScheduler.noteStableHeight()
+      }
+
+      grid.addEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
+
+      ctx.cleanup(() => {
+        grid.removeEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
+        settleScheduler.dispose()
+      })
+    },
+    { strategy: 'document-ready' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (isStaticHome) return
+      if (typeof window === 'undefined') return
+      let frame = 0
+      const handleResize = () => {
+        if (frame) return
+        frame = window.requestAnimationFrame(() => {
+          frame = 0
+          layoutTick.value += 1
+        })
+      }
+
+      window.addEventListener('resize', handleResize)
+      ctx.cleanup(() => {
+        window.removeEventListener('resize', handleResize)
+        if (frame) {
+          window.cancelAnimationFrame(frame)
+        }
+      })
+    },
+    { strategy: 'document-ready' }
   )
 
   useVisibleTask$(
@@ -485,7 +569,7 @@ export const useFragmentShellState = ({
   )
 
   useFragmentShellDrag({ shellMode, orderIds, columnSplit, dragState, layoutTick, gridRef })
-  useFragmentShellLayout({ shellMode, planValue, gridRef, layoutTick, expandedId })
+  useFragmentShellLayout({ shellMode, planValue, gridRef, layoutTick })
 
   return {
     shellMode,
