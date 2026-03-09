@@ -19,7 +19,13 @@ import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
 import { StaticShellLayout } from '../static-shell/StaticShellLayout'
-import { FRAGMENT_STATIC_ROUTE_KIND, HOME_STATIC_ROUTE_KIND, isHomeStaticPath, isStaticShellPath } from '../static-shell/constants'
+import {
+  FRAGMENT_STATIC_ROUTE_KIND,
+  HOME_STATIC_ROUTE_KIND,
+  getStaticShellRouteConfig,
+  isHomeStaticPath,
+  isStaticShellPath
+} from '../static-shell/constants'
 
 const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
@@ -799,6 +805,7 @@ const InteractiveShellLayout = component$(() => {
 export default component$(() => {
   const location = useLocation()
   const shellPreferences = useShellPreferences()
+  const staticRouteConfig = getStaticShellRouteConfig(location.url.pathname)
 
   if (isStaticShellPath(location.url.pathname)) {
     return (
@@ -807,7 +814,10 @@ export default component$(() => {
         lang={shellPreferences.value.lang}
         theme={shellPreferences.value.theme}
         languageSeed={shellPreferences.value.languageSeed}
-        routeKind={isHomeStaticPath(location.url.pathname) ? HOME_STATIC_ROUTE_KIND : FRAGMENT_STATIC_ROUTE_KIND}
+        routeKind={
+          staticRouteConfig?.routeKind ??
+          (isHomeStaticPath(location.url.pathname) ? HOME_STATIC_ROUTE_KIND : FRAGMENT_STATIC_ROUTE_KIND)
+        }
       >
         <Slot />
       </StaticShellLayout>

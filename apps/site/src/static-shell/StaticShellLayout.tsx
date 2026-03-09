@@ -7,23 +7,26 @@ import { supportedLanguages } from '../lang/manifest'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
+  ISLAND_STATIC_ROUTE_KIND,
   STATIC_DOCK_ROOT_ATTR,
   STATIC_ROUTE_ATTR,
   STATIC_SHELL_DOCK_REGION,
   STATIC_SHELL_HEADER_REGION,
   STATIC_SHELL_MAIN_REGION,
   STATIC_SHELL_REGION_ATTR,
-  STATIC_SHELL_SEED_SCRIPT_ID
+  STATIC_SHELL_SEED_SCRIPT_ID,
+  getStaticShellRouteConfig
 } from './constants'
 import { getLangLabel, renderStaticBrand, StaticDockMarkup } from './dock'
 import { MoonIcon, SunIcon, TranslateIcon } from './icons'
+import type { StaticShellSeed } from './seed'
 
 type StaticShellLayoutProps = {
   currentPath: string
   lang: Lang
   theme: Theme
   languageSeed: LanguageSeedPayload
-  routeKind?: typeof HOME_STATIC_ROUTE_KIND | typeof FRAGMENT_STATIC_ROUTE_KIND
+  routeKind?: typeof HOME_STATIC_ROUTE_KIND | typeof FRAGMENT_STATIC_ROUTE_KIND | typeof ISLAND_STATIC_ROUTE_KIND
 }
 
 const serializeJson = (value: unknown) =>
@@ -39,6 +42,16 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   languageSeed,
   routeKind = FRAGMENT_STATIC_ROUTE_KIND
 }) => {
+  const routeConfig = getStaticShellRouteConfig(currentPath)
+  const resolvedRouteKind = routeConfig?.routeKind ?? routeKind
+  const shellSeed: StaticShellSeed = {
+    lang,
+    currentPath,
+    languageSeed,
+    bootstrapMode: routeConfig?.bootstrapMode ?? 'fragment-static',
+    authPolicy: routeConfig?.authPolicy ?? 'public',
+    snapshotKey: routeConfig?.snapshotKey ?? currentPath
+  }
   const copy = {
     ...emptyUiCopy,
     ...(languageSeed.ui ?? {})
@@ -48,7 +61,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     <div
       class="layout-shell"
       {...{
-        [STATIC_ROUTE_ATTR]: routeKind
+        [STATIC_ROUTE_ATTR]: resolvedRouteKind
       }}
       data-static-lang={lang}
     >
@@ -139,7 +152,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
         <script
           id={STATIC_SHELL_SEED_SCRIPT_ID}
           type="application/json"
-          dangerouslySetInnerHTML={serializeJson({ lang, currentPath, languageSeed })}
+          dangerouslySetInnerHTML={serializeJson(shellSeed)}
         />
       </header>
       <main

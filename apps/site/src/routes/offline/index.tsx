@@ -1,39 +1,32 @@
 import { component$ } from '@builder.io/qwik'
-import type { DocumentHead } from '@builder.io/qwik-city'
-import { type FragmentPlanValue } from '../../fragment/types'
-import { buildOfflineShellFragment, offlineShellFragmentId } from '../home'
+import { routeLoader$, type DocumentHead, type DocumentHeadProps } from '@builder.io/qwik-city'
+import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { defaultLang } from '../../shared/lang-store'
-import { buildFragmentCssLinks } from '../../fragment/fragment-css'
-import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
-import { buildStaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { resolveRequestLang } from '../fragment-resource'
 
-const offlinePath = '/offline/'
-const offlinePlan: FragmentPlanValue = {
-  path: offlinePath,
-  createdAt: 0,
-  fragments: [
-    {
-      id: offlineShellFragmentId,
-      critical: true,
-      layout: { column: 'span 12' }
-    }
-  ]
+type OfflineRouteData = {
+  lang: string
 }
 
-const offlineRoute = buildStaticFragmentRouteModel({
-  plan: offlinePlan,
-  fragments: {
-  [offlineShellFragmentId]: buildOfflineShellFragment(offlineShellFragmentId, offlinePath)
-  },
-  lang: defaultLang
-})
+export const useOfflineRoute = routeLoader$<OfflineRouteData>(({ request }) => ({
+  lang: resolveRequestLang(request)
+}))
 
 export default component$(() => (
-  <StaticFragmentRoute model={offlineRoute} />
+  <StaticPageRoot>
+    <StaticRouteTemplate
+      metaLine="offline mode"
+      title="You are offline"
+      description="The shell is available, but live fragments need connectivity."
+      actionLabel="Refresh when online"
+      closeLabel="Close"
+    />
+  </StaticPageRoot>
 ))
 
-export const head: DocumentHead = () => ({
+export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => ({
   title: `${siteBrand.name} | Offline`,
   meta: [
     {
@@ -41,8 +34,7 @@ export const head: DocumentHead = () => ({
       content: 'noindex'
     }
   ],
-  links: buildFragmentCssLinks(offlinePlan),
   htmlAttributes: {
-    lang: defaultLang
+    lang: resolveValue(useOfflineRoute)?.lang ?? defaultLang
   }
 })

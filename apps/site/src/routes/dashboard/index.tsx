@@ -8,6 +8,10 @@ import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import { dashboardLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
+import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -17,6 +21,9 @@ type ProtectedRouteData = {
 export const useDashboardData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
+  if (isStaticShellBuild()) {
+    return { lang, languageSeed: createServerLanguageSeed(lang, dashboardLanguageSelection) }
+  }
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
@@ -54,12 +61,17 @@ export default component$(() => {
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navDashboard)
 
   return (
-    <StaticRouteTemplate
-      metaLine={copy.value.protectedMetaLine}
-      title={copy.value.navDashboard}
-      description={description}
-      actionLabel={copy.value.protectedAction}
-      closeLabel={copy.value.fragmentClose}
-    />
+    <StaticPageRoot
+      routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
+      routeData={createStaticIslandRouteData('/dashboard', data.value.lang, 'dashboard')}
+    >
+      <StaticRouteTemplate
+        metaLine={copy.value.protectedMetaLine}
+        title={copy.value.navDashboard}
+        description={description}
+        actionLabel={copy.value.protectedAction}
+        closeLabel={copy.value.fragmentClose}
+      />
+    </StaticPageRoot>
   )
 })

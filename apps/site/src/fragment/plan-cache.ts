@@ -1,4 +1,4 @@
-import { createFragmentPlanCache, type FragmentPlanCacheEntry } from '@core/fragments'
+import { createFragmentPlanCache, type FragmentPlanCacheEntry } from '@core/fragment/plan-cache'
 import type { EarlyHint } from './types'
 
 type FragmentPlanCacheEntryWithHints = FragmentPlanCacheEntry & {

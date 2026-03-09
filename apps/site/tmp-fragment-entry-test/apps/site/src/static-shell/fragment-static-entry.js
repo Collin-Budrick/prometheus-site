@@ -1,0 +1,1 @@
+import{B as o}from"../../../../fragment-static-entry-hq1mdf3r.js";if(typeof window<"u")window.__PROM_STATIC_FRAGMENT_ENTRY__=!0,import("../../../../static-bootstrap-rmvkprj1.js").then(({bootstrapStaticFragmentShell:e})=>e()).catch((e)=>{console.error("Static fragment bootstrap failed:",e)});

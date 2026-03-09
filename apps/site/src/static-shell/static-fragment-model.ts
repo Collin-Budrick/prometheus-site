@@ -5,6 +5,7 @@ import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
 import type { StoreSeed } from '../shared/store-seed'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
+import { getStaticShellRouteConfig } from './constants'
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
@@ -32,6 +33,34 @@ type BuildStaticFragmentRouteModelOptions = {
   initialHtml?: Record<string, string> | null
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
+}
+
+type CreateStaticFragmentRouteDataOptions = {
+  path: string
+  lang: Lang
+  fragmentVersions?: Record<string, number>
+  storeSeed?: StoreSeed | null
+  contactInvitesSeed?: ContactInvitesSeed | null
+}
+
+export const createStaticFragmentRouteData = ({
+  path,
+  lang,
+  fragmentVersions = {},
+  storeSeed,
+  contactInvitesSeed
+}: CreateStaticFragmentRouteDataOptions): StaticFragmentRouteData => {
+  const routeConfig = getStaticShellRouteConfig(path)
+  return {
+    lang,
+    path,
+    snapshotKey: routeConfig?.snapshotKey ?? path,
+    authPolicy: routeConfig?.authPolicy ?? 'public',
+    bootstrapMode: 'fragment-static',
+    fragmentVersions,
+    storeSeed: storeSeed ?? null,
+    contactInvitesSeed: contactInvitesSeed ?? null
+  }
 }
 
 export const buildStaticFragmentRouteModel = ({
@@ -91,12 +120,12 @@ export const buildStaticFragmentRouteModel = ({
     path: plan.path,
     inlineStyles,
     entries,
-    routeData: {
-      lang,
+    routeData: createStaticFragmentRouteData({
       path: plan.path,
+      lang,
       fragmentVersions,
-      storeSeed: storeSeed ?? null,
-      contactInvitesSeed: contactInvitesSeed ?? null
-    }
+      storeSeed,
+      contactInvitesSeed
+    })
   }
 }

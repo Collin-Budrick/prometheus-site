@@ -144,7 +144,8 @@ export const createMemoryFragmentStore = (
     enforceMemoryStoreLimit()
   }
 
-  setInterval(cleanupMemoryStore, memoryStoreCleanupIntervalMs)
+  const cleanupHandle = setInterval(cleanupMemoryStore, memoryStoreCleanupIntervalMs)
+  cleanupHandle.unref?.()
 
   const readMemoryEntry = (key: string): StoredFragment | null => {
     const entry = memoryStore.get(key)

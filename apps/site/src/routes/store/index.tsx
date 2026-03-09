@@ -4,8 +4,8 @@ import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
-import type { FragmentPayload, FragmentPlan, FragmentPlanValue, RenderNode } from '../../fragment/types'
-import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
+import type { FragmentPlan, FragmentPlanValue } from '../../fragment/types'
+import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import type { StoreSeed } from '../../shared/store-seed'
@@ -15,6 +15,8 @@ import { storeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedP
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-shell-fragment'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
@@ -26,52 +28,7 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload
 }
 
-const textNode = (text: string): RenderNode => ({ type: 'text', text })
-
-const elementNode = (tag: string, attrs?: Record<string, string>, children: RenderNode[] = []): RenderNode => ({
-  type: 'element',
-  tag,
-  attrs,
-  children
-})
-
-export const offlineShellFragmentId = 'fragment://fallback/offline-shell@v1'
 const STORE_STREAM_LIMIT = 12
-
-export const buildOfflineShellFragment = (id: string, path: string): FragmentPayload => {
-  return {
-    id,
-    css: '',
-    head: [{ op: 'title', value: `${siteBrand.name} | Offline` }],
-    meta: {
-      cacheKey: id,
-      ttl: 30,
-      staleTtl: 300,
-      tags: ['fallback', 'offline', 'shell'],
-      runtime: 'node'
-    },
-    tree: elementNode('section', { class: 'offline-shell' }, [
-      elementNode('div', { class: 'meta-line' }, [textNode('offline mode')]),
-      elementNode('h1', undefined, [textNode('You are offline')]),
-      elementNode('p', undefined, [textNode('The shell is available, but live fragments need connectivity.')]),
-      elementNode('div', { class: 'matrix' }, [
-        elementNode('div', { class: 'cell' }, [
-          textNode('Route'),
-          elementNode('strong', undefined, [textNode(path || '/store')])
-        ]),
-        elementNode('div', { class: 'cell' }, [
-          textNode('Status'),
-          elementNode('strong', undefined, [textNode('Offline')])
-        ])
-      ]),
-      elementNode('ul', { class: 'inline-list' }, [
-        elementNode('li', undefined, [elementNode('span'), textNode('Check your connection')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Refresh once you are back online')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Cached content will load where available')])
-      ])
-    ])
-  }
-}
 
 const resolveStoreApiBase = async (request: Request) => {
   const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
@@ -108,6 +65,13 @@ const loadStoreSeed = async (
   const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
   const queued = readStoreCartQueueFromCookie(cookieHeader)
   let streamItems: unknown[] = []
+
+  if (isStaticShellBuild()) {
+    return {
+      stream: { items: streamItems, sort: sortParams.sort, dir: sortParams.dir },
+      cart: { items: cartItems, queuedCount: queued.length }
+    }
+  }
 
   try {
     const apiBase = await resolveStoreApiBase(request)
@@ -156,7 +120,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   }
 
   try {
-    const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const { plan, fragments, path: planPath, initialHtml } = isStaticShellBuild()
+      ? await loadStaticFragmentResource(path, lang, request)
+      : await loadHybridFragmentResource(path, appConfig, lang, request)
     const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
     return {
       plan,

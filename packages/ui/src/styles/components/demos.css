@@ -16,7 +16,7 @@
 
   .home-demo-compact-kicker {
     @apply font-mono text-[11px] uppercase tracking-[0.35em];
-    color: rgb(var(--muted-soft));
+    color: rgb(var(--muted));
   }
 
   .home-demo-compact-copy {

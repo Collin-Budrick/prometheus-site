@@ -2,65 +2,14 @@ import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
 import { loadFragments } from '@core/fragment/server'
 import { siteBrand } from '../config'
-import { loadHybridFragmentResource, resolveRequestLang } from './fragment-resource'
+import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
-import type {
-  FragmentPayload,
-  FragmentPayloadValue,
-  FragmentPlan,
-  FragmentPlanValue,
-  RenderNode
-} from '../fragment/types'
+import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
-
-const textNode = (text: string): RenderNode => ({ type: 'text', text })
-
-const elementNode = (tag: string, attrs?: Record<string, string>, children: RenderNode[] = []): RenderNode => ({
-  type: 'element',
-  tag,
-  attrs,
-  children
-})
-
-export const offlineShellFragmentId = 'fragment://fallback/offline-shell@v1'
-
-export const buildOfflineShellFragment = (id: string, path: string): FragmentPayload => {
-
-  return {
-    id,
-    css: '',
-    head: [{ op: 'title', value: `${siteBrand.name} | Offline` }],
-    meta: {
-      cacheKey: id,
-      ttl: 30,
-      staleTtl: 300,
-      tags: ['fallback', 'offline', 'shell'],
-      runtime: 'node'
-    },
-    tree: elementNode('section', { class: 'offline-shell' }, [
-      elementNode('div', { class: 'meta-line' }, [textNode('offline mode')]),
-      elementNode('h1', undefined, [textNode('You are offline')]),
-      elementNode('p', undefined, [textNode('The shell is available, but live fragments need connectivity.')]),
-      elementNode('div', { class: 'matrix' }, [
-        elementNode('div', { class: 'cell' }, [
-          textNode('Route'),
-          elementNode('strong', undefined, [textNode(path || '/')])
-        ]),
-        elementNode('div', { class: 'cell' }, [
-          textNode('Status'),
-          elementNode('strong', undefined, [textNode('Offline')])
-        ])
-      ]),
-      elementNode('ul', { class: 'inline-list' }, [
-        elementNode('li', undefined, [elementNode('span'), textNode('Check your connection')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Refresh once you are back online')]),
-        elementNode('li', undefined, [elementNode('span'), textNode('Cached content will load where available')])
-      ])
-    ])
-  }
-}
+import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
+import { isStaticShellBuild } from '../static-shell/build-mode'
 
 type FragmentResource = {
   plan: FragmentPlanValue
@@ -84,11 +33,13 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       plan,
       fragments: initialFragments,
       path: planPath
-    } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    } = isStaticShellBuild()
+      ? await loadStaticFragmentResource(path, lang, request)
+      : await loadHybridFragmentResource(path, appConfig, lang, request)
     const allFragmentIds = plan.fragments.map((entry) => entry.id)
     const missingIds = allFragmentIds.filter((id) => !initialFragments[id])
     const resolvedApiBase = resolveServerApiBase(appConfig.apiBase, request)
-    const fetchedFragments = missingIds.length
+    const fetchedFragments = !isStaticShellBuild() && missingIds.length
       ? await loadFragments(missingIds, { apiBase: resolvedApiBase }, lang, { protocol: 2 })
       : {}
     const fragments = {

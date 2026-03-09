@@ -492,6 +492,7 @@ const buildNativeBundle = async () => {
     VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
     VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
     VITE_DISABLE_SW: previewDisableSw,
+    PROMETHEUS_STATIC_SHELL_BUILD: '1',
     ...(isTauriMode
       ? {
           VITE_TAURI: '1',
@@ -505,11 +506,20 @@ const buildNativeBundle = async () => {
       cwd: root,
       env: buildEnv
     })
-  const runStaticHomeBuild = () =>
-    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/build-static-home.ts'], {
+  const runStaticShellEntryBuild = () =>
+    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build:static-shell:entries'], {
       stdio: 'inherit',
       cwd: root,
       env: buildEnv
+    })
+  const runStaticShellBuild = () =>
+    spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/build-static-shell.ts'], {
+      stdio: 'inherit',
+      cwd: root,
+      env: {
+        ...buildEnv,
+        PROMETHEUS_STATIC_SHELL_BUILD: '1'
+      }
     })
   if (!isTauriMode) {
     const clientResult = runViteBuild([])
@@ -517,15 +527,15 @@ const buildNativeBundle = async () => {
       logSpawnFailure('Vite client build', clientResult)
       process.exit(clientResult.status ?? 1)
     }
-    const staticHomeResult = runStaticHomeBuild()
-    if (staticHomeResult.status !== 0) {
-      logSpawnFailure('Static home build', staticHomeResult)
-      process.exit(staticHomeResult.status ?? 1)
+    const staticShellEntryResult = runStaticShellEntryBuild()
+    if (staticShellEntryResult.status !== 0) {
+      logSpawnFailure('Static shell entry build', staticShellEntryResult)
+      process.exit(staticShellEntryResult.status ?? 1)
     }
-    const ssrResult = runViteBuild(['--ssr', 'src/entry.preview.tsx'])
-    if (ssrResult.status !== 0) {
-      logSpawnFailure('Vite SSR build', ssrResult)
-      process.exit(ssrResult.status ?? 1)
+    const staticShellResult = runStaticShellBuild()
+    if (staticShellResult.status !== 0) {
+      logSpawnFailure('Static shell build', staticShellResult)
+      process.exit(staticShellResult.status ?? 1)
     }
   }
 

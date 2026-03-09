@@ -1,4 +1,7 @@
+import { decodeFragmentPayload } from '@core/fragment/binary'
 import { loadFragmentPlan, loadFragments } from '@core/fragment/server'
+import { createFragmentService } from '@core/fragment/service'
+import { createMemoryFragmentStore, type StoredFragment } from '@core/fragment/store'
 import type { FragmentPayloadMap, FragmentPlanValue } from '../fragment/types'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type Lang } from '../shared/lang-store'
@@ -39,6 +42,31 @@ const resolveViewportHint = (request: Request | undefined) => {
   }
   return 'desktop'
 }
+
+let staticFragmentServicePromise: Promise<ReturnType<typeof createFragmentService>> | null = null
+
+const loadStaticFragmentService = async () => {
+  if (!staticFragmentServicePromise) {
+    staticFragmentServicePromise = (async () => {
+      await Promise.all([
+        import('../fragment/definitions/home.server'),
+        import('../fragment/definitions/store'),
+        import('../fragment/definitions/chat')
+      ])
+      return createFragmentService({
+        store: createMemoryFragmentStore()
+      })
+    })()
+  }
+
+  return staticFragmentServicePromise
+}
+
+const decodeStoredFragment = (id: string, entry: StoredFragment) => ({
+  ...decodeFragmentPayload(entry.payload),
+  id,
+  cacheUpdatedAt: entry.updatedAt
+})
 
 export const loadHybridFragmentResource = async (
   path: string,
@@ -119,6 +147,53 @@ export const loadHybridFragmentResource = async (
     fragments,
     path: plan.path,
     initialHtml
+  }
+}
+
+export const loadStaticFragmentResource = async (
+  path: string,
+  lang: string = defaultLang,
+  _request?: Request
+): Promise<HybridFragmentResource> => {
+  const cached = fragmentPlanCache.get(path, lang)
+  if (cached?.plan && cached.initialFragments) {
+    return {
+      plan: cached.plan as FragmentPlanValue,
+      fragments: cached.initialFragments,
+      path: cached.plan.path,
+      initialHtml: cached.initialHtml
+    }
+  }
+
+  const fragmentService = await loadStaticFragmentService()
+  const plan = await fragmentService.getFragmentPlan(path, lang)
+  const fragmentIds = plan.fragments.map((entry) => entry.id)
+  const entries = await Promise.all(
+    fragmentIds.map(async (id) => [id, await fragmentService.getFragmentEntry(id, { lang })] as const)
+  )
+  const fragments = entries.reduce<FragmentPayloadMap>((acc, [id, entry]) => {
+    acc[id] = decodeStoredFragment(id, entry)
+    return acc
+  }, {})
+  const initialHtml = entries.reduce<Record<string, string>>((acc, [id, entry]) => {
+    if (typeof entry.html === 'string' && entry.html.length > 0) {
+      acc[id] = entry.html
+    }
+    return acc
+  }, {})
+
+  fragmentPlanCache.set(path, lang, {
+    etag: 'static-shell',
+    plan,
+    initialFragments: fragments,
+    initialHtml: Object.keys(initialHtml).length ? initialHtml : undefined
+  })
+
+  return {
+    plan,
+    fragments,
+    path: plan.path,
+    initialHtml: Object.keys(initialHtml).length ? initialHtml : undefined
   }
 }
 

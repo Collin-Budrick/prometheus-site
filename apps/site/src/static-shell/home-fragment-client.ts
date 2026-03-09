@@ -4,6 +4,7 @@ import { encodeFragmentKnownVersions, type FragmentKnownVersions } from '../../.
 import type { FragmentPayload, HeadOp } from '../../../../packages/core/src/fragment/types'
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import { getPublicFragmentApiBase } from '../shared/public-fragment-config'
+import { FragmentStreamError } from './fragment-stream-error'
 
 type StreamHomeFragmentsOptions = {
   signal?: AbortSignal
@@ -260,7 +261,10 @@ export const streamHomeFragmentFrames = async (
   })
 
   if (!response.ok || !response.body) {
-    throw new Error(`Fragment stream failed: ${response.status}`)
+    throw new FragmentStreamError(`Fragment stream failed: ${response.status}`, {
+      status: response.status,
+      retryable: response.ok && !response.body ? false : undefined
+    })
   }
 
   const reader = response.body.getReader()

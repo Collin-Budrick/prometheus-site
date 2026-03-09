@@ -16,7 +16,8 @@ import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
-  STATIC_HOME_DATA_SCRIPT_ID
+  STATIC_HOME_DATA_SCRIPT_ID,
+  getStaticShellRouteConfig
 } from './constants'
 
 type StaticHomeRouteProps = {
@@ -36,6 +37,7 @@ const serializeJson = (value: unknown) =>
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
 export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragments, lang, introMarkdown, languageSeed }) => {
+  const routeConfig = getStaticShellRouteConfig(plan.path)
   const copyBundle = {
     ui: {
       ...emptyUiCopy,
@@ -146,6 +148,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
         dangerouslySetInnerHTML={serializeJson({
           lang,
           path: plan.path,
+          snapshotKey: routeConfig?.snapshotKey ?? plan.path,
+          authPolicy: routeConfig?.authPolicy ?? 'public',
+          bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
           languageSeed,
           fragmentVersions
         })}

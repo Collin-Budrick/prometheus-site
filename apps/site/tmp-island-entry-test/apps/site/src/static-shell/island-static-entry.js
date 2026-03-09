@@ -1,0 +1,1 @@
+import{p as e}from"../../../../island-static-entry-x9tmfvwv.js";if(typeof window<"u")window.__PROM_STATIC_ISLAND_ENTRY__=!0,import("../../../../island-bootstrap-av0xn3e4.js").then(({bootstrapStaticIslandShell:o})=>o()).catch((o)=>{console.error("Static island bootstrap failed:",o)});

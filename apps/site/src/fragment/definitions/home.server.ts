@@ -11,15 +11,16 @@ const baseMeta = {
 }
 
 const dockIconSizeStyle = 'width:48px;height:48px;padding:8px;box-sizing:border-box;'
-const dockIconSvgStyle = 'width:100%;height:100%;display:block;object-fit:contain;'
-const DockIconSources = {
-  gitHub: '/assets/dock/github.svg',
-  googleDrive: '/assets/dock/google-drive.svg',
-  notion: '/assets/dock/notion.svg',
-  whatsapp: '/assets/dock/whatsapp.svg'
+const dockMonogramStyle =
+  'display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:999px;font:700 11px/1 system-ui,sans-serif;letter-spacing:0.08em;'
+const DockIconMonograms = {
+  gitHub: { label: 'GH', style: `${dockMonogramStyle}background:#0f172a;color:#f8fafc;` },
+  googleDrive: { label: 'GD', style: `${dockMonogramStyle}background:#eef6ff;color:#2563eb;` },
+  notion: { label: 'NO', style: `${dockMonogramStyle}background:#111827;color:#f9fafb;` },
+  whatsapp: { label: 'WA', style: `${dockMonogramStyle}background:#dcfce7;color:#166534;` }
 }
 
-const renderDockIcon = (label: string, src: string) =>
+const renderDockIcon = (label: string, monogram: { label: string; style: string }) =>
   createElement(
     'div',
     {
@@ -30,14 +31,14 @@ const renderDockIcon = (label: string, src: string) =>
       'aria-label': label,
       title: label
     },
-    createElement('img', {
-      src,
-      style: dockIconSvgStyle,
-      width: 48,
-      height: 48,
-      alt: '',
-      'aria-hidden': 'true'
-    })
+    createElement(
+      'span',
+      {
+        style: monogram.style,
+        'aria-hidden': 'true'
+      },
+      monogram.label
+    )
   )
 
 const reactFragment: FragmentDefinition = {
@@ -91,10 +92,10 @@ const dockFragment: FragmentDefinition = {
               'aria-label': t('Dock shortcuts')
             },
             [
-              renderDockIcon('GitHub', DockIconSources.gitHub),
-              renderDockIcon('Google Drive', DockIconSources.googleDrive),
-              renderDockIcon('Notion', DockIconSources.notion),
-              renderDockIcon('WhatsApp', DockIconSources.whatsapp)
+              renderDockIcon('GitHub', DockIconMonograms.gitHub),
+              renderDockIcon('Google Drive', DockIconMonograms.googleDrive),
+              renderDockIcon('Notion', DockIconMonograms.notion),
+              renderDockIcon('WhatsApp', DockIconMonograms.whatsapp)
             ]
           )
         )

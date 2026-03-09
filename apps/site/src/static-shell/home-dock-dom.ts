@@ -2,25 +2,14 @@ import { type NavLabelKey } from '../config'
 import type { Lang } from '../lang'
 import { getUiCopy } from '../lang/client'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
-import { buildPublicApiUrl } from '../shared/public-api-url'
-
-type SessionPayload = {
-  session?: {
-    userId?: string
-  }
-  user?: {
-    id?: string
-  }
-}
+import { loadClientAuthSession } from './auth-client'
 
 type MountStaticDockOptions = {
   root: HTMLElement
   lang: Lang
   currentPath: string
+  skipAuthUpgrade?: boolean
 }
-
-const isAuthenticatedPayload = (payload: SessionPayload | null | undefined) =>
-  Boolean(payload?.user?.id || payload?.session?.userId)
 
 const dockIconMarkup: Record<NavLabelKey, string> = {
   navHome:
@@ -77,24 +66,25 @@ const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean)
   return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${navItems.length}"><div class="dock" role="list" aria-label="${escapeHtml(copy.dockAriaLabel)}">${items}</div></div>`
 }
 
-export const mountStaticDock = ({ root, lang, currentPath }: MountStaticDockOptions) => {
+export const mountStaticDock = ({ root, lang, currentPath, skipAuthUpgrade = false }: MountStaticDockOptions) => {
   let cancelled = false
-  const abortController = new AbortController()
 
   if (!root.firstElementChild) {
     root.innerHTML = renderDockHtml(lang, currentPath, false)
   }
 
+  if (skipAuthUpgrade) {
+    return {
+      cleanup() {
+        cancelled = true
+      }
+    }
+  }
+
   void (async () => {
     try {
-      const response = await fetch(buildPublicApiUrl('/auth/session', window.location.origin), {
-        credentials: 'include',
-        headers: { accept: 'application/json' },
-        signal: abortController.signal
-      })
-      if (!response.ok || cancelled) return
-      const payload = (await response.json()) as SessionPayload
-      if (!isAuthenticatedPayload(payload) || cancelled) return
+      const session = await loadClientAuthSession()
+      if (cancelled || session.status !== 'authenticated') return
       root.innerHTML = renderDockHtml(lang, currentPath, true)
     } catch {
       // Leave the public dock in place when session checks fail.
@@ -104,7 +94,6 @@ export const mountStaticDock = ({ root, lang, currentPath }: MountStaticDockOpti
   return {
     cleanup() {
       cancelled = true
-      abortController.abort()
     }
   }
 }

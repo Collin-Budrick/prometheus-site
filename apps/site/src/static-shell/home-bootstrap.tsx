@@ -4,35 +4,35 @@ import {
 } from '../lang/client'
 import type { Lang } from '../lang'
 import type { LanguageSeedPayload } from '../lang/selection'
+import type { StaticShellSeed } from './seed'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_LOCKED_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
-  STATIC_SHELL_DOCK_REGION,
-  STATIC_SHELL_HEADER_REGION,
-  STATIC_SHELL_MAIN_REGION,
-  STATIC_SHELL_REGION_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
+import {
+  applyStaticShellSnapshot,
+  loadStaticShellSnapshot,
+  resolvePreferredStaticShellLang,
+  updateStaticShellUrlLang
+} from './snapshot-client'
+import { shouldRetryFragmentStream } from './fragment-stream-error'
 
 type Theme = 'light' | 'dark'
-
-type HomeStaticShellSeed = {
-  lang: Lang
-  currentPath: string
-  languageSeed: LanguageSeedPayload
-}
 
 type HomeStaticRouteData = {
   lang: Lang
   path: string
+  snapshotKey?: string
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
 
 type HomeStaticBootstrapData = {
   currentPath: string
+  snapshotKey: string
   lang: Lang
   shellSeed: LanguageSeedPayload
   routeSeed: LanguageSeedPayload
@@ -203,11 +203,12 @@ const readJsonScript = <T,>(id: string): T | null => {
 }
 
 const readBootstrapDataFromDocument = (): HomeStaticBootstrapData | null => {
-  const shell = readJsonScript<HomeStaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
+  const shell = readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
   const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID)
   if (!shell || !route) return null
   return {
     currentPath: shell.currentPath || route.path || '/',
+    snapshotKey: route.snapshotKey || shell.snapshotKey || shell.currentPath || route.path || '/',
     lang: route.lang || shell.lang,
     shellSeed: shell.languageSeed ?? {},
     routeSeed: route.languageSeed ?? {},
@@ -253,11 +254,11 @@ const loadHomeStreamRuntime = () => {
   return homeStreamRuntimePromise
 }
 
-const mountDock = async (lang: Lang, currentPath: string) => {
+const mountDock = async (lang: Lang, currentPath: string, options?: { skipAuthUpgrade?: boolean }) => {
   const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
   if (!dockRoot) return null
   const { mountStaticDock } = await import('./home-dock-dom')
-  return mountStaticDock({ root: dockRoot, lang, currentPath })
+  return mountStaticDock({ root: dockRoot, lang, currentPath, skipAuthUpgrade: options?.skipAuthUpgrade })
 }
 
 const parseDemoProps = (value: string | null) => {
@@ -463,8 +464,8 @@ const stopLiveHomeConnections = (controller: HomeControllerState) => {
   }
 }
 
-const scheduleDockMount = (controller: HomeControllerState, delayMs = 1400) => {
-  const cancelIdle = requestIdle(() => {
+const scheduleDockMount = (controller: HomeControllerState, delayMs = 12000) => {
+  const startMount = () => {
     if (controller.destroyed || controller.dockCleanup) return
     void mountDock(controller.lang, controller.path)
       .then((dockCleanup) => {
@@ -480,8 +481,34 @@ const scheduleDockMount = (controller: HomeControllerState, delayMs = 1400) => {
           console.error('Failed to mount static dock controller:', error)
         }
       })
+  }
+
+  if (delayMs <= 0) {
+    startMount()
+    return
+  }
+
+  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
+  const handleInteraction = () => {
+    cleanupInteractionListeners()
+    cancelIdle()
+    startMount()
+  }
+  const cleanupInteractionListeners = () => {
+    dockRoot?.removeEventListener('pointerenter', handleInteraction)
+    dockRoot?.removeEventListener('focusin', handleInteraction)
+    dockRoot?.removeEventListener('touchstart', handleInteraction)
+  }
+  dockRoot?.addEventListener('pointerenter', handleInteraction)
+  dockRoot?.addEventListener('focusin', handleInteraction)
+  dockRoot?.addEventListener('touchstart', handleInteraction)
+  controller.cleanupFns.push(cleanupInteractionListeners)
+
+  const idleTimer = window.setTimeout(() => {
+    cleanupInteractionListeners()
+    startMount()
   }, delayMs)
-  controller.cleanupFns.push(cancelIdle)
+  controller.cleanupFns.push(() => window.clearTimeout(idleTimer))
 }
 
 const scheduleDeferredStreamStart = (controller: HomeControllerState, delayMs = 1800) => {
@@ -528,7 +555,9 @@ const startDeferredStream = async (controller: HomeControllerState) => {
     if (controller.destroyed || controller.streamAbort !== streamAbort || streamAbort.signal.aborted) return
     console.error('Static home fragment stream failed:', error)
     updateFragmentStatus(controller.lang, 'error')
-    scheduleStreamRetry(controller, 2000)
+    if (shouldRetryFragmentStream(error)) {
+      scheduleStreamRetry(controller, 2000)
+    }
   }
 }
 
@@ -547,13 +576,6 @@ const destroyController = async (controller: HomeControllerState | null) => {
   controller.demoRenders.clear()
 }
 
-const replaceShellRegion = (nextDocument: Document, region: string) => {
-  const current = document.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${region}"]`)
-  const next = nextDocument.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${region}"]`)
-  if (!current || !next) return
-  current.replaceWith(document.importNode(next, true))
-}
-
 const swapStaticHomeLanguage = async (nextLang: Lang) => {
   if (languageSwapInFlight) return
   const current = readBootstrapDataFromDocument()
@@ -561,34 +583,16 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
   languageSwapInFlight = true
 
   try {
-    const url = new URL(window.location.href)
-    url.searchParams.set('lang', nextLang)
-    const response = await fetch(`${url.pathname}${url.search}${url.hash}`, {
-      headers: { accept: 'text/html' },
-      credentials: 'include'
-    })
-    if (!response.ok) {
-      throw new Error(`Failed to fetch localized static home: ${response.status}`)
-    }
-
-    const html = await response.text()
-    const parser = new DOMParser()
-    const nextDocument = parser.parseFromString(html, 'text/html')
+    const snapshot = await loadStaticShellSnapshot(current.snapshotKey, nextLang)
 
     await destroyController(activeController)
     activeController = null
 
-    replaceShellRegion(nextDocument, STATIC_SHELL_HEADER_REGION)
-    replaceShellRegion(nextDocument, STATIC_SHELL_MAIN_REGION)
-    replaceShellRegion(nextDocument, STATIC_SHELL_DOCK_REGION)
-
-    document.title = nextDocument.title
+    applyStaticShellSnapshot(snapshot)
     persistStaticLang(nextLang)
+    updateStaticShellUrlLang(nextLang)
 
     await bootstrapStaticHome()
-    const nextUrl = `${url.pathname}${url.search}${url.hash}`
-    const state = window.history.state && typeof window.history.state === 'object' ? { ...window.history.state } : {}
-    window.history.replaceState(state, '', nextUrl)
   } catch (error) {
     console.error('Failed to switch static home language:', error)
   } finally {
@@ -599,6 +603,19 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
 export const bootstrapStaticHome = async () => {
   const data = readBootstrapDataFromDocument()
   if (!data) return
+  const preferredLang = resolvePreferredStaticShellLang(data.lang)
+  if (preferredLang !== data.lang) {
+    try {
+      const snapshot = await loadStaticShellSnapshot(data.snapshotKey, preferredLang)
+      applyStaticShellSnapshot(snapshot)
+      persistStaticLang(preferredLang)
+      updateStaticShellUrlLang(preferredLang)
+      await bootstrapStaticHome()
+      return
+    } catch (error) {
+      console.error('Failed to restore preferred home language snapshot:', error)
+    }
+  }
 
   cleanupLegacyHomePersistence()
   applyShellLanguageSeed(data.lang, data.shellSeed, data.routeSeed)

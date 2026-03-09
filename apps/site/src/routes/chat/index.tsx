@@ -14,7 +14,13 @@ import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import { chatLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import {
+  buildStaticFragmentRouteModel,
+  createStaticFragmentRouteData,
+  type StaticFragmentRouteModel
+} from '../../static-shell/static-fragment-model'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
+import { STATIC_FRAGMENT_DATA_SCRIPT_ID } from '../../static-shell/constants'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -24,6 +30,9 @@ type ProtectedRouteData = {
 export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
+  if (isStaticShellBuild()) {
+    return { lang, languageSeed: createServerLanguageSeed(lang, chatLanguageSelection) }
+  }
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
@@ -84,6 +93,16 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const { appConfig } = await import('../../app-config.server')
   const path = url.pathname || '/chat'
   const lang = resolveRequestLang(request)
+  if (isStaticShellBuild()) {
+    return {
+      plan: null,
+      path,
+      lang,
+      staticRoute: null,
+      contactInvitesSeed: null,
+      languageSeed: createServerLanguageSeed(lang, chatLanguageSelection)
+    }
+  }
   const contactInvitesSeed = await loadContactInvitesSeed(request)
 
   try {
@@ -164,7 +183,14 @@ export default component$(() => {
   }
 
   return (
-    <StaticPageRoot>
+    <StaticPageRoot
+      routeDataScriptId={STATIC_FRAGMENT_DATA_SCRIPT_ID}
+      routeData={createStaticFragmentRouteData({
+        path: fragmentData.path,
+        lang: fragmentData.lang,
+        contactInvitesSeed: fragmentData.contactInvitesSeed
+      })}
+    >
       <StaticRouteTemplate
         metaLine={copy.value.protectedMetaLine}
         title={copy.value.navChat}

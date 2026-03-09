@@ -22,6 +22,10 @@ import {
 } from '../../shared/profile-storage'
 import profileStyles from './profile.css?inline'
 import { profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
+import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 type ProfileData = {
   user: {
@@ -97,6 +101,14 @@ const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
 export const useProfileData = routeLoader$<ProfileData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
+  if (isStaticShellBuild()) {
+    return {
+      user: {},
+      lang,
+      localProfile: readLocalProfileFromCookie(request.headers.get('cookie')),
+      languageSeed: createServerLanguageSeed(lang, profileLanguageSelection)
+    }
+  }
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
@@ -325,184 +337,235 @@ export default component$(() => {
   })
 
   return (
-    <StaticRouteTemplate
-      metaLine={copy.value.protectedMetaLine}
-      title={copy.value.navProfile}
-      description={description}
-      actionLabel={copy.value.profileNameAction}
-      actionDisabled={!canSave}
-      onAction$={handleSaveName}
-      closeLabel={copy.value.fragmentClose}
+    <StaticPageRoot
+      routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
+      routeData={createStaticIslandRouteData('/profile', data.value.lang, 'profile')}
     >
-      <div class="profile-details">
-        <label class="auth-field">
-          <span>{copy.value.authNameLabel}</span>
-          <input
-            class="auth-input"
-            type="text"
-            maxLength={64}
-            placeholder="Nova Lane"
-            value={nameInput.value}
-            onInput$={handleNameInput}
-            aria-label={copy.value.authNameLabel}
-          />
-        </label>
-        {nameValue ? (
-          <div class="profile-row">
-            <span>{copy.value.authNameLabel}</span>
-            <strong>{nameValue}</strong>
-          </div>
-        ) : null}
-        {emailValue ? (
-          <div class="profile-row">
-            <span>{copy.value.authEmailLabel}</span>
-            <strong>{emailValue}</strong>
-          </div>
-        ) : null}
-        {user.id ? (
-          <div class="profile-row">
-            <span>User ID</span>
-            <strong>{user.id}</strong>
-          </div>
-        ) : null}
-      </div>
-      {statusMessage.value ? (
-        <div class="auth-status" role="status" aria-live="polite" data-tone={statusTone.value}>
-          {statusMessage.value}
-        </div>
-      ) : null}
-      <div
-        class="profile-card"
-        style={{
-          '--profile-accent': `${localColor.value.r} ${localColor.value.g} ${localColor.value.b}`
-        }}
+      <StaticRouteTemplate
+        metaLine={copy.value.protectedMetaLine}
+        title={copy.value.navProfile}
+        description={description}
+        actionLabel={copy.value.profileNameAction}
+        actionDisabled={!canSave}
+        onAction$={handleSaveName}
+        closeLabel={copy.value.fragmentClose}
       >
-        <div class="profile-card-header">
-          <div>
-            <p class="profile-card-title">Profile card</p>
-            <p class="profile-card-hint">Stored only on this device.</p>
-          </div>
-          <div class="profile-card-swatch">
-            <span>RGB</span>
-            <strong>{colorHex.value}</strong>
-          </div>
-        </div>
-        <div class="profile-card-body">
-          <div class="profile-preview">
-            <p class="profile-preview-name">{nameValue ?? 'Profile'}</p>
-            {emailValue ? <p class="profile-preview-email">{emailValue}</p> : null}
-            <p class="profile-preview-bio" data-empty={localBio.value ? 'false' : 'true'}>
-              {localBio.value || 'Add a short bio to personalize your profile card.'}
-            </p>
-          </div>
-          <div class="profile-avatar-block">
-            <div class="profile-avatar" data-empty={localAvatar.value ? 'false' : 'true'}>
-              {localAvatar.value ? (
-                <img src={localAvatar.value} alt="Profile" loading="lazy" />
-              ) : (
-                <span>{avatarInitials.value}</span>
-              )}
-            </div>
-            <div class="profile-avatar-info">
-              <p class="profile-avatar-title">Profile photo</p>
-              <p class="profile-avatar-subtitle">PNG or JPG under 1.2MB.</p>
-              <div class="profile-avatar-actions">
-                <label class="profile-avatar-upload">
-                  <input type="file" accept="image/*" onChange$={handleAvatarChange} />
-                  Upload
-                </label>
-                {localAvatar.value ? (
-                  <button type="button" class="profile-avatar-remove" onClick$={handleAvatarRemove}>
-                    Remove
-                  </button>
-                ) : null}
+        <div data-static-profile-root>
+          <div class="profile-details">
+            <label class="auth-field">
+              <span>{copy.value.authNameLabel}</span>
+              <input
+                class="auth-input"
+                type="text"
+                maxLength={64}
+                placeholder="Nova Lane"
+                value={nameInput.value}
+                data-static-profile-name-input
+                onInput$={handleNameInput}
+                aria-label={copy.value.authNameLabel}
+              />
+            </label>
+            {nameValue ? (
+              <div class="profile-row">
+                <span>{copy.value.authNameLabel}</span>
+                <strong data-static-profile-name-value>{nameValue}</strong>
               </div>
-            </div>
+            ) : null}
+            {emailValue ? (
+              <div class="profile-row">
+                <span>{copy.value.authEmailLabel}</span>
+                <strong data-static-profile-email-value>{emailValue}</strong>
+              </div>
+            ) : null}
+            {user.id ? (
+              <div class="profile-row">
+                <span>User ID</span>
+                <strong data-static-profile-id-value>{user.id}</strong>
+              </div>
+            ) : null}
           </div>
-          <label class="profile-field">
-            <span>Bio</span>
-            <textarea
-              class="profile-textarea"
-              maxLength={160}
-              rows={3}
-              placeholder="Tell us what you are building."
-              value={localBio.value}
-              onInput$={handleBioInput}
-            />
-            <span class="profile-field-meta">{bioCount.value}/160</span>
-          </label>
-          <div class="profile-color-picker">
-            <div class="profile-color-header">
+          {statusMessage.value ? (
+            <div
+              class="auth-status"
+              role="status"
+              aria-live="polite"
+              data-tone={statusTone.value}
+              data-static-profile-status
+            >
+              {statusMessage.value}
+            </div>
+          ) : null}
+          <div
+            class="profile-card"
+            style={{
+              '--profile-accent': `${localColor.value.r} ${localColor.value.g} ${localColor.value.b}`
+            }}
+          >
+            <div class="profile-card-header">
               <div>
-                <p class="profile-color-title">Card color</p>
-                <p class="profile-card-hint">Use RGB sliders for precise control.</p>
+                <p class="profile-card-title">Profile card</p>
+                <p class="profile-card-hint">Stored only on this device.</p>
               </div>
-              <label class="profile-color-well" style={{ background: `rgb(${localColor.value.r} ${localColor.value.g} ${localColor.value.b})` }}>
-                <input type="color" value={colorHex.value} onInput$={handleColorPick} aria-label="Pick a color" />
+              <div class="profile-card-swatch" data-static-profile-color-hex>
+                <span>RGB</span>
+                <strong>{colorHex.value}</strong>
+              </div>
+            </div>
+            <div class="profile-card-body">
+              <div class="profile-preview">
+                <p class="profile-preview-name" data-static-profile-preview-name>{nameValue ?? 'Profile'}</p>
+                {emailValue ? (
+                  <p class="profile-preview-email" data-static-profile-preview-email>
+                    {emailValue}
+                  </p>
+                ) : null}
+                <p
+                  class="profile-preview-bio"
+                  data-empty={localBio.value ? 'false' : 'true'}
+                  data-static-profile-preview-bio
+                >
+                  {localBio.value || 'Add a short bio to personalize your profile card.'}
+                </p>
+              </div>
+              <div class="profile-avatar-block">
+                <div class="profile-avatar" data-empty={localAvatar.value ? 'false' : 'true'} data-static-profile-avatar>
+                  {localAvatar.value ? (
+                    <img src={localAvatar.value} alt="Profile" loading="lazy" />
+                  ) : (
+                    <span>{avatarInitials.value}</span>
+                  )}
+                </div>
+                <div class="profile-avatar-info">
+                  <p class="profile-avatar-title">Profile photo</p>
+                  <p class="profile-avatar-subtitle">PNG or JPG under 1.2MB.</p>
+                  <div class="profile-avatar-actions">
+                    <label class="profile-avatar-upload">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        data-static-profile-avatar-input
+                        onChange$={handleAvatarChange}
+                      />
+                      Upload
+                    </label>
+                    {localAvatar.value ? (
+                      <button
+                        type="button"
+                        class="profile-avatar-remove"
+                        data-static-profile-avatar-remove
+                        onClick$={handleAvatarRemove}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <label class="profile-field">
+                <span>Bio</span>
+                <textarea
+                  class="profile-textarea"
+                  maxLength={160}
+                  rows={3}
+                  placeholder="Tell us what you are building."
+                  value={localBio.value}
+                  data-static-profile-bio
+                  onInput$={handleBioInput}
+                />
+                <span class="profile-field-meta">{bioCount.value}/160</span>
               </label>
-            </div>
-            <div class="profile-color-row">
-              <div class="profile-color-label">
-                <span>Red</span>
-                <strong>{localColor.value.r}</strong>
+              <div class="profile-color-picker">
+                <div class="profile-color-header">
+                  <div>
+                    <p class="profile-color-title">Card color</p>
+                    <p class="profile-card-hint">Use RGB sliders for precise control.</p>
+                  </div>
+                  <label
+                    class="profile-color-well"
+                    style={{ background: `rgb(${localColor.value.r} ${localColor.value.g} ${localColor.value.b})` }}
+                  >
+                    <input
+                      type="color"
+                      value={colorHex.value}
+                      data-static-profile-color-picker
+                      onInput$={handleColorPick}
+                      aria-label="Pick a color"
+                    />
+                  </label>
+                </div>
+                <div class="profile-color-row">
+                  <div class="profile-color-label">
+                    <span>Red</span>
+                    <strong>{localColor.value.r}</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={255}
+                    value={localColor.value.r}
+                    class="profile-color-slider"
+                    style={{
+                      '--color-start': `0 ${localColor.value.g} ${localColor.value.b}`,
+                      '--color-end': `255 ${localColor.value.g} ${localColor.value.b}`
+                    }}
+                    data-static-profile-color="red"
+                    onInput$={handleRedInput}
+                  />
+                </div>
+                <div class="profile-color-row">
+                  <div class="profile-color-label">
+                    <span>Green</span>
+                    <strong>{localColor.value.g}</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={255}
+                    value={localColor.value.g}
+                    class="profile-color-slider"
+                    style={{
+                      '--color-start': `${localColor.value.r} 0 ${localColor.value.b}`,
+                      '--color-end': `${localColor.value.r} 255 ${localColor.value.b}`
+                    }}
+                    data-static-profile-color="green"
+                    onInput$={handleGreenInput}
+                  />
+                </div>
+                <div class="profile-color-row">
+                  <div class="profile-color-label">
+                    <span>Blue</span>
+                    <strong>{localColor.value.b}</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={255}
+                    value={localColor.value.b}
+                    class="profile-color-slider"
+                    style={{
+                      '--color-start': `${localColor.value.r} ${localColor.value.g} 0`,
+                      '--color-end': `${localColor.value.r} ${localColor.value.g} 255`
+                    }}
+                    data-static-profile-color="blue"
+                    onInput$={handleBlueInput}
+                  />
+                </div>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={255}
-                value={localColor.value.r}
-                class="profile-color-slider"
-                style={{
-                  '--color-start': `0 ${localColor.value.g} ${localColor.value.b}`,
-                  '--color-end': `255 ${localColor.value.g} ${localColor.value.b}`
-                }}
-                onInput$={handleRedInput}
-              />
-            </div>
-            <div class="profile-color-row">
-              <div class="profile-color-label">
-                <span>Green</span>
-                <strong>{localColor.value.g}</strong>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={255}
-                value={localColor.value.g}
-                class="profile-color-slider"
-                style={{
-                  '--color-start': `${localColor.value.r} 0 ${localColor.value.b}`,
-                  '--color-end': `${localColor.value.r} 255 ${localColor.value.b}`
-                }}
-                onInput$={handleGreenInput}
-              />
-            </div>
-            <div class="profile-color-row">
-              <div class="profile-color-label">
-                <span>Blue</span>
-                <strong>{localColor.value.b}</strong>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={255}
-                value={localColor.value.b}
-                class="profile-color-slider"
-                style={{
-                  '--color-start': `${localColor.value.r} ${localColor.value.g} 0`,
-                  '--color-end': `${localColor.value.r} ${localColor.value.g} 255`
-                }}
-                onInput$={handleBlueInput}
-              />
             </div>
           </div>
+          {localStatus.value ? (
+            <div
+              class="auth-status"
+              role="status"
+              aria-live="polite"
+              data-tone={localStatusTone.value}
+              data-static-profile-local-status
+            >
+              {localStatus.value}
+            </div>
+          ) : null}
         </div>
-      </div>
-      {localStatus.value ? (
-        <div class="auth-status" role="status" aria-live="polite" data-tone={localStatusTone.value}>
-          {localStatus.value}
-        </div>
-      ) : null}
-    </StaticRouteTemplate>
+      </StaticRouteTemplate>
+    </StaticPageRoot>
   )
 })

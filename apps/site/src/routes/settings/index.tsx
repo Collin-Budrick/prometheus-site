@@ -27,6 +27,10 @@ import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../native/native-auth'
 import { isNativeShellRuntime } from '../../native/runtime'
 import { settingsLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
+import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -105,6 +109,18 @@ const resolveFriendCodeUser = (user?: ProtectedRouteData['user']): FriendCodeUse
 export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
+  if (isStaticShellBuild()) {
+    const cookieHeader = request.headers.get('cookie')
+    const chatSettings = readChatSettingsFromCookie(cookieHeader) ?? { ...defaultChatSettings }
+    const swSeed = readServiceWorkerSeedFromCookie(cookieHeader)
+    return {
+      lang,
+      user: undefined,
+      chatSettings,
+      swOptOut: Boolean(swSeed.optOut),
+      languageSeed: createServerLanguageSeed(lang, settingsLanguageSelection)
+    }
+  }
   const session = await loadAuthSession(request)
   if (session.status !== 'authenticated') {
     throw redirect(302, '/login')
@@ -327,15 +343,20 @@ export default component$(() => {
   })
 
   return (
-    <StaticRouteTemplate
-      metaLine={copy.value.protectedMetaLine}
-      title={copy.value.navSettings}
-      description={description}
-      actionLabel={copy.value.authLogoutLabel}
-      actionDisabled={logoutBusy.value}
-      onAction$={handleLogout}
-      closeLabel={copy.value.fragmentClose}
+    <StaticPageRoot
+      routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
+      routeData={createStaticIslandRouteData('/settings', data.value.lang, 'settings')}
     >
+      <StaticRouteTemplate
+        metaLine={copy.value.protectedMetaLine}
+        title={copy.value.navSettings}
+        description={description}
+        actionLabel={copy.value.authLogoutLabel}
+        actionDisabled={logoutBusy.value}
+        onAction$={handleLogout}
+        closeLabel={copy.value.fragmentClose}
+      >
+        <div data-static-settings-root>
       <section class="settings-panel">
         <div class="settings-panel-header">
           <span class="settings-panel-title">{copy.value.settingsChatTitle}</span>
@@ -350,6 +371,7 @@ export default component$(() => {
             type="button"
             class="chat-settings-toggle"
             data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
+            data-static-settings-toggle="read-receipts"
             role="switch"
             aria-checked={chatSettings.value.readReceipts}
             onClick$={toggleReadReceipts}
@@ -368,6 +390,7 @@ export default component$(() => {
             type="button"
             class="chat-settings-toggle"
             data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
+            data-static-settings-toggle="typing-indicators"
             role="switch"
             aria-checked={chatSettings.value.typingIndicators}
             onClick$={toggleTypingIndicators}
@@ -392,11 +415,17 @@ export default component$(() => {
               type="button"
               class="settings-action-button"
               disabled={!friendCode.value}
+              data-static-settings-action="copy-friend-code"
               onClick$={handleCopyFriendCode}
             >
               {copy.value.settingsInviteCopyAction}
             </button>
-            <button type="button" class="settings-action-button" onClick$={handleRotateFriendCode}>
+            <button
+              type="button"
+              class="settings-action-button"
+              data-static-settings-action="rotate-friend-code"
+              onClick$={handleRotateFriendCode}
+            >
               {copy.value.settingsInviteRotateAction}
             </button>
           </div>
@@ -405,10 +434,17 @@ export default component$(() => {
           class="settings-invite-code"
           readOnly
           value={friendCode.value}
+          data-static-settings-friend-code
           aria-label={copy.value.settingsInviteCodeLabel}
         />
         {friendCodeStatus.value ? (
-          <div class="auth-status" role="status" aria-live="polite" data-tone={friendCodeStatus.value.tone}>
+          <div
+            class="auth-status"
+            role="status"
+            aria-live="polite"
+            data-tone={friendCodeStatus.value.tone}
+            data-static-settings-friend-status
+          >
             {friendCodeStatus.value.message}
           </div>
         ) : null}
@@ -428,6 +464,7 @@ export default component$(() => {
               type="button"
               class="chat-settings-toggle"
               data-active={!swOptOut.value ? 'true' : 'false'}
+              data-static-settings-toggle="offline-cache"
               role="switch"
               aria-checked={!swOptOut.value}
               onClick$={toggleOfflineCache}
@@ -442,7 +479,12 @@ export default component$(() => {
               <span class="settings-toggle-title">{copy.value.settingsOfflineRefreshLabel}</span>
               <span class="settings-toggle-hint">{copy.value.settingsOfflineRefreshHint}</span>
             </div>
-            <button type="button" class="settings-action-button" onClick$={handleOfflineRefresh}>
+            <button
+              type="button"
+              class="settings-action-button"
+              data-static-settings-action="offline-refresh"
+              onClick$={handleOfflineRefresh}
+            >
               {copy.value.settingsOfflineRefreshAction}
             </button>
           </div>
@@ -451,12 +493,23 @@ export default component$(() => {
               <span class="settings-toggle-title">{copy.value.settingsOfflineCleanupLabel}</span>
               <span class="settings-toggle-hint">{copy.value.settingsOfflineCleanupHint}</span>
             </div>
-            <button type="button" class="settings-action-button" onClick$={handleOfflineCleanup}>
+            <button
+              type="button"
+              class="settings-action-button"
+              data-static-settings-action="offline-cleanup"
+              onClick$={handleOfflineCleanup}
+            >
               {copy.value.settingsOfflineCleanupAction}
             </button>
           </div>
           {swStatus.value ? (
-            <div class="auth-status" role="status" aria-live="polite" data-tone={swStatus.value.tone}>
+            <div
+              class="auth-status"
+              role="status"
+              aria-live="polite"
+              data-tone={swStatus.value.tone}
+              data-static-settings-sw-status
+            >
               {swStatus.value.message}
             </div>
           ) : null}
@@ -487,6 +540,7 @@ export default component$(() => {
             aria-valuemax={140}
             aria-valuenow={textZoom.value}
             aria-label={copy.value.settingsNativeTextZoomAriaLabel}
+            data-static-settings-text-zoom
             onInput$={handleTextZoomInput}
           />
         </div>
@@ -499,6 +553,7 @@ export default component$(() => {
             type="button"
             class="chat-settings-toggle"
             data-active={privacyAlwaysOn.value ? 'true' : 'false'}
+            data-static-settings-toggle="privacy-always-on"
             role="switch"
             aria-checked={privacyAlwaysOn.value}
             onClick$={togglePrivacyAlwaysOn}
@@ -510,10 +565,12 @@ export default component$(() => {
         </div>
       </section>
       {logoutMessage.value ? (
-        <div class="auth-status" role="status" aria-live="polite" data-tone="error">
+        <div class="auth-status" role="status" aria-live="polite" data-tone="error" data-static-settings-logout-status>
           {logoutMessage.value}
         </div>
       ) : null}
-    </StaticRouteTemplate>
+        </div>
+      </StaticRouteTemplate>
+    </StaticPageRoot>
   )
 })

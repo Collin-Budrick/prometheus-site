@@ -577,6 +577,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
     const nativeBuildEnabled = isTruthyEnv(process.env.VITE_TAURI)
+    const staticBuildEnabled = isBuildCommand && !ssrBuild
     const deviceApiBase = resolveDeviceApiBase({
       deviceHost: process.env.PROMETHEUS_DEVICE_HOST,
       deviceProtocol: process.env.PROMETHEUS_DEVICE_PROTOCOL,
@@ -657,7 +658,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
             inlineStylesUpToBytes: 60000
           }
         }),
-        ...(isBuildCommand && nativeBuildEnabled
+        ...(staticBuildEnabled
           ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })]
           : []),
         ...(nativeBuildEnabled && isBuildCommand

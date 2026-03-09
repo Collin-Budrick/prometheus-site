@@ -72,7 +72,7 @@ type RouteBenchmark = {
 const DEFAULT_BASE_URL = 'http://127.0.0.1:4173'
 const DEFAULT_THRESHOLD_MS = 150
 const DEFAULT_OBSERVE_WINDOW_MS = 3000
-const DEFAULT_ROUTES = ['/', '/store', '/chat']
+const DEFAULT_ROUTES = ['/', '/store', '/login', '/settings', '/profile', '/chat']
 const SETTINGS_CHUNK_PATTERNS = [
   /ThemeToggle/i,
   /LanguageToggle/i,

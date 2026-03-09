@@ -13,6 +13,7 @@ import { labLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPay
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 const featureLabModule = await import('@features/lab/pages/Lab')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
@@ -33,6 +34,16 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   const path = url.pathname || '/lab'
   const lang = resolveRequestLang(request)
   if (!labEnabled) {
+    return {
+      plan: null,
+      path,
+      lang,
+      staticRoute: null,
+      languageSeed: createServerLanguageSeed(lang, labLanguageSelection)
+    }
+  }
+
+  if (isStaticShellBuild()) {
     return {
       plan: null,
       path,

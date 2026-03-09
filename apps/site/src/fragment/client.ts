@@ -1,4 +1,4 @@
-import { createFragmentClient } from '@core/fragments'
+import { createFragmentClient } from '@core/fragment/client'
 import type { FragmentPayload } from './types'
 import { fragmentPlanCache } from './plan-cache'
 import { getFragmentCssHref } from './fragment-css'

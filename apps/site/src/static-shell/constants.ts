@@ -1,6 +1,18 @@
 export const HOME_STATIC_ROUTE_PATH = '/'
 export const HOME_STATIC_ROUTE_KIND = 'home'
 export const FRAGMENT_STATIC_ROUTE_KIND = 'fragment'
+export const ISLAND_STATIC_ROUTE_KIND = 'island'
+
+export type StaticShellBootstrapMode = 'home-static' | 'fragment-static' | 'island-static'
+export type StaticShellAuthPolicy = 'public' | 'protected' | 'guest'
+
+export type StaticShellRouteConfig = {
+  path: string
+  routeKind: typeof HOME_STATIC_ROUTE_KIND | typeof FRAGMENT_STATIC_ROUTE_KIND | typeof ISLAND_STATIC_ROUTE_KIND
+  bootstrapMode: StaticShellBootstrapMode
+  authPolicy: StaticShellAuthPolicy
+  snapshotKey: string
+}
 
 export const STATIC_ROUTE_ATTR = 'data-static-route'
 export const STATIC_SHELL_REGION_ATTR = 'data-static-shell-region'
@@ -18,8 +30,91 @@ export const STATIC_SHELL_DOCK_REGION = 'dock'
 export const STATIC_SHELL_SEED_SCRIPT_ID = 'prom-static-shell-seed'
 export const STATIC_HOME_DATA_SCRIPT_ID = 'prom-static-home-data'
 export const STATIC_FRAGMENT_DATA_SCRIPT_ID = 'prom-static-fragment-data'
+export const STATIC_ISLAND_DATA_SCRIPT_ID = 'prom-static-island-data'
 
-const staticShellRoutePaths = new Set(['/', '/chat', '/lab', '/login', '/offline', '/store'])
+const normalizeStaticShellPath = (path: string) => {
+  const trimmed = (path || '/').trim()
+  if (!trimmed || trimmed === '/') return '/'
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
+}
 
-export const isHomeStaticPath = (path: string) => (path || '/') === HOME_STATIC_ROUTE_PATH
-export const isStaticShellPath = (path: string) => staticShellRoutePaths.has(path || '/')
+const staticShellRouteConfigs = [
+  {
+    path: '/',
+    routeKind: HOME_STATIC_ROUTE_KIND,
+    bootstrapMode: 'home-static',
+    authPolicy: 'public',
+    snapshotKey: '/'
+  },
+  {
+    path: '/store',
+    routeKind: FRAGMENT_STATIC_ROUTE_KIND,
+    bootstrapMode: 'fragment-static',
+    authPolicy: 'public',
+    snapshotKey: '/store'
+  },
+  {
+    path: '/lab',
+    routeKind: FRAGMENT_STATIC_ROUTE_KIND,
+    bootstrapMode: 'fragment-static',
+    authPolicy: 'public',
+    snapshotKey: '/lab'
+  },
+  {
+    path: '/login',
+    routeKind: ISLAND_STATIC_ROUTE_KIND,
+    bootstrapMode: 'island-static',
+    authPolicy: 'guest',
+    snapshotKey: '/login'
+  },
+  {
+    path: '/chat',
+    routeKind: FRAGMENT_STATIC_ROUTE_KIND,
+    bootstrapMode: 'fragment-static',
+    authPolicy: 'protected',
+    snapshotKey: '/chat'
+  },
+  {
+    path: '/dashboard',
+    routeKind: ISLAND_STATIC_ROUTE_KIND,
+    bootstrapMode: 'island-static',
+    authPolicy: 'protected',
+    snapshotKey: '/dashboard'
+  },
+  {
+    path: '/profile',
+    routeKind: ISLAND_STATIC_ROUTE_KIND,
+    bootstrapMode: 'island-static',
+    authPolicy: 'protected',
+    snapshotKey: '/profile'
+  },
+  {
+    path: '/settings',
+    routeKind: ISLAND_STATIC_ROUTE_KIND,
+    bootstrapMode: 'island-static',
+    authPolicy: 'protected',
+    snapshotKey: '/settings'
+  },
+  {
+    path: '/offline',
+    routeKind: FRAGMENT_STATIC_ROUTE_KIND,
+    bootstrapMode: 'fragment-static',
+    authPolicy: 'public',
+    snapshotKey: '/offline'
+  }
+] as const satisfies readonly StaticShellRouteConfig[]
+
+const staticShellRouteMap = new Map<string, StaticShellRouteConfig>(
+  staticShellRouteConfigs.map((config) => [config.path, config])
+)
+
+export const getStaticShellRouteConfig = (path: string): StaticShellRouteConfig | null =>
+  staticShellRouteMap.get(normalizeStaticShellPath(path)) ?? null
+
+export const getStaticShellRouteConfigs = () => Array.from(staticShellRouteConfigs)
+
+export const isHomeStaticPath = (path: string) => normalizeStaticShellPath(path) === HOME_STATIC_ROUTE_PATH
+export const isStaticShellPath = (path: string) => Boolean(getStaticShellRouteConfig(path))
+export const isIslandStaticPath = (path: string) =>
+  getStaticShellRouteConfig(path)?.routeKind === ISLAND_STATIC_ROUTE_KIND
+export const normalizeStaticShellRoutePath = normalizeStaticShellPath

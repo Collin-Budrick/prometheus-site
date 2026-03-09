@@ -43,6 +43,7 @@
         "@tauri-apps/plugin-shell": "2.3.5",
         "@tauri-apps/plugin-sql": "2.3.2",
         "@tauri-apps/plugin-updater": "2.10.0",
+        "extend": "3.0.2",
         "gridstack": "12.4.2",
         "nostr-tools": "2.23.3",
         "preact": "11.0.0-experimental.1",

@@ -1,31 +1,41 @@
 import { getUiCopy, seedLanguageResources } from '../lang/client'
 import type { Lang } from '../lang'
-import type { LanguageSeedPayload } from '../lang/selection'
 import type { StaticFragmentRouteData } from './fragment-static-data'
+import type { StaticShellSeed } from './seed'
+import type { StaticFragmentRouteModel } from './static-fragment-model'
 import {
   STATIC_DOCK_ROOT_ATTR,
+  STATIC_FRAGMENT_BODY_ATTR,
+  STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
+  STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_SHELL_MAIN_REGION,
+  STATIC_SHELL_REGION_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
-import { withLangParam } from './dock'
+import { createStaticFragmentRouteData } from './static-fragment-model'
+import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
+import {
+  applyStaticShellSnapshot,
+  loadStaticShellSnapshot,
+  resolvePreferredStaticShellLang,
+  updateStaticShellUrlLang
+} from './snapshot-client'
+import { shouldRetryFragmentStream } from './fragment-stream-error'
 
 type Theme = 'light' | 'dark'
 
-type StaticShellSeed = {
-  lang: Lang
-  currentPath: string
-  languageSeed: LanguageSeedPayload
-}
-
-type StaticShellController = {
+type StaticFragmentController = {
   lang: Lang
   path: string
+  snapshotKey: string
+  authPolicy: StaticShellSeed['authPolicy']
   streamAbort: AbortController | null
   streamRetryTimer: number
   cleanupFns: Array<() => void>
   dockCleanup: { cleanup: () => void } | null
   destroyed: boolean
-  routeData: StaticFragmentRouteData | null
+  routeData: StaticFragmentRouteData
 }
 
 const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
@@ -37,8 +47,9 @@ const STATIC_LANG_PREFERENCE_KEY = 'prometheus:pref:locale'
 const DARK_THEME_COLOR = '#0f172a'
 const LIGHT_THEME_COLOR = '#f97316'
 
-let activeController: StaticShellController | null = null
+let activeController: StaticFragmentController | null = null
 let fragmentStreamRuntimePromise: Promise<typeof import('./fragment-stream')> | null = null
+let languageSwapInFlight = false
 
 const readJsonScript = <T,>(id: string): T | null => {
   const element = document.getElementById(id)
@@ -49,6 +60,12 @@ const readJsonScript = <T,>(id: string): T | null => {
     return null
   }
 }
+
+const serializeJson = (value: unknown) =>
+  JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
@@ -131,11 +148,11 @@ const loadFragmentStreamRuntime = () => {
   return fragmentStreamRuntimePromise
 }
 
-const mountDock = async (lang: Lang, currentPath: string) => {
+const mountDock = async (lang: Lang, currentPath: string, options?: { skipAuthUpgrade?: boolean }) => {
   const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
   if (!dockRoot) return null
   const { mountStaticDock } = await import('./home-dock-dom')
-  return mountStaticDock({ root: dockRoot, lang, currentPath })
+  return mountStaticDock({ root: dockRoot, lang, currentPath, skipAuthUpgrade: options?.skipAuthUpgrade })
 }
 
 const refreshThemeButton = (lang: Lang) => {
@@ -148,14 +165,39 @@ const refreshThemeButton = (lang: Lang) => {
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
 }
 
-const navigateToLang = (controller: StaticShellController, nextLang: Lang) => {
-  if (nextLang === controller.lang) return
-  persistStaticLang(nextLang)
-  const current = new URL(window.location.href)
-  window.location.assign(withLangParam(`${current.pathname}${current.search}${current.hash}`, nextLang))
+const hasStaticFragmentRoot = () => Boolean(document.querySelector('[data-static-fragment-root]'))
+
+const readShellSeed = () => readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
+
+const readRouteData = (shellSeed: StaticShellSeed) =>
+  readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID) ??
+  createStaticFragmentRouteData({
+    path: shellSeed.currentPath || window.location.pathname,
+    lang: shellSeed.lang
+  })
+
+const swapStaticFragmentLanguage = async (nextLang: Lang) => {
+  if (languageSwapInFlight) return
+  const shellSeed = readShellSeed()
+  if (!shellSeed || shellSeed.lang === nextLang) return
+  languageSwapInFlight = true
+
+  try {
+    const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
+    await destroyController(activeController)
+    activeController = null
+    applyStaticShellSnapshot(snapshot)
+    persistStaticLang(nextLang)
+    updateStaticShellUrlLang(nextLang)
+    await bootstrapStaticFragmentShell()
+  } catch (error) {
+    console.error('Failed to switch static fragment language:', error)
+  } finally {
+    languageSwapInFlight = false
+  }
 }
 
-const bindShellControls = (controller: StaticShellController) => {
+const bindShellControls = (controller: StaticFragmentController) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
   const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
   const languageMenuToggle = document.querySelector<HTMLButtonElement>('[data-static-language-menu-toggle]')
@@ -225,8 +267,8 @@ const bindShellControls = (controller: StaticShellController) => {
     const handleClick = () => {
       const nextLang = button.dataset.lang as Lang | undefined
       closeMenus()
-      if (!nextLang) return
-      navigateToLang(controller, nextLang)
+      if (!nextLang || nextLang === controller.lang) return
+      void swapStaticFragmentLanguage(nextLang)
     }
 
     button.addEventListener('click', handleClick)
@@ -236,7 +278,7 @@ const bindShellControls = (controller: StaticShellController) => {
   refreshThemeButton(controller.lang)
 }
 
-const stopConnections = (controller: StaticShellController) => {
+const stopConnections = (controller: StaticFragmentController) => {
   if (controller.streamAbort) {
     controller.streamAbort.abort()
     controller.streamAbort = null
@@ -251,8 +293,8 @@ const stopConnections = (controller: StaticShellController) => {
   }
 }
 
-const scheduleDockMount = (controller: StaticShellController, delayMs = 1200) => {
-  const cancelIdle = requestIdle(() => {
+const scheduleDockMount = (controller: StaticFragmentController, delayMs = 12000) => {
+  const startMount = () => {
     if (controller.destroyed || controller.dockCleanup) return
     void mountDock(controller.lang, controller.path)
       .then((dockCleanup) => {
@@ -268,20 +310,46 @@ const scheduleDockMount = (controller: StaticShellController, delayMs = 1200) =>
           console.error('Failed to mount static dock controller:', error)
         }
       })
+  }
+
+  if (delayMs <= 0) {
+    startMount()
+    return
+  }
+
+  const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
+  const handleInteraction = () => {
+    cleanupInteractionListeners()
+    cancelIdle()
+    startMount()
+  }
+  const cleanupInteractionListeners = () => {
+    dockRoot?.removeEventListener('pointerenter', handleInteraction)
+    dockRoot?.removeEventListener('focusin', handleInteraction)
+    dockRoot?.removeEventListener('touchstart', handleInteraction)
+  }
+  dockRoot?.addEventListener('pointerenter', handleInteraction)
+  dockRoot?.addEventListener('focusin', handleInteraction)
+  dockRoot?.addEventListener('touchstart', handleInteraction)
+  controller.cleanupFns.push(cleanupInteractionListeners)
+
+  const idleTimer = window.setTimeout(() => {
+    cleanupInteractionListeners()
+    startMount()
   }, delayMs)
-  controller.cleanupFns.push(cancelIdle)
+  controller.cleanupFns.push(() => window.clearTimeout(idleTimer))
 }
 
-const scheduleStreamRetry = (controller: StaticShellController, delayMs: number) => {
-  if (controller.destroyed || !controller.routeData) return
+const scheduleStreamRetry = (controller: StaticFragmentController, delayMs: number) => {
+  if (controller.destroyed || !hasStaticFragmentRoot()) return
   controller.streamRetryTimer = window.setTimeout(() => {
     controller.streamRetryTimer = 0
     void startDeferredStream(controller)
   }, delayMs)
 }
 
-const startDeferredStream = async (controller: StaticShellController) => {
-  if (controller.destroyed || !controller.routeData) return
+const startDeferredStream = async (controller: StaticFragmentController) => {
+  if (controller.destroyed || !hasStaticFragmentRoot()) return
   if (controller.streamAbort) {
     controller.streamAbort.abort()
   }
@@ -312,12 +380,14 @@ const startDeferredStream = async (controller: StaticShellController) => {
     if (controller.destroyed || controller.streamAbort !== streamAbort || streamAbort.signal.aborted) return
     console.error('Static fragment stream failed:', error)
     updateFragmentStatus(controller.lang, 'error')
-    scheduleStreamRetry(controller, 2000)
+    if (shouldRetryFragmentStream(error)) {
+      scheduleStreamRetry(controller, 2000)
+    }
   }
 }
 
-const scheduleDeferredStreamStart = (controller: StaticShellController, delayMs = 1800) => {
-  if (!controller.routeData) return
+const scheduleDeferredStreamStart = (controller: StaticFragmentController, delayMs = 1800) => {
+  if (!hasStaticFragmentRoot()) return
   const cancelIdle = requestIdle(() => {
     if (controller.destroyed || document.visibilityState === 'hidden') return
     void startDeferredStream(controller)
@@ -325,30 +395,113 @@ const scheduleDeferredStreamStart = (controller: StaticShellController, delayMs 
   controller.cleanupFns.push(cancelIdle)
 }
 
-const destroyController = async (controller: StaticShellController | null) => {
+const destroyController = async (controller: StaticFragmentController | null) => {
   if (!controller) return
   controller.destroyed = true
   stopConnections(controller)
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
 }
 
-export const bootstrapStaticShell = async () => {
-  const shellSeed = readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
+const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
+  const leftCount = Math.ceil(model.entries.length / 2)
+  const inlineStyles = model.inlineStyles
+    .map((fragment) => `<style data-fragment-css="${fragment.id}">${fragment.css}</style>`)
+    .join('')
+  const entries = model.entries
+    .map((entry, index) => {
+      const column = index < leftCount ? '1' : '2'
+      const versionAttr = entry.version ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"` : ''
+      const sizeAttr = entry.size ? ` data-size="${entry.size}"` : ''
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`
+    })
+    .join('')
+
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json">${serializeJson(model.routeData)}</script></section>`
+}
+
+const hydrateProtectedStaticFragments = async (controller: StaticFragmentController) => {
+  const [{ fetchFragmentBatch, fetchFragmentPlan }, { buildStaticFragmentRouteModel }] = await Promise.all([
+    import('../fragment/client'),
+    import('./static-fragment-model')
+  ])
+  const plan = await fetchFragmentPlan(controller.path, controller.lang)
+  const fragments = await fetchFragmentBatch(
+    plan.fragments.map((entry) => ({ id: entry.id })),
+    {
+      lang: controller.lang
+    }
+  )
+  const model = buildStaticFragmentRouteModel({
+    plan,
+    fragments,
+    lang: controller.lang,
+    storeSeed: controller.routeData.storeSeed ?? null,
+    contactInvitesSeed: controller.routeData.contactInvitesSeed ?? null
+  })
+  const mainRegion = document.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`)
+  if (!mainRegion) return
+  mainRegion.innerHTML = buildStaticFragmentMarkup(model)
+  controller.routeData = model.routeData
+}
+
+const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
+  const handle = window.setTimeout(() => {
+    void (async () => {
+      try {
+        const session = await loadClientAuthSession()
+        if (controller.destroyed) return
+        if (session.status !== 'authenticated') {
+          redirectProtectedStaticRouteToLogin(controller.lang)
+          return
+        }
+        if (!hasStaticFragmentRoot()) {
+          await hydrateProtectedStaticFragments(controller)
+        }
+        scheduleDockMount(controller, 0)
+        scheduleDeferredStreamStart(controller, 0)
+      } catch (error) {
+        if (!controller.destroyed) {
+          console.error('Protected static fragment auth upgrade failed:', error)
+        }
+      }
+    })()
+  }, 48)
+  controller.cleanupFns.push(() => window.clearTimeout(handle))
+}
+
+export const bootstrapStaticFragmentShell = async () => {
+  const shellSeed = readShellSeed()
   if (!shellSeed) return
+  const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang)
+  if (preferredLang !== shellSeed.lang) {
+    try {
+      const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
+      applyStaticShellSnapshot(snapshot)
+      persistStaticLang(preferredLang)
+      updateStaticShellUrlLang(preferredLang)
+      await bootstrapStaticFragmentShell()
+      return
+    } catch (error) {
+      console.error('Failed to restore preferred fragment language snapshot:', error)
+    }
+  }
 
   seedLanguageResources(shellSeed.lang, shellSeed.languageSeed ?? {})
   setDocumentLang(shellSeed.lang)
   await destroyController(activeController)
 
-  const controller: StaticShellController = {
+  const routeData = readRouteData(shellSeed)
+  const controller: StaticFragmentController = {
     lang: shellSeed.lang,
     path: shellSeed.currentPath || window.location.pathname,
+    snapshotKey: shellSeed.snapshotKey,
+    authPolicy: shellSeed.authPolicy,
     streamAbort: null,
     streamRetryTimer: 0,
     cleanupFns: [],
     dockCleanup: null,
     destroyed: false,
-    routeData: readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID)
+    routeData
   }
   activeController = controller
 
@@ -362,10 +515,12 @@ export const bootstrapStaticShell = async () => {
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return
     updateFragmentStatus(controller.lang, 'idle')
-    scheduleDockMount(controller, 0)
-    if (controller.routeData) {
-      scheduleDeferredStreamStart(controller, 0)
+    if (controller.authPolicy === 'protected') {
+      scheduleProtectedAuthUpgrade(controller)
+      return
     }
+    scheduleDockMount(controller, 0)
+    scheduleDeferredStreamStart(controller, 0)
   }
 
   window.addEventListener('pagehide', handlePageHide)
@@ -373,7 +528,13 @@ export const bootstrapStaticShell = async () => {
   controller.cleanupFns.push(() => window.removeEventListener('pagehide', handlePageHide))
   controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
 
+  if (controller.authPolicy === 'protected') {
+    scheduleProtectedAuthUpgrade(controller)
+    return
+  }
+
   scheduleDockMount(controller)
   scheduleDeferredStreamStart(controller)
 }
 
+export const bootstrapStaticShell = bootstrapStaticFragmentShell

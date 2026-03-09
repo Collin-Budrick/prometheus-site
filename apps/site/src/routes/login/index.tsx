@@ -14,7 +14,9 @@ import { loginLanguageSelection, withFragmentHeaderSelection, type LanguageSeedP
 import { resolveAuthFormState, type AuthFormState } from '@features/auth/auth-form-state'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { StaticLoginRoute } from '../../static-shell/StaticLoginRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import { isStaticShellBuild } from '../../static-shell/build-mode'
 
 type LoginClientModule = typeof import('@features/auth/pages/Login.client')
 type LoginClientRoute = LoginClientModule['LoginRoute']
@@ -25,6 +27,7 @@ type FragmentResource = {
   path: string
   lang: Lang
   staticRoute: StaticFragmentRouteModel | null
+  staticLogin: boolean
   languageSeed: LanguageSeedPayload
 }
 
@@ -43,6 +46,18 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       path,
       lang,
       staticRoute: null,
+      staticLogin: false,
+      languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
+    }
+  }
+
+  if (isStaticShellBuild()) {
+    return {
+      plan: null,
+      path,
+      lang,
+      staticRoute: null,
+      staticLogin: true,
       languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
     }
   }
@@ -62,6 +77,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
             initialHtml
           })
         : null,
+      staticLogin: false,
       languageSeed: createServerLanguageSeed(
         lang,
         withFragmentHeaderSelection(loginLanguageSelection, fragmentHeaderIds)
@@ -74,6 +90,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       path,
       lang,
       staticRoute: null,
+      staticLogin: false,
       languageSeed: createServerLanguageSeed(lang, loginLanguageSelection)
     }
   }
@@ -187,8 +204,17 @@ const RouteComponent = loginEnabled ? EnabledLoginRoute : DisabledLoginRoute
 
 export default component$(() => {
   const fragmentResource = useFragmentResource()
+  const authFormState = useAuthFormState()
   useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
   const data = fragmentResource.value
+  if (data.staticLogin) {
+    return (
+      <StaticLoginRoute
+        lang={data.lang}
+        initialFormState={authFormState.value}
+      />
+    )
+  }
   if (data.staticRoute?.entries.length) {
     return (
       <StaticFragmentRoute

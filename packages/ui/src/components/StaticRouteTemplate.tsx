@@ -88,7 +88,7 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
     )
 
     return (
-      <section class="fragment-shell">
+      <section class="fragment-shell" data-static-route-template>
         <div ref={gridRef} class="fragment-grid" data-fragment-grid="main">
           <FragmentCard
             id={cardId}
@@ -106,7 +106,13 @@ export const StaticRouteTemplate = component$<StaticRouteTemplateProps>(
             <h1>{title}</h1>
             <p>{description}</p>
             <Slot />
-            <button class="action-button" type="button" disabled={actionDisabled} onClick$={onAction$}>
+            <button
+              class="action-button"
+              type="button"
+              disabled={actionDisabled}
+              data-static-route-action
+              onClick$={onAction$}
+            >
               {actionLabel}
             </button>
           </FragmentCard>
