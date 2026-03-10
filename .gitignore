@@ -28,3 +28,4 @@ Trace-*
 *.keystore
 *.p12
 .codex
+tmp-home-trace.json
