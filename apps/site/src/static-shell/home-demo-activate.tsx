@@ -3,8 +3,14 @@ import {
   getStaticHomePlannerDemoCopy,
   getStaticHomePreactIslandDemoCopy,
   getStaticHomeReactBinaryDemoCopy,
-  getStaticHomeWasmRendererDemoCopy
+  getStaticHomeWasmRendererDemoCopy,
+  seedStaticHomeCopy
 } from './home-copy-store'
+import {
+  readStaticHomeBootstrapData,
+  type StaticHomeBootstrapDocument
+} from './home-bootstrap-data'
+import { normalizeStaticShellLang } from './lang-param'
 
 export type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 
@@ -23,10 +29,19 @@ const plannerStepDelayMs = 720
 const preactCountdownSeconds = 60
 const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
 const reactDomPreview = '<section> <h2> <p> <div.badge>'
+let didWarnMissingReactBinaryCopy = false
 
 const getCurrentLang = (): Lang => {
-  const value = document.documentElement.lang?.trim().toLowerCase()
-  return (value || 'en') as Lang
+  return normalizeStaticShellLang(document.documentElement.lang)
+}
+
+export const ensureStaticHomeDemoSeed = (
+  doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  const data = readStaticHomeBootstrapData({ doc })
+  if (!data) return null
+  seedStaticHomeCopy(data.lang, data.shellSeed, data.routeSeed)
+  return data
 }
 
 const getRootElement = (root: Element) => {
@@ -92,6 +107,12 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
   root.setAttribute('data-home-demo-active', 'true')
   root.removeAttribute('data-home-preview')
   root.innerHTML = html
+}
+
+const warnMissingReactBinaryCopy = () => {
+  if (didWarnMissingReactBinaryCopy) return
+  didWarnMissingReactBinaryCopy = true
+  console.warn('Static home react demo copy was missing at activation time; keeping compact preview intact.')
 }
 
 const renderPlannerDemoMarkup = (copy: PlannerDemoCopy) => `
@@ -601,6 +622,12 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
 
 const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomeReactBinaryDemoCopy(getCurrentLang())
+  if (copy.stages.length === 0) {
+    warnMissingReactBinaryCopy()
+    return {
+      cleanup: () => undefined
+    }
+  }
   prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
   const status = root.querySelector<HTMLElement>('.react-binary-status')
@@ -839,6 +866,7 @@ export const activateHomeDemo = async ({
   props
 }: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult> => {
   const element = getRootElement(root)
+  ensureStaticHomeDemoSeed()
 
   switch (kind) {
     case 'planner':
@@ -852,4 +880,8 @@ export const activateHomeDemo = async ({
     default:
       throw new Error(`Unsupported home demo: ${kind satisfies never}`)
   }
+}
+
+export const resetHomeDemoActivationForTests = () => {
+  didWarnMissingReactBinaryCopy = false
 }

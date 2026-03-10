@@ -1,5 +1,7 @@
 import type { Lang, PlannerDemoCopy, PreactIslandCopy, ReactBinaryDemoCopy, UiCopy, WasmRendererDemoCopy } from '../lang'
+import { defaultLanguage } from '../lang/manifest'
 import type { LanguageSeedPayload } from '../lang/selection'
+import { normalizeStaticShellLang } from './lang-param'
 
 export type HomeStaticUiCopy = Pick<
   UiCopy,
@@ -211,6 +213,8 @@ const clonePreactIslandDemo = (value?: PreactIslandCopy): PreactIslandCopy => ({
   ...(value ?? {})
 })
 
+const resolveHomeCopyLang = (lang: Lang | string) => normalizeStaticShellLang(lang)
+
 const toHomeUi = (payload?: LanguageSeedPayload): Partial<HomeStaticUiCopy> =>
   omitUndefined({
     navHome: payload?.ui?.navHome,
@@ -238,7 +242,7 @@ export const seedStaticHomeCopy = (
   shellSeed: LanguageSeedPayload,
   routeSeed: LanguageSeedPayload
 ) => {
-  const normalized = lang.trim().toLowerCase()
+  const normalized = resolveHomeCopyLang(lang)
   const existing = homeCopyCache.get(normalized)
   homeCopyCache.set(normalized, {
     ui: {
@@ -261,7 +265,9 @@ export const seedStaticHomeCopy = (
 }
 
 const getHomeStaticState = (lang: Lang | string): HomeStaticCopyState | undefined =>
-  homeCopyCache.get(lang.trim().toLowerCase())
+  homeCopyCache.get(lang.trim().toLowerCase()) ??
+  homeCopyCache.get(resolveHomeCopyLang(lang)) ??
+  homeCopyCache.get(defaultLanguage)
 
 export const getStaticHomeUiCopy = (lang: Lang | string): HomeStaticUiCopy => ({
   ...emptyUiCopy,
@@ -279,3 +285,7 @@ export const getStaticHomeReactBinaryDemoCopy = (lang: Lang | string): ReactBina
 
 export const getStaticHomePreactIslandDemoCopy = (lang: Lang | string): PreactIslandCopy =>
   clonePreactIslandDemo(getHomeStaticState(lang)?.demos.preactIsland)
+
+export const resetStaticHomeCopyForTests = () => {
+  homeCopyCache.clear()
+}

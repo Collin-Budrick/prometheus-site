@@ -4,6 +4,7 @@ import {
   getStaticHomeUiCopy,
   seedStaticHomeCopy
 } from './home-copy-store'
+import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
   type HomeDemoActivationResult,
   type HomeDemoKind
@@ -15,13 +16,10 @@ import {
   createStaticHomePatchQueue,
   type StaticHomePatchQueue
 } from './home-stream'
-import type { StaticShellSeed } from './seed'
 import {
-  STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
-  STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { scheduleStaticShellTask } from './scheduler'
 import {
@@ -38,26 +36,6 @@ import {
 import type { StaticHomeCardStage } from './constants'
 
 type Theme = 'light' | 'dark'
-
-type HomeStaticRouteData = {
-  lang: Lang
-  path: string
-  snapshotKey?: string
-  homeDemoStylesheetHref?: string
-  languageSeed: LanguageSeedPayload
-  fragmentVersions: Record<string, number>
-}
-
-type HomeStaticBootstrapData = {
-  currentPath: string
-  isAuthenticated: boolean
-  snapshotKey: string
-  lang: Lang
-  shellSeed: LanguageSeedPayload
-  routeSeed: LanguageSeedPayload
-  homeDemoStylesheetHref: string | null
-  fragmentVersions: Record<string, number>
-}
 
 type HomeControllerState = {
   isAuthenticated: boolean
@@ -203,32 +181,6 @@ const cleanupLegacyHomePersistence = () => {
     window.sessionStorage.setItem(LEGACY_HOME_CLEANUP_SESSION_KEY, '1')
   } catch {
     // Ignore sessionStorage failures.
-  }
-}
-
-const readJsonScript = <T,>(id: string): T | null => {
-  const element = document.getElementById(id)
-  if (!(element instanceof HTMLScriptElement) || !element.textContent) return null
-  try {
-    return JSON.parse(element.textContent) as T
-  } catch {
-    return null
-  }
-}
-
-const readBootstrapDataFromDocument = (): HomeStaticBootstrapData | null => {
-  const shell = readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
-  const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID)
-  if (!shell || !route) return null
-  return {
-    currentPath: shell.currentPath || route.path || '/',
-    isAuthenticated: shell.isAuthenticated ?? false,
-    snapshotKey: route.snapshotKey || shell.snapshotKey || shell.currentPath || route.path || '/',
-    lang: route.lang || shell.lang,
-    shellSeed: shell.languageSeed ?? {},
-    routeSeed: route.languageSeed ?? {},
-    homeDemoStylesheetHref: route.homeDemoStylesheetHref ?? null,
-    fragmentVersions: route.fragmentVersions ?? {}
   }
 }
 
@@ -1046,7 +998,7 @@ const destroyController = async (controller: HomeControllerState | null) => {
 
 const swapStaticHomeLanguage = async (nextLang: Lang) => {
   if (languageSwapInFlight) return
-  const current = readBootstrapDataFromDocument()
+  const current = readStaticHomeBootstrapData()
   if (!current || current.lang === nextLang) return
   languageSwapInFlight = true
 
@@ -1070,7 +1022,7 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
 }
 
 export const bootstrapStaticHome = async () => {
-  const data = readBootstrapDataFromDocument()
+  const data = readStaticHomeBootstrapData()
   if (!data) return
   const preferredLang = resolvePreferredStaticShellLang(data.lang)
   if (preferredLang !== data.lang) {
