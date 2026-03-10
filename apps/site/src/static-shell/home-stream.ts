@@ -13,9 +13,11 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_LOCKED_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
 import { renderHomeStaticFragmentHtml } from './home-render'
+import { scheduleStaticShellTask } from './scheduler'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -39,8 +41,7 @@ type CreateStaticHomePatchQueueOptions = {
   applyEffects?: boolean
   onPatchedBody?: (body: HTMLElement, fragmentId: string) => void
   root?: ParentNode
-  requestFrame?: (callback: FrameRequestCallback) => number
-  cancelFrame?: (handle: number) => void
+  scheduleTask?: typeof scheduleStaticShellTask
 }
 
 type ObserveStaticHomePatchVisibilityOptions = {
@@ -84,14 +85,17 @@ const findStaticHomeFragmentCard = (fragmentId: string, root: ParentNode = docum
 const collectStaticHomeCards = (root: ParentNode = document) =>
   Array.from(root.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`))
 
+const isStaticHomeElement = (card: Element | null): card is HTMLElement =>
+  Boolean(card && typeof (card as HTMLElement).getAttribute === 'function')
+
 const isHomePatchReady = (card: Element | null) =>
-  card instanceof HTMLElement && card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready'
+  isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready'
 
 const setHomePatchState = (card: HTMLElement, state: 'pending' | 'ready') => {
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, state)
 }
 
-const collectKnownVersions = (root: ParentNode = document) => {
+export const collectStaticHomeKnownVersions = (root: ParentNode = document) => {
   const versions: Record<string, number> = {}
   collectStaticHomeCards(root).forEach((element) => {
     if (!isHomePatchReady(element)) return
@@ -105,7 +109,7 @@ const collectKnownVersions = (root: ParentNode = document) => {
 }
 
 const parseFragmentVersion = (element: Element | null) => {
-  if (!(element instanceof HTMLElement)) return null
+  if (!isStaticHomeElement(element)) return null
   const raw = element.getAttribute(STATIC_FRAGMENT_VERSION_ATTR)
   if (!raw) return null
   const parsed = Number(raw)
@@ -163,45 +167,37 @@ export const createStaticHomePatchQueue = ({
   applyEffects = true,
   onPatchedBody,
   root = document,
-  requestFrame,
-  cancelFrame
+  scheduleTask = scheduleStaticShellTask
 }: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
-  const scheduleFrame =
-    requestFrame ??
-    ((callback: FrameRequestCallback) => {
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        return window.requestAnimationFrame(callback)
-      }
-      callback(0)
-      return 0
-    })
-  const cancelScheduledFrame =
-    cancelFrame ??
-    ((handle: number) => {
-      if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function' && handle) {
-        window.cancelAnimationFrame(handle)
-      }
-    })
-  let frameHandle = 0
+  let cancelScheduledFlush: (() => void) | null = null
+  let flushInFlight = false
   let destroyed = false
 
-  const flushNow = () => {
-    if (destroyed) return
-    if (frameHandle) {
-      cancelScheduledFrame(frameHandle)
-      frameHandle = 0
-    }
+  const isEligibleCard = (card: HTMLElement, fragmentId: string) => {
+    if (card.dataset.critical === 'true') return false
+    if (card.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return false
+    const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+    if (stage === 'anchor') return true
+    return visibleIds.has(fragmentId)
+  }
 
-    collectStaticHomeCards(root).forEach((card) => {
+  const hasEligiblePayload = () =>
+    collectStaticHomeCards(root).some((card) => {
       const fragmentId = card.dataset.fragmentId
-      if (!fragmentId) return
+      if (!fragmentId || !pendingPayloads.has(fragmentId)) return false
+      return isEligibleCard(card, fragmentId)
+    })
+
+  const flushNext = () => {
+    if (destroyed) return false
+
+    for (const card of collectStaticHomeCards(root)) {
+      const fragmentId = card.dataset.fragmentId
+      if (!fragmentId) continue
       const payload = pendingPayloads.get(fragmentId)
-      if (!payload) return
-      if (card.dataset.critical !== 'true' && !visibleIds.has(fragmentId)) {
-        return
-      }
+      if (!payload || !isEligibleCard(card, fragmentId)) continue
 
       const result = patchStaticHomeFragmentCard({
         lang,
@@ -215,16 +211,41 @@ export const createStaticHomePatchQueue = ({
 
       if (result === 'patched' || result === 'stale' || result === 'missing') {
         pendingPayloads.delete(fragmentId)
+        return true
       }
-    })
+    }
+
+    return false
+  }
+
+  const flushNow = () => {
+    if (destroyed) return
+    cancelScheduledFlush?.()
+    cancelScheduledFlush = null
+    flushNext()
+    scheduleFlush()
   }
 
   const scheduleFlush = () => {
-    if (destroyed || frameHandle) return
-    frameHandle = scheduleFrame(() => {
-      frameHandle = 0
-      flushNow()
-    })
+    if (destroyed || flushInFlight || cancelScheduledFlush || !hasEligiblePayload()) return
+    cancelScheduledFlush = scheduleTask(
+      () => {
+        cancelScheduledFlush = null
+        if (destroyed) return
+        flushInFlight = true
+        try {
+          flushNext()
+        } finally {
+          flushInFlight = false
+          scheduleFlush()
+        }
+      },
+      {
+        priority: 'background',
+        timeoutMs: 250,
+        waitForPaint: true
+      }
+    )
   }
 
   return {
@@ -251,10 +272,8 @@ export const createStaticHomePatchQueue = ({
       destroyed = true
       pendingPayloads.clear()
       visibleIds.clear()
-      if (frameHandle) {
-        cancelScheduledFrame(frameHandle)
-        frameHandle = 0
-      }
+      cancelScheduledFlush?.()
+      cancelScheduledFlush = null
     }
   }
 }
@@ -266,6 +285,7 @@ export const observeStaticHomePatchVisibility = ({
 }: ObserveStaticHomePatchVisibilityOptions) => {
   const cards = collectStaticHomeCards(root).filter((card) => {
     if (card.dataset.critical === 'true') return false
+    if (card.getAttribute(STATIC_HOME_STAGE_ATTR) !== 'deferred') return false
     return Boolean(card.dataset.fragmentId)
   })
   if (!cards.length) return () => undefined
@@ -317,6 +337,6 @@ export const streamHomeFragments = async ({
   await streamHomeFragmentFrames(path, onFragment, onError, {
     signal,
     lang,
-    knownVersions: collectKnownVersions(),
+    knownVersions: collectStaticHomeKnownVersions(),
     live
   })

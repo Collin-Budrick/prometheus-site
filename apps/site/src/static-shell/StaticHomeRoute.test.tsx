@@ -31,7 +31,14 @@ const fragments = {
     tree: h('section', null, [
       h('div', { class: 'meta-line' }, [t('fragment manifesto')]),
       h('h2', null, [t('The render tree is the artifact.')]),
-      h('p', null, [t('HTML is a fallback. Every surface is compiled into deterministic binary fragments.')]),
+      h('div', { class: 'home-manifest-copy' }, [
+        h('span', { class: 'home-manifest-copy-line home-manifest-copy-lead' }, [
+          t('HTML remains the fallback surface.')
+        ]),
+        h('span', { class: 'home-manifest-copy-line' }, [
+          t('Deterministic binary fragments handle replay, caching, and instant patching.')
+        ])
+      ]),
       h('ul', { class: 'home-manifest-pills' }, [
         h('li', { class: 'home-manifest-pill' }, [t('Resumable by default')]),
         h('li', { class: 'home-manifest-pill' }, [t('Fragment caching with async revalidation')]),
@@ -90,7 +97,7 @@ const languageSeed: LanguageSeedPayload = {
 }
 
 describe('StaticHomeRoute', () => {
-  it('builds initial home state with stubbed non-critical cards and no legacy manifesto paragraph', () => {
+  it('builds initial home state with anchored shells and no legacy manifesto paragraph', () => {
     const state = buildStaticHomeRouteState({
       plan: plan as never,
       fragments: fragments as never,
@@ -103,10 +110,14 @@ describe('StaticHomeRoute', () => {
     const plannerCard = state?.cards.find((card) => card.id === 'fragment://page/home/planner@v1')
 
     expect(manifestoCard?.html).toContain('home-manifest-pills')
+    expect(manifestoCard?.html).toContain('home-manifest-copy')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
-    expect(plannerCard?.html).toContain('home-fragment-stub')
-    expect(plannerCard?.html).toContain('Resolve the dependency graph.')
+    expect(plannerCard?.html).toContain('home-fragment-shell')
+    expect(plannerCard?.html).toContain('home-fragment-shell-copy')
+    expect(plannerCard?.html).toContain('Dependencies')
+    expect(plannerCard?.html).not.toContain('home-demo-compact')
+    expect(plannerCard?.html).not.toContain('<p>')
     expect(plannerCard?.html).not.toContain('data-home-demo-root="planner"')
-    expect(plannerCard?.html).not.toContain('home-fragment-shell-footer')
+    expect(plannerCard?.html).toContain('home-fragment-shell-footer')
   })
 })

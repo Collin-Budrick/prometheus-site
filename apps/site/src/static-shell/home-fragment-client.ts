@@ -1,5 +1,5 @@
 import { decodeFragmentPayload } from '../../../../packages/core/src/fragment/binary'
-import { isFragmentHeartbeatFrame } from '../../../../packages/core/src/fragment/frames'
+import { isFragmentHeartbeatFrame, parseFragmentFrames } from '../../../../packages/core/src/fragment/frames'
 import { encodeFragmentKnownVersions, type FragmentKnownVersions } from '../../../../packages/core/src/fragment/known-versions'
 import type { FragmentPayload, HeadOp } from '../../../../packages/core/src/fragment/types'
 import { getFragmentCssHref } from '../fragment/fragment-css'
@@ -11,6 +11,13 @@ type StreamHomeFragmentsOptions = {
   lang?: string
   knownVersions?: FragmentKnownVersions
   live?: boolean
+}
+
+type FetchHomeFragmentBatchOptions = {
+  signal?: AbortSignal
+  lang?: string
+  knownVersions?: FragmentKnownVersions
+  refresh?: boolean
 }
 
 const appliedCss = new Map<string, HTMLStyleElement | HTMLLinkElement>()
@@ -238,6 +245,46 @@ export const applyHomeFragmentEffects = (payload: FragmentPayload) => {
     return
   }
   applyFragmentEffects(payload)
+}
+
+export const fetchHomeFragmentBatch = async (
+  ids: string[],
+  options: FetchHomeFragmentBatchOptions = {}
+) => {
+  if (!ids.length) return {}
+
+  const params = new URLSearchParams({ protocol: '2' })
+  if (options.knownVersions) {
+    const encoded = encodeFragmentKnownVersions(options.knownVersions)
+    if (encoded) {
+      params.set('known', encoded)
+    }
+  }
+
+  const response = await fetch(`${getPublicFragmentApiBase()}/fragments/batch?${params.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(
+      ids.map((id) => ({
+        id,
+        lang: options.lang,
+        refresh: options.refresh ? true : undefined
+      }))
+    ),
+    cache: options.refresh ? 'no-store' : 'default',
+    signal: options.signal
+  })
+
+  if (!response.ok) {
+    throw new Error(`Home fragment batch fetch failed: ${response.status}`)
+  }
+
+  return parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    .filter((frame) => !isFragmentHeartbeatFrame(frame))
+    .reduce<Record<string, FragmentPayload>>((acc, frame) => {
+      acc[frame.id] = decodeFragment(frame.id, frame.payloadBytes)
+      return acc
+    }, {})
 }
 
 export const streamHomeFragmentFrames = async (

@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import type { Lang } from '../lang'
+import homeDemoStylesheetHref from './home-static-deferred.css?url'
 import {
   emptyPlannerDemoCopy,
   emptyPreactIslandCopy,
@@ -11,7 +12,7 @@ import {
   type LanguageSeedPayload
 } from '../lang/selection'
 import { renderHomeStaticFragmentHtml } from './home-render'
-import { renderMarkdownToHtml } from './markdown'
+import { renderHomeIntroMarkdownToHtml } from './markdown'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -19,8 +20,10 @@ import {
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
-  getStaticShellRouteConfig
+  getStaticShellRouteConfig,
+  type StaticHomeCardStage
 } from './constants'
 import { getHomeStaticFragmentKind } from './home-render'
 
@@ -39,13 +42,37 @@ const serializeJson = (value: unknown) =>
     .replace(/&/g, '\\u0026')
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
+const DEFERRED_RESERVED_HEIGHT_BY_SIZE: Record<string, number> = {
+  small: 220,
+  big: 280,
+  tall: 320
+}
+
+const resolveStaticHomeReservedHeight = (
+  reservedHeight: number,
+  stage: StaticHomeCardStage,
+  size: string | undefined
+) => {
+  if (stage !== 'deferred') {
+    return reservedHeight
+  }
+
+  const deferredHeight = size ? DEFERRED_RESERVED_HEIGHT_BY_SIZE[size] : undefined
+  if (typeof deferredHeight !== 'number') {
+    return Math.min(reservedHeight, 220)
+  }
+
+  return Math.min(reservedHeight, deferredHeight)
+}
 
 type StaticHomeRenderedCard = {
   id: string
+  order: number
   critical: boolean
   size: string | undefined
   html: string
   column: '1' | '2'
+  stage: StaticHomeCardStage
   reservedHeight: number
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
@@ -109,12 +136,20 @@ export const buildStaticHomeRouteState = ({
     return acc
   }, {})
 
+  const anchorColumns = new Set<'1' | '2'>()
+
   const cards = entries.map<StaticHomeRenderedCard>((entry, index) => {
     const fragment = fragmentMap[entry.id]
     const fragmentKind = getHomeStaticFragmentKind(entry.id)
+    const column = index < leftCount ? '1' : '2'
+    const stage: StaticHomeCardStage = entry.critical
+      ? 'critical'
+      : !anchorColumns.has(column)
+        ? (anchorColumns.add(column), 'anchor')
+        : 'deferred'
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
-          mode: fragmentKind === 'manifest' ? 'rich' : 'stub',
+          mode: stage === 'critical' ? 'rich' : stage === 'anchor' ? 'shell' : 'stub',
           fragmentId: entry.id,
           fragmentHeaders
         })
@@ -126,14 +161,16 @@ export const buildStaticHomeRouteState = ({
 
     return {
       id: entry.id,
+      order: index,
       critical: Boolean(entry.critical),
       size: entry.layout.size,
       html,
-      column: index < leftCount ? '1' : '2',
-      reservedHeight,
+      column,
+      stage,
+      reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size),
       fragmentKind,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
-      patchState: fragmentKind === 'manifest' ? 'ready' : 'pending'
+      patchState: stage === 'critical' ? 'ready' : 'pending'
     }
   })
 
@@ -152,6 +189,13 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   }
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
+  const columns = routeState.cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
+    (acc, card) => {
+      acc[card.column].push(card)
+      return acc
+    },
+    { '1': [], '2': [] }
+  )
 
   return (
     <section
@@ -178,47 +222,52 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-reveal-locked="false"
           >
             <div class="fragment-card-body">
-              <div class="fragment-markdown" dangerouslySetInnerHTML={renderMarkdownToHtml(introMarkdown)} />
+              <div class="home-intro" dangerouslySetInnerHTML={renderHomeIntroMarkdownToHtml(introMarkdown)} />
             </div>
           </article>
         </div>
       </div>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
-        {routeState.cards.map((card) => {
-          const style = {
-            '--fragment-min-height': `${card.reservedHeight}px`,
-            gridColumn: card.column
-          }
+        {(['1', '2'] as const).map((column) => (
+          <div key={column} class="fragment-grid-static-home-column" data-static-home-column={column}>
+            {columns[column].map((card) => {
+              const style = {
+                '--fragment-min-height': `${card.reservedHeight}px`,
+                order: card.order
+              }
 
-          return (
-            <article
-              key={card.id}
-              class={{
-                'fragment-card': true,
-                'fragment-card-static-home': true
-              }}
-              data-critical={card.critical ? 'true' : undefined}
-              data-fragment-id={card.id}
-              data-fragment-loaded="true"
-              data-fragment-ready="true"
-              data-fragment-stage="ready"
-              data-reveal-locked="false"
-              data-draggable="false"
-              data-size={card.size}
-              style={style}
-              {...{
-                [STATIC_FRAGMENT_CARD_ATTR]: 'true',
-                [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
-                [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
-                [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState
-              }}
-            >
-              <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
-                <div class="fragment-html" dangerouslySetInnerHTML={card.html} />
-              </div>
-            </article>
-          )
-        })}
+              return (
+                <article
+                  key={card.id}
+                  class={{
+                    'fragment-card': true,
+                    'fragment-card-static-home': true
+                  }}
+                  data-critical={card.critical ? 'true' : undefined}
+                  data-fragment-id={card.id}
+                  data-fragment-loaded="true"
+                  data-fragment-ready="true"
+                  data-fragment-stage="ready"
+                  data-reveal-locked="false"
+                  data-draggable="false"
+                  data-size={card.size}
+                  style={style}
+                  {...{
+                    [STATIC_FRAGMENT_CARD_ATTR]: 'true',
+                    [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
+                    [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
+                    [STATIC_HOME_STAGE_ATTR]: card.stage,
+                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState
+                  }}
+                >
+                  <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
+                    <div class="fragment-html" dangerouslySetInnerHTML={card.html} />
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        ))}
       </div>
       <script
         id={STATIC_HOME_DATA_SCRIPT_ID}
@@ -229,6 +278,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
           authPolicy: routeConfig?.authPolicy ?? 'public',
           bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
+          homeDemoStylesheetHref,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}

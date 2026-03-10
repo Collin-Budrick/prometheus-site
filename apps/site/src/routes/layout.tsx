@@ -37,6 +37,13 @@ const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null,
   return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr}${fragmentAttr} onload="this.onload=null;this.rel='stylesheet'">`
 }
 
+const buildStylesheetPreloadOnlyMarkup = (href: string, crossorigin?: string | null, fragmentId?: string) => {
+  const escapedHref = escapeAttr(href)
+  const crossoriginAttr = crossorigin ? ` crossorigin="${escapeAttr(crossorigin)}"` : ''
+  const fragmentAttr = fragmentId ? ` data-fragment-css="${escapeAttr(fragmentId)}"` : ''
+  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr}${fragmentAttr}>`
+}
+
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
 const initialCriticalLiteClearDelayMs = 1200
@@ -532,7 +539,9 @@ export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
-  const shouldDeferManifest = isHomeStaticPath(location.url.pathname)
+  const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
+  const shouldDeferManifest = isHomeStaticRoute
+  const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
   const preconnectOrigins = buildPreconnectOrigins(currentOrigin, false)
@@ -546,12 +555,14 @@ export const RouterHead = component$(() => {
       {head.meta.map((meta) => (
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
-      <HTMLFragment
-        dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(globalDeferredStylesheetHref)}
-      />
-      <noscript>
-        <link rel="stylesheet" href={globalDeferredStylesheetHref} />
-      </noscript>
+      {deferredStylesheetHref ? (
+        <>
+          <HTMLFragment dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(deferredStylesheetHref)} />
+          <noscript>
+            <link rel="stylesheet" href={deferredStylesheetHref} />
+          </noscript>
+        </>
+      ) : null}
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
           const fragmentId = (link as Record<string, string>)['data-fragment-css']

@@ -4,6 +4,7 @@ import type { FragmentPayload } from '@core/fragment/types'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
 import { createStaticHomePatchQueue, patchStaticHomeFragmentCard } from './home-stream'
@@ -80,6 +81,29 @@ class MockRoot {
 
 const originalHTMLElement = (globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement
 
+const createTaskQueue = () => {
+  const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
+
+  return {
+    scheduleTask: ((callback: () => void) => {
+      const task = { callback, cancelled: false }
+      tasks.push(task)
+      return () => {
+        task.cancelled = true
+      }
+    }) as typeof import('./scheduler').scheduleStaticShellTask,
+    pendingCount: () => tasks.filter((task) => !task.cancelled).length,
+    flushNext: () => {
+      while (tasks.length > 0) {
+        const task = tasks.shift()
+        if (!task || task.cancelled) continue
+        task.callback()
+        return
+      }
+    }
+  }
+}
+
 const createPayload = (id: string, label: string, cacheUpdatedAt = 1) =>
   ({
     id,
@@ -95,13 +119,19 @@ const createPayload = (id: string, label: string, cacheUpdatedAt = 1) =>
 const createCard = (
   fragmentId: string,
   log: string[],
-  options: { critical?: boolean; version?: number; patchState?: 'pending' | 'ready' } = {}
+  options: {
+    critical?: boolean
+    version?: number
+    patchState?: 'pending' | 'ready'
+    stage?: 'critical' | 'anchor' | 'deferred'
+  } = {}
 ) => {
   const body = new MockBodyElement(fragmentId, log)
   const card = new MockElement(fragmentId)
   card.dataset.fragmentId = fragmentId
   card.dataset.critical = options.critical ? 'true' : 'false'
   card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${options.version ?? 1}`)
+  card.setAttribute(STATIC_HOME_STAGE_ATTR, options.stage ?? (options.critical ? 'critical' : 'deferred'))
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, options.patchState ?? 'pending')
   card.attachBody(body)
   return { card, body }
@@ -154,34 +184,35 @@ describe('home-stream patching', () => {
     expect(body.innerHTML).toBe('')
   })
 
-  it('coalesces payloads and flushes in DOM order', () => {
+  it('coalesces payloads and patches one eligible card per scheduled task in DOM order', () => {
     const log: string[] = []
-    const planner = createCard('fragment://page/home/planner@v1', log)
-    const react = createCard('fragment://page/home/react@v1', log)
+    const taskQueue = createTaskQueue()
+    const planner = createCard('fragment://page/home/planner@v1', log, { stage: 'anchor' })
+    const react = createCard('fragment://page/home/react@v1', log, { stage: 'deferred' })
     const root = new MockRoot([planner.card, react.card])
-    const frames: FrameRequestCallback[] = []
     const queue = createStaticHomePatchQueue({
       lang: 'en',
       applyEffects: false,
       root: root as unknown as ParentNode,
-      requestFrame: (callback) => {
-        frames.push(callback)
-        return frames.length
-      },
-      cancelFrame: () => undefined
+      scheduleTask: taskQueue.scheduleTask
     })
 
-    queue.setVisible('fragment://page/home/planner@v1', true)
     queue.setVisible('fragment://page/home/react@v1', true)
     queue.enqueue(createPayload('fragment://page/home/react@v1', 'React first', 2))
     queue.enqueue(createPayload('fragment://page/home/planner@v1', 'Planner first', 2))
     queue.enqueue(createPayload('fragment://page/home/planner@v1', 'Planner latest', 3))
 
-    expect(frames).toHaveLength(1)
-    frames[0]?.(0)
+    expect(taskQueue.pendingCount()).toBe(1)
+    taskQueue.flushNext()
+
+    expect(log).toEqual(['fragment://page/home/planner@v1'])
+    expect(planner.body.innerHTML).toContain('Planner latest')
+    expect(react.body.innerHTML).toBe('')
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    taskQueue.flushNext()
 
     expect(log).toEqual(['fragment://page/home/planner@v1', 'fragment://page/home/react@v1'])
-    expect(planner.body.innerHTML).toContain('Planner latest')
     expect(react.body.innerHTML).toContain('React first')
   })
 
@@ -192,9 +223,7 @@ describe('home-stream patching', () => {
     const queue = createStaticHomePatchQueue({
       lang: 'en',
       applyEffects: false,
-      root: root as unknown as ParentNode,
-      requestFrame: () => 1,
-      cancelFrame: () => undefined
+      root: root as unknown as ParentNode
     })
 
     queue.enqueue(createPayload('fragment://page/home/ledger@v1', 'Ledger payload', 2))
@@ -217,9 +246,7 @@ describe('home-stream patching', () => {
     const queue = createStaticHomePatchQueue({
       lang: 'en',
       applyEffects: false,
-      root: root as unknown as ParentNode,
-      requestFrame: () => 1,
-      cancelFrame: () => undefined
+      root: root as unknown as ParentNode
     })
 
     queue.enqueue(createPayload('fragment://page/home/dock@v1', 'Dock payload', 2))

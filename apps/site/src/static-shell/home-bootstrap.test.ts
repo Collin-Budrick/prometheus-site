@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { STATIC_HOME_PAINT_ATTR } from './constants'
 import {
+  STATIC_HOME_PAINT_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_STAGE_ATTR
+} from './constants'
+import {
+  bindHomeFragmentHydration,
   bindHomeDemoActivation,
   scheduleStaticHomePaintReady,
   type HomeDemoController
@@ -51,6 +56,36 @@ class MockStaticHomeRoot {
   }
 }
 
+class MockStaticHomeDocumentRoot extends MockStaticHomeRoot {
+  constructor(private readonly cards: MockFragmentCard[]) {
+    super()
+  }
+
+  querySelectorAll<T>() {
+    return this.cards as unknown as T[]
+  }
+}
+
+class MockFragmentCard {
+  dataset: Record<string, string> = {}
+  isConnected = true
+  private attrs = new Map<string, string>([['data-static-fragment-card', 'true']])
+
+  constructor(id: string, stage: 'anchor' | 'deferred', patchState: 'pending' | 'ready' = 'pending') {
+    this.dataset.fragmentId = id
+    this.setAttribute(STATIC_HOME_STAGE_ATTR, stage)
+    this.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, patchState)
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value)
+  }
+}
+
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = []
   readonly observed = new Set<Element>()
@@ -71,14 +106,14 @@ class MockIntersectionObserver {
     this.observed.clear()
   }
 
-  emit(entries: Array<{ target: Element; isIntersecting: boolean }>) {
+  emit(entries: Array<{ target: Element; isIntersecting: boolean; intersectionRatio?: number }>) {
     this.callback(
       entries.map(
-        ({ target, isIntersecting }) =>
+        ({ target, isIntersecting, intersectionRatio }) =>
           ({
             target,
             isIntersecting,
-            intersectionRatio: isIntersecting ? 1 : 0
+            intersectionRatio: typeof intersectionRatio === 'number' ? intersectionRatio : isIntersecting ? 1 : 0
           }) as IntersectionObserverEntry
       ),
       this as unknown as IntersectionObserver
@@ -100,6 +135,16 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
   await Promise.resolve()
 }
+
+const createHomeFragmentPayload = (id: string) =>
+  ({
+    id,
+    meta: { cacheKey: `${id}:1` },
+    head: [],
+    css: '',
+    cacheUpdatedAt: 1,
+    tree: { type: 'element', tag: 'section', attrs: {}, children: [] }
+  }) as const
 
 const createTaskQueue = () => {
   const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
@@ -266,6 +311,35 @@ describe('bindHomeDemoActivation', () => {
     expect(activationCount).toBe(1)
     expect(taskQueue.pendingCount()).toBe(0)
   })
+
+  it('does not activate demos that are only barely intersecting', async () => {
+    const taskQueue = createTaskQueue()
+    const controller = createController()
+    const planner = new MockDemoElement('planner')
+    let activationCount = 0
+    const manager = bindHomeDemoActivation({
+      controller,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      activate: async () => {
+        activationCount += 1
+        return { cleanup: () => undefined }
+      }
+    })
+
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
+    const observer = MockIntersectionObserver.instances[0]
+
+    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true, intersectionRatio: 0.2 }])
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+
+    expect(activationCount).toBe(1)
+  })
 })
 
 describe('scheduleStaticHomePaintReady', () => {
@@ -290,5 +364,153 @@ describe('scheduleStaticHomePaintReady', () => {
     expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
 
     cleanup()
+  })
+})
+
+describe('bindHomeFragmentHydration', () => {
+  it('schedules anchor hydration only after the home paint attribute flips to ready', async () => {
+    const frameQueue = createAnimationFrameQueue()
+    const taskQueue = createTaskQueue()
+    const anchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor')
+    const deferred = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred')
+    const root = new MockStaticHomeDocumentRoot([anchor, deferred])
+    const fetchCalls: string[][] = []
+    const enqueued: string[] = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: (payload) => enqueued.push(payload.id),
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
+      }
+    })
+
+    const cleanup = scheduleStaticHomePaintReady({
+      root: root as unknown as Element,
+      requestFrame: frameQueue.requestFrame,
+      cancelFrame: frameQueue.cancelFrame,
+      onReady: () => hydration.scheduleAnchorHydration()
+    })
+
+    expect(fetchCalls).toEqual([])
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    frameQueue.flushNext()
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('initial')
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    frameQueue.flushNext()
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+    await flushMicrotasks()
+
+    expect(fetchCalls).toEqual([['fragment://page/home/planner@v1']])
+    expect(enqueued).toEqual(['fragment://page/home/planner@v1'])
+
+    cleanup()
+    hydration.destroy()
+  })
+
+  it('does not fetch deferred cards until they become visible', async () => {
+    const taskQueue = createTaskQueue()
+    const deferred = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred')
+    const root = new MockStaticHomeDocumentRoot([deferred])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const fetchCalls: string[][] = []
+    const visibility: Array<{ id: string; visible: boolean }> = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: (id, visible) => visibility.push({ id, visible }),
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
+      }
+    })
+
+    hydration.observeWithin(root as unknown as ParentNode)
+
+    expect(fetchCalls).toEqual([])
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    const observer = MockIntersectionObserver.instances[0]
+    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
+
+    expect(visibility).toEqual([{ id: 'fragment://page/home/ledger@v1', visible: false }])
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.2 }])
+
+    expect(visibility).toEqual([
+      { id: 'fragment://page/home/ledger@v1', visible: false },
+      { id: 'fragment://page/home/ledger@v1', visible: true }
+    ])
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+    await flushMicrotasks()
+
+    expect(fetchCalls).toEqual([['fragment://page/home/ledger@v1']])
+    hydration.destroy()
+  })
+
+  it('retries hydration only for cards that are still pending', async () => {
+    const taskQueue = createTaskQueue()
+    const readyAnchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready')
+    const pendingAnchor = new MockFragmentCard('fragment://page/home/ledger@v1', 'anchor', 'pending')
+    const root = new MockStaticHomeDocumentRoot([readyAnchor, pendingAnchor])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const fetchCalls: string[][] = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
+      }
+    })
+
+    hydration.retryPending()
+    await taskQueue.flushNext()
+    await flushMicrotasks()
+
+    expect(fetchCalls).toEqual([['fragment://page/home/ledger@v1']])
+    hydration.destroy()
   })
 })

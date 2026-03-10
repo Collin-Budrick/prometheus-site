@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { h, renderToHtml, t } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
 import type { FragmentHeaderCopy } from '../lang'
-import { homeFragmentDefinitions } from '../fragment/definitions/home'
+import { homeFragmentDefinitions, homeFragments } from '../fragment/definitions/home'
 import {
   emptyPlannerDemoCopy,
   emptyPreactIslandCopy,
@@ -11,6 +11,7 @@ import {
 } from '../lang/selection'
 import type { HomeStaticCopyBundle } from './home-render'
 import { renderHomeStaticFragmentHtml } from './home-render'
+import { buildStaticHomeRouteState } from './StaticHomeRoute'
 
 const copy: HomeStaticCopyBundle = {
   ui: {
@@ -177,6 +178,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('Planner executes before rendering.')
     expect(html).toContain('Resolve the dependency graph.')
     expect(html).not.toContain('home-fragment-shell-footer')
+    expect(html).not.toContain('home-fragment-shell-copy')
     expect(html).not.toContain('data-home-demo-root')
     expect(html).not.toContain('home-demo-compact')
     expect(html).not.toContain('matrix')
@@ -188,6 +190,9 @@ describe('renderHomeStaticFragmentHtml', () => {
     const tree = await Promise.resolve(manifesto?.render({ t: (value: string) => value } as never))
     const html = renderToHtml(tree as RenderNode)
 
+    expect(html).toContain('home-manifest-copy')
+    expect(html).toContain('HTML remains the fallback surface.')
+    expect(html).toContain('Deterministic binary fragments handle replay, caching, and instant patching.')
     expect(html).toContain('home-manifest-pills')
     expect(html).toContain('home-manifest-pill')
     expect(html).toContain('Resumable by default')
@@ -195,6 +200,23 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('Deterministic binary DOM replay')
     expect(html).not.toContain('class="inline-list"')
     expect(html).not.toContain('<p class="inline-list"')
+  })
+
+  it('renders home fragment copy blocks without paragraph nodes for rich fragments', async () => {
+    const planner = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/planner@v1')
+    const ledger = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/ledger@v1')
+    const island = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/island@v1')
+
+    const [plannerHtml, ledgerHtml, islandHtml] = await Promise.all(
+      [planner, ledger, island].map(async (definition) =>
+        renderToHtml((await Promise.resolve(definition?.render({ t: (value: string) => value } as never))) as RenderNode)
+      )
+    )
+
+    ;[plannerHtml, ledgerHtml, islandHtml].forEach((html) => {
+      expect(html).toContain('home-fragment-copy')
+      expect(html).not.toContain('<p>')
+    })
   })
 
   it('preserves demo props on compact preact previews', () => {
@@ -210,5 +232,63 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('data-home-demo-root="preact-island"')
     expect(html).toContain('data-demo-props="{&quot;label&quot;:&quot;Mission clock&quot;}"')
     expect(html).toContain('Mission clock')
+  })
+
+  it('derives critical, anchor, and deferred home stages with matching initial render modes', () => {
+    const orderedEntries = [
+      homeFragments[0],
+      homeFragments[1],
+      homeFragments[3],
+      homeFragments[2],
+      homeFragments[4],
+      homeFragments[5]
+    ]
+    const fragments = Object.fromEntries(
+      orderedEntries.map((entry) => [
+        entry.id,
+        {
+          id: entry.id,
+          meta: { cacheKey: `${entry.id}:1` },
+          head: [],
+          css: '',
+          cacheUpdatedAt: 1,
+          tree: h('section', null, [
+            h('div', { class: 'meta-line' }, [t(entry.id)]),
+            h('h2', null, [t(entry.id)]),
+            h('p', null, [t(`description:${entry.id}`)])
+          ])
+        }
+      ])
+    )
+
+    const state = buildStaticHomeRouteState({
+      plan: {
+        path: '/',
+        fragments: orderedEntries
+      } as never,
+      fragments: fragments as never,
+      languageSeed: {
+        fragmentHeaders
+      }
+    })
+
+    expect(state?.cards.map((card) => ({ id: card.id, stage: card.stage, column: card.column }))).toEqual([
+      { id: 'fragment://page/home/manifest@v1', stage: 'critical', column: '1' },
+      { id: 'fragment://page/home/planner@v1', stage: 'anchor', column: '1' },
+      { id: 'fragment://page/home/island@v1', stage: 'deferred', column: '1' },
+      { id: 'fragment://page/home/ledger@v1', stage: 'anchor', column: '2' },
+      { id: 'fragment://page/home/react@v1', stage: 'deferred', column: '2' },
+      { id: 'fragment://page/home/dock@v1', stage: 'deferred', column: '2' }
+    ])
+    expect(state?.cards[0]?.html).not.toContain('home-fragment-shell')
+    expect(state?.cards[1]?.html).toContain('home-fragment-shell')
+    expect(state?.cards[1]?.html).toContain('home-fragment-shell-copy')
+    expect(state?.cards[1]?.html).not.toContain('home-demo-compact')
+    expect(state?.cards[1]?.html).not.toContain('<p>')
+    expect(state?.cards[1]?.html).not.toContain('data-home-demo-root')
+    expect(state?.cards[2]?.html).toContain('home-fragment-stub')
+    expect(state?.cards[2]?.reservedHeight).toBe(220)
+    expect(state?.cards[4]?.reservedHeight).toBe(220)
+    expect(state?.cards[5]?.reservedHeight).toBe(220)
   })
 })

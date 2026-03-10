@@ -8,17 +8,19 @@ import {
   type HomeDemoActivationResult,
   type HomeDemoKind
 } from './home-demo-activate'
-import { loadHomeDemoRuntime } from './home-demo-runtime-loader'
+import { ensureHomeDemoStylesheet, loadHomeDemoRuntime } from './home-demo-runtime-loader'
+import { fetchHomeFragmentBatch } from './home-fragment-client'
 import {
+  collectStaticHomeKnownVersions,
   createStaticHomePatchQueue,
-  observeStaticHomePatchVisibility,
-  streamHomeFragments,
   type StaticHomePatchQueue
 } from './home-stream'
 import type { StaticShellSeed } from './seed'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_HOME_PAINT_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_STAGE_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { scheduleStaticShellTask } from './scheduler'
@@ -33,7 +35,7 @@ import {
   resolvePreferredStaticShellLang,
   updateStaticShellUrlLang
 } from './snapshot-client'
-import { shouldRetryFragmentStream } from './fragment-stream-error'
+import type { StaticHomeCardStage } from './constants'
 
 type Theme = 'light' | 'dark'
 
@@ -41,6 +43,7 @@ type HomeStaticRouteData = {
   lang: Lang
   path: string
   snapshotKey?: string
+  homeDemoStylesheetHref?: string
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -52,6 +55,7 @@ type HomeStaticBootstrapData = {
   lang: Lang
   shellSeed: LanguageSeedPayload
   routeSeed: LanguageSeedPayload
+  homeDemoStylesheetHref: string | null
   fragmentVersions: Record<string, number>
 }
 
@@ -59,8 +63,8 @@ type HomeControllerState = {
   isAuthenticated: boolean
   lang: Lang
   path: string
-  streamAbort: AbortController | null
-  streamRetryTimer: number
+  homeDemoStylesheetHref: string | null
+  fetchAbort: AbortController | null
   cleanupFns: Array<() => void>
   demoRenders: Map<Element, HomeDemoActivationResult>
   pendingDemoRoots: Set<Element>
@@ -223,11 +227,13 @@ const readBootstrapDataFromDocument = (): HomeStaticBootstrapData | null => {
     lang: route.lang || shell.lang,
     shellSeed: shell.languageSeed ?? {},
     routeSeed: route.languageSeed ?? {},
+    homeDemoStylesheetHref: route.homeDemoStylesheetHref ?? null,
     fragmentVersions: route.fragmentVersions ?? {}
   }
 }
 
 const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error') => {
+  if (typeof document === 'undefined') return
   const element = document.querySelector<HTMLElement>('[data-static-fragment-status]')
   if (!element) return
   const copy = getStaticHomeUiCopy(lang)
@@ -299,16 +305,19 @@ export const scheduleStaticHomePaintReady = ({
   requestFrame = globalThis.requestAnimationFrame?.bind(globalThis),
   cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis),
   setTimer = globalThis.setTimeout?.bind(globalThis),
-  clearTimer = globalThis.clearTimeout?.bind(globalThis)
+  clearTimer = globalThis.clearTimeout?.bind(globalThis),
+  onReady
 }: ScheduleStaticHomePaintReadyOptions = {}) => {
   const staticHomeRoot = resolveStaticHomePaintRoot(root)
   if (!staticHomeRoot) return () => undefined
   if (staticHomeRoot.getAttribute(STATIC_HOME_PAINT_ATTR) === 'ready') {
+    onReady?.()
     return () => undefined
   }
 
   if (typeof requestFrame !== 'function') {
     staticHomeRoot.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    onReady?.()
     return () => undefined
   }
 
@@ -322,6 +331,7 @@ export const scheduleStaticHomePaintReady = ({
     const liveRoot = resolveStaticHomePaintRoot(staticHomeRoot) ?? resolveStaticHomePaintRoot()
     if (!liveRoot) return
     liveRoot.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    onReady?.()
   }
 
   firstFrame = requestFrame(() => {
@@ -376,6 +386,255 @@ type ScheduleStaticHomePaintReadyOptions = {
   cancelFrame?: typeof cancelAnimationFrame
   setTimer?: typeof setTimeout
   clearTimer?: typeof clearTimeout
+  onReady?: () => void
+}
+
+type HomeFragmentHydrationController = Pick<
+  HomeControllerState,
+  'destroyed' | 'lang' | 'patchQueue' | 'fetchAbort' | 'homeDemoStylesheetHref'
+>
+
+type HomeFragmentHydrationManager = {
+  observeWithin: (root: ParentNode) => void
+  scheduleAnchorHydration: () => void
+  retryPending: () => void
+  destroy: () => void
+}
+
+type BindHomeFragmentHydrationOptions = {
+  controller: HomeFragmentHydrationController
+  root?: ParentNode
+  fetchBatch?: typeof fetchHomeFragmentBatch
+  scheduleTask?: typeof scheduleStaticShellTask
+  ObserverImpl?: typeof IntersectionObserver
+}
+
+type PendingHomeFragmentCard = {
+  card: HTMLElement
+  id: string
+  stage: StaticHomeCardStage
+}
+
+const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = '0px'
+const HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15
+const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
+const HOME_DEMO_ACTIVATION_THRESHOLD = 0.15
+
+const isStaticHomeCardStage = (value: string | null): value is StaticHomeCardStage =>
+  value === 'critical' || value === 'anchor' || value === 'deferred'
+
+const collectPendingHomeFragmentCards = (root: ParentNode = document): PendingHomeFragmentCard[] =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-static-fragment-card]')).flatMap((card) => {
+    const id = card.dataset.fragmentId
+    const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
+    const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+    if (!id || patchState !== 'pending' || !isStaticHomeCardStage(stage)) {
+      return []
+    }
+    return [{ card, id, stage }]
+  })
+
+export const bindHomeFragmentHydration = ({
+  controller,
+  root = document,
+  fetchBatch = fetchHomeFragmentBatch,
+  scheduleTask = scheduleStaticShellTask,
+  ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
+    .IntersectionObserver
+}: BindHomeFragmentHydrationOptions): HomeFragmentHydrationManager => {
+  const observedDeferredCards = new Set<Element>()
+  const visibleDeferredIds = new Set<string>()
+  const queuedAnchorIds = new Set<string>()
+  const queuedDeferredIds = new Set<string>()
+  const observer =
+    typeof ObserverImpl === 'function'
+      ? new ObserverImpl(
+          (entries) => {
+            if (controller.destroyed) return
+
+            entries.forEach((entry) => {
+              const card = entry.target as HTMLElement
+              const id = card.dataset.fragmentId
+              if (!id) return
+
+              if (card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== 'pending') {
+                observer?.unobserve(card)
+                observedDeferredCards.delete(card)
+                visibleDeferredIds.delete(id)
+                queuedDeferredIds.delete(id)
+                controller.patchQueue?.setVisible(id, false)
+                return
+              }
+
+              const visible =
+                entry.isIntersecting &&
+                (typeof entry.intersectionRatio !== 'number' ||
+                  entry.intersectionRatio >= HOME_DEFERRED_HYDRATION_THRESHOLD)
+              controller.patchQueue?.setVisible(id, visible)
+              if (!visible) {
+                visibleDeferredIds.delete(id)
+                queuedDeferredIds.delete(id)
+                return
+              }
+
+              visibleDeferredIds.add(id)
+              queuedDeferredIds.add(id)
+              scheduleNextHydration()
+            })
+          },
+          {
+            root: null,
+            rootMargin: HOME_DEFERRED_HYDRATION_ROOT_MARGIN,
+            threshold: HOME_DEFERRED_HYDRATION_THRESHOLD
+          }
+        )
+      : null
+  let cancelScheduledHydration: (() => void) | null = null
+  let hydrationInFlight = false
+
+  const collectQueuedIds = (stage: Extract<StaticHomeCardStage, 'anchor' | 'deferred'>) => {
+    const activeQueue = stage === 'anchor' ? queuedAnchorIds : queuedDeferredIds
+    return collectPendingHomeFragmentCards(root)
+      .filter(({ id, stage: cardStage }) => {
+        if (cardStage !== stage || !activeQueue.has(id)) return false
+        return stage === 'anchor' || visibleDeferredIds.has(id)
+      })
+      .map(({ id }) => id)
+  }
+
+  const hasQueuedHydration = () =>
+    collectQueuedIds('anchor').length > 0 || collectQueuedIds('deferred').length > 0
+
+  const runHydrationBatch = async () => {
+    if (controller.destroyed) return
+    const anchorIds = collectQueuedIds('anchor')
+    const ids = anchorIds.length > 0 ? anchorIds : collectQueuedIds('deferred')
+    if (!ids.length) return
+
+    ids.forEach((id) => {
+      if (anchorIds.length > 0) {
+        queuedAnchorIds.delete(id)
+        return
+      }
+      queuedDeferredIds.delete(id)
+    })
+
+    if (controller.fetchAbort) {
+      controller.fetchAbort.abort()
+    }
+
+    const fetchAbort = new AbortController()
+    controller.fetchAbort = fetchAbort
+    updateFragmentStatus(controller.lang, 'streaming')
+
+    try {
+      const payloads = await fetchBatch(ids, {
+        lang: controller.lang,
+        signal: fetchAbort.signal,
+        knownVersions: collectStaticHomeKnownVersions(root)
+      })
+
+      if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
+
+      await ensureHomeDemoStylesheet({ href: controller.homeDemoStylesheetHref ?? undefined })
+      if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
+
+      ids.forEach((id) => {
+        const payload = payloads[id]
+        if (!payload) return
+        controller.patchQueue?.enqueue(payload)
+      })
+
+      updateFragmentStatus(controller.lang, 'idle')
+      controller.fetchAbort = null
+    } catch (error) {
+      if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
+      console.error('Static home fragment hydration failed:', error)
+      updateFragmentStatus(controller.lang, 'error')
+      controller.fetchAbort = null
+    }
+  }
+
+  const scheduleNextHydration = () => {
+    const staticHomeRoot = resolveStaticHomePaintRoot(root)
+    if (
+      controller.destroyed ||
+      hydrationInFlight ||
+      cancelScheduledHydration ||
+      !hasQueuedHydration() ||
+      staticHomeRoot?.getAttribute(STATIC_HOME_PAINT_ATTR) !== 'ready'
+    ) {
+      return
+    }
+
+    cancelScheduledHydration = scheduleTask(
+      () => {
+        cancelScheduledHydration = null
+        if (controller.destroyed) return
+
+        hydrationInFlight = true
+        void runHydrationBatch().finally(() => {
+          hydrationInFlight = false
+          if (controller.destroyed) return
+          scheduleNextHydration()
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 250,
+        waitForPaint: true
+      }
+    )
+  }
+
+  const manager: HomeFragmentHydrationManager = {
+    observeWithin(nextRoot) {
+      if (controller.destroyed) return
+
+      collectPendingHomeFragmentCards(nextRoot)
+        .filter(({ stage }) => stage === 'deferred')
+        .forEach(({ card, id }) => {
+          if (!observer) {
+            visibleDeferredIds.add(id)
+            queuedDeferredIds.add(id)
+            controller.patchQueue?.setVisible(id, true)
+            scheduleNextHydration()
+            return
+          }
+
+          if (observedDeferredCards.has(card)) return
+          observedDeferredCards.add(card)
+          observer.observe(card)
+        })
+    },
+    scheduleAnchorHydration() {
+      if (controller.destroyed) return
+      collectPendingHomeFragmentCards(root)
+        .filter(({ stage }) => stage === 'anchor')
+        .forEach(({ id }) => {
+          queuedAnchorIds.add(id)
+        })
+      scheduleNextHydration()
+    },
+    retryPending() {
+      if (controller.destroyed) return
+      manager.observeWithin(root)
+      manager.scheduleAnchorHydration()
+      scheduleNextHydration()
+    },
+    destroy() {
+      cancelScheduledHydration?.()
+      cancelScheduledHydration = null
+      controller.fetchAbort?.abort()
+      controller.fetchAbort = null
+      observer?.disconnect()
+      observedDeferredCards.clear()
+      visibleDeferredIds.clear()
+      queuedAnchorIds.clear()
+      queuedDeferredIds.clear()
+    }
+  }
+  return manager
 }
 
 const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
@@ -390,7 +649,9 @@ const isConnectedHomeDemoRoot = (root: Element) =>
   (root as Element & { isConnected?: boolean }).isConnected !== false
 
 const activateHomeDemoFromRuntime: ActivateHomeDemoFn = async (options) => {
-  const runtime = await loadHomeDemoRuntime()
+  const runtime = await loadHomeDemoRuntime({
+    stylesheetHref: activeController?.homeDemoStylesheetHref ?? undefined
+  })
   return runtime.activateHomeDemo(options)
 }
 
@@ -499,7 +760,11 @@ export const bindHomeDemoActivation = ({
               const demoRoot = entry.target as HTMLElement
               if (!observedRoots.has(demoRoot)) return
 
-              if (entry.isIntersecting || entry.intersectionRatio > 0) {
+              if (
+                entry.isIntersecting &&
+                (typeof entry.intersectionRatio !== 'number' ||
+                  entry.intersectionRatio >= HOME_DEMO_ACTIVATION_THRESHOLD)
+              ) {
                 visibleRoots.add(demoRoot)
                 enqueueDemoRoot(demoRoot)
                 return
@@ -510,7 +775,8 @@ export const bindHomeDemoActivation = ({
           },
           {
             root: null,
-            threshold: 0.01
+            rootMargin: HOME_DEMO_ACTIVATION_ROOT_MARGIN,
+            threshold: HOME_DEMO_ACTIVATION_THRESHOLD
           }
         )
       : null
@@ -758,87 +1024,17 @@ const bindShellControls = (controller: HomeControllerState) => {
   refreshThemeButton(controller.lang)
 }
 
-const scheduleStreamRetry = (controller: HomeControllerState, delayMs: number) => {
-  if (controller.destroyed) return
-  controller.streamRetryTimer = window.setTimeout(() => {
-    controller.streamRetryTimer = 0
-    void startDeferredStream(controller)
-  }, delayMs)
-}
-
-const stopLiveHomeConnections = (controller: HomeControllerState) => {
-  if (controller.streamAbort) {
-    controller.streamAbort.abort()
-    controller.streamAbort = null
-  }
-  if (controller.streamRetryTimer) {
-    window.clearTimeout(controller.streamRetryTimer)
-    controller.streamRetryTimer = 0
-  }
-}
-
-const scheduleDeferredStreamStart = (
-  controller: HomeControllerState,
-  options?: { waitForPaint?: boolean }
-) => {
-  const cancelSchedule = scheduleStaticShellTask(
-    () => {
-      if (controller.destroyed || document.visibilityState === 'hidden') return
-      void startDeferredStream(controller)
-    },
-    {
-      priority: 'user-visible',
-      timeoutMs: 120,
-      waitForPaint: options?.waitForPaint ?? true
-    }
-  )
-  controller.cleanupFns.push(cancelSchedule)
-}
-
-const startDeferredStream = async (controller: HomeControllerState) => {
-  if (controller.destroyed) return
-  if (controller.streamAbort) {
-    controller.streamAbort.abort()
-  }
-  const streamAbort = new AbortController()
-  controller.streamAbort = streamAbort
-  updateFragmentStatus(controller.lang, 'streaming')
-  const liveUpdates = false
-
-  try {
-    await streamHomeFragments({
-      path: controller.path,
-      lang: controller.lang,
-      signal: streamAbort.signal,
-      live: liveUpdates,
-      onFragment: (payload) => {
-        controller.patchQueue?.enqueue(payload)
-      },
-      onError: () => {
-        updateFragmentStatus(controller.lang, 'error')
-      }
-    })
-    if (!controller.destroyed && controller.streamAbort === streamAbort && !streamAbort.signal.aborted) {
-      updateFragmentStatus(controller.lang, 'idle')
-      controller.streamAbort = null
-      if (liveUpdates) {
-        scheduleStreamRetry(controller, 2000)
-      }
-    }
-  } catch (error) {
-    if (controller.destroyed || controller.streamAbort !== streamAbort || streamAbort.signal.aborted) return
-    console.error('Static home fragment stream failed:', error)
-    updateFragmentStatus(controller.lang, 'error')
-    if (shouldRetryFragmentStream(error)) {
-      scheduleStreamRetry(controller, 2000)
-    }
+const stopHomeHydrationFetches = (controller: HomeControllerState) => {
+  if (controller.fetchAbort) {
+    controller.fetchAbort.abort()
+    controller.fetchAbort = null
   }
 }
 
 const destroyController = async (controller: HomeControllerState | null) => {
   if (!controller) return
   controller.destroyed = true
-  stopLiveHomeConnections(controller)
+  stopHomeHydrationFetches(controller)
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
   controller.patchQueue = null
   for (const result of controller.demoRenders.values()) {
@@ -899,8 +1095,8 @@ export const bootstrapStaticHome = async () => {
     isAuthenticated: data.isAuthenticated,
     lang: data.lang,
     path: data.currentPath,
-    streamAbort: null,
-    streamRetryTimer: 0,
+    homeDemoStylesheetHref: data.homeDemoStylesheetHref,
+    fetchAbort: null,
     cleanupFns: [],
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),
@@ -909,10 +1105,10 @@ export const bootstrapStaticHome = async () => {
   }
   activeController = controller
 
-  controller.cleanupFns.push(scheduleStaticHomePaintReady())
   const homeDemoActivation = bindHomeDemoActivation({ controller })
+  const homeFragmentHydration = bindHomeFragmentHydration({ controller })
   controller.cleanupFns.push(() => homeDemoActivation.destroy())
-  await syncHomeDockIfNeeded(controller)
+  controller.cleanupFns.push(() => homeFragmentHydration.destroy())
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
     onPatchedBody: (body) => {
@@ -922,28 +1118,44 @@ export const bootstrapStaticHome = async () => {
   })
   controller.cleanupFns.push(() => controller.patchQueue?.destroy())
   controller.cleanupFns.push(
-    observeStaticHomePatchVisibility({
-      queue: controller.patchQueue
+    scheduleStaticHomePaintReady({
+      onReady: () => {
+        if (controller.destroyed || document.visibilityState === 'hidden') return
+        homeFragmentHydration.scheduleAnchorHydration()
+      }
     })
   )
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        if (controller.destroyed) return
+        homeFragmentHydration.observeWithin(document)
+        void syncHomeDockIfNeeded(controller).catch((error) => {
+          console.error('Static home dock sync failed:', error)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
   bindShellControls(controller)
-  homeDemoActivation.observeWithin(document)
   updateFragmentStatus(controller.lang, 'idle')
 
   const handlePageHide = () => {
-    stopLiveHomeConnections(controller)
+    stopHomeHydrationFetches(controller)
   }
 
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return
     updateFragmentStatus(controller.lang, 'idle')
-    scheduleDeferredStreamStart(controller, { waitForPaint: false })
+    homeFragmentHydration.retryPending()
   }
 
   window.addEventListener('pagehide', handlePageHide)
   window.addEventListener('pageshow', handlePageShow)
   controller.cleanupFns.push(() => window.removeEventListener('pagehide', handlePageHide))
   controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
-
-  scheduleDeferredStreamStart(controller)
 }

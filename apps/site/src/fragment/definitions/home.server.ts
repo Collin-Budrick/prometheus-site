@@ -20,6 +20,14 @@ const DockIconMonograms = {
   whatsapp: { label: 'WA', style: `${dockMonogramStyle}background:#dcfce7;color:#166534;` }
 }
 
+const renderHomeCopyBlock = (lead: string, detail?: string) =>
+  createElement(
+    'div',
+    { className: 'home-fragment-copy' },
+    createElement('span', { className: 'home-fragment-copy-line home-fragment-copy-lead' }, lead),
+    ...(detail ? [createElement('span', { className: 'home-fragment-copy-line' }, detail)] : [])
+  )
+
 const renderDockIcon = (label: string, monogram: { label: string; style: string }) =>
   createElement(
     'div',
@@ -56,9 +64,18 @@ const reactFragment: FragmentDefinition = {
         createElement('div', { className: 'meta-line' }, t('react authoring')),
         createElement('h2', null, t('React stays server-only.')),
         createElement(
-          'p',
-          null,
-          t('React fragments compile into binary trees without client hydration. The DOM remains owned by Qwik.')
+          'div',
+          { className: 'home-fragment-copy' },
+          createElement(
+            'span',
+            { className: 'home-fragment-copy-line home-fragment-copy-lead' },
+            t('React fragments compile into binary trees without client hydration.')
+          ),
+          createElement(
+            'span',
+            { className: 'home-fragment-copy-line' },
+            t('The DOM remains owned by Qwik.')
+          )
         ),
         createElement('react-binary-demo', null),
         createElement('div', { className: 'badge' }, t('RSC-ready'))
@@ -79,7 +96,7 @@ const dockFragment: FragmentDefinition = {
         null,
         createElement('div', { className: 'meta-line' }, t('react dock')),
         createElement('h2', null, t('Server-only dock fragment.')),
-        createElement('p', null, t('MagicUI dock authored in React, compiled to a static fragment.')),
+        renderHomeCopyBlock(t('MagicUI dock authored in React,'), t('compiled to a static fragment.')),
         createElement(
           'div',
           { className: 'relative' },

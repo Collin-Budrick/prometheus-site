@@ -1,7 +1,6 @@
-import { $, component$, useSignal, useStyles$ } from '@builder.io/qwik'
+import { $, component$, useSignal } from '@builder.io/qwik'
 import { getWasmRendererDemoCopy } from '../lang/client'
 import { useLangSignal } from '../shared/lang-bridge'
-import { homeDemoActiveStyles } from './home-demo-active-inline'
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -14,8 +13,6 @@ const computeMetrics = (a: number, b: number) => {
 }
 
 export const WasmRendererDemo = component$(() => {
-  useStyles$(homeDemoActiveStyles)
-
   const langSignal = useLangSignal()
   const copy = getWasmRendererDemoCopy(langSignal.value)
   const inputA = useSignal(128)

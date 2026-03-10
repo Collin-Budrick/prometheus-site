@@ -10,6 +10,7 @@ const repoRoot = path.resolve(siteRoot, '..', '..')
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
 const entrypoints = [
   'apps/site/src/static-shell/home-static-entry.ts',
+  'apps/site/src/static-shell/home-bootstrap-runtime.ts',
   'apps/site/src/static-shell/home-demo-runtime.ts',
   'apps/site/src/static-shell/fragment-static-entry.ts',
   'apps/site/src/static-shell/island-static-entry.ts'

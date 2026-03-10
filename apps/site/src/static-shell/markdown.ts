@@ -99,15 +99,16 @@ const renderInline = (value: string): string => {
   return html
 }
 
+const headingMatch = (line: string) => /^(#{1,4})\s+(.*)/.exec(line.trim())
+const unorderedMatch = (line: string) => /^\s*[-*]\s+(.+)/.exec(line)
+const orderedMatch = (line: string) => /^\s*\d+\.\s+(.+)/.exec(line)
+
 export const renderMarkdownToHtml = (source: string) => {
   const lines = source.replace(/\r\n?/g, '\n').split('\n')
   const blocks: string[] = []
   let index = 0
 
   const isFence = (line: string) => line.trim().startsWith('```')
-  const headingMatch = (line: string) => /^(#{1,4})\s+(.*)/.exec(line.trim())
-  const unorderedMatch = (line: string) => /^\s*[-*]\s+(.+)/.exec(line)
-  const orderedMatch = (line: string) => /^\s*\d+\.\s+(.+)/.exec(line)
 
   const isBlockStart = (line: string) =>
     line.trim().length === 0 ||
@@ -185,4 +186,35 @@ export const renderMarkdownToHtml = (source: string) => {
   }
 
   return blocks.join('')
+}
+
+export const renderHomeIntroMarkdownToHtml = (source: string) => {
+  const lines = source.replace(/\r\n?/g, '\n').split('\n')
+  const headingLine = lines.find((line) => headingMatch(line))
+  const heading = headingLine ? headingMatch(headingLine)?.[2]?.trim() ?? '' : ''
+  const bullets = lines
+    .map((line) => unorderedMatch(line)?.[1]?.trim() ?? '')
+    .filter(Boolean)
+  const lead = lines
+    .map((line) => line.trim())
+    .find((line) => line && !headingMatch(line) && !unorderedMatch(line) && !orderedMatch(line)) ?? ''
+
+  if (!heading && !lead && bullets.length === 0) {
+    return renderMarkdownToHtml(source)
+  }
+
+  const parts: string[] = ['<section class="home-intro-copy-block">']
+  if (heading) {
+    parts.push(`<h2>${renderInline(heading)}</h2>`)
+  }
+  if (lead) {
+    parts.push(`<div class="home-intro-copy"><span class="home-intro-copy-line">${renderInline(lead)}</span></div>`)
+  }
+  if (bullets.length > 0) {
+    parts.push(
+      `<ul class="home-intro-pills">${bullets.map((item) => `<li class="home-intro-pill">${renderInline(item)}</li>`).join('')}</ul>`
+    )
+  }
+  parts.push('</section>')
+  return parts.join('')
 }

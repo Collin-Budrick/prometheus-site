@@ -57,9 +57,8 @@ const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
 })
 
-const demoShellAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
-  ...demoRootAttrs(kind, props),
-  class: `home-demo-compact home-demo-compact--${kind} home-fragment-shell home-fragment-shell--${kind}`
+const demoShellAttrs = (kind: DemoKind) => ({
+  class: `home-fragment-shell home-fragment-shell--${kind}`
 })
 
 const buildCompactDemoNode = (
@@ -129,27 +128,33 @@ const getShellHeader = (
 const buildDemoShellNode = (
   kind: DemoKind,
   header: FragmentHeaderCopy,
-  summaryMeta: string[],
-  props?: Record<string, string>
-) =>
-  h('div', demoShellAttrs(kind, props), [
+  summary: string,
+  summaryMeta: string[]
+) => {
+  const shellSummary = summary || header.description || ''
+  return h('div', demoShellAttrs(kind), [
     ...(normalizeHeaderMeta(header.metaLine)
       ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
       : []),
     h(header.heading ?? 'h2', null, [t(header.title)]),
-    ...(header.description ? [h('p', null, [t(header.description)])] : []),
-    h('div', { class: 'home-fragment-shell-footer' }, [h('p', { class: 'home-fragment-shell-meta' }, [t(joinMeta(summaryMeta))])])
+    ...(shellSummary ? [h('div', { class: 'home-fragment-shell-copy' }, [t(shellSummary)])] : []),
+    h('div', { class: 'home-fragment-shell-footer' }, [
+      h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(summaryMeta))])
+    ])
   ])
+}
 
-const buildDockShellNode = (header: FragmentHeaderCopy) =>
-  h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
+const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
+  const shellSummary = summary || header.description || ''
+  return h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
     ...(normalizeHeaderMeta(header.metaLine)
       ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
       : []),
     h(header.heading ?? 'h2', null, [t(header.title)]),
-    ...(header.description ? [h('p', null, [t(header.description)])] : []),
-    h('p', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['GitHub', 'Google Drive', 'Notion', 'WhatsApp']))])
+    ...(shellSummary ? [h('div', { class: 'home-fragment-shell-copy' }, [t(shellSummary)])] : []),
+    h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['GitHub', 'Google Drive', 'Notion', 'WhatsApp']))])
   ])
+}
 
 const buildHomeStaticStubNode = (kind: string, header: FragmentHeaderCopy, description: string) =>
   h('section', { class: `home-fragment-stub home-fragment-stub--${kind}` }, [
@@ -178,12 +183,14 @@ const buildHomeStaticShellNode = (
           copy.planner.title,
           copy.planner.steps[0]?.hint || copy.planner.waiting
         ),
+        copy.planner.steps[0]?.hint || copy.planner.waiting,
         [copy.planner.labels.dependencies, copy.planner.labels.cache, copy.planner.labels.runtime]
       )
     case 'ledger':
       return buildDemoShellNode(
         'wasm-renderer',
         getShellHeader(fragmentId, fragmentHeaders, copy.wasmRenderer.title, copy.wasmRenderer.subtitle),
+        copy.wasmRenderer.subtitle,
         [
           copy.wasmRenderer.footer.edgeSafe,
           copy.wasmRenderer.footer.deterministic,
@@ -194,14 +201,15 @@ const buildHomeStaticShellNode = (
       return buildDemoShellNode(
         'preact-island',
         getShellHeader(fragmentId, fragmentHeaders, copy.preactIsland.label, copy.preactIsland.activeSub),
-        [copy.preactIsland.countdown, '1:00', copy.preactIsland.ready],
-        copy.preactIsland.label ? { label: copy.preactIsland.label } : undefined
+        copy.preactIsland.activeSub,
+        [copy.preactIsland.countdown, '1:00', copy.preactIsland.ready]
       )
     case 'react': {
       const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
       return buildDemoShellNode(
         'react-binary',
         getShellHeader(fragmentId, fragmentHeaders, copy.reactBinary.title, stage.hint),
+        stage.hint,
         [stage.label, copy.reactBinary.footer.hydrationSkipped, copy.reactBinary.footer.binaryStream]
       )
     }
@@ -212,7 +220,8 @@ const buildHomeStaticShellNode = (
           fragmentHeaders,
           'Server-only dock fragment.',
           'MagicUI dock authored in React, compiled to a static fragment.'
-        )
+        ),
+        'Static React dock, server rendered only.'
       )
     default:
       return null

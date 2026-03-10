@@ -83,6 +83,18 @@ const stripBlockingDeferredStylesheet = (html: string) =>
     /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*global-deferred\.css[^"']*["'][^>]*>\s*/gi,
     ''
   )
+    .replace(
+      /<style\b[^>]*data-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'][^>]*>[\s\S]*?<\/style>\s*/gi,
+      ''
+    )
+    .replace(
+      /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*home-demo-active\.css[^"']*["'][^>]*>\s*/gi,
+      ''
+    )
+    .replace(
+      /<link\b[^>]*rel=["']preload["'][^>]*as=["']style["'][^>]*href=["'][^"']*home-demo-active\.css[^"']*["'][^>]*>\s*/gi,
+      ''
+    )
 
 const injectStaticBootstrap = (html: string, publicBase: string, pathname: string) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname)

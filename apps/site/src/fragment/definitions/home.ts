@@ -14,6 +14,16 @@ const makeText = (translate: (value: string, params?: Record<string, string | nu
   return (value: string, params?: Record<string, string | number>) => textNode(translate(value, params))
 }
 
+const renderHomeCopyBlock = (
+  text: ReturnType<typeof makeText>,
+  lead: string,
+  detail?: string
+) =>
+  h('div', { class: 'home-fragment-copy' }, [
+    h('span', { class: 'home-fragment-copy-line home-fragment-copy-lead' }, [text(lead)]),
+    ...(detail ? [h('span', { class: 'home-fragment-copy-line' }, [text(detail)])] : [])
+  ])
+
 const planner: FragmentDefinition = {
   id: 'fragment://page/home/planner@v1',
   tags: ['home', 'planner'],
@@ -25,12 +35,10 @@ const planner: FragmentDefinition = {
     return h('section', null, [
       h('div', { class: 'meta-line' }, [text('fragment planner')]),
       h('h2', null, text('Planner executes before rendering.')),
-      h(
-        'p',
-        null,
-        text(
-          'Dependency resolution, cache hit checks, and runtime selection happen up front. Rendering only occurs on cache miss; revalidation runs asynchronously.'
-        )
+      renderHomeCopyBlock(
+        text,
+        'Dependency resolution, cache hit checks, and runtime selection happen up front.',
+        'Rendering only occurs on cache miss; revalidation runs asynchronously.'
       ),
       h('planner-demo', null),
       h('div', { class: 'matrix' }, [
@@ -59,12 +67,10 @@ const ledger: FragmentDefinition = {
     return h('section', null, [
       h('div', { class: 'meta-line' }, [text('wasm renderer')]),
       h('h2', null, text('Hot-path fragments rendered by WASM.')),
-      h(
-        'p',
-        null,
-        text(
-          'Critical transforms run inside WebAssembly for deterministic, edge-safe execution. Numeric outputs feed fragment composition without touching HTML.'
-        )
+      renderHomeCopyBlock(
+        text,
+        'Critical transforms run inside WebAssembly for deterministic, edge-safe execution.',
+        'Numeric outputs feed fragment composition without touching HTML.'
       ),
       h('wasm-renderer-demo', null),
       h('div', { class: 'matrix' }, [
@@ -88,10 +94,10 @@ const island: FragmentDefinition = {
     return h('section', null, [
       h('div', { class: 'meta-line' }, [text('preact island')]),
       h('h2', null, text('Isolated client islands stay sandboxed.')),
-      h(
-        'p',
-        null,
-        text('Preact loads only inside the island boundary. No shared state, no routing ownership, no global hydration.')
+      renderHomeCopyBlock(
+        text,
+        'Preact loads only inside the island boundary.',
+        'No shared state, no routing ownership, no global hydration.'
       ),
       h('preact-island', { label: t('Isolated island') })
     ])
@@ -109,13 +115,14 @@ const manifesto: FragmentDefinition = {
     return h('section', null, [
       h('div', { class: 'meta-line' }, [text('fragment manifesto')]),
       h('h2', null, text('The render tree is the artifact.')),
-      h(
-        'p',
-        null,
-        text(
-          'HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.'
-        )
-      ),
+      h('div', { class: 'home-manifest-copy' }, [
+        h('span', { class: 'home-manifest-copy-line home-manifest-copy-lead' }, [
+          text('HTML remains the fallback surface.')
+        ]),
+        h('span', { class: 'home-manifest-copy-line' }, [
+          text('Deterministic binary fragments handle replay, caching, and instant patching.')
+        ])
+      ]),
       h('ul', { class: 'home-manifest-pills' }, [
         h('li', { class: 'home-manifest-pill' }, [text('Resumable by default')]),
         h('li', { class: 'home-manifest-pill' }, [text('Fragment caching with async revalidation')]),

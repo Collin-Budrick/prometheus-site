@@ -1,16 +1,13 @@
-import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { effect } from '@preact/signals-core'
 import { getPreactIslandCopy } from '../lang/client'
 import { lang } from '../shared/lang-store'
-import { homeDemoActiveStyles } from './home-demo-active-inline'
 
 type PreactIslandProps = {
   label?: string
 }
 
 export const PreactIsland = component$(({ label }: PreactIslandProps) => {
-  useStyles$(homeDemoActiveStyles)
-
   const host = useSignal<HTMLElement>()
 
   useVisibleTask$((ctx) => {
