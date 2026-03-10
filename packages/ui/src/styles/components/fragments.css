@@ -1037,7 +1037,7 @@
     border-radius: 999px;
     border: 1px solid rgb(var(--stroke) / 0.72);
     background-color: rgb(var(--surface-soft) / 0.72);
-    color: rgb(var(--muted-soft));
+    color: rgb(var(--muted));
     font-family: var(--font-mono);
     font-size: 10px;
     line-height: 1.35;
@@ -1174,7 +1174,7 @@
 
   .meta-line {
     @apply flex flex-wrap gap-2 mb-3 font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
-    color: rgb(var(--muted-soft));
+    color: rgb(var(--muted));
   }
 
   .badge {
@@ -1266,7 +1266,7 @@
     border-radius: 999px;
     border: 1px solid rgb(var(--stroke) / 0.72);
     background-color: rgb(var(--surface-soft) / 0.72);
-    color: rgb(var(--muted-soft));
+    color: rgb(var(--muted));
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.18em;
@@ -1325,7 +1325,7 @@
     gap: 8px;
     background-color: rgb(var(--surface) / 0.75);
     border-color: rgb(var(--stroke) / 0.7);
-    color: rgb(var(--muted-soft));
+    color: rgb(var(--muted));
   }
 
   .matrix .cell::after {
