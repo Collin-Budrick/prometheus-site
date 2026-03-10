@@ -1,8 +1,13 @@
 import { type NavLabelKey } from '../config'
 import type { Lang } from '../lang'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
-import { getStaticHomeUiCopy } from './home-copy-store'
-import { syncStaticDockRootState } from './seed-client'
+import { getStaticHomeUiCopy, type HomeStaticUiCopy } from './home-copy-store'
+import {
+  STATIC_DOCK_ROOT_ATTR,
+  STATIC_SHELL_DOCK_REGION,
+  STATIC_SHELL_REGION_ATTR
+} from './constants'
+import { readStaticShellSeed, syncStaticDockRootState, type StaticDockState } from './seed-client'
 
 type SyncStaticDockOptions = {
   root: HTMLElement
@@ -10,6 +15,7 @@ type SyncStaticDockOptions = {
   currentPath: string
   isAuthenticated: boolean
   force?: boolean
+  lockMetrics?: boolean
 }
 
 const dockIconMarkup: Record<NavLabelKey, string> = {
@@ -53,20 +59,106 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
-export const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
-  const copy = getStaticHomeUiCopy(lang)
-  const navItems = authenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
-  const items = navItems
-    .map((item) => {
-      const label = copy[item.labelKey]
-      const href = withLangParam(item.href, lang)
-      const active = isDockItemActive(currentPath, item.href)
-      const current = active ? ' aria-current="page"' : ''
-      return `<div class="dock-icon" role="listitem" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><a class="dock-link" href="${escapeHtml(href)}" data-fragment-link aria-label="${escapeHtml(label)}"${current} title="${escapeHtml(label)}">${dockIconMarkup[item.labelKey]}</a></div>`
-    })
-    .join('')
+const isHtmlElement = (value: unknown): value is HTMLElement => {
+  if (!value) return false
+  if (typeof HTMLElement !== 'undefined') {
+    return value instanceof HTMLElement
+  }
+  return typeof (value as { innerHTML?: unknown }).innerHTML === 'string'
+}
 
-  return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${navItems.length}"><div class="dock" role="list" aria-label="${escapeHtml(copy.dockAriaLabel)}">${items}</div></div>`
+type DockCopy = Pick<HomeStaticUiCopy, NavLabelKey | 'dockAriaLabel'>
+
+const getDockCopyFromSeed = (lang: Lang): Partial<DockCopy> => {
+  if (typeof document === 'undefined') return {}
+  const seed = readStaticShellSeed()
+  if (!seed || seed.lang !== lang) return {}
+  return {
+    navHome: seed.languageSeed?.ui?.navHome,
+    navStore: seed.languageSeed?.ui?.navStore,
+    navLab: seed.languageSeed?.ui?.navLab,
+    navLogin: seed.languageSeed?.ui?.navLogin,
+    navProfile: seed.languageSeed?.ui?.navProfile,
+    navChat: seed.languageSeed?.ui?.navChat,
+    navSettings: seed.languageSeed?.ui?.navSettings,
+    navDashboard: seed.languageSeed?.ui?.navDashboard,
+    dockAriaLabel: seed.languageSeed?.ui?.dockAriaLabel
+  }
+}
+
+const resolveDockCopy = (lang: Lang): DockCopy => ({
+  ...getStaticHomeUiCopy(lang),
+  ...getDockCopyFromSeed(lang)
+})
+
+const getDockCount = (authenticated: boolean) => (authenticated ? AUTH_NAV_ITEMS.length : TOPBAR_NAV_ITEMS.length)
+
+const renderDockItemsHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
+  const copy = resolveDockCopy(lang)
+  const navItems = authenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
+  return {
+    copy,
+    items: navItems
+      .map((item) => {
+        const label = copy[item.labelKey]
+        const href = withLangParam(item.href, lang)
+        const active = isDockItemActive(currentPath, item.href)
+        const current = active ? ' aria-current="page"' : ''
+        return `<div class="dock-icon" role="listitem" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><a class="dock-link" href="${escapeHtml(href)}" data-fragment-link aria-label="${escapeHtml(label)}"${current} title="${escapeHtml(label)}">${dockIconMarkup[item.labelKey]}</a></div>`
+      })
+      .join('')
+  }
+}
+
+export const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
+  const { copy, items } = renderDockItemsHtml(lang, currentPath, authenticated)
+  return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${getDockCount(authenticated)}"><div class="dock" role="list" aria-label="${escapeHtml(copy.dockAriaLabel)}">${items}</div></div>`
+}
+
+export const renderDockRegionHtml = ({ lang, currentPath, isAuthenticated }: StaticDockState) =>
+  `<div ${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}" ${STATIC_DOCK_ROOT_ATTR}="true" data-static-dock-lang="${escapeHtml(lang)}" data-static-dock-mode="${isAuthenticated ? 'auth' : 'public'}" data-static-dock-path="${escapeHtml(currentPath)}">${renderDockHtml(lang, currentPath, isAuthenticated)}</div>`
+
+const parseDockShell = (html: string) => {
+  if (typeof document === 'undefined') return null
+  const template = document.createElement('template')
+  template.innerHTML = html.trim()
+  const next = template.content.firstElementChild
+  return isHtmlElement(next) ? next : null
+}
+
+const lockDockGeometry = (dockShell: HTMLElement) => {
+  if (typeof dockShell.getBoundingClientRect !== 'function') return () => undefined
+  const rect = dockShell.getBoundingClientRect()
+  if (rect.width === 0 && rect.height === 0) return () => undefined
+
+  const previousWidth = dockShell.style.width
+  const previousHeight = dockShell.style.height
+  dockShell.style.width = `${rect.width}px`
+  dockShell.style.height = `${rect.height}px`
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const clear = () => {
+      dockShell.style.width = previousWidth
+      dockShell.style.height = previousHeight
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(clear)
+      })
+      return
+    }
+
+    if (typeof window !== 'undefined') {
+      window.setTimeout(clear, 32)
+      return
+    }
+
+    clear()
+  }
 }
 
 export const syncStaticDockMarkup = ({
@@ -74,7 +166,8 @@ export const syncStaticDockMarkup = ({
   lang,
   currentPath,
   isAuthenticated,
-  force = false
+  force = false,
+  lockMetrics = false
 }: SyncStaticDockOptions) => {
   const nextMode = isAuthenticated ? 'auth' : 'public'
   const shouldUpdate =
@@ -88,7 +181,24 @@ export const syncStaticDockMarkup = ({
     return false
   }
 
-  root.innerHTML = renderDockHtml(lang, currentPath, isAuthenticated)
+  const nextDockHtml = renderDockHtml(lang, currentPath, isAuthenticated)
+  const currentShell = isHtmlElement(root.firstElementChild) ? root.firstElementChild : null
+
+  if (currentShell?.classList.contains('dock-shell')) {
+    const nextShell = parseDockShell(nextDockHtml)
+    if (nextShell) {
+      const unlockMetrics = lockMetrics ? lockDockGeometry(currentShell) : () => undefined
+      currentShell.setAttribute('data-dock-mode', nextMode)
+      currentShell.style.setProperty('--dock-count', `${getDockCount(isAuthenticated)}`)
+      currentShell.innerHTML = nextShell.innerHTML
+      unlockMetrics()
+    } else {
+      root.innerHTML = nextDockHtml
+    }
+  } else {
+    root.innerHTML = nextDockHtml
+  }
+
   syncStaticDockRootState({ currentPath, isAuthenticated, lang })
   return true
 }

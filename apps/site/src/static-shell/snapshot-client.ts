@@ -1,6 +1,7 @@
 import type { Lang } from '../lang'
 import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
+import { renderDockRegionHtml, syncStaticDockMarkup } from './home-dock-dom'
 import {
   STATIC_SHELL_DOCK_REGION,
   STATIC_SHELL_HEADER_REGION,
@@ -9,6 +10,7 @@ import {
 } from './constants'
 import { resolveStaticAssetUrl } from './static-asset-url'
 import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH } from './snapshot'
+import type { StaticDockState } from './seed-client'
 
 const STATIC_LANG_STORAGE_KEYS = ['prometheus-lang', 'prometheus:pref:locale'] as const
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
@@ -59,6 +61,28 @@ const replaceStaticShellRegionHtml = (region: string, html: string) => {
   current.replaceWith(next)
 }
 
+const replaceStaticShellDockRegion = (dockHtml: string, dockState?: StaticDockState) => {
+  if (!dockState) {
+    replaceStaticShellRegionHtml(STATIC_SHELL_DOCK_REGION, dockHtml)
+    return
+  }
+
+  const current = document.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_DOCK_REGION}"]`)
+  if (!current) {
+    replaceStaticShellRegionHtml(STATIC_SHELL_DOCK_REGION, renderDockRegionHtml(dockState))
+    return
+  }
+
+  syncStaticDockMarkup({
+    root: current,
+    lang: dockState.lang,
+    currentPath: dockState.currentPath,
+    isAuthenticated: dockState.isAuthenticated,
+    force: true,
+    lockMetrics: true
+  })
+}
+
 export const resolvePreferredStaticShellLang = (fallback: Lang) => {
   const url = new URL(window.location.href)
   const paramLang = resolveStaticShellLangParam(url.searchParams.get('lang'))
@@ -106,10 +130,15 @@ export const loadStaticShellSnapshot = async (snapshotKey: string, lang: Lang) =
   return await nextPromise
 }
 
-export const applyStaticShellSnapshot = (snapshot: StaticShellSnapshot) => {
+export const applyStaticShellSnapshot = (
+  snapshot: StaticShellSnapshot,
+  options: {
+    dockState?: StaticDockState
+  } = {}
+) => {
   replaceStaticShellRegionHtml(STATIC_SHELL_HEADER_REGION, snapshot.regions.header)
   replaceStaticShellRegionHtml(STATIC_SHELL_MAIN_REGION, snapshot.regions.main)
-  replaceStaticShellRegionHtml(STATIC_SHELL_DOCK_REGION, snapshot.regions.dock)
+  replaceStaticShellDockRegion(snapshot.regions.dock, options.dockState)
   document.title = snapshot.title
 }
 

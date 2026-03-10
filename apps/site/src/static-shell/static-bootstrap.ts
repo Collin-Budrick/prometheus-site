@@ -159,8 +159,19 @@ const syncStaticFragmentDockIfNeeded = async (
     lang: controller.lang,
     currentPath: controller.path,
     isAuthenticated: controller.isAuthenticated,
-    force: true
+    force: true,
+    lockMetrics: true
   })
+}
+
+const refreshStaticFragmentDockAuthIfNeeded = async (controller: StaticFragmentController) => {
+  const session = await loadClientAuthSession()
+  if (controller.destroyed) return
+  const isAuthenticated = session.status === 'authenticated'
+  if (controller.isAuthenticated === isAuthenticated) return
+  controller.isAuthenticated = isAuthenticated
+  writeStaticShellSeed({ isAuthenticated })
+  await syncStaticFragmentDockIfNeeded(controller)
 }
 
 const refreshThemeButton = (lang: Lang) => {
@@ -194,7 +205,13 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
     const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
     await destroyController(activeController)
     activeController = null
-    applyStaticShellSnapshot(snapshot)
+    applyStaticShellSnapshot(snapshot, {
+      dockState: {
+        lang: nextLang,
+        currentPath: shellSeed.currentPath || window.location.pathname,
+        isAuthenticated: shellSeed.isAuthenticated ?? false
+      }
+    })
     writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
@@ -410,29 +427,29 @@ const hydrateProtectedStaticFragments = async (controller: StaticFragmentControl
 }
 
 const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
-  const handle = window.setTimeout(() => {
-    void (async () => {
-      try {
-        const session = await loadClientAuthSession()
-        if (controller.destroyed) return
-        if (session.status !== 'authenticated') {
-          redirectProtectedStaticRouteToLogin(controller.lang)
-          return
-        }
-        controller.isAuthenticated = true
-        await syncStaticFragmentDockIfNeeded(controller)
-        if (!hasStaticFragmentRoot()) {
-          await hydrateProtectedStaticFragments(controller)
-        }
-        scheduleDeferredStreamStart(controller, 0)
-      } catch (error) {
-        if (!controller.destroyed) {
-          console.error('Protected static fragment auth upgrade failed:', error)
-        }
+  void (async () => {
+    try {
+      const session = await loadClientAuthSession()
+      if (controller.destroyed) return
+      if (session.status !== 'authenticated') {
+        redirectProtectedStaticRouteToLogin(controller.lang)
+        return
       }
-    })()
-  }, 48)
-  controller.cleanupFns.push(() => window.clearTimeout(handle))
+      if (!controller.isAuthenticated) {
+        controller.isAuthenticated = true
+        writeStaticShellSeed({ isAuthenticated: true })
+        await syncStaticFragmentDockIfNeeded(controller)
+      }
+      if (!hasStaticFragmentRoot()) {
+        await hydrateProtectedStaticFragments(controller)
+      }
+      scheduleDeferredStreamStart(controller, 0)
+    } catch (error) {
+      if (!controller.destroyed) {
+        console.error('Protected static fragment auth upgrade failed:', error)
+      }
+    }
+  })()
 }
 
 export const bootstrapStaticFragmentShell = async () => {
@@ -442,7 +459,13 @@ export const bootstrapStaticFragmentShell = async () => {
   if (preferredLang !== shellSeed.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
-      applyStaticShellSnapshot(snapshot)
+      applyStaticShellSnapshot(snapshot, {
+        dockState: {
+          lang: preferredLang,
+          currentPath: shellSeed.currentPath || window.location.pathname,
+          isAuthenticated: shellSeed.isAuthenticated ?? false
+        }
+      })
       writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
@@ -473,6 +496,21 @@ export const bootstrapStaticFragmentShell = async () => {
   activeController = controller
 
   await syncStaticFragmentDockIfNeeded(controller)
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        if (controller.destroyed || controller.authPolicy === 'protected') return
+        void refreshStaticFragmentDockAuthIfNeeded(controller).catch((error) => {
+          console.error('Static fragment auth dock refresh failed:', error)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
   bindShellControls(controller)
   updateFragmentStatus(controller.lang, 'idle')
 
@@ -488,6 +526,9 @@ export const bootstrapStaticFragmentShell = async () => {
       return
     }
     void syncStaticFragmentDockIfNeeded(controller)
+    void refreshStaticFragmentDockAuthIfNeeded(controller).catch((error) => {
+      console.error('Static fragment auth dock refresh failed:', error)
+    })
     scheduleDeferredStreamStart(controller, 0)
   }
 

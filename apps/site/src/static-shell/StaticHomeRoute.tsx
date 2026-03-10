@@ -43,23 +43,34 @@ const serializeJson = (value: unknown) =>
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 const DEFERRED_RESERVED_HEIGHT_BY_SIZE: Record<string, number> = {
-  small: 220,
+  small: 272,
   big: 280,
-  tall: 320
+  tall: 372
 }
+const DEFERRED_RESERVED_HEIGHT_BY_KIND = {
+  island: 272,
+  react: 272,
+  ledger: 372
+} as const
 
 const resolveStaticHomeReservedHeight = (
   reservedHeight: number,
   stage: StaticHomeCardStage,
-  size: string | undefined
+  size: string | undefined,
+  fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
 ) => {
   if (stage !== 'deferred') {
     return reservedHeight
   }
 
+  const deferredKindHeight = DEFERRED_RESERVED_HEIGHT_BY_KIND[fragmentKind]
+  if (typeof deferredKindHeight === 'number') {
+    return deferredKindHeight
+  }
+
   const deferredHeight = size ? DEFERRED_RESERVED_HEIGHT_BY_SIZE[size] : undefined
   if (typeof deferredHeight !== 'number') {
-    return Math.min(reservedHeight, 220)
+    return Math.min(reservedHeight, DEFERRED_RESERVED_HEIGHT_BY_SIZE.small)
   }
 
   return Math.min(reservedHeight, deferredHeight)
@@ -167,8 +178,8 @@ export const buildStaticHomeRouteState = ({
       html,
       column,
       stage,
-      reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size),
       fragmentKind,
+      reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size, fragmentKind),
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
       patchState: stage === 'critical' ? 'ready' : 'pending'
     }

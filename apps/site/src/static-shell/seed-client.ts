@@ -12,6 +12,9 @@ const serializeJson = (value: unknown) =>
     .replace(/&/g, '\\u0026')
 
 export const readStaticShellSeed = () => {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') {
+    return null
+  }
   const element = document.getElementById(STATIC_SHELL_SEED_SCRIPT_ID)
   if (!(element instanceof HTMLScriptElement) || !element.textContent) return null
   try {
@@ -22,6 +25,9 @@ export const readStaticShellSeed = () => {
 }
 
 export const writeStaticShellSeed = (patch: Partial<StaticShellSeed>) => {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') {
+    return null
+  }
   const element = document.getElementById(STATIC_SHELL_SEED_SCRIPT_ID)
   if (!(element instanceof HTMLScriptElement)) return null
 
@@ -36,7 +42,7 @@ export const writeStaticShellSeed = (patch: Partial<StaticShellSeed>) => {
   return next
 }
 
-type StaticDockState = {
+export type StaticDockState = {
   currentPath: string
   isAuthenticated: boolean
   lang: Lang
@@ -45,6 +51,9 @@ type StaticDockState = {
 const toDockMode = (isAuthenticated: boolean) => (isAuthenticated ? 'auth' : 'public')
 
 export const syncStaticDockRootState = ({ currentPath, isAuthenticated, lang }: StaticDockState) => {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+    return null
+  }
   const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
   if (!dockRoot) return null
 
@@ -55,6 +64,9 @@ export const syncStaticDockRootState = ({ currentPath, isAuthenticated, lang }: 
 }
 
 export const staticDockRootNeedsSync = ({ currentPath, isAuthenticated, lang }: StaticDockState) => {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+    return false
+  }
   const dockRoot = document.querySelector<HTMLElement>(`[${STATIC_DOCK_ROOT_ATTR}]`)
   if (!dockRoot) return false
 

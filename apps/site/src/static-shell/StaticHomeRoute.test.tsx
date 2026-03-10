@@ -120,4 +120,75 @@ describe('StaticHomeRoute', () => {
     expect(plannerCard?.html).not.toContain('data-home-demo-root="planner"')
     expect(plannerCard?.html).toContain('home-fragment-shell-footer')
   })
+
+  it('uses stabilized reserved heights for deferred compact cards', () => {
+    const deferredPlan = {
+      path: '/',
+      fragments: [
+        {
+          id: 'fragment://page/home/manifest@v1',
+          critical: true,
+          layout: { column: 'span 12', size: 'small', minHeight: 489 }
+        },
+        {
+          id: 'fragment://page/home/planner@v1',
+          critical: false,
+          layout: { column: 'span 5', size: 'big', minHeight: 640 }
+        },
+        {
+          id: 'fragment://page/home/island@v1',
+          critical: false,
+          layout: { column: 'span 5', minHeight: 489 }
+        },
+        {
+          id: 'fragment://page/home/dock@v1',
+          critical: false,
+          layout: { column: 'span 12', size: 'small', minHeight: 489 }
+        },
+        {
+          id: 'fragment://page/home/react@v1',
+          critical: false,
+          layout: { column: 'span 12', size: 'small', minHeight: 489 }
+        },
+        {
+          id: 'fragment://page/home/ledger@v1',
+          critical: false,
+          layout: { column: 'span 7', size: 'tall', minHeight: 904 }
+        }
+      ]
+    } as const
+
+    const deferredFragments = {
+      ...fragments,
+      'fragment://page/home/island@v1': {
+        tree: h('section', null, [h('preact-island', null)]),
+        cacheUpdatedAt: 3
+      },
+      'fragment://page/home/react@v1': {
+        tree: h('section', null, [h('react-binary', null)]),
+        cacheUpdatedAt: 4
+      },
+      'fragment://page/home/ledger@v1': {
+        tree: h('section', null, [h('wasm-renderer', null)]),
+        cacheUpdatedAt: 5
+      },
+      'fragment://page/home/dock@v1': {
+        tree: h('section', null, [h('div', null, [t('Dock shell')])]),
+        cacheUpdatedAt: 6
+      }
+    } as const
+
+    const state = buildStaticHomeRouteState({
+      plan: deferredPlan as never,
+      fragments: deferredFragments as never,
+      languageSeed
+    })
+
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.stage).toBe('deferred')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.reservedHeight).toBe(272)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(272)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.stage).toBe('deferred')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(372)
+  })
 })

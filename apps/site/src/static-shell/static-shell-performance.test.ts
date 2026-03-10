@@ -4,8 +4,11 @@ const readSource = async (path: string) => await Bun.file(new URL(path, import.m
 
 describe('static shell performance invariants', () => {
   it('keeps the home bootstrap on the fast path', async () => {
-    const [bootstrapSource, streamSource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource] = await Promise.all([
+    const [bootstrapSource, fragmentBootstrapSource, islandBootstrapSource, snapshotClientSource, streamSource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource] = await Promise.all([
       readSource('./home-bootstrap.tsx'),
+      readSource('./static-bootstrap.ts'),
+      readSource('./island-bootstrap.ts'),
+      readSource('./snapshot-client.ts'),
       readSource('./home-stream.ts'),
       readSource('./home-demo-runtime-loader.ts'),
       readSource('./home-bootstrap-runtime-loader.ts'),
@@ -27,6 +30,8 @@ describe('static shell performance invariants', () => {
     expect(bootstrapSource).toContain('writeStaticShellSeed({ isAuthenticated:')
     expect(bootstrapSource).toContain('createStaticHomePatchQueue({')
     expect(bootstrapSource).toContain('bindHomeFragmentHydration({ controller })')
+    expect(bootstrapSource).toContain('loadClientAuthSession()')
+    expect(bootstrapSource).toContain('refreshHomeDockAuthIfNeeded(controller)')
     expect(bootstrapSource).toContain('await ensureHomeDemoStylesheet({ href: controller.homeDemoStylesheetHref ?? undefined })')
     expect(bootstrapSource).toContain("homeFragmentHydration.observeWithin(document)")
     expect(bootstrapSource).not.toContain('observeStaticHomePatchVisibility({')
@@ -48,10 +53,20 @@ describe('static shell performance invariants', () => {
     expect(homeRouteSource).toContain("mode: stage === 'critical' ? 'rich' : stage === 'anchor' ? 'shell' : 'stub'")
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR")
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR")
+    expect(homeRouteSource).toContain('ledger: 372')
+    expect(homeRouteSource).toContain('react: 272')
+    expect(homeRouteSource).toContain('island: 272')
     expect(homeRouteSource).toContain('fragment-grid-static-home-column')
     expect(globalCriticalSource).toContain("::file-selector-button {\n  box-sizing: border-box;\n  border: 0 solid;\n}")
     expect(globalCriticalSource).not.toContain("> .fragment-card:not([data-critical='true'])\n  .fragment-card-body")
     expect(globalCriticalSource).toContain(".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-stage='deferred']")
+    expect(globalCriticalSource).toContain("data-static-home-fragment-kind='ledger'")
+    expect(snapshotClientSource).toContain('dockState?: StaticDockState')
+    expect(snapshotClientSource).toContain('syncStaticDockMarkup({')
+    expect(fragmentBootstrapSource).not.toContain('}, 48)')
+    expect(fragmentBootstrapSource).toContain('refreshStaticFragmentDockAuthIfNeeded(controller)')
+    expect(islandBootstrapSource).not.toContain('}, 48)')
+    expect(islandBootstrapSource).toContain('refreshStaticIslandDockAuthIfNeeded(controller)')
     expect(globalCriticalSource).toContain('.home-fragment-copy')
     expect(homeDefinitionSource).toContain("class: 'home-manifest-pills'")
     expect(homeDefinitionSource).not.toContain("class: 'inline-list'")

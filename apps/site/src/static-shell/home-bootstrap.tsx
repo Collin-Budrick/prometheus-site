@@ -21,6 +21,7 @@ import {
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
 } from './constants'
+import { loadClientAuthSession } from './auth-client'
 import { scheduleStaticShellTask } from './scheduler'
 import {
   staticDockRootNeedsSync,
@@ -220,8 +221,19 @@ const syncHomeDockIfNeeded = async (controller: Pick<HomeControllerState, 'isAut
     lang: controller.lang,
     currentPath: controller.path,
     isAuthenticated: controller.isAuthenticated,
-    force: true
+    force: true,
+    lockMetrics: true
   })
+}
+
+const refreshHomeDockAuthIfNeeded = async (controller: HomeControllerState) => {
+  const session = await loadClientAuthSession()
+  if (controller.destroyed) return
+  const isAuthenticated = session.status === 'authenticated'
+  if (controller.isAuthenticated === isAuthenticated) return
+  controller.isAuthenticated = isAuthenticated
+  writeStaticShellSeed({ isAuthenticated })
+  await syncHomeDockIfNeeded(controller)
 }
 
 const parseDemoProps = (value: string | null) => {
@@ -1008,7 +1020,13 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
     await destroyController(activeController)
     activeController = null
 
-    applyStaticShellSnapshot(snapshot)
+    applyStaticShellSnapshot(snapshot, {
+      dockState: {
+        lang: nextLang,
+        currentPath: current.currentPath,
+        isAuthenticated: current.isAuthenticated
+      }
+    })
     writeStaticShellSeed({ isAuthenticated: current.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
@@ -1028,7 +1046,13 @@ export const bootstrapStaticHome = async () => {
   if (preferredLang !== data.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(data.snapshotKey, preferredLang)
-      applyStaticShellSnapshot(snapshot)
+      applyStaticShellSnapshot(snapshot, {
+        dockState: {
+          lang: preferredLang,
+          currentPath: data.currentPath,
+          isAuthenticated: data.isAuthenticated
+        }
+      })
       writeStaticShellSeed({ isAuthenticated: data.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
@@ -1085,6 +1109,9 @@ export const bootstrapStaticHome = async () => {
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
         })
+        void refreshHomeDockAuthIfNeeded(controller).catch((error) => {
+          console.error('Static home auth dock refresh failed:', error)
+        })
       },
       {
         priority: 'background',
@@ -1104,6 +1131,9 @@ export const bootstrapStaticHome = async () => {
     if (!event.persisted || controller.destroyed) return
     updateFragmentStatus(controller.lang, 'idle')
     homeFragmentHydration.retryPending()
+    void refreshHomeDockAuthIfNeeded(controller).catch((error) => {
+      console.error('Static home auth dock refresh failed:', error)
+    })
   }
 
   window.addEventListener('pagehide', handlePageHide)

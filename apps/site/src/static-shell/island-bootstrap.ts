@@ -7,6 +7,7 @@ import {
 } from './constants'
 import { createStaticIslandRouteData } from './island-static-data'
 import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
+import { scheduleStaticShellTask } from './scheduler'
 import {
   staticDockRootNeedsSync,
   syncStaticDockRootState,
@@ -121,8 +122,19 @@ const syncStaticIslandDockIfNeeded = async (
     lang: controller.lang,
     currentPath: controller.path,
     isAuthenticated: controller.isAuthenticated,
-    force: true
+    force: true,
+    lockMetrics: true
   })
+}
+
+const refreshStaticIslandDockAuthIfNeeded = async (controller: StaticIslandController) => {
+  const session = await loadClientAuthSession()
+  if (controller.destroyed) return
+  const isAuthenticated = session.status === 'authenticated'
+  if (controller.isAuthenticated === isAuthenticated) return
+  controller.isAuthenticated = isAuthenticated
+  writeStaticShellSeed({ isAuthenticated })
+  await syncStaticIslandDockIfNeeded(controller)
 }
 
 const refreshThemeButton = (lang: Lang) => {
@@ -162,7 +174,13 @@ const swapStaticIslandLanguage = async (nextLang: Lang) => {
     const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
     await destroyController(activeController)
     activeController = null
-    applyStaticShellSnapshot(snapshot)
+    applyStaticShellSnapshot(snapshot, {
+      dockState: {
+        lang: nextLang,
+        currentPath: shellSeed.currentPath || window.location.pathname,
+        isAuthenticated: shellSeed.isAuthenticated ?? false
+      }
+    })
     writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
@@ -298,26 +316,26 @@ const destroyController = async (controller: StaticIslandController | null) => {
 }
 
 const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
-  const handle = window.setTimeout(() => {
-    void (async () => {
-      try {
-        const session = await loadClientAuthSession()
-        if (controller.destroyed) return
-        if (session.status !== 'authenticated') {
-          redirectProtectedStaticRouteToLogin(controller.lang)
-          return
-        }
-        controller.isAuthenticated = true
-        await syncStaticIslandDockIfNeeded(controller)
-        await activateIslandController(controller, session.user)
-      } catch (error) {
-        if (!controller.destroyed) {
-          console.error('Protected static island auth upgrade failed:', error)
-        }
+  void (async () => {
+    try {
+      const session = await loadClientAuthSession()
+      if (controller.destroyed) return
+      if (session.status !== 'authenticated') {
+        redirectProtectedStaticRouteToLogin(controller.lang)
+        return
       }
-    })()
-  }, 48)
-  controller.cleanupFns.push(() => window.clearTimeout(handle))
+      if (!controller.isAuthenticated) {
+        controller.isAuthenticated = true
+        writeStaticShellSeed({ isAuthenticated: true })
+        await syncStaticIslandDockIfNeeded(controller)
+      }
+      await activateIslandController(controller, session.user)
+    } catch (error) {
+      if (!controller.destroyed) {
+        console.error('Protected static island auth upgrade failed:', error)
+      }
+    }
+  })()
 }
 
 export const bootstrapStaticIslandShell = async () => {
@@ -327,7 +345,13 @@ export const bootstrapStaticIslandShell = async () => {
   if (preferredLang !== shellSeed.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
-      applyStaticShellSnapshot(snapshot)
+      applyStaticShellSnapshot(snapshot, {
+        dockState: {
+          lang: preferredLang,
+          currentPath: shellSeed.currentPath || window.location.pathname,
+          isAuthenticated: shellSeed.isAuthenticated ?? false
+        }
+      })
       writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
@@ -357,6 +381,21 @@ export const bootstrapStaticIslandShell = async () => {
   activeController = controller
 
   await syncStaticIslandDockIfNeeded(controller)
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        if (controller.destroyed || controller.authPolicy === 'protected') return
+        void refreshStaticIslandDockAuthIfNeeded(controller).catch((error) => {
+          console.error('Static island auth dock refresh failed:', error)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
   bindShellControls(controller)
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -366,6 +405,9 @@ export const bootstrapStaticIslandShell = async () => {
       return
     }
     void syncStaticIslandDockIfNeeded(controller)
+    void refreshStaticIslandDockAuthIfNeeded(controller).catch((error) => {
+      console.error('Static island auth dock refresh failed:', error)
+    })
   }
 
   window.addEventListener('pageshow', handlePageShow)
