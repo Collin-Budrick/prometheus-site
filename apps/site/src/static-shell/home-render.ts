@@ -18,7 +18,7 @@ export type HomeStaticCopyBundle = {
 }
 
 export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island' | 'react' | 'dock' | 'unknown'
-export type HomeStaticRenderMode = 'rich' | 'shell'
+export type HomeStaticRenderMode = 'rich' | 'shell' | 'stub'
 
 export type HomeStaticRenderOptions = {
   mode?: HomeStaticRenderMode
@@ -151,6 +151,15 @@ const buildDockShellNode = (header: FragmentHeaderCopy) =>
     h('p', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['GitHub', 'Google Drive', 'Notion', 'WhatsApp']))])
   ])
 
+const buildHomeStaticStubNode = (kind: string, header: FragmentHeaderCopy, description: string) =>
+  h('section', { class: `home-fragment-stub home-fragment-stub--${kind}` }, [
+    ...(normalizeHeaderMeta(header.metaLine)
+      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      : []),
+    h(header.heading ?? 'h2', null, [t(header.title)]),
+    ...(description ? [h('p', { class: 'home-fragment-stub-copy' }, [t(description)])] : [])
+  ])
+
 export const getHomeStaticFragmentKind = (fragmentId?: string): HomeStaticFragmentKind =>
   (fragmentId ? HOME_FRAGMENT_KIND_BY_ID[fragmentId] : null) ?? 'unknown'
 
@@ -197,7 +206,67 @@ const buildHomeStaticShellNode = (
       )
     }
     case 'dock':
-      return buildDockShellNode(getShellHeader(fragmentId, fragmentHeaders, 'Server-only dock.', ''))
+      return buildDockShellNode(
+        getShellHeader(
+          fragmentId,
+          fragmentHeaders,
+          'Server-only dock fragment.',
+          'MagicUI dock authored in React, compiled to a static fragment.'
+        )
+      )
+    default:
+      return null
+  }
+}
+
+const buildHomeStaticStubForFragment = (
+  fragmentId: string,
+  copy: HomeStaticCopyBundle,
+  fragmentHeaders?: Record<string, FragmentHeaderCopy>
+) => {
+  switch (getHomeStaticFragmentKind(fragmentId)) {
+    case 'planner':
+      return buildHomeStaticStubNode(
+        'planner',
+        getShellHeader(
+          fragmentId,
+          fragmentHeaders,
+          copy.planner.title,
+          copy.planner.steps[0]?.hint || copy.planner.waiting
+        ),
+        copy.planner.steps[0]?.hint || copy.planner.waiting
+      )
+    case 'ledger':
+      return buildHomeStaticStubNode(
+        'wasm-renderer',
+        getShellHeader(fragmentId, fragmentHeaders, copy.wasmRenderer.title, copy.wasmRenderer.subtitle),
+        copy.wasmRenderer.subtitle
+      )
+    case 'island':
+      return buildHomeStaticStubNode(
+        'preact-island',
+        getShellHeader(fragmentId, fragmentHeaders, copy.preactIsland.label, copy.preactIsland.activeSub),
+        copy.preactIsland.activeSub
+      )
+    case 'react': {
+      const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
+      return buildHomeStaticStubNode(
+        'react-binary',
+        getShellHeader(fragmentId, fragmentHeaders, copy.reactBinary.title, stage.hint),
+        stage.hint
+      )
+    }
+    case 'dock':
+      return buildHomeStaticStubNode(
+        'dock',
+        getShellHeader(
+          fragmentId,
+          fragmentHeaders,
+          'Server-only dock fragment.',
+          'MagicUI dock authored in React, compiled to a static fragment.'
+        ),
+        fragmentHeaders?.[fragmentId]?.description || 'MagicUI dock authored in React, compiled to a static fragment.'
+      )
     default:
       return null
   }
@@ -222,10 +291,19 @@ export const renderHomeStaticFragmentHtml = (
   copy: HomeStaticCopyBundle,
   options: HomeStaticRenderOptions = {}
 ) => {
-  if (options.mode === 'shell' && options.fragmentId) {
-    const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
-    if (shellNode) {
-      return renderToHtml(shellNode)
+  if (options.fragmentId) {
+    if (options.mode === 'shell') {
+      const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
+      if (shellNode) {
+        return renderToHtml(shellNode)
+      }
+    }
+
+    if (options.mode === 'stub') {
+      const stubNode = buildHomeStaticStubForFragment(options.fragmentId, copy, options.fragmentHeaders)
+      if (stubNode) {
+        return renderToHtml(stubNode)
+      }
     }
   }
 

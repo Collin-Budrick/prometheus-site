@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
-import { h, t } from '@core/fragment/tree'
+import { h, renderToHtml, t } from '@core/fragment/tree'
 import type { RenderNode } from '@core/fragment/types'
 import type { FragmentHeaderCopy } from '../lang'
+import { homeFragmentDefinitions } from '../fragment/definitions/home'
 import {
   emptyPlannerDemoCopy,
   emptyPreactIslandCopy,
@@ -154,7 +155,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).not.toContain('preact-island-stage')
   })
 
-  it('renders lightweight shell markup for non-critical home cards', () => {
+  it('renders lightweight stub markup for non-critical home cards', () => {
     const html = renderHomeStaticFragmentHtml(
       h('section', null, [
         h('div', { class: 'meta-line' }, [t('fragment planner')]),
@@ -165,19 +166,35 @@ describe('renderHomeStaticFragmentHtml', () => {
       ]),
       copy,
       {
-        mode: 'shell',
+        mode: 'stub',
         fragmentId: 'fragment://page/home/planner@v1',
         fragmentHeaders
       }
     )
 
-    expect(html).toContain('home-fragment-shell')
+    expect(html).toContain('home-fragment-stub')
     expect(html).toContain('fragment planner')
     expect(html).toContain('Planner executes before rendering.')
-    expect(html).toContain('data-demo-kind="planner"')
-    expect(html).not.toContain('data-demo-activate')
+    expect(html).toContain('Resolve the dependency graph.')
+    expect(html).not.toContain('home-fragment-shell-footer')
+    expect(html).not.toContain('data-home-demo-root')
+    expect(html).not.toContain('home-demo-compact')
     expect(html).not.toContain('matrix')
     expect(html).not.toContain('planner-demo-grid')
+  })
+
+  it('renders manifesto pills instead of the legacy inline paragraph', async () => {
+    const manifesto = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/manifest@v1')
+    const tree = await Promise.resolve(manifesto?.render({ t: (value: string) => value } as never))
+    const html = renderToHtml(tree as RenderNode)
+
+    expect(html).toContain('home-manifest-pills')
+    expect(html).toContain('home-manifest-pill')
+    expect(html).toContain('Resumable by default')
+    expect(html).toContain('Fragment caching with async revalidation')
+    expect(html).toContain('Deterministic binary DOM replay')
+    expect(html).not.toContain('class="inline-list"')
+    expect(html).not.toContain('<p class="inline-list"')
   })
 
   it('preserves demo props on compact preact previews', () => {

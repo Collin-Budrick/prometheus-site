@@ -5,10 +5,10 @@ import {
   seedStaticHomeCopy
 } from './home-copy-store'
 import {
-  activateHomeDemo,
   type HomeDemoActivationResult,
   type HomeDemoKind
 } from './home-demo-activate'
+import { loadHomeDemoRuntime } from './home-demo-runtime-loader'
 import {
   createStaticHomePatchQueue,
   observeStaticHomePatchVisibility,
@@ -18,6 +18,7 @@ import {
 import type { StaticShellSeed } from './seed'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_HOME_PAINT_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { scheduleStaticShellTask } from './scheduler'
@@ -275,15 +276,106 @@ const parseDemoProps = (value: string | null) => {
   }
 }
 
+const resolveStaticHomePaintRoot = (target?: ParentNode | Element | null): HTMLElement | null => {
+  const candidate = target ?? (typeof document !== 'undefined' ? document : null)
+  if (!candidate) return null
+
+  if (
+    typeof (candidate as Element).getAttribute === 'function' &&
+    (candidate as Element).getAttribute('data-static-home-root') !== null
+  ) {
+    return candidate as HTMLElement
+  }
+
+  if (typeof (candidate as ParentNode).querySelector === 'function') {
+    return (candidate as ParentNode).querySelector<HTMLElement>('[data-static-home-root]')
+  }
+
+  return null
+}
+
+export const scheduleStaticHomePaintReady = ({
+  root,
+  requestFrame = globalThis.requestAnimationFrame?.bind(globalThis),
+  cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis),
+  setTimer = globalThis.setTimeout?.bind(globalThis),
+  clearTimer = globalThis.clearTimeout?.bind(globalThis)
+}: ScheduleStaticHomePaintReadyOptions = {}) => {
+  const staticHomeRoot = resolveStaticHomePaintRoot(root)
+  if (!staticHomeRoot) return () => undefined
+  if (staticHomeRoot.getAttribute(STATIC_HOME_PAINT_ATTR) === 'ready') {
+    return () => undefined
+  }
+
+  if (typeof requestFrame !== 'function') {
+    staticHomeRoot.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    return () => undefined
+  }
+
+  let firstFrame = 0
+  let secondFrame = 0
+  let fallbackTimer: ReturnType<typeof setTimeout> | 0 = 0
+  let cancelled = false
+
+  const markReady = () => {
+    if (cancelled) return
+    const liveRoot = resolveStaticHomePaintRoot(staticHomeRoot) ?? resolveStaticHomePaintRoot()
+    if (!liveRoot) return
+    liveRoot.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+  }
+
+  firstFrame = requestFrame(() => {
+    if (cancelled) return
+    secondFrame = requestFrame(markReady)
+  })
+  if (typeof setTimer === 'function') {
+    fallbackTimer = setTimer(markReady, 180)
+  }
+
+  return () => {
+    cancelled = true
+    if (typeof cancelFrame === 'function') {
+      if (firstFrame) cancelFrame(firstFrame)
+      if (secondFrame) cancelFrame(secondFrame)
+    }
+    if (fallbackTimer && typeof clearTimer === 'function') {
+      clearTimer(fallbackTimer)
+    }
+  }
+}
+
 export type HomeDemoController = Pick<HomeControllerState, 'demoRenders' | 'pendingDemoRoots' | 'destroyed'>
 
+type ActivateHomeDemoFn = (options: {
+  root: Element
+  kind: HomeDemoKind
+  props: Record<string, unknown>
+}) => Promise<HomeDemoActivationResult>
+
+type HomeDemoActivationManager = {
+  observeWithin: (root: ParentNode) => void
+  destroy: () => void
+}
+
 type ActivateHomeDemosOptions = {
-  activate?: (options: {
-    root: Element
-    kind: HomeDemoKind
-    props: Record<string, unknown>
-  }) => Promise<HomeDemoActivationResult>
+  activate?: ActivateHomeDemoFn
   root?: ParentNode
+  limit?: number
+}
+
+type BindHomeDemoActivationOptions = {
+  controller: HomeDemoController
+  activate?: ActivateHomeDemoFn
+  scheduleTask?: typeof scheduleStaticShellTask
+  ObserverImpl?: typeof IntersectionObserver
+}
+
+type ScheduleStaticHomePaintReadyOptions = {
+  root?: ParentNode | Element | null
+  requestFrame?: typeof requestAnimationFrame
+  cancelFrame?: typeof cancelAnimationFrame
+  setTimer?: typeof setTimeout
+  clearTimer?: typeof clearTimeout
 }
 
 const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
@@ -296,6 +388,18 @@ const resolveHomeDemoKind = (root: Element) => {
 
 const isConnectedHomeDemoRoot = (root: Element) =>
   (root as Element & { isConnected?: boolean }).isConnected !== false
+
+const activateHomeDemoFromRuntime: ActivateHomeDemoFn = async (options) => {
+  const runtime = await loadHomeDemoRuntime()
+  return runtime.activateHomeDemo(options)
+}
+
+const shouldSkipHomeDemoRoot = (controller: HomeDemoController, root: Element) =>
+  controller.destroyed ||
+  !isConnectedHomeDemoRoot(root) ||
+  root.getAttribute('data-home-demo-active') === 'true' ||
+  controller.demoRenders.has(root) ||
+  controller.pendingDemoRoots.has(root)
 
 export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
   Array.from(controller.demoRenders.entries()).forEach(([root, result]) => {
@@ -310,47 +414,242 @@ export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
   })
 }
 
+const activateHomeDemoRoot = async (
+  controller: HomeDemoController,
+  demoRoot: HTMLElement,
+  activate: ActivateHomeDemoFn = activateHomeDemoFromRuntime
+) => {
+  if (shouldSkipHomeDemoRoot(controller, demoRoot)) return false
+
+  const kind = resolveHomeDemoKind(demoRoot)
+  if (!kind) return false
+
+  controller.pendingDemoRoots.add(demoRoot)
+
+  try {
+    const result = await activate({
+      root: demoRoot,
+      kind,
+      props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
+    })
+
+    if (controller.destroyed || !isConnectedHomeDemoRoot(demoRoot)) {
+      result.cleanup()
+      return false
+    }
+
+    controller.demoRenders.set(demoRoot, result)
+    return true
+  } catch (error) {
+    console.error(`Failed to activate home demo: ${kind}`, error)
+    return false
+  } finally {
+    controller.pendingDemoRoots.delete(demoRoot)
+  }
+}
+
 export const activateHomeDemos = async (
   controller: HomeDemoController,
   options: ActivateHomeDemosOptions = {}
 ) => {
-  if (controller.destroyed) return
+  if (controller.destroyed) return 0
 
   pruneDetachedHomeDemos(controller)
 
   const root = options.root ?? (typeof document !== 'undefined' ? document : null)
-  if (!root) return
+  if (!root) return 0
 
-  const activate = options.activate ?? activateHomeDemo
+  const activate = options.activate ?? activateHomeDemoFromRuntime
   const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
+  let activatedCount = 0
 
   for (const demoRoot of demoRoots) {
-    if (controller.destroyed) return
-    if (demoRoot.getAttribute('data-home-demo-active') === 'true') continue
-    if (controller.demoRenders.has(demoRoot) || controller.pendingDemoRoots.has(demoRoot)) continue
+    if (controller.destroyed) return activatedCount
+    if (typeof options.limit === 'number' && activatedCount >= options.limit) {
+      return activatedCount
+    }
 
-    const kind = resolveHomeDemoKind(demoRoot)
-    if (!kind) continue
+    if (await activateHomeDemoRoot(controller, demoRoot, activate)) {
+      activatedCount += 1
+    }
+  }
 
-    controller.pendingDemoRoots.add(demoRoot)
+  return activatedCount
+}
 
-    try {
-      const result = await activate({
-        root: demoRoot,
-        kind,
-        props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
-      })
+export const bindHomeDemoActivation = ({
+  controller,
+  activate = activateHomeDemoFromRuntime,
+  scheduleTask = scheduleStaticShellTask,
+  ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
+    .IntersectionObserver
+}: BindHomeDemoActivationOptions): HomeDemoActivationManager => {
+  const observedRoots = new Set<Element>()
+  const observedOrder = new Map<Element, number>()
+  const visibleRoots = new Set<Element>()
+  const queuedRoots = new Set<Element>()
+  const activationQueue: HTMLElement[] = []
+  const observer =
+    typeof ObserverImpl === 'function'
+      ? new ObserverImpl(
+          (entries) => {
+            if (controller.destroyed) return
 
-      if (controller.destroyed || !isConnectedHomeDemoRoot(demoRoot)) {
-        result.cleanup()
+            entries.forEach((entry) => {
+              const demoRoot = entry.target as HTMLElement
+              if (!observedRoots.has(demoRoot)) return
+
+              if (entry.isIntersecting || entry.intersectionRatio > 0) {
+                visibleRoots.add(demoRoot)
+                enqueueDemoRoot(demoRoot)
+                return
+              }
+
+              visibleRoots.delete(demoRoot)
+            })
+          },
+          {
+            root: null,
+            threshold: 0.01
+          }
+        )
+      : null
+  let activationInFlight = false
+  let cancelScheduledActivation: (() => void) | null = null
+  let nextObservedOrder = 0
+
+  const pruneQueuedRoots = () => {
+    let index = 0
+    while (index < activationQueue.length) {
+      const demoRoot = activationQueue[index]
+      if (visibleRoots.has(demoRoot) && !shouldSkipHomeDemoRoot(controller, demoRoot)) {
+        index += 1
         continue
       }
 
-      controller.demoRenders.set(demoRoot, result)
-    } catch (error) {
-      console.error(`Failed to activate home demo: ${kind}`, error)
-    } finally {
-      controller.pendingDemoRoots.delete(demoRoot)
+      queuedRoots.delete(demoRoot)
+      activationQueue.splice(index, 1)
+    }
+  }
+
+  const scheduleNextActivation = () => {
+    if (
+      controller.destroyed ||
+      activationInFlight ||
+      cancelScheduledActivation ||
+      activationQueue.length === 0
+    ) {
+      return
+    }
+
+    cancelScheduledActivation = scheduleTask(
+      () => {
+        cancelScheduledActivation = null
+        if (controller.destroyed) return
+
+        activationInFlight = true
+        void activateNextVisibleHomeDemo().finally(() => {
+          activationInFlight = false
+          if (controller.destroyed) return
+          pruneQueuedRoots()
+          scheduleNextActivation()
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 250,
+        waitForPaint: true
+      }
+    )
+  }
+
+  const enqueueDemoRoot = (demoRoot: HTMLElement) => {
+    if (
+      controller.destroyed ||
+      !visibleRoots.has(demoRoot) ||
+      shouldSkipHomeDemoRoot(controller, demoRoot) ||
+      queuedRoots.has(demoRoot)
+    ) {
+      return
+    }
+
+    queuedRoots.add(demoRoot)
+    const demoRootOrder = observedOrder.get(demoRoot) ?? Number.MAX_SAFE_INTEGER
+    let insertIndex = activationQueue.length
+    while (insertIndex > 0) {
+      const queuedRoot = activationQueue[insertIndex - 1]
+      const queuedRootOrder = observedOrder.get(queuedRoot) ?? Number.MAX_SAFE_INTEGER
+      if (queuedRootOrder <= demoRootOrder) {
+        break
+      }
+      insertIndex -= 1
+    }
+    activationQueue.splice(insertIndex, 0, demoRoot)
+    scheduleNextActivation()
+  }
+
+  const activateNextVisibleHomeDemo = async () => {
+    if (controller.destroyed) return
+
+    pruneDetachedHomeDemos(controller)
+
+    while (activationQueue.length > 0) {
+      const demoRoot = activationQueue.shift()
+      if (!demoRoot) return
+      queuedRoots.delete(demoRoot)
+
+      if (!visibleRoots.has(demoRoot) || shouldSkipHomeDemoRoot(controller, demoRoot)) {
+        continue
+      }
+
+      const activated = await activateHomeDemoRoot(controller, demoRoot, activate)
+      if (activated && observer && observedRoots.delete(demoRoot)) {
+        observer.unobserve(demoRoot)
+        observedOrder.delete(demoRoot)
+        visibleRoots.delete(demoRoot)
+      }
+      if (activated) {
+        return
+      }
+    }
+  }
+
+  return {
+    observeWithin(root) {
+      if (controller.destroyed) return
+
+      pruneDetachedHomeDemos(controller)
+
+      const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
+      demoRoots.forEach((demoRoot) => {
+        if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
+
+        if (!observer) {
+          if (!observedOrder.has(demoRoot)) {
+            observedOrder.set(demoRoot, nextObservedOrder)
+            nextObservedOrder += 1
+          }
+          visibleRoots.add(demoRoot)
+          enqueueDemoRoot(demoRoot)
+          return
+        }
+
+        if (observedRoots.has(demoRoot)) return
+        observedRoots.add(demoRoot)
+        observedOrder.set(demoRoot, nextObservedOrder)
+        nextObservedOrder += 1
+        observer.observe(demoRoot)
+      })
+    },
+    destroy() {
+      cancelScheduledActivation?.()
+      cancelScheduledActivation = null
+      observer?.disconnect()
+      observedRoots.clear()
+      observedOrder.clear()
+      visibleRoots.clear()
+      queuedRoots.clear()
+      activationQueue.length = 0
     }
   }
 }
@@ -504,12 +803,14 @@ const startDeferredStream = async (controller: HomeControllerState) => {
   const streamAbort = new AbortController()
   controller.streamAbort = streamAbort
   updateFragmentStatus(controller.lang, 'streaming')
+  const liveUpdates = false
 
   try {
     await streamHomeFragments({
       path: controller.path,
       lang: controller.lang,
       signal: streamAbort.signal,
+      live: liveUpdates,
       onFragment: (payload) => {
         controller.patchQueue?.enqueue(payload)
       },
@@ -519,7 +820,10 @@ const startDeferredStream = async (controller: HomeControllerState) => {
     })
     if (!controller.destroyed && controller.streamAbort === streamAbort && !streamAbort.signal.aborted) {
       updateFragmentStatus(controller.lang, 'idle')
-      scheduleStreamRetry(controller, 2000)
+      controller.streamAbort = null
+      if (liveUpdates) {
+        scheduleStreamRetry(controller, 2000)
+      }
     }
   } catch (error) {
     if (controller.destroyed || controller.streamAbort !== streamAbort || streamAbort.signal.aborted) return
@@ -605,12 +909,15 @@ export const bootstrapStaticHome = async () => {
   }
   activeController = controller
 
+  controller.cleanupFns.push(scheduleStaticHomePaintReady())
+  const homeDemoActivation = bindHomeDemoActivation({ controller })
+  controller.cleanupFns.push(() => homeDemoActivation.destroy())
   await syncHomeDockIfNeeded(controller)
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
     onPatchedBody: (body) => {
       pruneDetachedHomeDemos(controller)
-      void activateHomeDemos(controller, { root: body })
+      homeDemoActivation.observeWithin(body)
     }
   })
   controller.cleanupFns.push(() => controller.patchQueue?.destroy())
@@ -620,7 +927,7 @@ export const bootstrapStaticHome = async () => {
     })
   )
   bindShellControls(controller)
-  await activateHomeDemos(controller)
+  homeDemoActivation.observeWithin(document)
   updateFragmentStatus(controller.lang, 'idle')
 
   const handlePageHide = () => {

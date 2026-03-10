@@ -15,7 +15,7 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
-import { getHomeStaticFragmentKind, renderHomeStaticFragmentHtml } from './home-render'
+import { renderHomeStaticFragmentHtml } from './home-render'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -31,6 +31,7 @@ type StreamHomeFragmentsOptions = {
   signal: AbortSignal
   onFragment: (payload: FragmentPayload) => void
   onError?: (error: unknown) => void
+  live?: boolean
 }
 
 type CreateStaticHomePatchQueueOptions = {
@@ -58,11 +59,6 @@ export type StaticHomePatchQueue = {
 }
 
 const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
-
-const isEagerHomeDemoFragment = (fragmentId: string) => {
-  const kind = getHomeStaticFragmentKind(fragmentId)
-  return kind === 'planner' || kind === 'ledger' || kind === 'island' || kind === 'react'
-}
 
 const createHomeCopyBundle = (lang: Lang) => ({
   ui: {
@@ -203,7 +199,7 @@ export const createStaticHomePatchQueue = ({
       if (!fragmentId) return
       const payload = pendingPayloads.get(fragmentId)
       if (!payload) return
-      if (card.dataset.critical !== 'true' && !visibleIds.has(fragmentId) && !isEagerHomeDemoFragment(fragmentId)) {
+      if (card.dataset.critical !== 'true' && !visibleIds.has(fragmentId)) {
         return
       }
 
@@ -270,8 +266,7 @@ export const observeStaticHomePatchVisibility = ({
 }: ObserveStaticHomePatchVisibilityOptions) => {
   const cards = collectStaticHomeCards(root).filter((card) => {
     if (card.dataset.critical === 'true') return false
-    const fragmentId = card.dataset.fragmentId
-    return !fragmentId || !isEagerHomeDemoFragment(fragmentId)
+    return Boolean(card.dataset.fragmentId)
   })
   if (!cards.length) return () => undefined
 
@@ -316,10 +311,12 @@ export const streamHomeFragments = async ({
   lang,
   signal,
   onFragment,
-  onError
+  onError,
+  live
 }: StreamHomeFragmentsOptions) =>
   await streamHomeFragmentFrames(path, onFragment, onError, {
     signal,
     lang,
-    knownVersions: collectKnownVersions()
+    knownVersions: collectKnownVersions(),
+    live
   })

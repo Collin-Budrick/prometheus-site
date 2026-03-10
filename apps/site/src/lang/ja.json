@@ -309,6 +309,9 @@
     }
   },
   "fragments": {
+    "Resumable by default": "標準でレジューム可能",
+    "Fragment caching with async revalidation": "フラグメント単位のキャッシュと非同期再検証",
+    "Deterministic binary DOM replay": "決定的なバイナリDOMリプレイ",
     "fragment addressable": "フラグメントアドレス指定",
     "edge-primary": "エッジ優先",
     "Binary-first. Fragment-native. Zero hydration.": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",

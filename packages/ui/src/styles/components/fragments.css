@@ -335,6 +335,20 @@
     contain-intrinsic-size: auto 380px;
   }
 
+  .layout-shell[data-static-route='home'] .fragment-grid-static-home > .fragment-card:not([data-critical='true']) {
+    content-visibility: visible;
+    contain: layout paint;
+    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+  }
+
+  .layout-shell[data-static-route='home']
+    .fragment-grid-static-home
+    > .fragment-card:not([data-critical='true'])
+    .fragment-card-body {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+  }
+
   .layout-shell[data-static-route='home'] .fragment-card::before,
   .layout-shell[data-static-route='home'] .fragment-card::after {
     display: none;
@@ -357,6 +371,48 @@
   .layout-shell[data-static-route='home'] .wasm-demo-action,
   .layout-shell[data-static-route='home'] .action-button {
     box-shadow: none;
+  }
+
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-grid-static-home
+    > .fragment-card {
+    background-color: rgb(var(--surface) / 0.98);
+    box-shadow: none;
+  }
+
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-grid-static-home
+    > .fragment-card::before,
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-grid-static-home
+    > .fragment-card::after {
+    display: none;
+  }
+
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-grid-static-home
+    > .fragment-card
+    .home-demo-compact,
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-grid-static-home
+    > .fragment-card
+    .home-fragment-shell {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .fragment-card-loader,
+  .layout-shell[data-static-route='home']
+    [data-static-home-root][data-home-paint='initial']
+    .loader {
+    display: none;
   }
 
   .fragment-card-drag {
@@ -1105,6 +1161,44 @@
 
   .inline-list span {
     @apply bg-amber-400 rounded-full w-2.5 h-2.5;
+  }
+
+  .home-manifest-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .home-manifest-pill {
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--stroke) / 0.72);
+    background-color: rgb(var(--surface-soft) / 0.72);
+    color: rgb(var(--muted-soft));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-transform: none;
+  }
+
+  .home-fragment-stub {
+    display: grid;
+    gap: 0.875rem;
+  }
+
+  .home-fragment-stub .meta-line,
+  .home-fragment-stub h2 {
+    margin-bottom: 0;
+  }
+
+  .home-fragment-stub-copy {
+    margin: 0;
+    max-width: 42ch;
   }
 
   .matrix {

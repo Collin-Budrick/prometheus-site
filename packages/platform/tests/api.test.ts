@@ -137,11 +137,20 @@ describe('fragment plan includeInitial', () => {
       )
     )
 
-    const streamResponse = await fetch(`${apiUrl}/fragments/stream?path=/store&protocol=2&known=${known}`)
+    const streamResponse = await fetch(`${apiUrl}/fragments/stream?path=/store&protocol=2&known=${known}&live=0`)
     expect(streamResponse.status).toBe(200)
 
     const frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
     expect(frames.length).toBe(0)
+  })
+
+  it('returns protocol 2 one-shot stream bundles when live updates are disabled', async () => {
+    const response = await fetch(`${apiUrl}/fragments/stream?path=/&protocol=2&live=0`)
+    expect(response.status).toBe(200)
+
+    const frames = parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    expect(frames.length).toBeGreaterThan(0)
+    expect(frames.every((frame) => frame.id !== '')).toBe(true)
   })
 })
 

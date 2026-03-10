@@ -10,6 +10,7 @@ type StreamHomeFragmentsOptions = {
   signal?: AbortSignal
   lang?: string
   knownVersions?: FragmentKnownVersions
+  live?: boolean
 }
 
 const appliedCss = new Map<string, HTMLStyleElement | HTMLLinkElement>()
@@ -254,6 +255,9 @@ export const streamHomeFragmentFrames = async (
     if (encoded) {
       params.set('known', encoded)
     }
+  }
+  if (options.live === false) {
+    params.set('live', '0')
   }
 
   const response = await fetch(`${getPublicFragmentApiBase()}/fragments/stream?${params.toString()}`, {

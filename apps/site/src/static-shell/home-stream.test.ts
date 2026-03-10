@@ -185,7 +185,7 @@ describe('home-stream patching', () => {
     expect(react.body.innerHTML).toContain('React first')
   })
 
-  it('patches demo cards even before they become visible', () => {
+  it('waits to patch demo cards until they become visible', () => {
     const log: string[] = []
     const ledger = createCard('fragment://page/home/ledger@v1', log)
     const root = new MockRoot([ledger.card])
@@ -198,6 +198,12 @@ describe('home-stream patching', () => {
     })
 
     queue.enqueue(createPayload('fragment://page/home/ledger@v1', 'Ledger payload', 2))
+    queue.flushNow()
+
+    expect(ledger.body.innerHTML).toBe('')
+    expect(ledger.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('pending')
+
+    queue.setVisible('fragment://page/home/ledger@v1', true)
     queue.flushNow()
 
     expect(ledger.body.innerHTML).toContain('Ledger payload')

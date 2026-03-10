@@ -912,6 +912,7 @@ const createLiveFragmentStream = (options: {
   path: string
   lang: FragmentLang
   protocol: FragmentProtocol
+  liveUpdates?: boolean
   knownVersions?: FragmentKnownVersions
   getFragmentPlan: FragmentService['getFragmentPlan']
   getFragmentEntry: FragmentService['getFragmentEntry']
@@ -923,6 +924,7 @@ const createLiveFragmentStream = (options: {
     path,
     lang,
     protocol,
+    liveUpdates = true,
     getFragmentPlan,
     getFragmentEntry,
     clearPlanMemo,
@@ -1039,20 +1041,22 @@ const createLiveFragmentStream = (options: {
       }
       signal?.addEventListener('abort', onAbort, { once: true })
 
-      heartbeatTimer = setInterval(() => {
-        if (closed) return
-        try {
-          controller.enqueue(heartbeatFrame.slice())
-        } catch (error) {
-          fail(error)
-        }
-      }, fragmentStreamHeartbeatMs)
+      if (liveUpdates) {
+        heartbeatTimer = setInterval(() => {
+          if (closed) return
+          try {
+            controller.enqueue(heartbeatFrame.slice())
+          } catch (error) {
+            fail(error)
+          }
+        }, fragmentStreamHeartbeatMs)
 
-      unsubscribe = updates.subscribe((event) => {
-        runSerial(async () => {
-          await handleUpdate(event)
+        unsubscribe = updates.subscribe((event) => {
+          runSerial(async () => {
+            await handleUpdate(event)
+          })
         })
-      })
+      }
 
       cleanup = () => {
         if (heartbeatTimer) {
@@ -1068,6 +1072,9 @@ const createLiveFragmentStream = (options: {
         currentPlan = plan
         currentFragmentIds = new Set(plan.fragments.map((entry) => entry.id))
         await sendPlan(plan, false)
+        if (!liveUpdates) {
+          close()
+        }
       })
     },
     cancel() {
@@ -1347,6 +1354,8 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
+      const liveUpdates =
+        typeof query.live === 'string' ? isTruthyParam(query.live) : true
       const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
       const stream =
         protocol === 2
@@ -1354,6 +1363,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
               path,
               lang,
               protocol,
+              liveUpdates,
               knownVersions,
               getFragmentPlan,
               getFragmentEntry,
@@ -1385,6 +1395,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         path: t.Optional(t.String()),
         protocol: t.Optional(t.String()),
         known: t.Optional(t.String()),
+        live: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }
@@ -1409,6 +1420,8 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const path = normalizePlanPath(rawPath)
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
+      const liveUpdates =
+        typeof query.live === 'string' ? isTruthyParam(query.live) : true
       const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
       const start = performance.now()
       const stream =
@@ -1417,6 +1430,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
               path,
               lang,
               protocol,
+              liveUpdates,
               knownVersions,
               getFragmentPlan,
               getFragmentEntry,
@@ -1441,6 +1455,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         path: t.Optional(t.String()),
         protocol: t.Optional(t.String()),
         known: t.Optional(t.String()),
+        live: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }

@@ -309,6 +309,9 @@
     }
   },
   "fragments": {
+    "Resumable by default": "기본은 재개 가능",
+    "Fragment caching with async revalidation": "프래그먼트 캐싱과 비동기 재검증",
+    "Deterministic binary DOM replay": "결정적인 바이너리 DOM 재생",
     "fragment addressable": "프래그먼트 주소 지정",
     "edge-primary": "엣지 우선",
     "Binary-first. Fragment-native. Zero hydration.": "바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.",

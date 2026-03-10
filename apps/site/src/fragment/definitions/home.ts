@@ -34,10 +34,10 @@ const planner: FragmentDefinition = {
       ),
       h('planner-demo', null),
       h('div', { class: 'matrix' }, [
-      h('div', { class: 'cell', 'data-value': 'Resolved' }, [text('Dependencies')]),
-      h('div', { class: 'cell', 'data-value': 'Parallel' }, [text('Cache hits')]),
-      h('div', { class: 'cell', 'data-value': 'Edge/Node' }, [text('Runtime')]),
-      h('div', { class: 'cell', 'data-value': 'Async' }, [text('Revalidation')])
+        h('div', { class: 'cell', 'data-value': 'Resolved' }, [text('Dependencies')]),
+        h('div', { class: 'cell', 'data-value': 'Parallel' }, [text('Cache hits')]),
+        h('div', { class: 'cell', 'data-value': 'Edge/Node' }, [text('Runtime')]),
+        h('div', { class: 'cell', 'data-value': 'Async' }, [text('Revalidation')])
       ])
     ])
   }
@@ -68,10 +68,10 @@ const ledger: FragmentDefinition = {
       ),
       h('wasm-renderer-demo', null),
       h('div', { class: 'matrix' }, [
-      h('div', { class: 'cell', 'data-value': `${burst} op/s` }, [text('Burst throughput')]),
-      h('div', { class: 'cell', 'data-value': `${hotPath} pts` }, [text('Hot-path score')]),
-      h('div', { class: 'cell', 'data-value': '30s' }, [text('Cache TTL')]),
-      h('div', { class: 'cell', 'data-value': '120s' }, [text('Stale TTL')])
+        h('div', { class: 'cell', 'data-value': `${burst} op/s` }, [text('Burst throughput')]),
+        h('div', { class: 'cell', 'data-value': `${hotPath} pts` }, [text('Hot-path score')]),
+        h('div', { class: 'cell', 'data-value': '30s' }, [text('Cache TTL')]),
+        h('div', { class: 'cell', 'data-value': '120s' }, [text('Stale TTL')])
       ])
     ])
   }
@@ -116,10 +116,10 @@ const manifesto: FragmentDefinition = {
           'HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.'
         )
       ),
-      h('p', { class: 'inline-list' }, [
-        text(
-          'Resumable by default: no hydration dependency. · Fragment-level caching + async revalidation. · Deterministic replay with binary DOM trees.'
-        )
+      h('ul', { class: 'home-manifest-pills' }, [
+        h('li', { class: 'home-manifest-pill' }, [text('Resumable by default')]),
+        h('li', { class: 'home-manifest-pill' }, [text('Fragment caching with async revalidation')]),
+        h('li', { class: 'home-manifest-pill' }, [text('Deterministic binary DOM replay')])
       ])
     ])
   }
@@ -165,7 +165,9 @@ const homeFetchGroups = [
   ['fragment://page/home/island@v1', 'fragment://page/home/react@v1', 'fragment://page/home/dock@v1']
 ] satisfies string[][]
 
-registerFragmentDefinitions([planner, ledger, island, manifesto])
+export const homeFragmentDefinitions: FragmentDefinition[] = [planner, ledger, island, manifesto]
+
+registerFragmentDefinitions(homeFragmentDefinitions)
 
 setFragmentPlanBuilder((path, normalizedPath) => {
   if (normalizedPath === '/') {

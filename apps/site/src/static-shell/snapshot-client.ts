@@ -7,11 +7,11 @@ import {
   STATIC_SHELL_MAIN_REGION,
   STATIC_SHELL_REGION_ATTR
 } from './constants'
+import { resolveStaticAssetUrl } from './static-asset-url'
 import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH } from './snapshot'
 
 const STATIC_LANG_STORAGE_KEYS = ['prometheus-lang', 'prometheus:pref:locale'] as const
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
-const STATIC_SHELL_BUNDLE_MARKER = 'build/static-shell/'
 
 let snapshotManifestPromise: Promise<StaticShellSnapshotManifest> | null = null
 const snapshotCache = new Map<string, Promise<StaticShellSnapshot>>()
@@ -43,23 +43,7 @@ const readCookieValue = (key: string) => {
   return null
 }
 
-const resolveStaticAssetBase = () => {
-  const script = Array.from(document.scripts).find((entry) => {
-    const src = entry.getAttribute('src') ?? ''
-    return src.includes(STATIC_SHELL_BUNDLE_MARKER)
-  })
-  const scriptSrc = script?.src
-  if (!scriptSrc) {
-    return `${window.location.origin}/`
-  }
-  const markerIndex = scriptSrc.indexOf(STATIC_SHELL_BUNDLE_MARKER)
-  if (markerIndex < 0) {
-    return `${window.location.origin}/`
-  }
-  return scriptSrc.slice(0, markerIndex)
-}
-
-const toSnapshotUrl = (assetPath: string) => new URL(assetPath, resolveStaticAssetBase()).toString()
+const toSnapshotUrl = (assetPath: string) => resolveStaticAssetUrl(assetPath)
 
 const parseHtmlFragment = (html: string) => {
   const template = document.createElement('template')
