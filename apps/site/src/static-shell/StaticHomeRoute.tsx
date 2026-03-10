@@ -18,6 +18,7 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
+  STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
@@ -91,6 +92,7 @@ type StaticHomeRenderedCard = {
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
   patchState: 'ready' | 'pending'
+  lcpStable: boolean
 }
 
 type StaticHomeRouteState = {
@@ -195,7 +197,8 @@ export const buildStaticHomeRouteState = ({
       fragmentKind,
       reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size, fragmentKind),
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
-      patchState
+      patchState,
+      lcpStable: Boolean(entry.critical) || renderMode === 'preview'
     }
   })
 
@@ -281,6 +284,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_FRAGMENT_CARD_ATTR]: 'true',
                     [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
                     [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
+                    [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState
                   }}

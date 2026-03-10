@@ -23,6 +23,7 @@ import {
   STATIC_HOME_STAGE_ATTR,
 } from './constants'
 import { loadClientAuthSession } from './auth-client'
+import { createHomeFirstLcpGate, type HomeFirstLcpGate } from './home-lcp-gate'
 import { scheduleStaticShellTask } from './scheduler'
 import {
   staticDockRootNeedsSync,
@@ -720,6 +721,49 @@ const scheduleHomePreviewRefresh = (
   }
 }
 
+type ScheduleHomePostLcpTasksOptions = {
+  controller: HomeControllerState
+  lcpGate?: HomeFirstLcpGate
+  homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>
+  homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
+  root?: ParentNode
+  schedulePreviewRefresh?: (
+    controller: HomeControllerState,
+    homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
+  ) => () => void
+}
+
+export const scheduleHomePostLcpTasks = ({
+  controller,
+  lcpGate = createHomeFirstLcpGate(),
+  homeDemoActivation,
+  homeFragmentHydration,
+  root = document,
+  schedulePreviewRefresh = scheduleHomePreviewRefresh
+}: ScheduleHomePostLcpTasksOptions) => {
+  let cancelled = false
+  let previewRefreshCleanup: (() => void) | null = null
+  let postLcpStarted = false
+
+  const startPostLcpTasks = () => {
+    if (cancelled || controller.destroyed || postLcpStarted) return
+    postLcpStarted = true
+    homeDemoActivation.observeWithin(root)
+    previewRefreshCleanup = schedulePreviewRefresh(controller, homeFragmentHydration)
+  }
+
+  void lcpGate.wait.then(() => {
+    startPostLcpTasks()
+  })
+
+  return () => {
+    cancelled = true
+    lcpGate.cleanup()
+    previewRefreshCleanup?.()
+    previewRefreshCleanup = null
+  }
+}
+
 const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
   value === 'planner' || value === 'wasm-renderer' || value === 'react-binary' || value === 'preact-island'
 
@@ -1225,7 +1269,6 @@ export const bootstrapStaticHome = async () => {
       () => {
         if (controller.destroyed) return
         homeFragmentHydration.observeWithin(document)
-        controller.cleanupFns.push(scheduleHomePreviewRefresh(controller, homeFragmentHydration))
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
         })
@@ -1239,6 +1282,13 @@ export const bootstrapStaticHome = async () => {
         waitForPaint: true
       }
     )
+  )
+  controller.cleanupFns.push(
+    scheduleHomePostLcpTasks({
+      controller,
+      homeDemoActivation,
+      homeFragmentHydration
+    })
   )
   bindShellControls(controller)
   updateFragmentStatus(controller.lang, 'idle')

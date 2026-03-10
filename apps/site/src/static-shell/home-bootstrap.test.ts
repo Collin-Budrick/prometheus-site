@@ -8,9 +8,11 @@ import {
 import {
   bindHomeFragmentHydration,
   bindHomeDemoActivation,
+  scheduleHomePostLcpTasks,
   scheduleStaticHomePaintReady,
   type HomeDemoController
 } from './home-bootstrap'
+import type { HomeFirstLcpGate } from './home-lcp-gate'
 
 class MockDemoElement {
   dataset: Record<string, string> = {}
@@ -141,6 +143,25 @@ const createController = (): HomeDemoController => ({
 const flushMicrotasks = async () => {
   await Promise.resolve()
   await Promise.resolve()
+}
+
+const createManualLcpGate = () => {
+  let resolveWait!: () => void
+  let cleanupCount = 0
+  const gate: HomeFirstLcpGate = {
+    wait: new Promise<void>((resolve) => {
+      resolveWait = resolve
+    }),
+    cleanup: () => {
+      cleanupCount += 1
+    }
+  }
+
+  return {
+    gate,
+    resolve: () => resolveWait(),
+    cleanupCount: () => cleanupCount
+  }
 }
 
 const createHomeFragmentPayload = (id: string) =>
@@ -371,6 +392,55 @@ describe('scheduleStaticHomePaintReady', () => {
     expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
 
     cleanup()
+  })
+})
+
+describe('scheduleHomePostLcpTasks', () => {
+  it('defers demo observation and preview refresh until the LCP gate resolves', async () => {
+    const manualGate = createManualLcpGate()
+    const observedRoots: ParentNode[] = []
+    const previewRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: {
+        destroyed: false,
+        isAuthenticated: false,
+        lang: 'en',
+        path: '/',
+        homeDemoStylesheetHref: null,
+        fetchAbort: null,
+        cleanupFns: [],
+        demoRenders: new Map(),
+        pendingDemoRoots: new Set(),
+        patchQueue: null
+      },
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: (root) => observedRoots.push(root)
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh')
+      },
+      root: {} as ParentNode,
+      schedulePreviewRefresh: () => {
+        previewRefreshCalls.push('armed')
+        return () => previewRefreshCalls.push('cleanup')
+      }
+    })
+
+    await flushMicrotasks()
+
+    expect(observedRoots).toEqual([])
+    expect(previewRefreshCalls).toEqual([])
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(observedRoots).toHaveLength(1)
+    expect(previewRefreshCalls).toEqual(['armed'])
+
+    cleanup()
+    expect(previewRefreshCalls).toEqual(['armed', 'cleanup'])
+    expect(manualGate.cleanupCount()).toBe(1)
   })
 })
 
