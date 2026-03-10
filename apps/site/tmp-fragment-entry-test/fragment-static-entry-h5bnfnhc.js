@@ -1,2 +1,0 @@
-var n={"fragment://page/chat/contacts@v1":{path:"fragments/fragment-02e5aaec0e8c.css"},"fragment://page/store/cart@v1":{path:"fragments/fragment-cdbb7b7cca38.css"},"fragment://page/store/create@v1":{path:"fragments/fragment-cdbb7b7cca38.css"},"fragment://page/store/stream@v5":{path:"fragments/fragment-cdbb7b7cca38.css"}};var e=import.meta.env??{},r=Boolean(e.DEV),a=(t)=>t.endsWith("/")?t:`${t}/`,c=(t)=>t.replace(/^\/+/,""),f=(t)=>{if(r)return null;let s=n[t];if(!s)return null;return`${a(typeof e.BASE_URL==="string"?e.BASE_URL:"/")}${c(s.path)}`};
-export{f as A};

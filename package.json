@@ -63,7 +63,7 @@
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "optionalDependencies": {
-    "@oxlint/binding-linux-arm64-gnu": "1.51.0",
+    "@oxlint/binding-linux-arm64-gnu": "1.52.0",
     "@oxfmt/win32-arm64": "0.28.0",
     "lefthook-linux-arm64": "2.1.3",
     "lefthook-windows-arm64": "2.1.3"
@@ -72,11 +72,11 @@
     "@oxlint-tsgolint/linux-arm64": "0.16.0",
     "@oxlint-tsgolint/win32-arm64": "0.16.0",
     "@oxlint/win32-arm64": "1.43.0",
-    "@playwright/test": "1.59.0-alpha-2026-03-07",
+    "@playwright/test": "1.59.0-alpha-2026-03-10",
     "@types/web-push": "3.6.4",
-    "bun-types": "^1.3.11-canary.20260307T140746",
+    "bun-types": "^1.3.11-canary.20260310T142154",
     "lefthook": "^2.1.3",
-    "oxlint": "1.51.0",
+    "oxlint": "1.52.0",
     "oxlint-tsgolint": "0.16.0"
   }
 }

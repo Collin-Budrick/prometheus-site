@@ -1,1 +1,0 @@
-import{t as e}from"../../../../home-static-entry-8rn5xagm.js";if(typeof window<"u")window.__PROM_STATIC_HOME_ENTRY__=!0,import("../../../../home-bootstrap-r84ymnfz.js").then(({bootstrapStaticHome:o})=>o()).catch((o)=>{console.error("Static home bootstrap failed:",o)});

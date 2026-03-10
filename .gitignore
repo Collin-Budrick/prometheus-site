@@ -27,3 +27,4 @@ infra/caddy/certs/*.key
 Trace-*
 *.keystore
 *.p12
+.codex

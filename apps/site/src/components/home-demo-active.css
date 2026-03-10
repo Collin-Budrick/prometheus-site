@@ -448,8 +448,9 @@
 
   .planner-demo-toggle[data-state="hit"] {
     @apply border-teal-200/80 text-teal-700;
-    border-color: rgb(var(--signal) / 0.28);
-    color: rgb(var(--signal-strong));
+    background-color: rgb(var(--signal) / 0.12);
+    border-color: rgb(var(--signal) / 0.4);
+    color: rgb(var(--ink-soft));
   }
 
   .planner-demo-toggle[data-state="miss"] {
@@ -504,8 +505,8 @@
   }
 
   .planner-demo-outcome.is-muted {
-    @apply text-slate-400;
-    color: rgb(var(--muted-faint));
+    @apply text-slate-500;
+    color: rgb(var(--muted-soft));
   }
 
   .planner-demo-outcome.is-muted::after {
@@ -513,7 +514,7 @@
     width: 10px;
     height: 10px;
     border-radius: 9999px;
-    border: 2px solid rgb(var(--muted-faint) / 0.45);
+    border: 2px solid rgb(var(--muted-soft) / 0.5);
     border-top-color: rgb(var(--signal) / 0.8);
     display: none;
   }
