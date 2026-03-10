@@ -1,14 +1,4 @@
-type AuthSessionPayload = {
-  session?: {
-    userId?: string
-  }
-  user?: {
-    id?: string
-    name?: string | null
-    email?: string | null
-    image?: string | null
-  }
-}
+import { normalizeAuthSessionPayload } from './auth-session-payload'
 
 export type AuthSessionState =
   | {
@@ -41,8 +31,11 @@ export const loadAuthSession = async (request: Request): Promise<AuthSessionStat
       }
     })
     if (!response.ok) return { status: 'anonymous' }
-    const payload = (await response.json()) as AuthSessionPayload
+    const payload = normalizeAuthSessionPayload(await response.json())
     const user = payload.user ?? {}
+    if (!payload.session?.userId && !user.id) {
+      return { status: 'anonymous' }
+    }
     return {
       status: 'authenticated',
       user: {

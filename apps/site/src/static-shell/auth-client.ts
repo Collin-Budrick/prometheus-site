@@ -1,18 +1,7 @@
 import type { Lang } from '../lang'
 import { buildPublicApiUrl } from '../shared/public-api-url'
 import type { AuthSessionState } from '../shared/auth-session'
-
-type AuthSessionPayload = {
-  session?: {
-    userId?: string
-  }
-  user?: {
-    id?: string
-    name?: string | null
-    email?: string | null
-    image?: string | null
-  }
-}
+import { normalizeAuthSessionPayload } from '../shared/auth-session-payload'
 
 type LoadClientAuthSessionOptions = {
   force?: boolean
@@ -54,29 +43,33 @@ export const loadClientAuthSession = async (
   }
 
   const request = (async () => {
-    const response = await fetch(buildPublicApiUrl('/auth/session', window.location.origin), {
-      credentials: 'include',
-      headers: {
-        accept: 'application/json'
+    try {
+      const response = await fetch(buildPublicApiUrl('/auth/session', window.location.origin), {
+        credentials: 'include',
+        headers: {
+          accept: 'application/json'
+        }
+      })
+      if (!response.ok) {
+        return storeCachedAuthSession(buildAnonymousSession())
       }
-    })
-    if (!response.ok) {
+      const payload = normalizeAuthSessionPayload(await response.json())
+      const user = payload.user ?? {}
+      if (!payload.session?.userId && !user.id) {
+        return storeCachedAuthSession(buildAnonymousSession())
+      }
+      return storeCachedAuthSession({
+        status: 'authenticated',
+        user: {
+          id: user.id ?? payload.session?.userId,
+          name: user.name ?? undefined,
+          email: user.email ?? undefined,
+          image: user.image ?? undefined
+        }
+      })
+    } catch {
       return storeCachedAuthSession(buildAnonymousSession())
     }
-    const payload = (await response.json()) as AuthSessionPayload
-    const user = payload.user ?? {}
-    if (!payload.session?.userId && !user.id) {
-      return storeCachedAuthSession(buildAnonymousSession())
-    }
-    return storeCachedAuthSession({
-      status: 'authenticated',
-      user: {
-        id: user.id ?? payload.session?.userId,
-        name: user.name ?? undefined,
-        email: user.email ?? undefined,
-        image: user.image ?? undefined
-      }
-    })
   })()
 
   authSessionPromise = request
