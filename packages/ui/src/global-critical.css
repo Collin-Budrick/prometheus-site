@@ -924,7 +924,7 @@ body {
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card {
+  > .fragment-card:not([data-static-home-fragment-kind='manifest']) {
   background-color: rgb(var(--surface) / 0.98);
   box-shadow: none;
 }
@@ -932,23 +932,23 @@ body {
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card::before,
+  > .fragment-card:not([data-static-home-fragment-kind='manifest'])::before,
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card::after {
+  > .fragment-card:not([data-static-home-fragment-kind='manifest'])::after {
   display: none;
 }
 
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card
+  > .fragment-card:not([data-static-home-fragment-kind='manifest'])
   .home-demo-compact,
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card
+  > .fragment-card:not([data-static-home-fragment-kind='manifest'])
   .home-fragment-shell {
   background: transparent;
   box-shadow: none;

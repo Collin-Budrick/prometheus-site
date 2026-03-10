@@ -18,7 +18,7 @@ export type HomeStaticCopyBundle = {
 }
 
 export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island' | 'react' | 'dock' | 'unknown'
-export type HomeStaticRenderMode = 'rich' | 'shell' | 'stub'
+export type HomeStaticRenderMode = 'preview' | 'rich' | 'shell' | 'stub'
 
 export type HomeStaticRenderOptions = {
   mode?: HomeStaticRenderMode
@@ -60,6 +60,8 @@ const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
 const demoShellAttrs = (kind: DemoKind) => ({
   class: `home-fragment-shell home-fragment-shell--${kind}`
 })
+
+const HOME_PREVIEW_DEMO_TAGS = new Set(['planner-demo', 'wasm-renderer-demo', 'react-binary-demo', 'preact-island'])
 
 const buildCompactDemoNode = (
   kind: DemoKind,
@@ -281,6 +283,27 @@ const buildHomeStaticStubForFragment = (
   }
 }
 
+const buildHomeStaticPreviewNode = (node: RenderNode, copy: HomeStaticCopyBundle): RenderNode => {
+  if (node.type !== 'element') {
+    return replaceDemoNodes(node, copy)
+  }
+
+  const children = node.children ?? []
+  const previewChildren: RenderNode[] = []
+
+  for (const child of children) {
+    previewChildren.push(replaceDemoNodes(child, copy))
+    if (child.type === 'element' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
+      break
+    }
+  }
+
+  return {
+    ...node,
+    children: previewChildren
+  }
+}
+
 const replaceDemoNodes = (node: RenderNode, copy: HomeStaticCopyBundle): RenderNode => {
   if (node.type !== 'element') return { ...node }
 
@@ -301,6 +324,16 @@ export const renderHomeStaticFragmentHtml = (
   options: HomeStaticRenderOptions = {}
 ) => {
   if (options.fragmentId) {
+    if (options.mode === 'preview') {
+      switch (getHomeStaticFragmentKind(options.fragmentId)) {
+        case 'planner':
+        case 'ledger':
+        case 'island':
+        case 'react':
+          return renderToHtml(buildHomeStaticPreviewNode(node, copy))
+      }
+    }
+
     if (options.mode === 'shell') {
       const shellNode = buildHomeStaticShellNode(options.fragmentId, copy, options.fragmentHeaders)
       if (shellNode) {

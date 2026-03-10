@@ -17,6 +17,7 @@ import {
   type StaticHomePatchQueue
 } from './home-stream'
 import {
+  STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
@@ -361,6 +362,7 @@ type HomeFragmentHydrationController = Pick<
 type HomeFragmentHydrationManager = {
   observeWithin: (root: ParentNode) => void
   scheduleAnchorHydration: () => void
+  schedulePreviewRefreshes: () => void
   retryPending: () => void
   destroy: () => void
 }
@@ -373,7 +375,7 @@ type BindHomeFragmentHydrationOptions = {
   ObserverImpl?: typeof IntersectionObserver
 }
 
-type PendingHomeFragmentCard = {
+type HydratableHomeFragmentCard = {
   card: HTMLElement
   id: string
   stage: StaticHomeCardStage
@@ -383,16 +385,39 @@ const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = '0px'
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15
 const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
 const HOME_DEMO_ACTIVATION_THRESHOLD = 0.15
+const HOME_PREVIEW_REFRESH_DELAY_MS = 600
+const HOME_PREVIEW_REFRESH_IDLE_TIMEOUT_MS = 1800
 
 const isStaticHomeCardStage = (value: string | null): value is StaticHomeCardStage =>
   value === 'critical' || value === 'anchor' || value === 'deferred'
 
-const collectPendingHomeFragmentCards = (root: ParentNode = document): PendingHomeFragmentCard[] =>
+const isRefreshableHomeFragmentKind = (value: string | null) =>
+  value === 'planner' || value === 'ledger' || value === 'island' || value === 'react'
+
+const collectPendingHomeFragmentCards = (root: ParentNode = document): HydratableHomeFragmentCard[] =>
   Array.from(root.querySelectorAll<HTMLElement>('[data-static-fragment-card]')).flatMap((card) => {
     const id = card.dataset.fragmentId
     const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
     const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
     if (!id || patchState !== 'pending' || !isStaticHomeCardStage(stage)) {
+      return []
+    }
+    return [{ card, id, stage }]
+  })
+
+const collectRefreshableHomeFragmentCards = (root: ParentNode = document): HydratableHomeFragmentCard[] =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-static-fragment-card]')).flatMap((card) => {
+    const id = card.dataset.fragmentId
+    const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
+    const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+    const fragmentKind = card.getAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR)
+    if (
+      !id ||
+      patchState !== 'ready' ||
+      !isStaticHomeCardStage(stage) ||
+      stage === 'critical' ||
+      !isRefreshableHomeFragmentKind(fragmentKind)
+    ) {
       return []
     }
     return [{ card, id, stage }]
@@ -410,6 +435,13 @@ export const bindHomeFragmentHydration = ({
   const visibleDeferredIds = new Set<string>()
   const queuedAnchorIds = new Set<string>()
   const queuedDeferredIds = new Set<string>()
+  let previewRefreshesEnabled = false
+
+  const isRefreshableHomeFragmentCard = (card: HTMLElement) =>
+    card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready' &&
+    card.getAttribute(STATIC_HOME_STAGE_ATTR) !== 'critical' &&
+    isRefreshableHomeFragmentKind(card.getAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR))
+
   const observer =
     typeof ObserverImpl === 'function'
       ? new ObserverImpl(
@@ -421,7 +453,10 @@ export const bindHomeFragmentHydration = ({
               const id = card.dataset.fragmentId
               if (!id) return
 
-              if (card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== 'pending') {
+              if (
+                card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== 'pending' &&
+                !isRefreshableHomeFragmentCard(card)
+              ) {
                 observer?.unobserve(card)
                 observedDeferredCards.delete(card)
                 visibleDeferredIds.delete(id)
@@ -458,9 +493,23 @@ export const bindHomeFragmentHydration = ({
 
   const collectQueuedIds = (stage: Extract<StaticHomeCardStage, 'anchor' | 'deferred'>) => {
     const activeQueue = stage === 'anchor' ? queuedAnchorIds : queuedDeferredIds
-    return collectPendingHomeFragmentCards(root)
-      .filter(({ id, stage: cardStage }) => {
+    return Array.from(root.querySelectorAll<HTMLElement>('[data-static-fragment-card]'))
+      .flatMap((card) => {
+        const id = card.dataset.fragmentId
+        const cardStage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+        if (!id || !isStaticHomeCardStage(cardStage)) {
+          return []
+        }
+        return [{ card, id, stage: cardStage }]
+      })
+      .filter(({ card, id, stage: cardStage }) => {
         if (cardStage !== stage || !activeQueue.has(id)) return false
+        if (
+          card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== 'pending' &&
+          (!previewRefreshesEnabled || !isRefreshableHomeFragmentCard(card))
+        ) {
+          return false
+        }
         return stage === 'anchor' || visibleDeferredIds.has(id)
       })
       .map(({ id }) => id)
@@ -555,12 +604,30 @@ export const bindHomeFragmentHydration = ({
     observeWithin(nextRoot) {
       if (controller.destroyed) return
 
-      collectPendingHomeFragmentCards(nextRoot)
-        .filter(({ stage }) => stage === 'deferred')
+      Array.from(nextRoot.querySelectorAll<HTMLElement>('[data-static-fragment-card]'))
+        .flatMap((card) => {
+          const id = card.dataset.fragmentId
+          const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+          if (!id || !isStaticHomeCardStage(stage) || stage !== 'deferred') {
+            return []
+          }
+          if (
+            card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== 'pending' &&
+            !isRefreshableHomeFragmentCard(card)
+          ) {
+            return []
+          }
+          return [{ card, id, stage }]
+        })
         .forEach(({ card, id }) => {
           if (!observer) {
             visibleDeferredIds.add(id)
-            queuedDeferredIds.add(id)
+            if (
+              card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'pending' ||
+              (previewRefreshesEnabled && isRefreshableHomeFragmentCard(card))
+            ) {
+              queuedDeferredIds.add(id)
+            }
             controller.patchQueue?.setVisible(id, true)
             scheduleNextHydration()
             return
@@ -578,6 +645,17 @@ export const bindHomeFragmentHydration = ({
         .forEach(({ id }) => {
           queuedAnchorIds.add(id)
         })
+      scheduleNextHydration()
+    },
+    schedulePreviewRefreshes() {
+      if (controller.destroyed) return
+      previewRefreshesEnabled = true
+      collectRefreshableHomeFragmentCards(root)
+        .filter(({ stage }) => stage === 'anchor')
+        .forEach(({ id }) => {
+          queuedAnchorIds.add(id)
+        })
+      manager.observeWithin(root)
       scheduleNextHydration()
     },
     retryPending() {
@@ -599,6 +677,47 @@ export const bindHomeFragmentHydration = ({
     }
   }
   return manager
+}
+
+const scheduleHomePreviewRefresh = (
+  controller: HomeControllerState,
+  homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
+) => {
+  let delayId: ReturnType<typeof setTimeout> | null = null
+  let idleId: number | null = null
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let cancelled = false
+
+  const runRefresh = () => {
+    if (cancelled || controller.destroyed || document.visibilityState === 'hidden') return
+    homeFragmentHydration.schedulePreviewRefreshes()
+  }
+
+  const armIdleRefresh = () => {
+    if (cancelled || controller.destroyed) return
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(runRefresh, {
+        timeout: HOME_PREVIEW_REFRESH_IDLE_TIMEOUT_MS
+      })
+      return
+    }
+    timeoutId = window.setTimeout(runRefresh, HOME_PREVIEW_REFRESH_IDLE_TIMEOUT_MS)
+  }
+
+  delayId = window.setTimeout(armIdleRefresh, HOME_PREVIEW_REFRESH_DELAY_MS)
+
+  return () => {
+    cancelled = true
+    if (delayId !== null) {
+      window.clearTimeout(delayId)
+    }
+    if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(idleId)
+    }
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId)
+    }
+  }
 }
 
 const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
@@ -1106,6 +1225,7 @@ export const bootstrapStaticHome = async () => {
       () => {
         if (controller.destroyed) return
         homeFragmentHydration.observeWithin(document)
+        controller.cleanupFns.push(scheduleHomePreviewRefresh(controller, homeFragmentHydration))
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
         })

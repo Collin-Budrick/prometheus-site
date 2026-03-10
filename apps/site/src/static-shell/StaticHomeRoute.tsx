@@ -53,6 +53,9 @@ const DEFERRED_RESERVED_HEIGHT_BY_KIND = {
   ledger: 372
 } as const
 
+const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
+  fragmentKind === 'planner' || fragmentKind === 'ledger' || fragmentKind === 'island' || fragmentKind === 'react'
+
 const resolveStaticHomeReservedHeight = (
   reservedHeight: number,
   stage: StaticHomeCardStage,
@@ -159,8 +162,16 @@ export const buildStaticHomeRouteState = ({
         ? (anchorColumns.add(column), 'anchor')
         : 'deferred'
     const renderMode =
-      stage === 'critical' ? 'rich' : fragmentKind === 'dock' ? 'shell' : stage === 'anchor' ? 'shell' : 'stub'
-    const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'
+      stage === 'critical'
+        ? 'rich'
+        : isStaticHomePreviewKind(fragmentKind)
+          ? 'preview'
+          : fragmentKind === 'dock'
+            ? 'shell'
+            : stage === 'anchor'
+              ? 'shell'
+              : 'stub'
+    const patchState = stage === 'critical' || fragmentKind === 'dock' || renderMode === 'preview' ? 'ready' : 'pending'
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,

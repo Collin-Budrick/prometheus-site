@@ -28,4 +28,7 @@ Trace-*
 *.keystore
 *.p12
 .codex
-tmp-home-trace.json
+
+tmp*
+apps/site/local-home*
+apps/site/prod-home*

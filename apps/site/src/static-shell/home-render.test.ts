@@ -185,6 +185,33 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).not.toContain('planner-demo-grid')
   })
 
+  it('renders preview markup that keeps the compact demo block and drops rich-only extras', () => {
+    const html = renderHomeStaticFragmentHtml(
+      h('section', null, [
+        h('div', { class: 'meta-line' }, [t('wasm renderer')]),
+        h('h2', null, [t('Hot-path fragments rendered by WASM.')]),
+        h('p', { class: 'home-fragment-copy' }, [
+          h('strong', { class: 'home-fragment-copy-lead' }, [t('Critical transforms run inside WebAssembly.')]),
+          t('Numeric outputs feed fragment composition without touching HTML.')
+        ]),
+        { type: 'element', tag: 'wasm-renderer-demo', attrs: {}, children: [] },
+        h('div', { class: 'matrix' }, [h('div', { class: 'cell' }, [t('Burst throughput')])])
+      ]),
+      copy,
+      {
+        mode: 'preview',
+        fragmentId: 'fragment://page/home/ledger@v1'
+      }
+    )
+
+    expect(html).toContain('home-fragment-copy')
+    expect(html).toContain('home-demo-compact')
+    expect(html).toContain('data-demo-kind="wasm-renderer"')
+    expect(html).toContain('Critical transforms run inside WebAssembly.')
+    expect(html).not.toContain('matrix')
+    expect(html).not.toContain('Burst throughput')
+  })
+
   it('renders manifesto pills instead of the legacy inline paragraph', async () => {
     const manifesto = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/manifest@v1')
     const tree = await Promise.resolve(manifesto?.render({ t: (value: string) => value } as never))
@@ -269,11 +296,35 @@ describe('renderHomeStaticFragmentHtml', () => {
           head: [],
           css: '',
           cacheUpdatedAt: 1,
-          tree: h('section', null, [
-            h('div', { class: 'meta-line' }, [t(entry.id)]),
-            h('h2', null, [t(entry.id)]),
-            h('p', null, [t(`description:${entry.id}`)])
-          ])
+          tree:
+            entry.id === 'fragment://page/home/planner@v1'
+              ? h('section', null, [
+                  h('div', { class: 'meta-line' }, [t('fragment planner')]),
+                  h('h2', null, [t('Planner executes before rendering.')]),
+                  h('p', { class: 'home-fragment-copy' }, [t('Dependency graph resolved up front.')]),
+                  h('planner-demo', null),
+                  h('div', { class: 'matrix' }, [h('div', { class: 'cell' }, [t('Dependencies')])])
+                ])
+              : entry.id === 'fragment://page/home/island@v1'
+                ? h('section', null, [
+                    h('div', { class: 'meta-line' }, [t('preact island')]),
+                    h('h2', null, [t('Isolated client islands stay sandboxed.')]),
+                    h('p', { class: 'home-fragment-copy' }, [t('Edge-safe timer')]),
+                    h('preact-island', null)
+                  ])
+                : entry.id === 'fragment://page/home/react@v1'
+                  ? h('section', null, [
+                      h('div', { class: 'meta-line' }, [t('react authoring')]),
+                      h('h2', null, [t('React stays server-only.')]),
+                      h('p', { class: 'home-fragment-copy' }, [t('React fragment renders on the server only.')]),
+                      h('react-binary-demo', null),
+                      h('div', { class: 'badge' }, [t('RSC-ready')])
+                    ])
+                  : h('section', null, [
+                      h('div', { class: 'meta-line' }, [t(entry.id)]),
+                      h('h2', null, [t(entry.id)]),
+                      h('p', null, [t(`description:${entry.id}`)])
+                    ])
         }
       ])
     )
@@ -298,13 +349,17 @@ describe('renderHomeStaticFragmentHtml', () => {
       { id: 'fragment://page/home/dock@v2', stage: 'deferred', column: '2' }
     ])
     expect(state?.cards[0]?.html).not.toContain('home-fragment-shell')
-    expect(state?.cards[1]?.html).toContain('home-fragment-shell')
-    expect(state?.cards[1]?.html).toContain('home-fragment-shell-copy')
-    expect(state?.cards[1]?.html).not.toContain('home-demo-compact')
-    expect(state?.cards[1]?.html).not.toContain('<p>')
-    expect(state?.cards[1]?.html).not.toContain('data-home-demo-root')
-    expect(state?.cards[2]?.html).toContain('home-fragment-stub')
+    expect(state?.cards[1]?.html).toContain('home-fragment-copy')
+    expect(state?.cards[1]?.html).toContain('home-demo-compact')
+    expect(state?.cards[1]?.html).not.toContain('home-fragment-shell')
+    expect(state?.cards[1]?.html).not.toContain('matrix')
+    expect(state?.cards[1]?.patchState).toBe('ready')
+    expect(state?.cards[2]?.html).toContain('home-demo-compact')
+    expect(state?.cards[2]?.html).not.toContain('home-fragment-stub')
+    expect(state?.cards[2]?.patchState).toBe('ready')
     expect(state?.cards[2]?.reservedHeight).toBe(272)
+    expect(state?.cards[4]?.html).toContain('home-demo-compact')
+    expect(state?.cards[4]?.patchState).toBe('ready')
     expect(state?.cards[4]?.reservedHeight).toBe(272)
     expect(state?.cards[5]?.reservedHeight).toBe(272)
   })

@@ -91,4 +91,27 @@ describe('syncStaticDockMarkup', () => {
     expect(updated).toBe(false)
     expect(dockRoot.innerHTML).toBe(firstRender)
   })
+
+  it('does not measure dock geometry when the seeded state already matches', () => {
+    dockRoot.dataset.staticDockLang = 'en'
+    dockRoot.dataset.staticDockMode = 'public'
+    dockRoot.dataset.staticDockPath = '/'
+    dockRoot.innerHTML = '<div class="dock-shell"></div>'
+    dockRoot.firstElementChild = {
+      innerHTML: '<div class="dock"></div>',
+      getBoundingClientRect() {
+        throw new Error('dock geometry should not be measured')
+      }
+    } as unknown as Element
+
+    const updated = syncStaticDockMarkup({
+      root: dockRoot as unknown as HTMLElement,
+      lang: 'en',
+      currentPath: '/',
+      isAuthenticated: false,
+      lockMetrics: true
+    })
+
+    expect(updated).toBe(false)
+  })
 })

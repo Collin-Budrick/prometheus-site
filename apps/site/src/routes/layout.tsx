@@ -111,17 +111,6 @@ const initialFadeScript = `(function () {
 
 const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
 const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
-const themeBootstrapScript = `(function () {
-  if (typeof window === 'undefined') return;
-  var root = document.documentElement;
-  if (!root) return;
-  var theme = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-  if (root.getAttribute('data-theme') !== theme) {
-    root.setAttribute('data-theme', theme);
-  }
-  root.style.colorScheme = theme;
-})();`
-const buildThemeBootstrapScriptMarkup = () => `<script>${themeBootstrapScript}</script>`
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
   return `<script>(function () {
@@ -584,7 +573,6 @@ export const RouterHead = component$(() => {
           <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
         </>
       ) : null}
-      <HTMLFragment dangerouslySetInnerHTML={buildThemeBootstrapScriptMarkup()} />
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       {shouldDeferManifest ? (

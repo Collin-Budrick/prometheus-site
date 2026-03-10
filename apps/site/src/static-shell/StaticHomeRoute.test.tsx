@@ -49,7 +49,7 @@ const fragments = {
     tree: h('section', null, [
       h('div', { class: 'meta-line' }, [t('fragment planner')]),
       h('h2', null, [t('Planner executes before rendering.')]),
-      h('p', null, [t('Long planner description that should not survive the initial static stub.')]),
+      h('p', { class: 'home-fragment-copy' }, [t('Dependency resolution happens before any render work.')]),
       h('planner-demo', null),
       h('div', { class: 'matrix' }, [])
     ]),
@@ -110,13 +110,13 @@ describe('StaticHomeRoute', () => {
     expect(manifestoCard?.html).toContain('home-manifest-pills')
     expect(manifestoCard?.html).toContain('home-manifest-copy')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
-    expect(plannerCard?.html).toContain('home-fragment-shell')
-    expect(plannerCard?.html).toContain('home-fragment-shell-copy')
+    expect(plannerCard?.html).toContain('home-fragment-copy')
+    expect(plannerCard?.html).toContain('home-demo-compact')
     expect(plannerCard?.html).toContain('Dependencies')
-    expect(plannerCard?.html).not.toContain('home-demo-compact')
-    expect(plannerCard?.html).not.toContain('<p>')
-    expect(plannerCard?.html).not.toContain('data-home-demo-root="planner"')
-    expect(plannerCard?.html).toContain('home-fragment-shell-footer')
+    expect(plannerCard?.html).not.toContain('home-fragment-shell')
+    expect(plannerCard?.html).not.toContain('matrix')
+    expect(plannerCard?.html).toContain('data-home-demo-root="planner"')
+    expect(plannerCard?.patchState).toBe('ready')
   })
 
   it('uses stabilized reserved heights for deferred compact cards', () => {
@@ -163,11 +163,11 @@ describe('StaticHomeRoute', () => {
         cacheUpdatedAt: 3
       },
       'fragment://page/home/react@v1': {
-        tree: h('section', null, [h('react-binary', null)]),
+        tree: h('section', null, [h('react-binary-demo', null)]),
         cacheUpdatedAt: 4
       },
       'fragment://page/home/ledger@v1': {
-        tree: h('section', null, [h('wasm-renderer', null)]),
+        tree: h('section', null, [h('wasm-renderer-demo', null)]),
         cacheUpdatedAt: 5
       },
       'fragment://page/home/dock@v2': {
@@ -187,8 +187,12 @@ describe('StaticHomeRoute', () => {
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('ready')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.patchState).toBe('ready')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.html).toContain('home-demo-compact')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(272)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.stage).toBe('deferred')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.patchState).toBe('ready')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.html).toContain('home-demo-compact')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(372)
   })
 })

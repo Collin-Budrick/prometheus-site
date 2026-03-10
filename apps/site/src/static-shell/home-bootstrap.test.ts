@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
+  STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR
@@ -71,10 +72,16 @@ class MockFragmentCard {
   isConnected = true
   private attrs = new Map<string, string>([['data-static-fragment-card', 'true']])
 
-  constructor(id: string, stage: 'anchor' | 'deferred', patchState: 'pending' | 'ready' = 'pending') {
+  constructor(
+    id: string,
+    stage: 'anchor' | 'deferred',
+    patchState: 'pending' | 'ready' = 'pending',
+    kind: 'planner' | 'ledger' | 'island' | 'react' | 'dock' = 'planner'
+  ) {
     this.dataset.fragmentId = id
     this.setAttribute(STATIC_HOME_STAGE_ATTR, stage)
     this.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, patchState)
+    this.setAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR, kind)
   }
 
   getAttribute(name: string) {
@@ -514,9 +521,82 @@ describe('bindHomeFragmentHydration', () => {
     hydration.destroy()
   })
 
+  it('does not fetch seeded preview cards during the initial anchor hydration pass', () => {
+    const taskQueue = createTaskQueue()
+    const readyPlanner = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready', 'planner')
+    const readyLedger = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred', 'ready', 'ledger')
+    const root = new MockStaticHomeDocumentRoot([readyPlanner, readyLedger])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const fetchCalls: string[][] = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return {}
+      }
+    })
+
+    hydration.observeWithin(root as unknown as ParentNode)
+    hydration.scheduleAnchorHydration()
+
+    expect(taskQueue.pendingCount()).toBe(0)
+    expect(fetchCalls).toEqual([])
+
+    hydration.destroy()
+  })
+
+  it('refreshes seeded preview anchors only after preview refreshes are enabled', async () => {
+    const taskQueue = createTaskQueue()
+    const readyPlanner = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready', 'planner')
+    const root = new MockStaticHomeDocumentRoot([readyPlanner])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const fetchCalls: string[][] = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return {}
+      }
+    })
+
+    hydration.schedulePreviewRefreshes()
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+    await flushMicrotasks()
+
+    expect(fetchCalls).toEqual([['fragment://page/home/planner@v1']])
+    hydration.destroy()
+  })
+
   it('does not refetch a dock card that is already marked ready', async () => {
     const taskQueue = createTaskQueue()
-    const readyDock = new MockFragmentCard('fragment://page/home/dock@v2', 'deferred', 'ready')
+    const readyDock = new MockFragmentCard('fragment://page/home/dock@v2', 'deferred', 'ready', 'dock')
     const root = new MockStaticHomeDocumentRoot([readyDock])
     root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
     const fetchCalls: string[][] = []
