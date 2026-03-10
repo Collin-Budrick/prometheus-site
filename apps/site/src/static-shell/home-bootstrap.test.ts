@@ -513,4 +513,40 @@ describe('bindHomeFragmentHydration', () => {
     expect(fetchCalls).toEqual([['fragment://page/home/ledger@v1']])
     hydration.destroy()
   })
+
+  it('does not refetch a dock card that is already marked ready', async () => {
+    const taskQueue = createTaskQueue()
+    const readyDock = new MockFragmentCard('fragment://page/home/dock@v2', 'deferred', 'ready')
+    const root = new MockStaticHomeDocumentRoot([readyDock])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const fetchCalls: string[][] = []
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids)
+        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
+      }
+    })
+
+    hydration.observeWithin(root as unknown as ParentNode)
+    hydration.retryPending()
+
+    expect(taskQueue.pendingCount()).toBe(0)
+    expect(fetchCalls).toEqual([])
+
+    hydration.destroy()
+  })
 })

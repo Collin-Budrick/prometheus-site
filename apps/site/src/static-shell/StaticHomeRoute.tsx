@@ -158,9 +158,12 @@ export const buildStaticHomeRouteState = ({
       : !anchorColumns.has(column)
         ? (anchorColumns.add(column), 'anchor')
         : 'deferred'
+    const renderMode =
+      stage === 'critical' ? 'rich' : fragmentKind === 'dock' ? 'shell' : stage === 'anchor' ? 'shell' : 'stub'
+    const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
-          mode: stage === 'critical' ? 'rich' : stage === 'anchor' ? 'shell' : 'stub',
+          mode: renderMode,
           fragmentId: entry.id,
           fragmentHeaders
         })
@@ -181,7 +184,7 @@ export const buildStaticHomeRouteState = ({
       fragmentKind,
       reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size, fragmentKind),
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
-      patchState: stage === 'critical' ? 'ready' : 'pending'
+      patchState
     }
   })
 

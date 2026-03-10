@@ -219,6 +219,23 @@ describe('renderHomeStaticFragmentHtml', () => {
     })
   })
 
+  it('registers static-shell renderers for the react and dock home fragments', async () => {
+    const react = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/react@v1')
+    const dock = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/dock@v2')
+
+    const [reactHtml, dockHtml] = await Promise.all(
+      [react, dock].map(async (definition) =>
+        renderToHtml((await Promise.resolve(definition?.render({ t: (value: string) => value } as never))) as RenderNode)
+      )
+    )
+
+    expect(reactHtml).toContain('React stays server-only.')
+    expect(reactHtml).toContain('react-binary-demo')
+    expect(dockHtml).toContain('Server-only dock fragment.')
+    expect(dockHtml).toContain('aria-label="Dock shortcuts"')
+    expect(dockHtml).toContain('GH')
+  })
+
   it('preserves demo props on compact preact previews', () => {
     const html = render({
       type: 'element',
@@ -278,7 +295,7 @@ describe('renderHomeStaticFragmentHtml', () => {
       { id: 'fragment://page/home/island@v1', stage: 'deferred', column: '1' },
       { id: 'fragment://page/home/ledger@v1', stage: 'anchor', column: '2' },
       { id: 'fragment://page/home/react@v1', stage: 'deferred', column: '2' },
-      { id: 'fragment://page/home/dock@v1', stage: 'deferred', column: '2' }
+      { id: 'fragment://page/home/dock@v2', stage: 'deferred', column: '2' }
     ])
     expect(state?.cards[0]?.html).not.toContain('home-fragment-shell')
     expect(state?.cards[1]?.html).toContain('home-fragment-shell')
@@ -287,8 +304,8 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(state?.cards[1]?.html).not.toContain('<p>')
     expect(state?.cards[1]?.html).not.toContain('data-home-demo-root')
     expect(state?.cards[2]?.html).toContain('home-fragment-stub')
-    expect(state?.cards[2]?.reservedHeight).toBe(220)
-    expect(state?.cards[4]?.reservedHeight).toBe(220)
-    expect(state?.cards[5]?.reservedHeight).toBe(220)
+    expect(state?.cards[2]?.reservedHeight).toBe(272)
+    expect(state?.cards[4]?.reservedHeight).toBe(272)
+    expect(state?.cards[5]?.reservedHeight).toBe(272)
   })
 })

@@ -31,13 +31,11 @@ const fragments = {
     tree: h('section', null, [
       h('div', { class: 'meta-line' }, [t('fragment manifesto')]),
       h('h2', null, [t('The render tree is the artifact.')]),
-      h('div', { class: 'home-manifest-copy' }, [
-        h('span', { class: 'home-manifest-copy-line home-manifest-copy-lead' }, [
+      h('p', { class: 'home-manifest-copy' }, [
+        h('strong', { class: 'home-manifest-copy-lead' }, [
           t('HTML remains the fallback surface.')
         ]),
-        h('span', { class: 'home-manifest-copy-line' }, [
-          t('Deterministic binary fragments handle replay, caching, and instant patching.')
-        ])
+        t('Deterministic binary fragments handle replay, caching, and instant patching.')
       ]),
       h('ul', { class: 'home-manifest-pills' }, [
         h('li', { class: 'home-manifest-pill' }, [t('Resumable by default')]),
@@ -141,7 +139,7 @@ describe('StaticHomeRoute', () => {
           layout: { column: 'span 5', minHeight: 489 }
         },
         {
-          id: 'fragment://page/home/dock@v1',
+          id: 'fragment://page/home/dock@v2',
           critical: false,
           layout: { column: 'span 12', size: 'small', minHeight: 489 }
         },
@@ -172,7 +170,7 @@ describe('StaticHomeRoute', () => {
         tree: h('section', null, [h('wasm-renderer', null)]),
         cacheUpdatedAt: 5
       },
-      'fragment://page/home/dock@v1': {
+      'fragment://page/home/dock@v2': {
         tree: h('section', null, [h('div', null, [t('Dock shell')])]),
         cacheUpdatedAt: 6
       }
@@ -186,6 +184,8 @@ describe('StaticHomeRoute', () => {
 
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.reservedHeight).toBe(272)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('ready')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(272)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.stage).toBe('deferred')

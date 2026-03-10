@@ -241,7 +241,7 @@ describe('home-stream patching', () => {
 
   it('waits to patch non-demo cards until they become visible', () => {
     const log: string[] = []
-    const dock = createCard('fragment://page/home/dock@v1', log)
+    const dock = createCard('fragment://page/home/dock@v2', log)
     const root = new MockRoot([dock.card])
     const queue = createStaticHomePatchQueue({
       lang: 'en',
@@ -249,13 +249,13 @@ describe('home-stream patching', () => {
       root: root as unknown as ParentNode
     })
 
-    queue.enqueue(createPayload('fragment://page/home/dock@v1', 'Dock payload', 2))
+    queue.enqueue(createPayload('fragment://page/home/dock@v2', 'Dock payload', 2))
     queue.flushNow()
 
     expect(dock.body.innerHTML).toBe('')
     expect(dock.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('pending')
 
-    queue.setVisible('fragment://page/home/dock@v1', true)
+    queue.setVisible('fragment://page/home/dock@v2', true)
     queue.flushNow()
 
     expect(dock.body.innerHTML).toContain('Dock payload')

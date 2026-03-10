@@ -1259,24 +1259,22 @@
   }
 
   .home-manifest-copy {
-    display: grid;
-    gap: 0.375rem;
+    margin: 0;
     max-width: 36ch;
-  }
-
-  .home-fragment-copy {
-    display: grid;
-    gap: 0.375rem;
-    max-width: 38ch;
-  }
-
-  .home-manifest-copy-line {
-    display: block;
     color: rgb(var(--muted));
     font-size: 0.875rem;
     line-height: 1.6;
   }
 
+  .home-fragment-copy {
+    margin: 0;
+    max-width: 38ch;
+    color: rgb(var(--muted));
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .home-manifest-copy-line,
   .home-fragment-copy-line {
     display: block;
     color: rgb(var(--muted));
@@ -1285,11 +1283,15 @@
   }
 
   .home-manifest-copy-lead {
+    display: block;
+    margin-bottom: 0.375rem;
     color: rgb(var(--ink-soft));
     font-weight: 500;
   }
 
   .home-fragment-copy-lead {
+    display: block;
+    margin-bottom: 0.375rem;
     color: rgb(var(--ink-soft));
     font-weight: 500;
   }

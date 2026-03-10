@@ -34,7 +34,7 @@ const HOME_FRAGMENT_KIND_BY_ID: Record<string, HomeStaticFragmentKind> = {
   'fragment://page/home/ledger@v1': 'ledger',
   'fragment://page/home/island@v1': 'island',
   'fragment://page/home/react@v1': 'react',
-  'fragment://page/home/dock@v1': 'dock'
+  'fragment://page/home/dock@v2': 'dock'
 }
 
 const joinMeta = (values: string[]) =>
