@@ -27,6 +27,7 @@ class MockElement {
   tabIndex = 0
   ownerDocument: MockDocument | null = null
   parentElement: MockElement | null = null
+  lastInnerHtmlValue: unknown = null
   private attrs = new Map<string, string>()
   private listeners = new Map<string, Set<(event: Event) => void>>()
   private childNodes: MockChildNode[] = []
@@ -47,6 +48,7 @@ class MockElement {
   }
 
   set innerHTML(_value: unknown) {
+    this.lastInnerHtmlValue = _value
     this.ownTextContent = null
     this.childNodes = []
     if (this.className === 'react-binary-demo') {
@@ -408,6 +410,26 @@ describe('home-demo-activate', () => {
       'Binary stream',
       'Qwik DOM'
     ])
+
+    result.cleanup()
+  })
+
+  it('uses the trusted server-html policy for runtime demo shells', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    expect((root.lastInnerHtmlValue as { policy?: string } | null)?.policy).toBe(
+      'prometheus-server-html'
+    )
 
     result.cleanup()
   })

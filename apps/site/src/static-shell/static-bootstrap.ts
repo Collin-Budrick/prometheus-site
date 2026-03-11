@@ -1,6 +1,6 @@
 import { getUiCopy, seedLanguageResources } from '../lang/client'
 import type { Lang } from '../lang'
-import { getCspNonce, setTrustedInnerHtml } from '../security/client'
+import { getCspNonce, primeTrustedTypesPolicies, setTrustedInnerHtml } from '../security/client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import type { StaticShellSeed } from './seed'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
@@ -460,6 +460,7 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
 export const bootstrapStaticFragmentShell = async () => {
   const shellSeed = readShellSeed()
   if (!shellSeed) return
+  primeTrustedTypesPolicies()
   const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang)
   if (preferredLang !== shellSeed.lang) {
     try {

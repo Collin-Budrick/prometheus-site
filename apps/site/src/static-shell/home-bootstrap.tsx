@@ -25,6 +25,7 @@ import {
 import { loadClientAuthSession } from './auth-client'
 import { createHomeFirstLcpGate, type HomeFirstLcpGate } from './home-lcp-gate'
 import { scheduleStaticShellTask } from './scheduler'
+import { primeTrustedTypesPolicies } from '../security/client'
 import {
   staticDockRootNeedsSync,
   syncStaticDockRootState,
@@ -1228,6 +1229,7 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
 export const bootstrapStaticHome = async () => {
   const data = readStaticHomeBootstrapData()
   if (!data) return
+  primeTrustedTypesPolicies()
   const preferredLang = resolvePreferredStaticShellLang(data.lang)
   if (preferredLang !== data.lang) {
     try {

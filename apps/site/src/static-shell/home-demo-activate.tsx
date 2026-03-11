@@ -107,7 +107,7 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
   root.className = className
   root.setAttribute('data-home-demo-active', 'true')
   root.removeAttribute('data-home-preview')
-  setTrustedInnerHtml(root, html, 'template')
+  setTrustedInnerHtml(root, html, 'server')
 }
 
 const warnMissingReactBinaryCopy = () => {

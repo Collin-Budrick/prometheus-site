@@ -30,6 +30,7 @@ type InnerHtmlTarget = {
 }
 
 const getTrustedTypesGlobal = () => globalThis as TrustedTypesGlobal
+const TRUSTED_HTML_KINDS: TrustedHtmlKind[] = ['server', 'template']
 
 const getTrustedTypesPolicyName = (kind: TrustedHtmlKind) =>
   kind === 'server' ? TRUSTED_TYPES_SERVER_POLICY_NAME : TRUSTED_TYPES_TEMPLATE_POLICY_NAME
@@ -89,6 +90,16 @@ export const asTrustedHtml = (html: string, kind: TrustedHtmlKind = 'server'): T
     return html
   }
   return policy.createHTML(html)
+}
+
+export const primeTrustedTypesPolicies = (
+  kinds: ReadonlyArray<TrustedHtmlKind> = TRUSTED_HTML_KINDS
+) => {
+  const policies: Partial<Record<TrustedHtmlKind, TrustedTypePolicyLike | null>> = {}
+  kinds.forEach((kind) => {
+    policies[kind] = getTrustedTypesPolicy(kind)
+  })
+  return policies
 }
 
 export const setTrustedInnerHtml = (

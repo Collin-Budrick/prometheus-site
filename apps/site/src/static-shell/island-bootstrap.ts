@@ -1,5 +1,6 @@
 import type { Lang } from '../lang'
 import { getUiCopy, seedLanguageResources } from '../lang/client'
+import { primeTrustedTypesPolicies } from '../security/client'
 import type { StaticShellSeed, StaticIslandRouteData, StaticIslandRouteKind } from './seed'
 import {
   STATIC_ISLAND_DATA_SCRIPT_ID,
@@ -341,6 +342,7 @@ const scheduleProtectedAuthUpgrade = (controller: StaticIslandController) => {
 export const bootstrapStaticIslandShell = async () => {
   const shellSeed = readShellSeed()
   if (!shellSeed) return
+  primeTrustedTypesPolicies()
   const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang)
   if (preferredLang !== shellSeed.lang) {
     try {
