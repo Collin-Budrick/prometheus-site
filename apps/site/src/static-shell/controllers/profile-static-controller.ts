@@ -100,6 +100,38 @@ const persistLocalProfileState = (state: ControllerState) => {
   return saved
 }
 
+const replaceNodeChildren = (root: HTMLElement, nextChild: Node) => {
+  if (typeof root.replaceChildren === 'function') {
+    root.replaceChildren(nextChild)
+    return
+  }
+
+  root.textContent = ''
+  root.append(nextChild)
+}
+
+export const syncAvatarPreview = (
+  avatarRoot: HTMLElement,
+  avatar: string | null,
+  displayName: string,
+  user?: ProfileUser
+) => {
+  avatarRoot.dataset.empty = avatar ? 'false' : 'true'
+
+  if (avatar) {
+    const image = document.createElement('img')
+    image.src = avatar
+    image.alt = 'Profile'
+    image.loading = 'lazy'
+    replaceNodeChildren(avatarRoot, image)
+    return
+  }
+
+  const initials = document.createElement('span')
+  initials.textContent = resolveAvatarInitials(displayName, user)
+  replaceNodeChildren(avatarRoot, initials)
+}
+
 const updateProfileCard = (root: HTMLElement, state: ControllerState, user?: ProfileUser) => {
   const displayName = state.savedName || user?.email || user?.id || 'Profile'
   const displayEmail = user?.email ?? ''
@@ -128,10 +160,7 @@ const updateProfileCard = (root: HTMLElement, state: ControllerState, user?: Pro
     previewBio.dataset.empty = bio ? 'false' : 'true'
   }
   if (avatarRoot) {
-    avatarRoot.dataset.empty = state.avatar ? 'false' : 'true'
-    avatarRoot.innerHTML = state.avatar
-      ? `<img src="${state.avatar}" alt="Profile" loading="lazy">`
-      : `<span>${resolveAvatarInitials(displayName, user)}</span>`
+    syncAvatarPreview(avatarRoot, state.avatar, displayName, user)
   }
   if (colorHex) {
     colorHex.textContent = rgbToHex(state.color)

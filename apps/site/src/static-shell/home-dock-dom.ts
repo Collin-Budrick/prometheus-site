@@ -1,5 +1,6 @@
 import { type NavLabelKey } from '../config'
 import type { Lang } from '../lang'
+import { setTrustedInnerHtml, setTrustedTemplateHtml } from '../security/client'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { getStaticHomeUiCopy, type HomeStaticUiCopy } from './home-copy-store'
 import {
@@ -121,7 +122,7 @@ export const renderDockRegionHtml = ({ lang, currentPath, isAuthenticated }: Sta
 const parseDockShell = (html: string) => {
   if (typeof document === 'undefined') return null
   const template = document.createElement('template')
-  template.innerHTML = html.trim()
+  setTrustedTemplateHtml(template, html, 'template')
   const next = template.content.firstElementChild
   return isHtmlElement(next) ? next : null
 }
@@ -190,13 +191,13 @@ export const syncStaticDockMarkup = ({
       const unlockMetrics = lockMetrics ? lockDockGeometry(currentShell) : () => undefined
       currentShell.setAttribute('data-dock-mode', nextMode)
       currentShell.style.setProperty('--dock-count', `${getDockCount(isAuthenticated)}`)
-      currentShell.innerHTML = nextShell.innerHTML
+      setTrustedInnerHtml(currentShell, nextShell.innerHTML, 'template')
       unlockMetrics()
     } else {
-      root.innerHTML = nextDockHtml
+      setTrustedInnerHtml(root, nextDockHtml, 'template')
     }
   } else {
-    root.innerHTML = nextDockHtml
+    setTrustedInnerHtml(root, nextDockHtml, 'template')
   }
 
   syncStaticDockRootState({ currentPath, isAuthenticated, lang })

@@ -1,5 +1,6 @@
 import { getUiCopy, seedLanguageResources } from '../lang/client'
 import type { Lang } from '../lang'
+import { getCspNonce, setTrustedInnerHtml } from '../security/client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import type { StaticShellSeed } from './seed'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
@@ -71,6 +72,8 @@ const serializeJson = (value: unknown) =>
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
+
+const escapeHtmlAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
@@ -386,8 +389,10 @@ const destroyController = async (controller: StaticFragmentController | null) =>
 
 const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
   const leftCount = Math.ceil(model.entries.length / 2)
+  const nonce = getCspNonce()
+  const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : ''
   const inlineStyles = model.inlineStyles
-    .map((fragment) => `<style data-fragment-css="${fragment.id}">${fragment.css}</style>`)
+    .map((fragment) => `<style${nonceAttr} data-fragment-css="${fragment.id}">${fragment.css}</style>`)
     .join('')
   const entries = model.entries
     .map((entry, index) => {
@@ -398,7 +403,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
     })
     .join('')
 
-  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json">${serializeJson(model.routeData)}</script></section>`
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script></section>`
 }
 
 const hydrateProtectedStaticFragments = async (controller: StaticFragmentController) => {
@@ -422,7 +427,7 @@ const hydrateProtectedStaticFragments = async (controller: StaticFragmentControl
   })
   const mainRegion = document.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`)
   if (!mainRegion) return
-  mainRegion.innerHTML = buildStaticFragmentMarkup(model)
+  setTrustedInnerHtml(mainRegion, buildStaticFragmentMarkup(model), 'server')
   controller.routeData = model.routeData
 }
 

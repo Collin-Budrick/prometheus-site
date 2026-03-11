@@ -1,4 +1,4 @@
-import { $, component$, HTMLFragment, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
+import { $, component$, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
@@ -19,6 +19,8 @@ import type { FragmentPlan } from '../fragment/types'
 import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
+import { useCspNonce } from '../security/qwik'
+import { buildSiteCsp, getOrCreateRequestCspNonce } from '../security/server'
 import { StaticShellLayout } from '../static-shell/StaticShellLayout'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
@@ -27,22 +29,6 @@ import {
   isHomeStaticPath,
   isStaticShellPath
 } from '../static-shell/constants'
-
-const escapeAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-
-const buildStylesheetPreloadMarkup = (href: string, crossorigin?: string | null, fragmentId?: string) => {
-  const escapedHref = escapeAttr(href)
-  const crossoriginAttr = crossorigin ? ` crossorigin="${escapeAttr(crossorigin)}"` : ''
-  const fragmentAttr = fragmentId ? ` data-fragment-css="${escapeAttr(fragmentId)}"` : ''
-  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr}${fragmentAttr} onload="this.onload=null;this.rel='stylesheet'">`
-}
-
-const buildStylesheetPreloadOnlyMarkup = (href: string, crossorigin?: string | null, fragmentId?: string) => {
-  const escapedHref = escapeAttr(href)
-  const crossoriginAttr = crossorigin ? ` crossorigin="${escapeAttr(crossorigin)}"` : ''
-  const fragmentAttr = fragmentId ? ` data-fragment-css="${escapeAttr(fragmentId)}"` : ''
-  return `<link rel="preload" as="style" href="${escapedHref}"${crossoriginAttr}${fragmentAttr}>`
-}
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -109,11 +95,9 @@ const initialFadeScript = `(function () {
   }
 })();`
 
-const buildInitialFadeStyleMarkup = () => `<style>${initialFadeStyle}</style>`
-const buildInitialFadeScriptMarkup = () => `<script>${initialFadeScript}</script>`
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
-  return `<script>(function () {
+  return `(function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   var appendManifest = function () {
     if (document.head.querySelector('link[rel="manifest"]')) return;
@@ -134,7 +118,7 @@ const buildDeferredManifestScript = (href: string) => {
     return;
   }
   window.addEventListener('load', schedule, { once: true });
-})();</script>`
+})();`
 }
 
 type EarlyHint = {
@@ -493,9 +477,10 @@ export const useInitialFadeState = routeLoader$((_event) => {
   return { initialFade, criticalLite }
 })
 
-export const onRequest: RequestHandler = async ({ headers, method, request }) => {
+export const onRequest: RequestHandler = async (event) => {
+  const { headers, method, request } = event
   const isCacheableMethod = method === 'GET' || method === 'HEAD'
-  const isHtmlRequest = isCacheableMethod && headers.get('Accept')?.includes('text/html')
+  const isHtmlRequest = isCacheableMethod && request.headers.get('accept')?.toLowerCase().includes('text/html')
 
   if (isHtmlRequest) {
     headers.set('Cache-Control', PUBLIC_CACHE_CONTROL)
@@ -504,8 +489,12 @@ export const onRequest: RequestHandler = async ({ headers, method, request }) =>
   }
 
   if (isHtmlRequest) {
-    const pathName = request ? new URL(request.url).pathname : '/'
-    const planHints = getPlanEarlyHints(pathName, request ?? null)
+    const requestUrl = new URL(request.url)
+    const nonce = getOrCreateRequestCspNonce(event)
+    const planHints = getPlanEarlyHints(requestUrl.pathname, request)
+    headers.set('Content-Security-Policy', buildSiteCsp({ nonce, currentOrigin: requestUrl.origin }))
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin')
+    headers.set('X-Frame-Options', 'DENY')
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
@@ -515,6 +504,7 @@ export const onRequest: RequestHandler = async ({ headers, method, request }) =>
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
+  const nonce = useCspNonce()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
   const shouldDeferManifest = isHomeStaticRoute
@@ -534,23 +524,29 @@ export const RouterHead = component$(() => {
       ))}
       {deferredStylesheetHref ? (
         <>
-          <HTMLFragment dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(deferredStylesheetHref)} />
-          <noscript>
-            <link rel="stylesheet" href={deferredStylesheetHref} />
-          </noscript>
+          <link rel="preload" as="style" href={deferredStylesheetHref} />
+          <link rel="stylesheet" href={deferredStylesheetHref} />
         </>
       ) : null}
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
           const fragmentId = (link as Record<string, string>)['data-fragment-css']
           return [
-            <HTMLFragment
+            <link
               key={`preload-style-${link.href}`}
-              dangerouslySetInnerHTML={buildStylesheetPreloadMarkup(link.href, link.crossorigin, fragmentId)}
+              rel="preload"
+              as="style"
+              href={link.href}
+              crossOrigin={
+                link.crossorigin === 'use-credentials'
+                  ? 'use-credentials'
+                  : link.crossorigin
+                    ? 'anonymous'
+                    : undefined
+              }
+              {...(fragmentId ? { 'data-fragment-css': fragmentId } : {})}
             />,
-            <noscript key={`noscript-style-${link.href}`}>
-              <link {...link} />
-            </noscript>
+            <link key={`${link.rel}-${link.href}`} {...link} />
           ]
         }
 
@@ -569,14 +565,17 @@ export const RouterHead = component$(() => {
       ))}
       {initialFade ? (
         <>
-          <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeStyleMarkup()} />
-          <HTMLFragment dangerouslySetInnerHTML={buildInitialFadeScriptMarkup()} />
+          <style nonce={nonce || undefined}>{initialFadeStyle}</style>
+          <script nonce={nonce || undefined} dangerouslySetInnerHTML={initialFadeScript} />
         </>
       ) : null}
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
       {shouldDeferManifest ? (
-        <HTMLFragment dangerouslySetInnerHTML={buildDeferredManifestScript(withBase('manifest.webmanifest'))} />
+        <script
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={buildDeferredManifestScript(withBase('manifest.webmanifest'))}
+        />
       ) : (
         <link rel="manifest" href={withBase('manifest.webmanifest')} />
       )}

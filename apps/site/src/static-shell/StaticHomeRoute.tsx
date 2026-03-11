@@ -2,6 +2,8 @@ import { component$ } from '@builder.io/qwik'
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import type { Lang } from '../lang'
+import { asTrustedHtml } from '../security/client'
+import { useCspNonce } from '../security/qwik'
 import homeDemoStylesheetHref from './home-static-deferred.css?url'
 import {
   emptyPlannerDemoCopy,
@@ -67,7 +69,10 @@ const resolveStaticHomeReservedHeight = (
     return reservedHeight
   }
 
-  const deferredKindHeight = DEFERRED_RESERVED_HEIGHT_BY_KIND[fragmentKind]
+  const deferredKindHeight =
+    fragmentKind in DEFERRED_RESERVED_HEIGHT_BY_KIND
+      ? DEFERRED_RESERVED_HEIGHT_BY_KIND[fragmentKind as keyof typeof DEFERRED_RESERVED_HEIGHT_BY_KIND]
+      : undefined
   if (typeof deferredKindHeight === 'number') {
     return deferredKindHeight
   }
@@ -212,6 +217,7 @@ export const buildStaticHomeRouteState = ({
 
 export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragments, lang, introMarkdown, languageSeed }) => {
   const routeState = buildStaticHomeRouteState({ plan, fragments, languageSeed })
+  const nonce = useCspNonce()
   if (!plan || !routeState) {
     return null
   }
@@ -234,7 +240,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       {...{ [STATIC_HOME_PAINT_ATTR]: routeState.paintState }}
     >
       {routeState.inlineStyles.map((fragment) => (
-        <style key={fragment.id} data-fragment-css={fragment.id} dangerouslySetInnerHTML={fragment.css} />
+        <style key={fragment.id} nonce={nonce || undefined} data-fragment-css={fragment.id}>
+          {fragment.css}
+        </style>
       ))}
       <div class="fragment-grid" data-fragment-grid="intro">
         <div class="fragment-slot" data-variant="text" data-critical="true" style={{ gridColumn: '1 / -1' }}>
@@ -250,7 +258,10 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-reveal-locked="false"
           >
             <div class="fragment-card-body">
-              <div class="home-intro" dangerouslySetInnerHTML={renderHomeIntroMarkdownToHtml(introMarkdown)} />
+              <div
+                class="home-intro"
+                dangerouslySetInnerHTML={asTrustedHtml(renderHomeIntroMarkdownToHtml(introMarkdown), 'template') as string}
+              />
             </div>
           </article>
         </div>
@@ -290,7 +301,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   }}
                 >
                   <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
-                    <div class="fragment-html" dangerouslySetInnerHTML={card.html} />
+                    <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(card.html, 'server') as string} />
                   </div>
                 </article>
               )
@@ -301,6 +312,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       <script
         id={STATIC_HOME_DATA_SCRIPT_ID}
         type="application/json"
+        nonce={nonce || undefined}
         dangerouslySetInnerHTML={serializeJson({
           lang,
           path: plan.path,

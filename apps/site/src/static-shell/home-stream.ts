@@ -1,6 +1,7 @@
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { FragmentPayload } from '@core/fragment/types'
 import type { Lang } from '../lang'
+import { setTrustedInnerHtml } from '../security/client'
 import {
   getStaticHomePlannerDemoCopy,
   getStaticHomePreactIslandDemoCopy,
@@ -146,7 +147,11 @@ export const patchStaticHomeFragmentCard = ({
   const body = targetCard.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return 'missing'
 
-  body.innerHTML = `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createHomeCopyBundle(lang))}</div>`
+  setTrustedInnerHtml(
+    body,
+    `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createHomeCopyBundle(lang))}</div>`,
+    'server'
+  )
   onPatchedBody?.(body)
 
   if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {

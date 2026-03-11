@@ -1,4 +1,5 @@
 import type { Lang } from '../lang'
+import { setTrustedTemplateHtml } from '../security/client'
 import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'
 import { renderDockRegionHtml, syncStaticDockMarkup } from './home-dock-dom'
@@ -49,7 +50,7 @@ const toSnapshotUrl = (assetPath: string) => resolveStaticAssetUrl(assetPath)
 
 const parseHtmlFragment = (html: string) => {
   const template = document.createElement('template')
-  template.innerHTML = html.trim()
+  setTrustedTemplateHtml(template, html, 'server')
   const next = template.content.firstElementChild
   return next instanceof HTMLElement ? next : null
 }

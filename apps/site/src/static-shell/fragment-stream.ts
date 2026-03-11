@@ -1,4 +1,5 @@
 import type { FragmentPayload } from '@core/fragment/types'
+import { setTrustedInnerHtml } from '../security/client'
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import {
@@ -55,10 +56,14 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
   const body = card.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return
 
-  body.innerHTML = `<div class="fragment-html">${renderStaticFragmentPayloadHtml(payload, {
-    storeSeed: routeData.storeSeed,
-    contactInvitesSeed: routeData.contactInvitesSeed
-  })}</div>`
+  setTrustedInnerHtml(
+    body,
+    `<div class="fragment-html">${renderStaticFragmentPayloadHtml(payload, {
+      storeSeed: routeData.storeSeed,
+      contactInvitesSeed: routeData.contactInvitesSeed
+    })}</div>`,
+    'server'
+  )
 
   if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
     card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${payload.cacheUpdatedAt}`)
@@ -86,4 +91,3 @@ export const streamStaticFragments = async ({
     lang,
     knownVersions: collectKnownVersions()
   })
-

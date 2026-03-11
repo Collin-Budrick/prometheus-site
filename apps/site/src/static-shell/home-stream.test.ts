@@ -9,6 +9,11 @@ import {
 } from './constants'
 import { createStaticHomePatchQueue, patchStaticHomeFragmentCard } from './home-stream'
 
+const unwrapTrustedHtml = (value: unknown) =>
+  typeof value === 'object' && value !== null && '__html' in value
+    ? String((value as { __html: unknown }).__html ?? '')
+    : String(value ?? '')
+
 class MockElement {
   dataset: Record<string, string> = {}
   private html = ''
@@ -24,8 +29,8 @@ class MockElement {
     this.body = body
   }
 
-  set innerHTML(value: string) {
-    this.html = value
+  set innerHTML(value: unknown) {
+    this.html = unwrapTrustedHtml(value)
     this.recordWrite()
   }
 
@@ -80,6 +85,7 @@ class MockRoot {
 }
 
 const originalHTMLElement = (globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement
+const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
 
 const createTaskQueue = () => {
   const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
@@ -141,10 +147,20 @@ describe('home-stream patching', () => {
   beforeEach(() => {
     ;(globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement =
       MockElement as unknown as typeof HTMLElement
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
+      createPolicy: (name: string) => ({
+        createHTML: (input: string) => ({ __html: input, policy: name })
+      })
+    }
   })
 
   afterEach(() => {
     ;(globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement = originalHTMLElement
+    if (originalTrustedTypes !== undefined) {
+      ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
+    } else {
+      delete (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+    }
   })
 
   it('patches pending shells even when the payload version matches SSR', () => {

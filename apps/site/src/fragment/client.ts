@@ -2,6 +2,7 @@ import { createFragmentClient } from '@core/fragment/client'
 import type { FragmentPayload } from './types'
 import { fragmentPlanCache } from './plan-cache'
 import { getFragmentCssHref } from './fragment-css'
+import { getCspNonce } from '../security/client'
 import {
   getPublicFragmentApiBase,
   getPublicWebTransportBase,
@@ -13,6 +14,7 @@ import {
 const client = createFragmentClient(
   {
     getApiBase: getPublicFragmentApiBase,
+    getCspNonce,
     getWebTransportBase: getPublicWebTransportBase,
     getFragmentProtocol: () => 2,
     isFragmentCompressionPreferred: isPublicFragmentCompressionPreferred,

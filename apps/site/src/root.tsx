@@ -4,6 +4,7 @@ import globalCriticalStyles from '@prometheus/ui/global-critical.css?inline'
 import { RouterHead } from './routes/layout'
 import { FragmentStatusProvider } from '@core/fragments'
 import { useProvideLangSignal } from './shared/lang-bridge'
+import { useCspNonce } from './security/qwik'
 
 const viewportFadeHeadStyle = `
   .viewport-fade {
@@ -39,12 +40,13 @@ const viewportFadeHeadStyle = `
 export default component$(() => {
   useProvideLangSignal()
   useStyles$(globalCriticalStyles)
+  const nonce = useCspNonce()
 
   return (
     <QwikCityProvider>
       <head>
         <meta charSet="utf-8" />
-        <style>{viewportFadeHeadStyle}</style>
+        <style nonce={nonce || undefined}>{viewportFadeHeadStyle}</style>
         <RouterHead />
       </head>
       <body class="app-shell">

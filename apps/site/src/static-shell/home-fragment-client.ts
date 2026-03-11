@@ -3,6 +3,7 @@ import { isFragmentHeartbeatFrame, parseFragmentFrames } from '../../../../packa
 import { encodeFragmentKnownVersions, type FragmentKnownVersions } from '../../../../packages/core/src/fragment/known-versions'
 import type { FragmentPayload, HeadOp } from '../../../../packages/core/src/fragment/types'
 import { getFragmentCssHref } from '../fragment/fragment-css'
+import { getCspNonce } from '../security/client'
 import { getPublicFragmentApiBase } from '../shared/public-fragment-config'
 import { FragmentStreamError } from './fragment-stream-error'
 
@@ -137,6 +138,10 @@ const applyFragmentEffects = (payload: FragmentPayload) => {
     } else {
       const style = document.createElement('style')
       style.dataset.fragmentCss = payload.id
+      const nonce = getCspNonce()
+      if (nonce) {
+        style.nonce = nonce
+      }
       style.textContent = payload.css
       document.head.appendChild(style)
       appliedCss.set(payload.id, style)

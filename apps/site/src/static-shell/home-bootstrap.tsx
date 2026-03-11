@@ -53,8 +53,7 @@ type HomeControllerState = {
   destroyed: boolean
 }
 
-const moonIconMarkup = `<svg class="theme-toggle-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z"></path></svg>`
-const sunIconMarkup = `<svg class="theme-toggle-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8Z"></path></svg>`
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 const LEGACY_HOME_CLEANUP_SESSION_KEY = 'prom-static-home-cleanup:v1'
 const HOME_STABLE_HEIGHT_PREFIX = `fragment:stable-height:v1:${encodeURIComponent('/')}:`
 const LEGACY_HOME_STORAGE_KEYS = [
@@ -72,6 +71,30 @@ const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
 const STATIC_LANG_PREFERENCE_KEY = 'prometheus:pref:locale'
 const LIGHT_THEME_COLOR = '#f97316'
 const DARK_THEME_COLOR = '#0f172a'
+
+const createThemeIcon = (theme: Theme) => {
+  const svg = document.createElementNS(SVG_NAMESPACE, 'svg')
+  svg.setAttribute('class', 'theme-toggle-icon')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '1em')
+  svg.setAttribute('height', '1em')
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('stroke', 'currentColor')
+  svg.setAttribute('stroke-width', '2')
+  svg.setAttribute('stroke-linecap', 'round')
+  svg.setAttribute('stroke-linejoin', 'round')
+  svg.setAttribute('aria-hidden', 'true')
+
+  const path = document.createElementNS(SVG_NAMESPACE, 'path')
+  path.setAttribute(
+    'd',
+    theme === 'dark'
+      ? 'M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8Z'
+      : 'M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z'
+  )
+  svg.append(path)
+  return svg
+}
 
 let activeController: HomeControllerState | null = null
 let languageSwapInFlight = false
@@ -684,9 +707,9 @@ const scheduleHomePreviewRefresh = (
   controller: HomeControllerState,
   homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
 ) => {
-  let delayId: ReturnType<typeof setTimeout> | null = null
+  let delayId: number | null = null
   let idleId: number | null = null
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let timeoutId: number | null = null
   let cancelled = false
 
   const runRefresh = () => {
@@ -1060,7 +1083,7 @@ const refreshThemeButton = (lang: Lang) => {
   button.dataset.theme = theme
   button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
-  button.innerHTML = theme === 'dark' ? sunIconMarkup : moonIconMarkup
+  button.replaceChildren(createThemeIcon(theme))
 }
 
 const bindShellControls = (controller: HomeControllerState) => {

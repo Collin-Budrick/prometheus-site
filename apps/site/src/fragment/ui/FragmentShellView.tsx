@@ -3,6 +3,8 @@ import { FragmentCard, FragmentMarkdownBlock } from '@prometheus/ui'
 import type { FragmentPayloadMap } from '../types'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
+import { asTrustedHtml } from '../../security/client'
+import { useCspNonce } from '../../security/qwik'
 import { isStaticHomeShellMode } from './fragment-shell-mode'
 import type { FragmentDragState, FragmentShellMode, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
@@ -65,6 +67,7 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     dynamicCriticalIds
   } = props
   const isStaticHome = isStaticHomeShellMode(shellMode)
+  const nonce = useCspNonce()
 
   useVisibleTask$(
     (ctx) => {
@@ -169,7 +172,9 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
         })
         if (!criticalStyles.size) return null
         return Array.from(criticalStyles.entries()).map(([id, css]) => (
-          <style key={id} data-fragment-css={id} dangerouslySetInnerHTML={css} />
+          <style key={id} nonce={nonce || undefined} data-fragment-css={id}>
+            {css}
+          </style>
         ))
       })()}
       {hasIntro ? (
@@ -296,9 +301,12 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       dragState={dragState}
                     >
                       {useHtml ? (
-                        <div class="fragment-html" dangerouslySetInnerHTML={html ?? ''} />
+                        <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(html ?? '', 'server') as string} />
                       ) : useFallbackHtml ? (
-                        <div class="fragment-html" dangerouslySetInnerHTML={fallbackHtml ?? ''} />
+                        <div
+                          class="fragment-html"
+                          dangerouslySetInnerHTML={asTrustedHtml(fallbackHtml ?? '', 'server') as string}
+                        />
                       ) : fragment ? (
                         <FragmentRenderer node={renderNode ?? fragment.tree} />
                       ) : (

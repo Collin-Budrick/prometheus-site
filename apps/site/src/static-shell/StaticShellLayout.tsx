@@ -3,6 +3,7 @@ import type { Theme } from '@prometheus/ui'
 import { InSettings } from '@qwikest/icons/iconoir'
 import { emptyUiCopy, type LanguageSeedPayload } from '../lang/selection'
 import type { Lang } from '../lang'
+import { useCspNonce } from '../security/qwik'
 import { supportedLanguages } from '../lang/manifest'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
@@ -46,6 +47,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   languageSeed,
   routeKind = FRAGMENT_STATIC_ROUTE_KIND
 }) => {
+  const nonce = useCspNonce()
   const routeConfig = getStaticShellRouteConfig(currentPath)
   const resolvedRouteKind = routeConfig?.routeKind ?? routeKind
   const shellSeed: StaticShellSeed = {
@@ -157,6 +159,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
         <script
           id={STATIC_SHELL_SEED_SCRIPT_ID}
           type="application/json"
+          nonce={nonce || undefined}
           dangerouslySetInnerHTML={serializeJson(shellSeed)}
         />
       </header>

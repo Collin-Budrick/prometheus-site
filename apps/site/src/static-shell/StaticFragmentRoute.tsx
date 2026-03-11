@@ -1,4 +1,6 @@
 import { component$ } from '@builder.io/qwik'
+import { asTrustedHtml } from '../security/client'
+import { useCspNonce } from '../security/qwik'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -20,6 +22,7 @@ const serializeJson = (value: unknown) =>
 export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model }) => {
   const entries = model.entries
   const leftCount = Math.ceil(entries.length / 2)
+  const nonce = useCspNonce()
 
   return (
     <section
@@ -29,7 +32,9 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       data-static-lang={model.lang}
     >
       {model.inlineStyles.map((fragment) => (
-        <style key={fragment.id} data-fragment-css={fragment.id} dangerouslySetInnerHTML={fragment.css} />
+        <style key={fragment.id} nonce={nonce || undefined} data-fragment-css={fragment.id}>
+          {fragment.css}
+        </style>
       ))}
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {entries.map((entry, index) => {
@@ -58,7 +63,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               }}
             >
               <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: entry.id }}>
-                <div class="fragment-html" dangerouslySetInnerHTML={entry.html} />
+                <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(entry.html, 'server') as string} />
               </div>
             </article>
           )
@@ -67,6 +72,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       <script
         id={STATIC_FRAGMENT_DATA_SCRIPT_ID}
         type="application/json"
+        nonce={nonce || undefined}
         dangerouslySetInnerHTML={serializeJson(model.routeData)}
       />
     </section>

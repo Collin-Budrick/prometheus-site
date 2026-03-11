@@ -12,6 +12,8 @@ import {
   STATIC_PAGE_ROOT_ATTR,
   isStaticShellPath
 } from './static-shell/constants'
+import { getOrCreateRequestCspNonce } from './security/server'
+import { CSP_NONCE_ATTR } from './security/shared'
 import { existsSync } from 'node:fs'
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
@@ -61,6 +63,8 @@ const hasStaticBootstrapBundle = (pathname: string) => {
   return existsSync(STATIC_BOOTSTRAP_BUNDLE_URLS[routeConfig.bootstrapMode])
 }
 
+const escapeHtmlAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+
 const stripStaticQwikScripts = (html: string) =>
   html
     .replace(/<!--\/?qv[\s\S]*?-->/g, '')
@@ -96,12 +100,13 @@ const stripBlockingDeferredStylesheet = (html: string) =>
       ''
     )
 
-const injectStaticBootstrap = (html: string, publicBase: string, pathname: string) => {
+const injectStaticBootstrap = (html: string, publicBase: string, pathname: string, nonce?: string) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname)
   if (!bundlePath) return html
   const bundleHref = `${publicBase}${bundlePath}`
   const preloadTag = `<link rel="modulepreload" href="${bundleHref}">`
-  const scriptTag = `<script type="module" src="${bundleHref}"></script>`
+  const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : ''
+  const scriptTag = `<script type="module" src="${bundleHref}"${nonceAttr}></script>`
   return html
     .replace('</head>', `${preloadTag}</head>`)
     .replace('</body>', `${scriptTag}</body>`)
@@ -113,9 +118,10 @@ const hasStaticOnlyMarker = (html: string) =>
   html.includes(`id="${STATIC_ISLAND_DATA_SCRIPT_ID}"`) ||
   html.includes(STATIC_PAGE_ROOT_ATTR)
 
-export default function (opts: RenderToStreamOptions) {
+export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
   const lang = opts.containerAttributes?.lang ?? opts.serverData?.locale ?? 'en'
   const requestEv = opts.serverData?.qwikcity?.ev as RequestEvent | undefined
+  const nonce = requestEv ? getOrCreateRequestCspNonce(requestEv) : undefined
   const pathname = requestEv?.url.pathname ?? (requestEv?.request ? new URL(requestEv.request.url).pathname : '')
   const cookieHeader = requestEv?.request.headers.get('cookie') ?? null
   const theme = requestEv ? readThemeFromCookie(cookieHeader) : null
@@ -124,6 +130,9 @@ export default function (opts: RenderToStreamOptions) {
   const containerAttributes: Record<string, string> = {
     ...opts.containerAttributes,
     lang
+  }
+  if (nonce) {
+    containerAttributes[CSP_NONCE_ATTR] = nonce
   }
   if (theme) {
     containerAttributes['data-theme'] = theme
@@ -147,9 +156,13 @@ export default function (opts: RenderToStreamOptions) {
     ...opts,
     preloader,
     qwikLoader,
+    serverData: {
+      ...opts.serverData,
+      nonce
+    },
     containerTagName: opts.containerTagName ?? 'html',
     containerAttributes
-  } satisfies RenderToStreamOptions
+  } satisfies RenderOptions & Partial<RenderToStreamOptions>
 
   if (isStaticShellPath(pathname)) {
     return renderToString(<Root />, {
@@ -168,13 +181,14 @@ export default function (opts: RenderToStreamOptions) {
         html: injectStaticBootstrap(
           stripBlockingDeferredStylesheet(stripStaticQwikScripts(result.html)),
           resolvePublicBase(renderOptions),
-          pathname
+          pathname,
+          nonce
         )
       }
     })
   }
 
   return renderToStream(<Root />, {
-    ...renderOptions
+    ...(renderOptions as RenderToStreamOptions)
   })
 }

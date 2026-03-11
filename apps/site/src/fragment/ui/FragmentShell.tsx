@@ -6,9 +6,11 @@ import { FragmentShellIslands } from './FragmentShellIslands'
 import { FragmentShellView } from './FragmentShellView'
 import { FragmentStreamController } from './FragmentStreamController'
 import { useFragmentShellState } from './fragment-shell-state'
+import { useCspNonce } from '../../security/qwik'
 
 export const FragmentShell = component$((props: FragmentShellProps) => {
   const shell = useFragmentShellState(props)
+  const nonce = useCspNonce()
 
   return (
     <section class="fragment-shell">
@@ -48,6 +50,7 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
         <script
           id={FRAGMENT_PLAN_CACHE_PAYLOAD_ID}
           type="application/json"
+          nonce={nonce || undefined}
           dangerouslySetInnerHTML={shell.planCachePayload}
         />
       ) : null}

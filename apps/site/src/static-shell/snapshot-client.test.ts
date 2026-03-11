@@ -9,6 +9,11 @@ import {
 import { seedStaticHomeCopy } from './home-copy-store'
 import { applyStaticShellSnapshot } from './snapshot-client'
 
+const unwrapTrustedHtml = (value: unknown) =>
+  typeof value === 'object' && value !== null && '__html' in value
+    ? String((value as { __html: unknown }).__html ?? '')
+    : String(value ?? '')
+
 class MockElement {
   dataset: Record<string, string> = {}
   firstElementChild: MockElement | null = null
@@ -29,9 +34,10 @@ class MockElement {
     return this.markup
   }
 
-  set innerHTML(value: string) {
-    this.markup = value
-    this.firstElementChild = value ? new MockElement(this.regions) : null
+  set innerHTML(value: unknown) {
+    const normalized = unwrapTrustedHtml(value)
+    this.markup = normalized
+    this.firstElementChild = normalized ? new MockElement(this.regions) : null
   }
 
   replaceWith(next: MockElement) {
@@ -48,10 +54,11 @@ class MockTemplateElement {
     this.content = { firstElementChild: null }
   }
 
-  set innerHTML(value: string) {
-    const regionMatch = value.match(/data-static-shell-region="([^"]+)"/)
+  set innerHTML(value: unknown) {
+    const normalized = unwrapTrustedHtml(value)
+    const regionMatch = normalized.match(/data-static-shell-region="([^"]+)"/)
     const next = new MockElement(this.regions, regionMatch?.[1] ?? null)
-    next.innerHTML = value
+    next.innerHTML = normalized
     this.content.firstElementChild = next
   }
 }
@@ -60,6 +67,7 @@ const originalDocument = globalThis.document
 const originalWindow = globalThis.window
 const originalHTMLElement = globalThis.HTMLElement
 const originalHTMLScriptElement = globalThis.HTMLScriptElement
+const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
 
 describe('snapshot-client', () => {
   const regions = new Map<string, MockElement>()
@@ -112,6 +120,11 @@ describe('snapshot-client', () => {
         origin: 'https://prometheus.test'
       }
     } as never
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
+      createPolicy: (name: string) => ({
+        createHTML: (input: string) => ({ __html: input, policy: name })
+      })
+    }
   })
 
   afterEach(() => {
@@ -119,6 +132,11 @@ describe('snapshot-client', () => {
     globalThis.window = originalWindow
     globalThis.HTMLElement = originalHTMLElement
     globalThis.HTMLScriptElement = originalHTMLScriptElement
+    if (originalTrustedTypes !== undefined) {
+      ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
+    } else {
+      delete (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+    }
   })
 
   it('preserves auth-aware dock state when applying a snapshot', () => {

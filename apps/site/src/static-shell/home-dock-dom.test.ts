@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { seedStaticHomeCopy } from './home-copy-store'
 import { syncStaticDockMarkup } from './home-dock-dom'
 
+const unwrapTrustedHtml = (value: unknown) =>
+  typeof value === 'object' && value !== null && '__html' in value
+    ? String((value as { __html: unknown }).__html ?? '')
+    : String(value ?? '')
+
 class MockDockRoot {
   dataset: Record<string, string> = {}
   firstElementChild: Element | null = null
@@ -12,14 +17,16 @@ class MockDockRoot {
     return this.markup
   }
 
-  set innerHTML(value: string) {
-    this.markup = value
-    this.firstElementChild = value ? ({} as Element) : null
+  set innerHTML(value: unknown) {
+    const normalized = unwrapTrustedHtml(value)
+    this.markup = normalized
+    this.firstElementChild = normalized ? ({} as Element) : null
   }
 }
 
 const originalDocument = globalThis.document
 const originalWindow = globalThis.window
+const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
 
 describe('syncStaticDockMarkup', () => {
   const dockRoot = new MockDockRoot()
@@ -49,11 +56,21 @@ describe('syncStaticDockMarkup', () => {
         origin: 'https://prometheus.test'
       }
     } as never
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
+      createPolicy: (name: string) => ({
+        createHTML: (input: string) => ({ __html: input, policy: name })
+      })
+    }
   })
 
   afterEach(() => {
     globalThis.document = originalDocument
     globalThis.window = originalWindow
+    if (originalTrustedTypes !== undefined) {
+      ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
+    } else {
+      delete (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+    }
   })
 
   it('renders an authenticated dock and updates the root state metadata', () => {

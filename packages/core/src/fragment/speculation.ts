@@ -174,7 +174,8 @@ export const buildSpeculationRulesForPlan = (
 
 export const applySpeculationRules = (
   rules: SpeculationRulesProps | null,
-  documentRef: ScriptDocument | null = typeof document !== 'undefined' ? (document as ScriptDocument) : null
+  documentRef: ScriptDocument | null = typeof document !== 'undefined' ? (document as ScriptDocument) : null,
+  nonce?: string | null
 ) => {
   if (!documentRef) return () => {}
 
@@ -192,6 +193,9 @@ export const applySpeculationRules = (
   const script = documentRef.createElement('script')
   script.type = 'speculationrules'
   script.setAttribute('data-fragment-speculation', 'fragments')
+  if (nonce) {
+    script.nonce = nonce
+  }
   script.textContent = JSON.stringify({
     prerender: rules.prerenderRules ?? [],
     prefetch: rules.prefetchRules ?? []

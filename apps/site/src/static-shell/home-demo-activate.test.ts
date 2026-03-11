@@ -46,7 +46,7 @@ class MockElement {
     this.childNodes = []
   }
 
-  set innerHTML(_value: string) {
+  set innerHTML(_value: unknown) {
     this.ownTextContent = null
     this.childNodes = []
     if (this.className === 'react-binary-demo') {
@@ -319,7 +319,8 @@ const installBootstrapScripts = (doc: MockDocument) => {
 const originalGlobals = {
   document: (globalThis as typeof globalThis & { document?: Document }).document,
   window: (globalThis as typeof globalThis & { window?: Window & typeof globalThis }).window,
-  HTMLElement: (globalThis as typeof globalThis & { HTMLElement?: typeof HTMLElement }).HTMLElement
+  HTMLElement: (globalThis as typeof globalThis & { HTMLElement?: typeof HTMLElement }).HTMLElement,
+  trustedTypes: (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
 }
 
 const installDomGlobals = (doc: MockDocument) => {
@@ -328,6 +329,11 @@ const installDomGlobals = (doc: MockDocument) => {
     globalThis as Window & typeof globalThis
   ;(globalThis as typeof globalThis & { HTMLElement?: typeof MockElement }).HTMLElement =
     MockElement as unknown as typeof HTMLElement
+  ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
+    createPolicy: (name: string) => ({
+      createHTML: (input: string) => ({ __html: input, policy: name })
+    })
+  }
 }
 
 afterEach(() => {
@@ -351,6 +357,12 @@ afterEach(() => {
       originalGlobals.HTMLElement
   } else {
     delete (globalThis as typeof globalThis & { HTMLElement?: typeof HTMLElement }).HTMLElement
+  }
+
+  if (originalGlobals.trustedTypes !== undefined) {
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalGlobals.trustedTypes
+  } else {
+    delete (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
   }
 })
 

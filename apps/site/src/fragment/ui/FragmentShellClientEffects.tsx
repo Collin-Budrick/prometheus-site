@@ -2,6 +2,7 @@ import { component$, useVisibleTask$ } from '@builder.io/qwik'
 import { applySpeculationRules, buildSpeculationRulesForPlan } from '@core/fragments'
 import type { FragmentPayloadMap, FragmentPlan } from '../types'
 import { appConfig } from '../../public-app-config'
+import { getCspNonce } from '../../security/client'
 
 const INITIAL_SPECULATION_IDLE_TIMEOUT_MS = 4000
 
@@ -52,7 +53,9 @@ export const FragmentShellClientEffects = component$(
               saveData: connectionState.saveData,
               effectiveType: connectionState.effectiveType,
               maxInitialPrefetchUrls: 2
-            })
+            }),
+            document,
+            getCspNonce()
           )
           pageWindow.__PROM_INITIAL_SPECULATION_HANDLED = true
         }

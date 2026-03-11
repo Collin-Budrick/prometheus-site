@@ -1,4 +1,5 @@
 import { Slot, component$ } from '@builder.io/qwik'
+import { useCspNonce } from '../security/qwik'
 import { STATIC_PAGE_ROOT_ATTR } from './constants'
 
 type StaticPageRootProps = {
@@ -12,19 +13,24 @@ const serializeJson = (value: unknown) =>
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
 
-export const StaticPageRoot = component$<StaticPageRootProps>(({ routeDataScriptId, routeData }) => (
-  <div
-    {...{
-      [STATIC_PAGE_ROOT_ATTR]: 'true'
-    }}
-  >
-    <Slot />
-    {routeDataScriptId ? (
-      <script
-        id={routeDataScriptId}
-        type="application/json"
-        dangerouslySetInnerHTML={serializeJson(routeData ?? {})}
-      />
-    ) : null}
-  </div>
-))
+export const StaticPageRoot = component$<StaticPageRootProps>(({ routeDataScriptId, routeData }) => {
+  const nonce = useCspNonce()
+
+  return (
+    <div
+      {...{
+        [STATIC_PAGE_ROOT_ATTR]: 'true'
+      }}
+    >
+      <Slot />
+      {routeDataScriptId ? (
+        <script
+          id={routeDataScriptId}
+          type="application/json"
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={serializeJson(routeData ?? {})}
+        />
+      ) : null}
+    </div>
+  )
+})

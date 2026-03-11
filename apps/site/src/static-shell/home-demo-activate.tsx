@@ -1,4 +1,5 @@
 import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../lang'
+import { setTrustedInnerHtml } from '../security/client'
 import {
   getStaticHomePlannerDemoCopy,
   getStaticHomePreactIslandDemoCopy,
@@ -106,7 +107,7 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
   root.className = className
   root.setAttribute('data-home-demo-active', 'true')
   root.removeAttribute('data-home-preview')
-  root.innerHTML = html
+  setTrustedInnerHtml(root, html, 'template')
 }
 
 const warnMissingReactBinaryCopy = () => {

@@ -170,6 +170,7 @@ const recordFragmentNetworkDebug = (
 
 export type FragmentClientConfig = {
   getApiBase: () => string
+  getCspNonce?: () => string | null
   getWebTransportBase?: () => string
   getFragmentProtocol?: () => 1 | 2
   isFragmentCompressionPreferred?: () => boolean
@@ -217,6 +218,7 @@ export const createFragmentClient = (
   planCache: FragmentPlanCache = createFragmentPlanCache()
 ) => {
   const getApiBase = () => config.getApiBase()
+  const getCspNonce = () => config.getCspNonce?.() ?? null
   const getWebTransportBase = () => config.getWebTransportBase?.() ?? ''
   const getFragmentProtocol = () => config.getFragmentProtocol?.() ?? 1
   const isFragmentCompressionPreferred = () => config.isFragmentCompressionPreferred?.() ?? false
@@ -245,6 +247,10 @@ export const createFragmentClient = (
       } else {
         const style = document.createElement('style')
         style.dataset.fragmentCss = payload.id
+        const nonce = getCspNonce()
+        if (nonce) {
+          style.nonce = nonce
+        }
         style.textContent = payload.css
         document.head.appendChild(style)
         appliedCss.set(payload.id, style)
