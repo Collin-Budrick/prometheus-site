@@ -727,13 +727,6 @@ body {
   background-color: rgb(var(--surface-soft) / 0.58);
 }
 
-.home-demo-compact-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .home-demo-compact-kicker,
 .home-demo-compact-meta {
   margin: 0;

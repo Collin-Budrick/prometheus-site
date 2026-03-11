@@ -71,7 +71,7 @@ const buildCompactDemoNode = (
   props?: Record<string, string>
 ) =>
   h('div', demoRootAttrs(kind, props), [
-    h('div', { class: 'home-demo-compact-header' }, [h('div', { class: 'home-demo-compact-kicker' }, [t(title)])]),
+    h('div', { class: 'home-demo-compact-kicker' }, [t(title)]),
     h('p', { class: 'home-demo-compact-copy' }, [t(summary)]),
     h('p', { class: 'home-demo-compact-meta' }, [t(joinMeta(badges))])
   ])

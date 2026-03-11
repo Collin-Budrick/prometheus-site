@@ -6,6 +6,7 @@ import { defaultLang, type Lang } from '../shared/lang-store'
 import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
+import homeDemoStylesheetHref from '../static-shell/home-static-deferred.css?url'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
 
@@ -26,6 +27,27 @@ const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => ({
     critical: HOME_CRITICAL_FRAGMENT_IDS.has(entry.id)
   }))
 })
+
+type HomeHeadLink =
+  | (ReturnType<typeof buildFragmentCssLinks>[number] & {
+      rel: 'stylesheet'
+    })
+  | {
+      rel: 'preload'
+      as: 'style'
+      href: string
+      'data-home-demo-stylesheet': 'true'
+    }
+
+export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null): HomeHeadLink[] => [
+  ...buildFragmentCssLinks(plan),
+  {
+    rel: 'preload',
+    as: 'style',
+    href: homeDemoStylesheetHref,
+    'data-home-demo-stylesheet': 'true'
+  }
+]
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')
@@ -105,7 +127,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: siteBrand.metaDescription
       }
     ],
-    links: buildFragmentCssLinks(data?.plan),
+    links: buildHomeHeadLinks(data?.plan),
     htmlAttributes: {
       lang
     }

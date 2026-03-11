@@ -33,7 +33,8 @@ describe('static shell performance invariants', () => {
     expect(bootstrapSource).toContain('createHomeFirstLcpGate()')
     expect(bootstrapSource).toContain('loadClientAuthSession()')
     expect(bootstrapSource).toContain('refreshHomeDockAuthIfNeeded(controller)')
-    expect(bootstrapSource).toContain('await ensureHomeDemoStylesheet({ href: controller.homeDemoStylesheetHref ?? undefined })')
+    expect(bootstrapSource).toContain('const demoStylesheetReady = ensureDemoStylesheet({')
+    expect(bootstrapSource).toContain('await demoStylesheetReady')
     expect(bootstrapSource).toContain("homeFragmentHydration.observeWithin(document)")
     expect(bootstrapSource).toContain('scheduleHomePostLcpTasks({')
     expect(bootstrapSource).not.toContain('observeStaticHomePatchVisibility({')
@@ -114,6 +115,7 @@ describe('static shell performance invariants', () => {
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-runtime.js")
     expect(await readSource('./StaticHomeRoute.tsx')).toContain("import homeDemoStylesheetHref from './home-static-deferred.css?url'")
     expect(homeRouteSource).toContain('await loadStaticFragmentResource(path, lang, request)')
+    expect(homeRouteSource).toContain("'data-home-demo-stylesheet': 'true'")
     expect(homeRouteSource).not.toContain('loadHybridFragmentResource')
     expect(homeStaticEntrySource).toContain('installHomeStaticEntry')
     expect(homeStaticEntrySource).toContain('createHomeFirstLcpGate')
@@ -125,6 +127,7 @@ describe('static shell performance invariants', () => {
     expect(homeStaticEntrySource).not.toContain("'focusin'")
     expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'")
     expect(homeStaticEntrySource).not.toContain('scheduleStaticShellTask(')
+    expect(entrySsrSource).toContain('home-bootstrap-runtime.js')
   })
 
   it('threads authenticated state through the static shell layout and seed', async () => {

@@ -150,6 +150,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).not.toContain('Activate demo')
     expect(html).toContain('Dependencies \u00b7 Cache \u00b7 Runtime')
     expect(html).not.toContain('home-demo-compact-badge-wrap')
+    expect(html).not.toContain('home-demo-compact-header')
     expect(html).not.toContain('planner-demo-grid')
     expect(html).not.toContain('wasm-demo-grid')
     expect(html).not.toContain('react-binary-track')
@@ -206,6 +207,7 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(html).toContain('home-fragment-copy')
     expect(html).toContain('home-demo-compact')
+    expect(html).not.toContain('home-demo-compact-header')
     expect(html).toContain('data-demo-kind="wasm-renderer"')
     expect(html).toContain('Critical transforms run inside WebAssembly.')
     expect(html).not.toContain('matrix')

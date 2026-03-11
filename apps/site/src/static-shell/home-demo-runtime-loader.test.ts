@@ -97,9 +97,13 @@ describe('home-demo-runtime-loader', () => {
     }
 
     const link = new MockLink()
+    let appendCount = 0
     const doc = {
       head: {
-        appendChild: () => link
+        appendChild: () => {
+          appendCount += 1
+          return link
+        }
       },
       createElement: () => link,
       querySelector: () => link
@@ -111,6 +115,7 @@ describe('home-demo-runtime-loader', () => {
     expect(firstLoad).toBe(secondLoad)
     expect(link.getAttribute('rel')).toBe('stylesheet')
     expect(link.getAttribute('as')).toBeNull()
+    expect(appendCount).toBe(0)
 
     link.emit('load')
     await firstLoad

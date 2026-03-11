@@ -396,6 +396,7 @@ type BindHomeFragmentHydrationOptions = {
   controller: HomeFragmentHydrationController
   root?: ParentNode
   fetchBatch?: typeof fetchHomeFragmentBatch
+  ensureDemoStylesheet?: typeof ensureHomeDemoStylesheet
   scheduleTask?: typeof scheduleStaticShellTask
   ObserverImpl?: typeof IntersectionObserver
 }
@@ -452,6 +453,7 @@ export const bindHomeFragmentHydration = ({
   controller,
   root = document,
   fetchBatch = fetchHomeFragmentBatch,
+  ensureDemoStylesheet = ensureHomeDemoStylesheet,
   scheduleTask = scheduleStaticShellTask,
   ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver
@@ -566,6 +568,9 @@ export const bindHomeFragmentHydration = ({
     updateFragmentStatus(controller.lang, 'streaming')
 
     try {
+      const demoStylesheetReady = ensureDemoStylesheet({
+        href: controller.homeDemoStylesheetHref ?? undefined
+      })
       const payloads = await fetchBatch(ids, {
         lang: controller.lang,
         signal: fetchAbort.signal,
@@ -574,7 +579,7 @@ export const bindHomeFragmentHydration = ({
 
       if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
 
-      await ensureHomeDemoStylesheet({ href: controller.homeDemoStylesheetHref ?? undefined })
+      await demoStylesheetReady
       if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
 
       ids.forEach((id) => {
@@ -751,6 +756,7 @@ type ScheduleHomePostLcpTasksOptions = {
   homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>
   homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
   root?: ParentNode
+  refreshAuth?: (controller: HomeControllerState) => Promise<void>
   schedulePreviewRefresh?: (
     controller: HomeControllerState,
     homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
@@ -763,6 +769,7 @@ export const scheduleHomePostLcpTasks = ({
   homeDemoActivation,
   homeFragmentHydration,
   root = document,
+  refreshAuth = refreshHomeDockAuthIfNeeded,
   schedulePreviewRefresh = scheduleHomePreviewRefresh
 }: ScheduleHomePostLcpTasksOptions) => {
   let cancelled = false
@@ -774,6 +781,9 @@ export const scheduleHomePostLcpTasks = ({
     postLcpStarted = true
     homeDemoActivation.observeWithin(root)
     previewRefreshCleanup = schedulePreviewRefresh(controller, homeFragmentHydration)
+    void refreshAuth(controller).catch((error) => {
+      console.error('Static home auth dock refresh failed:', error)
+    })
   }
 
   void lcpGate.wait.then(() => {
@@ -1296,9 +1306,6 @@ export const bootstrapStaticHome = async () => {
         homeFragmentHydration.observeWithin(document)
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
-        })
-        void refreshHomeDockAuthIfNeeded(controller).catch((error) => {
-          console.error('Static home auth dock refresh failed:', error)
         })
       },
       {

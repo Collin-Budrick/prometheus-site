@@ -22,6 +22,15 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   'island-static': 'build/static-shell/apps/site/src/static-shell/island-static-entry.js'
 } as const
 
+const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
+  'home-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
+    'build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js'
+  ],
+  'fragment-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static']],
+  'island-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static']]
+} as const
+
 const STATIC_BOOTSTRAP_BUNDLE_URLS = Object.fromEntries(
   Object.entries(STATIC_BOOTSTRAP_BUNDLE_PATHS).map(([mode, bundlePath]) => [
     mode,
@@ -55,6 +64,12 @@ const resolveStaticBootstrapBundlePath = (pathname: string) => {
   const routeConfig = getStaticShellRouteConfig(pathname)
   if (!routeConfig) return null
   return STATIC_BOOTSTRAP_BUNDLE_PATHS[routeConfig.bootstrapMode]
+}
+
+const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
+  const routeConfig = getStaticShellRouteConfig(pathname)
+  if (!routeConfig) return []
+  return STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode]
 }
 
 const hasStaticBootstrapBundle = (pathname: string) => {
@@ -100,15 +115,17 @@ const stripBlockingDeferredStylesheet = (html: string) =>
       ''
     )
 
-const injectStaticBootstrap = (html: string, publicBase: string, pathname: string, nonce?: string) => {
+export const injectStaticBootstrap = (html: string, publicBase: string, pathname: string, nonce?: string) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname)
   if (!bundlePath) return html
   const bundleHref = `${publicBase}${bundlePath}`
-  const preloadTag = `<link rel="modulepreload" href="${bundleHref}">`
+  const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
+    .map((path) => `<link rel="modulepreload" href="${publicBase}${path}">`)
+    .join('')
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : ''
   const scriptTag = `<script type="module" src="${bundleHref}"${nonceAttr}></script>`
   return html
-    .replace('</head>', `${preloadTag}</head>`)
+    .replace('</head>', `${preloadTags}</head>`)
     .replace('</body>', `${scriptTag}</body>`)
 }
 

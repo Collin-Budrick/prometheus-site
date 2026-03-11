@@ -400,6 +400,7 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
       controller: {
         destroyed: false,
@@ -424,6 +425,9 @@ describe('scheduleHomePostLcpTasks', () => {
       schedulePreviewRefresh: () => {
         previewRefreshCalls.push('armed')
         return () => previewRefreshCalls.push('cleanup')
+      },
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
       }
     })
 
@@ -431,12 +435,14 @@ describe('scheduleHomePostLcpTasks', () => {
 
     expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
+    expect(authRefreshCalls).toEqual([])
 
     manualGate.resolve()
     await flushMicrotasks()
 
     expect(observedRoots).toHaveLength(1)
     expect(previewRefreshCalls).toEqual(['armed'])
+    expect(authRefreshCalls).toEqual(['refresh'])
 
     cleanup()
     expect(previewRefreshCalls).toEqual(['armed', 'cleanup'])
@@ -499,6 +505,63 @@ describe('bindHomeFragmentHydration', () => {
     expect(enqueued).toEqual(['fragment://page/home/planner@v1'])
 
     cleanup()
+    hydration.destroy()
+  })
+
+  it('starts the home demo stylesheet load before patching fetched home fragments', async () => {
+    const taskQueue = createTaskQueue()
+    const anchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor')
+    const root = new MockStaticHomeDocumentRoot([anchor])
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
+    const callOrder: string[] = []
+    const enqueued: string[] = []
+    let resolveStylesheet!: () => void
+    const stylesheetReady = new Promise<void>((resolve) => {
+      resolveStylesheet = () => {
+        callOrder.push('stylesheet:ready')
+        resolve()
+      }
+    })
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: 'en',
+        homeDemoStylesheetHref: '/assets/home-static-deferred.css',
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: (payload) => enqueued.push(payload.id),
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined
+        }
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ensureDemoStylesheet: async () => {
+        callOrder.push('stylesheet:start')
+        await stylesheetReady
+      },
+      fetchBatch: async (ids) => {
+        callOrder.push('fetch:start')
+        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
+      }
+    })
+
+    hydration.scheduleAnchorHydration()
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+    await flushMicrotasks()
+
+    expect(callOrder).toEqual(['stylesheet:start', 'fetch:start'])
+    expect(enqueued).toEqual([])
+
+    resolveStylesheet()
+    await flushMicrotasks()
+
+    expect(callOrder).toEqual(['stylesheet:start', 'fetch:start', 'stylesheet:ready'])
+    expect(enqueued).toEqual(['fragment://page/home/planner@v1'])
+
     hydration.destroy()
   })
 
