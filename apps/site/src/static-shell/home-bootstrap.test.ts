@@ -164,6 +164,115 @@ const createManualLcpGate = () => {
   }
 }
 
+type MockWindowListener = (event?: unknown) => void
+
+class MockDeferredWindow {
+  private readonly listeners = new Map<string, Set<MockWindowListener>>()
+  readonly timeouts = new Map<number, () => void>()
+  readonly idleCallbacks = new Map<number, () => void>()
+  nextTimeoutId = 1
+  nextIdleId = 1
+
+  addEventListener(type: string, listener: MockWindowListener) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: MockWindowListener) {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listeners.delete(type)
+    }
+  }
+
+  setTimeout(callback: () => void) {
+    const id = this.nextTimeoutId
+    this.nextTimeoutId += 1
+    this.timeouts.set(id, callback)
+    return id as unknown as ReturnType<typeof setTimeout>
+  }
+
+  clearTimeout(id: ReturnType<typeof setTimeout>) {
+    this.timeouts.delete(id as unknown as number)
+  }
+
+  requestIdleCallback(callback: IdleRequestCallback) {
+    const id = this.nextIdleId
+    this.nextIdleId += 1
+    this.idleCallbacks.set(id, () =>
+      callback({
+        didTimeout: false,
+        timeRemaining: () => 50
+      } as IdleDeadline)
+    )
+    return id
+  }
+
+  cancelIdleCallback(id: number) {
+    this.idleCallbacks.delete(id)
+  }
+
+  emit(type: string, event?: unknown) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+  }
+
+  runIdle(id = 1) {
+    const callback = this.idleCallbacks.get(id)
+    if (!callback) return
+    this.idleCallbacks.delete(id)
+    callback()
+  }
+
+  listenerCount(type: string) {
+    return this.listeners.get(type)?.size ?? 0
+  }
+}
+
+class MockDeferredDocument {
+  visibilityState: DocumentVisibilityState = 'visible'
+  private readonly listeners = new Map<string, Set<MockWindowListener>>()
+
+  addEventListener(type: string, listener: MockWindowListener) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: MockWindowListener) {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listeners.delete(type)
+    }
+  }
+
+  emit(type: string, event?: unknown) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+  }
+
+  setVisibility(state: DocumentVisibilityState) {
+    this.visibilityState = state
+    this.emit('visibilitychange')
+  }
+}
+
+const createHomeBootstrapController = () => ({
+  destroyed: false,
+  isAuthenticated: false,
+  lang: 'en' as const,
+  path: '/',
+  homeDemoStylesheetHref: null,
+  fetchAbort: null,
+  cleanupFns: [],
+  demoRenders: new Map(),
+  pendingDemoRoots: new Set(),
+  patchQueue: null
+})
+
 const createHomeFragmentPayload = (id: string) =>
   ({
     id,
@@ -396,36 +505,26 @@ describe('scheduleStaticHomePaintReady', () => {
 })
 
 describe('scheduleHomePostLcpTasks', () => {
-  it('defers demo observation and preview refresh until the LCP gate resolves', async () => {
+  it('defers demo observation until the LCP gate resolves and only arms deferred revalidation at that point', async () => {
     const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
     const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
-      controller: {
-        destroyed: false,
-        isAuthenticated: false,
-        lang: 'en',
-        path: '/',
-        homeDemoStylesheetHref: null,
-        fetchAbort: null,
-        cleanupFns: [],
-        demoRenders: new Map(),
-        pendingDemoRoots: new Set(),
-        patchQueue: null
-      },
+      controller: createHomeBootstrapController(),
       lcpGate: manualGate.gate,
       homeDemoActivation: {
         observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh')
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => previewRefreshCalls.push('retry')
       },
       root: {} as ParentNode,
-      schedulePreviewRefresh: () => {
-        previewRefreshCalls.push('armed')
-        return () => previewRefreshCalls.push('cleanup')
-      },
+      win: win as never,
+      doc: doc as never,
       refreshAuth: async () => {
         authRefreshCalls.push('refresh')
       }
@@ -436,16 +535,213 @@ describe('scheduleHomePostLcpTasks', () => {
     expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
+    expect(win.idleCallbacks.size).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
     expect(observedRoots).toHaveLength(1)
-    expect(previewRefreshCalls).toEqual(['armed'])
-    expect(authRefreshCalls).toEqual(['refresh'])
+    expect(previewRefreshCalls).toEqual([])
+    expect(authRefreshCalls).toEqual([])
+    expect(win.idleCallbacks.size).toBe(1)
+    expect(win.listenerCount('pageshow')).toBe(1)
 
     cleanup()
-    expect(previewRefreshCalls).toEqual(['armed', 'cleanup'])
+    expect(manualGate.cleanupCount()).toBe(1)
+    expect(win.listenerCount('pageshow')).toBe(0)
+  })
+
+  it('runs deferred revalidation on first user intent after the LCP gate resolves', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: () => undefined
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => undefined
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    win.emit('pointerdown')
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+
+    win.emit('keydown')
+    win.runIdle()
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+    cleanup()
+  })
+
+  it('runs deferred revalidation from the idle fallback when there is no user intent', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: () => undefined
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => undefined
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+    win.runIdle()
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+    cleanup()
+  })
+
+  it('runs deferred revalidation when the page becomes visible again before it starts', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: () => undefined
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => undefined
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    doc.setVisibility('hidden')
+    manualGate.resolve()
+    await flushMicrotasks()
+    win.runIdle()
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual([])
+    expect(authRefreshCalls).toEqual([])
+
+    doc.setVisibility('visible')
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+    cleanup()
+  })
+
+  it('retries pending hydration and revalidates auth on persisted pageshow', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const previewRefreshCalls: string[] = []
+    const retryCalls: string[] = []
+    const authRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: () => undefined
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => retryCalls.push('retry')
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(retryCalls).toEqual(['retry'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+
+    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(retryCalls).toEqual(['retry', 'retry'])
+    expect(authRefreshCalls).toEqual(['refresh', 'refresh'])
+    cleanup()
+  })
+
+  it('cancels pending deferred revalidation triggers during cleanup', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: () => undefined
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => undefined
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+    cleanup()
+
+    win.emit('pointerdown')
+    win.runIdle()
+    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual([])
+    expect(authRefreshCalls).toEqual([])
     expect(manualGate.cleanupCount()).toBe(1)
   })
 })
