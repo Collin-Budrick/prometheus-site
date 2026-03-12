@@ -130,7 +130,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
 
   const markValkeyFailure = (label: string, error: unknown) => {
     valkeyBackoffUntil = Date.now() + valkeyBackoffMs
-    console.warn('Store Valkey operation failed', { label, error })
+    console.warn('Store Garnet operation failed', { label, error })
   }
 
   const isTimeoutError = (error: unknown) => {

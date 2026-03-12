@@ -172,6 +172,11 @@ const buildSessionPayload = (claims: SessionClaims) => {
   }
 }
 
+const buildAnonymousSessionPayload = () => ({
+  user: null,
+  session: null
+})
+
 const resolveSubtle = (): SubtleCrypto | null => {
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
     return globalThis.crypto.subtle
@@ -346,7 +351,7 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
   const validateSession = async (context?: AuthRequestContext) => {
     const claims = await readSessionClaims(context)
     if (!claims) {
-      return jsonResponse({ message: 'No active session' }, { status: 401 })
+      return jsonResponse(buildAnonymousSessionPayload())
     }
     return jsonResponse(buildSessionPayload(claims))
   }

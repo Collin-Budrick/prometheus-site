@@ -834,7 +834,7 @@ const devHttpPort = runtimeConfig.ports.http
 const devHttpsPort = runtimeConfig.ports.https
 const devApiPort = runtimeConfig.ports.api
 const devSpacetimeDbPort = runtimeConfig.ports.spacetimedb
-const devValkeyPort = runtimeConfig.ports.valkey
+const devGarnetPort = runtimeConfig.ports.garnet
 const devWebTransportPort = runtimeConfig.ports.webtransport
 const devProject = runtimeCompose.projectName
 const devWebHost = runtimeConfig.domains.web
@@ -876,7 +876,7 @@ const composeEnv = {
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
   PROMETHEUS_SPACETIMEDB_PORT: devSpacetimeDbPort,
-  PROMETHEUS_VALKEY_PORT: devValkeyPort,
+  PROMETHEUS_GARNET_PORT: devGarnetPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
   PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
@@ -1053,7 +1053,9 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_API_BASE: devApiBase,
   VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
   VITE_SPACETIMEDB_MODULE:
-    process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
+    process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
+    process.env.SPACETIMEDB_MODULE?.trim() ||
+    'prometheus-site-local',
   VITE_SPACETIMEAUTH_AUTHORITY:
     process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
     process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||

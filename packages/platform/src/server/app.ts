@@ -165,10 +165,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     app.get('/health', async () => {
       const dependencies: {
         spacetime: { status: 'ok' | 'error'; error?: string }
-        valkey: { status: 'ok' | 'error'; error?: string }
+        garnet: { status: 'ok' | 'error'; error?: string }
       } = {
         spacetime: { status: 'ok' },
-        valkey: { status: 'ok' }
+        garnet: { status: 'ok' }
       }
 
       let healthy = true
@@ -186,12 +186,12 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
       try {
         if (!isValkeyReady()) {
-          throw new Error('Valkey connection not established')
+          throw new Error('Garnet connection not established')
         }
         await valkey.ping()
       } catch (error) {
         healthy = false
-        dependencies.valkey = {
+        dependencies.garnet = {
           status: 'error',
           error: error instanceof Error ? error.message : String(error)
         }

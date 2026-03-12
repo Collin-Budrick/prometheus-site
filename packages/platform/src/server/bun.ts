@@ -33,7 +33,7 @@ export type PlatformServer = {
 
 export const createPlatformServer = (options: PlatformServerOptions): PlatformServer => {
   const logger = options.logger ?? createLogger('server')
-  const cache = options.cache ?? createCacheClient(options.config.valkey, logger.getChild('cache'))
+  const cache = options.cache ?? createCacheClient(options.config.garnet, logger.getChild('cache'))
   const spacetime =
     options.spacetime ?? createSpacetimeControlClient(options.config.spacetime, logger.getChild('spacetimedb'))
   const rateLimiter =

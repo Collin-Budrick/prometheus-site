@@ -111,6 +111,19 @@ fn parse_claims(sender_auth: &AuthCtx) -> Result<OidcClaims, String> {
         .map_err(|error| format!("Invalid JWT payload: {error}"))
 }
 
+fn has_allowed_issuer(sender_auth: &AuthCtx) -> bool {
+    if sender_auth.is_internal() {
+        return true;
+    }
+
+    let Some(jwt) = sender_auth.jwt() else {
+        return false;
+    };
+
+    jwt.issuer() == resolve_authority()
+        && jwt.audience().iter().any(|aud| aud == resolve_client_id())
+}
+
 fn ensure_allowed_issuer(sender_auth: &AuthCtx) -> Result<(), String> {
     if sender_auth.is_internal() {
         return Ok(());
@@ -180,7 +193,9 @@ fn sync_user_profile(ctx: &ReducerContext) -> Result<(), String> {
         None => return Ok(()),
     };
 
-    ensure_allowed_issuer(&sender_auth)?;
+    if !has_allowed_issuer(&sender_auth) {
+        return Ok(());
+    }
 
     let claims = parse_claims(&sender_auth)?;
     let sender = ctx.sender();

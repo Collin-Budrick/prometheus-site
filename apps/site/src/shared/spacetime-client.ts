@@ -18,6 +18,16 @@ type SnapshotListener = (snapshot: SpacetimeConnectionSnapshot) => void
 
 const reconnectBaseDelayMs = 1_500
 const reconnectMaxDelayMs = 30_000
+const candidateConnectTimeoutMs = 2_500
+const preferredUriStorageKey = 'spacetimedb:preferred-uri:v1'
+const preferredUriTtlMs = 7 * 24 * 60 * 60 * 1000
+
+type StoredPreferredUri = {
+  moduleName: string
+  origin: string
+  updatedAt: number
+  uri: string
+}
 
 let snapshot: SpacetimeConnectionSnapshot = {
   connection: null,
@@ -38,6 +48,44 @@ let browserEventsBound = false
 const listeners = new Set<SnapshotListener>()
 
 const cloneSnapshot = () => ({ ...snapshot })
+
+const readStorage = (key: string) => {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+const writeStorage = (key: string, value: string) => {
+  if (typeof window === 'undefined') return false
+  try {
+    window.localStorage.setItem(key, value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const removeStorage = (key: string) => {
+  if (typeof window === 'undefined') return false
+  try {
+    window.localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const parseJson = <T>(value: string | null) => {
+  if (!value) return null
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
 
 const notifyListeners = () => {
   const next = cloneSnapshot()
@@ -130,6 +178,75 @@ type EnsureOptions = {
   force?: boolean
 }
 
+const normalizeCandidateUri = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    return new URL(trimmed).toString()
+  } catch {
+    return trimmed
+  }
+}
+
+const readStoredPreferredUri = (moduleName: string) => {
+  const stored = parseJson<StoredPreferredUri>(readStorage(preferredUriStorageKey))
+  if (!stored) return null
+
+  const normalizedOrigin =
+    typeof window !== 'undefined' ? normalizeCandidateUri(window.location.origin) : ''
+  const normalizedUri = normalizeCandidateUri(stored.uri)
+
+  const isExpired = Date.now() - stored.updatedAt > preferredUriTtlMs
+  if (
+    isExpired ||
+    stored.moduleName !== moduleName ||
+    !normalizedOrigin ||
+    stored.origin !== normalizedOrigin ||
+    !normalizedUri
+  ) {
+    removeStorage(preferredUriStorageKey)
+    return null
+  }
+
+  return normalizedUri
+}
+
+const writeStoredPreferredUri = (moduleName: string, uri: string) => {
+  if (typeof window === 'undefined') return
+  const normalizedUri = normalizeCandidateUri(uri)
+  const normalizedOrigin = normalizeCandidateUri(window.location.origin)
+  if (!normalizedUri || !normalizedOrigin) return
+
+  writeStorage(
+    preferredUriStorageKey,
+    JSON.stringify({
+      moduleName,
+      origin: normalizedOrigin,
+      updatedAt: Date.now(),
+      uri: normalizedUri
+    } satisfies StoredPreferredUri)
+  )
+}
+
+const resolveCandidateUris = (uri: string, moduleName: string) => {
+  const candidates: string[] = []
+  const pushCandidate = (value: string | null | undefined) => {
+    if (!value) return
+    const normalized = normalizeCandidateUri(value)
+    if (!normalized || candidates.includes(normalized)) return
+    candidates.push(normalized)
+  }
+
+  pushCandidate(readStoredPreferredUri(moduleName))
+  pushCandidate(uri)
+
+  if (typeof window !== 'undefined' && window.location.origin) {
+    pushCandidate(window.location.origin)
+  }
+
+  return candidates
+}
+
 export const ensureSpacetimeConnection = async (
   options: EnsureOptions = {}
 ): Promise<SpacetimeDbConnection | null> => {
@@ -140,6 +257,7 @@ export const ensureSpacetimeConnection = async (
   const uri = resolved.uri?.trim() ?? ''
   const moduleName = resolved.module?.trim() ?? ''
   const token = resolved.token?.trim() ?? null
+  const candidateUris = resolveCandidateUris(uri, moduleName)
 
   if (!uri || !moduleName) {
     updateSnapshot({
@@ -155,7 +273,8 @@ export const ensureSpacetimeConnection = async (
 
   const connectionMatches =
     snapshot.connection !== null &&
-    snapshot.uri === uri &&
+    snapshot.uri !== null &&
+    candidateUris.includes(snapshot.uri) &&
     snapshot.moduleName === moduleName &&
     snapshot.token === token &&
     snapshot.status === 'live'
@@ -185,6 +304,7 @@ export const ensureSpacetimeConnection = async (
   reconnectAttempt = 0
   connectionPromise = new Promise<SpacetimeDbConnection | null>((resolve) => {
     let settled = false
+    let activeAttemptId = 0
     const finish = (connection: SpacetimeDbConnection | null) => {
       if (settled) return
       settled = true
@@ -195,85 +315,130 @@ export const ensureSpacetimeConnection = async (
     }
 
     disconnectCurrentConnection()
-    updateSnapshot({
-      connection: null,
-      error: null,
-      moduleName,
-      status: 'connecting',
-      token,
-      uri
-    })
+    const attemptConnection = (candidateIndex: number) => {
+      const attemptId = ++activeAttemptId
+      const candidateUri = candidateUris[candidateIndex] ?? uri
+      let connectTimeoutId: number | null = null
+      let pendingConnection: SpacetimeDbConnection | null = null
 
-    try {
-      DbConnection.builder()
-        .withUri(uri)
-        .withDatabaseName(moduleName)
-        .withCompression('gzip')
-        .withLightMode(true)
-        .withToken(token ?? undefined)
-        .onConnect((connection, identity, issuedToken) => {
-          if (generation !== connectionGeneration) {
-            connection.disconnect()
-            finish(null)
-            return
-          }
-          updateSnapshot({
-            connection,
-            error: null,
-            identity: identity.toHexString(),
-            moduleName,
-            status: 'live',
-            token: token ?? issuedToken ?? null,
-            uri
-          })
-          finish(connection)
-        })
-        .onConnectError((_, error) => {
-          if (generation !== connectionGeneration) {
-            finish(null)
-            return
-          }
-          updateSnapshot({
-            connection: null,
-            error: error.message,
-            identity: null,
-            moduleName,
-            status: isBrowserOffline() ? 'offline' : 'error',
-            token,
-            uri
-          })
-          scheduleReconnect()
-          finish(null)
-        })
-        .onDisconnect((_, error) => {
-          if (generation !== connectionGeneration) return
-          updateSnapshot({
-            connection: null,
-            error: error?.message ?? null,
-            identity: null,
-            moduleName,
-            status: isBrowserOffline() ? 'offline' : 'error',
-            token,
-            uri
-          })
-          scheduleReconnect()
-        })
-        .build()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const clearConnectTimeout = () => {
+        if (typeof window === 'undefined') return
+        if (connectTimeoutId === null) return
+        window.clearTimeout(connectTimeoutId)
+        connectTimeoutId = null
+      }
+
+      const isStaleAttempt = () =>
+        generation !== connectionGeneration || attemptId !== activeAttemptId
+
       updateSnapshot({
         connection: null,
-        error: message,
-        identity: null,
+        error: null,
         moduleName,
-        status: isBrowserOffline() ? 'offline' : 'error',
+        status: 'connecting',
         token,
-        uri
+        uri: candidateUri
       })
-      scheduleReconnect()
-      finish(null)
+
+      const failOrRetry = (message: string) => {
+        clearConnectTimeout()
+        if (isStaleAttempt()) return
+
+        const nextCandidate = candidateUris[candidateIndex + 1]
+        if (nextCandidate) {
+          try {
+            pendingConnection?.disconnect()
+          } catch {
+            // Ignore teardown failures while moving to the next candidate.
+          }
+          attemptConnection(candidateIndex + 1)
+          return
+        }
+
+        updateSnapshot({
+          connection: null,
+          error: message,
+          identity: null,
+          moduleName,
+          status: isBrowserOffline() ? 'offline' : 'error',
+          token,
+          uri: candidateUri
+        })
+        scheduleReconnect()
+        finish(null)
+      }
+
+      try {
+        if (candidateUris[candidateIndex + 1]) {
+          connectTimeoutId = window.setTimeout(() => {
+            failOrRetry(`Timed out connecting to ${candidateUri}.`)
+          }, candidateConnectTimeoutMs)
+        }
+
+        pendingConnection = DbConnection.builder()
+          .withUri(candidateUri)
+          .withDatabaseName(moduleName)
+          .withCompression('gzip')
+          .withLightMode(true)
+          .withToken(token ?? undefined)
+          .onConnect((connection, identity, issuedToken) => {
+            clearConnectTimeout()
+            if (isStaleAttempt()) {
+              connection.disconnect()
+              return
+            }
+            writeStoredPreferredUri(moduleName, candidateUri)
+            updateSnapshot({
+              connection,
+              error: null,
+              identity: identity.toHexString(),
+              moduleName,
+              status: 'live',
+              token: token ?? issuedToken ?? null,
+              uri: candidateUri
+            })
+            finish(connection)
+          })
+          .onConnectError((_, error) => {
+            clearConnectTimeout()
+            failOrRetry(error.message)
+          })
+          .onDisconnect((_, error) => {
+            clearConnectTimeout()
+            if (isStaleAttempt()) return
+            const nextCandidate = candidateUris[candidateIndex + 1]
+            if (!settled && nextCandidate) {
+              attemptConnection(candidateIndex + 1)
+              return
+            }
+            updateSnapshot({
+              connection: null,
+              error: error?.message ?? null,
+              identity: null,
+              moduleName,
+              status: isBrowserOffline() ? 'offline' : 'error',
+              token,
+              uri: candidateUri
+            })
+            scheduleReconnect()
+            if (!settled) {
+              finish(null)
+            }
+          })
+          .build()
+      } catch (error) {
+        failOrRetry(error instanceof Error ? error.message : String(error))
+      }
     }
+
+    attemptConnection(0)
   })
 
   return connectionPromise
+}
+
+export const prewarmSpacetimeConnection = () => {
+  if (typeof window === 'undefined') return
+  if (snapshot.status === 'connecting' || snapshot.status === 'live') return
+  void ensureSpacetimeConnection()
 }

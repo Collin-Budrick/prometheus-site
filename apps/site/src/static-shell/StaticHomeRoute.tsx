@@ -29,7 +29,10 @@ import {
   type StaticHomeCardStage
 } from './constants'
 import { getHomeStaticFragmentKind } from './home-render'
-import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
+import {
+  buildHomeFragmentBootstrapHref,
+  buildPrimeHomeFragmentBootstrapScript
+} from './home-fragment-bootstrap'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -326,6 +329,10 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}
+      />
+      <script
+        nonce={nonce || undefined}
+        dangerouslySetInnerHTML={buildPrimeHomeFragmentBootstrapScript(fragmentBootstrapHref)}
       />
     </section>
   )

@@ -16,7 +16,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the WebTransport sidecar for HTTP/3 WebTransport sessions.
-  - SpaceTimeDB 2.0 + Valkey 8 containers with healthchecks and persistent volumes.
+  - SpaceTimeDB 2.0 + Microsoft Garnet containers with healthchecks; SpaceTimeDB uses a persistent volume and Garnet runs as an in-memory low-latency cache tier.
   - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`, controlled by `scripts/runtime-config.ts`).
 
 ## Dev and runtime flow
@@ -51,7 +51,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Runtimes:** Prefer Bun for scripts and package management. Avoid switching to npm/yarn. TypeScript target is modern (`typescript@6.0.0-dev`); Vite 8 beta + Qwik require up-to-date Node headers but the runtime is Bun.
 - **Fragments:** Keep fragment payloads binary-compatible with `packages/core/src/fragment/binary.ts` and API encoders. Changes to fragment schemas must update both sides and related tests.
 - **Early hints:** Fragment plans may include `earlyHints` for shell assets only (CSS, fonts, critical JS); never include fragment payloads or WebTransport URLs.
-- **Caching:** Valkey cache keys for store items come from `buildStoreItemsCacheKey`; invalidation is coupled to realtime events. Preserve this coupling when modifying store logic.
+- **Caching:** Garnet cache keys for store items come from `buildStoreItemsCacheKey`; invalidation is coupled to realtime events. Preserve this coupling when modifying store logic.
 - **Rate limits and payload limits:** Respect API constraints in `packages/platform/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
 - **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/caddy/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
@@ -74,9 +74,9 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/.storybook/` (Storybook config), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragments/` (site fragment definitions).
 - **Stories:** `apps/site/src/**/*.stories.tsx` and `packages/ui/src/**/*.stories.tsx` feed the shared Storybook instance; prefer real component stories over generated onboarding samples.
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
-- **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/db/schema.ts` (schema), `packages/platform/src/cache.ts` (Valkey), `packages/platform/src/server/fragments.ts` (fragment routes).
+- **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/db/schema.ts` (schema), `packages/platform/src/cache.ts` (Garnet RESP client), `packages/platform/src/server/fragments.ts` (fragment routes).
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
-- **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/valkey/valkey.conf`, `scripts/*.ts` (compose helpers, preview/dev).
+- **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
 - **Runtime config:** `scripts/runtime-config.ts`.
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
 - **Tauri:** `apps/tauri/src-tauri/tauri.conf.base.json`, `apps/tauri/src-tauri/tauri.conf.dev.json`, `apps/tauri/src-tauri/tauri.conf.prod.json`, `apps/tauri/src-tauri/capabilities/*.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.

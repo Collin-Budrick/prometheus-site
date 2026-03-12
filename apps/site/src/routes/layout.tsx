@@ -281,6 +281,8 @@ const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: b
   }
 
   addOrigin(appConfig.apiBase)
+  addOrigin(appConfig.spacetimeDbUri)
+  addOrigin(appConfig.spacetimeAuthAuthority)
   if (appConfig.enableFragmentStreaming && (appConfig.preferWebTransport || appConfig.preferWebTransportDatagrams)) {
     addOrigin(appConfig.webTransportBase)
   }

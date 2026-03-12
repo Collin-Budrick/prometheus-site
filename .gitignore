@@ -23,6 +23,8 @@ infra/caddy/Caddyfile
 infra/caddy/certs/
 infra/caddy/certs/*.pem
 infra/caddy/certs/*.key
+infra/spacetimedb/config/*
+!infra/spacetimedb/config/.gitkeep
 infra/spacetimedb/keys/*.key
 infra/spacetimedb/keys/*.pub
 !infra/spacetimedb/keys/.gitkeep

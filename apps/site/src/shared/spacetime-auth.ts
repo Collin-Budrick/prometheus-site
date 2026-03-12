@@ -76,7 +76,16 @@ type SpacetimeAuthConfig = {
 
 const pendingRequestStorageKey = 'spacetimeauth:pkce:v1'
 const sessionStorageKey = 'spacetimeauth:session:v1'
+const preferredSpacetimeDbUriStorageKey = 'spacetimedb:preferred-uri:v1'
+const preferredSpacetimeDbUriTtlMs = 7 * 24 * 60 * 60 * 1000
 const refreshGraceMs = 30_000
+
+type StoredPreferredSpacetimeDbUri = {
+  moduleName: string
+  origin: string
+  updatedAt: number
+  uri: string
+}
 
 let discoveryPromise: Promise<SpacetimeAuthDiscovery> | null = null
 
@@ -164,6 +173,14 @@ const decodeJwtClaims = (token: string): AuthClaims | null => {
     return JSON.parse(decoded) as AuthClaims
   } catch {
     return null
+  }
+}
+
+const normalizeAbsoluteUrl = (value: string) => {
+  try {
+    return new URL(value).toString()
+  } catch {
+    return value.trim()
   }
 }
 
@@ -576,14 +593,41 @@ const resolveDirectSpacetimeDbUri = (origin: string) => {
   return new URL('/spacetimedb', origin).toString()
 }
 
+const readStoredPreferredSpacetimeDbUri = (origin: string, moduleName: string) => {
+  if (typeof window === 'undefined') return null
+  const stored = parseJson<StoredPreferredSpacetimeDbUri>(
+    readStorage(window.localStorage, preferredSpacetimeDbUriStorageKey)
+  )
+  if (!stored) return null
+
+  const normalizedOrigin = normalizeAbsoluteUrl(origin)
+  const normalizedStoredUri = normalizeAbsoluteUrl(stored.uri)
+  const isExpired = Date.now() - stored.updatedAt > preferredSpacetimeDbUriTtlMs
+
+  if (
+    isExpired ||
+    !normalizedOrigin ||
+    !normalizedStoredUri ||
+    stored.origin !== normalizedOrigin ||
+    stored.moduleName !== moduleName
+  ) {
+    removeStorage(window.localStorage, preferredSpacetimeDbUriStorageKey)
+    return null
+  }
+
+  return normalizedStoredUri
+}
+
 export const resolveSpacetimeDbClientConfig = async (apiBase = appConfig.apiBase) => {
   const token = await getSpacetimeDbAuthToken(apiBase)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const moduleName = appConfig.spacetimeDbModule || 'prometheus-site-local'
   const fallbackUri = origin ? resolveDirectSpacetimeDbUri(origin) : appConfig.spacetimeDbUri
+  const preferredUri = origin ? readStoredPreferredSpacetimeDbUri(origin, moduleName) : null
   return {
-    module: appConfig.spacetimeDbModule || 'prometheus-site',
+    module: moduleName,
     token,
-    uri: appConfig.spacetimeDbUri || fallbackUri
+    uri: preferredUri || appConfig.spacetimeDbUri || fallbackUri
   }
 }
 

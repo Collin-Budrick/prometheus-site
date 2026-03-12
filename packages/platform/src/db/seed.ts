@@ -10,7 +10,7 @@ async function seed() {
     { name: 'Nebula Hoodie', price: '59.00', quantity: 6 },
     { name: 'Latency Patch', price: '9.00', quantity: 42 },
     { name: 'Edge Worker Cap', price: '29.50', quantity: 12 },
-    { name: 'Valkey Sticker Pack', price: '6.50', quantity: 55 }
+    { name: 'Garnet Sticker Pack', price: '6.50', quantity: 55 }
   ])
 
   await db.insert(chatMessages).values([

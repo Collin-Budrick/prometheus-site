@@ -12,7 +12,7 @@ export type PrometheusRuntimeConfig = {
     https: string
     api: string
     spacetimedb: string
-    valkey: string
+    garnet: string
     webtransport: string
     deviceWeb: string
   }
@@ -46,7 +46,7 @@ const DEFAULT_PORTS = {
   https: '443',
   api: '4000',
   spacetimedb: '3000',
-  valkey: '6379',
+  garnet: '6379',
   webtransport: '4444',
   deviceWeb: '4173'
 } as const
@@ -54,7 +54,7 @@ const DEFAULT_PORTS = {
 const DEFAULT_COMPOSE = {
   projectName: 'prometheus',
   services: {
-    core: ['spacetimedb', 'valkey', 'api'],
+    core: ['spacetimedb', 'garnet', 'api'],
     web: ['web'],
     proxy: ['caddy'],
     optional: ['yjs-signaling', 'webtransport']
@@ -79,6 +79,12 @@ const readPort = (env: ProcessEnv, key: string, fallback: string) => {
     throw new Error(`[runtime-config] Invalid port for ${key}: ${raw ?? '(unset)'}`)
   }
   return `${port}`
+}
+
+const readPortAliases = (env: ProcessEnv, keys: string[], fallback: string) => {
+  const resolvedKey = keys.find((key) => trim(env[key]) !== undefined) ?? keys[0] ?? ''
+  const resolvedValue = keys.map((key) => trim(env[key])).find((value) => value !== undefined)
+  return readPort({ ...env, [resolvedKey]: resolvedValue }, resolvedKey, fallback)
 }
 
 const sanitizeHost = (value: string) => value.replace(/^https?:\/\//, '').split('/')[0]
@@ -133,7 +139,7 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRunti
     https: readPort(env, 'PROMETHEUS_HTTPS_PORT', DEFAULT_PORTS.https),
     api: readPort(env, 'PROMETHEUS_API_PORT', DEFAULT_PORTS.api),
     spacetimedb: readPort(env, 'PROMETHEUS_SPACETIMEDB_PORT', DEFAULT_PORTS.spacetimedb),
-    valkey: readPort(env, 'PROMETHEUS_VALKEY_PORT', DEFAULT_PORTS.valkey),
+    garnet: readPortAliases(env, ['PROMETHEUS_GARNET_PORT', 'PROMETHEUS_VALKEY_PORT'], DEFAULT_PORTS.garnet),
     webtransport: readPort(env, 'PROMETHEUS_WEBTRANSPORT_PORT', DEFAULT_PORTS.webtransport),
     deviceWeb: readPort(env, 'PROMETHEUS_DEVICE_WEB_PORT', DEFAULT_PORTS.deviceWeb)
   }

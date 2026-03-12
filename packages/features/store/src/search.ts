@@ -161,7 +161,7 @@ const createStoreSearchIndex = async (client: ValkeyClientType) => {
 
 export const ensureStoreSearchIndex = async (client: ValkeyClientType) => {
   if (typeof client.sendCommand !== 'function') {
-    console.warn('Store search unavailable: Valkey client missing sendCommand')
+    console.warn('Store search unavailable: Garnet client missing sendCommand')
     return false
   }
   try {
@@ -169,7 +169,7 @@ export const ensureStoreSearchIndex = async (client: ValkeyClientType) => {
     return true
   } catch (error) {
     if (isUnsupportedCommand(error)) {
-      console.warn('Store search unavailable: Valkey Search module not detected')
+      console.warn('Store search unavailable: Garnet search commands not detected')
       return false
     }
     if (!isUnknownIndexError(error)) {
@@ -198,7 +198,7 @@ export const rebuildStoreSearchIndex = async (options: {
 }) => {
   if (!options.isValkeyReady()) return false
   if (typeof options.valkey.sendCommand !== 'function' || typeof options.valkey.multi !== 'function') {
-    console.warn('Store search unavailable: Valkey client missing search commands')
+    console.warn('Store search unavailable: Garnet client missing search commands')
     return false
   }
 
@@ -355,7 +355,7 @@ export const searchStoreIndex = async (
   } catch (error) {
     const message = toErrorMessage(error).toLowerCase()
     if (message.includes('missing `=>`') || message.includes('missing =>') || message.includes('invalid filter format')) {
-      console.warn('Store search query rejected by Valkey parser', error)
+      console.warn('Store search query rejected by Garnet parser', error)
       return { total: 0, hits: [] }
     }
     throw error

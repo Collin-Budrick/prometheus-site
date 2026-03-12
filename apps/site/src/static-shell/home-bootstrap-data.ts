@@ -58,19 +58,20 @@ export const readStaticHomeBootstrapData = ({
 } = {}): HomeStaticBootstrapData | null => {
   const shell = readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID, doc)
   const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID, doc)
-  if (!shell || !route) return null
+  if (!shell && !route) return null
 
   return {
-    currentPath: shell.currentPath || route.path || '/',
-    isAuthenticated: shell.isAuthenticated ?? false,
-    snapshotKey: route.snapshotKey || shell.snapshotKey || shell.currentPath || route.path || '/',
-    lang: route.lang || shell.lang,
-    shellSeed: shell.languageSeed ?? {},
-    routeSeed: route.languageSeed ?? {},
-    homeDemoStylesheetHref: route.homeDemoStylesheetHref ?? null,
+    currentPath: shell?.currentPath || route?.path || '/',
+    isAuthenticated: shell?.isAuthenticated ?? false,
+    snapshotKey:
+      route?.snapshotKey || shell?.snapshotKey || shell?.currentPath || route?.path || '/',
+    lang: route?.lang || shell?.lang || 'en',
+    shellSeed: shell?.languageSeed ?? {},
+    routeSeed: route?.languageSeed ?? {},
+    homeDemoStylesheetHref: route?.homeDemoStylesheetHref ?? null,
     fragmentBootstrapHref:
-      route.fragmentBootstrapHref ??
-      buildHomeFragmentBootstrapHref({ lang: route.lang || shell.lang }),
-    fragmentVersions: route.fragmentVersions ?? {}
+      route?.fragmentBootstrapHref ??
+      buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
+    fragmentVersions: route?.fragmentVersions ?? {}
   }
 }

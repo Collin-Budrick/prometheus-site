@@ -10,7 +10,14 @@ import {
   type HomeDemoKind
 } from './home-demo-activate'
 import { ensureHomeDemoStylesheet, loadHomeDemoRuntime } from './home-demo-runtime-loader'
-import { fetchHomeFragmentBatch } from './home-fragment-client'
+import {
+  fetchHomeFragmentBatch,
+  fetchHomeFragmentBootstrapSelection
+} from './home-fragment-client'
+import {
+  isHomeFragmentBootstrapSubset,
+  primeHomeFragmentBootstrapBytes
+} from './home-fragment-bootstrap'
 import {
   collectStaticHomeKnownVersions,
   createStaticHomePatchQueue,
@@ -607,12 +614,16 @@ export const bindHomeFragmentHydration = ({
       const demoStylesheetReady = ensureDemoStylesheet({
         href: controller.homeDemoStylesheetHref ?? undefined
       })
-      const payloads = await fetchBatch(ids, {
+      const batchOptions = {
         lang: controller.lang,
         signal: fetchAbort.signal,
         knownVersions: collectStaticHomeKnownVersions(root),
         bootstrapHref: controller.homeFragmentBootstrapHref ?? undefined
-      })
+      }
+      const payloads =
+        fetchBatch === fetchHomeFragmentBatch && isHomeFragmentBootstrapSubset(ids)
+          ? await fetchHomeFragmentBootstrapSelection(ids, batchOptions)
+          : await fetchBatch(ids, batchOptions)
 
       if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
 
@@ -1399,6 +1410,13 @@ export const bootstrapStaticHome = async () => {
     destroyed: false
   }
   activeController = controller
+  if (controller.homeFragmentBootstrapHref) {
+    void primeHomeFragmentBootstrapBytes({
+      href: controller.homeFragmentBootstrapHref
+    }).catch((error) => {
+      console.error('Static home fragment bootstrap prefetch failed:', error)
+    })
+  }
 
   const homeDemoActivation = bindHomeDemoActivation({ controller })
   const homeFragmentHydration = bindHomeFragmentHydration({ controller })

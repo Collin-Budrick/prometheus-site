@@ -9,7 +9,7 @@ export type SpacetimeDbConfig = {
   backoffMs: number
 }
 
-export type ValkeyConfig = {
+export type GarnetConfig = {
   host: string
   port: number
 }
@@ -60,7 +60,7 @@ export type PlatformConfig = {
   server: ServerConfig
   log: LogConfig
   spacetime: SpacetimeDbConfig
-  valkey: ValkeyConfig
+  garnet: GarnetConfig
   rateLimit: RateLimitConfig
   auth: AuthConfig
   push: PushConfig
@@ -79,6 +79,8 @@ const platformEnvSchema = {
   API_HOST: 'string?',
   DB_CONNECT_RETRIES: 'string?',
   DB_CONNECT_BACKOFF_MS: 'string?',
+  GARNET_HOST: 'string?',
+  GARNET_PORT: 'string?',
   VALKEY_HOST: 'string?',
   VALKEY_PORT: 'string?',
   ENABLE_WEBTRANSPORT_FRAGMENTS: 'string?',
@@ -179,6 +181,34 @@ const normalizeOptionalString = (value: string | undefined) => {
   return trimmed === '' ? undefined : trimmed
 }
 
+const resolveCacheHost = (env: Env) => {
+  const garnetHost = normalizeOptionalString(env.GARNET_HOST)
+  if (garnetHost !== undefined) {
+    return ensureString(garnetHost, 'localhost', 'GARNET_HOST')
+  }
+
+  const valkeyHost = normalizeOptionalString(env.VALKEY_HOST)
+  if (valkeyHost !== undefined) {
+    return ensureString(valkeyHost, 'localhost', 'VALKEY_HOST')
+  }
+
+  return ensureString(undefined, 'localhost', 'GARNET_HOST')
+}
+
+const resolveCachePort = (env: Env) => {
+  const garnetPort = normalizeOptionalString(env.GARNET_PORT)
+  if (garnetPort !== undefined) {
+    return parsePort(garnetPort, 6379, 'GARNET_PORT')
+  }
+
+  const valkeyPort = normalizeOptionalString(env.VALKEY_PORT)
+  if (valkeyPort !== undefined) {
+    return parsePort(valkeyPort, 6379, 'VALKEY_PORT')
+  }
+
+  return parsePort(undefined, 6379, 'GARNET_PORT')
+}
+
 const resolveLogLevel = (value: string | undefined): LogLevel => {
   const normalized = value?.trim().toLowerCase()
   if (normalized === 'trace') return 'trace'
@@ -222,7 +252,7 @@ const resolveSpacetimeDbUri = (value: string | undefined) => {
 }
 
 const resolveSpacetimeModuleName = (value: string | undefined) => {
-  const resolved = (value ?? 'prometheus-site').trim()
+  const resolved = (value ?? 'prometheus-site-local').trim()
   if (!resolved) {
     throw new Error('SPACETIMEDB_MODULE is required')
   }
@@ -324,8 +354,8 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
   const connectRetries = parseNonNegativeInt(parsedEnv.DB_CONNECT_RETRIES, 5, 'DB_CONNECT_RETRIES')
   const backoffMs = parseNonNegativeInt(parsedEnv.DB_CONNECT_BACKOFF_MS, 200, 'DB_CONNECT_BACKOFF_MS')
 
-  const valkeyHost = ensureString(parsedEnv.VALKEY_HOST, 'localhost', 'VALKEY_HOST')
-  const valkeyPort = parsePort(parsedEnv.VALKEY_PORT, 6379, 'VALKEY_PORT')
+  const garnetHost = resolveCacheHost(parsedEnv)
+  const garnetPort = resolveCachePort(parsedEnv)
   const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
   const push = resolvePushConfig(parsedEnv)
   const runtime = resolveRuntimeFlags(parsedEnv)
@@ -350,9 +380,9 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
     server,
     log,
     spacetime,
-    valkey: {
-      host: valkeyHost,
-      port: valkeyPort
+    garnet: {
+      host: garnetHost,
+      port: garnetPort
     },
     rateLimit,
     auth,

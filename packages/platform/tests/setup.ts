@@ -148,13 +148,13 @@ const getSessionIdFromHeaders = (headers?: HeadersInit) => {
 
 const validateSession = async (context?: { request?: Request; headers?: HeadersInit }) => {
   const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
-  if (sessionId === null) return authJson({ message: 'No active session' }, { status: 401 })
+  if (sessionId === null) return authJson({ user: null, session: null })
 
   const session = authSessionsData.find((record) => record.id === sessionId)
-  if (session === undefined) return authJson({ message: 'No active session' }, { status: 401 })
+  if (session === undefined) return authJson({ user: null, session: null })
 
   const user = authUsersData.find((candidate) => candidate.id === session.userId)
-  if (user === undefined) return authJson({ message: 'No active session' }, { status: 401 })
+  if (user === undefined) return authJson({ user: null, session: null })
 
   return authJson(
     {

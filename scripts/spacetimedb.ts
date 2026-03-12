@@ -6,15 +6,17 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const defaultImage = 'clockworklabs/spacetime:v2.0.4'
-const defaultModuleName = process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site'
+const defaultModuleName = process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site-local'
 const defaultServerUri = process.env.SPACETIMEDB_URI?.trim() || 'http://127.0.0.1:3000'
 const keysDir = path.join(root, 'infra', 'spacetimedb', 'keys')
+const cliConfigDir = path.join(root, 'infra', 'spacetimedb', 'config')
 const publicKeyPath = path.join(keysDir, 'jwt.pub')
 const privateKeyPath = path.join(keysDir, 'jwt.key')
 
 const toDockerMountPath = (value: string) => value.replace(/\\/g, '/')
 
 export const ensureSpacetimeJwtKeys = () => {
+  mkdirSync(cliConfigDir, { recursive: true })
   if (existsSync(publicKeyPath) && existsSync(privateKeyPath)) {
     return { publicKeyPath, privateKeyPath }
   }
@@ -46,6 +48,8 @@ const runDockerSpacetime = (args: string[], extraEnv: Record<string, string | un
       '--rm',
       '-v',
       `${toDockerMountPath(root)}:/workspace`,
+      '-v',
+      `${toDockerMountPath(cliConfigDir)}:/tmp/.config`,
       '-w',
       '/workspace',
       ...envArgs,

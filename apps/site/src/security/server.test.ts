@@ -6,7 +6,11 @@ describe('security/server', () => {
   it('builds an enforced CSP with strict script controls and Trusted Types', () => {
     const csp = buildSiteCsp({
       nonce: 'nonce-123',
-      currentOrigin: 'https://prometheus.dev'
+      currentOrigin: 'https://prometheus.dev',
+      config: resolvePublicAppConfig({
+        spacetimeDbUri: '',
+        spacetimeDbModule: ''
+      })
     })
 
     expect(csp).toContain(
@@ -21,9 +25,30 @@ describe('security/server', () => {
     expect(csp).toContain(`frame-ancestors 'none'`)
   })
 
+  it('relaxes script evaluation and connect-src when direct SpaceTimeDB is enabled', () => {
+    const config = resolvePublicAppConfig({
+      apiBase: 'https://api.prometheus.dev/api',
+      spacetimeDbUri: 'https://db.prometheus.dev',
+      spacetimeDbModule: 'prometheus-site'
+    })
+
+    const csp = buildSiteCsp({
+      nonce: 'nonce-123',
+      currentOrigin: 'https://prometheus.dev',
+      config
+    })
+
+    expect(csp).toContain(
+      `script-src 'nonce-nonce-123' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https: http: 'inline-speculation-rules'`
+    )
+    expect(csp).not.toContain(`require-trusted-types-for 'script'`)
+    expect(csp).toContain(`connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://db.prometheus.dev wss://db.prometheus.dev`)
+  })
+
   it('expands connect-src for api, websocket, webtransport, and analytics origins', () => {
     const config = resolvePublicAppConfig({
       apiBase: 'https://api.prometheus.dev/api',
+      spacetimeDbUri: 'https://db.prometheus.dev',
       webTransportBase: 'https://prometheus.dev:4444',
       enableFragmentStreaming: true,
       preferWebTransport: true,
@@ -38,6 +63,8 @@ describe('security/server', () => {
       'https://prometheus.dev',
       'https://api.prometheus.dev',
       'wss://api.prometheus.dev',
+      'https://db.prometheus.dev',
+      'wss://db.prometheus.dev',
       'https://prometheus.dev:4444',
       'https://analytics.prometheus.dev'
     ])

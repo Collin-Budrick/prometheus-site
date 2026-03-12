@@ -200,6 +200,33 @@ describe('fetchHomeFragmentBatch', () => {
     expect(Object.keys(payloads)).toEqual(['fragment://page/home/planner@v1'])
   })
 
+  it('keeps using the bootstrap GET bundle when known fragment versions are provided', async () => {
+    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+    const requests: Array<{ url: string; method: string | undefined }> = []
+
+    globalThis.fetch = (async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url
+      requests.push({ url, method: init?.method })
+      return new Response(
+        buildBootstrapPayload('fragment://page/home/planner@v1', 'fragment://page/home/react@v1'),
+        {
+          headers: { 'content-type': 'application/octet-stream' }
+        }
+      )
+    }) as typeof fetch
+
+    const payloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
+      lang: 'en',
+      knownVersions: {
+        'fragment://page/home/planner@v1': 1773319098713,
+        'fragment://page/home/react@v1': 1773319098718
+      }
+    })
+
+    expect(requests).toEqual([{ url: href, method: undefined }])
+    expect(Object.keys(payloads)).toEqual(['fragment://page/home/planner@v1'])
+  })
+
   it('reuses a primed bootstrap bundle instead of issuing a fallback fragment request', async () => {
     const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
     const win = {} as HomeFragmentBootstrapWindow
@@ -231,5 +258,47 @@ describe('fetchHomeFragmentBatch', () => {
 
     expect(requestCount).toBe(1)
     expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
+  })
+
+  it('keeps the primed bootstrap bundle available for later subset hydrations', async () => {
+    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+    const win = {} as HomeFragmentBootstrapWindow
+    ;(globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window = win
+
+    let requestCount = 0
+    await primeHomeFragmentBootstrapBytes({
+      href,
+      win,
+      fetcher: async () => {
+        requestCount += 1
+        return new Response(
+          buildBootstrapPayload(
+            'fragment://page/home/planner@v1',
+            'fragment://page/home/react@v1',
+            'fragment://page/home/island@v1'
+          ),
+          {
+            headers: { 'content-type': 'application/octet-stream' }
+          }
+        )
+      }
+    })
+
+    globalThis.fetch = (async () => {
+      throw new Error('Unexpected fallback fragment fetch')
+    }) as typeof fetch
+
+    const plannerPayloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
+      lang: 'en',
+      bootstrapHref: href
+    })
+    const islandPayloads = await fetchHomeFragmentBatch(['fragment://page/home/island@v1'], {
+      lang: 'en',
+      bootstrapHref: href
+    })
+
+    expect(requestCount).toBe(1)
+    expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
+    expect(Object.keys(islandPayloads)).toEqual(['fragment://page/home/island@v1'])
   })
 })

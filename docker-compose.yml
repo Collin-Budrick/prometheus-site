@@ -60,6 +60,7 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
+      - ./infra/spacetimedb/config:/tmp/.config
     environment:
       HOME: /tmp
       XDG_CONFIG_HOME: /tmp/.config
@@ -68,7 +69,7 @@ services:
     command:
       [
         "publish",
-        "${SPACETIMEDB_MODULE:-prometheus-site}",
+        "${SPACETIMEDB_MODULE:-prometheus-site-local}",
         "--server",
         "http://spacetimedb:3000",
         "--module-path",
@@ -79,16 +80,43 @@ services:
       ]
     restart: "no"
 
-  valkey:
-    image: valkey/valkey-bundle:9.0.1-alpine
-    command: ["valkey-server", "/etc/valkey/valkey.conf"]
+  garnet:
+    image: ghcr.io/microsoft/garnet:1.1.0
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >
+        worker_threads="${PROMETHEUS_GARNET_WORKER_THREADS:-$(nproc)}";
+        if [ "$$worker_threads" -lt 1 ]; then worker_threads=1; fi;
+        io_threads="${PROMETHEUS_GARNET_IO_THREADS:-$(( $$worker_threads > 1 ? ($$worker_threads + 1) / 2 : 1 ))}";
+        if [ "$$io_threads" -lt 1 ]; then io_threads=1; fi;
+        exec /app/GarnetServer
+        --bind 0.0.0.0
+        --port 6379
+        --memory "${PROMETHEUS_GARNET_MEMORY:-1g}"
+        --index "${PROMETHEUS_GARNET_INDEX:-256m}"
+        --obj-log-memory "${PROMETHEUS_GARNET_OBJ_LOG_MEMORY:-64m}"
+        --obj-index "${PROMETHEUS_GARNET_OBJ_INDEX:-32m}"
+        --mutable-percent "${PROMETHEUS_GARNET_MUTABLE_PERCENT:-95}"
+        --obj-mutable-percent "${PROMETHEUS_GARNET_OBJ_MUTABLE_PERCENT:-95}"
+        --readcache "${PROMETHEUS_GARNET_READCACHE:-false}"
+        --readcache-memory "${PROMETHEUS_GARNET_READCACHE_MEMORY:-256m}"
+        --readcache-page "${PROMETHEUS_GARNET_READCACHE_PAGE:-16m}"
+        --obj-readcache "${PROMETHEUS_GARNET_OBJ_READCACHE:-false}"
+        --obj-readcache-log-memory "${PROMETHEUS_GARNET_OBJ_READCACHE_LOG_MEMORY:-64m}"
+        --obj-readcache-page "${PROMETHEUS_GARNET_OBJ_READCACHE_PAGE:-1m}"
+        --copy-reads-to-tail "${PROMETHEUS_GARNET_COPY_READS_TO_TAIL:-true}"
+        --obj-copy-reads-to-tail "${PROMETHEUS_GARNET_OBJ_COPY_READS_TO_TAIL:-true}"
+        --latency-monitor "${PROMETHEUS_GARNET_LATENCY_MONITOR:-false}"
+        --metrics-sampling-freq "${PROMETHEUS_GARNET_METRICS_SAMPLING_FREQ:-0}"
+        --protected-mode false
+        --minthreads "$$worker_threads"
+        --maxthreads "$$worker_threads"
+        --miniothreads "$$io_threads"
+        --maxiothreads "$$io_threads"
     ports:
-      - "${PROMETHEUS_VALKEY_PORT:-6379}:6379"
-    volumes:
-      - ./infra/valkey/valkey.conf:/etc/valkey/valkey.conf:ro
-      - valkey_data:/data
+      - "${PROMETHEUS_GARNET_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/6379'"]
       interval: 2s
       timeout: 3s
       retries: 10
@@ -104,21 +132,19 @@ services:
     depends_on:
       spacetimedb:
         condition: service_healthy
-      spacetimedb-publish:
-        condition: service_completed_successfully
-      valkey:
+      garnet:
         condition: service_healthy
     environment:
       NODE_ENV: ${API_NODE_ENV:-development}
       API_HOST: 0.0.0.0
       API_PORT: 4000
       SPACETIMEDB_URI: http://spacetimedb:3000
-      SPACETIMEDB_MODULE: ${SPACETIMEDB_MODULE:-prometheus-site}
+      SPACETIMEDB_MODULE: ${SPACETIMEDB_MODULE:-prometheus-site-local}
       SPACETIMEDB_DATA_DIR: /var/lib/spacetimedb
       SPACETIMEDB_JWT_PUBLIC_KEY_PATH: /etc/spacetimedb/keys/jwt.pub
       SPACETIMEDB_JWT_PRIVATE_KEY_PATH: /etc/spacetimedb/keys/jwt.key
-      VALKEY_HOST: valkey
-      VALKEY_PORT: 6379
+      GARNET_HOST: garnet
+      GARNET_PORT: 6379
       WEB_PROTOCOL: https
       WEB_PORT: 443
       DB_HOST: ${PROMETHEUS_DB_HOST:-db.prometheus.dev}
@@ -212,7 +238,7 @@ services:
         VITE_SPACETIMEAUTH_CLIENT_ID: ${VITE_SPACETIMEAUTH_CLIENT_ID:-${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}}
         SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-https://prometheus.dev/}
         VITE_SPACETIMEDB_URI: ${VITE_SPACETIMEDB_URI:-https://db.prometheus.dev}
-        VITE_SPACETIMEDB_MODULE: ${VITE_SPACETIMEDB_MODULE:-${SPACETIMEDB_MODULE:-prometheus-site}}
+        VITE_SPACETIMEDB_MODULE: ${VITE_SPACETIMEDB_MODULE:-${SPACETIMEDB_MODULE:-prometheus-site-local}}
     environment:
       API_BASE: http://api:4000
       PROMETHEUS_DEVICE_HOST: ${PROMETHEUS_DEVICE_HOST:-}
@@ -234,4 +260,3 @@ volumes:
   caddy_data:
   caddy_config:
   spacetimedb_data:
-  valkey_data:

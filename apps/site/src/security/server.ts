@@ -72,6 +72,7 @@ export const buildSiteConnectSrc = (
   config: PublicAppConfig = appConfig
 ) => {
   const apiOrigin = resolveHttpOrigin(config.apiBase, currentOrigin)
+  const spacetimeDbOrigin = resolveHttpOrigin(config.spacetimeDbUri, currentOrigin)
   const webTransportOrigin =
     config.enableFragmentStreaming && (config.preferWebTransport || config.preferWebTransportDatagrams)
       ? resolveHttpOrigin(config.webTransportBase, currentOrigin)
@@ -86,23 +87,35 @@ export const buildSiteConnectSrc = (
     currentOrigin,
     apiOrigin,
     toSocketOrigin(apiOrigin),
+    spacetimeDbOrigin,
+    toSocketOrigin(spacetimeDbOrigin),
     webTransportOrigin,
     analyticsOrigin
   ])
 }
 
+const requiresDynamicScriptEvaluation = (config: PublicAppConfig) =>
+  Boolean(config.spacetimeDbUri || config.spacetimeDbModule)
+
 export const buildSiteCsp = ({
   nonce,
   currentOrigin,
   config = appConfig
-}: SiteCspOptions) =>
-  [
+}: SiteCspOptions) => {
+  const relaxedScriptPolicy = requiresDynamicScriptEvaluation(config)
+  const scriptSrcTokens = [`'nonce-${nonce}'`, `'strict-dynamic'`, `'unsafe-inline'`, 'https:', 'http:', "'inline-speculation-rules'"]
+
+  if (relaxedScriptPolicy) {
+    scriptSrcTokens.splice(3, 0, "'unsafe-eval'")
+  }
+
+  const directives = [
     `default-src 'self'`,
     `base-uri 'self'`,
     `object-src 'none'`,
     `frame-ancestors 'none'`,
     `form-action 'self'`,
-    `script-src 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' https: http: 'inline-speculation-rules'`,
+    `script-src ${scriptSrcTokens.join(' ')}`,
     `script-src-attr 'none'`,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data: blob: https:`,
@@ -110,6 +123,12 @@ export const buildSiteCsp = ({
     `connect-src ${buildSiteConnectSrc(currentOrigin, config).join(' ')}`,
     `worker-src 'self'`,
     `manifest-src 'self'`,
-    `require-trusted-types-for 'script'`,
     `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME}`
-  ].join('; ')
+  ]
+
+  if (!relaxedScriptPolicy) {
+    directives.push(`require-trusted-types-for 'script'`)
+  }
+
+  return directives.join('; ')
+}

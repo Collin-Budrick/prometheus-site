@@ -162,7 +162,7 @@ test.describe('p2p chat e2e', () => {
     const apiB = await request.newContext({ baseURL, ignoreHTTPSErrors })
     const sessionCheck = await apiA.get('/api/auth/session')
     if (![200, 401].includes(sessionCheck.status())) {
-      throw new Error('API is not reachable. Start the API + Valkey/SpaceTimeDB services before running this test.')
+      throw new Error('API is not reachable. Start the API + Garnet/SpaceTimeDB services before running this test.')
     }
 
     const [userA, userB] = await Promise.all([createUser(apiA, 'A'), createUser(apiB, 'B')])

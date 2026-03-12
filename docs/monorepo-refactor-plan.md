@@ -32,7 +32,7 @@ scripts/       # Tooling scripts
 - **Fragment types/codec:** Merge fragment types and binary encode/decode into `packages/core/src/fragment/types.ts` and `packages/core/src/fragment/binary.ts` (from `apps/site/src/fragment/types.ts`, legacy API fragment types, and binary helpers).
 - **Planner:** Move the legacy API fragment planner to `packages/core/src/fragment/planner.ts`; remove hard-coded homepage fragments and let external plan maps supply entries. Core only handles dependency resolution/sorting.
 - **Definitions:** Strip app-specific fragment definitions; provide stubs or registration hooks so the site (or a feature) injects actual fragment renderers.
-- **Service/store:** Move generic fragment read/plan fetch/cache logic (`service.ts`, `store.ts`) and make cache access pluggable (no direct Valkey/DB calls). Keep in-memory memoization/locking.
+- **Service/store:** Move generic fragment read/plan fetch/cache logic (`service.ts`, `store.ts`) and make cache access pluggable (no direct Garnet/DB calls). Keep in-memory memoization/locking.
 - **Client orchestration:** Move client fragment orchestration (`apps/site/src/fragment/client.ts`, `plan-cache.ts`) under `packages/core/src/fragment/`, parameterizing API/WebTransport bases and feature flags instead of reading env directly.
 - **Server handlers:** Provide framework-agnostic handlers (e.g., `getFragmentPlanResponse`, `getFragmentPayloadResponse`) under `src/server/` and optional router factory sugar.
 - **i18n:** Keep only language normalization + translator helpers in `src/i18n/`; move actual copy/phrases out of core.
@@ -42,7 +42,7 @@ scripts/       # Tooling scripts
 
 - **Env/config:** Centralize env + feature flags (`src/env.ts`, `src/runtime-flags.ts`), exposing a config object for core/features instead of direct `import.meta.env` reads.
 - **Logging/telemetry:** Move error reporting hooks and any analytics beacons here.
-- **Cache/DB:** Wrap Valkey/Redis and Drizzle setup (`src/cache.ts`, `src/db.ts`), including connection lifecycle and optional pub/sub helpers.
+- **Cache/DB:** Wrap Garnet/Redis and Drizzle setup (`src/cache.ts`, `src/db.ts`), including connection lifecycle and optional pub/sub helpers.
 - **Server bootstrap:** Rehome Bun/Elysia server startup, migrations, rate limits, and WebSocket/webtransport toggles into `src/server/bun.ts` (or similar), composing routes from core + features.
 - **Framework adapters:** Provide Elysia wrappers for fragment/auth/store/chat routes as thin shims over core/feature logic.
 

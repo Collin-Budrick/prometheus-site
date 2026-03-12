@@ -5,6 +5,8 @@ import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 
 export const HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
+const HOME_FRAGMENT_BOOTSTRAP_RETRY_DELAY_MS = 16
+const HOME_FRAGMENT_BOOTSTRAP_MAX_RETRIES = 8
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -44,6 +46,8 @@ export const installHomeStaticEntry = ({
   let lcpGateReleased = false
   let lcpGateCleanup: (() => void) | null = null
   let fragmentBootstrapPrimed = false
+  let fragmentBootstrapRetryCount = 0
+  let fragmentBootstrapRetryId: ReturnType<typeof setTimeout> | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
@@ -65,6 +69,11 @@ export const installHomeStaticEntry = ({
     if (timeoutId !== null) {
       win.clearTimeout(timeoutId)
       timeoutId = null
+    }
+
+    if (fragmentBootstrapRetryId !== null) {
+      win.clearTimeout(fragmentBootstrapRetryId)
+      fragmentBootstrapRetryId = null
     }
 
     lcpGateCleanup?.()
@@ -94,12 +103,27 @@ export const installHomeStaticEntry = ({
   const primeFragmentBootstrapRequest = () => {
     if (fragmentBootstrapPrimed) return
     const href = readBootstrapData({ doc })?.fragmentBootstrapHref
-    if (!href) return
+    if (!href) {
+      if (fragmentBootstrapRetryId !== null || fragmentBootstrapRetryCount >= HOME_FRAGMENT_BOOTSTRAP_MAX_RETRIES) {
+        return
+      }
+
+      fragmentBootstrapRetryCount += 1
+      fragmentBootstrapRetryId = win.setTimeout(() => {
+        fragmentBootstrapRetryId = null
+        primeFragmentBootstrapRequest()
+      }, HOME_FRAGMENT_BOOTSTRAP_RETRY_DELAY_MS)
+      return
+    }
+
+    fragmentBootstrapRetryCount = 0
     fragmentBootstrapPrimed = true
     void primeFragmentBootstrap({ href, win }).catch((error) => {
       console.error('Static home fragment bootstrap prefetch failed:', error)
     })
   }
+
+  primeFragmentBootstrapRequest()
 
   const armIdleTrigger = () => {
     if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return

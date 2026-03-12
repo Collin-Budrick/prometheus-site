@@ -150,13 +150,13 @@
       "heading": "h2",
       "metaLine": "ストアストリーム",
       "title": "リアルタイムのストアフィード。",
-      "description": "Postgresは正の情報源のまま、Valkey Searchが結果をランク付けし、アイテムの更新がリアルタイムで流れ込みます。"
+      "description": "SpaceTimeDBが正の情報源のまま、Garnetがキャッシュヒットを高速化し、アイテムの更新がリアルタイムで流れ込みます。"
     },
     "fragment://page/store/create@v1": {
       "heading": "h2",
       "metaLine": "ストア追加",
       "title": "新しいストアアイテムを追加。",
-      "description": "Postgresへ書き込み、drizzle-zodで検証し、更新をリアルタイムにストリームします。"
+      "description": "SpaceTimeDBへ書き込み、ペイロードを検証し、更新をリアルタイムにストリームします。"
     },
     "fragment://page/chat/contacts@v1": {
       "heading": "h2",
@@ -353,11 +353,11 @@
     "react dock": "Reactドック",
     "Server-only dock fragment.": "サーバー専用ドックフラグメント。",
     "MagicUI dock authored in React, compiled to a static fragment.": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。",
-    "Postgres truth": "Postgresの真実",
-    "Valkey search": "Valkey検索",
+    "Postgres truth": "SpaceTimeDBの真実",
+    "Valkey search": "Garnetキャッシュ",
     "Realtime stream": "リアルタイムストリーム",
-    "Postgres": "Postgres",
-    "Valkey": "Valkey",
+    "Postgres": "SpaceTimeDB",
+    "Valkey": "Garnet",
     "Realtime": "Realtime",
     "Search the store...": "ストアを検索...",
     "Search": "検索",
@@ -380,7 +380,7 @@
     "Search unavailable": "検索は利用できません",
     "No matches yet.": "一致する結果がありません。",
     "No items yet.": "アイテムがまだありません。",
-    "Postgres stream": "Postgresストリーム",
+    "Postgres stream": "SpaceTimeDBストリーム",
     "results": "件",
     "items": "件",
     "Score": "スコア",

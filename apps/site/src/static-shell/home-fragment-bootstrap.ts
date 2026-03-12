@@ -8,7 +8,7 @@ export const HOME_FRAGMENT_BOOTSTRAP_IDS = [
   'fragment://page/home/dock@v2'
 ] as const
 
-const HOME_FRAGMENT_BOOTSTRAP_STATE_KEY = '__PROM_STATIC_HOME_FRAGMENT_BOOTSTRAP__'
+export const HOME_FRAGMENT_BOOTSTRAP_STATE_KEY = '__PROM_STATIC_HOME_FRAGMENT_BOOTSTRAP__'
 const HOME_FRAGMENT_BOOTSTRAP_ID_SET = new Set<string>(HOME_FRAGMENT_BOOTSTRAP_IDS)
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
@@ -47,16 +47,19 @@ const dedupeFragmentIds = (ids: readonly string[]) => {
 export const fetchHomeFragmentBootstrapBytes = async ({
   href,
   fetcher = fetch as FetchLike,
-  cache = 'default'
+  cache = 'default',
+  signal
 }: {
   href: string
   fetcher?: FetchLike
   cache?: RequestCache
+  signal?: AbortSignal
 }) => {
   const response = await fetcher(href, {
     cache,
     credentials: 'same-origin',
-    mode: 'cors'
+    mode: 'cors',
+    signal
   })
   if (!response.ok) {
     throw new Error(`Home fragment bootstrap fetch failed: ${response.status}`)
@@ -103,6 +106,13 @@ export const buildHomeFragmentBootstrapEarlyHint = (lang?: string) => ({
   as: 'fetch' as const,
   crossorigin: 'anonymous' as const
 })
+
+export const buildPrimeHomeFragmentBootstrapScript = (href: string) => {
+  const escapedHref = JSON.stringify(href)
+  const escapedKey = JSON.stringify(HOME_FRAGMENT_BOOTSTRAP_STATE_KEY)
+
+  return `(function(){var win=window;if(!win)return;var href=${escapedHref};var key=${escapedKey};var existing=win[key];if(existing&&existing.href===href)return;var bytesPromise=fetch(href,{cache:"default",credentials:"same-origin",mode:"cors"}).then(function(response){if(!response.ok)throw new Error("Home fragment bootstrap fetch failed: "+response.status);return response.arrayBuffer();}).then(function(buffer){return new Uint8Array(buffer);}).catch(function(error){if(win[key]&&win[key].href===href){delete win[key];}throw error;});win[key]={href:href,bytesPromise:bytesPromise};})();`
+}
 
 export const primeHomeFragmentBootstrapBytes = ({
   href,

@@ -304,7 +304,7 @@ const previewHttpPort = runtimeConfig.ports.http
 const previewHttpsPort = runtimeConfig.ports.https
 const previewApiPort = runtimeConfig.ports.api
 const previewSpacetimeDbPort = runtimeConfig.ports.spacetimedb
-const previewValkeyPort = runtimeConfig.ports.valkey
+const previewGarnetPort = runtimeConfig.ports.garnet
 const previewWebTransportPort = runtimeConfig.ports.webtransport
 const previewProject = runtimeConfig.compose.projectName
 const previewWebHost = runtimeConfig.domains.web
@@ -404,7 +404,7 @@ const composeEnv = {
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,
   PROMETHEUS_SPACETIMEDB_PORT: previewSpacetimeDbPort,
-  PROMETHEUS_VALKEY_PORT: previewValkeyPort,
+  PROMETHEUS_GARNET_PORT: previewGarnetPort,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
   PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
   PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
@@ -479,7 +479,9 @@ const buildNativeBundle = async () => {
     VITE_API_BASE: previewApiBase,
     VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
     VITE_SPACETIMEDB_MODULE:
-      process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
+      process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
+      process.env.SPACETIMEDB_MODULE?.trim() ||
+      'prometheus-site-local',
     VITE_SPACETIMEAUTH_AUTHORITY:
       process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
       process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
@@ -579,7 +581,7 @@ const buildNativeBundle = async () => {
   }
 }
 
-const { configChanged } = ensureCaddyConfig(process.env.DEV_WEB_UPSTREAM?.trim(), 'http://web:4173', {
+const { configChanged } = ensureCaddyConfig('http://web:4173', 'http://web:4173', {
   dev: {
     encode: 'br gzip',
     stripAcceptEncoding: true
@@ -735,8 +737,8 @@ for (const target of buildResults) {
 saveBuildCache(cache)
 
 const runPreview = async () => {
-  await buildNativeBundle()
   if (isTauriMode) {
+    await buildNativeBundle()
     process.exit(0)
   }
   if (!process.env.VITE_API_BASE?.trim()) {

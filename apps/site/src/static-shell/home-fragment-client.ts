@@ -8,7 +8,7 @@ import { getPublicFragmentApiBase } from '../shared/public-fragment-config'
 import { FragmentStreamError } from './fragment-stream-error'
 import {
   buildHomeFragmentBootstrapHref,
-  consumePrimedHomeFragmentBootstrapBytes,
+  readPrimedHomeFragmentBootstrapBytes,
   fetchHomeFragmentBootstrapBytes,
   isHomeFragmentBootstrapSubset
 } from './home-fragment-bootstrap'
@@ -266,6 +266,26 @@ const selectHomeFragmentPayloads = (ids: string[], payloads: Record<string, Frag
     return acc
   }, {})
 
+export const fetchHomeFragmentBootstrapSelection = async (
+  ids: string[],
+  options: Pick<FetchHomeFragmentBatchOptions, 'bootstrapHref' | 'lang' | 'signal'> = {}
+) => {
+  if (!ids.length) return {}
+
+  const bootstrapHref =
+    options.bootstrapHref ?? buildHomeFragmentBootstrapHref({ lang: options.lang })
+  const primedBytes = readPrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
+  const bytes =
+    (await primedBytes) ??
+    (await fetchHomeFragmentBootstrapBytes({
+      href: bootstrapHref,
+      cache: 'default',
+      signal: options.signal
+    }))
+
+  return selectHomeFragmentPayloads(ids, parseHomeFragmentPayloads(bytes))
+}
+
 export const applyHomeFragmentEffects = (payload: FragmentPayload) => {
   const href = getFragmentCssHref(payload.id)
   if (href) {
@@ -283,17 +303,7 @@ export const fetchHomeFragmentBatch = async (
   if (!ids.length) return {}
 
   if (!options.refresh && isHomeFragmentBootstrapSubset(ids)) {
-    const bootstrapHref =
-      options.bootstrapHref ?? buildHomeFragmentBootstrapHref({ lang: options.lang })
-    const primedBytes = consumePrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
-    const bytes =
-      (await primedBytes) ??
-      (await fetchHomeFragmentBootstrapBytes({
-        href: bootstrapHref,
-        cache: 'no-store'
-      }))
-    const payloads = parseHomeFragmentPayloads(bytes)
-    return selectHomeFragmentPayloads(ids, payloads)
+    return fetchHomeFragmentBootstrapSelection(ids, options)
   }
 
   const params = new URLSearchParams({ protocol: '2' })

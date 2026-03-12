@@ -10,6 +10,7 @@ import {
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_SHELL_MAIN_REGION,
+  normalizeStaticShellRoutePath,
   STATIC_SHELL_REGION_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
@@ -485,6 +486,23 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
   })()
 }
 
+const prewarmRouteConnection = (path: string) => {
+  if (normalizeStaticShellRoutePath(path) !== '/store') return
+  void import('../shared/spacetime-client')
+    .then(({ prewarmSpacetimeConnection }) => {
+      prewarmSpacetimeConnection()
+    })
+    .catch((error) => {
+      console.warn('Failed to prewarm the SpaceTimeDB connection:', error)
+    })
+}
+
+const bindRouteControllers = async (controller: StaticFragmentController) => {
+  if (normalizeStaticShellRoutePath(controller.path) !== '/store') return
+  const { activateStoreStaticController } = await import('./controllers/store-static-controller')
+  controller.cleanupFns.push(await activateStoreStaticController({ routeData: controller.routeData }))
+}
+
 export const bootstrapStaticFragmentShell = async () => {
   const shellSeed = readShellSeed()
   if (!shellSeed) return
@@ -546,6 +564,8 @@ export const bootstrapStaticFragmentShell = async () => {
     )
   )
   bindShellControls(controller)
+  prewarmRouteConnection(controller.path)
+  await bindRouteControllers(controller)
   updateFragmentStatus(controller.lang, 'idle')
 
   const handlePageHide = () => {

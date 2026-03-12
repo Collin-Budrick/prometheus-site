@@ -1,6 +1,6 @@
 import { createClient, type ValkeyClientType } from '@valkey/client'
 import { createLogger, type PlatformLogger } from './logger'
-import type { ValkeyConfig } from './config'
+import type { GarnetConfig } from './config'
 
 type CacheOptions = {
   maxConnectAttempts?: number
@@ -19,7 +19,7 @@ export type CacheClient = {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const createCacheClient = (
-  config: ValkeyConfig,
+  config: GarnetConfig,
   logger: PlatformLogger = createLogger('cache'),
   options: CacheOptions = {}
 ): CacheClient => {
@@ -46,7 +46,7 @@ export const createCacheClient = (
   })
   client.on('error', (error) => {
     cacheReady = false
-    logger.warn('Valkey client error', { error })
+    logger.warn('Garnet client error', { error })
   })
 
   const connect = async () => {
@@ -60,14 +60,14 @@ export const createCacheClient = (
       try {
         await client.connect()
         cacheReady = client.isReady
-        logger.info('Valkey connected')
+        logger.info('Garnet connected')
         return
       } catch (error) {
         lastError = error
         cacheReady = false
-        logger.error(`Valkey connection attempt ${attempt} failed`, { error })
+        logger.error(`Garnet connection attempt ${attempt} failed`, { error })
         if (attempt === maxConnectAttempts) {
-          throw new Error(`Valkey connection failed after ${maxConnectAttempts} attempts`, {
+          throw new Error(`Garnet connection failed after ${maxConnectAttempts} attempts`, {
             cause: lastError
           })
         }

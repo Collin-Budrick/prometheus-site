@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  HOME_FRAGMENT_BOOTSTRAP_STATE_KEY,
+  buildPrimeHomeFragmentBootstrapScript,
   buildHomeFragmentBootstrapEarlyHint,
   buildHomeFragmentBootstrapPreloadLink,
   fetchHomeFragmentBootstrapBytes
@@ -36,5 +38,14 @@ describe('home fragment bootstrap preload metadata', () => {
       credentials: 'same-origin',
       mode: 'cors'
     })
+  })
+
+  it('builds an inline priming script that stores the bootstrap promise on window', () => {
+    const href = '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
+    const script = buildPrimeHomeFragmentBootstrapScript(href)
+
+    expect(script).toContain(HOME_FRAGMENT_BOOTSTRAP_STATE_KEY)
+    expect(script).toContain('fetch(href,{cache:"default",credentials:"same-origin",mode:"cors"})')
+    expect(script).toContain(JSON.stringify(href))
   })
 })

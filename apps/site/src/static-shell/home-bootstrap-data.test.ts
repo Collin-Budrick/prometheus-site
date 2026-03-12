@@ -94,4 +94,32 @@ describe('home-bootstrap-data', () => {
       'fragment://page/home/react@v1': 1
     })
   })
+
+  it('falls back to route bootstrap data when the shared shell seed is unavailable', () => {
+    const scripts = new Map<string, { textContent: string | null }>([
+      [
+        STATIC_HOME_DATA_SCRIPT_ID,
+        {
+          textContent: JSON.stringify({
+            lang: 'en',
+            path: '/',
+            snapshotKey: '/',
+            fragmentBootstrapHref:
+              '/api/fragments/bootstrap?protocol=2&ids=fragment%3A%2F%2Fpage%2Fhome%2Fplanner%40v1&lang=en'
+          })
+        }
+      ]
+    ])
+    const doc = {
+      getElementById: (id: string) => scripts.get(id) ?? null
+    }
+
+    const data = readStaticHomeBootstrapData({ doc: doc as never })
+
+    expect(data).not.toBeNull()
+    expect(data?.lang).toBe('en')
+    expect(data?.currentPath).toBe('/')
+    expect(data?.isAuthenticated).toBe(false)
+    expect(data?.fragmentBootstrapHref).toContain('/api/fragments/bootstrap?protocol=2')
+  })
 })

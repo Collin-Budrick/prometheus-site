@@ -47,9 +47,10 @@ describe('session bridge endpoints', () => {
   it('rejects session lookups without a valid cookie', async () => {
     const session = await fetch(`${apiUrl}/auth/session`)
 
-    expect(session.status).toBe(401)
+    expect(session.status).toBe(200)
     const payload = await session.json()
-    expect(payload.message).toContain('No active session')
+    expect(payload.session).toBeNull()
+    expect(payload.user).toBeNull()
   })
 
   it('clears the mirrored session on logout', async () => {

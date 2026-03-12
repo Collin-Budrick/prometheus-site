@@ -6,12 +6,12 @@ describe('configuration validation', () => {
     const cfg = loadConfig({})
 
     expect(cfg.spacetime.uri).toBe('http://127.0.0.1:3000/')
-    expect(cfg.spacetime.moduleName).toBe('prometheus-site')
+    expect(cfg.spacetime.moduleName).toBe('prometheus-site-local')
     expect(cfg.spacetime.connectRetries).toBe(5)
     expect(cfg.spacetime.backoffMs).toBe(200)
 
-    expect(cfg.valkey.host).toBe('localhost')
-    expect(cfg.valkey.port).toBe(6379)
+    expect(cfg.garnet.host).toBe('localhost')
+    expect(cfg.garnet.port).toBe(6379)
 
     expect(cfg.rateLimit.unkey.rootKey).toBeUndefined()
     expect(cfg.rateLimit.unkey.namespace).toBe('prometheus-api')
@@ -29,8 +29,8 @@ describe('configuration validation', () => {
       SPACETIMEDB_MODULE: 'prometheus-prod',
       DB_CONNECT_RETRIES: '2',
       DB_CONNECT_BACKOFF_MS: '400',
-      VALKEY_HOST: 'cache.internal',
-      VALKEY_PORT: '6380',
+      GARNET_HOST: 'cache.internal',
+      GARNET_PORT: '6380',
       SPACETIMEAUTH_AUTHORITY: 'https://auth.prometheus.dev/oidc',
       SPACETIMEAUTH_CLIENT_ID: 'prometheus-web',
       SPACETIMEAUTH_JWKS_URI: 'https://auth.prometheus.dev/oidc/jwks',
@@ -56,8 +56,8 @@ describe('configuration validation', () => {
     expect(cfg.spacetime.connectRetries).toBe(2)
     expect(cfg.spacetime.backoffMs).toBe(400)
 
-    expect(cfg.valkey.host).toBe('cache.internal')
-    expect(cfg.valkey.port).toBe(6380)
+    expect(cfg.garnet.host).toBe('cache.internal')
+    expect(cfg.garnet.port).toBe(6380)
 
     expect(cfg.auth.spacetimeAuth.authority).toBe('https://auth.prometheus.dev/oidc')
     expect(cfg.auth.spacetimeAuth.clientId).toBe('prometheus-web')
@@ -82,9 +82,19 @@ describe('configuration validation', () => {
   })
 
   it('rejects invalid numeric values', () => {
-    expect(() => loadConfig({ VALKEY_PORT: '-1' })).toThrow(/VALKEY_PORT/)
+    expect(() => loadConfig({ GARNET_PORT: '-1' })).toThrow(/GARNET_PORT/)
     expect(() => loadConfig({ DB_CONNECT_RETRIES: '-5' })).toThrow(/DB_CONNECT_RETRIES/)
     expect(() => loadConfig({ DB_CONNECT_BACKOFF_MS: '1.5' })).toThrow(/DB_CONNECT_BACKOFF_MS/)
+  })
+
+  it('supports legacy Valkey env aliases during the cache migration', () => {
+    const cfg = loadConfig({
+      VALKEY_HOST: 'legacy-cache.internal',
+      VALKEY_PORT: '6381'
+    })
+
+    expect(cfg.garnet.host).toBe('legacy-cache.internal')
+    expect(cfg.garnet.port).toBe(6381)
   })
 
   it('rejects invalid booleans and URLs', () => {
