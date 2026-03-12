@@ -17,6 +17,12 @@ import {
   type ContactInviteUser,
   type ContactSearchResult
 } from './data'
+import {
+  bindOverlayDismiss,
+  focusOverlayEntry,
+  restoreOverlayFocus,
+  setOverlaySurfaceState
+} from '../../shared/overlay-a11y'
 
 type ContactInvitesProps = {
   class?: string
@@ -83,6 +89,11 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const searchState = useSignal<'idle' | 'loading' | 'error'>('idle')
   const searchError = useSignal<string | null>(null)
   const rootRef = useSignal<HTMLElement>()
+  const popoverRootRef = useSignal<HTMLElement>()
+  const popoverTriggerRef = useSignal<HTMLButtonElement>()
+  const popoverRef = useSignal<HTMLDivElement>()
+  const searchInputRef = useSignal<HTMLInputElement>()
+  const wasPopoverOpen = useSignal(false)
   const initialTaskKey = useSignal<string | null>(null)
   const initialTaskSettled = useSignal(hasSeed)
 
@@ -241,10 +252,38 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     })
   })
 
+  useVisibleTask$((ctx) => {
+    const open = ctx.track(() => popoverOpen.value)
+    const popover = popoverRef.value
+
+    setOverlaySurfaceState(popover, open)
+    if (open && !wasPopoverOpen.value) {
+      focusOverlayEntry(popover, searchInputRef.value)
+    } else if (!open && wasPopoverOpen.value) {
+      restoreOverlayFocus(popoverTriggerRef.value)
+    }
+
+    wasPopoverOpen.value = open
+    if (!open) return
+
+    const cleanup = bindOverlayDismiss({
+      root: popoverRootRef.value,
+      onDismiss: () => {
+        popoverOpen.value = false
+      }
+    })
+
+    ctx.cleanup(cleanup)
+  })
+
   const incomingCount = invites.value.incoming.length
   const outgoingCount = invites.value.outgoing.length
   const contactsCount = invites.value.contacts.length
   const pendingCount = incomingCount + outgoingCount
+  const popoverLabel =
+    pendingCount > 0
+      ? `${props.title ?? 'Contact invites'}, ${pendingCount} pending`
+      : `Open ${props.title ?? 'contact invites'}`
 
   return (
     <div ref={rootRef} class={buildRootClass(props.class)}>
@@ -259,14 +298,18 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
               {statusNote.value.message}
             </span>
           ) : null}
-          <div class="chat-invites-bell-wrap">
+          <div ref={popoverRootRef} class="chat-invites-bell-wrap">
             <button
+              ref={popoverTriggerRef}
               type="button"
               class="chat-invites-bell"
               data-open={popoverOpen.value ? 'true' : 'false'}
               data-alert={incomingCount > 0 ? 'true' : 'false'}
               onClick$={togglePopover}
-              aria-label="Toggle invites"
+              aria-haspopup="dialog"
+              aria-expanded={popoverOpen.value ? 'true' : 'false'}
+              aria-controls="chat-invites-popover"
+              aria-label={popoverLabel}
             >
               <svg class="chat-invites-bell-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
@@ -284,9 +327,21 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
                 />
               </svg>
             </button>
-            <div class="chat-invites-popover" data-open={popoverOpen.value ? 'true' : 'false'}>
+            <div
+              ref={popoverRef}
+              class="chat-invites-popover"
+              id="chat-invites-popover"
+              role="dialog"
+              aria-modal="false"
+              aria-labelledby="chat-invites-popover-title"
+              data-open={popoverOpen.value ? 'true' : 'false'}
+              hidden={!popoverOpen.value}
+              aria-hidden={popoverOpen.value ? 'false' : 'true'}
+            >
               <div class="chat-invites-popover-header">
-                <span>{props.title ?? 'Contact invites'}</span>
+                <h3 class="chat-invites-popover-title" id="chat-invites-popover-title">
+                  {props.title ?? 'Contact invites'}
+                </h3>
                 <span class="chat-invites-popover-count">{pendingCount}</span>
               </div>
               <div class="chat-invites-popover-body">
@@ -294,6 +349,7 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
                   <label class="chat-invites-field">
                     <span>{props.searchLabel ?? 'Search'}</span>
                     <input
+                      ref={searchInputRef}
                       type="text"
                       value={searchQuery.value}
                       placeholder={props.searchPlaceholder ?? 'email'}

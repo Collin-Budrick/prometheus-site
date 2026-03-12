@@ -105,7 +105,7 @@ const renderDockItemsHtml = (lang: Lang, currentPath: string, authenticated: boo
         const href = withLangParam(item.href, lang)
         const active = isDockItemActive(currentPath, item.href)
         const current = active ? ' aria-current="page"' : ''
-        return `<div class="dock-icon" role="listitem" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><a class="dock-link" href="${escapeHtml(href)}" data-fragment-link aria-label="${escapeHtml(label)}"${current} title="${escapeHtml(label)}">${dockIconMarkup[item.labelKey]}</a></div>`
+        return `<li class="dock-icon" title="${escapeHtml(label)}"><a class="dock-link" href="${escapeHtml(href)}" data-fragment-link aria-label="${escapeHtml(label)}"${current} title="${escapeHtml(label)}">${dockIconMarkup[item.labelKey]}</a></li>`
       })
       .join('')
   }
@@ -113,7 +113,7 @@ const renderDockItemsHtml = (lang: Lang, currentPath: string, authenticated: boo
 
 export const renderDockHtml = (lang: Lang, currentPath: string, authenticated: boolean) => {
   const { copy, items } = renderDockItemsHtml(lang, currentPath, authenticated)
-  return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${getDockCount(authenticated)}"><div class="dock" role="list" aria-label="${escapeHtml(copy.dockAriaLabel)}">${items}</div></div>`
+  return `<div class="dock-shell" data-dock-mode="${authenticated ? 'auth' : 'public'}" style="--dock-count:${getDockCount(authenticated)}"><nav class="dock-nav" aria-label="${escapeHtml(copy.dockAriaLabel)}"><ul class="dock">${items}</ul></nav></div>`
 }
 
 export const renderDockRegionHtml = ({ lang, currentPath, isAuthenticated }: StaticDockState) =>

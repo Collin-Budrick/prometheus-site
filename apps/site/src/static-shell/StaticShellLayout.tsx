@@ -96,7 +96,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
               <button
                 class="settings-trigger"
                 type="button"
-                aria-haspopup="menu"
+                aria-haspopup="dialog"
                 aria-expanded="false"
                 aria-label={copy.navSettings}
                 aria-controls="topbar-settings-menu"
@@ -104,15 +104,29 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
-              <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
+              <div
+                class="settings-dropdown"
+                id="topbar-settings-menu"
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby="topbar-settings-heading"
+                data-open="false"
+                hidden
+                aria-hidden="true"
+                inert
+              >
+                <h2 class="sr-only" id="topbar-settings-heading">
+                  {copy.navSettings}
+                </h2>
                 <div class="settings-controls">
                   {supportedLanguages.length > 1 ? (
                     <button
                       type="button"
                       class="lang-toggle settings-lang-trigger"
                       data-lang={lang}
-                      aria-pressed="false"
+                      aria-expanded="false"
                       aria-label={copy.languageToggleLabel}
+                      aria-controls="topbar-settings-language-panel"
                       data-static-language-menu-toggle
                     >
                       <TranslateIcon />
@@ -130,26 +144,38 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
                   </button>
                 </div>
                 {supportedLanguages.length > 1 ? (
-                  <div class="settings-lang-drawer" data-open="false">
-                    <div class="settings-lang-list" role="menu">
+                  <div
+                    class="settings-lang-drawer"
+                    id="topbar-settings-language-panel"
+                    data-open="false"
+                    hidden
+                    aria-hidden="true"
+                    aria-labelledby="topbar-settings-heading"
+                    inert
+                  >
+                    <fieldset class="settings-lang-list">
+                      <legend class="sr-only">{copy.languageToggleLabel}</legend>
                       {supportedLanguages.map((langOption) => {
                         const isActive = lang === langOption
                         return (
-                          <button
+                          <label
                             key={langOption}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={isActive}
                             class="settings-lang-option"
                             data-active={isActive ? 'true' : 'false'}
-                            data-static-language-option
-                            data-lang={langOption}
                           >
+                            <input
+                              class="settings-lang-input"
+                              type="radio"
+                              name="static-topbar-language"
+                              checked={isActive}
+                              data-static-language-option
+                              data-lang={langOption}
+                            />
                             <span class="settings-lang-code">{getLangLabel(langOption)}</span>
-                          </button>
+                          </label>
                         )
                       })}
-                    </div>
+                    </fieldset>
                   </div>
                 ) : null}
               </div>

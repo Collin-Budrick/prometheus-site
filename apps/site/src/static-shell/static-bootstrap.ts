@@ -28,6 +28,12 @@ import {
   updateStaticShellUrlLang
 } from './snapshot-client'
 import { shouldRetryFragmentStream } from './fragment-stream-error'
+import {
+  bindOverlayDismiss,
+  focusOverlayEntry,
+  restoreOverlayFocus,
+  setOverlaySurfaceState
+} from '../shared/overlay-a11y'
 
 type Theme = 'light' | 'dark'
 
@@ -229,20 +235,32 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
 const bindShellControls = (controller: StaticFragmentController) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
   const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
+  const settingsPanel = document.querySelector<HTMLElement>('.settings-dropdown')
   const languageMenuToggle = document.querySelector<HTMLButtonElement>('[data-static-language-menu-toggle]')
   const languageDrawer = document.querySelector<HTMLElement>('.settings-lang-drawer')
   const themeToggle = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
 
-  if (!settingsRoot || !settingsToggle || !themeToggle) return
+  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle) return
 
-  const closeMenus = () => {
+  const closeLanguageMenu = (restoreFocus = false) => {
+    const wasOpen = languageDrawer?.dataset.open === 'true'
+    setOverlaySurfaceState(languageDrawer, false)
+    if (languageMenuToggle) {
+      languageMenuToggle.setAttribute('aria-expanded', 'false')
+    }
+    if (restoreFocus && wasOpen && languageMenuToggle) {
+      restoreOverlayFocus(languageMenuToggle)
+    }
+  }
+
+  const closeMenus = (restoreFocus = false) => {
+    const wasOpen = settingsRoot.dataset.open === 'true'
     settingsRoot.dataset.open = 'false'
     settingsToggle.setAttribute('aria-expanded', 'false')
-    if (languageDrawer) {
-      languageDrawer.dataset.open = 'false'
-    }
-    if (languageMenuToggle) {
-      languageMenuToggle.setAttribute('aria-pressed', 'false')
+    setOverlaySurfaceState(settingsPanel, false)
+    closeLanguageMenu(false)
+    if (restoreFocus && wasOpen) {
+      restoreOverlayFocus(settingsToggle)
     }
   }
 
@@ -250,26 +268,27 @@ const bindShellControls = (controller: StaticFragmentController) => {
     const next = settingsRoot.dataset.open !== 'true'
     settingsRoot.dataset.open = next ? 'true' : 'false'
     settingsToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
-    if (!next) closeMenus()
+    if (!next) {
+      closeMenus(false)
+      return
+    }
+    setOverlaySurfaceState(settingsPanel, true)
+    focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle)
   }
 
   const toggleLanguageMenu = () => {
     if (!languageDrawer || !languageMenuToggle) return
     const next = languageDrawer.dataset.open !== 'true'
-    languageDrawer.dataset.open = next ? 'true' : 'false'
-    languageMenuToggle.setAttribute('aria-pressed', next ? 'true' : 'false')
-  }
-
-  const handleDocumentPointer = (event: PointerEvent) => {
-    const target = event.target as Node | null
-    if (!target || settingsRoot.contains(target)) return
-    closeMenus()
-  }
-
-  const handleDocumentKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      closeMenus()
+    setOverlaySurfaceState(languageDrawer, next)
+    languageMenuToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
+    if (next) {
+      focusOverlayEntry(languageDrawer, [
+        'input[name="static-topbar-language"]:checked',
+        'input[name="static-topbar-language"]'
+      ])
+      return
     }
+    restoreOverlayFocus(languageMenuToggle)
   }
 
   const handleThemeClick = () => {
@@ -280,30 +299,39 @@ const bindShellControls = (controller: StaticFragmentController) => {
 
   settingsToggle.addEventListener('click', toggleSettings)
   themeToggle.addEventListener('click', handleThemeClick)
-  document.addEventListener('pointerdown', handleDocumentPointer)
-  document.addEventListener('keydown', handleDocumentKey)
   controller.cleanupFns.push(() => settingsToggle.removeEventListener('click', toggleSettings))
   controller.cleanupFns.push(() => themeToggle.removeEventListener('click', handleThemeClick))
-  controller.cleanupFns.push(() => document.removeEventListener('pointerdown', handleDocumentPointer))
-  controller.cleanupFns.push(() => document.removeEventListener('keydown', handleDocumentKey))
+  controller.cleanupFns.push(
+    bindOverlayDismiss({
+      root: settingsRoot,
+      onDismiss: () => {
+        if (settingsRoot.dataset.open !== 'true' && languageDrawer?.dataset.open !== 'true') {
+          return
+        }
+        closeMenus(true)
+      }
+    })
+  )
 
   if (languageMenuToggle && languageDrawer) {
     languageMenuToggle.addEventListener('click', toggleLanguageMenu)
     controller.cleanupFns.push(() => languageMenuToggle.removeEventListener('click', toggleLanguageMenu))
   }
 
-  document.querySelectorAll<HTMLButtonElement>('[data-static-language-option]').forEach((button) => {
-    const handleClick = () => {
-      const nextLang = button.dataset.lang as Lang | undefined
-      closeMenus()
+  document.querySelectorAll<HTMLInputElement>('[data-static-language-option]').forEach((input) => {
+    const handleChange = () => {
+      const nextLang = input.dataset.lang as Lang | undefined
+      closeMenus(false)
       if (!nextLang || nextLang === controller.lang) return
       void swapStaticFragmentLanguage(nextLang)
     }
 
-    button.addEventListener('click', handleClick)
-    controller.cleanupFns.push(() => button.removeEventListener('click', handleClick))
+    input.addEventListener('change', handleChange)
+    controller.cleanupFns.push(() => input.removeEventListener('change', handleChange))
   })
 
+  setOverlaySurfaceState(settingsPanel, false)
+  closeLanguageMenu(false)
   refreshThemeButton(controller.lang)
 }
 

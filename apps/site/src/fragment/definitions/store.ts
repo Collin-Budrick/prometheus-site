@@ -241,6 +241,8 @@ const storeFragmentCss = `
 .store-stream-sort-list {
   display: grid;
   gap: 6px;
+  margin: 0;
+  min-width: 0;
   padding: 8px;
   border-radius: 16px;
   border: 1px solid rgb(var(--stroke));
@@ -249,6 +251,9 @@ const storeFragmentCss = `
 }
 
 .store-stream-sort-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
   border: 1px solid transparent;
   background: rgb(var(--surface) / 0.6);
   color: rgb(var(--muted));
@@ -267,6 +272,11 @@ const storeFragmentCss = `
     box-shadow 160ms ease;
 }
 
+.store-stream-sort-option:focus-within {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 3px;
+}
+
 .store-stream-sort-option:hover {
   color: rgb(var(--ink));
   transform: translateY(-1px);
@@ -279,6 +289,14 @@ const storeFragmentCss = `
   background: rgb(var(--surface) / 0.92);
   border-color: rgb(var(--accent) / 0.6);
   box-shadow: 0 12px 20px rgb(var(--accent) / 0.16);
+}
+
+.store-stream-sort-input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .store-stream-sort:focus-within {

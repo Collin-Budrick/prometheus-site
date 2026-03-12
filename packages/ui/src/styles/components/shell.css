@@ -231,6 +231,8 @@
   .settings-lang-list {
     display: grid;
     gap: 6px;
+    margin: 0;
+    min-width: 0;
     padding: 8px;
     border-radius: 14px;
     border: 1px solid rgb(var(--stroke));
@@ -239,9 +241,11 @@
 
   .settings-lang-option {
     @apply inline-flex items-center justify-between rounded-full border px-3 py-2;
+    width: 100%;
     border-color: transparent;
     background: rgb(var(--surface) / 0.6);
     color: rgb(var(--muted));
+    cursor: pointer;
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.35em;
@@ -270,6 +274,19 @@
     --control-glow-translate: 0px;
     --control-glow-border: rgb(var(--accent) / 0.6);
     --control-glow-shadow: 0 12px 20px rgb(var(--accent) / 0.16);
+  }
+
+  .settings-lang-option:focus-within {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 3px;
+  }
+
+  .settings-lang-input {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: 0;
+    opacity: 0;
   }
 
   .settings-lang-code {

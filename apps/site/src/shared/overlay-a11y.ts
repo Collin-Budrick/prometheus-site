@@ -1,0 +1,123 @@
+type FocusTarget =
+  | HTMLElement
+  | string
+  | Array<HTMLElement | string | null | undefined>
+  | (() => HTMLElement | null | undefined)
+  | null
+  | undefined
+
+type OverlayDismissReason = 'pointer' | 'escape'
+
+type OverlayDismissEventTarget = Pick<Document, 'addEventListener' | 'removeEventListener'>
+type OverlayDismissWindowTarget = Pick<Window, 'addEventListener' | 'removeEventListener'>
+
+const FALLBACK_FOCUSABLE_SELECTOR = [
+  'button:not([disabled]):not([hidden])',
+  'input:not([disabled]):not([type="hidden"]):not([hidden])',
+  'select:not([disabled]):not([hidden])',
+  'textarea:not([disabled]):not([hidden])',
+  'a[href]:not([hidden])',
+  '[tabindex]:not([tabindex="-1"]):not([hidden])'
+].join(', ')
+
+const isFocusableElement = (value: unknown): value is HTMLElement =>
+  Boolean(value) && typeof (value as { focus?: unknown }).focus === 'function'
+
+const resolveFocusTarget = (root: ParentNode, target: FocusTarget): HTMLElement | null => {
+  if (!target) return null
+  if (Array.isArray(target)) {
+    for (const candidate of target) {
+      const resolved = resolveFocusTarget(root, candidate)
+      if (resolved) return resolved
+    }
+    return null
+  }
+  if (typeof target === 'function') {
+    return resolveFocusTarget(root, target())
+  }
+  if (typeof target === 'string') {
+    return root.querySelector<HTMLElement>(target)
+  }
+  return isFocusableElement(target) ? target : null
+}
+
+const setElementInert = (element: HTMLElement, inert: boolean) => {
+  const overlayElement = element as HTMLElement & { inert?: boolean }
+  if ('inert' in overlayElement) {
+    overlayElement.inert = inert
+  }
+  if (inert) {
+    element.setAttribute('inert', '')
+    return
+  }
+  element.removeAttribute('inert')
+}
+
+export const setOverlaySurfaceState = (surface: HTMLElement | null | undefined, open: boolean) => {
+  if (!surface) return
+  surface.dataset.open = open ? 'true' : 'false'
+  surface.hidden = !open
+  surface.setAttribute('aria-hidden', open ? 'false' : 'true')
+  setElementInert(surface, !open)
+}
+
+export const focusOverlayEntry = (
+  root: ParentNode | null | undefined,
+  preferredTarget?: FocusTarget
+) => {
+  if (!root) return null
+  const preferred = preferredTarget ? resolveFocusTarget(root, preferredTarget) : null
+  const fallback =
+    typeof root.querySelector === 'function'
+      ? root.querySelector<HTMLElement>(FALLBACK_FOCUSABLE_SELECTOR)
+      : null
+  const target =
+    preferred ??
+    fallback ??
+    ((root as HTMLElement).tabIndex >= 0 && isFocusableElement(root) ? (root as HTMLElement) : null)
+  if (!target) return null
+  target.focus()
+  return target
+}
+
+export const restoreOverlayFocus = (target: HTMLElement | null | undefined) => {
+  if (!isFocusableElement(target)) return null
+  if ((target as HTMLElement & { isConnected?: boolean }).isConnected === false) return null
+  target.focus()
+  return target
+}
+
+export const bindOverlayDismiss = ({
+  root,
+  onDismiss,
+  doc = typeof document !== 'undefined' ? document : null,
+  win = typeof window !== 'undefined' ? window : null
+}: {
+  root: HTMLElement | null | undefined
+  onDismiss: (reason: OverlayDismissReason) => void
+  doc?: OverlayDismissEventTarget | null
+  win?: OverlayDismissWindowTarget | null
+}) => {
+  if (!root || !doc || !win) return () => undefined
+
+  const handlePointerDown = (event: Event) => {
+    const target = (event as PointerEvent).target as Node | null
+    if (!target || root.contains(target)) return
+    onDismiss('pointer')
+  }
+
+  const handleKeyDown = (event: Event) => {
+    const keyboardEvent = event as KeyboardEvent
+    if (keyboardEvent.key !== 'Escape') return
+    keyboardEvent.preventDefault?.()
+    onDismiss('escape')
+  }
+
+  doc.addEventListener('pointerdown', handlePointerDown)
+  win.addEventListener('keydown', handleKeyDown)
+
+  return () => {
+    doc.removeEventListener('pointerdown', handlePointerDown)
+    win.removeEventListener('keydown', handleKeyDown)
+  }
+}

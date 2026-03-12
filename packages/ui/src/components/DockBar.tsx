@@ -14,8 +14,10 @@ export const DockBar = component$(({ ariaLabel, class: className, dockMode, dock
     data-dock-mode={dockMode}
     style={dockCount ? { '--dock-count': String(dockCount) } : undefined}
   >
-    <Dock iconMagnification={1.45} iconDistance={150} ariaLabel={ariaLabel}>
-      <Slot />
-    </Dock>
+    <nav class="dock-nav" aria-label={ariaLabel}>
+      <Dock iconMagnification={1.45} iconDistance={150}>
+        <Slot />
+      </Dock>
+    </nav>
   </div>
 ))

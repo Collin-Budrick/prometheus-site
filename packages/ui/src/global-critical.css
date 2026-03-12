@@ -383,6 +383,8 @@ body {
 .settings-lang-list {
   display: grid;
   gap: 6px;
+  margin: 0;
+  min-width: 0;
   padding: 8px;
   border-radius: 14px;
   border: 1px solid rgb(var(--stroke));
@@ -393,10 +395,12 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-height: 2.25rem;
   padding: 0.5rem 0.75rem;
   border-color: transparent;
   background: rgb(var(--surface) / 0.6);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.35em;
@@ -406,6 +410,19 @@ body {
 .settings-lang-option[data-active="true"] {
   background: rgb(var(--surface) / 0.92);
   color: rgb(var(--ink));
+}
+
+.settings-lang-option:focus-within {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 3px;
+}
+
+.settings-lang-input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .settings-lang-code {
@@ -979,12 +996,14 @@ body {
   background: rgb(var(--surface) / 0.92);
   pointer-events: auto;
   position: relative;
+  margin: 0;
   min-width: calc(
     (var(--dock-icon-size) * var(--dock-count, 4)) +
       (var(--dock-gap) * (var(--dock-count, 4) - 1)) +
       (var(--dock-padding-x) * 2)
   );
   min-height: calc(var(--dock-icon-size) + var(--dock-padding-y) + var(--dock-padding-y));
+  list-style: none;
 }
 
 .dock-icon {
@@ -1009,6 +1028,12 @@ body {
   color: inherit;
   padding: 8px;
   box-sizing: border-box;
+}
+
+.dock-link[aria-current='page'] {
+  color: rgb(var(--accent-strong));
+  background: rgb(var(--surface-strong) / 0.9);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent) / 0.25);
 }
 
 .dock-link:focus-visible {

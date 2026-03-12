@@ -4,7 +4,6 @@ import { shouldActivateDockMotion } from './dock-motion'
 type DockProps = {
   iconMagnification?: number
   iconDistance?: number
-  ariaLabel: string
   class?: string
 }
 
@@ -28,7 +27,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
 
 export const Dock = component$<DockProps>(
-  ({ iconMagnification = DEFAULT_MAGNIFICATION, iconDistance = DEFAULT_DISTANCE, ariaLabel, class: className }) => {
+  ({ iconMagnification = DEFAULT_MAGNIFICATION, iconDistance = DEFAULT_DISTANCE, class: className }) => {
     const dockRef = useSignal<HTMLElement>()
 
     useVisibleTask$((ctx) => {
@@ -264,17 +263,17 @@ export const Dock = component$<DockProps>(
     }, { strategy: 'document-idle' })
 
     return (
-      <div ref={dockRef} class={`dock${className ? ` ${className}` : ''}`} role="list" aria-label={ariaLabel}>
+      <ul ref={dockRef} class={`dock${className ? ` ${className}` : ''}`}>
         <Slot />
-      </div>
+      </ul>
     )
   }
 )
 
 export const DockIcon = component$<DockIconProps>(({ label, class: className }) => {
   return (
-    <div class={`dock-icon${className ? ` ${className}` : ''}`} role="listitem" aria-label={label} title={label}>
+    <li class={`dock-icon${className ? ` ${className}` : ''}`} title={label}>
       <Slot />
-    </div>
+    </li>
   )
 })

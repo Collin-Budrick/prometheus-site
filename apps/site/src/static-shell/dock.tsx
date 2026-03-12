@@ -62,27 +62,29 @@ export const StaticDockMarkup = ({ lang, currentPath, copy, isAuthenticated }: S
   const navItems = isAuthenticated ? AUTH_NAV_ITEMS : TOPBAR_NAV_ITEMS
   return (
     <div class="dock-shell" data-dock-mode={isAuthenticated ? 'auth' : 'public'} style={{ '--dock-count': `${navItems.length}` }}>
-      <div class="dock" role="list" aria-label={copy.dockAriaLabel}>
-        {navItems.map((item) => {
-          const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
-          const href = withLangParam(item.href, lang)
-          const isActive = isDockItemActive(currentPath, item.href)
-          return (
-            <div key={item.href} class="dock-icon" role="listitem" aria-label={copy[item.labelKey]} title={copy[item.labelKey]}>
-              <a
-                class="dock-link"
-                href={href}
-                data-fragment-link
-                aria-label={copy[item.labelKey]}
-                aria-current={isActive ? 'page' : undefined}
-                title={copy[item.labelKey]}
-              >
-                <Icon class="dock-icon-svg" aria-hidden="true" />
-              </a>
-            </div>
-          )
-        })}
-      </div>
+      <nav class="dock-nav" aria-label={copy.dockAriaLabel}>
+        <ul class="dock">
+          {navItems.map((item) => {
+            const Icon = DOCK_ICONS[item.labelKey] ?? InHomeSimple
+            const href = withLangParam(item.href, lang)
+            const isActive = isDockItemActive(currentPath, item.href)
+            return (
+              <li key={item.href} class="dock-icon" title={copy[item.labelKey]}>
+                <a
+                  class="dock-link"
+                  href={href}
+                  data-fragment-link
+                  aria-label={copy[item.labelKey]}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={copy[item.labelKey]}
+                >
+                  <Icon class="dock-icon-svg" aria-hidden="true" />
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
     </div>
   )
 }

@@ -178,6 +178,11 @@ const chatInvitesCss = `
   color: rgb(var(--muted));
 }
 
+.chat-invites-popover-title {
+  margin: 0;
+  font: inherit;
+}
+
 .chat-invites-popover-count {
   padding: 2px 10px;
   border-radius: 999px;

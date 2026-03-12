@@ -22,6 +22,12 @@ import { loadLanguageResources, prefetchLanguageResources } from '../lang/client
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
 import { useCspNonce } from '../security/qwik'
 import { buildSiteCsp, getOrCreateRequestCspNonce } from '../security/server'
+import {
+  bindOverlayDismiss,
+  focusOverlayEntry,
+  restoreOverlayFocus,
+  setOverlaySurfaceState
+} from '../shared/overlay-a11y'
 import { StaticShellLayout } from '../static-shell/StaticShellLayout'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
@@ -361,6 +367,7 @@ const TranslateIcon = () => (
 type ShellSettingsPanelProps = {
   open: boolean
   rootRef: Signal<HTMLDivElement | undefined>
+  triggerRef: Signal<HTMLButtonElement | undefined>
   copy: Record<string, string>
   hasMultipleLangs: boolean
   langSignal: Signal<Lang>
@@ -376,6 +383,7 @@ const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
   const {
     open,
     rootRef,
+    triggerRef,
     copy,
     hasMultipleLangs,
     langSignal,
@@ -386,47 +394,83 @@ const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
     onToggleLanguageMenu$,
     onClose$
   } = props
+  const panelRef = useSignal<HTMLDivElement>()
+  const languageTriggerRef = useSignal<HTMLButtonElement>()
+  const langDrawerRef = useSignal<HTMLDivElement>()
+  const wasOpen = useSignal(false)
+  const wasLangOpen = useSignal(false)
+
+  useVisibleTask$((ctx) => {
+    const isOpen = ctx.track(() => open)
+    const isLangMenuOpen = ctx.track(() => langMenuOpen.value)
+    const panel = panelRef.value
+    const langDrawer = langDrawerRef.value
+    const langDrawerOpen = isOpen && hasMultipleLangs && isLangMenuOpen
+
+    setOverlaySurfaceState(panel, isOpen)
+    setOverlaySurfaceState(langDrawer, langDrawerOpen)
+
+    if (isOpen && !wasOpen.value) {
+      focusOverlayEntry(panel, hasMultipleLangs ? '.settings-lang-trigger' : '.theme-toggle')
+    } else if (!isOpen && wasOpen.value) {
+      restoreOverlayFocus(triggerRef.value)
+    }
+
+    if (langDrawerOpen && !wasLangOpen.value) {
+      focusOverlayEntry(langDrawer, [
+        'input[name="topbar-language"]:checked',
+        'input[name="topbar-language"]'
+      ])
+    } else if (isOpen && !langDrawerOpen && wasLangOpen.value) {
+      restoreOverlayFocus(languageTriggerRef.value)
+    }
+
+    wasOpen.value = isOpen
+    wasLangOpen.value = langDrawerOpen
+  })
 
   useVisibleTask$(
     (ctx) => {
       const isOpen = ctx.track(() => open)
       if (!isOpen) return
 
-      const handlePointerDown = (event: PointerEvent) => {
-        const target = event.target as Node | null
-        const root = rootRef.value
-        if (!root || !target) return
-        if (root.contains(target)) return
-        onClose$()
-      }
-
-      const handleKeyDown = (event: KeyboardEvent) => {
-        if (event.key !== 'Escape') return
-        onClose$()
-      }
-
-      window.addEventListener('pointerdown', handlePointerDown)
-      window.addEventListener('keydown', handleKeyDown)
-      ctx.cleanup(() => {
-        window.removeEventListener('pointerdown', handlePointerDown)
-        window.removeEventListener('keydown', handleKeyDown)
+      const cleanup = bindOverlayDismiss({
+        root: rootRef.value,
+        onDismiss: () => {
+          onClose$()
+        }
       })
+
+      ctx.cleanup(cleanup)
     },
     { strategy: 'document-ready' }
   )
 
-  if (!open) return null
-
   return (
-    <div class="settings-dropdown" id="topbar-settings-menu" role="menu">
+    <div
+      ref={panelRef}
+      class="settings-dropdown"
+      id="topbar-settings-menu"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="topbar-settings-heading"
+      data-open={open ? 'true' : 'false'}
+      hidden={!open}
+      aria-hidden={open ? 'false' : 'true'}
+    >
+      <h2 class="sr-only" id="topbar-settings-heading">
+        {copy.navSettings}
+      </h2>
       <div class="settings-controls">
         {hasMultipleLangs ? (
           <button
+            ref={languageTriggerRef}
             type="button"
             class="lang-toggle settings-lang-trigger"
             data-lang={langSignal.value}
-            aria-pressed={langMenuOpen.value}
+            aria-expanded={open && langMenuOpen.value ? 'true' : 'false'}
             aria-label={copy.languageToggleLabel}
+            aria-controls="topbar-settings-language-panel"
             onClick$={onToggleLanguageMenu$}
           >
             <TranslateIcon />
@@ -444,29 +488,41 @@ const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
         </button>
       </div>
       {hasMultipleLangs ? (
-        <div class="settings-lang-drawer" data-open={langMenuOpen.value ? 'true' : 'false'}>
-          <div class="settings-lang-list" role="menu">
+        <div
+          ref={langDrawerRef}
+          class="settings-lang-drawer"
+          id="topbar-settings-language-panel"
+          data-open={open && langMenuOpen.value ? 'true' : 'false'}
+          hidden={!open || !langMenuOpen.value}
+          aria-hidden={open && langMenuOpen.value ? 'false' : 'true'}
+          aria-labelledby="topbar-settings-heading"
+        >
+          <fieldset class="settings-lang-list">
+            <legend class="sr-only">{copy.languageToggleLabel}</legend>
             {supportedLangs.map((langOption) => {
               const langValue = langOption as Lang
               const isActive = langSignal.value === langValue
               return (
-                <button
+                <label
                   key={langOption}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={isActive}
                   class="settings-lang-option"
                   data-active={isActive ? 'true' : 'false'}
-                  onClick$={$(() => {
-                    onApplyLangChoice$(langValue)
-                    langMenuOpen.value = false
-                  })}
                 >
+                  <input
+                    class="settings-lang-input"
+                    type="radio"
+                    name="topbar-language"
+                    checked={isActive}
+                    onChange$={$(() => {
+                      onApplyLangChoice$(langValue)
+                      langMenuOpen.value = false
+                    })}
+                  />
                   <span class="settings-lang-code">{getLangLabel(langOption)}</span>
-                </button>
+                </label>
               )
             })}
-          </div>
+          </fieldset>
         </div>
       ) : null}
     </div>
@@ -630,6 +686,7 @@ const InteractiveShellLayout = component$(() => {
   const settingsOpen = useSignal(false)
   const settingsPanelMounted = useSignal(false)
   const settingsRef = useSignal<HTMLDivElement>()
+  const settingsTriggerRef = useSignal<HTMLButtonElement>()
   const langMenuOpen = useSignal(false)
   const themeSignal = useSignal<ShellTheme>(shellPreferences.value.theme === 'dark' ? 'dark' : 'light')
   const currentLanguageSelection = mergeLanguageSelections(
@@ -803,9 +860,10 @@ const InteractiveShellLayout = component$(() => {
                 <span class="dot" aria-hidden="true" />
               </div>
               <button
+                ref={settingsTriggerRef}
                 class="settings-trigger"
                 type="button"
-                aria-haspopup="menu"
+                aria-haspopup="dialog"
                 aria-expanded={settingsOpen.value ? 'true' : 'false'}
                 aria-label={copy.value.navSettings}
                 aria-controls="topbar-settings-menu"
@@ -827,6 +885,7 @@ const InteractiveShellLayout = component$(() => {
                 <ShellSettingsPanel
                   open={settingsOpen.value}
                   rootRef={settingsRef}
+                  triggerRef={settingsTriggerRef}
                   copy={copy.value}
                   hasMultipleLangs={hasMultipleLangs}
                   langSignal={langSignal}
@@ -852,6 +911,10 @@ const InteractiveShellLayout = component$(() => {
       >
         {dockItems.map(({ href, label, icon: Icon }, index) => {
           const langHref = withLangParam(href, langSignal.value)
+          const isActive =
+            href === '/'
+              ? location.url.pathname === '/'
+              : location.url.pathname === href || location.url.pathname.startsWith(`${href}/`)
           return (
             <DockIcon key={href} label={label}>
               <Link
@@ -860,6 +923,7 @@ const InteractiveShellLayout = component$(() => {
                 prefetch={false}
                 data-fragment-link
                 aria-label={label}
+                aria-current={isActive ? 'page' : undefined}
                 title={label}
                 style={{ '--dock-index': `${index}` }}
               >

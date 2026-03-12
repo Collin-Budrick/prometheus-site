@@ -12,6 +12,12 @@ import {
 } from '../fragment/ui/initial-settle'
 import { isOnline } from '../native/connectivity'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import {
+  bindOverlayDismiss,
+  focusOverlayEntry,
+  restoreOverlayFocus,
+  setOverlaySurfaceState
+} from '../shared/overlay-a11y'
 import { useStoreSeed } from '../shared/store-seed'
 import {
   buildStoreSortToken,
@@ -208,6 +214,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const rootRef = useSignal<HTMLElement>()
   const sortMenuRef = useSignal<HTMLElement>()
+  const sortTriggerRef = useSignal<HTMLButtonElement>()
+  const sortDrawerRef = useSignal<HTMLDivElement>()
+  const wasSortMenuOpen = useSignal(false)
   const panelRef = useSignal<HTMLElement>()
   const loadMoreRef = useSignal<HTMLDivElement>()
   const initialTaskKey = useSignal<string | null>(null)
@@ -1016,24 +1025,29 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
     const open = ctx.track(() => sortMenuOpen.value)
+    const drawer = sortDrawerRef.value
+
+    setOverlaySurfaceState(drawer, open)
+    if (open && !wasSortMenuOpen.value) {
+      focusOverlayEntry(drawer, [
+        'input[name="store-stream-sort"]:checked',
+        'input[name="store-stream-sort"]'
+      ])
+    } else if (!open && wasSortMenuOpen.value) {
+      restoreOverlayFocus(sortTriggerRef.value)
+    }
+
+    wasSortMenuOpen.value = open
     if (!open) return
-    const handlePointerDown = (event: PointerEvent) => {
-      const menu = sortMenuRef.value
-      const target = event.target as Node | null
-      if (!menu || !target) return
-      if (menu.contains(target)) return
-      sortMenuOpen.value = false
-    }
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      sortMenuOpen.value = false
-    }
-    window.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('keydown', handleEscape)
-    ctx.cleanup(() => {
-      window.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('keydown', handleEscape)
+
+    const cleanup = bindOverlayDismiss({
+      root: sortMenuRef.value,
+      onDismiss: () => {
+        sortMenuOpen.value = false
+      }
     })
+
+    ctx.cleanup(cleanup)
   })
 
   return (
@@ -1080,10 +1094,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
             style={{ position: 'relative', zIndex: '80' }}
           >
             <button
+              ref={sortTriggerRef}
               class="store-stream-sort-trigger"
               type="button"
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               aria-expanded={sortMenuOpen.value ? 'true' : 'false'}
+              aria-controls="store-stream-sort-panel"
               aria-label={sortLabel}
               onClick$={handleSortToggle}
             >
@@ -1093,28 +1109,42 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
               </span>
             </button>
             <div
+              ref={sortDrawerRef}
               class="store-stream-sort-drawer"
+              id="store-stream-sort-panel"
               data-open={sortMenuOpen.value ? 'true' : 'false'}
+              role="dialog"
+              aria-modal="false"
+              aria-labelledby="store-stream-sort-heading"
+              hidden={!sortMenuOpen.value}
+              aria-hidden={sortMenuOpen.value ? 'false' : 'true'}
               style={{ zIndex: '90' }}
             >
-              <div class="store-stream-sort-list" role="menu" aria-label={sortLabel}>
+              <fieldset class="store-stream-sort-list">
+                <legend class="sr-only" id="store-stream-sort-heading">
+                  {sortLabel}
+                </legend>
                 {sortOptions.value.map((option) => {
                   const isActive = option.value === sortToken.value
                   return (
-                    <button
+                    <label
                       key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isActive}
                       class="store-stream-sort-option"
                       data-active={isActive ? 'true' : 'false'}
-                      onClick$={() => handleSortSelect(option.value)}
                     >
-                      {option.label}
-                    </button>
+                      <input
+                        class="store-stream-sort-input"
+                        type="radio"
+                        name="store-stream-sort"
+                        value={option.value}
+                        checked={isActive}
+                        onChange$={() => handleSortSelect(option.value)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
                   )
                 })}
-              </div>
+              </fieldset>
             </div>
           </div>
         </div>

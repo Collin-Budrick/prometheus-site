@@ -83,7 +83,10 @@ describe('syncStaticDockMarkup', () => {
 
     expect(updated).toBe(true)
     expect(dockRoot.innerHTML).toContain('data-dock-mode="auth"')
+    expect(dockRoot.innerHTML).toContain('<nav class="dock-nav" aria-label="Dock">')
+    expect(dockRoot.innerHTML).toContain('<ul class="dock">')
     expect(dockRoot.innerHTML).toContain('/dashboard?lang=en')
+    expect(dockRoot.innerHTML).toContain('aria-current="page"')
     expect(dockRoot.dataset.staticDockMode).toBe('auth')
     expect(dockRoot.dataset.staticDockLang).toBe('en')
     expect(dockRoot.dataset.staticDockPath).toBe('/dashboard')
