@@ -28,28 +28,6 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload
 }
 
-const STORE_STREAM_LIMIT = 12
-
-const resolveStoreApiBase = async (request: Request) => {
-  const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
-    import('../../app-config.server'),
-    import('../../shared/api-base.server')
-  ])
-  const apiBase = resolveServerApiBase(appConfig.apiBase, request)
-  if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
-  const origin = resolveRequestOrigin(request)
-  if (!origin) return ''
-  if (apiBase.startsWith('/')) return `${origin}${apiBase}`
-  return `${origin}/${apiBase}`
-}
-
-const buildStoreApiUrl = (apiBase: string, path: string) => {
-  if (!apiBase) return ''
-  const trimmed = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase
-  const suffix = path.startsWith('/') ? path : `/${path}`
-  return `${trimmed}${suffix}`
-}
-
 const resolveStoreSort = (url: URL): { sort: StoreSortKey; dir: StoreSortDir } => {
   return {
     sort: normalizeStoreSortKey(url.searchParams.get('sort')),
@@ -64,39 +42,9 @@ const loadStoreSeed = async (
   const cookieHeader = request.headers.get('cookie')
   const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
   const queued = readStoreCartQueueFromCookie(cookieHeader)
-  let streamItems: unknown[] = []
-
-  if (isStaticShellBuild()) {
-    return {
-      stream: { items: streamItems, sort: sortParams.sort, dir: sortParams.dir },
-      cart: { items: cartItems, queuedCount: queued.length }
-    }
-  }
-
-  try {
-    const apiBase = await resolveStoreApiBase(request)
-    const url = buildStoreApiUrl(
-      apiBase,
-      `/store/items?limit=${STORE_STREAM_LIMIT}&sort=${sortParams.sort}&dir=${sortParams.dir}`
-    )
-    if (url) {
-      const response = await fetch(url, {
-        headers: { accept: 'application/json' },
-        credentials: 'include'
-      })
-      if (response.ok) {
-        const payload = (await response.json()) as { items?: unknown }
-        if (Array.isArray(payload.items)) {
-          streamItems = payload.items
-        }
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to seed store stream items', error)
-  }
 
   return {
-    stream: { items: streamItems, sort: sortParams.sort, dir: sortParams.dir },
+    stream: { items: [], sort: sortParams.sort, dir: sortParams.dir },
     cart: { items: cartItems, queuedCount: queued.length }
   }
 }

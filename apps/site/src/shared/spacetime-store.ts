@@ -156,12 +156,12 @@ const attachToConnection = () => {
     .onError((ctx) => {
       inventoryState = {
         ...inventoryState,
-        error: ctx.event.message,
+        error: ctx.event?.message ?? 'Subscription failed.',
         status: 'error'
       }
       notifyInventoryListeners()
     })
-    .subscribe((tables) => tables.store_item)
+    .subscribe('SELECT * FROM store_item')
 }
 
 const ensureStoreService = () => {

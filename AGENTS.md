@@ -16,7 +16,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the WebTransport sidecar for HTTP/3 WebTransport sessions.
-  - Postgres 16 + Valkey 8 containers with healthchecks and persistent volumes.
+  - SpaceTimeDB 2.0 + Valkey 8 containers with healthchecks and persistent volumes.
   - Dynamic Caddy config generated for dev via `scripts/compose-utils.ts` (writes `infra/caddy/Caddyfile`, controlled by `scripts/runtime-config.ts`).
 
 ## Dev and runtime flow
@@ -43,7 +43,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **API base resolution:** Frontend resolves API origin via `API_BASE`/`VITE_API_BASE` (absolute URL or `/api` prefix). Default dev fallback is `http://127.0.0.1:4000`. Set the envs explicitly when front/back aren’t co-located.
 - **Public base (IPFS/PWA):** `VITE_PUBLIC_BASE` controls the Vite `base` path (use `./` for IPFS/gateway hosting so assets resolve under the CID path).
 - **P2P relay/signaling envs:** `VITE_P2P_RELAY_BASES` (HTTP mailbox relays), `VITE_P2P_NOSTR_RELAYS` (wss relays for discovery/prekeys), `VITE_P2P_WAKU_RELAYS` (Waku multiaddrs), and `VITE_P2P_CRDT_SIGNALING` (y-webrtc signaling list; if empty, falls back to `/yjs`).
-- **Database bootstrap:** When `RUN_MIGRATIONS=1`, the API runs Drizzle migrations + seed (`packages/platform/src/db/prepare.ts`). Compose dev flow sets this automatically via scripts.
+- **Database bootstrap:** Compose dev/preview now ensures SpaceTimeDB JWT keys exist and publishes the Rust module into the running SpaceTimeDB instance before the API/site are treated as ready.
 - **Networking:** Caddy expects `prometheus.dev` to resolve to localhost. On WSL/non-macOS, set `DEV_WEB_UPSTREAM` if `host.docker.internal` is unsuitable.
 
 ## Compatibility and constraints

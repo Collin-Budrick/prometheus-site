@@ -483,7 +483,6 @@ export const ensureApiReady = async () => {
   if (startPromise === null) {
     process.env.API_PORT = String(apiPort)
     process.env.API_HOST = '127.0.0.1'
-    process.env.RUN_MIGRATIONS = '0'
     ;(globalThis as typeof globalThis & { __PROM_API_TEST__?: unknown }).__PROM_API_TEST__ = {
       cache: cacheClient,
       database: databaseClient,

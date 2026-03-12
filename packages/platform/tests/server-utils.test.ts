@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'bun:test'
 import { createRateLimiter } from '@platform/rate-limit'
 import { resolveRuntimeFlags } from '@platform/runtime'
-import { invalidateStoreItemsCache } from '@features/store'
+import { invalidateStoreItemsCache } from '@features/store/cache'
 import { resolveWsClientIp } from '@platform/network'
 import { resetTestState, testValkey } from './setup'
 
 describe('runtime flags', () => {
   it('treats common truthy values as enabled', () => {
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: '1' }).runMigrations).toBe(true)
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'true' }).runMigrations).toBe(true)
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'TRUE' }).runMigrations).toBe(true)
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: ' yes ' }).runMigrations).toBe(true)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: '1' }).enableWebTransportFragments).toBe(true)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: 'true' }).enableWebTransportFragments).toBe(true)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: 'TRUE' }).enableWebTransportFragments).toBe(true)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: ' yes ' }).enableWebTransportFragments).toBe(true)
   })
 
   it('treats falsy or missing values as disabled', () => {
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: '0' }).runMigrations).toBe(false)
-    expect(resolveRuntimeFlags({ RUN_MIGRATIONS: 'false' }).runMigrations).toBe(false)
-    expect(resolveRuntimeFlags({}).runMigrations).toBe(false)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: '0' }).enableWebTransportFragments).toBe(false)
+    expect(resolveRuntimeFlags({ ENABLE_WEBTRANSPORT_FRAGMENTS: 'false' }).enableWebTransportFragments).toBe(false)
+    expect(resolveRuntimeFlags({ NODE_ENV: 'production' }).enableWebTransportFragments).toBe(false)
   })
 })
 

@@ -5,12 +5,10 @@ describe('configuration validation', () => {
   it('builds defaults when env vars are absent', () => {
     const cfg = loadConfig({})
 
-    expect(cfg.postgres.connectionString).toBe(
-      'postgresql://prometheus:secret@localhost:5433/prometheus'
-    )
-    expect(cfg.postgres.ssl).toBe(false)
-    expect(cfg.postgres.connectRetries).toBe(5)
-    expect(cfg.postgres.backoffMs).toBe(200)
+    expect(cfg.spacetime.uri).toBe('http://127.0.0.1:3000/')
+    expect(cfg.spacetime.moduleName).toBe('prometheus-site')
+    expect(cfg.spacetime.connectRetries).toBe(5)
+    expect(cfg.spacetime.backoffMs).toBe(200)
 
     expect(cfg.valkey.host).toBe('localhost')
     expect(cfg.valkey.port).toBe(6379)
@@ -27,16 +25,16 @@ describe('configuration validation', () => {
 
   it('uses custom values when provided', () => {
     const cfg = loadConfig({
-      POSTGRES_USER: 'app',
-      POSTGRES_PASSWORD: 'pw',
-      POSTGRES_HOST: 'db.internal',
-      POSTGRES_PORT: '6543',
-      POSTGRES_DB: 'appdb',
-      POSTGRES_SSL: 'true',
+      SPACETIMEDB_URI: 'https://db.prometheus.dev/',
+      SPACETIMEDB_MODULE: 'prometheus-prod',
       DB_CONNECT_RETRIES: '2',
       DB_CONNECT_BACKOFF_MS: '400',
       VALKEY_HOST: 'cache.internal',
       VALKEY_PORT: '6380',
+      SPACETIMEAUTH_AUTHORITY: 'https://auth.prometheus.dev/oidc',
+      SPACETIMEAUTH_CLIENT_ID: 'prometheus-web',
+      SPACETIMEAUTH_JWKS_URI: 'https://auth.prometheus.dev/oidc/jwks',
+      SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'https://prometheus.dev/login',
       UNKEY_ROOT_KEY: 'unkey_root_123',
       UNKEY_RATELIMIT_NAMESPACE: 'api',
       UNKEY_RATELIMIT_BASE_URL: 'https://unkey.example.com',
@@ -53,15 +51,18 @@ describe('configuration validation', () => {
       PUSH_APNS_USE_SANDBOX: 'true'
     })
 
-    expect(cfg.postgres.connectionString).toBe(
-      'postgresql://app:pw@db.internal:6543/appdb'
-    )
-    expect(cfg.postgres.ssl).toBe('require')
-    expect(cfg.postgres.connectRetries).toBe(2)
-    expect(cfg.postgres.backoffMs).toBe(400)
+    expect(cfg.spacetime.uri).toBe('https://db.prometheus.dev/')
+    expect(cfg.spacetime.moduleName).toBe('prometheus-prod')
+    expect(cfg.spacetime.connectRetries).toBe(2)
+    expect(cfg.spacetime.backoffMs).toBe(400)
 
     expect(cfg.valkey.host).toBe('cache.internal')
     expect(cfg.valkey.port).toBe(6380)
+
+    expect(cfg.auth.spacetimeAuth.authority).toBe('https://auth.prometheus.dev/oidc')
+    expect(cfg.auth.spacetimeAuth.clientId).toBe('prometheus-web')
+    expect(cfg.auth.spacetimeAuth.jwksUri).toBe('https://auth.prometheus.dev/oidc/jwks')
+    expect(cfg.auth.spacetimeAuth.postLogoutRedirectUri).toBe('https://prometheus.dev/login')
 
     expect(cfg.rateLimit.unkey.rootKey).toBe('unkey_root_123')
     expect(cfg.rateLimit.unkey.namespace).toBe('api')
@@ -81,15 +82,14 @@ describe('configuration validation', () => {
   })
 
   it('rejects invalid numeric values', () => {
-    expect(() => loadConfig({ POSTGRES_PORT: 'abc' })).toThrow(/POSTGRES_PORT/)
     expect(() => loadConfig({ VALKEY_PORT: '-1' })).toThrow(/VALKEY_PORT/)
     expect(() => loadConfig({ DB_CONNECT_RETRIES: '-5' })).toThrow(/DB_CONNECT_RETRIES/)
     expect(() => loadConfig({ DB_CONNECT_BACKOFF_MS: '1.5' })).toThrow(/DB_CONNECT_BACKOFF_MS/)
   })
 
   it('rejects invalid booleans and URLs', () => {
-    expect(() => loadConfig({ POSTGRES_SSL: 'maybe' })).toThrow(/POSTGRES_SSL/)
-    expect(() => loadConfig({ DATABASE_URL: 'not-a-url' })).toThrow(/DATABASE_URL/)
+    expect(() => loadConfig({ SPACETIMEDB_URI: 'not-a-url' })).toThrow(/Invalid URL/)
+    expect(() => loadConfig({ SPACETIMEAUTH_AUTHORITY: 'not-a-url' })).toThrow(/Invalid URL/)
     expect(() => loadConfig({ PUSH_APNS_USE_SANDBOX: 'maybe' })).toThrow(/PUSH_APNS_USE_SANDBOX/)
   })
 })

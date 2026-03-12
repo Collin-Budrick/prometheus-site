@@ -32,7 +32,11 @@ export const ensureSpacetimeJwtKeys = () => {
 }
 
 const runDockerSpacetime = (args: string[], extraEnv: Record<string, string | undefined> = {}) => {
-  const envArgs = Object.entries(extraEnv).flatMap(([key, value]) =>
+  const envArgs = Object.entries({
+    HOME: '/tmp',
+    XDG_CONFIG_HOME: '/tmp/.config',
+    ...extraEnv
+  }).flatMap(([key, value]) =>
     value ? ['-e', `${key}=${value}`] : []
   )
   const result = spawnSync(
@@ -101,8 +105,7 @@ export const publishSpacetimeModule = (
       'packages/spacetimedb-module',
       '--anonymous',
       '--yes',
-      '--delete-data',
-      'on-conflict'
+      '--delete-data=on-conflict'
     ],
     {
       SPACETIMEAUTH_AUTHORITY: process.env.SPACETIMEAUTH_AUTHORITY,

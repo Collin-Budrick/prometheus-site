@@ -838,6 +838,7 @@ const devValkeyPort = runtimeConfig.ports.valkey
 const devWebTransportPort = runtimeConfig.ports.webtransport
 const devProject = runtimeCompose.projectName
 const devWebHost = runtimeConfig.domains.web
+const devDbHost = runtimeConfig.domains.db
 const devDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const devDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
 const useDeviceHost = Boolean(devDeviceHost)
@@ -877,6 +878,8 @@ const composeEnv = {
   PROMETHEUS_SPACETIMEDB_PORT: devSpacetimeDbPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
+  PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
+  PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: runtimeConfig.domains.web,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
   ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
@@ -1018,6 +1021,7 @@ const bunBin =
   'bun'
 
 const devHttpsHost = devHttpsPort === '443' ? devWebHost : `${devWebHost}:${devHttpsPort}`
+const devDbOrigin = devHttpsPort === '443' ? `https://${devDbHost}` : `https://${devDbHost}:${devHttpsPort}`
 const devHostForVite = useDeviceHost && devDeviceHost ? devDeviceHost : devWebHost
 const devApiBase = useDeviceHost ? '/api' : `https://${devHttpsHost}/api`
 const normalizeBasePort = (value: string) => {
@@ -1047,7 +1051,7 @@ const webEnv: NodeJS.ProcessEnv = {
   ...process.env,
   VITE_DEV_HOST: devHostForVite,
   VITE_API_BASE: devApiBase,
-  VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || `https://${devHttpsHost}/spacetimedb`,
+  VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || devDbOrigin,
   VITE_SPACETIMEDB_MODULE:
     process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
   VITE_SPACETIMEAUTH_AUTHORITY:

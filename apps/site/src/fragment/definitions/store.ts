@@ -1086,12 +1086,12 @@ const storeStream: FragmentDefinition = {
   css: storeFragmentCss,
   ...baseMeta,
   render: ({ t }) =>
-    h('section', { class: 'store-fragment' }, [
-      h('div', { class: 'store-fragment-badges' }, [
-        h('span', { class: 'badge' }, textNode(t('Postgres'))),
-        h('span', { class: 'badge signal' }, textNode(t('Valkey'))),
-        h('span', { class: 'badge accent' }, textNode(t('Realtime')))
-      ]),
+      h('section', { class: 'store-fragment' }, [
+        h('div', { class: 'store-fragment-badges' }, [
+          h('span', { class: 'badge' }, textNode(t('SpaceTimeDB'))),
+          h('span', { class: 'badge signal' }, textNode(t('Direct'))),
+          h('span', { class: 'badge accent' }, textNode(t('Realtime')))
+        ]),
       h('store-stream', {
         class: 'store-stream',
         'data-limit': '12',

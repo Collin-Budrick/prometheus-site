@@ -56,7 +56,7 @@ bun run scripts/dev.ts  # or bun run preview.ts
 Defaults are centralized in `scripts/runtime-config.ts` and mirrored by `.env.example`:
 
 - Hosts: `prometheus.dev`, `prometheus.prod`
-- Ports: `4000` API, `5433` Postgres, `6379` Valkey, `4444` webtransport, `4173` device web
+- Ports: `4000` API, `3000` SpaceTimeDB, `6379` Valkey, `4444` webtransport, `4173` device web
 - Compose project: `prometheus`
 - Feature/service toggles from `PROMETHEUS_*`/`VITE_*`
 

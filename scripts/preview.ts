@@ -308,6 +308,7 @@ const previewValkeyPort = runtimeConfig.ports.valkey
 const previewWebTransportPort = runtimeConfig.ports.webtransport
 const previewProject = runtimeConfig.compose.projectName
 const previewWebHost = runtimeConfig.domains.web
+const previewDbHost = runtimeConfig.domains.db
 const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const useDeviceHost = Boolean(previewDeviceHost)
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
@@ -375,6 +376,7 @@ const resolvedWebTransportBase = explicitWebTransportBase
     ? legacyWebTransportBase
     : previewDefaultWebTransportBase
 const previewOrigin = resolvePreviewOrigin(previewWebHost, previewHttpsPort)
+const previewDbOrigin = resolvePreviewOrigin(previewDbHost, previewHttpsPort)
 const previewDeviceApiHost = resolvePreviewDeviceApiHost(previewDeviceHost, previewApiPort)
 const previewDeviceApiBase = resolveDeviceApiBase(previewDeviceApiHost, previewApiPort)
 const envApiBase = process.env.VITE_API_BASE?.trim() || ''
@@ -404,8 +406,11 @@ const composeEnv = {
   PROMETHEUS_SPACETIMEDB_PORT: previewSpacetimeDbPort,
   PROMETHEUS_VALKEY_PORT: previewValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
+  PROMETHEUS_DB_HOST: runtimeConfig.domains.db,
+  PROMETHEUS_DB_HOST_PROD: runtimeConfig.domains.dbProd,
   PROMETHEUS_WEB_HOST: previewWebHost,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
+  VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
   PROMETHEUS_VITE_API_BASE: '/api',
   PROMETHEUS_VITE_WEBTRANSPORT_BASE: resolvedWebTransportBase,
   VITE_ENABLE_PREFETCH: previewEnablePrefetch,
@@ -472,8 +477,7 @@ const buildNativeBundle = async () => {
     PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
     PROMETHEUS_API_PORT: previewApiPort,
     VITE_API_BASE: previewApiBase,
-    VITE_SPACETIMEDB_URI:
-      process.env.VITE_SPACETIMEDB_URI?.trim() || `${previewOrigin || `https://${previewWebHost}`}/spacetimedb`,
+    VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || previewDbOrigin,
     VITE_SPACETIMEDB_MODULE:
       process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
     VITE_SPACETIMEAUTH_AUTHORITY:
@@ -623,6 +627,7 @@ const buildTargets: BuildTarget[] = [
     ],
     extra: {
       VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
+      VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
       VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
       VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
       VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "moduleResolution": "node",
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@core": ["./packages/core/src/index.ts"],
       "@core/*": ["./packages/core/src/*"],

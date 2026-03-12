@@ -10,7 +10,7 @@
   }
 }
 
-http://{{WEB_HOST}}, http://{{WEB_HOST_PROD}} {
+http://{{WEB_HOST}}, http://{{WEB_HOST_PROD}}, http://{{DB_HOST}}, http://{{DB_HOST_PROD}} {
   redir https://{host}{uri}
 }
 
@@ -28,6 +28,22 @@ https://{{WEB_HOST_PROD}} {
     alt-svc "h3=\":443\"; ma=2592000"
   }
   include _fragment
+}
+
+https://{{DB_HOST}} {
+  tls /etc/caddy/certs/{{CERT_BASENAME}}.pem /etc/caddy/certs/{{CERT_BASENAME}}.key
+  header {
+    alt-svc "h3=\":443\"; ma=2592000"
+  }
+  include _spacetimedb
+}
+
+https://{{DB_HOST_PROD}} {
+  tls /etc/caddy/certs/{{CERT_BASENAME}}.pem /etc/caddy/certs/{{CERT_BASENAME}}.key
+  header {
+    alt-svc "h3=\":443\"; ma=2592000"
+  }
+  include _spacetimedb
 }
 
 (fragment) {
@@ -48,12 +64,25 @@ https://{{WEB_HOST_PROD}} {
   handle_path /api/* {
     reverse_proxy http://api:4000
   }
+}
 
-  handle /spacetimedb {
-    reverse_proxy http://spacetimedb:3000
+(_spacetimedb) {
+  @allowed_origin header_regexp Origin ^https://(?:{{WEB_HOST}}|{{WEB_HOST_PROD}})(?::\d+)?$
+  header @allowed_origin {
+    Access-Control-Allow-Origin "{http.request.header.Origin}"
+    Access-Control-Allow-Headers "*"
+    Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    Access-Control-Expose-Headers "*"
+    Vary "Origin"
   }
 
-  handle_path /spacetimedb/* {
+  @preflight {
+    method OPTIONS
+    header_regexp Origin ^https://(?:{{WEB_HOST}}|{{WEB_HOST_PROD}})(?::\d+)?$
+  }
+  respond @preflight 204
+
+  handle {
     reverse_proxy http://spacetimedb:3000
   }
 }

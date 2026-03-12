@@ -19,15 +19,15 @@ New-Item -ItemType Directory -Force -Path $certDir | Out-Null
 Write-Host "Installing mkcert root CA into Windows trust store..."
 & $mkcert -install
 
-$certFile = Join-Path $certDir 'prometheus.dev+prometheus.prod.pem'
-$keyFile = Join-Path $certDir 'prometheus.dev+prometheus.prod.key'
+$certFile = Join-Path $certDir 'prometheus.dev+prometheus.prod+db.prometheus.dev+db.prometheus.prod.pem'
+$keyFile = Join-Path $certDir 'prometheus.dev+prometheus.prod+db.prometheus.dev+db.prometheus.prod.key'
 
-Write-Host "Generating certificate for prometheus.dev and prometheus.prod..."
-& $mkcert -cert-file $certFile -key-file $keyFile prometheus.dev prometheus.prod
+Write-Host "Generating certificate for prometheus.dev, prometheus.prod, db.prometheus.dev, and db.prometheus.prod..."
+& $mkcert -cert-file $certFile -key-file $keyFile prometheus.dev prometheus.prod db.prometheus.dev db.prometheus.prod
 
 $hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 $hosts = Get-Content -Path $hostsPath -ErrorAction SilentlyContinue
-$missing = @('prometheus.dev', 'prometheus.prod') | Where-Object { -not ($hosts -match "(?i)\b$($_)\b") }
+$missing = @('prometheus.dev', 'prometheus.prod', 'db.prometheus.dev', 'db.prometheus.prod') | Where-Object { -not ($hosts -match "(?i)\b$($_)\b") }
 
 if ($missing.Count -gt 0) {
   $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(

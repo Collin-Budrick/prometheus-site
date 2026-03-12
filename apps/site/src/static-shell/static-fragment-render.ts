@@ -150,11 +150,11 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
       queuedCount > 0
         ? h('div', { class: 'store-stream-queue', 'aria-live': 'polite' }, [t(`Queued: ${queuedCount}`)])
         : null
-    ]),
-    h('div', { class: 'store-stream-meta' }, [
-      h('span', undefined, [t(query ? 'Valkey search' : 'Postgres snapshot')]),
-      h('span', undefined, [t(query ? `${total} results` : `${visibleItems.length} items`)])
-    ]),
+      ]),
+      h('div', { class: 'store-stream-meta' }, [
+        h('span', undefined, [t(query ? 'SpaceTimeDB search' : 'SpaceTimeDB snapshot')]),
+        h('span', undefined, [t(query ? `${total} results` : `${visibleItems.length} items`)])
+      ]),
     h('div', { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' }, [
       visibleItems.length === 0
         ? h('div', { class: 'store-stream-empty' }, [t(emptyLabel)])
@@ -399,4 +399,3 @@ export const renderStaticFragmentPayloadHtml = (
   if (html) return html
   return renderStaticFragmentTreeHtml(payload.tree, context)
 }
-

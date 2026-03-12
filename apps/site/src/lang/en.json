@@ -150,19 +150,19 @@
       "heading": "h2",
       "metaLine": "store stream",
       "title": "Realtime store feed.",
-      "description": "Postgres stays the source of truth while Valkey Search ranks results; updates stream in as items change."
+      "description": "SpaceTimeDB now serves as the live source of truth, with direct subscriptions keeping the feed current as items change."
     },
     "fragment://page/store/create@v1": {
       "heading": "h2",
       "metaLine": "store writer",
       "title": "Create a new store item.",
-      "description": "Write to Postgres, validate with drizzle-zod, and stream updates into the feed."
+      "description": "Write directly into SpaceTimeDB and watch the live inventory update without a REST round-trip."
     },
     "fragment://page/chat/contacts@v1": {
       "heading": "h2",
       "metaLine": "contact invites",
       "title": "Invite and manage contacts.",
-      "description": "Search by email to send invites, accept or decline requests, and keep your contact list in sync."
+      "description": "Search by name or identity to send invites, accept or decline requests, and keep your contact list in sync."
     }
   },
   "lab": {
@@ -340,6 +340,8 @@
     "Realtime stream": "Realtime stream",
     "Postgres": "Postgres",
     "Valkey": "Valkey",
+    "SpaceTimeDB": "SpaceTimeDB",
+    "Direct": "Direct",
     "Realtime": "Realtime",
     "Search the store...": "Search the store...",
     "Search": "Search",
@@ -363,6 +365,9 @@
     "No matches yet.": "No matches yet.",
     "No items yet.": "No items yet.",
     "Postgres stream": "Postgres stream",
+    "SpaceTimeDB search": "SpaceTimeDB search",
+    "SpaceTimeDB snapshot": "SpaceTimeDB snapshot",
+    "SpaceTimeDB stream": "SpaceTimeDB stream",
     "results": "results",
     "items": "items",
     "Score": "Score",
@@ -396,9 +401,9 @@
     "Unable to create item.": "Unable to create item.",
     "Saving...": "Saving...",
     "Contact invites": "Contact invites",
-    "Search by email to connect.": "Search by email to connect.",
-    "Search by email": "Search by email",
-    "name@domain.com": "name@domain.com",
+    "Search by email to connect.": "Search by name or identity to connect.",
+    "Search by email": "Search by name or identity",
+    "name@domain.com": "identity or display name",
     "Invite": "Invite",
     "Accept": "Accept",
     "Decline": "Decline",

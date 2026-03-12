@@ -553,10 +553,33 @@ export const getSpacetimeDbAuthToken = async (apiBase = appConfig.apiBase) => {
   return session?.idToken ?? null
 }
 
+const resolveDirectSpacetimeDbUri = (origin: string) => {
+  if (!origin) return appConfig.spacetimeDbUri
+  try {
+    const url = new URL(origin)
+    const hostname = url.hostname
+    const isIpAddress = /^[\d.:]+$/.test(hostname)
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    if (!isIpAddress && !isLocalHost) {
+      if (!hostname.startsWith('db.')) {
+        url.hostname = `db.${hostname}`
+      }
+      url.pathname = '/'
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    }
+  } catch {
+    // Fall through to the legacy same-origin path below.
+  }
+
+  return new URL('/spacetimedb', origin).toString()
+}
+
 export const resolveSpacetimeDbClientConfig = async (apiBase = appConfig.apiBase) => {
   const token = await getSpacetimeDbAuthToken(apiBase)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const fallbackUri = origin ? new URL('/spacetimedb', origin).toString() : appConfig.spacetimeDbUri
+  const fallbackUri = origin ? resolveDirectSpacetimeDbUri(origin) : appConfig.spacetimeDbUri
   return {
     module: appConfig.spacetimeDbModule || 'prometheus-site',
     token,

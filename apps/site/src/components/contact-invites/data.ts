@@ -4,7 +4,8 @@ export type ContactSearchStatus = 'none' | 'incoming' | 'outgoing' | 'accepted'
 export type ContactInviteUser = {
   id: string
   name?: string | null
-  email: string
+  handle?: string | null
+  image?: string | null
 }
 
 export type ContactInviteView = {
@@ -22,7 +23,8 @@ export type ContactInviteGroups = {
 export type ContactSearchResult = {
   id: string
   name?: string | null
-  email: string
+  handle?: string | null
+  image?: string | null
   status: ContactSearchStatus
   inviteId?: string
 }
@@ -51,21 +53,33 @@ const normalizeSearchStatus = (value: unknown): ContactSearchStatus => {
 const normalizeSearchResult = (value: unknown): ContactSearchResult | null => {
   if (!isRecord(value)) return null
   const id = typeof value.id === 'string' ? value.id : ''
-  const email = typeof value.email === 'string' ? value.email : ''
-  if (!id || !email) return null
+  const handle =
+    typeof value.handle === 'string'
+      ? value.handle
+      : typeof value.email === 'string'
+        ? value.email
+        : null
+  if (!id) return null
   const name = typeof value.name === 'string' ? value.name : null
+  const image = typeof value.image === 'string' ? value.image : null
   const status = normalizeSearchStatus(value.status)
   const inviteId = typeof value.inviteId === 'string' ? value.inviteId : undefined
-  return { id, email, name, status, inviteId }
+  return { id, handle, image, name, status, inviteId }
 }
 
 const normalizeInviteUser = (value: unknown): ContactInviteUser | null => {
   if (!isRecord(value)) return null
   const id = typeof value.id === 'string' ? value.id : ''
-  const email = typeof value.email === 'string' ? value.email : ''
-  if (!id || !email) return null
+  if (!id) return null
   const name = typeof value.name === 'string' ? value.name : null
-  return { id, email, name }
+  const handle =
+    typeof value.handle === 'string'
+      ? value.handle
+      : typeof value.email === 'string'
+        ? value.email
+        : null
+  const image = typeof value.image === 'string' ? value.image : null
+  return { id, handle, image, name }
 }
 
 const normalizeInvite = (value: unknown): ContactInviteView | null => {

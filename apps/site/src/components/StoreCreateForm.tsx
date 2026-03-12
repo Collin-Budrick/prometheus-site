@@ -1,8 +1,8 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { appConfig } from '../public-app-config'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { getFragmentTextCopy } from '../lang/client'
 import { useSharedLangSignal } from '../shared/lang-bridge'
+import { createStoreItemDirect } from '../shared/spacetime-store'
 
 type StoreCreateFormProps = {
   class?: string
@@ -17,13 +17,6 @@ type StoreCreateFormProps = {
 }
 
 type CreateState = 'idle' | 'saving' | 'success' | 'error'
-
-const buildApiUrl = (path: string, origin: string) => {
-  const base = appConfig.apiBase
-  if (!base) return `${origin}${path}`
-  if (base.startsWith('/')) return `${origin}${base}${path}`
-  return `${base}${path}`
-}
 
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
@@ -205,30 +198,12 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
       statusMessage.value = null
 
       try {
-        const response = await fetch(buildApiUrl('/store/items', window.location.origin), {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ name: trimmedName, price: parsedPrice, quantity: parsedQuantity })
+        const created = await createStoreItemDirect({
+          name: trimmedName,
+          price: parsedPrice,
+          quantity: parsedQuantity
         })
-
-        if (!response.ok) {
-          let errorMessage = interpolate(resolveLocal('Request failed: {{status}}'), { status: response.status })
-          try {
-            const payload = (await response.json()) as { error?: string }
-            if (payload?.error) {
-              errorMessage = payload.error
-            }
-          } catch (error) {
-            console.warn('Failed to parse store create error response:', error)
-          }
-          state.value = 'error'
-          statusMessage.value = errorMessage
-          return
-        }
-
-        const payload = (await response.json()) as { item?: { id?: number; name?: string } }
-        const createdId = payload?.item?.id
+        const createdId = created?.id
         state.value = 'success'
         statusMessage.value = createdId
           ? interpolate(resolveLocal('Added item #{{id}}'), { id: createdId })
@@ -244,7 +219,8 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
         clearCookieValue(STORE_CREATE_DIGITAL_COOKIE)
       } catch (error) {
         state.value = 'error'
-        statusMessage.value = error instanceof Error ? error.message : resolveLocal('Unable to create item.')
+        const message = error instanceof Error ? error.message : ''
+        statusMessage.value = message || interpolate(resolveLocal('Request failed: {{status}}'), { status: 500 })
       }
     })
 

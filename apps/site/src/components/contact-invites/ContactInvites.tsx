@@ -1,5 +1,4 @@
 import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import { buildApiUrl } from './api'
 import {
   beginInitialTask,
   failInitialTask,
@@ -11,8 +10,6 @@ import {
 import { useContactInvitesSeed } from '../../shared/contact-invites-seed'
 import {
   emptyInviteGroups,
-  normalizeInviteGroups,
-  normalizeSearchResults,
   type ContactInviteGroups,
   type ContactInviteUser,
   type ContactSearchResult
@@ -23,6 +20,14 @@ import {
   restoreOverlayFocus,
   setOverlaySurfaceState
 } from '../../shared/overlay-a11y'
+import {
+  acceptContactInviteDirect,
+  declineContactInviteDirect,
+  removeContactInviteDirect,
+  searchContactDirectory,
+  sendContactInviteDirect,
+  subscribeContactInvites
+} from '../../shared/spacetime-contacts'
 
 type ContactInvitesProps = {
   class?: string
@@ -46,16 +51,6 @@ type StatusNote = {
   message: string
 }
 
-const readErrorMessage = async (response: Response) => {
-  try {
-    const payload = (await response.json()) as { error?: string } | null
-    if (payload?.error) return payload.error
-  } catch (error) {
-    console.warn('Failed to parse contact invite error response:', error)
-  }
-  return response.statusText || 'Request failed'
-}
-
 const buildRootClass = (className?: string) => {
   const classes = ['chat-invites']
   if (className) classes.push(className)
@@ -63,9 +58,9 @@ const buildRootClass = (className?: string) => {
 }
 
 const resolveDisplayName = (user: ContactInviteUser) =>
-  user.name?.trim() || user.email || user.id
+  user.name?.trim() || user.handle || user.id
 
-const resolveMetaLine = (user: ContactInviteUser) => (user.name ? user.email : user.id)
+const resolveMetaLine = (user: ContactInviteUser) => user.handle || user.id
 
 const resolveAvatarText = (user: ContactInviteUser) => {
   const source = resolveDisplayName(user)
@@ -79,6 +74,7 @@ const resolveAvatarText = (user: ContactInviteUser) => {
 export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const seed = useContactInvitesSeed()
   const hasSeed = seed !== null
+  const minimumSearchLength = 2
   const popoverOpen = useSignal(false)
   const statusNote = useSignal<StatusNote | null>(null)
   const invitesState = useSignal<'idle' | 'loading' | 'error'>('idle')
@@ -97,50 +93,18 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   const initialTaskKey = useSignal<string | null>(null)
   const initialTaskSettled = useSignal(hasSeed)
 
-  const refreshInvites = $(async () => {
-    if (typeof window === 'undefined') return
-    invitesState.value = 'loading'
-    invitesError.value = null
-    try {
-      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        credentials: 'include'
-      })
-      if (!response.ok) {
-        invitesState.value = 'error'
-        invitesError.value = await readErrorMessage(response)
-        return
-      }
-      const payload = await response.json()
-      invites.value = normalizeInviteGroups(payload)
-      invitesState.value = 'idle'
-    } catch (error) {
-      invitesState.value = 'error'
-      invitesError.value = error instanceof Error ? error.message : 'Unable to load invites'
-    }
-  })
-
   const refreshSearch = $(async (query: string) => {
-    if (typeof window === 'undefined') return
     const trimmed = query.trim()
-    if (trimmed.length < 3) {
+    if (trimmed.length < minimumSearchLength) {
       searchResults.value = []
-      searchState.value = 'error'
-      searchError.value = 'Search needs at least 3 characters.'
+      searchState.value = trimmed.length === 0 ? 'idle' : 'error'
+      searchError.value = trimmed.length === 0 ? null : `Search needs at least ${minimumSearchLength} characters.`
       return
     }
     searchState.value = 'loading'
     searchError.value = null
     try {
-      const url = new URL(buildApiUrl('/chat/contacts/search', window.location.origin))
-      url.searchParams.set('email', trimmed)
-      const response = await fetch(url.toString(), { credentials: 'include' })
-      if (!response.ok) {
-        searchState.value = 'error'
-        searchError.value = await readErrorMessage(response)
-        return
-      }
-      const payload = await response.json()
-      searchResults.value = normalizeSearchResults(payload)
+      searchResults.value = searchContactDirectory(trimmed)
       searchState.value = 'idle'
     } catch (error) {
       searchState.value = 'error'
@@ -152,22 +116,11 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     await refreshSearch(searchQuery.value)
   })
 
-  const handleInvite = $(async (email: string) => {
-    if (typeof window === 'undefined') return
+  const handleInvite = $(async (identity: string) => {
     statusNote.value = null
     try {
-      const response = await fetch(buildApiUrl('/chat/contacts/invites', window.location.origin), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      })
-      if (!response.ok) {
-        statusNote.value = { tone: 'error', message: await readErrorMessage(response) }
-        return
-      }
+      await sendContactInviteDirect(identity)
       statusNote.value = { tone: 'success', message: 'Invite sent.' }
-      await refreshInvites()
       await refreshSearch(searchQuery.value)
     } catch (error) {
       statusNote.value = {
@@ -178,24 +131,19 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
   })
 
   const handleInviteAction = $(async (inviteId: string, action: 'accept' | 'decline' | 'remove') => {
-    if (typeof window === 'undefined') return
     statusNote.value = null
-    const path =
-      action === 'remove' ? `/chat/contacts/invites/${inviteId}` : `/chat/contacts/invites/${inviteId}/${action}`
     try {
-      const response = await fetch(buildApiUrl(path, window.location.origin), {
-        method: action === 'remove' ? 'DELETE' : 'POST',
-        credentials: 'include'
-      })
-      if (!response.ok) {
-        statusNote.value = { tone: 'error', message: await readErrorMessage(response) }
-        return
+      if (action === 'accept') {
+        await acceptContactInviteDirect(inviteId)
+      } else if (action === 'decline') {
+        await declineContactInviteDirect(inviteId)
+      } else {
+        await removeContactInviteDirect(inviteId)
       }
       statusNote.value = {
         tone: 'success',
         message: action === 'accept' ? 'Invite accepted.' : action === 'decline' ? 'Invite declined.' : 'Invite removed.'
       }
-      await refreshInvites()
       await refreshSearch(searchQuery.value)
     } catch (error) {
       statusNote.value = {
@@ -243,13 +191,18 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     markInitialTasksComplete(host)
   })
 
-  useVisibleTask$(() => {
-    if (hasSeed) return
-    void refreshInvites().finally(() => {
-      if (!initialTaskSettled.value) {
+  useVisibleTask$((ctx) => {
+    if (typeof window === 'undefined') return
+    invitesState.value = hasSeed ? 'idle' : 'loading'
+    const cleanup = subscribeContactInvites((snapshot) => {
+      invites.value = snapshot.invites
+      invitesError.value = snapshot.error
+      invitesState.value = snapshot.status === 'error' ? 'error' : snapshot.status === 'connecting' ? 'loading' : 'idle'
+      if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
         void settleInitialTask()
       }
     })
+    ctx.cleanup(cleanup)
   })
 
   useVisibleTask$((ctx) => {
@@ -352,7 +305,7 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
                       ref={searchInputRef}
                       type="text"
                       value={searchQuery.value}
-                      placeholder={props.searchPlaceholder ?? 'email'}
+                      placeholder={props.searchPlaceholder ?? 'name or identity'}
                       onInput$={(event) => {
                         searchQuery.value = (event.target as HTMLInputElement).value
                       }}
@@ -385,8 +338,8 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
                               {resolveAvatarText(result)}
                             </div>
                             <div>
-                              <div class="chat-invites-item-name">{result.name?.trim() || result.email}</div>
-                              <div class="chat-invites-item-meta">{result.email}</div>
+                              <div class="chat-invites-item-name">{result.name?.trim() || result.handle || result.id}</div>
+                              <div class="chat-invites-item-meta">{result.handle || result.id}</div>
                             </div>
                           </div>
                           <div class="chat-invites-actions">
@@ -394,7 +347,7 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
                               <button
                                 type="button"
                                 class="chat-invites-action success"
-                                onClick$={() => handleInvite(result.email)}
+                                onClick$={() => handleInvite(result.id)}
                               >
                                 {props.inviteActionLabel ?? 'Invite'}
                               </button>

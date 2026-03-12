@@ -4,5 +4,5 @@
 
 src/lib.rs:
 
-# env-dep:SPACETIMEAUTH_AUTHORITY
-# env-dep:SPACETIMEAUTH_CLIENT_ID
+# env-dep:SPACETIMEAUTH_AUTHORITY=https://auth.spacetimedb.com/oidc
+# env-dep:SPACETIMEAUTH_CLIENT_ID=prometheus-site-dev

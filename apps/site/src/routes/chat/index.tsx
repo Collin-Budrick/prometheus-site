@@ -9,7 +9,7 @@ import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import type { FragmentPlanValue } from '../../fragment/types'
 import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
-import { normalizeInviteGroups } from '../../components/contact-invites/data'
+import { emptyInviteGroups } from '../../components/contact-invites/data'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import { chatLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
@@ -49,44 +49,9 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload | null
 }
 
-const resolveChatApiBase = async (request: Request) => {
-  const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
-    import('../../app-config.server'),
-    import('../../shared/api-base.server')
-  ])
-  const apiBase = resolveServerApiBase(appConfig.apiBase, request)
-  if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) return apiBase
-  const origin = resolveRequestOrigin(request)
-  if (!origin) return ''
-  if (apiBase.startsWith('/')) return `${origin}${apiBase}`
-  return `${origin}/${apiBase}`
-}
-
-const buildChatApiUrl = (apiBase: string, path: string) => {
-  if (!apiBase) return ''
-  const trimmed = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase
-  const suffix = path.startsWith('/') ? path : `/${path}`
-  return `${trimmed}${suffix}`
-}
-
-const loadContactInvitesSeed = async (request: Request): Promise<ContactInvitesSeed | null> => {
-  const apiBase = await resolveChatApiBase(request)
-  const url = buildChatApiUrl(apiBase, '/chat/contacts/invites')
-  if (!url) return null
-  const cookieHeader = request.headers.get('cookie')
-  const headers: HeadersInit = { accept: 'application/json' }
-  if (cookieHeader) headers.cookie = cookieHeader
-
-  try {
-    const response = await fetch(url, { headers })
-    if (!response.ok) return null
-    const payload = await response.json()
-    return { invites: normalizeInviteGroups(payload) }
-  } catch (error) {
-    console.warn('Failed to seed contact invites', error)
-    return null
-  }
-}
+const loadContactInvitesSeed = async (_request: Request): Promise<ContactInvitesSeed> => ({
+  invites: emptyInviteGroups
+})
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')

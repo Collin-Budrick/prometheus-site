@@ -3,9 +3,10 @@ import { platformConfig } from '@platform/config'
 import { createLogger } from '@platform/logger'
 
 const logger = createLogger('api:db')
-const database = createDatabase(platformConfig.postgres, logger)
+const database = createDatabase(platformConfig.spacetime, logger)
 
 export const pgClient = database.pgClient
 export const db = database.db
+export const spacetime = database.spacetime
 export const connectDatabase = database.connect
 export const disconnectDatabase = database.disconnect

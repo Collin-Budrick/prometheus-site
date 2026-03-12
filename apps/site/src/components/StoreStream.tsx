@@ -1,6 +1,4 @@
-import { $, component$, noSerialize, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type { NoSerialize } from '@builder.io/qwik'
-import { appConfig } from '../public-app-config'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { getFragmentTextCopy } from '../lang/client'
 import {
   beginInitialTask,
@@ -38,9 +36,8 @@ import {
   storeCartAddEvent,
   storeCartQueueEvent,
   storeInventoryEvent,
-  type StoreCommandPayload,
-  type StoreConsumeResult
 } from '../shared/store-cart'
+import { deleteStoreItemDirect, executeStoreCommandDirect, subscribeStoreInventory } from '../shared/spacetime-store'
 
 type StoreStreamProps = {
   limit?: string
@@ -153,26 +150,11 @@ const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
   return () => window.clearTimeout(handle)
 }
 
-const buildApiUrl = (path: string, origin: string) => {
-  const base = appConfig.apiBase
-  if (!base) return `${origin}${path}`
-  if (base.startsWith('/')) return `${origin}${base}${path}`
-  return `${base}${path}`
-}
-
-const buildWsUrl = (path: string, origin: string) => {
-  const httpUrl = buildApiUrl(path, origin)
-  if (!httpUrl) return ''
-  const url = new URL(httpUrl)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
-}
-
 export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, class: className }) => {
   const maxItems = clampLimit(limit)
   const initialBatch = Math.min(12, maxItems)
   const loadBatchSize = Math.min(8, maxItems)
-  const searchDebounceMs = 350
+  const searchDebounceMs = 150
   const langSignal = useSharedLangSignal()
   const storeSeed = useStoreSeed()
   const seedStream = storeSeed?.stream ?? null
@@ -191,8 +173,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const seedQueryValue = seedMeta?.query ?? seedQuery
   const seedSortKey = normalizeStoreSortKey(seedStream?.sort ?? defaultStoreSortKey)
   const seedSortDir = normalizeStoreSortDir(seedStream?.dir ?? defaultStoreSortDir)
-  const shouldSkipInitialFetch = useSignal(Boolean(seedItems.length || seedMeta || seedQuery))
   const query = useSignal(seedQuery)
+  const inventoryItems = useSignal<StoreItem[]>(seedItems)
   const items = useSignal<StoreItem[]>(seedItems)
   const visibleCount = useSignal(Math.min(seedItems.length, initialBatch))
   const lastQuery = useSignal(seedQueryValue)
@@ -211,7 +193,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const searchError = useSignal<string | null>(null)
   const searchMeta = useSignal<{ total: number; query: string } | null>(seedMeta)
   const refreshTick = useSignal(0)
-  const wsRef = useSignal<NoSerialize<WebSocket> | undefined>(undefined)
   const rootRef = useSignal<HTMLElement>()
   const sortMenuRef = useSignal<HTMLElement>()
   const sortTriggerRef = useSignal<HTMLButtonElement>()
@@ -228,8 +209,8 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const searchPlaceholder = placeholder
     ? copy?.[placeholder] ?? placeholder
     : copy?.['Search the store...'] ?? 'Search the store...'
-  const valkeyLabel = copy?.['Valkey search'] ?? 'Valkey search'
-  const postgresLabel = copy?.['Postgres stream'] ?? 'Postgres stream'
+  const spacetimeSearchLabel = copy?.['SpaceTimeDB search'] ?? 'SpaceTimeDB search'
+  const spacetimeStreamLabel = copy?.['SpaceTimeDB stream'] ?? 'SpaceTimeDB stream'
   const resultsLabel = copy?.['results'] ?? 'results'
   const itemsLabel = copy?.['items'] ?? 'items'
   const scoreLabel = copy?.['Score'] ?? 'Score'
@@ -241,7 +222,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const queuedLabel = copy?.['Queued actions'] ?? 'Queued actions'
   const clearLabel = copy?.['Clear'] ?? 'Clear'
   const sortLabel = copy?.['Sort by'] ?? 'Sort by'
-  const requestFailedTemplate = copy?.['Request failed: {{status}}'] ?? 'Request failed: {{status}}'
 
   const sortOptions = useComputed$(() => {
     const optionsCopy = fragmentCopy.value
@@ -282,6 +262,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     }
     if (searchState.value === 'error' && items.value.length === 0) {
       return searchError.value ?? resolve('Search unavailable')
+    }
+    if ((streamState.value === 'connecting' || streamState.value === 'idle') && items.value.length === 0) {
+      return resolve('Loading items...')
     }
     if (items.value.length === 0) {
       return query.value.trim() ? resolve('No matches yet.') : resolve('No items yet.')
@@ -406,6 +389,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     removingIds.value = [...removingIds.value, id]
     const delayMs = 260
     const finalize = () => {
+      inventoryItems.value = inventoryItems.value.filter((entry) => entry.id !== id)
       items.value = items.value.filter((entry) => entry.id !== id)
       removingIds.value = removingIds.value.filter((entry) => entry !== id)
       if (searchMeta.value) {
@@ -427,13 +411,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     deletingIds.value = [...deletingIds.value, id]
     const run = async () => {
       try {
-        const response = await fetch(buildApiUrl(`/store/items/${id}`, window.location.origin), {
-          method: 'DELETE',
-          credentials: 'include'
-        })
-        if (!response.ok) {
-          throw new Error(`Request failed: ${response.status}`)
-        }
+        await deleteStoreItemDirect(id)
         await scheduleRemoval(id)
       } catch (error) {
         console.warn('Failed to delete store item', error)
@@ -447,299 +425,18 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      ctx.track(() => rootRef.value)
-      const root = rootRef.value
-      if (!root) return
-      const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
-      let active = true
-      let reconnectTimer: number | null = null
-      let reconnectAttempt = 0
-      const nativeRuntime = (window as Window & { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime === true
-      let isPageVisible = document.visibilityState === 'visible'
-      const pendingCommands = new Map<
-        string,
-        { resolve: (result: StoreConsumeResult) => void; timeoutId: number }
-      >()
-      const commandTimeoutMs = 5000
-
-      const isOffline = () => !isOnline()
-      const canConnect = () => active && (nativeRuntime || isPageVisible)
-
-      const clearReconnectTimer = () => {
-        if (reconnectTimer !== null) {
-          window.clearTimeout(reconnectTimer)
-          reconnectTimer = null
+      const cleanup = subscribeStoreInventory((snapshot) => {
+        inventoryItems.value = snapshot.items.map((item) => ({ ...item }))
+        streamState.value = snapshot.status
+        streamError.value = snapshot.error
+        if (!initialTaskSettled.value && snapshot.status !== 'connecting') {
+          void settleInitialTask()
         }
-      }
-
-      const scheduleReconnect = (delayMs?: number) => {
-        if (!canConnect() || reconnectTimer !== null) return
-        if (isOffline()) {
-          streamState.value = 'offline'
-          return
-        }
-        reconnectAttempt += 1
-        const baseDelay = 1500
-        const maxDelay = 45_000
-        const exponentialDelay = baseDelay * 2 ** (reconnectAttempt - 1)
-        const resolvedDelay = Number.isFinite(delayMs) && delayMs && delayMs > 0 ? Math.max(delayMs, exponentialDelay) : exponentialDelay
-        const cappedDelay = Math.min(resolvedDelay, maxDelay)
-        const jitter = Math.random() * cappedDelay * 0.3
-        const wait = cappedDelay + jitter
-        reconnectTimer = window.setTimeout(() => {
-          reconnectTimer = null
-          if (!canConnect()) return
-          connect()
-        }, wait)
-      }
-
-      const pauseStream = () => {
-        clearReconnectTimer()
-        if (streamState.value === 'connecting' || streamState.value === 'live') {
-          streamState.value = 'idle'
-        }
-        const ws = wsRef.value
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-          wsRef.value = undefined
-          ws.close()
-        }
-      }
-
-      const updateConnection = () => {
-        if (!canConnect()) {
-          pauseStream()
-          return
-        }
-        const ws = wsRef.value
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-          return
-        }
-        clearReconnectTimer()
-        connect()
-      }
-
-      const handleUpsert = (item: StoreItem) => {
-        const searchActive = query.value.trim() !== ''
-        if (removingIds.value.includes(item.id)) {
-          removingIds.value = removingIds.value.filter((entry) => entry !== item.id)
-        }
-        const existingIndex = items.value.findIndex((entry) => entry.id === item.id)
-        if (existingIndex >= 0) {
-          const next = [...items.value]
-          next[existingIndex] = { ...next[existingIndex], ...item }
-          if (searchActive) {
-            items.value = next
-            refreshTick.value += 1
-            return
-          }
-          items.value = next.sort((left, right) => compareStoreItems(left, right, sortKey.value, sortDir.value))
-          return
-        }
-        if (searchActive) {
-          refreshTick.value += 1
-          return
-        }
-        const next = [...items.value, item].sort((left, right) => compareStoreItems(left, right, sortKey.value, sortDir.value))
-        items.value = next.slice(0, maxItems)
-      }
-
-      const handleDelete = (id: number) => {
-        if (!Number.isFinite(id)) return
-        void scheduleRemoval(id)
-        if (query.value.trim()) refreshTick.value += 1
-      }
-
-      const connect = () => {
-        if (!canConnect()) return
-        if (isOffline()) {
-          streamState.value = 'offline'
-          return
-        }
-        const existing = wsRef.value
-        if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
-          return
-        }
-        const wsUrl = buildWsUrl('/store/ws', window.location.origin)
-        if (!wsUrl) return
-        streamState.value = 'connecting'
-        streamError.value = null
-        const ws = new WebSocket(wsUrl)
-        wsRef.value = noSerialize(ws)
-
-        ws.addEventListener('message', (event) => {
-          let payload: unknown
-          try {
-            payload = JSON.parse(String(event.data))
-          } catch (error) {
-            console.warn('Failed to parse store stream websocket message:', error)
-            return
-          }
-          if (!payload || typeof payload !== 'object') return
-          const record = payload as Record<string, unknown>
-          const type = record.type
-          if (type === 'store:ack') {
-            const requestId = typeof record.requestId === 'string' ? record.requestId : ''
-            const pending = requestId ? pendingCommands.get(requestId) : undefined
-            if (pending) {
-              pendingCommands.delete(requestId)
-              window.clearTimeout(pending.timeoutId)
-              const statusRaw = Number(record.status)
-              const ok = record.ok === true
-              const status = Number.isFinite(statusRaw) ? statusRaw : ok ? 200 : 500
-              const item = normalizeInventoryUpdate(record.item)
-              const result: StoreConsumeResult = { ok, status }
-              if (item) result.item = item
-              pending.resolve(result)
-            }
-            return
-          }
-          if (type === 'ping') {
-            ws.send(JSON.stringify({ type: 'pong' }))
-            return
-          }
-          if (type === 'store:ready') {
-            streamState.value = 'live'
-            streamError.value = null
-            reconnectAttempt = 0
-            clearReconnectTimer()
-            refreshTick.value += 1
-            return
-          }
-          if (type === 'error') {
-            const errorMessage = typeof record.error === 'string' ? record.error : resolve('Stream error')
-            streamState.value = 'error'
-            streamError.value = errorMessage
-            const retryAfter = Number(record.retryAfter)
-            if (Number.isFinite(retryAfter) && retryAfter > 0) {
-              scheduleReconnect(retryAfter * 1000)
-            }
-            return
-          }
-          if (type === 'store:upsert') {
-            const item = normalizeItem(record.item)
-            if (item) handleUpsert(item)
-            return
-          }
-          if (type === 'store:delete') {
-            const id = Number(record.id)
-            handleDelete(id)
-          }
-        })
-
-        ws.addEventListener('open', () => {
-          streamState.value = 'connecting'
-          reconnectAttempt = 0
-          clearReconnectTimer()
-        })
-
-        ws.addEventListener('close', () => {
-          wsRef.value = undefined
-          pendingCommands.forEach((pending) => {
-            window.clearTimeout(pending.timeoutId)
-            pending.resolve({ ok: false, status: 0 })
-          })
-          pendingCommands.clear()
-          if (!canConnect()) return
-          streamState.value = isOffline() ? 'offline' : streamState.value === 'error' ? 'error' : 'offline'
-          scheduleReconnect()
-        })
-
-        ws.addEventListener('error', () => {
-          streamState.value = 'error'
-          streamError.value = streamError.value ?? resolve('Stream error')
-        })
-      }
-
-      const handleVisibilityChange = () => {
-        isPageVisible = document.visibilityState === 'visible'
-        updateConnection()
-      }
-
-      const handlePageHide = () => {
-        isPageVisible = false
-        updateConnection()
-      }
-
-      const sendStoreCommand = async (payload: StoreCommandPayload): Promise<StoreConsumeResult | null> => {
-        const ws = wsRef.value
-        if (!ws || ws.readyState !== WebSocket.OPEN) return null
-        const requestId = `store:${Date.now()}:${Math.random().toString(16).slice(2)}`
-        const message = {
-          type: payload.type === 'restore' ? 'store:restore' : 'store:consume',
-          requestId,
-          id: payload.id,
-          ...(payload.type === 'restore' ? { amount: payload.amount } : {})
-        }
-        return new Promise((resolve) => {
-          const timeoutId = window.setTimeout(() => {
-            pendingCommands.delete(requestId)
-            resolve({ ok: false, status: 0 })
-          }, commandTimeoutMs)
-          pendingCommands.set(requestId, { resolve, timeoutId })
-          try {
-            ws.send(JSON.stringify(message))
-          } catch (error) {
-            window.clearTimeout(timeoutId)
-            pendingCommands.delete(requestId)
-            console.warn('Failed to send store command', error)
-            resolve(null)
-          }
-        })
-      }
-
-      const cancelStartup = scheduleIdleTask(() => {
-        updateConnection()
       })
-
-      const handleOnline = () => {
-        if (!canConnect()) return
-        const ws = wsRef.value
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-          return
-        }
-        void flushStoreCartQueue(window.location.origin)
-        scheduleReconnect(0)
-      }
-
-      const handleOffline = () => {
-        streamState.value = 'offline'
-      }
-
-      const handleNetworkStatus = (event: Event) => {
-        const detail = (event as CustomEvent<{ online?: unknown }>).detail
-        if (typeof detail?.online !== 'boolean') return
-        if (!detail.online) {
-          streamState.value = 'offline'
-          return
-        }
-        handleOnline()
-      }
-
-      window.addEventListener('online', handleOnline)
-      window.addEventListener('offline', handleOffline)
-      window.addEventListener('prom:network-status', handleNetworkStatus as EventListener)
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-      window.addEventListener('pageshow', handleVisibilityChange)
-      window.addEventListener('pagehide', handlePageHide)
-      setStoreCommandSender(sendStoreCommand)
-
+      setStoreCommandSender(executeStoreCommandDirect)
       ctx.cleanup(() => {
-        active = false
-        cancelStartup()
-        clearReconnectTimer()
+        cleanup()
         setStoreCommandSender(null)
-        window.removeEventListener('online', handleOnline)
-        window.removeEventListener('offline', handleOffline)
-        window.removeEventListener('prom:network-status', handleNetworkStatus as EventListener)
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
-        window.removeEventListener('pageshow', handleVisibilityChange)
-        window.removeEventListener('pagehide', handlePageHide)
-        pendingCommands.forEach((pending) => {
-          window.clearTimeout(pending.timeoutId)
-          pending.resolve({ ok: false, status: 0 })
-        })
-        pendingCommands.clear()
-        wsRef.value?.close()
       })
     },
     { strategy: 'document-ready' }
@@ -795,6 +492,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         const detail = (event as CustomEvent).detail
         const update = normalizeInventoryUpdate(detail)
         if (!update) return
+        const inventoryIndex = inventoryItems.value.findIndex((entry) => entry.id === update.id)
+        if (inventoryIndex >= 0) {
+          const nextInventory = [...inventoryItems.value]
+          nextInventory[inventoryIndex] = { ...nextInventory[inventoryIndex], quantity: update.quantity }
+          inventoryItems.value = nextInventory
+        }
         const existingIndex = items.value.findIndex((entry) => entry.id === update.id)
         if (existingIndex < 0) return
         const next = [...items.value]
@@ -810,68 +513,44 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
-      const resolve = (value: string) => fragmentCopy.value?.[value] ?? value
       const activeQuery = ctx.track(() => query.value).trim()
       const activeSortKey = ctx.track(() => sortKey.value)
       const activeSortDir = ctx.track(() => sortDir.value)
-      const refresh = ctx.track(() => refreshTick.value)
-      if (
-        shouldSkipInitialFetch.value &&
-        refresh === 0 &&
-        activeQuery === seedQueryValue &&
-        activeSortKey === seedSortKey &&
-        activeSortDir === seedSortDir
-      ) {
-        shouldSkipInitialFetch.value = false
-        return
-      }
-      if (shouldSkipInitialFetch.value) {
-        shouldSkipInitialFetch.value = false
-      }
-      const controller = new AbortController()
+      ctx.track(() => refreshTick.value)
+      const sourceItems = ctx.track(() => inventoryItems.value)
       const delay = activeQuery ? searchDebounceMs : 0
-      const timeout = window.setTimeout(async () => {
+      const timeout = window.setTimeout(() => {
         searchState.value = 'loading'
         searchError.value = null
         try {
-          const path = activeQuery
-            ? `/store/search?q=${encodeURIComponent(activeQuery)}&limit=${maxItems}`
-            : `/store/items?limit=${maxItems}&sort=${encodeURIComponent(activeSortKey)}&dir=${encodeURIComponent(
-                activeSortDir
-              )}`
-          const response = await fetch(buildApiUrl(path, window.location.origin), {
-            signal: controller.signal,
-            credentials: 'include',
-            headers: {
-              accept: 'application/json'
-            }
-          })
-          if (!response.ok) {
-            throw new Error(interpolate(requestFailedTemplate, { status: response.status }))
-          }
-          const payload = (await response.json()) as { items?: unknown; total?: unknown; query?: unknown }
-          if (controller.signal.aborted) return
-          const list = Array.isArray(payload.items) ? payload.items : []
-          const normalized = list.map(normalizeItem).filter((entry): entry is StoreItem => entry !== null)
+          const normalized = [...sourceItems].sort((left, right) =>
+            compareStoreItems(left, right, activeSortKey, activeSortDir)
+          )
           if (activeQuery) {
-            items.value = normalized
-            const total = Number(payload.total)
+            const loweredQuery = activeQuery.toLowerCase()
+            const filtered = normalized.filter((item) => {
+              return (
+                item.name.toLowerCase().includes(loweredQuery) ||
+                `${item.id}`.includes(loweredQuery) ||
+                `${item.price}`.includes(loweredQuery)
+              )
+            })
+            items.value = filtered.slice(0, maxItems)
             searchMeta.value = {
-              total: Number.isFinite(total) ? total : normalized.length,
+              total: filtered.length,
               query: activeQuery
             }
           } else {
-            items.value = normalized
+            items.value = normalized.slice(0, maxItems)
             searchMeta.value = null
           }
           searchState.value = 'idle'
-          if (!initialTaskSettled.value) {
+          if (!initialTaskSettled.value && (sourceItems.length > 0 || streamState.value !== 'connecting')) {
             void settleInitialTask()
           }
         } catch (error) {
-          if ((error as Error)?.name === 'AbortError') return
           searchState.value = 'error'
-          searchError.value = error instanceof Error ? error.message : resolve('Search unavailable')
+          searchError.value = error instanceof Error ? error.message : 'Search unavailable'
           if (!initialTaskSettled.value) {
             void settleInitialTask()
           }
@@ -879,7 +558,6 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       }, delay)
 
       ctx.cleanup(() => {
-        controller.abort()
         window.clearTimeout(timeout)
       })
     },
@@ -1155,7 +833,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
         ) : null}
       </div>
       <div class="store-stream-meta">
-        <span>{query.value.trim() ? valkeyLabel : postgresLabel}</span>
+        <span>{query.value.trim() ? spacetimeSearchLabel : spacetimeStreamLabel}</span>
         <span>
           {query.value.trim()
             ? `${searchMeta.value?.total ?? items.value.length} ${resultsLabel}`

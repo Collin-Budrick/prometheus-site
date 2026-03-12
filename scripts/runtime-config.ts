@@ -2,6 +2,8 @@ type ProcessEnv = NodeJS.ProcessEnv
 
 export type PrometheusRuntimeConfig = {
   domains: {
+    db: string
+    dbProd: string
     web: string
     webProd: string
   }
@@ -33,6 +35,8 @@ export type PrometheusRuntimeConfig = {
 }
 
 const DEFAULT_DOMAINS = {
+  db: 'db.prometheus.dev',
+  dbProd: 'db.prometheus.prod',
   web: 'prometheus.dev',
   webProd: 'prometheus.prod'
 } as const
@@ -116,9 +120,12 @@ const readProjectName = (env: ProcessEnv) => {
   return value
 }
 
-const computeCertBasename = (dev: string, prod: string) => `${dev}+${prod}`
+const computeCertBasename = (web: string, webProd: string, db: string, dbProd: string) =>
+  `${web}+${webProd}+${db}+${dbProd}`
 
 export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRuntimeConfig => {
+  const dbHost = readDomain(env, 'PROMETHEUS_DB_HOST', DEFAULT_DOMAINS.db)
+  const dbProd = readDomain(env, 'PROMETHEUS_DB_HOST_PROD', DEFAULT_DOMAINS.dbProd)
   const webHost = readDomain(env, 'PROMETHEUS_WEB_HOST', DEFAULT_DOMAINS.web)
   const webProd = readDomain(env, 'PROMETHEUS_WEB_HOST_PROD', DEFAULT_DOMAINS.webProd)
   const ports = {
@@ -130,13 +137,19 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRunti
     webtransport: readPort(env, 'PROMETHEUS_WEBTRANSPORT_PORT', DEFAULT_PORTS.webtransport),
     deviceWeb: readPort(env, 'PROMETHEUS_DEVICE_WEB_PORT', DEFAULT_PORTS.deviceWeb)
   }
-  const certBasename = readString(env, 'PROMETHEUS_CADDY_CERT_BASENAME', computeCertBasename(webHost, webProd))
+  const certBasename = readString(
+    env,
+    'PROMETHEUS_CADDY_CERT_BASENAME',
+    computeCertBasename(webHost, webProd, dbHost, dbProd)
+  )
   const includeOptionalServices = readIncludeOptionalServices(env)
   const profiles = parseProfiles(env)
   const projectName = readProjectName(env)
 
   return {
     domains: {
+      db: dbHost,
+      dbProd,
       web: webHost,
       webProd
     },
