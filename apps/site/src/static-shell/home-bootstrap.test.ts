@@ -266,6 +266,7 @@ const createHomeBootstrapController = () => ({
   lang: 'en' as const,
   path: '/',
   homeDemoStylesheetHref: null,
+  homeFragmentBootstrapHref: null,
   fetchAbort: null,
   cleanupFns: [],
   demoRenders: new Map(),

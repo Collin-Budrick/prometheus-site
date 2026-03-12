@@ -6,6 +6,12 @@ import { getFragmentCssHref } from '../fragment/fragment-css'
 import { getCspNonce } from '../security/client'
 import { getPublicFragmentApiBase } from '../shared/public-fragment-config'
 import { FragmentStreamError } from './fragment-stream-error'
+import {
+  buildHomeFragmentBootstrapHref,
+  consumePrimedHomeFragmentBootstrapBytes,
+  fetchHomeFragmentBootstrapBytes,
+  isHomeFragmentBootstrapSubset
+} from './home-fragment-bootstrap'
 
 type StreamHomeFragmentsOptions = {
   signal?: AbortSignal
@@ -19,6 +25,7 @@ type FetchHomeFragmentBatchOptions = {
   lang?: string
   knownVersions?: FragmentKnownVersions
   refresh?: boolean
+  bootstrapHref?: string
 }
 
 const appliedCss = new Map<string, HTMLStyleElement | HTMLLinkElement>()
@@ -242,6 +249,23 @@ const decodeFragment = (fragmentId: string, bytes: Uint8Array): FragmentPayload 
   return { ...payload, id: fragmentId }
 }
 
+const parseHomeFragmentPayloads = (bytes: Uint8Array) =>
+  parseFragmentFrames(bytes)
+    .filter((frame) => !isFragmentHeartbeatFrame(frame))
+    .reduce<Record<string, FragmentPayload>>((acc, frame) => {
+      acc[frame.id] = decodeFragment(frame.id, frame.payloadBytes)
+      return acc
+    }, {})
+
+const selectHomeFragmentPayloads = (ids: string[], payloads: Record<string, FragmentPayload>) =>
+  ids.reduce<Record<string, FragmentPayload>>((acc, id) => {
+    const payload = payloads[id]
+    if (payload) {
+      acc[id] = payload
+    }
+    return acc
+  }, {})
+
 export const applyHomeFragmentEffects = (payload: FragmentPayload) => {
   const href = getFragmentCssHref(payload.id)
   if (href) {
@@ -257,6 +281,20 @@ export const fetchHomeFragmentBatch = async (
   options: FetchHomeFragmentBatchOptions = {}
 ) => {
   if (!ids.length) return {}
+
+  if (!options.refresh && isHomeFragmentBootstrapSubset(ids)) {
+    const bootstrapHref =
+      options.bootstrapHref ?? buildHomeFragmentBootstrapHref({ lang: options.lang })
+    const primedBytes = consumePrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
+    const bytes =
+      (await primedBytes) ??
+      (await fetchHomeFragmentBootstrapBytes({
+        href: bootstrapHref,
+        cache: 'no-store'
+      }))
+    const payloads = parseHomeFragmentPayloads(bytes)
+    return selectHomeFragmentPayloads(ids, payloads)
+  }
 
   const params = new URLSearchParams({ protocol: '2' })
   if (options.knownVersions) {
@@ -290,6 +328,10 @@ export const fetchHomeFragmentBatch = async (
       acc[frame.id] = decodeFragment(frame.id, frame.payloadBytes)
       return acc
     }, {})
+}
+
+export const resetHomeFragmentBatchCacheForTests = () => {
+  // No-op placeholder for test symmetry with other static-shell caches.
 }
 
 export const streamHomeFragmentFrames = async (

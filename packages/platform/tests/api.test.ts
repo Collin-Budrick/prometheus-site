@@ -88,6 +88,24 @@ describe('fragment plan includeInitial', () => {
     expect(payload.meta.cacheKey).toBe(firstFrame!.id)
   })
 
+  it('supports explicit protocol 2 bootstrap ids with stable ordering', async () => {
+    const requestedIds = [
+      'fragment://page/home/react@v1',
+      'fragment://page/home/planner@v1',
+      'fragment://page/home/react@v1'
+    ]
+    const response = await fetch(
+      `${apiUrl}/fragments/bootstrap?path=/&protocol=2&ids=${encodeURIComponent(requestedIds.join(','))}`
+    )
+    expect(response.status).toBe(200)
+
+    const frames = parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    expect(frames.map((frame) => frame.id)).toEqual([
+      'fragment://page/home/react@v1',
+      'fragment://page/home/planner@v1'
+    ])
+  })
+
   it('filters already-known fragments from protocol 2 batch responses', async () => {
     const planResponse = await fetch(`${apiUrl}/fragments/plan?path=/store&protocol=2`)
     expect(planResponse.status).toBe(200)

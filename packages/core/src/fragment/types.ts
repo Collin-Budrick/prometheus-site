@@ -82,7 +82,7 @@ export type EarlyHint = {
   as?: string
   rel?: 'preload' | 'modulepreload'
   type?: string
-  crossorigin?: boolean
+  crossorigin?: boolean | 'anonymous' | 'use-credentials'
 }
 
 export type FragmentPlan = {

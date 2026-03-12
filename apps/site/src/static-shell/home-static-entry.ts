@@ -1,5 +1,7 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
+import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 
 export const HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
@@ -16,13 +18,17 @@ type InstallHomeStaticEntryOptions = {
   doc?: HomeStaticEntryDocument | null
   loadRuntime?: typeof loadHomeBootstrapRuntime
   createLcpGate?: typeof createHomeFirstLcpGate
+  readBootstrapData?: typeof readStaticHomeBootstrapData
+  primeFragmentBootstrap?: typeof primeHomeFragmentBootstrapBytes
 }
 
 export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   loadRuntime = loadHomeBootstrapRuntime,
-  createLcpGate = createHomeFirstLcpGate
+  createLcpGate = createHomeFirstLcpGate,
+  readBootstrapData = readStaticHomeBootstrapData,
+  primeFragmentBootstrap = primeHomeFragmentBootstrapBytes
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -37,6 +43,7 @@ export const installHomeStaticEntry = ({
   let bootstrapRequested = false
   let lcpGateReleased = false
   let lcpGateCleanup: (() => void) | null = null
+  let fragmentBootstrapPrimed = false
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
@@ -84,6 +91,16 @@ export const installHomeStaticEntry = ({
     }
   }
 
+  const primeFragmentBootstrapRequest = () => {
+    if (fragmentBootstrapPrimed) return
+    const href = readBootstrapData({ doc })?.fragmentBootstrapHref
+    if (!href) return
+    fragmentBootstrapPrimed = true
+    void primeFragmentBootstrap({ href, win }).catch((error) => {
+      console.error('Static home fragment bootstrap prefetch failed:', error)
+    })
+  }
+
   const armIdleTrigger = () => {
     if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
     if (typeof win.requestIdleCallback === 'function') {
@@ -99,6 +116,7 @@ export const installHomeStaticEntry = ({
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
+    primeFragmentBootstrapRequest()
     if (bootstrapRequested) {
       startBootstrap()
       return

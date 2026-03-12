@@ -43,7 +43,9 @@ const buildPlanEarlyHints = (planValue: FragmentPlan) => {
   const unique = new Map<string, EarlyHint>()
   hints.forEach((hint) => {
     if (!hint?.href) return
-    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${hint.crossorigin ? '1' : '0'}`
+    const crossoriginKey =
+      typeof hint.crossorigin === 'string' ? hint.crossorigin : hint.crossorigin ? '1' : '0'
+    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${crossoriginKey}`
     if (!unique.has(key)) unique.set(key, hint)
   })
   return Array.from(unique.values())

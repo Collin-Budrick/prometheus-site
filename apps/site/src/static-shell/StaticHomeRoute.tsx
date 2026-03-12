@@ -29,6 +29,7 @@ import {
   type StaticHomeCardStage
 } from './constants'
 import { getHomeStaticFragmentKind } from './home-render'
+import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -223,6 +224,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   }
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
+  const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({ lang })
   const columns = routeState.cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
     (acc, card) => {
       acc[card.column].push(card)
@@ -320,6 +322,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           authPolicy: routeConfig?.authPolicy ?? 'public',
           bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
           homeDemoStylesheetHref,
+          fragmentBootstrapHref,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}

@@ -91,6 +91,41 @@ const createManualGate = () => {
 }
 
 describe('installHomeStaticEntry', () => {
+  it('starts the home fragment bootstrap fetch as soon as the LCP gate resolves', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const manualGate = createManualGate()
+    const primedHrefs: string[] = []
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      readBootstrapData: () =>
+        ({
+          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
+        }) as never,
+      primeFragmentBootstrap: async ({ href }) => {
+        primedHrefs.push(href)
+        return new Uint8Array(0)
+      },
+      loadRuntime: async () => ({
+        bootstrapStaticHome: async () => undefined
+      })
+    })
+
+    expect(primedHrefs).toEqual([])
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(primedHrefs).toEqual([
+      '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
+    ])
+
+    cleanup()
+  })
+
   it('does not start bootstrap on early user intent until the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
@@ -102,6 +137,11 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
+      readBootstrapData: () =>
+        ({
+          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
+        }) as never,
+      primeFragmentBootstrap: async () => new Uint8Array(0),
       loadRuntime: async () => {
         loadRuntimeCount += 1
         return {
@@ -139,6 +179,11 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
+      readBootstrapData: () =>
+        ({
+          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
+        }) as never,
+      primeFragmentBootstrap: async () => new Uint8Array(0),
       loadRuntime: async () => {
         loadRuntimeCount += 1
         return {

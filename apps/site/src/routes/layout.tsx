@@ -29,6 +29,7 @@ import {
   isHomeStaticPath,
   isStaticShellPath
 } from '../static-shell/constants'
+import { buildHomeFragmentBootstrapEarlyHint } from '../static-shell/home-fragment-bootstrap'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -126,29 +127,40 @@ type EarlyHint = {
   as?: string
   rel?: 'preload' | 'modulepreload'
   type?: string
-  crossorigin?: boolean
+  crossorigin?: boolean | 'anonymous' | 'use-credentials'
+}
+
+const resolveLinkCrossOrigin = (crossorigin: EarlyHint['crossorigin']) =>
+  crossorigin === 'use-credentials' ? 'use-credentials' : crossorigin ? 'anonymous' : undefined
+
+const isPreloadableFragmentHint = (hint: EarlyHint) => {
+  const href = hint.href?.trim()
+  if (!href || hint.as !== 'fetch' || hint.rel === 'modulepreload') return false
+  return /^\/(?:api\/)?fragments\/bootstrap(?:[/?#]|$)/.test(href)
 }
 
 const shouldSkipEarlyHint = (hint: EarlyHint) => {
   const href = hint.href?.trim()
   if (!href) return true
-  if (href.includes('/fragments') || href.includes('webtransport')) return true
+  if (href.includes('webtransport')) return true
+  if (href.includes('/fragments') && !isPreloadableFragmentHint(hint)) return true
   if (hint.rel === 'modulepreload') return true
   return false
 }
 
 const buildEarlyHintHeader = (hint: EarlyHint) => {
   if (shouldSkipEarlyHint(hint)) return null
+  const crossoriginValue = resolveLinkCrossOrigin(hint.crossorigin) ?? null
   if (hint.rel === 'modulepreload') {
     let value = `<${hint.href}>; rel=modulepreload`
-    if (hint.crossorigin) value += '; crossorigin'
+    if (crossoriginValue) value += `; crossorigin=${crossoriginValue}`
     return value
   }
   const asValue = hint.as?.trim()
   if (!asValue) return null
   let value = `<${hint.href}>; rel=preload; as=${asValue}`
   if (hint.type) value += `; type=${hint.type}`
-  if (hint.crossorigin) value += '; crossorigin'
+  if (crossoriginValue) value += `; crossorigin=${crossoriginValue}`
   return value
 }
 
@@ -158,7 +170,9 @@ const sanitizeHints = (raw: EarlyHint[]) => {
     if (!hint?.href) return
     if (!hint.as && hint.rel !== 'modulepreload') return
     if (shouldSkipEarlyHint(hint)) return
-    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${hint.crossorigin ? '1' : '0'}`
+    const crossoriginKey =
+      typeof hint.crossorigin === 'string' ? hint.crossorigin : hint.crossorigin ? '1' : '0'
+    const key = `${hint.href}|${hint.as ?? ''}|${hint.rel ?? ''}|${hint.type ?? ''}|${crossoriginKey}`
     if (!unique.has(key)) unique.set(key, hint)
   })
   return Array.from(unique.values())
@@ -492,9 +506,15 @@ export const onRequest: RequestHandler = async (event) => {
     const requestUrl = new URL(request.url)
     const nonce = getOrCreateRequestCspNonce(event)
     const planHints = getPlanEarlyHints(requestUrl.pathname, request)
+    const homeBootstrapHint = isHomeStaticPath(requestUrl.pathname)
+      ? buildEarlyHintHeader(buildHomeFragmentBootstrapEarlyHint(resolveRequestLang(request)))
+      : null
     headers.set('Content-Security-Policy', buildSiteCsp({ nonce, currentOrigin: requestUrl.origin }))
     headers.set('Cross-Origin-Opener-Policy', 'same-origin')
     headers.set('X-Frame-Options', 'DENY')
+    if (homeBootstrapHint) {
+      headers.append('Link', homeBootstrapHint)
+    }
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
@@ -537,20 +557,14 @@ export const RouterHead = component$(() => {
               rel="preload"
               as="style"
               href={link.href}
-              crossOrigin={
-                link.crossorigin === 'use-credentials'
-                  ? 'use-credentials'
-                  : link.crossorigin
-                    ? 'anonymous'
-                    : undefined
-              }
+              crossOrigin={resolveLinkCrossOrigin(link.crossorigin)}
               {...(fragmentId ? { 'data-fragment-css': fragmentId } : {})}
             />,
             <link key={`${link.rel}-${link.href}`} {...link} />
           ]
         }
 
-        return <link key={`${link.rel}-${link.href}`} {...link} />
+        return <link key={`${link.rel}-${link.href}`} crossOrigin={resolveLinkCrossOrigin(link.crossorigin)} {...link} />
       })}
         {preconnectOrigins.map((origin) => (
           <link

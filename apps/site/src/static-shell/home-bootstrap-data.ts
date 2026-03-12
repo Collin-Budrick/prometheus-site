@@ -4,6 +4,7 @@ import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
+import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import type { StaticShellSeed } from './seed'
 
 export type HomeStaticRouteData = {
@@ -11,6 +12,7 @@ export type HomeStaticRouteData = {
   path: string
   snapshotKey?: string
   homeDemoStylesheetHref?: string
+  fragmentBootstrapHref?: string
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -23,6 +25,7 @@ export type HomeStaticBootstrapData = {
   shellSeed: LanguageSeedPayload
   routeSeed: LanguageSeedPayload
   homeDemoStylesheetHref: string | null
+  fragmentBootstrapHref: string | null
   fragmentVersions: Record<string, number>
 }
 
@@ -65,6 +68,9 @@ export const readStaticHomeBootstrapData = ({
     shellSeed: shell.languageSeed ?? {},
     routeSeed: route.languageSeed ?? {},
     homeDemoStylesheetHref: route.homeDemoStylesheetHref ?? null,
+    fragmentBootstrapHref:
+      route.fragmentBootstrapHref ??
+      buildHomeFragmentBootstrapHref({ lang: route.lang || shell.lang }),
     fragmentVersions: route.fragmentVersions ?? {}
   }
 }

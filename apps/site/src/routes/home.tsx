@@ -9,6 +9,7 @@ import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPa
 import homeDemoStylesheetHref from '../static-shell/home-static-deferred.css?url'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
+import { buildHomeFragmentBootstrapPreloadLink } from '../static-shell/home-fragment-bootstrap'
 
 type FragmentResource = {
   plan: FragmentPlanValue
@@ -32,6 +33,7 @@ type HomeHeadLink =
   | (ReturnType<typeof buildFragmentCssLinks>[number] & {
       rel: 'stylesheet'
     })
+  | ReturnType<typeof buildHomeFragmentBootstrapPreloadLink>
   | {
       rel: 'preload'
       as: 'style'
@@ -39,14 +41,15 @@ type HomeHeadLink =
       'data-home-demo-stylesheet': 'true'
     }
 
-export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null): HomeHeadLink[] => [
+export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null, lang?: Lang): HomeHeadLink[] => [
   ...buildFragmentCssLinks(plan),
   {
     rel: 'preload',
     as: 'style',
     href: homeDemoStylesheetHref,
     'data-home-demo-stylesheet': 'true'
-  }
+  },
+  buildHomeFragmentBootstrapPreloadLink(lang)
 ]
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
@@ -127,7 +130,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: siteBrand.metaDescription
       }
     ],
-    links: buildHomeHeadLinks(data?.plan),
+    links: buildHomeHeadLinks(data?.plan, lang),
     htmlAttributes: {
       lang
     }

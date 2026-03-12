@@ -46,6 +46,7 @@ type HomeControllerState = {
   lang: Lang
   path: string
   homeDemoStylesheetHref: string | null
+  homeFragmentBootstrapHref: string | null
   fetchAbort: AbortController | null
   cleanupFns: Array<() => void>
   demoRenders: Map<Element, HomeDemoActivationResult>
@@ -381,7 +382,7 @@ type ScheduleStaticHomePaintReadyOptions = {
 
 type HomeFragmentHydrationController = Pick<
   HomeControllerState,
-  'destroyed' | 'lang' | 'patchQueue' | 'fetchAbort' | 'homeDemoStylesheetHref'
+  'destroyed' | 'lang' | 'patchQueue' | 'fetchAbort' | 'homeDemoStylesheetHref' | 'homeFragmentBootstrapHref'
 >
 
 type HomeFragmentHydrationManager = {
@@ -603,7 +604,8 @@ export const bindHomeFragmentHydration = ({
       const payloads = await fetchBatch(ids, {
         lang: controller.lang,
         signal: fetchAbort.signal,
-        knownVersions: collectStaticHomeKnownVersions(root)
+        knownVersions: collectStaticHomeKnownVersions(root),
+        bootstrapHref: controller.homeFragmentBootstrapHref ?? undefined
       })
 
       if (controller.destroyed || controller.fetchAbort !== fetchAbort || fetchAbort.signal.aborted) return
@@ -1361,6 +1363,7 @@ export const bootstrapStaticHome = async () => {
     lang: data.lang,
     path: data.currentPath,
     homeDemoStylesheetHref: data.homeDemoStylesheetHref,
+    homeFragmentBootstrapHref: data.fragmentBootstrapHref,
     fetchAbort: null,
     cleanupFns: [],
     demoRenders: new Map(),

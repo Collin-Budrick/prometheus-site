@@ -763,6 +763,23 @@ function collectInitialFragmentIds(plan: FragmentPlanPayload) {
   return { ids: Array.from(required), criticalIds, lcpIds }
 }
 
+const dedupeFragmentIds = (ids: readonly string[]) => {
+  const unique: string[] = []
+  const seen = new Set<string>()
+
+  ids.forEach((id) => {
+    const normalized = id.trim()
+    if (!normalized || seen.has(normalized)) return
+    seen.add(normalized)
+    unique.push(normalized)
+  })
+
+  return unique
+}
+
+const resolveExplicitFragmentIds = (value: string | undefined) =>
+  dedupeFragmentIds((value ?? '').split(','))
+
 const collectBootFragmentTargets = (plan: FragmentPlanPayload) => {
   const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
   const htmlIds = plan.fragments
@@ -790,13 +807,12 @@ const collectBootFragmentTargets = (plan: FragmentPlanPayload) => {
   }
 }
 
-const prefetchCriticalFragments = async (
-  plan: FragmentPlanPayload,
+const prefetchFragments = async (
+  ids: readonly string[],
   lang: FragmentLang,
   service: FragmentService,
   fragmentsByCacheKey?: Map<string, StoredFragment>
 ) => {
-  const { ids } = collectInitialFragmentIds(plan)
   if (ids.length === 0) return
   const pending = ids.filter((id) => {
     if (!fragmentsByCacheKey) return true
@@ -805,6 +821,38 @@ const prefetchCriticalFragments = async (
   })
   if (pending.length === 0) return
   await Promise.allSettled(pending.map((id) => service.getFragmentEntry(id, { lang })))
+}
+
+const prefetchCriticalFragments = async (
+  plan: FragmentPlanPayload,
+  lang: FragmentLang,
+  service: FragmentService,
+  fragmentsByCacheKey?: Map<string, StoredFragment>
+) => {
+  const { ids } = collectInitialFragmentIds(plan)
+  await prefetchFragments(ids, lang, service, fragmentsByCacheKey)
+}
+
+const collectStaticHomeRevalidationIds = (plan: FragmentPlanPayload) => {
+  if (plan.path !== '/') return []
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const groups =
+    plan.fetchGroups !== undefined && plan.fetchGroups.length > 0
+      ? plan.fetchGroups
+      : [plan.fragments.map((entry) => entry.id)]
+
+  return dedupeFragmentIds(
+    groups.flatMap((group) => group.filter((id) => entryById.get(id)?.critical !== true))
+  )
+}
+
+const prefetchStaticHomeFragments = async (
+  plan: FragmentPlanPayload,
+  lang: FragmentLang,
+  service: FragmentService,
+  fragmentsByCacheKey?: Map<string, StoredFragment>
+) => {
+  await prefetchFragments(collectStaticHomeRevalidationIds(plan), lang, service, fragmentsByCacheKey)
 }
 
 const getPlanKnownVersions = (
@@ -1238,6 +1286,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       memoizeFragmentPlan(path, lang, basePlan)
       if (didBuildPlan) {
         void prefetchCriticalFragments(basePlan, lang, service, fragmentsByCacheKey)
+        void prefetchStaticHomeFragments(basePlan, lang, service, fragmentsByCacheKey)
       }
 
       const version = getPlanEtagVersion(path, lang)
@@ -1329,8 +1378,9 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const lang = normalizeFragmentLang(typeof query.lang === 'string' ? query.lang : undefined)
       const protocol = resolveFragmentProtocol(typeof query.protocol === 'string' ? query.protocol : undefined)
       const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
+      const explicitIds = resolveExplicitFragmentIds(typeof query.ids === 'string' ? query.ids : undefined)
       const plan = await getFragmentPlan(path, lang)
-      const { ids } = collectBootFragmentTargets(plan)
+      const ids = explicitIds.length > 0 ? explicitIds : collectBootFragmentTargets(plan).ids
       const payload = await buildFragmentBundle(ids, lang, getFragmentEntry, protocol, knownVersions, plan)
       const headers = new Headers({
         'content-type': 'application/octet-stream',
@@ -1343,6 +1393,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         path: t.Optional(t.String()),
         protocol: t.Optional(t.String()),
         known: t.Optional(t.String()),
+        ids: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
     }
