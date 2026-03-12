@@ -22,21 +22,57 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  postgres:
-    image: postgres:18.3-alpine
-    environment:
-      POSTGRES_USER: prometheus
-      POSTGRES_PASSWORD: prometheus
-      POSTGRES_DB: prometheus
+  spacetimedb:
+    image: clockworklabs/spacetime:v2.0.4
+    command:
+      [
+        "start",
+        "--listen-addr",
+        "0.0.0.0:3000",
+        "--data-dir",
+        "/var/lib/spacetimedb",
+        "--jwt-pub-key-path",
+        "/etc/spacetimedb/keys/jwt.pub",
+        "--jwt-priv-key-path",
+        "/etc/spacetimedb/keys/jwt.key",
+        "--non-interactive"
+      ]
     ports:
-      - "${PROMETHEUS_POSTGRES_PORT:-5433}:5432"
+      - "${PROMETHEUS_SPACETIMEDB_PORT:-3000}:3000"
     volumes:
-      - postgres18_data:/var/lib/postgresql
+      - spacetimedb_data:/var/lib/spacetimedb
+      - ./infra/spacetimedb/keys:/etc/spacetimedb/keys:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U prometheus -d prometheus"]
+      test: ["CMD", "spacetime", "server", "ping", "http://127.0.0.1:3000"]
       interval: 2s
       timeout: 3s
-      retries: 10
+      retries: 15
+
+  spacetimedb-publish:
+    image: clockworklabs/spacetime:v2.0.4
+    depends_on:
+      spacetimedb:
+        condition: service_healthy
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      SPACETIMEAUTH_AUTHORITY: ${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}
+      SPACETIMEAUTH_CLIENT_ID: ${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}
+    command:
+      [
+        "publish",
+        "${SPACETIMEDB_MODULE:-prometheus-site}",
+        "--server",
+        "http://spacetimedb:3000",
+        "--module-path",
+        "packages/spacetimedb-module",
+        "--anonymous",
+        "--yes",
+        "--delete-data",
+        "on-conflict"
+      ]
+    restart: "no"
 
   valkey:
     image: valkey/valkey-bundle:9.0.1-alpine
@@ -61,31 +97,37 @@ services:
       cache_to:
         - type=local,dest=.cache/buildx/api,mode=max
     depends_on:
-      postgres:
+      spacetimedb:
         condition: service_healthy
+      spacetimedb-publish:
+        condition: service_completed_successfully
       valkey:
         condition: service_healthy
     environment:
       NODE_ENV: ${API_NODE_ENV:-development}
       API_HOST: 0.0.0.0
       API_PORT: 4000
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: prometheus
-      POSTGRES_PASSWORD: prometheus
-      POSTGRES_DB: prometheus
-      POSTGRES_SSL: "false"
+      SPACETIMEDB_URI: http://spacetimedb:3000
+      SPACETIMEDB_MODULE: ${SPACETIMEDB_MODULE:-prometheus-site}
+      SPACETIMEDB_DATA_DIR: /var/lib/spacetimedb
+      SPACETIMEDB_JWT_PUBLIC_KEY_PATH: /etc/spacetimedb/keys/jwt.pub
+      SPACETIMEDB_JWT_PRIVATE_KEY_PATH: /etc/spacetimedb/keys/jwt.key
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       WEB_PROTOCOL: https
       WEB_PORT: 443
       WEB_HOST: ${PROMETHEUS_WEB_HOST:-prometheus.dev}
       WEB_HOST_PROD: ${PROMETHEUS_WEB_HOST_PROD:-prometheus.prod}
-      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       ENABLE_WEBTRANSPORT_FRAGMENTS: ${ENABLE_WEBTRANSPORT_FRAGMENTS:-1}
       BETTER_AUTH_COOKIE_SECRET: dev-cookie-secret-please-change-32
+      SPACETIMEAUTH_AUTHORITY: ${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}
+      SPACETIMEAUTH_CLIENT_ID: ${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}
+      SPACETIMEAUTH_JWKS_URI: ${SPACETIMEAUTH_JWKS_URI:-https://auth.spacetimedb.com/oidc/jwks}
+      SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-https://prometheus.dev/}
     ports:
       - "${PROMETHEUS_API_PORT:-4000}:4000"
+    volumes:
+      - ./infra/spacetimedb/keys:/etc/spacetimedb/keys:ro
 
   yjs-signaling:
     profiles:
@@ -159,6 +201,11 @@ services:
         VITE_P2P_PEERJS_SERVER: ${VITE_P2P_PEERJS_SERVER:-https://0.peerjs.com}
         VITE_PUBLIC_BASE: ${VITE_PUBLIC_BASE:-}
         VITE_DISABLE_SW: ${VITE_DISABLE_SW:-}
+        VITE_SPACETIMEAUTH_AUTHORITY: ${VITE_SPACETIMEAUTH_AUTHORITY:-${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}}
+        VITE_SPACETIMEAUTH_CLIENT_ID: ${VITE_SPACETIMEAUTH_CLIENT_ID:-${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}}
+        SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: ${SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI:-https://prometheus.dev/}
+        VITE_SPACETIMEDB_URI: ${VITE_SPACETIMEDB_URI:-/spacetimedb}
+        VITE_SPACETIMEDB_MODULE: ${VITE_SPACETIMEDB_MODULE:-${SPACETIMEDB_MODULE:-prometheus-site}}
     environment:
       API_BASE: http://api:4000
       PROMETHEUS_DEVICE_HOST: ${PROMETHEUS_DEVICE_HOST:-}
@@ -179,5 +226,5 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  postgres18_data:
+  spacetimedb_data:
   valkey_data:

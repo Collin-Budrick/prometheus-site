@@ -22,6 +22,7 @@
     "@preact/signals-core": "1.14.0",
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
+    "@prometheus/spacetimedb-client": "workspace:*",
     "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "0.0.13",
     "@tauri-apps/api": "2.10.1",

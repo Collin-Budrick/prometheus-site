@@ -1,12 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { apiUrl, cacheKeysWritten, chatMessagesData, ensureApiReady, publishedMessages, resetTestState, storeItemsData } from './setup'
 import { decodeFragmentPayload } from '@core/fragment/binary'
 import { parseFragmentFrames } from '@core/fragment/frames'
 import { encodeFragmentKnownVersions } from '@core/fragment/known-versions'
 
-beforeAll(async () => {
-  await ensureApiReady()
-})
+await ensureApiReady()
 
 beforeEach(() => {
   resetTestState()
@@ -262,13 +260,11 @@ describe('chat websocket publish', () => {
   })
 
   it('publishes authenticated chat messages with user metadata', async () => {
-    const login = await fetch(`${apiUrl}/auth/sign-in/email`, {
+    const login = await fetch(`${apiUrl}/auth/session/sync`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        email: 'existing@example.com',
-        password: 'password123',
-        rememberMe: true
+        idToken: 'mock-id-token'
       }),
       redirect: 'manual'
     })

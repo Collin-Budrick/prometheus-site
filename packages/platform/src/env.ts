@@ -46,6 +46,11 @@ export type AppConfig = {
   p2pPeerjsServer?: string
   p2pIceServers: P2pIceServer[]
   authBootstrapPublicKey?: string
+  spacetimeAuthAuthority?: string
+  spacetimeAuthClientId?: string
+  spacetimeAuthPostLogoutRedirectUri?: string
+  spacetimeDbUri?: string
+  spacetimeDbModule?: string
 }
 
 export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
@@ -98,6 +103,16 @@ const runtimeEnvSchema = {
   VITE_P2P_ICE_SERVERS: 'string?',
   AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   VITE_AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
+  SPACETIMEAUTH_AUTHORITY: 'string?',
+  VITE_SPACETIMEAUTH_AUTHORITY: 'string?',
+  SPACETIMEAUTH_CLIENT_ID: 'string?',
+  VITE_SPACETIMEAUTH_CLIENT_ID: 'string?',
+  SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
+  VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
+  SPACETIMEDB_URI: 'string?',
+  VITE_SPACETIMEDB_URI: 'string?',
+  SPACETIMEDB_MODULE: 'string?',
+  VITE_SPACETIMEDB_MODULE: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -133,6 +148,16 @@ const publicEnvSchema = {
   FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
   VITE_AUTH_BOOTSTRAP_PUBLIC_KEY: 'string?',
+  SPACETIMEAUTH_AUTHORITY: 'string?',
+  VITE_SPACETIMEAUTH_AUTHORITY: 'string?',
+  SPACETIMEAUTH_CLIENT_ID: 'string?',
+  VITE_SPACETIMEAUTH_CLIENT_ID: 'string?',
+  SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
+  VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI: 'string?',
+  SPACETIMEDB_URI: 'string?',
+  VITE_SPACETIMEDB_URI: 'string?',
+  SPACETIMEDB_MODULE: 'string?',
+  VITE_SPACETIMEDB_MODULE: 'string?',
   DEV: 'string?',
   MODE: 'string?',
   NODE_ENV: 'string?'
@@ -424,6 +449,21 @@ export const resolveHighlightConfig = (env: AppEnv = resolveRuntimeEnv()): Highl
 const resolveAuthBootstrapPublicKey = (env: AppEnv) =>
   toStringValue(firstDefined(env.VITE_AUTH_BOOTSTRAP_PUBLIC_KEY, env.AUTH_BOOTSTRAP_PUBLIC_KEY))?.trim() ?? ''
 
+const resolveSpacetimeAuthAuthority = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_SPACETIMEAUTH_AUTHORITY, env.SPACETIMEAUTH_AUTHORITY))?.trim() ?? ''
+
+const resolveSpacetimeAuthClientId = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_SPACETIMEAUTH_CLIENT_ID, env.SPACETIMEAUTH_CLIENT_ID))?.trim() ?? ''
+
+const resolveSpacetimeAuthPostLogoutRedirectUri = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI, env.SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI))?.trim() ?? ''
+
+const resolveSpacetimeDbUri = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_SPACETIMEDB_URI, env.SPACETIMEDB_URI))?.trim() ?? ''
+
+const resolveSpacetimeDbModule = (env: AppEnv) =>
+  toStringValue(firstDefined(env.VITE_SPACETIMEDB_MODULE, env.SPACETIMEDB_MODULE))?.trim() ?? ''
+
 const resolveP2pRelayBases = (env: AppEnv) => {
   const raw = toStringValue(firstDefined(env.P2P_RELAY_BASES, env.VITE_P2P_RELAY_BASES))?.trim() ?? ''
   if (raw === '') return []
@@ -544,6 +584,12 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     p2pCrdtSignaling: resolveP2pCrdtSignaling(resolvedEnv),
     p2pPeerjsServer: resolveP2pPeerjsServer(resolvedEnv),
     p2pIceServers: resolveP2pIceServers(resolvedEnv),
-    authBootstrapPublicKey: resolveAuthBootstrapPublicKey(resolvedEnv) || undefined
+    authBootstrapPublicKey: resolveAuthBootstrapPublicKey(resolvedEnv) || undefined,
+    spacetimeAuthAuthority: resolveSpacetimeAuthAuthority(resolvedEnv) || undefined,
+    spacetimeAuthClientId: resolveSpacetimeAuthClientId(resolvedEnv) || undefined,
+    spacetimeAuthPostLogoutRedirectUri:
+      resolveSpacetimeAuthPostLogoutRedirectUri(resolvedEnv) || undefined,
+    spacetimeDbUri: resolveSpacetimeDbUri(resolvedEnv) || undefined,
+    spacetimeDbModule: resolveSpacetimeDbModule(resolvedEnv) || undefined
   }
 }

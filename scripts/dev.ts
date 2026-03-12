@@ -15,8 +15,10 @@ import {
 } from './compose-utils'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
+import { ensureSpacetimeJwtKeys } from './spacetimedb'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+ensureSpacetimeJwtKeys()
 
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const runtimeConfig = getRuntimeConfig(process.env)
@@ -831,7 +833,7 @@ generateFragmentCss()
 const devHttpPort = runtimeConfig.ports.http
 const devHttpsPort = runtimeConfig.ports.https
 const devApiPort = runtimeConfig.ports.api
-const devPostgresPort = runtimeConfig.ports.postgres
+const devSpacetimeDbPort = runtimeConfig.ports.spacetimedb
 const devValkeyPort = runtimeConfig.ports.valkey
 const devWebTransportPort = runtimeConfig.ports.webtransport
 const devProject = runtimeCompose.projectName
@@ -855,7 +857,6 @@ const devHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() ||
 const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
-const devRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
 const isWindowsMount = root.startsWith('/mnt/')
 const enablePollingWatch = isWsl && isWindowsMount
 const includeRealtimeServices =
@@ -873,12 +874,11 @@ const composeEnv = {
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
-  PROMETHEUS_POSTGRES_PORT: devPostgresPort,
+  PROMETHEUS_SPACETIMEDB_PORT: devSpacetimeDbPort,
   PROMETHEUS_VALKEY_PORT: devValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: devWebTransportPort,
   PROMETHEUS_WEB_HOST: runtimeConfig.domains.web,
   PROMETHEUS_WEB_HOST_PROD: runtimeConfig.domains.webProd,
-  RUN_MIGRATIONS: devRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: devEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: devWebTransportMaxDatagramSize
@@ -1047,6 +1047,17 @@ const webEnv: NodeJS.ProcessEnv = {
   ...process.env,
   VITE_DEV_HOST: devHostForVite,
   VITE_API_BASE: devApiBase,
+  VITE_SPACETIMEDB_URI: process.env.VITE_SPACETIMEDB_URI?.trim() || `https://${devHttpsHost}/spacetimedb`,
+  VITE_SPACETIMEDB_MODULE:
+    process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
+  VITE_SPACETIMEAUTH_AUTHORITY:
+    process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
+    process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
+    'https://auth.spacetimedb.com/oidc',
+  VITE_SPACETIMEAUTH_CLIENT_ID:
+    process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
+    process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
+    'prometheus-site-dev',
   VITE_WEBTRANSPORT_BASE: devWebTransportBase,
   VITE_ENABLE_PREFETCH: devEnablePrefetch,
   VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: devEnableWebTransport,

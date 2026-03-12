@@ -2,27 +2,12 @@ import { Elysia, type AnyElysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
 import type { FragmentLang, FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
-import { sendServerOnlinePush } from '@features/messaging'
-import { createStoreRoutes, type StoreTelemetry } from '@features/store/api'
-import { invalidateStoreItemsCache } from '@features/store/cache'
-import { createStoreRealtime, type StoreRealtimeEvent } from '@features/store/realtime'
-import { rebuildStoreSearchIndex, removeStoreSearchDocument, upsertStoreSearchDocument } from '@features/store/search'
-import { registerStoreWs, storeChannel } from '@features/store/ws'
+import { PromptBodyError, readPromptBody, sendServerOnlinePush } from '@features/messaging'
 import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
-import type { DatabaseClient } from '../db'
-import { prepareDatabase } from '../db/prepare'
-import {
-  authKeys,
-  authSessions,
-  passkeys,
-  storeItems,
-  users,
-  verification
-} from '../db/schema'
 import { checkEarlyLimit, recordLatencySample } from '../cache-helpers'
 import { createLogger } from '../logger'
-import { getClientIp, resolveWsClientIp, resolveWsHeaders, resolveWsRequest } from '../network'
+import { getClientIp } from '../network'
 import type { RateLimiter } from '../rate-limit'
 import { resolveBooleanFlag } from '../runtime'
 import { createPlatformServer, type PlatformServerContext } from './bun'
@@ -31,7 +16,6 @@ import { createFragmentRoutes, createFragmentStore } from './fragments'
 
 type FeatureFlags = {
   auth: boolean
-  store: boolean
   messaging: boolean
 }
 
@@ -42,8 +26,8 @@ export type ApiServerOptions = {
   features?: Partial<FeatureFlags>
   server?: {
     cache?: CacheClient
-    database?: DatabaseClient
     rateLimiter?: RateLimiter
+    spacetime?: PlatformServerContext['spacetime']
   }
 }
 
@@ -123,11 +107,9 @@ const applyDevCors = (app: AnyElysia) => {
 
 export const startApiServer = async (options: ApiServerOptions = {}) => {
   const logger = createLogger('api')
-  const runtime = platformConfig.runtime
 
   const defaults: FeatureFlags = {
     auth: resolveBooleanFlag(process.env.FEATURE_AUTH_ENABLED, true),
-    store: resolveBooleanFlag(process.env.FEATURE_STORE_ENABLED, true),
     messaging: resolveBooleanFlag(process.env.FEATURE_MESSAGING_ENABLED, true)
   }
 
@@ -136,53 +118,12 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     ...options.features
   }
 
-  const telemetry: StoreTelemetry = {
-    cacheHits: 0,
-    cacheMisses: 0,
-    cacheGetErrors: 0,
-    cacheSetErrors: 0
-  }
-
-  let storeRealtime: ReturnType<typeof createStoreRealtime> | null = null
-  let storeRealtimeHandler: ((event: StoreRealtimeEvent) => void) | null = null
-  let authFeature: ReturnType<typeof createAuthFeature> | null = null
-  let storeValkeyClient: CacheClient['client'] | null = null
-  let storeValkeyReady = false
-  let storeValkeyListenersAttached = false
   const fragmentUpdates = createFragmentUpdateBroadcaster()
 
-  const resolveStoreValkey = (cache: CacheClient) => {
-    if (featureFlags.store && storeValkeyClient === null) {
-      storeValkeyClient = cache.client.duplicate({ disableOfflineQueue: true })
-    }
-    if (storeValkeyClient && !storeValkeyListenersAttached) {
-      storeValkeyListenersAttached = true
-      storeValkeyClient.on('ready', () => {
-        storeValkeyReady = true
-      })
-      storeValkeyClient.on('end', () => {
-        storeValkeyReady = false
-      })
-      storeValkeyClient.on('reconnecting', () => {
-        storeValkeyReady = false
-      })
-      storeValkeyClient.on('error', () => {
-        storeValkeyReady = false
-      })
-    }
-    const storeValkey = storeValkeyClient ?? cache.client
-    const isStoreValkeyReady = () =>
-      storeValkeyClient ? storeValkeyReady && storeValkeyClient.isReady : cache.isReady()
-    return { storeValkey, isStoreValkeyReady }
-  }
-
   const buildApp = (context: PlatformServerContext) => {
-    const { cache, database, rateLimiter } = context
+    const { cache, rateLimiter, spacetime } = context
     const valkey = cache.client
     const isValkeyReady = cache.isReady
-    const { storeValkey, isStoreValkeyReady } = resolveStoreValkey(cache)
-    const db = database.db
-    const pgClient = database.pgClient
 
     const fragmentStore = createFragmentStore(cache)
     const fragmentService = createFragmentService({
@@ -198,7 +139,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       service: fragmentService,
       store: fragmentStore,
       updates: fragmentUpdates,
-      enableWebTransportFragments: runtime.enableWebTransportFragments,
+      enableWebTransportFragments: platformConfig.runtime.enableWebTransportFragments,
       environment: platformConfig.environment
     })
 
@@ -213,78 +154,31 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     const checkRateLimit = (route: string, clientIp: string) =>
       rateLimiter.checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
-    const checkWsOpenQuota = (route: string, clientIp: string) =>
-      rateLimiter.checkQuota(`${route}:open:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
-
     if (featureFlags.auth) {
-      authFeature = createAuthFeature({
-        db,
-        tables: { users, authSessions, authKeys, verification, passkeys },
-        authConfig: platformConfig.auth
+      const authFeature = createAuthFeature({
+        authConfig: platformConfig.auth,
+        spacetime: platformConfig.spacetime
       })
       app.use(authFeature.authRoutes)
     }
 
-    if (featureFlags.store) {
-      storeRealtime = createStoreRealtime({
-        db,
-        pgClient,
-        storeItemsTable: storeItems
-      })
-      storeRealtimeHandler = (event: StoreRealtimeEvent) => {
-        const payload = JSON.stringify(event)
-        void invalidateStoreItemsCache(storeValkey, isStoreValkeyReady)
-        fragmentUpdates.notifyPath('/store')
-        if (!isStoreValkeyReady()) return
-        void (async () => {
-          try {
-            if (event.type === 'store:upsert') {
-              await upsertStoreSearchDocument(storeValkey, event.item)
-            }
-            if (event.type === 'store:delete') {
-              await removeStoreSearchDocument(storeValkey, event.id)
-            }
-            await storeValkey.publish(storeChannel, payload)
-          } catch (error) {
-            logger.warn('Failed to publish store realtime event', { error })
-          }
-        })()
-      }
-
-      app.use(
-        createStoreRoutes({
-          db,
-          valkey: storeValkey,
-          isValkeyReady: isStoreValkeyReady,
-          storeItemsTable: storeItems,
-          getClientIp,
-          checkRateLimit,
-          checkEarlyLimit: (key, max, windowMs) => checkEarlyLimit(cache, key, max, windowMs),
-          recordLatencySample: (metric, durationMs) => {
-            void recordLatencySample(cache, metric, durationMs)
-          },
-          jsonError,
-          telemetry
-        })
-      )
-    }
-
     app.get('/health', async () => {
       const dependencies: {
-        postgres: { status: 'ok' | 'error'; error?: string }
+        spacetime: { status: 'ok' | 'error'; error?: string }
         valkey: { status: 'ok' | 'error'; error?: string }
       } = {
-        postgres: { status: 'ok' },
+        spacetime: { status: 'ok' },
         valkey: { status: 'ok' }
       }
 
       let healthy = true
 
       try {
-        await pgClient`select 1`
+        await spacetime.ping()
+        await spacetime.getModuleInfo()
       } catch (error) {
         healthy = false
-        dependencies.postgres = {
+        dependencies.spacetime = {
           status: 'error',
           error: error instanceof Error ? error.message : String(error)
         }
@@ -306,7 +200,6 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       const payload = {
         status: healthy ? 'ok' : 'degraded',
         uptime: process.uptime(),
-        telemetry,
         dependencies
       }
 
@@ -316,23 +209,37 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       })
     })
 
-    if (featureFlags.store) {
-      const validateSession =
-        authFeature?.validateSession ??
-        (async () => new Response(null, { status: 401 }))
-      registerStoreWs(app, {
-        valkey: storeValkey,
-        isValkeyReady: isStoreValkeyReady,
-        db,
-        storeItemsTable: storeItems,
-        validateSession,
-        allowAnonymous: true,
-        checkWsOpenQuota,
-        resolveWsClientIp,
-        resolveWsHeaders,
-        resolveWsRequest
-      })
-    }
+    app.post('/ai/echo', async ({ request }) => {
+      const clientIp = getClientIp(request)
+      const rateLimit = await checkRateLimit('/ai/echo', clientIp)
+
+      if (!rateLimit.allowed) {
+        return jsonError(429, `Rate limit exceeded. Try again in ${rateLimit.retryAfter}s`, {
+          retryAfter: rateLimit.retryAfter
+        })
+      }
+
+      const earlyLimit = await checkEarlyLimit(cache, `/ai/echo:${clientIp}`, 5, 5000)
+      if (!earlyLimit.allowed) {
+        return jsonError(429, 'Slow down')
+      }
+
+      let prompt: string
+      try {
+        prompt = await readPromptBody(request)
+      } catch (error) {
+        if (error instanceof PromptBodyError) {
+          return jsonError(error.status, error.message, error.meta)
+        }
+        logger.warn('Prompt body parsing failed', { error })
+        return jsonError(400, 'Invalid request body')
+      }
+
+      const startedAt = performance.now()
+      const payload = { echo: `You said: ${prompt}` }
+      void recordLatencySample(cache, 'ai:echo', performance.now() - startedAt)
+      return payload
+    })
 
     return app
   }
@@ -341,58 +248,15 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     config: platformConfig,
     logger,
     cache: options.server?.cache,
-    database: options.server?.database,
     rateLimiter: options.server?.rateLimiter,
+    spacetime: options.server?.spacetime,
     buildApp,
     onStart: async (context) => {
-      if (runtime.runMigrations) {
-        logger.info('RUN_MIGRATIONS=1: running database migrations and seed data')
-        try {
-          await prepareDatabase()
-          logger.info('Database migrations and seed completed successfully')
-        } catch (error) {
-          logger.error('Database migrations failed', { error })
-          throw error
-        }
-      } else {
-        logger.info('RUN_MIGRATIONS not set; skipping migrations and seed step')
-      }
-
-      if (featureFlags.store && storeValkeyClient) {
-        try {
-          if (!storeValkeyClient.isOpen) {
-            await storeValkeyClient.connect()
-          }
-          storeValkeyReady = storeValkeyClient.isReady
-          if (storeValkeyReady) {
-            logger.info('Store Valkey connected')
-          }
-        } catch (error) {
-          storeValkeyReady = false
-          logger.warn('Store Valkey connection failed', { error })
-        }
-      }
-
-      if (featureFlags.store) {
-        const { storeValkey, isStoreValkeyReady } = resolveStoreValkey(context.cache)
-        try {
-          await rebuildStoreSearchIndex({
-            db: context.database.db,
-            storeItemsTable: storeItems,
-            valkey: storeValkey,
-            isValkeyReady: isStoreValkeyReady
-          })
-        } catch (error) {
-          logger.warn('Store search index rebuild failed', { error })
-        }
-      }
-
-      if (featureFlags.store && storeRealtime && storeRealtimeHandler) {
-        try {
-          await storeRealtime.start(storeRealtimeHandler)
-        } catch (error) {
-          logger.error('Store realtime listener failed', { error })
-        }
+      try {
+        await context.spacetime.getModuleInfo()
+      } catch (error) {
+        logger.error('SpaceTimeDB module check failed', { error })
+        throw error
       }
 
       if (featureFlags.messaging) {
@@ -403,19 +267,6 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         }).catch((error: unknown) => {
           logger.warn('Server online push failed', { error })
         })
-      }
-    },
-    onShutdown: async () => {
-      if (storeRealtime) {
-        await storeRealtime.stop()
-      }
-      if (storeValkeyClient && storeValkeyClient.isOpen) {
-        storeValkeyReady = false
-        try {
-          await storeValkeyClient.quit()
-        } catch (error) {
-          logger.warn('Store Valkey disconnect failed', { error })
-        }
       }
     }
   })

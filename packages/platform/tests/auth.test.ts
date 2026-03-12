@@ -1,40 +1,26 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import {
-  apiUrl,
-  authSessionsData,
-  authUsersData,
-  ensureApiReady,
-  oauthCallbacks,
-  oauthStarts,
-  passkeyEvents,
-  resetTestState
-} from './setup'
+import { beforeEach, describe, expect, it } from 'bun:test'
+import { apiUrl, ensureApiReady, resetTestState } from './setup'
 
-beforeAll(async () => {
-  await ensureApiReady()
-})
+await ensureApiReady()
 
 beforeEach(() => {
   resetTestState()
 })
 
-describe('email session endpoints', () => {
-  it('creates a session on signup and allows session verification', async () => {
-    const signup = await fetch(`${apiUrl}/auth/sign-up/email`, {
+describe('session bridge endpoints', () => {
+  it('creates a mirrored session from a synced ID token', async () => {
+    const sync = await fetch(`${apiUrl}/auth/session/sync`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: 'New User',
-        email: 'new@example.com',
-        password: 'hunter2'
+        idToken: 'mock-id-token'
       }),
       redirect: 'manual'
     })
 
-    expect(signup.status).toBe(200)
-    const cookie = signup.headers.get('set-cookie')
+    expect(sync.status).toBe(200)
+    const cookie = sync.headers.get('set-cookie')
     expect(cookie).toContain('session=')
-    expect(authUsersData.find((user) => user.email === 'new@example.com')).toBeDefined()
 
     const session = await fetch(`${apiUrl}/auth/session`, {
       headers: { cookie: cookie ?? '' }
@@ -42,26 +28,20 @@ describe('email session endpoints', () => {
 
     expect(session.status).toBe(200)
     const payload = await session.json()
-    expect(payload.session.userId).toBeDefined()
-    expect(authSessionsData.length).toBe(1)
+    expect(payload.session.userId).toBe('user-1')
+    expect(payload.user.id).toBe('user-1')
   })
 
-  it('signs in existing users and returns refreshed cookies', async () => {
-    const login = await fetch(`${apiUrl}/auth/sign-in/email`, {
+  it('rejects session sync requests without an ID token', async () => {
+    const sync = await fetch(`${apiUrl}/auth/session/sync`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        email: 'existing@example.com',
-        password: 'password123',
-        rememberMe: true
-      }),
-      redirect: 'manual'
+      body: JSON.stringify({})
     })
 
-    expect(login.status).toBe(200)
-    const cookie = login.headers.get('set-cookie')
-    expect(cookie).toContain('session=')
-    expect(authSessionsData.at(-1)?.userId).toBe('user-1')
+    expect(sync.status).toBe(400)
+    const payload = await sync.json()
+    expect(payload.error).toContain('ID token')
   })
 
   it('rejects session lookups without a valid cookie', async () => {
@@ -71,66 +51,25 @@ describe('email session endpoints', () => {
     const payload = await session.json()
     expect(payload.message).toContain('No active session')
   })
-})
 
-describe('passkey endpoints', () => {
-  it('serves registration options and records verification payloads', async () => {
-    const options = await fetch(`${apiUrl}/auth/passkey/generate-register-options`)
-    expect(options.status).toBe(200)
-    const data = await options.json()
-    expect(data.challenge).toBe('register-challenge')
-
-    const verify = await fetch(`${apiUrl}/auth/passkey/verify-registration`, {
+  it('clears the mirrored session on logout', async () => {
+    const sync = await fetch(`${apiUrl}/auth/session/sync`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ response: { id: 'cred-1' } })
+      body: JSON.stringify({
+        idToken: 'mock-id-token'
+      }),
+      redirect: 'manual'
     })
 
-    expect(verify.status).toBe(200)
-    expect(verify.headers.get('set-cookie')).toContain('session=')
-    expect(passkeyEvents).toEqual([
-      { type: 'registration', payload: { response: { id: 'cred-1' } } }
-    ])
-  })
-
-  it('provides authentication options and completes verification', async () => {
-    const options = await fetch(`${apiUrl}/auth/passkey/generate-authenticate-options`)
-    expect(options.status).toBe(200)
-    const data = await options.json()
-    expect(data.challenge).toBe('authenticate-challenge')
-    expect(Array.isArray(data.allowCredentials)).toBe(true)
-
-    const verify = await fetch(`${apiUrl}/auth/passkey/verify-authentication`, {
+    const cookie = sync.headers.get('set-cookie') ?? ''
+    const logout = await fetch(`${apiUrl}/auth/logout`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ response: { id: 'cred-auth' } })
+      headers: { cookie },
+      redirect: 'manual'
     })
 
-    expect(verify.status).toBe(200)
-    expect(passkeyEvents.at(-1)).toEqual({
-      type: 'authentication',
-      payload: { response: { id: 'cred-auth' } }
-    })
-  })
-})
-
-describe('oauth endpoints', () => {
-  it('redirects to provider start and completes callback with a session', async () => {
-    const start = await fetch(`${apiUrl}/auth/oauth/github/start`, { redirect: 'manual' })
-
-    expect(start.status).toBe(302)
-    expect(oauthStarts).toEqual([
-      { provider: 'github', redirect: '/auth/oauth/github/callback?code=mock-code&state=mock-state' }
-    ])
-    const redirect = start.headers.get('location')
-    expect(redirect).toContain('/callback')
-
-    const callback = await fetch(`${apiUrl}${redirect}`, { redirect: 'manual' })
-    expect(callback.status).toBe(302)
-    expect(callback.headers.get('set-cookie')).toContain('session=')
-    expect(callback.headers.get('location')).toBe('/')
-    expect(oauthCallbacks).toEqual([
-      { provider: 'github', code: 'mock-code', state: 'mock-state' }
-    ])
+    expect(logout.status).toBe(200)
+    expect(logout.headers.get('set-cookie')).toContain('Max-Age=0')
   })
 })

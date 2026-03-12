@@ -4,7 +4,6 @@ import { storeItems, chatMessages } from '@platform/db/schema'
 import { createRateLimiter } from '@platform/rate-limit'
 
 type AuthSession = { id: string; userId: string }
-type PasskeyEvent = { type: 'registration' | 'authentication'; payload: unknown }
 
 const defaultStoreItems = Array.from({ length: 15 }, (_, index) => ({
   id: index + 1,
@@ -25,15 +24,9 @@ export const authUsersData = [
   { id: 'user-1', email: 'existing@example.com', name: 'Existing User' }
 ]
 export const authSessionsData: AuthSession[] = []
-export const passkeyEvents: PasskeyEvent[] = []
-export const oauthStarts: Array<{ provider: string; redirect: string }> = []
-export const oauthCallbacks: Array<{ provider: string; code: string | null; state: string | null }> = []
 
 let nextChatId = chatMessagesData.length + 1
-let nextUserId = authUsersData.length + 1
 let nextSessionId = 1
-let registerChallenge = 'register-challenge'
-let authenticationChallenge = 'authenticate-challenge'
 
 const cacheStorage = new Map<string, string>()
 const valkeyCounters = new Map<string, { count: number; expiry: number }>()
@@ -44,6 +37,14 @@ const subscribers: ((message: string) => void)[] = []
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
+
+const stripValkeyCommandOptions = <T>(args: T[]) => {
+  if (args.length === 0) return args
+  return typeof args[0] === 'string' || Array.isArray(args[0]) ? args : args.slice(1)
+}
+
+const flattenValkeyKeys = (args: unknown[]) =>
+  stripValkeyCommandOptions(args).flatMap((value) => (Array.isArray(value) ? value : [value]))
 
 const extractThreshold = (condition: unknown) => {
   if (!isRecord(condition)) return null
@@ -145,52 +146,6 @@ const getSessionIdFromHeaders = (headers?: HeadersInit) => {
   return match ? match[1] : null
 }
 
-const findUserByEmail = (email: string) => authUsersData.find((user) => user.email === email)
-
-const signInWithEmail = async (body: { email: string; password: string }, _context?: { request?: Request }) => {
-  const user = findUserByEmail(body.email)
-  if (user === undefined) {
-    return authJson({ message: 'Invalid credentials' }, { status: 401 })
-  }
-
-  const session = createSession(user.id)
-  return authJson(
-    {
-      user,
-      session: { token: session.id, userId: user.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
-    },
-    { headers: { 'set-cookie': session.cookie } }
-  )
-}
-
-const signUpWithEmail = async (
-  body: { name: string; email: string; password: string },
-  _context?: { request?: Request }
-) => {
-  const existingUser = findUserByEmail(body.email)
-  if (existingUser !== undefined) {
-    return authJson({ message: 'User already exists' }, { status: 409 })
-  }
-
-  const user = { id: `user-${nextUserId}`, email: body.email, name: body.name }
-  nextUserId += 1
-  authUsersData.push(user)
-  const session = createSession(user.id)
-
-  return authJson(
-    {
-      user,
-      session: { token: session.id, userId: user.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
-    },
-    { headers: { 'set-cookie': session.cookie } }
-  )
-}
-
-const signUpWithPasskey = async (
-  body: { name: string; email: string },
-  context?: { request?: Request }
-) => signUpWithEmail({ ...body, password: `passkey-${Date.now()}` }, context)
-
 const validateSession = async (context?: { request?: Request; headers?: HeadersInit }) => {
   const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
   if (sessionId === null) return authJson({ message: 'No active session' }, { status: 401 })
@@ -210,105 +165,155 @@ const validateSession = async (context?: { request?: Request; headers?: HeadersI
   )
 }
 
-const handleAuthRequest = async (request: Request) => {
-  const url = new URL(request.url)
-  const { pathname } = url
-
-  if (pathname.endsWith('/passkey/generate-register-options')) {
-    return authJson({
-      challenge: registerChallenge,
-      user: { id: authUsersData[0]?.id ?? 'user-1', name: authUsersData[0]?.name ?? 'Passkey User' },
-      rpId: 'localhost'
-    })
+const syncSession = async (body: { idToken?: string }) => {
+  if (!body.idToken) {
+    return authJson({ error: 'ID token required' }, { status: 400 })
   }
 
-  if (pathname.endsWith('/passkey/verify-registration')) {
-    let payload: unknown
-    try {
-      payload = await request.json()
-    } catch {
-      payload = null
+  const defaultUser = authUsersData[0] ?? { id: 'user-1', email: 'existing@example.com', name: 'Existing User' }
+  const session = createSession(defaultUser.id)
+  return authJson(
+    {
+      user: defaultUser,
+      session: { token: session.id, userId: defaultUser.id, expiresAt: new Date(Date.now() + 3600_000).toISOString() }
+    },
+    { headers: { 'set-cookie': session.cookie } }
+  )
+}
+
+const logoutSession = async () =>
+  authJson(
+    { ok: true },
+    {
+      headers: {
+        'set-cookie': 'session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
+      }
     }
-    passkeyEvents.push({ type: 'registration', payload })
-    const session = createSession(authUsersData[0]?.id ?? 'user-1')
-    return authJson({ verified: true }, { headers: { 'set-cookie': session.cookie } })
+  )
+
+const updateProfileName = async (
+  body: { name: string },
+  context?: { request?: Request; headers?: HeadersInit }
+) => {
+  const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
+  if (sessionId === null) {
+    return authJson({ error: 'Authentication required' }, { status: 401 })
   }
 
-  if (pathname.endsWith('/passkey/generate-authenticate-options')) {
-    return authJson({
-      challenge: authenticationChallenge,
-      allowCredentials: [{ id: 'cred-123', type: 'public-key' }]
-    })
+  const session = authSessionsData.find((record) => record.id === sessionId)
+  const user = session ? authUsersData.find((record) => record.id === session.userId) : undefined
+  if (!user) {
+    return authJson({ error: 'Authentication required' }, { status: 401 })
   }
 
-  if (pathname.endsWith('/passkey/verify-authentication')) {
-    let payload: unknown
-    try {
-      payload = await request.json()
-    } catch {
-      payload = null
-    }
-    passkeyEvents.push({ type: 'authentication', payload })
-    const session = createSession(authUsersData[0]?.id ?? 'user-1')
-    return authJson({ authenticated: true }, { headers: { 'set-cookie': session.cookie } })
+  user.name = body.name
+  return authJson({ user })
+}
+
+const bootstrapSession = async (context?: { request?: Request; headers?: HeadersInit }) => {
+  const sessionId = getSessionIdFromHeaders(context?.headers ?? context?.request?.headers)
+  if (sessionId === null) {
+    return authJson({ error: 'Authentication required' }, { status: 401 })
   }
 
-  const oauthStart = pathname.match(/\/auth\/oauth\/(.+?)\/start/)
-  if (oauthStart !== null) {
-    const provider = oauthStart[1]
-    const redirect = `/auth/oauth/${provider}/callback?code=mock-code&state=mock-state`
-    oauthStarts.push({ provider, redirect })
-    return new Response(null, {
-      status: 302,
-      headers: { location: redirect }
-    })
+  const session = authSessionsData.find((record) => record.id === sessionId)
+  const user = session ? authUsersData.find((record) => record.id === session.userId) : undefined
+  if (!user) {
+    return authJson({ error: 'Authentication required' }, { status: 401 })
   }
 
-  const oauthCallback = pathname.match(/\/auth\/oauth\/(.+?)\/callback/)
-  if (oauthCallback !== null) {
-    const provider = oauthCallback[1]
-    oauthCallbacks.push({ provider, code: url.searchParams.get('code'), state: url.searchParams.get('state') })
-    const session = createSession(authUsersData[0]?.id ?? 'user-1')
-    return new Response(null, {
-      status: 302,
-      headers: { location: '/', 'set-cookie': session.cookie }
-    })
-  }
-
-  return authJson({ message: 'Unhandled auth route' }, { status: 404 })
+  return authJson({
+    token: 'bootstrap-token',
+    user,
+    issuedAt: Math.floor(Date.now() / 1000),
+    expiresAt: Math.floor(Date.now() / 1000) + 3600
+  })
 }
 
 const authRoutes = new Elysia({ prefix: '/auth' })
-  .post('/sign-in/email', async ({ body, request }) => signInWithEmail(body as any, { request }))
-  .post('/sign-up/email', async ({ body, request }) => signUpWithEmail(body as any, { request }))
-  .post('/sign-up/passkey', async ({ body, request }) => signUpWithPasskey(body as any, { request }))
+  .post('/session/sync', async ({ body }) => syncSession(body as { idToken?: string }))
+  .post('/logout', async () => logoutSession())
+  .post('/sign-out', async () => logoutSession())
+  .post('/profile/name', async ({ body, request }) => updateProfileName(body as { name: string }, { request }))
+  .post('/bootstrap', async ({ request }) => bootstrapSession({ request }))
   .get('/session', async ({ request }) => validateSession({ request }))
-  .all('/*', async ({ request }) => handleAuthRequest(request))
 
 mock.module('@features/auth/server', () => ({
   createAuthFeature: () => ({
-    auth: {},
+    auth: null,
     authRoutes,
-    handleAuthRequest,
-    signInWithEmail,
-    signUpWithEmail,
-    signUpWithPasskey,
     validateSession
   })
 }))
 
 let valkeyReady = true
 
+type ValkeyEventName = 'ready' | 'end' | 'reconnecting' | 'error'
+
+const createValkeyDuplicate = () => {
+  const listeners: Record<ValkeyEventName, Array<() => void>> = {
+    ready: [],
+    end: [],
+    reconnecting: [],
+    error: []
+  }
+
+  const emit = (event: ValkeyEventName) => {
+    listeners[event].forEach((listener) => listener())
+  }
+
+  return {
+    commandOptions: valkey.commandOptions,
+    get: (...args: Parameters<typeof valkey.get>) => valkey.get(...args),
+    set: (...args: Parameters<typeof valkey.set>) => valkey.set(...args),
+    keys: (...args: Parameters<typeof valkey.keys>) => valkey.keys(...args),
+    del: (...args: Parameters<typeof valkey.del>) => valkey.del(...args),
+    incr: (...args: Parameters<typeof valkey.incr>) => valkey.incr(...args),
+    expire: (...args: Parameters<typeof valkey.expire>) => valkey.expire(...args),
+    hIncrBy: (...args: Parameters<typeof valkey.hIncrBy>) => valkey.hIncrBy(...args),
+    exists: (...args: Parameters<typeof valkey.exists>) => valkey.exists(...args),
+    eval: (...args: Parameters<typeof valkey.eval>) => valkey.eval(...args),
+    publish: (...args: Parameters<typeof valkey.publish>) => valkey.publish(...args),
+    multi: () => valkey.multi(),
+    pExpire: (...args: Parameters<typeof valkey.pExpire>) => valkey.pExpire(...args),
+    ping: () => valkey.ping(),
+    isReady: true,
+    on(event: ValkeyEventName, handler: () => void) {
+      listeners[event].push(handler)
+      return this
+    },
+    async connect() {
+      this.isReady = true
+      emit('ready')
+    },
+    async subscribe(_channel: string, handler: (message: string) => void) {
+      subscribers.push(handler)
+      emit('ready')
+    },
+    async quit() {
+      this.isReady = false
+      emit('end')
+    }
+  }
+}
+
 const valkey = {
   isOpen: true,
-  async get(key: string) {
+  commandOptions(options: Record<string, unknown>) {
+    return options
+  },
+  async get(...args: unknown[]) {
+    const [key] = stripValkeyCommandOptions(args)
+    if (typeof key !== 'string') return null
     return cacheStorage.get(key) ?? null
   },
-  async set(
-    key: string,
-    value: string,
-    options?: { NX?: boolean; PX?: number; EX?: number }
-  ) {
+  async set(...args: unknown[]) {
+    const [key, value, options] = stripValkeyCommandOptions(args) as [
+      string | undefined,
+      string | undefined,
+      { NX?: boolean; PX?: number; EX?: number } | undefined
+    ]
+    if (typeof key !== 'string' || typeof value !== 'string') return null
     if (options?.NX && cacheStorage.has(key)) return null
     cacheStorage.set(key, value)
     cacheKeysWritten.push(key)
@@ -321,34 +326,43 @@ const valkey = {
     }
     return Array.from(cacheStorage.keys()).filter((key) => key === pattern)
   },
-  async del(...keys: string[]) {
+  async del(...args: unknown[]) {
+    const keys = flattenValkeyKeys(args).filter((key): key is string => typeof key === 'string')
     let removed = 0
     keys.forEach((key) => {
       if (cacheStorage.delete(key)) removed += 1
     })
     return removed
   },
-  async incr(key: string) {
+  async incr(...args: unknown[]) {
+    const [key] = stripValkeyCommandOptions(args)
+    if (typeof key !== 'string') return 0
     const now = Date.now()
     const record = valkeyCounters.get(key) ?? { count: 0, expiry: now + 60_000 }
     record.count += 1
     valkeyCounters.set(key, record)
     return record.count
   },
-  async expire(key: string, seconds: number) {
+  async expire(...args: unknown[]) {
+    const [key, seconds] = stripValkeyCommandOptions(args)
+    if (typeof key !== 'string' || typeof seconds !== 'number') return 0
     const now = Date.now()
     const record = valkeyCounters.get(key) ?? { count: 0, expiry: now + seconds * 1000 }
     record.expiry = now + seconds * 1000
     valkeyCounters.set(key, record)
     return 1
   },
-  async hIncrBy(key: string, field: string, increment: number) {
+  async hIncrBy(...args: unknown[]) {
+    const [key, field, increment] = stripValkeyCommandOptions(args)
+    if (typeof key !== 'string' || typeof field !== 'string' || typeof increment !== 'number') return 0
     const record = valkeyHashes.get(key) ?? {}
     record[field] = (record[field] ?? 0) + increment
     valkeyHashes.set(key, record)
     return record[field]
   },
-  async exists(key: string) {
+  async exists(...args: unknown[]) {
+    const [key] = stripValkeyCommandOptions(args)
+    if (typeof key !== 'string') return 0
     return cacheStorage.has(key) ? 1 : 0
   },
   async eval(_script: string, options: { keys: string[]; arguments: string[] }) {
@@ -412,13 +426,7 @@ const valkey = {
     return 'PONG'
   },
   duplicate() {
-    return {
-      async connect() {},
-      async subscribe(_channel: string, handler: (message: string) => void) {
-        subscribers.push(handler)
-      },
-      async quit() {}
-    }
+    return createValkeyDuplicate()
   },
   async connect() {},
   async quit() {}
@@ -460,14 +468,8 @@ export const resetTestState = () => {
   chatMessagesData.splice(0, chatMessagesData.length, ...structuredClone(defaultChatMessages))
   authUsersData.splice(0, authUsersData.length, { id: 'user-1', email: 'existing@example.com', name: 'Existing User' })
   authSessionsData.splice(0, authSessionsData.length)
-  passkeyEvents.splice(0, passkeyEvents.length)
-  oauthStarts.splice(0, oauthStarts.length)
-  oauthCallbacks.splice(0, oauthCallbacks.length)
   nextChatId = chatMessagesData.length + 1
-  nextUserId = authUsersData.length + 1
   nextSessionId = 1
-  registerChallenge = 'register-challenge'
-  authenticationChallenge = 'authenticate-challenge'
   cacheStorage.clear()
   valkeyCounters.clear()
   valkeyHashes.clear()

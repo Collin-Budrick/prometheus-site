@@ -1,0 +1,14 @@
+/workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/deps/serde-c4a22ced1c0cc9c4.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/build/serde-1fa3c9b0b2638098/out/private.rs
+
+/workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/deps/libserde-c4a22ced1c0cc9c4.rlib: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/build/serde-1fa3c9b0b2638098/out/private.rs
+
+/workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/deps/libserde-c4a22ced1c0cc9c4.rmeta: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/build/serde-1fa3c9b0b2638098/out/private.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/build/serde-1fa3c9b0b2638098/out/private.rs:
+
+# env-dep:OUT_DIR=/workspace/packages/spacetimedb-module/target/wasm32-unknown-unknown/release/build/serde-1fa3c9b0b2638098/out

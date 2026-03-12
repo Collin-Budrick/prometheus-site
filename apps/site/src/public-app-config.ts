@@ -42,6 +42,11 @@ export type PublicAppConfig = {
   p2pPeerjsServer?: string
   p2pIceServers: P2pIceServer[]
   authBootstrapPublicKey?: string
+  spacetimeAuthAuthority?: string
+  spacetimeAuthClientId?: string
+  spacetimeAuthPostLogoutRedirectUri?: string
+  spacetimeDbUri?: string
+  spacetimeDbModule?: string
 }
 
 type PublicEnv = Partial<ImportMetaEnv> & Record<string, string | boolean | undefined>
@@ -60,7 +65,7 @@ const publicEnv =
     ? (import.meta as ImportMeta & { env?: PublicEnv }).env
     : undefined
 
-const defaultHighlightEnvironment = (env = publicEnv) => {
+const defaultHighlightEnvironment = (env: PublicEnv | undefined = publicEnv) => {
   const mode = typeof env?.MODE === 'string' ? env.MODE.trim() : ''
   if (mode) return mode
   const nodeEnv = typeof env?.NODE_ENV === 'string' ? env.NODE_ENV.trim() : ''
@@ -290,7 +295,13 @@ export const resolvePublicAppConfig = (
           .map((entry) => normalizeIceServer(entry))
           .filter((entry): entry is P2pIceServer => entry !== null)
       : [],
-    authBootstrapPublicKey: normalizeString(rawConfig?.authBootstrapPublicKey) || undefined
+    authBootstrapPublicKey: normalizeString(rawConfig?.authBootstrapPublicKey) || undefined,
+    spacetimeAuthAuthority: normalizeString(rawConfig?.spacetimeAuthAuthority) || undefined,
+    spacetimeAuthClientId: normalizeString(rawConfig?.spacetimeAuthClientId) || undefined,
+    spacetimeAuthPostLogoutRedirectUri:
+      normalizeString(rawConfig?.spacetimeAuthPostLogoutRedirectUri) || undefined,
+    spacetimeDbUri: normalizeString(rawConfig?.spacetimeDbUri) || undefined,
+    spacetimeDbModule: normalizeString(rawConfig?.spacetimeDbModule) || undefined
   }
 }
 

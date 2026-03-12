@@ -1,29 +1,22 @@
 # API (Bun + Elysia)
 
-Bun-powered Elysia service with Postgres via Drizzle ORM and Valkey for cache/pubsub.
+Bun-powered Elysia service with SpaceTimeDB 2.0 for app state and Valkey for cache/supporting delivery state.
 
 ## Scripts
 
-- `bun run dev` – start the API with hot reload.
-- `bun run db:migrate` – apply pending migrations.
-- `bun run db:seed` – seed default data.
-- `bun run db:migrate && bun run db:seed` – run before first start.
-- `drizzle-kit generate` – generate SQL migrations from the schema.
-- `drizzle-kit studio` – inspect schema interactively.
+- `bun run dev` - start the API with hot reload.
+- `bun run build` - build the production Bun entrypoint.
 
 ## Environment
 
 Create a `.env` (or pass env vars at runtime) and set:
 
-- **Core:** `API_PORT`, `API_HOST`, `API_URL`
-- **Database:** `DATABASE_URL` (or `POSTGRES_*` + `POSTGRES_SSL`)
+- **Core:** `API_PORT`, `API_HOST`
+- **SpaceTimeDB:** `SPACETIMEDB_URI`, `SPACETIMEDB_MODULE`
 - **Cache:** `VALKEY_HOST`, `VALKEY_PORT`
 - **Rate limiting (Unkey):** `UNKEY_ROOT_KEY`, `UNKEY_RATELIMIT_NAMESPACE` (defaults to `prometheus-api`), `UNKEY_RATELIMIT_BASE_URL` (defaults to `https://api.unkey.com`)
-- **Better Auth (required):** `BETTER_AUTH_COOKIE_SECRET`, `BETTER_AUTH_RP_ID`, `BETTER_AUTH_RP_ORIGIN`
-- **Better Auth (multi-host):** `BETTER_AUTH_RP_IDS`, `BETTER_AUTH_RP_ORIGINS` (comma-separated, same order)
-- **Better Auth OAuth (optional):** provider pairs such as `BETTER_AUTH_GOOGLE_CLIENT_ID` / `BETTER_AUTH_GOOGLE_CLIENT_SECRET`, plus GitHub/Apple/Discord/Microsoft variants
-
-Passkeys require an RP ID + origin that match the host you serve over HTTPS. For local dev with Caddy + mkcert, set `BETTER_AUTH_RP_ID=localhost` and `BETTER_AUTH_RP_ORIGIN=https://localhost:4173` (or your forwarded dev host) so the WebAuthn challenge matches the browser origin.
+- **SpacetimeAuth:** `SPACETIMEAUTH_AUTHORITY`, `SPACETIMEAUTH_CLIENT_ID`, `SPACETIMEAUTH_JWKS_URI`, `SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI`
+- **Session bridge:** `BETTER_AUTH_COOKIE_SECRET`
 
 If `UNKEY_ROOT_KEY` is unset (typical for local dev), the API falls back to in-memory rate limiting per instance. In edge/serverless runtimes, set the Unkey credentials so limits remain globally consistent without relying on Valkey.
 
@@ -31,22 +24,22 @@ If `UNKEY_ROOT_KEY` is unset (typical for local dev), the API falls back to in-m
 
 Build from the repo root so workspaces resolve correctly:
 
-```
+```sh
 docker build -f packages/platform/Dockerfile -t prometheus-api .
 ```
 
 Run the container (map ports and provide env vars):
 
-```
+```sh
 docker run --rm -p 4000:4000 --env-file .env prometheus-api
 ```
 
 ## Routes
 
-- `GET /health` – readiness probe.
-- `GET /store/items?cursor=0&limit=10` – cursor pagination with Valkey cache.
-- `POST /ai/echo` – simple echo endpoint.
-- `GET /chat/history` – fetch the latest chat messages.
-- `WS /ws` – WebSocket chat backed by Valkey pub/sub.
+- `GET /health` - readiness probe.
+- `GET /auth/session` - SSR/session compatibility payload backed by SpacetimeAuth claims.
+- `POST /auth/session/sync` - mirrors the browser OIDC session into the signed site cookie.
+- `POST /auth/logout` - clears the mirrored site session.
+- `POST /ai/echo` - simple echo endpoint.
 
-The server runs migrations and seeds a baseline inventory on boot and keeps a shared Valkey connection for caching plus a duplicated subscriber for WebSocket fanout.
+The app-state hot path is expected to run directly against SpaceTimeDB from the browser; this service remains responsible for fragment delivery, session compatibility, and secret-bearing integrations.

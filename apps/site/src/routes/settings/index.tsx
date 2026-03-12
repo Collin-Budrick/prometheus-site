@@ -8,7 +8,6 @@ import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
-import { clearBootstrapSession } from '../../shared/auth-bootstrap'
 import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
 import { readServiceWorkerSeedFromCookie, writeServiceWorkerOptOutCookie } from '../../shared/service-worker-seed'
 import {
@@ -31,6 +30,7 @@ import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
+import { signOutSpacetimeAuth } from '../../shared/spacetime-auth'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -42,41 +42,6 @@ type ProtectedRouteData = {
   chatSettings: ChatSettings
   swOptOut: boolean
   languageSeed: LanguageSeedPayload
-}
-
-const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
-const resolveAuthBase = (origin: string, apiBase?: string) => {
-  if (!apiBase) return ''
-  if (apiBase.startsWith('/')) return apiBase
-  try {
-    const apiUrl = new URL(apiBase)
-    const originUrl = new URL(origin)
-    const apiHost = apiUrl.hostname
-    const originHost = originUrl.hostname
-    if (isLocalHost(apiHost) && !isLocalHost(originHost) && apiHost !== originHost) {
-      return '/api'
-    }
-  } catch {
-    return ''
-  }
-  return apiBase
-}
-
-const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
-  const base = resolveAuthBase(origin, apiBase)
-  if (!base) return `${origin}${path}`
-
-  if (base.startsWith('/')) {
-    if (path.startsWith(base)) return `${origin}${path}`
-    return `${origin}${base}${path}`
-  }
-
-  if (path.startsWith('/api')) {
-    const normalizedBase = base.endsWith('/api') ? base.slice(0, -4) : base
-    return `${normalizedBase}${path}`
-  }
-
-  return `${base}${path}`
 }
 
 type FriendCodeUser = {
@@ -144,10 +109,11 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useSettingsData)
   const lang = data?.lang ?? defaultLang
   const copy = data?.languageSeed.ui
-  const description = copy.protectedDescription.replace('{{label}}', copy.navSettings)
+  const navSettings = copy?.navSettings ?? 'Settings'
+  const description = (copy?.protectedDescription ?? '').replace('{{label}}', navSettings)
 
   return {
-    title: `${copy.navSettings} | ${siteBrand.name}`,
+    title: `${navSettings} | ${siteBrand.name}`,
     meta: [
       {
         name: 'description',
@@ -245,20 +211,9 @@ export default component$(() => {
     logoutBusy.value = true
     logoutMessage.value = null
     try {
-      const origin = window.location.origin
-      const response = await fetch(buildApiUrl('/auth/sign-out', origin, appConfig.apiBase), {
-        method: 'POST',
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        logoutMessage.value = 'Unable to sign out.'
-        return
-      }
-
-      clearBootstrapSession()
+      const logoutUrl = await signOutSpacetimeAuth(appConfig.apiBase)
       await clearNativeAuthCredentials()
-      window.location.assign('/')
+      window.location.assign(logoutUrl)
     } catch (error) {
       logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'
     } finally {

@@ -48,4 +48,12 @@ https://{{WEB_HOST_PROD}} {
   handle_path /api/* {
     reverse_proxy http://api:4000
   }
+
+  handle /spacetimedb {
+    reverse_proxy http://spacetimedb:3000
+  }
+
+  handle_path /spacetimedb/* {
+    reverse_proxy http://spacetimedb:3000
+  }
 }

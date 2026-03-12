@@ -1,5 +1,4 @@
 import type { Lang } from '../../lang'
-import { clearBootstrapSession } from '../../shared/auth-bootstrap'
 import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
 import { writeServiceWorkerOptOutCookie } from '../../shared/service-worker-seed'
 import { defaultChatSettings, loadChatSettings, saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
@@ -7,7 +6,7 @@ import { getPrivacyScreenAlwaysOn, setPrivacyScreenAlwaysOn } from '../../native
 import { applyTextZoom, getStoredTextZoom } from '../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../native/native-auth'
 import { isNativeShellRuntime } from '../../native/runtime'
-import { buildPublicApiUrl } from '../../shared/public-api-url'
+import { signOutSpacetimeAuth } from '../../shared/spacetime-auth'
 
 type SettingsUser = {
   id?: string
@@ -229,17 +228,9 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       }
       setStatus(root, '[data-static-settings-logout-status]', 'error', null)
       try {
-        const response = await fetch(buildPublicApiUrl('/auth/sign-out', window.location.origin), {
-          method: 'POST',
-          credentials: 'include'
-        })
-        if (!response.ok) {
-          setStatus(root, '[data-static-settings-logout-status]', 'error', 'Unable to sign out.')
-          return
-        }
-        clearBootstrapSession()
+        const logoutUrl = await signOutSpacetimeAuth()
         await clearNativeAuthCredentials()
-        window.location.assign(`/?lang=${encodeURIComponent(lang)}`)
+        window.location.assign(logoutUrl)
       } catch (error) {
         setStatus(
           root,

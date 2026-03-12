@@ -1,13 +1,11 @@
 export type Env = Record<string, string | undefined>
 
 type RuntimeEnv = {
-  RUN_MIGRATIONS?: string
   ENABLE_WEBTRANSPORT_FRAGMENTS?: string
   NODE_ENV?: string
 }
 
 const pickRuntimeEnv = (env: Env): RuntimeEnv => ({
-  RUN_MIGRATIONS: env.RUN_MIGRATIONS,
   ENABLE_WEBTRANSPORT_FRAGMENTS: env.ENABLE_WEBTRANSPORT_FRAGMENTS,
   NODE_ENV: env.NODE_ENV
 })
@@ -29,7 +27,6 @@ export const resolveEnvironment = (rawValue: string | undefined) => {
 }
 
 export type RuntimeFlags = {
-  runMigrations: boolean
   enableWebTransportFragments: boolean
 }
 
@@ -38,14 +35,12 @@ export const resolveRuntimeFlags = (
   defaults?: Partial<RuntimeFlags>
 ): RuntimeFlags => {
   const runtimeEnv = pickRuntimeEnv(env)
-  const runMigrations = resolveBooleanFlag(runtimeEnv.RUN_MIGRATIONS, defaults?.runMigrations ?? false)
   const enableWebTransportFragments = resolveBooleanFlag(
     runtimeEnv.ENABLE_WEBTRANSPORT_FRAGMENTS,
     defaults?.enableWebTransportFragments ?? runtimeEnv.NODE_ENV !== 'production'
   )
 
   return {
-    runMigrations,
     enableWebTransportFragments
   }
 }

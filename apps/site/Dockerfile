@@ -6,6 +6,7 @@ COPY package.json bun.lock ./
 COPY apps/site/package.json apps/site/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/platform/package.json packages/platform/package.json
+COPY packages/spacetimedb-client/package.json packages/spacetimedb-client/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
@@ -47,6 +48,11 @@ ARG VITE_P2P_WAKU_RELAYS
 ARG VITE_P2P_PEERJS_SERVER
 ARG VITE_PUBLIC_BASE
 ARG VITE_DISABLE_SW
+ARG VITE_SPACETIMEAUTH_AUTHORITY
+ARG VITE_SPACETIMEAUTH_CLIENT_ID
+ARG VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI
+ARG VITE_SPACETIMEDB_URI
+ARG VITE_SPACETIMEDB_MODULE
 ENV VITE_API_BASE=$VITE_API_BASE
 ENV VITE_ENABLE_PREFETCH=$VITE_ENABLE_PREFETCH
 ENV VITE_ENABLE_WEBTRANSPORT_FRAGMENTS=$VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
@@ -67,6 +73,11 @@ ENV VITE_P2P_WAKU_RELAYS=$VITE_P2P_WAKU_RELAYS
 ENV VITE_P2P_PEERJS_SERVER=$VITE_P2P_PEERJS_SERVER
 ENV VITE_PUBLIC_BASE=$VITE_PUBLIC_BASE
 ENV VITE_DISABLE_SW=$VITE_DISABLE_SW
+ENV VITE_SPACETIMEAUTH_AUTHORITY=$VITE_SPACETIMEAUTH_AUTHORITY
+ENV VITE_SPACETIMEAUTH_CLIENT_ID=$VITE_SPACETIMEAUTH_CLIENT_ID
+ENV VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI=$VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI
+ENV VITE_SPACETIMEDB_URI=$VITE_SPACETIMEDB_URI
+ENV VITE_SPACETIMEDB_MODULE=$VITE_SPACETIMEDB_MODULE
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
     bun run --cwd apps/site build

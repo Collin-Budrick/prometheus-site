@@ -1,15 +1,15 @@
 import type { AnyElysia } from 'elysia'
 import { createCacheClient, type CacheClient } from '../cache'
 import type { PlatformConfig } from '../config'
-import { createDatabase, type DatabaseClient } from '../db'
 import { createLogger, type PlatformLogger } from '../logger'
 import { createRateLimiter, type RateLimiter } from '../rate-limit'
+import { createSpacetimeControlClient, type SpacetimeControlClient } from '../spacetime'
 
 export type PlatformServerContext = {
   config: PlatformConfig
   logger: PlatformLogger
   cache: CacheClient
-  database: DatabaseClient
+  spacetime: SpacetimeControlClient
   rateLimiter: RateLimiter
 }
 
@@ -17,7 +17,7 @@ export type PlatformServerOptions = {
   config: PlatformConfig
   logger?: PlatformLogger
   cache?: CacheClient
-  database?: DatabaseClient
+  spacetime?: SpacetimeControlClient
   rateLimiter?: RateLimiter
   buildApp: (context: PlatformServerContext) => AnyElysia
   onStart?: (context: PlatformServerContext) => Promise<void>
@@ -34,7 +34,8 @@ export type PlatformServer = {
 export const createPlatformServer = (options: PlatformServerOptions): PlatformServer => {
   const logger = options.logger ?? createLogger('server')
   const cache = options.cache ?? createCacheClient(options.config.valkey, logger.getChild('cache'))
-  const database = options.database ?? createDatabase(options.config.postgres, logger.getChild('db'))
+  const spacetime =
+    options.spacetime ?? createSpacetimeControlClient(options.config.spacetime, logger.getChild('spacetimedb'))
   const rateLimiter =
     options.rateLimiter ??
     createRateLimiter({
@@ -46,7 +47,7 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
     config: options.config,
     logger,
     cache,
-    database,
+    spacetime,
     rateLimiter
   }
 
@@ -67,7 +68,7 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
       if (serverHandle?.stop) await serverHandle.stop()
       if (options.onShutdown) await options.onShutdown(context)
       await cache.disconnect()
-      await database.disconnect()
+      await spacetime.disconnect()
     } catch (error) {
       logger.error('Graceful shutdown failed', { error })
       process.exitCode = 1
@@ -92,7 +93,7 @@ export const createPlatformServer = (options: PlatformServerOptions): PlatformSe
     starting = true
     try {
       await cache.connect()
-      await database.connect()
+      await spacetime.connect()
       if (options.onStart) await options.onStart(context)
       serverHandle = app.listen({
         port: options.config.server.port,

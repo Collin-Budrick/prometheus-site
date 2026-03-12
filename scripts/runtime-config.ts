@@ -9,7 +9,7 @@ export type PrometheusRuntimeConfig = {
     http: string
     https: string
     api: string
-    postgres: string
+    spacetimedb: string
     valkey: string
     webtransport: string
     deviceWeb: string
@@ -41,7 +41,7 @@ const DEFAULT_PORTS = {
   http: '80',
   https: '443',
   api: '4000',
-  postgres: '5433',
+  spacetimedb: '3000',
   valkey: '6379',
   webtransport: '4444',
   deviceWeb: '4173'
@@ -50,7 +50,7 @@ const DEFAULT_PORTS = {
 const DEFAULT_COMPOSE = {
   projectName: 'prometheus',
   services: {
-    core: ['postgres', 'valkey', 'api'],
+    core: ['spacetimedb', 'valkey', 'api'],
     web: ['web'],
     proxy: ['caddy'],
     optional: ['yjs-signaling', 'webtransport']
@@ -125,7 +125,7 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRunti
     http: readPort(env, 'PROMETHEUS_HTTP_PORT', DEFAULT_PORTS.http),
     https: readPort(env, 'PROMETHEUS_HTTPS_PORT', DEFAULT_PORTS.https),
     api: readPort(env, 'PROMETHEUS_API_PORT', DEFAULT_PORTS.api),
-    postgres: readPort(env, 'PROMETHEUS_POSTGRES_PORT', DEFAULT_PORTS.postgres),
+    spacetimedb: readPort(env, 'PROMETHEUS_SPACETIMEDB_PORT', DEFAULT_PORTS.spacetimedb),
     valkey: readPort(env, 'PROMETHEUS_VALKEY_PORT', DEFAULT_PORTS.valkey),
     webtransport: readPort(env, 'PROMETHEUS_WEBTRANSPORT_PORT', DEFAULT_PORTS.webtransport),
     deviceWeb: readPort(env, 'PROMETHEUS_DEVICE_WEB_PORT', DEFAULT_PORTS.deviceWeb)

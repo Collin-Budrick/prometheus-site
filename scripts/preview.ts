@@ -15,8 +15,10 @@ import {
 } from './compose-utils'
 import { generateFragmentCss } from './fragment-css'
 import { getRuntimeConfig } from './runtime-config'
+import { ensureSpacetimeJwtKeys } from './spacetimedb'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+ensureSpacetimeJwtKeys()
 
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const runtimeConfig = getRuntimeConfig(process.env)
@@ -301,7 +303,7 @@ generateFragmentCss()
 const previewHttpPort = runtimeConfig.ports.http
 const previewHttpsPort = runtimeConfig.ports.https
 const previewApiPort = runtimeConfig.ports.api
-const previewPostgresPort = runtimeConfig.ports.postgres
+const previewSpacetimeDbPort = runtimeConfig.ports.spacetimedb
 const previewValkeyPort = runtimeConfig.ports.valkey
 const previewWebTransportPort = runtimeConfig.ports.webtransport
 const previewProject = runtimeConfig.compose.projectName
@@ -342,7 +344,6 @@ const previewPeerjsServer =
 const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
 const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
-const previewRunMigrations = process.env.RUN_MIGRATIONS?.trim() || '1'
 const includeRealtimeServices =
   runtimeCompose.includeOptionalServices ||
   (!useDeviceHost &&
@@ -400,7 +401,7 @@ const composeEnv = {
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,
-  PROMETHEUS_POSTGRES_PORT: previewPostgresPort,
+  PROMETHEUS_SPACETIMEDB_PORT: previewSpacetimeDbPort,
   PROMETHEUS_VALKEY_PORT: previewValkeyPort,
   PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
   PROMETHEUS_WEB_HOST: previewWebHost,
@@ -424,7 +425,6 @@ const composeEnv = {
   VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
   VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
   VITE_DISABLE_SW: previewDisableSw,
-  RUN_MIGRATIONS: previewRunMigrations,
   ENABLE_WEBTRANSPORT_FRAGMENTS: previewEnableApiWebTransport,
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
@@ -472,6 +472,18 @@ const buildNativeBundle = async () => {
     PROMETHEUS_WEBTRANSPORT_PORT: previewWebTransportPort,
     PROMETHEUS_API_PORT: previewApiPort,
     VITE_API_BASE: previewApiBase,
+    VITE_SPACETIMEDB_URI:
+      process.env.VITE_SPACETIMEDB_URI?.trim() || `${previewOrigin || `https://${previewWebHost}`}/spacetimedb`,
+    VITE_SPACETIMEDB_MODULE:
+      process.env.VITE_SPACETIMEDB_MODULE?.trim() || process.env.SPACETIMEDB_MODULE?.trim() || 'prometheus-site',
+    VITE_SPACETIMEAUTH_AUTHORITY:
+      process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
+      process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
+      'https://auth.spacetimedb.com/oidc',
+    VITE_SPACETIMEAUTH_CLIENT_ID:
+      process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
+      process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
+      'prometheus-site-dev',
     API_BASE: previewBuildApiBase,
     VITE_WEBTRANSPORT_BASE: previewWebTransportBase,
     WEBTRANSPORT_BASE: previewWebTransportBase,
