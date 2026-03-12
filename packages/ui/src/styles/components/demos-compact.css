@@ -4,7 +4,7 @@
     display: grid;
     gap: 12px;
     border-color: rgb(var(--stroke) / 0.72);
-    background-color: rgb(var(--surface-soft) / 0.58);
+    background-color: rgb(var(--surface-soft) / 0.88);
   }
 
   .home-demo-compact-kicker {

@@ -741,7 +741,7 @@ body {
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid rgb(var(--stroke) / 0.72);
-  background-color: rgb(var(--surface-soft) / 0.58);
+  background-color: rgb(var(--surface-soft) / 0.88);
 }
 
 .home-demo-compact-kicker,
@@ -954,7 +954,11 @@ body {
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
   > .fragment-card:not([data-static-home-lcp-stable='true'])
-  .home-demo-compact,
+  .home-demo-compact {
+  background-color: rgb(var(--surface-soft) / 0.88);
+  box-shadow: none;
+}
+
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
