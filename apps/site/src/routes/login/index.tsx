@@ -3,7 +3,7 @@ import type { NoSerialize } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
-import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
+import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import type { FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../public-app-config'
@@ -172,7 +172,7 @@ const EnabledLoginRoute = component$(() => {
   )
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
+export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
 
 export const LoginSkeleton = loginEnabled ? LoginFallbackSkeleton : StaticRouteSkeleton
 

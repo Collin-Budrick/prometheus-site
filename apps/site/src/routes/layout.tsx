@@ -11,6 +11,7 @@ import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
+import { didAuthSessionChange, revalidateClientAuthSession } from '../shared/auth-session-client'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../public-app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
@@ -679,6 +680,38 @@ const InteractiveShellLayout = component$(() => {
       })
     },
     { strategy: 'document-idle' }
+  )
+
+  useVisibleTask$(
+    (ctx) => {
+      if (typeof window === 'undefined') return
+      const initialSession = ctx.track(() => authSession.value)
+      let revalidating = false
+
+      const handlePageShow = (event: PageTransitionEvent) => {
+        if (!event.persisted || revalidating) return
+        revalidating = true
+        void revalidateClientAuthSession()
+          .then((restoredSession) => {
+            if (!restoredSession) return
+            if (didAuthSessionChange(initialSession, restoredSession)) {
+              window.location.reload()
+            }
+          })
+          .catch((error) => {
+            console.warn('Failed to revalidate auth session after bfcache restore:', error)
+          })
+          .finally(() => {
+            revalidating = false
+          })
+      }
+
+      window.addEventListener('pageshow', handlePageShow)
+      ctx.cleanup(() => {
+        window.removeEventListener('pageshow', handlePageShow)
+      })
+    },
+    { strategy: 'document-ready' }
   )
 
   const applyLangChoice = $(async (next: Lang) => {

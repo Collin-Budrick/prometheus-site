@@ -95,6 +95,7 @@ export const FragmentStreamController = component$(
     const langSignal = useSharedLangSignal()
     const lastLang = useSignal<string | null>(initialLang ?? null)
     const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
+    const lifecyclePaused = useSignal(false)
     const deferredStartupReady = useSignal(
       typeof window !== 'undefined' ? isClientBootIntentReady() : false
     )
@@ -114,9 +115,29 @@ export const FragmentStreamController = component$(
 
     useVisibleTask$(
       (ctx) => {
+        if (typeof window === 'undefined') return
+        const handlePageHide = () => {
+          lifecyclePaused.value = true
+        }
+        const handlePageShow = () => {
+          lifecyclePaused.value = false
+        }
+
+        window.addEventListener('pagehide', handlePageHide)
+        window.addEventListener('pageshow', handlePageShow)
+        ctx.cleanup(() => {
+          window.removeEventListener('pagehide', handlePageHide)
+          window.removeEventListener('pageshow', handlePageShow)
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
         let active = true
         const isPaused = ctx.track(() =>
-          typeof paused === 'boolean' ? paused : paused ? paused.value : false
+          (typeof paused === 'boolean' ? paused : paused ? paused.value : false) || lifecyclePaused.value
         )
         const streamController = FRAGMENT_STREAMING_ENABLED ? new AbortController() : null
         const fetchControllers = new Set<AbortController>()

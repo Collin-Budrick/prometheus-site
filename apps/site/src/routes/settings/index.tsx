@@ -4,7 +4,7 @@ import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
-import { createCacheHandler, PRIVATE_NO_STORE_CACHE } from '../cache-headers'
+import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
@@ -138,7 +138,7 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   }
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_NO_STORE_CACHE)
+export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useSettingsData)
