@@ -1,9 +1,15 @@
 import type { Lang } from '../../shared/lang-store'
 import { normalizeFragmentShellPath } from './shell-cache'
+import {
+  clearFragmentStableHeight as clearFragmentStableHeightValue,
+  getFragmentHeightViewport as getStableHeightViewportValue,
+  readFragmentStableHeight as readFragmentStableHeightValue,
+  writeFragmentStableHeight as writeFragmentStableHeightValue,
+  type FragmentHeightViewport
+} from '@prometheus/ui/fragment-height'
 
 export const INITIAL_TASKS_EVENT = 'prom:fragment-initial-tasks'
 const STABLE_HEIGHT_CACHE_PREFIX = 'fragment:stable-height:v1'
-const DESKTOP_MIN_WIDTH = 1025
 
 type FragmentInitialTaskEntry = {
   pending: Set<string>
@@ -28,7 +34,7 @@ export type FragmentInitialTaskSnapshot = {
   lastErrorAt: number | null
 }
 
-export type FragmentStableHeightViewport = 'desktop' | 'mobile'
+export type FragmentStableHeightViewport = FragmentHeightViewport
 
 export type FragmentStableHeightKeyInput = {
   fragmentId: string
@@ -143,10 +149,8 @@ export const getInitialTaskSnapshot = (host: HTMLElement | null | undefined): Fr
 export const readInitialTaskPendingKeys = (host: HTMLElement | null | undefined) =>
   getInitialTaskSnapshot(host).pendingKeys
 
-export const getStableHeightViewport = (width?: number): FragmentStableHeightViewport => {
-  const resolvedWidth = typeof width === 'number' && Number.isFinite(width) ? width : window.innerWidth
-  return resolvedWidth >= DESKTOP_MIN_WIDTH ? 'desktop' : 'mobile'
-}
+export const getStableHeightViewport = (width?: number): FragmentStableHeightViewport =>
+  getStableHeightViewportValue(width)
 
 export const buildFragmentStableHeightKey = ({
   fragmentId,
@@ -162,22 +166,9 @@ export const buildFragmentStableHeightKey = ({
     encodeURIComponent(fragmentId)
   ].join(':')
 
-const normalizeHeight = (value: unknown) => {
-  const parsed =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string'
-        ? Number.parseFloat(value)
-        : Number.NaN
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return Math.max(1, Math.round(parsed))
-}
-
 export const readFragmentStableHeight = (input: FragmentStableHeightKeyInput) => {
-  if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(buildFragmentStableHeightKey(input))
-    return normalizeHeight(raw)
+    return readFragmentStableHeightValue(input)
   } catch (error) {
     console.warn('Failed to read fragment stable height cache:', error)
     return null
@@ -185,20 +176,16 @@ export const readFragmentStableHeight = (input: FragmentStableHeightKeyInput) =>
 }
 
 export const writeFragmentStableHeight = (input: FragmentStableHeightKeyInput, height: number) => {
-  if (typeof window === 'undefined') return
-  const normalized = normalizeHeight(height)
-  if (normalized === null) return
   try {
-    window.localStorage.setItem(buildFragmentStableHeightKey(input), String(normalized))
+    writeFragmentStableHeightValue(input, height)
   } catch (error) {
     console.warn('Failed to write fragment stable height cache:', error)
   }
 }
 
 export const clearFragmentStableHeight = (input: FragmentStableHeightKeyInput) => {
-  if (typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(buildFragmentStableHeightKey(input))
+    clearFragmentStableHeightValue(input)
   } catch (error) {
     console.warn('Failed to clear fragment stable height cache:', error)
   }

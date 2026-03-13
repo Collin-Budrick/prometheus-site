@@ -1,12 +1,8 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
-import { readStaticHomeBootstrapData } from './home-bootstrap-data'
-import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 
 export const HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
-const HOME_FRAGMENT_BOOTSTRAP_RETRY_DELAY_MS = 16
-const HOME_FRAGMENT_BOOTSTRAP_MAX_RETRIES = 8
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -20,17 +16,13 @@ type InstallHomeStaticEntryOptions = {
   doc?: HomeStaticEntryDocument | null
   loadRuntime?: typeof loadHomeBootstrapRuntime
   createLcpGate?: typeof createHomeFirstLcpGate
-  readBootstrapData?: typeof readStaticHomeBootstrapData
-  primeFragmentBootstrap?: typeof primeHomeFragmentBootstrapBytes
 }
 
 export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   loadRuntime = loadHomeBootstrapRuntime,
-  createLcpGate = createHomeFirstLcpGate,
-  readBootstrapData = readStaticHomeBootstrapData,
-  primeFragmentBootstrap = primeHomeFragmentBootstrapBytes
+  createLcpGate = createHomeFirstLcpGate
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -41,13 +33,9 @@ export const installHomeStaticEntry = ({
   let started = false
   let loadHandler: (() => void) | null = null
   let timeoutId: ReturnType<typeof setTimeout> | null = null
-  let idleId: number | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
   let lcpGateCleanup: (() => void) | null = null
-  let fragmentBootstrapPrimed = false
-  let fragmentBootstrapRetryCount = 0
-  let fragmentBootstrapRetryId: ReturnType<typeof setTimeout> | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
@@ -61,19 +49,9 @@ export const installHomeStaticEntry = ({
       loadHandler = null
     }
 
-    if (idleId !== null && typeof win.cancelIdleCallback === 'function') {
-      win.cancelIdleCallback(idleId)
-      idleId = null
-    }
-
     if (timeoutId !== null) {
       win.clearTimeout(timeoutId)
       timeoutId = null
-    }
-
-    if (fragmentBootstrapRetryId !== null) {
-      win.clearTimeout(fragmentBootstrapRetryId)
-      fragmentBootstrapRetryId = null
     }
 
     lcpGateCleanup?.()
@@ -100,47 +78,14 @@ export const installHomeStaticEntry = ({
     }
   }
 
-  const primeFragmentBootstrapRequest = () => {
-    if (fragmentBootstrapPrimed) return
-    const href = readBootstrapData({ doc })?.fragmentBootstrapHref
-    if (!href) {
-      if (fragmentBootstrapRetryId !== null || fragmentBootstrapRetryCount >= HOME_FRAGMENT_BOOTSTRAP_MAX_RETRIES) {
-        return
-      }
-
-      fragmentBootstrapRetryCount += 1
-      fragmentBootstrapRetryId = win.setTimeout(() => {
-        fragmentBootstrapRetryId = null
-        primeFragmentBootstrapRequest()
-      }, HOME_FRAGMENT_BOOTSTRAP_RETRY_DELAY_MS)
-      return
-    }
-
-    fragmentBootstrapRetryCount = 0
-    fragmentBootstrapPrimed = true
-    void primeFragmentBootstrap({ href, win }).catch((error) => {
-      console.error('Static home fragment bootstrap prefetch failed:', error)
-    })
-  }
-
-  primeFragmentBootstrapRequest()
-
   const armIdleTrigger = () => {
     if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    if (typeof win.requestIdleCallback === 'function') {
-      idleId = win.requestIdleCallback(requestBootstrap, {
-        timeout: HOME_BOOTSTRAP_IDLE_TIMEOUT_MS
-      })
-      return
-    }
-
     timeoutId = win.setTimeout(requestBootstrap, HOME_BOOTSTRAP_IDLE_TIMEOUT_MS)
   }
 
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
-    primeFragmentBootstrapRequest()
     if (bootstrapRequested) {
       startBootstrap()
       return

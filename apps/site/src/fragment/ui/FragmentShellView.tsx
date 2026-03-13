@@ -1,6 +1,15 @@
 import { component$, useVisibleTask$, type Signal } from '@builder.io/qwik'
-import { FragmentCard, FragmentMarkdownBlock } from '@prometheus/ui'
-import type { FragmentPayloadMap } from '../types'
+import {
+  FragmentCard,
+  FragmentMarkdownBlock
+} from '@prometheus/ui'
+import {
+  buildFragmentHeightPlanSignature,
+  getFragmentHeightViewport,
+  readFragmentHeightCookieHeights,
+  resolveReservedFragmentHeight
+} from '@prometheus/ui/fragment-height'
+import type { FragmentPayloadMap, FragmentPlan } from '../types'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentHeaderCopy } from '../../shared/fragment-copy'
 import { asTrustedHtml } from '../../security/client'
@@ -8,7 +17,7 @@ import { useCspNonce } from '../../security/qwik'
 import { isStaticHomeShellMode } from './fragment-shell-mode'
 import type { FragmentDragState, FragmentShellMode, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
-import { type FragmentInitialStage, readFragmentStableHeight, writeFragmentStableHeight } from './initial-settle'
+import { type FragmentInitialStage, readFragmentStableHeight } from './initial-settle'
 import { applyHeaderOverride } from './header-overrides'
 import { requiresTreeRenderer } from './tree-render'
 import {
@@ -28,6 +37,8 @@ const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
 type FragmentShellViewProps = {
   shellMode: FragmentShellMode
+  path: string
+  planEntries: FragmentPlan['fragments']
   hasIntro: boolean
   introMarkdown?: string
   gridRef: Signal<HTMLDivElement | undefined>
@@ -49,6 +60,8 @@ type FragmentShellViewProps = {
 export const FragmentShellView = component$((props: FragmentShellViewProps) => {
   const {
     shellMode,
+    path,
+    planEntries,
     hasIntro,
     introMarkdown,
     gridRef,
@@ -68,6 +81,17 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
   } = props
   const isStaticHome = isStaticHomeShellMode(shellMode)
   const nonce = useCspNonce()
+  const planSignature = buildFragmentHeightPlanSignature(planEntries.map((entry) => entry.id))
+  const planIndexById = new Map(planEntries.map((entry, index) => [entry.id, index]))
+  const cookieHeights =
+    typeof document !== 'undefined'
+      ? readFragmentHeightCookieHeights(document.cookie, {
+          path,
+          lang: langSignal.value,
+          viewport: getFragmentHeightViewport(),
+          planSignature
+        })
+      : null
 
   useVisibleTask$(
     (ctx) => {
@@ -133,31 +157,6 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
       })
     },
     { strategy: 'document-idle' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
-      const grid = gridRef.value
-      ctx.track(() => gridRef.value)
-      if (!grid) return
-      const handleStableHeight = (event: Event) => {
-        const detail = (event as CustomEvent<{ fragmentId?: string; height?: number }>).detail
-        if (!detail?.fragmentId || typeof detail.height !== 'number' || !Number.isFinite(detail.height)) return
-        writeFragmentStableHeight(
-          {
-            fragmentId: detail.fragmentId,
-            path: window.location.pathname,
-            lang: langSignal.value
-          },
-          detail.height
-        )
-      }
-      grid.addEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
-      ctx.cleanup(() => {
-        grid.removeEventListener('prom:fragment-stable-height', handleStableHeight as EventListener)
-      })
-    },
-    { strategy: 'document-ready' }
   )
 
   return (
@@ -231,15 +230,22 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               ? Math.max(0, entry.layout.minHeight)
               : null
           const hasLoadedContent = Boolean(fragment || useFallbackHtml)
+          const planIndex = entry ? (planIndexById.get(entry.id) ?? -1) : -1
           const stableHeight =
-            typeof window !== 'undefined' && entry
+            entry && typeof window !== 'undefined'
               ? readFragmentStableHeight({
                   fragmentId: entry.id,
-                  path: window.location.pathname,
+                  path,
                   lang: langSignal.value
                 })
               : null
-          const reservedHeight = stableHeight ?? minHeight ?? DEFAULT_RESERVED_CARD_HEIGHT
+          const reservedHeight = entry
+            ? resolveReservedFragmentHeight({
+                layout: entry.layout,
+                cookieHeight: planIndex >= 0 ? cookieHeights?.[planIndex] ?? null : null,
+                stableHeight
+              })
+            : minHeight ?? DEFAULT_RESERVED_CARD_HEIGHT
           const applyMinHeight = Boolean(reservedHeight && reservedHeight > 0)
           const fragmentStage: FragmentInitialStage = hasLoadedContent ? 'waiting-css' : 'waiting-payload'
           const minHeightRows =
@@ -294,6 +300,13 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       fragmentStage={fragmentStage}
                       reservedHeight={reservedHeight}
                       revealLocked={true}
+                      fragmentHeightPersistence={{
+                        path,
+                        lang: langSignal.value,
+                        planSignature,
+                        planIndex,
+                        planCount: planEntries.length
+                      }}
                       critical={isCritical}
                       expandable={isStaticHome ? false : entry.expandable}
                       fullWidth={entry.fullWidth}

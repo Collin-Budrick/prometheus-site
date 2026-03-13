@@ -16,6 +16,8 @@ export const FragmentShell = component$((props: FragmentShellProps) => {
     <section class="fragment-shell">
       <FragmentShellView
         shellMode={shell.shellMode}
+        path={props.path}
+        planEntries={shell.planValue.fragments}
         hasIntro={shell.hasIntro}
         introMarkdown={props.introMarkdown}
         gridRef={shell.gridRef}

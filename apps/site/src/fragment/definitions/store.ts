@@ -1140,19 +1140,19 @@ export const storeFragments: FragmentPlanEntry[] = [
   {
     id: storeStream.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 579 },
+    layout: { column: 'span 12', size: 'small', minHeight: 579, heightHint: { desktop: 633, mobile: 633 } },
     renderHtml: false
   },
   {
     id: storeCart.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 440 },
+    layout: { column: 'span 12', size: 'small', minHeight: 440, heightHint: { desktop: 440, mobile: 440 } },
     renderHtml: false
   },
   {
     id: storeCreate.id,
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489 },
+    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } },
     renderHtml: false
   }
 ]

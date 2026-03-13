@@ -6,6 +6,13 @@ import type { StoreSeed } from '../shared/store-seed'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
 import { getStaticShellRouteConfig } from './constants'
+import {
+  buildFragmentHeightPlanSignature,
+  readFragmentHeightCookieHeights,
+  readFragmentStableHeight,
+  resolveReservedFragmentHeight,
+  type FragmentHeightViewport
+} from '@prometheus/ui/fragment-height'
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
 
@@ -33,11 +40,15 @@ type BuildStaticFragmentRouteModelOptions = {
   initialHtml?: Record<string, string> | null
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
+  cookieHeader?: string | null
+  viewportHint?: FragmentHeightViewport | null
 }
 
 type CreateStaticFragmentRouteDataOptions = {
   path: string
   lang: Lang
+  fragmentOrder?: string[]
+  planSignature?: string
   fragmentVersions?: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
@@ -46,6 +57,8 @@ type CreateStaticFragmentRouteDataOptions = {
 export const createStaticFragmentRouteData = ({
   path,
   lang,
+  fragmentOrder = [],
+  planSignature = buildFragmentHeightPlanSignature(fragmentOrder),
   fragmentVersions = {},
   storeSeed,
   contactInvitesSeed
@@ -57,6 +70,8 @@ export const createStaticFragmentRouteData = ({
     snapshotKey: routeConfig?.snapshotKey ?? path,
     authPolicy: routeConfig?.authPolicy ?? 'public',
     bootstrapMode: 'fragment-static',
+    fragmentOrder,
+    planSignature,
     fragmentVersions,
     storeSeed: storeSeed ?? null,
     contactInvitesSeed: contactInvitesSeed ?? null
@@ -69,14 +84,35 @@ export const buildStaticFragmentRouteModel = ({
   lang,
   initialHtml,
   storeSeed,
-  contactInvitesSeed
+  contactInvitesSeed,
+  cookieHeader,
+  viewportHint
 }: BuildStaticFragmentRouteModelOptions): StaticFragmentRouteModel => {
+  const fragmentOrder = plan.fragments.map((entry) => entry.id)
+  const planSignature = buildFragmentHeightPlanSignature(fragmentOrder)
+  const cookieHeights =
+    cookieHeader && viewportHint
+      ? readFragmentHeightCookieHeights(cookieHeader, {
+          path: plan.path,
+          lang,
+          viewport: viewportHint,
+          planSignature
+        })
+      : null
   const entries = plan.fragments.map((entry) => {
     const fragment = fragments[entry.id]
-    const reservedHeight =
-      typeof entry.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
-        ? Math.max(0, entry.layout.minHeight)
-        : DEFAULT_RESERVED_CARD_HEIGHT
+    const planIndex = fragmentOrder.indexOf(entry.id)
+    const reservedHeight = resolveReservedFragmentHeight({
+      layout: entry.layout,
+      viewport: viewportHint ?? undefined,
+      cookieHeight: planIndex >= 0 ? cookieHeights?.[planIndex] ?? null : null,
+      stableHeight: readFragmentStableHeight({
+        fragmentId: entry.id,
+        path: plan.path,
+        lang,
+        viewport: viewportHint ?? undefined
+      })
+    }) ?? DEFAULT_RESERVED_CARD_HEIGHT
     const html =
       initialHtml?.[entry.id] ??
       (fragment
@@ -123,6 +159,8 @@ export const buildStaticFragmentRouteModel = ({
     routeData: createStaticFragmentRouteData({
       path: plan.path,
       lang,
+      fragmentOrder,
+      planSignature,
       fragmentVersions,
       storeSeed,
       contactInvitesSeed

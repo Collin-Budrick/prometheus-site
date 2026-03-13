@@ -9,6 +9,8 @@ export type StaticFragmentRouteData = {
   snapshotKey: string
   authPolicy: StaticShellAuthPolicy
   bootstrapMode: 'fragment-static'
+  fragmentOrder: string[]
+  planSignature: string
   fragmentVersions: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null

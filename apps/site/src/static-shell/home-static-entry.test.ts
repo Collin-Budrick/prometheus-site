@@ -9,9 +9,7 @@ class MockWindow {
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
   readonly listeners: ListenerMap = new Map()
   readonly timeouts = new Map<number, () => void>()
-  readonly idleCallbacks = new Map<number, () => void>()
   nextTimeoutId = 1
-  nextIdleId = 1
 
   addEventListener(type: string, listener: () => void) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -39,26 +37,8 @@ class MockWindow {
     this.timeouts.delete(id as unknown as number)
   }
 
-  requestIdleCallback(callback: () => void) {
-    const id = this.nextIdleId
-    this.nextIdleId += 1
-    this.idleCallbacks.set(id, callback)
-    return id
-  }
-
-  cancelIdleCallback(id: number) {
-    this.idleCallbacks.delete(id)
-  }
-
   emit(type: string) {
     ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
-  }
-
-  runIdle(id = 1) {
-    const callback = this.idleCallbacks.get(id)
-    if (!callback) return
-    this.idleCallbacks.delete(id)
-    callback()
   }
 
   runTimeout(id = 1) {
@@ -98,39 +78,26 @@ const createManualGate = () => {
 }
 
 describe('installHomeStaticEntry', () => {
-  it('starts the home fragment bootstrap fetch immediately so the preload can be reused', async () => {
+  it('keeps the fragment bootstrap fetch off the initial home path', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
-    const primedHrefs: string[] = []
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      readBootstrapData: () =>
-        ({
-          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-        }) as never,
-      primeFragmentBootstrap: async ({ href }) => {
-        primedHrefs.push(href)
-        return new Uint8Array(0)
-      },
       loadRuntime: async () => ({
         bootstrapStaticHome: async () => undefined
       })
     })
 
-    expect(primedHrefs).toEqual([
-      '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-    ])
+    expect(win.timeouts.size).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(primedHrefs).toEqual([
-      '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-    ])
+    expect(win.timeouts.size).toBe(1)
 
     cleanup()
   })
@@ -146,11 +113,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      readBootstrapData: () =>
-        ({
-          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-        }) as never,
-      primeFragmentBootstrap: async () => new Uint8Array(0),
       loadRuntime: async () => {
         loadRuntimeCount += 1
         return {
@@ -188,11 +150,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      readBootstrapData: () =>
-        ({
-          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-        }) as never,
-      primeFragmentBootstrap: async () => new Uint8Array(0),
       loadRuntime: async () => {
         loadRuntimeCount += 1
         return {
@@ -203,62 +160,20 @@ describe('installHomeStaticEntry', () => {
       }
     })
 
-    expect(win.idleCallbacks.size).toBe(0)
+    expect(win.timeouts.size).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
     expect(loadRuntimeCount).toBe(0)
-    expect(win.idleCallbacks.size).toBe(1)
-
-    win.runIdle()
-    await flushMicrotasks()
-
-    expect(loadRuntimeCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-    expect(manualGate.cleanupCount()).toBe(1)
-
-    cleanup()
-  })
-
-  it('retries fragment bootstrap priming until the route data is readable', async () => {
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const primedHrefs: string[] = []
-    let readCount = 0
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      readBootstrapData: () => {
-        readCount += 1
-        if (readCount === 1) {
-          return null
-        }
-        return {
-          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-        } as never
-      },
-      primeFragmentBootstrap: async ({ href }) => {
-        primedHrefs.push(href)
-        return new Uint8Array(0)
-      },
-      loadRuntime: async () => ({
-        bootstrapStaticHome: async () => undefined
-      })
-    })
-
-    expect(primedHrefs).toEqual([])
     expect(win.timeouts.size).toBe(1)
 
     win.runTimeout()
     await flushMicrotasks()
 
-    expect(primedHrefs).toEqual([
-      '/api/fragments/bootstrap?protocol=2&ids=fragment://page/home/planner@v1'
-    ])
+    expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapCount).toBe(1)
+    expect(manualGate.cleanupCount()).toBe(1)
 
     cleanup()
   })

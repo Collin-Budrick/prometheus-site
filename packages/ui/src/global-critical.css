@@ -484,6 +484,14 @@ body {
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
+.fragment-card[data-fragment-id] {
+  contain-intrinsic-size: auto var(--fragment-min-height, 0px);
+}
+
+.fragment-card[data-fragment-height-locked='true'] {
+  overflow: hidden;
+}
+
 .fragment-card-body {
   position: relative;
   z-index: 1;
@@ -842,42 +850,8 @@ body {
 
 .layout-shell[data-static-route='home']
   .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='manifest'] {
-  contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-card-small-height);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='planner'] {
-  contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-card-big-height);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='ledger'] {
-  contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-card-tall-height);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='island'],
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='react'],
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-fragment-kind='dock'] {
-  contain: layout paint;
-  contain-intrinsic-size: auto var(--fragment-card-small-height);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
   > .fragment-card[data-static-home-stage='anchor'] {
-  content-visibility: visible;
+  content-visibility: auto;
   contain: layout paint;
   contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
 }
@@ -892,6 +866,14 @@ body {
 
 .layout-shell[data-static-route='home']
   .fragment-grid-static-home-column
+  > .fragment-card[data-static-home-lcp-stable='true'] {
+  content-visibility: visible;
+  contain: layout paint;
+  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
+}
+
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home-column
   > .fragment-card[data-static-home-stage='deferred']
   .fragment-card-body {
   content-visibility: auto;
@@ -900,35 +882,10 @@ body {
 
 .layout-shell[data-static-route='home']
   .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='island'],
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='react'] {
-  contain-intrinsic-size: auto var(--fragment-min-height, 272px);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='ledger'] {
-  contain-intrinsic-size: auto var(--fragment-min-height, 372px);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='island']
-  .fragment-card-body,
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='react']
+  > .fragment-card[data-static-home-lcp-stable='true']
   .fragment-card-body {
-  contain-intrinsic-size: auto var(--fragment-min-height, 272px);
-}
-
-.layout-shell[data-static-route='home']
-  .fragment-grid-static-home-column
-  > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='ledger']
-  .fragment-card-body {
-  contain-intrinsic-size: auto var(--fragment-min-height, 372px);
+  content-visibility: visible;
+  contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
 }
 
 .layout-shell[data-static-route='home']

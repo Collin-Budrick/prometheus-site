@@ -302,14 +302,14 @@ const renderStoreStream = (state: StoreStaticState) => {
   if (!panel) return
 
   if (state.inventory.status === 'connecting' && filteredItems.length === 0) {
-    setTrustedInnerHtml(panel, '<div class="store-stream-empty">Loading items...</div>', 'template')
+    setTrustedInnerHtml(panel, '<div class="store-stream-empty" role="listitem">Loading items...</div>', 'template')
     return
   }
 
   if (state.inventory.status === 'error' && filteredItems.length === 0) {
     setTrustedInnerHtml(
       panel,
-      `<div class="store-stream-empty">${escapeHtml(state.inventory.error ?? 'Stream error')}</div>`,
+      `<div class="store-stream-empty" role="listitem">${escapeHtml(state.inventory.error ?? 'Stream error')}</div>`,
       'template'
     )
     return
@@ -317,7 +317,11 @@ const renderStoreStream = (state: StoreStaticState) => {
 
   if (filteredItems.length === 0) {
     const label = state.query.trim() ? 'No matches yet.' : 'Catalog is empty.'
-    setTrustedInnerHtml(panel, `<div class="store-stream-empty">${escapeHtml(label)}</div>`, 'template')
+    setTrustedInnerHtml(
+      panel,
+      `<div class="store-stream-empty" role="listitem">${escapeHtml(label)}</div>`,
+      'template'
+    )
     return
   }
 

@@ -842,7 +842,9 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
       </div>
       <div class="store-stream-panel" role="list" aria-live="polite" ref={panelRef} style={{ position: 'relative', zIndex: '1' }}>
         {panelMessage.value ? (
-          <div class="store-stream-empty">{panelMessage.value}</div>
+          <div class="store-stream-empty" role="listitem">
+            {panelMessage.value}
+          </div>
         ) : (
           visibleItems.value.map((item, index) => {
             const isOutOfStock = item.quantity === 0

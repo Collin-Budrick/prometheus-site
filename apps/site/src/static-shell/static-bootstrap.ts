@@ -2,8 +2,10 @@ import { getUiCopy, seedLanguageResources } from '../lang/client'
 import type { Lang } from '../lang'
 import { getCspNonce, primeTrustedTypesPolicies, setTrustedInnerHtml } from '../security/client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
+import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import type { StaticShellSeed } from './seed'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
+import { persistInitialFragmentCardHeights } from './fragment-height'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -428,11 +430,18 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
       const column = index < leftCount ? '1' : '2'
       const versionAttr = entry.version ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"` : ''
       const sizeAttr = entry.size ? ` data-size="${entry.size}"` : ''
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`
     })
     .join('')
 
-  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script></section>`
+  const heightScript = buildFragmentHeightPersistenceScript({
+    path: model.path,
+    lang: model.lang,
+    fragmentOrder: model.routeData.fragmentOrder,
+    planSignature: model.routeData.planSignature
+  })
+
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`
 }
 
 const hydrateProtectedStaticFragments = async (controller: StaticFragmentController) => {
@@ -559,6 +568,28 @@ export const bootstrapStaticFragmentShell = async () => {
       {
         priority: 'background',
         timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        if (controller.destroyed) return
+        void persistInitialFragmentCardHeights({
+          routeContext: {
+            path: controller.path,
+            lang: controller.lang,
+            fragmentOrder: controller.routeData.fragmentOrder,
+            planSignature: controller.routeData.planSignature
+          }
+        }).catch((error) => {
+          console.error('Static fragment height persistence failed:', error)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 1200,
         waitForPaint: true
       }
     )

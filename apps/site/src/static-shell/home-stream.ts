@@ -19,6 +19,11 @@ import {
 } from './constants'
 import { renderHomeStaticFragmentHtml } from './home-render'
 import { scheduleStaticShellTask } from './scheduler'
+import {
+  lockFragmentCardHeight,
+  settlePatchedFragmentCardHeight,
+  type FragmentHeightRouteContext
+} from './fragment-height'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -26,6 +31,7 @@ type PatchStaticHomeFragmentCardOptions = {
   applyEffects?: boolean
   card?: HTMLElement | null
   onPatchedBody?: (body: HTMLElement) => void
+  routeContext?: FragmentHeightRouteContext | null
 }
 
 type StreamHomeFragmentsOptions = {
@@ -43,6 +49,7 @@ type CreateStaticHomePatchQueueOptions = {
   onPatchedBody?: (body: HTMLElement, fragmentId: string) => void
   root?: ParentNode
   scheduleTask?: typeof scheduleStaticShellTask
+  routeContext?: FragmentHeightRouteContext | null
 }
 
 type ObserveStaticHomePatchVisibilityOptions = {
@@ -122,7 +129,8 @@ export const patchStaticHomeFragmentCard = ({
   payload,
   applyEffects = true,
   card,
-  onPatchedBody
+  onPatchedBody,
+  routeContext
 }: PatchStaticHomeFragmentCardOptions): PatchStaticHomeFragmentCardResult => {
   const targetCard = card ?? findStaticHomeFragmentCard(payload.id)
   if (!targetCard) return 'missing'
@@ -144,6 +152,7 @@ export const patchStaticHomeFragmentCard = ({
     applyHomeFragmentEffects(payload)
   }
 
+  const { lockToken } = lockFragmentCardHeight(targetCard)
   const body = targetCard.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return 'missing'
 
@@ -164,6 +173,15 @@ export const patchStaticHomeFragmentCard = ({
   targetCard.dataset.fragmentStage = 'ready'
   targetCard.dataset.revealLocked = 'false'
 
+  void settlePatchedFragmentCardHeight({
+    card: targetCard,
+    fragmentId: payload.id,
+    routeContext,
+    lockToken
+  }).catch((error) => {
+    console.error('Static home fragment height settle failed:', error)
+  })
+
   return 'patched'
 }
 
@@ -172,7 +190,8 @@ export const createStaticHomePatchQueue = ({
   applyEffects = true,
   onPatchedBody,
   root = document,
-  scheduleTask = scheduleStaticShellTask
+  scheduleTask = scheduleStaticShellTask,
+  routeContext = null
 }: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
@@ -209,6 +228,7 @@ export const createStaticHomePatchQueue = ({
         payload,
         applyEffects,
         card,
+        routeContext,
         onPatchedBody: (body) => {
           onPatchedBody?.(body, fragmentId)
         }

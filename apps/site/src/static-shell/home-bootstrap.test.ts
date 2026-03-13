@@ -34,6 +34,10 @@ class MockDemoElement {
   setAttribute(name: string, value: string) {
     this.attrs.set(name, value)
   }
+
+  closest() {
+    return null
+  }
 }
 
 class MockRoot {
@@ -271,6 +275,7 @@ const createHomeBootstrapController = () => ({
   cleanupFns: [],
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
+  demoObservationReady: false,
   patchQueue: null
 })
 
@@ -506,7 +511,7 @@ describe('scheduleStaticHomePaintReady', () => {
 })
 
 describe('scheduleHomePostLcpTasks', () => {
-  it('defers demo observation until the LCP gate resolves and only arms deferred revalidation at that point', async () => {
+  it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
@@ -541,10 +546,11 @@ describe('scheduleHomePostLcpTasks', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(observedRoots).toHaveLength(1)
+    expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
     expect(win.idleCallbacks.size).toBe(1)
+    expect(win.timeouts.size).toBe(0)
     expect(win.listenerCount('pageshow')).toBe(1)
 
     cleanup()

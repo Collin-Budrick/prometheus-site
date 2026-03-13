@@ -36,7 +36,6 @@ import {
   isHomeStaticPath,
   isStaticShellPath
 } from '../static-shell/constants'
-import { buildHomeFragmentBootstrapEarlyHint } from '../static-shell/home-fragment-bootstrap'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -271,8 +270,33 @@ const buildTrackingOrigins = (currentOrigin: string | null) => {
   return Array.from(origins)
 }
 
-const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: boolean) => {
+const buildPreconnectOrigins = ({
+  currentOrigin,
+  includeTracking,
+  pathname,
+  isAuthenticated
+}: {
+  currentOrigin: string | null
+  includeTracking: boolean
+  pathname: string
+  isAuthenticated: boolean
+}) => {
   const origins = new Set<string>()
+  const staticRouteConfig = getStaticShellRouteConfig(pathname)
+  const isHomeRoute = isHomeStaticPath(pathname)
+  const shouldPreconnectDb =
+    !isHomeRoute &&
+    (staticRouteConfig
+      ? staticRouteConfig.routeKind === FRAGMENT_STATIC_ROUTE_KIND ||
+        staticRouteConfig.authPolicy === 'protected'
+      : true)
+  const shouldPreconnectAuth =
+    isAuthenticated || pathname === '/login' || staticRouteConfig?.authPolicy === 'protected'
+  const shouldPreconnectWebTransport =
+    shouldPreconnectDb &&
+    appConfig.enableFragmentStreaming &&
+    (appConfig.preferWebTransport || appConfig.preferWebTransportDatagrams)
+
   const addOrigin = (href: string | undefined) => {
     const origin = toPreconnectOrigin(href, currentOrigin)
     if (!origin) return
@@ -281,9 +305,13 @@ const buildPreconnectOrigins = (currentOrigin: string | null, includeTracking: b
   }
 
   addOrigin(appConfig.apiBase)
-  addOrigin(appConfig.spacetimeDbUri)
-  addOrigin(appConfig.spacetimeAuthAuthority)
-  if (appConfig.enableFragmentStreaming && (appConfig.preferWebTransport || appConfig.preferWebTransportDatagrams)) {
+  if (shouldPreconnectDb) {
+    addOrigin(appConfig.spacetimeDbUri)
+  }
+  if (shouldPreconnectAuth) {
+    addOrigin(appConfig.spacetimeAuthAuthority)
+  }
+  if (shouldPreconnectWebTransport) {
     addOrigin(appConfig.webTransportBase)
   }
 
@@ -565,15 +593,9 @@ export const onRequest: RequestHandler = async (event) => {
     const requestUrl = new URL(request.url)
     const nonce = getOrCreateRequestCspNonce(event)
     const planHints = getPlanEarlyHints(requestUrl.pathname, request)
-    const homeBootstrapHint = isHomeStaticPath(requestUrl.pathname)
-      ? buildEarlyHintHeader(buildHomeFragmentBootstrapEarlyHint(resolveRequestLang(request)))
-      : null
     headers.set('Content-Security-Policy', buildSiteCsp({ nonce, currentOrigin: requestUrl.origin }))
     headers.set('Cross-Origin-Opener-Policy', 'same-origin')
     headers.set('X-Frame-Options', 'DENY')
-    if (homeBootstrapHint) {
-      headers.append('Link', homeBootstrapHint)
-    }
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
@@ -583,6 +605,7 @@ export const onRequest: RequestHandler = async (event) => {
 export const RouterHead = component$(() => {
   const head = useDocumentHead()
   const location = useLocation()
+  const authSession = useAuthSession()
   const nonce = useCspNonce()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
@@ -590,7 +613,12 @@ export const RouterHead = component$(() => {
   const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
-  const preconnectOrigins = buildPreconnectOrigins(currentOrigin, false)
+  const preconnectOrigins = buildPreconnectOrigins({
+    currentOrigin,
+    includeTracking: false,
+    pathname: location.url.pathname,
+    isAuthenticated: authSession.value.status === 'authenticated'
+  })
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`

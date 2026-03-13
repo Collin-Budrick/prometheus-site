@@ -7,7 +7,7 @@ import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import type { FragmentPlanValue } from '../../fragment/types'
 import { appConfig } from '../../public-app-config'
-import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
+import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import { loginLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
@@ -74,7 +74,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
             plan,
             fragments,
             lang,
-            initialHtml
+            initialHtml,
+            cookieHeader: request.headers.get('cookie'),
+            viewportHint: resolveViewportHint(request)
           })
         : null,
       staticLogin: false,

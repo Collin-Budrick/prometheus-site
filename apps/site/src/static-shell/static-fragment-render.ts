@@ -157,7 +157,7 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
       ]),
     h('div', { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' }, [
       visibleItems.length === 0
-        ? h('div', { class: 'store-stream-empty' }, [t(emptyLabel)])
+        ? h('div', { class: 'store-stream-empty', role: 'listitem' }, [t(emptyLabel)])
         : visibleItems.map((item, index) =>
             h('div', {
               class: 'store-stream-row',

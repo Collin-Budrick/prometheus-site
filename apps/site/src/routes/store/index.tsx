@@ -5,7 +5,7 @@ import { siteBrand, siteFeatures } from '../../config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import type { FragmentPlan, FragmentPlanValue } from '../../fragment/types'
-import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang } from '../fragment-resource'
+import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import type { StoreSeed } from '../../shared/store-seed'
@@ -77,12 +77,14 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       path: planPath,
       lang,
       staticRoute: plan.fragments.length
-        ? buildStaticFragmentRouteModel({
+          ? buildStaticFragmentRouteModel({
             plan,
             fragments,
             lang,
             initialHtml,
-            storeSeed
+            storeSeed,
+            cookieHeader: request.headers.get('cookie'),
+            viewportHint: resolveViewportHint(request)
           })
         : null,
       storeSeed,
@@ -116,7 +118,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
           [fallbackId]: buildOfflineShellFragment(fallbackId, path)
         },
         lang,
-        storeSeed
+        storeSeed,
+        cookieHeader: request.headers.get('cookie'),
+        viewportHint: resolveViewportHint(request)
       }),
       storeSeed,
       languageSeed: createServerLanguageSeed(

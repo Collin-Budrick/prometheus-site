@@ -4,7 +4,7 @@ import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
-import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
+import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
 import type { FragmentPlanValue } from '../../fragment/types'
@@ -83,7 +83,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
             fragments,
             lang,
             initialHtml,
-            contactInvitesSeed
+            contactInvitesSeed,
+            cookieHeader: request.headers.get('cookie'),
+            viewportHint: resolveViewportHint(request)
           })
         : null,
       contactInvitesSeed,
