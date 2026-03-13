@@ -1,15 +1,17 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
-import { loadStaticFragmentResource, resolveRequestLang } from './fragment-resource'
+import { loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
 import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
-import homeDemoStylesheetHref from '../static-shell/home-static-deferred.css?url'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
-import { buildHomeFragmentBootstrapPreloadLink } from '../static-shell/home-fragment-bootstrap'
+import {
+  buildFragmentHeightPlanSignature,
+  readFragmentHeightCookieHeights
+} from '@prometheus/ui/fragment-height'
 
 type FragmentResource = {
   plan: FragmentPlanValue
@@ -17,6 +19,7 @@ type FragmentResource = {
   path: string
   lang: Lang
   languageSeed: LanguageSeedPayload
+  serverHeightHints: Array<number | null> | null
 }
 
 const HOME_CRITICAL_FRAGMENT_IDS = new Set(['fragment://page/home/manifest@v1'])
@@ -30,27 +33,11 @@ const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => ({
 })
 
 type HomeHeadLink =
-  | (ReturnType<typeof buildFragmentCssLinks>[number] & {
-      rel: 'stylesheet'
-    })
-  | ReturnType<typeof buildHomeFragmentBootstrapPreloadLink>
-  | {
-      rel: 'preload'
-      as: 'style'
-      href: string
-      'data-home-demo-stylesheet': 'true'
-    }
+  ReturnType<typeof buildFragmentCssLinks>[number] & {
+    rel: 'stylesheet'
+  }
 
-export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null, lang?: Lang): HomeHeadLink[] => [
-  ...buildFragmentCssLinks(plan),
-  {
-    rel: 'preload',
-    as: 'style',
-    href: homeDemoStylesheetHref,
-    'data-home-demo-stylesheet': 'true'
-  },
-  buildHomeFragmentBootstrapPreloadLink(lang)
-]
+export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null): HomeHeadLink[] => [...buildFragmentCssLinks(plan)]
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')
@@ -64,6 +51,16 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       path: planPath
     } = await loadStaticFragmentResource(path, lang, request)
     const normalizedPlan = normalizeHomePlan(plan)
+    const planSignature = buildFragmentHeightPlanSignature(
+      normalizedPlan.fragments.map((entry) => entry.id)
+    )
+    const viewportHint = resolveViewportHint(request)
+    const serverHeightHints = readFragmentHeightCookieHeights(request.headers.get('cookie'), {
+      path: planPath,
+      lang,
+      viewport: viewportHint,
+      planSignature
+    })
 
     const fragmentHeaderIds = normalizedPlan.fragments.map((entry) => entry.id)
     return {
@@ -71,6 +68,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       fragments: initialFragments as FragmentPayloadValue,
       path: planPath,
       lang,
+      serverHeightHints,
       languageSeed: createServerLanguageSeed(
         lang,
         withFragmentHeaderSelection(homeLanguageSelection, fragmentHeaderIds)
@@ -98,6 +96,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       } as FragmentPayloadValue,
       path,
       lang,
+      serverHeightHints: null,
       languageSeed: createServerLanguageSeed(lang, homeLanguageSelection)
     }
   }
@@ -115,6 +114,7 @@ export default component$(() => {
       lang={data.lang}
       introMarkdown={data.languageSeed.ui?.homeIntroMarkdown ?? ''}
       languageSeed={data.languageSeed}
+      serverHeightHints={data.serverHeightHints}
     />
   )
 })
@@ -130,7 +130,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: siteBrand.metaDescription
       }
     ],
-    links: buildHomeHeadLinks(data?.plan, lang),
+    links: buildHomeHeadLinks(data?.plan),
     htmlAttributes: {
       lang
     }

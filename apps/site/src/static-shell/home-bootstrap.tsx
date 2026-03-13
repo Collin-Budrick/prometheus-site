@@ -23,6 +23,7 @@ import {
   createStaticHomePatchQueue,
   type StaticHomePatchQueue
 } from './home-stream'
+import { persistInitialFragmentCardHeights } from './fragment-height'
 import {
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
@@ -58,12 +59,15 @@ type HomeControllerState = {
   isAuthenticated: boolean
   lang: Lang
   path: string
+  fragmentOrder: string[]
+  planSignature: string
   homeDemoStylesheetHref: string | null
   homeFragmentBootstrapHref: string | null
   fetchAbort: AbortController | null
   cleanupFns: Array<() => void>
   demoRenders: Map<Element, HomeDemoActivationResult>
   pendingDemoRoots: Set<Element>
+  demoObservationReady: boolean
   patchQueue: StaticHomePatchQueue | null
   destroyed: boolean
 }
@@ -358,7 +362,10 @@ export const scheduleStaticHomePaintReady = ({
   }
 }
 
-export type HomeDemoController = Pick<HomeControllerState, 'demoRenders' | 'pendingDemoRoots' | 'destroyed'>
+export type HomeDemoController = Pick<
+  HomeControllerState,
+  'demoRenders' | 'pendingDemoRoots' | 'destroyed' | 'path' | 'lang' | 'fragmentOrder' | 'planSignature'
+>
 
 type ActivateHomeDemoFn = (options: {
   root: Element
@@ -453,6 +460,22 @@ type ScheduleHomeDeferredRevalidationOptions = {
   controller: HomeControllerState
   homeFragmentHydration: Pick<HomeFragmentHydrationManager, 'schedulePreviewRefreshes'>
   refreshAuth?: (controller: HomeControllerState) => Promise<void>
+  win?: HomeDeferredRevalidationWindow | null
+  doc?: HomeDeferredRevalidationDocument | null
+}
+
+type ScheduleHomeDeferredActionOptions = {
+  controller: HomeControllerState
+  idleTimeoutMs: number
+  run: () => void
+  win?: HomeDeferredRevalidationWindow | null
+  doc?: HomeDeferredRevalidationDocument | null
+}
+
+type ScheduleHomeDeferredDemoObservationOptions = {
+  controller: HomeControllerState
+  homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>
+  root?: ParentNode | null
   win?: HomeDeferredRevalidationWindow | null
   doc?: HomeDeferredRevalidationDocument | null
 }
@@ -757,13 +780,13 @@ export const bindHomeFragmentHydration = ({
   return manager
 }
 
-const scheduleHomeDeferredRevalidation = ({
+const scheduleHomeDeferredAction = ({
   controller,
-  homeFragmentHydration,
-  refreshAuth = refreshHomeDockAuthIfNeeded,
+  idleTimeoutMs,
+  run,
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null
-}: ScheduleHomeDeferredRevalidationOptions): HomeDeferredRevalidationHandle => {
+}: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
   if (!win || !doc) {
     return {
       cleanup: () => undefined,
@@ -800,10 +823,7 @@ const scheduleHomeDeferredRevalidation = ({
 
     started = true
     cleanupTriggers()
-    homeFragmentHydration.schedulePreviewRefreshes()
-    void refreshAuth(controller).catch((error) => {
-      console.error('Static home auth dock refresh failed:', error)
-    })
+    run()
     return true
   }
 
@@ -825,12 +845,12 @@ const scheduleHomeDeferredRevalidation = ({
 
   if (typeof win.requestIdleCallback === 'function') {
     idleId = win.requestIdleCallback(triggerIdleRevalidation, {
-      timeout: HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS
+      timeout: idleTimeoutMs
     })
   } else {
     timeoutId = win.setTimeout(
       triggerIdleRevalidation,
-      HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS
+      idleTimeoutMs
     ) as unknown as number
   }
 
@@ -840,6 +860,46 @@ const scheduleHomeDeferredRevalidation = ({
       cleanupTriggers()
     },
     trigger: () => runDeferredRevalidation()
+  }
+}
+
+const scheduleHomeDeferredRevalidation = ({
+  controller,
+  homeFragmentHydration,
+  refreshAuth = refreshHomeDockAuthIfNeeded,
+  win = typeof window !== 'undefined' ? window : null,
+  doc = typeof document !== 'undefined' ? document : null
+}: ScheduleHomeDeferredRevalidationOptions): HomeDeferredRevalidationHandle =>
+  scheduleHomeDeferredAction({
+    controller,
+    idleTimeoutMs: HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS,
+    win,
+    doc,
+    run: () => {
+      homeFragmentHydration.schedulePreviewRefreshes()
+      void refreshAuth(controller).catch((error) => {
+        console.error('Static home auth dock refresh failed:', error)
+      })
+    }
+  })
+
+const scheduleHomeDeferredDemoObservation = ({
+  controller: _controller,
+  homeDemoActivation: _homeDemoActivation,
+  root = typeof document !== 'undefined' ? document : null,
+  win = typeof window !== 'undefined' ? window : null,
+  doc = typeof document !== 'undefined' ? document : null
+}: ScheduleHomeDeferredDemoObservationOptions): HomeDeferredRevalidationHandle => {
+  if (!root || !win || !doc) {
+    return {
+      cleanup: () => undefined,
+      trigger: () => false
+    }
+  }
+
+  return {
+    cleanup: () => undefined,
+    trigger: () => false
   }
 }
 
@@ -866,6 +926,7 @@ export const scheduleHomePostLcpTasks = ({
 }: ScheduleHomePostLcpTasksOptions) => {
   let cancelled = false
   let deferredRevalidation: HomeDeferredRevalidationHandle | null = null
+  let deferredDemoObservation: HomeDeferredRevalidationHandle | null = null
   let postLcpStarted = false
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -883,13 +944,17 @@ export const scheduleHomePostLcpTasks = ({
   const startPostLcpTasks = () => {
     if (cancelled || controller.destroyed || postLcpStarted) return
     postLcpStarted = true
-    if (root) {
-      homeDemoActivation.observeWithin(root)
-    }
     deferredRevalidation = scheduleHomeDeferredRevalidation({
       controller,
       homeFragmentHydration,
       refreshAuth,
+      win,
+      doc
+    })
+    deferredDemoObservation = scheduleHomeDeferredDemoObservation({
+      controller,
+      homeDemoActivation,
+      root,
       win,
       doc
     })
@@ -903,6 +968,8 @@ export const scheduleHomePostLcpTasks = ({
     cancelled = true
     lcpGate.cleanup()
     win?.removeEventListener('pageshow', handlePageShow)
+    deferredDemoObservation?.cleanup()
+    deferredDemoObservation = null
     deferredRevalidation?.cleanup()
     deferredRevalidation = null
   }
@@ -971,6 +1038,20 @@ const activateHomeDemoRoot = async (
     }
 
     controller.demoRenders.set(demoRoot, result)
+    const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
+    if (fragmentCard) {
+      void persistInitialFragmentCardHeights({
+        root: fragmentCard,
+        routeContext: {
+          path: controller.path,
+          lang: controller.lang,
+          fragmentOrder: controller.fragmentOrder,
+          planSignature: controller.planSignature
+        }
+      }).catch((error) => {
+        console.error('Static home demo height persistence failed:', error)
+      })
+    }
     return true
   } catch (error) {
     console.error(`Failed to activate home demo: ${kind}`, error)
@@ -1400,12 +1481,15 @@ export const bootstrapStaticHome = async () => {
     isAuthenticated: data.isAuthenticated,
     lang: data.lang,
     path: data.currentPath,
+    fragmentOrder: data.fragmentOrder,
+    planSignature: data.planSignature ?? '',
     homeDemoStylesheetHref: data.homeDemoStylesheetHref,
     homeFragmentBootstrapHref: data.fragmentBootstrapHref,
     fetchAbort: null,
     cleanupFns: [],
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),
+    demoObservationReady: false,
     patchQueue: null,
     destroyed: false
   }
@@ -1424,8 +1508,17 @@ export const bootstrapStaticHome = async () => {
   controller.cleanupFns.push(() => homeFragmentHydration.destroy())
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
+    routeContext: {
+      path: controller.path,
+      lang: controller.lang,
+      fragmentOrder: data.fragmentOrder,
+      planSignature: data.planSignature ?? ''
+    },
     onPatchedBody: (body) => {
       pruneDetachedHomeDemos(controller)
+      if (!controller.demoObservationReady) {
+        return
+      }
       homeDemoActivation.observeWithin(body)
     }
   })
@@ -1450,6 +1543,28 @@ export const bootstrapStaticHome = async () => {
       {
         priority: 'background',
         timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        if (controller.destroyed) return
+        void persistInitialFragmentCardHeights({
+          routeContext: {
+            path: controller.path,
+            lang: controller.lang,
+            fragmentOrder: data.fragmentOrder,
+            planSignature: data.planSignature ?? ''
+          }
+        }).catch((error) => {
+          console.error('Static home fragment height persistence failed:', error)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 1200,
         waitForPaint: true
       }
     )

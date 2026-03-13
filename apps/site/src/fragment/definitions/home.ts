@@ -220,32 +220,32 @@ export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/manifest@v1',
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 489 }
+    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
   },
   {
     id: 'fragment://page/home/planner@v1',
     critical: false,
-    layout: { column: 'span 5', size: 'big', minHeight: 640 }
+    layout: { column: 'span 5', size: 'big', minHeight: 640, heightHint: { desktop: 1054, mobile: 986 } }
   },
   {
     id: 'fragment://page/home/ledger@v1',
     critical: false,
-    layout: { column: 'span 7', size: 'tall', minHeight: 904 }
+    layout: { column: 'span 7', size: 'tall', minHeight: 904, heightHint: { desktop: 1023, mobile: 904 } }
   },
   {
     id: 'fragment://page/home/island@v1',
     critical: false,
-    layout: { column: 'span 5', minHeight: 489 }
+    layout: { column: 'span 5', minHeight: 489, heightHint: { desktop: 489, mobile: 389 } }
   },
   {
     id: 'fragment://page/home/react@v1',
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489 }
+    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 596, mobile: 489 } }
   },
   {
     id: 'fragment://page/home/dock@v2',
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489 }
+    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
   }
 ] satisfies FragmentPlanEntry[]
 

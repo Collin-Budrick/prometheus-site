@@ -1,6 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
+import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -55,6 +56,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               data-fragment-stage="ready"
               data-reveal-locked="false"
               data-draggable="false"
+              data-fragment-height-hint={`${entry.reservedHeight}`}
               data-size={entry.size}
               style={style}
               {...{
@@ -74,6 +76,15 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
         type="application/json"
         nonce={nonce || undefined}
         dangerouslySetInnerHTML={serializeJson(model.routeData)}
+      />
+      <script
+        nonce={nonce || undefined}
+        dangerouslySetInnerHTML={buildFragmentHeightPersistenceScript({
+          path: model.path,
+          lang: model.lang,
+          fragmentOrder: model.routeData.fragmentOrder,
+          planSignature: model.routeData.planSignature
+        })}
       />
     </section>
   )

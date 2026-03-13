@@ -99,7 +99,8 @@ describe('StaticHomeRoute', () => {
     const state = buildStaticHomeRouteState({
       plan: plan as never,
       fragments: fragments as never,
-      languageSeed
+      languageSeed,
+      lang: 'en'
     })
 
     expect(state?.paintState).toBe('initial')
@@ -118,7 +119,7 @@ describe('StaticHomeRoute', () => {
     expect(plannerCard?.html).not.toContain('matrix')
     expect(plannerCard?.html).toContain('data-home-demo-root="planner"')
     expect(plannerCard?.patchState).toBe('ready')
-    expect(plannerCard?.lcpStable).toBe(true)
+    expect(plannerCard?.lcpStable).toBe(false)
   })
 
   it('uses stabilized reserved heights for deferred compact cards', () => {
@@ -138,22 +139,22 @@ describe('StaticHomeRoute', () => {
         {
           id: 'fragment://page/home/island@v1',
           critical: false,
-          layout: { column: 'span 5', minHeight: 489 }
+          layout: { column: 'span 5', minHeight: 489, heightHint: { desktop: 489, mobile: 389 } }
         },
         {
           id: 'fragment://page/home/dock@v2',
           critical: false,
-          layout: { column: 'span 12', size: 'small', minHeight: 489 }
+          layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
         },
         {
           id: 'fragment://page/home/react@v1',
           critical: false,
-          layout: { column: 'span 12', size: 'small', minHeight: 489 }
+          layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 596, mobile: 489 } }
         },
         {
           id: 'fragment://page/home/ledger@v1',
           critical: false,
-          layout: { column: 'span 7', size: 'tall', minHeight: 904 }
+          layout: { column: 'span 7', size: 'tall', minHeight: 904, heightHint: { desktop: 1023, mobile: 904 } }
         }
       ]
     } as const
@@ -181,23 +182,24 @@ describe('StaticHomeRoute', () => {
     const state = buildStaticHomeRouteState({
       plan: deferredPlan as never,
       fragments: deferredFragments as never,
-      languageSeed
+      languageSeed,
+      lang: 'en'
     })
 
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.stage).toBe('deferred')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.reservedHeight).toBe(272)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.reservedHeight).toBe(489)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('ready')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.lcpStable).toBe(false)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.patchState).toBe('ready')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.html).toContain('home-demo-compact')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(272)
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.lcpStable).toBe(true)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(596)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.lcpStable).toBe(false)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.patchState).toBe('ready')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.html).toContain('home-demo-compact')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(372)
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.lcpStable).toBe(true)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(1023)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.lcpStable).toBe(false)
   })
 })

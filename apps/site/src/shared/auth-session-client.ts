@@ -7,12 +7,24 @@ type LoadClientAuthSessionOptions = {
 }
 
 const AUTH_SESSION_CACHE_TTL_MS = 10_000
+const SITE_SESSION_COOKIE_PREFIX = 'session='
 
 let cachedAuthSession: AuthSessionState | null = null
 let cachedAuthSessionAt = 0
 let authSessionPromise: Promise<AuthSessionState> | null = null
 
 const buildAnonymousSession = (): AuthSessionState => ({ status: 'anonymous' })
+
+export const hasClientSiteSessionCookie = (cookieHeader?: string | null) => {
+  const cookieSource =
+    typeof cookieHeader === 'string'
+      ? cookieHeader
+      : typeof document !== 'undefined'
+        ? document.cookie
+        : ''
+  if (!cookieSource) return false
+  return cookieSource.split(/;\s*/).some((entry) => entry.startsWith(SITE_SESSION_COOKIE_PREFIX))
+}
 
 const isCachedAuthSessionFresh = () =>
   Boolean(cachedAuthSession) && Date.now() - cachedAuthSessionAt < AUTH_SESSION_CACHE_TTL_MS
@@ -58,6 +70,10 @@ export const clearClientAuthSessionCache = () => {
 export const loadClientAuthSession = async (
   options: LoadClientAuthSessionOptions = {}
 ): Promise<AuthSessionState> => {
+  if (!hasClientSiteSessionCookie()) {
+    return storeCachedAuthSession(buildAnonymousSession())
+  }
+
   if (!options.force) {
     if (isCachedAuthSessionFresh() && cachedAuthSession) {
       return cachedAuthSession
@@ -86,6 +102,9 @@ export const loadClientAuthSession = async (
 }
 
 export const revalidateClientAuthSession = async () => {
+  if (!hasClientSiteSessionCookie()) {
+    return storeCachedAuthSession(buildAnonymousSession())
+  }
   try {
     return storeCachedAuthSession(await resolveClientAuthSession())
   } catch {

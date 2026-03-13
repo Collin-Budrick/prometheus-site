@@ -50,12 +50,12 @@ describe('home-demo-runtime-loader', () => {
     expect(calls).toEqual([assetUrl])
   })
 
-  it('promotes the preloaded home demo stylesheet once and reuses the same promise', async () => {
+  it('promotes the prefetched home demo stylesheet once and reuses the same promise', async () => {
     class MockLink {
-      rel = 'preload'
+      rel = 'prefetch'
       sheet: unknown = null
       private attrs = new Map<string, string>([
-        ['rel', 'preload'],
+        ['rel', 'prefetch'],
         ['as', 'style'],
         ['href', 'https://prometheus.prod/assets/home-static-deferred.css'],
         ['data-home-demo-stylesheet', 'true']

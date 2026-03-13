@@ -23,10 +23,7 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 } as const
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
-  'home-static': [
-    STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
-    'build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js'
-  ],
+  'home-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static']],
   'fragment-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static']],
   'island-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static']]
 } as const

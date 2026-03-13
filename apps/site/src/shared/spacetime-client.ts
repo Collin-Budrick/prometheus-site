@@ -188,6 +188,17 @@ const normalizeCandidateUri = (value: string) => {
   }
 }
 
+const shouldPreferSameOriginProxy = (uri: string, origin: string) => {
+  try {
+    const candidateUrl = new URL(uri)
+    const originUrl = new URL(origin)
+    if (candidateUrl.origin === originUrl.origin) return false
+    return candidateUrl.hostname === `db.${originUrl.hostname}`
+  } catch {
+    return false
+  }
+}
+
 const readStoredPreferredUri = (moduleName: string) => {
   const stored = parseJson<StoredPreferredUri>(readStorage(preferredUriStorageKey))
   if (!stored) return null
@@ -228,7 +239,17 @@ const writeStoredPreferredUri = (moduleName: string, uri: string) => {
   )
 }
 
-const resolveCandidateUris = (uri: string, moduleName: string) => {
+export const resolveCandidateUris = ({
+  uri,
+  moduleName,
+  currentOrigin,
+  storedPreferredUri
+}: {
+  uri: string
+  moduleName: string
+  currentOrigin?: string | null
+  storedPreferredUri?: string | null
+}) => {
   const candidates: string[] = []
   const pushCandidate = (value: string | null | undefined) => {
     if (!value) return
@@ -237,11 +258,26 @@ const resolveCandidateUris = (uri: string, moduleName: string) => {
     candidates.push(normalized)
   }
 
-  pushCandidate(readStoredPreferredUri(moduleName))
+  const resolvedOrigin =
+    currentOrigin ?? (typeof window !== 'undefined' ? window.location.origin : null)
+  const preferredUri =
+    storedPreferredUri === undefined ? readStoredPreferredUri(moduleName) : storedPreferredUri
+
+  pushCandidate(preferredUri)
+
+  const prefersSameOriginProxy =
+    typeof resolvedOrigin === 'string' &&
+    resolvedOrigin.trim() !== '' &&
+    shouldPreferSameOriginProxy(uri, resolvedOrigin)
+
+  if (prefersSameOriginProxy) {
+    pushCandidate(resolvedOrigin)
+  }
+
   pushCandidate(uri)
 
-  if (typeof window !== 'undefined' && window.location.origin) {
-    pushCandidate(window.location.origin)
+  if (typeof resolvedOrigin === 'string' && resolvedOrigin.trim() !== '') {
+    pushCandidate(resolvedOrigin)
   }
 
   return candidates
@@ -257,7 +293,7 @@ export const ensureSpacetimeConnection = async (
   const uri = resolved.uri?.trim() ?? ''
   const moduleName = resolved.module?.trim() ?? ''
   const token = resolved.token?.trim() ?? null
-  const candidateUris = resolveCandidateUris(uri, moduleName)
+  const candidateUris = resolveCandidateUris({ uri, moduleName })
 
   if (!uri || !moduleName) {
     updateSnapshot({

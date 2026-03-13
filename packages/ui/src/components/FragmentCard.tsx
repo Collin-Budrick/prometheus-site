@@ -1,4 +1,8 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
+import {
+  persistFragmentHeight,
+  type FragmentHeightPersistenceContext
+} from './fragment-height'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link], [data-drag-handle]'
@@ -200,6 +204,7 @@ export type FragmentCardProps = {
     suppressUntil: number
     draggingId?: string | null
   } | null>
+  fragmentHeightPersistence?: FragmentHeightPersistenceContext | null
 }
 
 type FragmentCardOverflowEffectsProps = {
@@ -304,6 +309,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const revealLocked = useSignal(props.revealLocked !== false)
     const finalMeasuredHeight = useSignal<number | null>(null)
     const lockedHeight = useSignal<number | null>(props.reservedHeight ?? null)
+    const resolvedHeightHint = useSignal<number | null>(props.reservedHeight ?? null)
     const hasSettledOnce = useSignal(false)
     const forceReveal = useSignal(false)
     const cssReady = useSignal(Boolean(props.fragmentLoaded && props.fragmentHasCss === false))
@@ -658,6 +664,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         revealLocked.value = props.revealLocked !== false
         if (finalMeasuredHeight.value === null) {
           lockedHeight.value = reservedHeight
+          resolvedHeightHint.value = reservedHeight
         }
 
         if (baseStage === 'waiting-payload' || !loaded) {
@@ -707,6 +714,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           )
           finalMeasuredHeight.value = measured > 0 ? measured : reservedHeight
           lockedHeight.value = finalMeasuredHeight.value
+          resolvedHeightHint.value = finalMeasuredHeight.value
           if (revealScheduled.value) return
           revealScheduled.value = true
           revealFrame = requestAnimationFrame(() => {
@@ -718,6 +726,13 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               hasSettledOnce.value = true
               forceReveal.value = false
               revealScheduled.value = false
+              if (props.fragmentId && finalMeasuredHeight.value) {
+                persistFragmentHeight({
+                  fragmentId: props.fragmentId,
+                  height: finalMeasuredHeight.value,
+                  context: props.fragmentHeightPersistence
+                })
+              }
               card.dispatchEvent(
                 new CustomEvent(STABLE_HEIGHT_EVENT, {
                   bubbles: true,
@@ -802,6 +817,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
       '--layout-version': `${layoutVersion}`,
+      ...(resolvedHeightHint.value ? { '--fragment-min-height': `${resolvedHeightHint.value}px` } : {}),
       ...(lockedHeight.value ? { height: `${lockedHeight.value}px` } : {})
     } as Record<string, string>
 
@@ -837,6 +853,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-wave-in={waveIn ? '' : undefined}
           data-critical={critical ? 'true' : undefined}
           data-fragment-id={fragmentId}
+          data-fragment-height-hint={resolvedHeightHint.value ? `${resolvedHeightHint.value}` : undefined}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           data-fragment-stage={currentStage.value}

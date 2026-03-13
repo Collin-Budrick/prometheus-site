@@ -1258,7 +1258,15 @@ export const chatFragments: FragmentPlanEntry[] = [
   {
     id: contactInvites.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: FRAGMENT_CARD_MIN_HEIGHTS.small }
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: FRAGMENT_CARD_MIN_HEIGHTS.small,
+      heightHint: {
+        desktop: FRAGMENT_CARD_MIN_HEIGHTS.small,
+        mobile: FRAGMENT_CARD_MIN_HEIGHTS.small
+      }
+    }
   }
 ]
 

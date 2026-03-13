@@ -30,7 +30,7 @@ const pickFragments = (fragments: FragmentPayloadMap | undefined, ids: string[])
   }, {})
 }
 
-const resolveViewportHint = (request: Request | undefined) => {
+export const resolveViewportHint = (request: Request | undefined) => {
   if (!request) return 'desktop'
   const hint = request.headers.get('sec-ch-ua-mobile')
   if (hint === '?1') return 'mobile'

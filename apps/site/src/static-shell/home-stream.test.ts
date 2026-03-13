@@ -16,6 +16,11 @@ const unwrapTrustedHtml = (value: unknown) =>
 
 class MockElement {
   dataset: Record<string, string> = {}
+  style = {
+    height: '',
+    setProperty: (_name: string, _value: string) => undefined,
+    getPropertyValue: (_name: string) => ''
+  }
   private html = ''
   private attrs = new Map<string, string>()
   private body: MockElement | null = null
@@ -50,11 +55,27 @@ class MockElement {
     this.attrs.delete(name)
   }
 
+  get scrollHeight() {
+    return 0
+  }
+
+  getBoundingClientRect() {
+    return { height: 0 }
+  }
+
   querySelector<T>(selector: string) {
     if (selector.includes(STATIC_FRAGMENT_BODY_ATTR)) {
       return this.body as T | null
     }
     return null
+  }
+
+  querySelectorAll() {
+    return []
+  }
+
+  dispatchEvent(_event: Event) {
+    return true
   }
 
   protected recordWrite() {}

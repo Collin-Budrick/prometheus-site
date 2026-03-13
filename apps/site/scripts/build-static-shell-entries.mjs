@@ -13,6 +13,7 @@ const entrypoints = [
   'apps/site/src/static-shell/home-bootstrap-runtime.ts',
   'apps/site/src/static-shell/home-demo-runtime.ts',
   'apps/site/src/static-shell/fragment-static-entry.ts',
+  'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
   'apps/site/src/static-shell/island-static-entry.ts'
 ]
 

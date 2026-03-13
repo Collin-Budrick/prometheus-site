@@ -13,6 +13,8 @@ export type HomeStaticRouteData = {
   snapshotKey?: string
   homeDemoStylesheetHref?: string
   fragmentBootstrapHref?: string
+  fragmentOrder?: string[]
+  planSignature?: string
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -26,6 +28,8 @@ export type HomeStaticBootstrapData = {
   routeSeed: LanguageSeedPayload
   homeDemoStylesheetHref: string | null
   fragmentBootstrapHref: string | null
+  fragmentOrder: string[]
+  planSignature: string | null
   fragmentVersions: Record<string, number>
 }
 
@@ -72,6 +76,8 @@ export const readStaticHomeBootstrapData = ({
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??
       buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
+    fragmentOrder: route?.fragmentOrder ?? [],
+    planSignature: route?.planSignature ?? null,
     fragmentVersions: route?.fragmentVersions ?? {}
   }
 }

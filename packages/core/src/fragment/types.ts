@@ -67,6 +67,10 @@ export type FragmentPlanEntry = {
     inlineSpan?: number
     size?: 'small' | 'big' | 'tall'
     minHeight?: number
+    heightHint?: {
+      desktop?: number
+      mobile?: number
+    }
   }
   expandable?: boolean
   fullWidth?: boolean

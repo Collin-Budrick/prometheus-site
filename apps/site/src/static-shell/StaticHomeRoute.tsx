@@ -15,6 +15,7 @@ import {
 } from '../lang/selection'
 import { renderHomeStaticFragmentHtml } from './home-render'
 import { renderHomeIntroMarkdownToHtml } from './markdown'
+import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -29,10 +30,12 @@ import {
   type StaticHomeCardStage
 } from './constants'
 import { getHomeStaticFragmentKind } from './home-render'
+import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import {
-  buildHomeFragmentBootstrapHref,
-  buildPrimeHomeFragmentBootstrapScript
-} from './home-fragment-bootstrap'
+  buildFragmentHeightPlanSignature,
+  readFragmentStableHeight,
+  resolveReservedFragmentHeight
+} from '@prometheus/ui/fragment-height'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -40,6 +43,7 @@ type StaticHomeRouteProps = {
   lang: Lang
   introMarkdown: string
   languageSeed: LanguageSeedPayload
+  serverHeightHints?: Array<number | null> | null
 }
 
 const serializeJson = (value: unknown) =>
@@ -49,45 +53,9 @@ const serializeJson = (value: unknown) =>
     .replace(/&/g, '\\u0026')
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
-const DEFERRED_RESERVED_HEIGHT_BY_SIZE: Record<string, number> = {
-  small: 272,
-  big: 280,
-  tall: 372
-}
-const DEFERRED_RESERVED_HEIGHT_BY_KIND = {
-  island: 272,
-  react: 272,
-  ledger: 372
-} as const
 
 const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
   fragmentKind === 'planner' || fragmentKind === 'ledger' || fragmentKind === 'island' || fragmentKind === 'react'
-
-const resolveStaticHomeReservedHeight = (
-  reservedHeight: number,
-  stage: StaticHomeCardStage,
-  size: string | undefined,
-  fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
-) => {
-  if (stage !== 'deferred') {
-    return reservedHeight
-  }
-
-  const deferredKindHeight =
-    fragmentKind in DEFERRED_RESERVED_HEIGHT_BY_KIND
-      ? DEFERRED_RESERVED_HEIGHT_BY_KIND[fragmentKind as keyof typeof DEFERRED_RESERVED_HEIGHT_BY_KIND]
-      : undefined
-  if (typeof deferredKindHeight === 'number') {
-    return deferredKindHeight
-  }
-
-  const deferredHeight = size ? DEFERRED_RESERVED_HEIGHT_BY_SIZE[size] : undefined
-  if (typeof deferredHeight !== 'number') {
-    return Math.min(reservedHeight, DEFERRED_RESERVED_HEIGHT_BY_SIZE.small)
-  }
-
-  return Math.min(reservedHeight, deferredHeight)
-}
 
 type StaticHomeRenderedCard = {
   id: string
@@ -108,6 +76,8 @@ type StaticHomeRouteState = {
   paintState: 'initial'
   inlineStyles: Array<{ id: string; css: string }>
   fragmentVersions: Record<string, number>
+  fragmentOrder: string[]
+  planSignature: string
   cards: StaticHomeRenderedCard[]
 }
 
@@ -137,8 +107,13 @@ const createStaticHomeCopyBundle = (languageSeed: LanguageSeedPayload) => ({
 export const buildStaticHomeRouteState = ({
   plan,
   fragments,
-  languageSeed
-}: Pick<StaticHomeRouteProps, 'plan' | 'fragments' | 'languageSeed'>): StaticHomeRouteState | null => {
+  languageSeed,
+  lang,
+  serverHeightHints
+}: Pick<
+  StaticHomeRouteProps,
+  'plan' | 'fragments' | 'languageSeed' | 'lang' | 'serverHeightHints'
+>): StaticHomeRouteState | null => {
   if (!plan) {
     return null
   }
@@ -146,6 +121,8 @@ export const buildStaticHomeRouteState = ({
   const fragmentMap = fragments ?? {}
   const copyBundle = createStaticHomeCopyBundle(languageSeed)
   const entries = plan.fragments
+  const fragmentOrder = entries.map((entry) => entry.id)
+  const planSignature = buildFragmentHeightPlanSignature(fragmentOrder)
   const leftCount = Math.ceil(entries.length / 2)
   const fragmentHeaders = languageSeed.fragmentHeaders ?? {}
 
@@ -190,10 +167,15 @@ export const buildStaticHomeRouteState = ({
           fragmentHeaders
         })
       : ''
-    const reservedHeight =
-      typeof entry.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
-        ? Math.max(0, entry.layout.minHeight)
-        : DEFAULT_RESERVED_CARD_HEIGHT
+    const reservedHeight = resolveReservedFragmentHeight({
+      layout: entry.layout,
+      cookieHeight: serverHeightHints?.[index] ?? null,
+      stableHeight: readFragmentStableHeight({
+        fragmentId: entry.id,
+        path: plan.path,
+        lang
+      })
+    }) ?? DEFAULT_RESERVED_CARD_HEIGHT
 
     return {
       id: entry.id,
@@ -204,10 +186,10 @@ export const buildStaticHomeRouteState = ({
       column,
       stage,
       fragmentKind,
-      reservedHeight: resolveStaticHomeReservedHeight(reservedHeight, stage, entry.layout.size, fragmentKind),
+      reservedHeight,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
       patchState,
-      lcpStable: Boolean(entry.critical) || renderMode === 'preview'
+      lcpStable: Boolean(entry.critical)
     }
   })
 
@@ -215,12 +197,14 @@ export const buildStaticHomeRouteState = ({
     paintState: 'initial',
     inlineStyles,
     fragmentVersions,
+    fragmentOrder,
+    planSignature,
     cards
   }
 }
 
-export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragments, lang, introMarkdown, languageSeed }) => {
-  const routeState = buildStaticHomeRouteState({ plan, fragments, languageSeed })
+export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragments, lang, introMarkdown, languageSeed, serverHeightHints }) => {
+  const routeState = buildStaticHomeRouteState({ plan, fragments, languageSeed, lang, serverHeightHints })
   const nonce = useCspNonce()
   if (!plan || !routeState) {
     return null
@@ -302,7 +286,8 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
-                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState
+                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+                    'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >
                   <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
@@ -326,13 +311,20 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
           homeDemoStylesheetHref,
           fragmentBootstrapHref,
+          fragmentOrder: routeState.fragmentOrder,
+          planSignature: routeState.planSignature,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}
       />
       <script
         nonce={nonce || undefined}
-        dangerouslySetInnerHTML={buildPrimeHomeFragmentBootstrapScript(fragmentBootstrapHref)}
+        dangerouslySetInnerHTML={buildFragmentHeightPersistenceScript({
+          path: plan.path,
+          lang,
+          fragmentOrder: routeState.fragmentOrder,
+          planSignature: routeState.planSignature
+        })}
       />
     </section>
   )

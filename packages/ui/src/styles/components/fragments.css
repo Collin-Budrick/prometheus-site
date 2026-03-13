@@ -317,6 +317,14 @@
     isolation: isolate;
   }
 
+  .fragment-card[data-fragment-id] {
+    contain-intrinsic-size: auto var(--fragment-min-height, 0px);
+  }
+
+  .fragment-card[data-fragment-height-locked='true'] {
+    overflow: hidden;
+  }
+
   .layout-shell[data-static-route='home'] .fragment-grid-item,
   .layout-shell[data-static-route='home'] .fragment-slot {
     contain: layout;
@@ -347,6 +355,14 @@
 
   .layout-shell[data-static-route='home']
     .fragment-grid-static-home-column
+    > .fragment-card[data-static-home-lcp-stable='true'] {
+    content-visibility: visible;
+    contain: layout paint;
+    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
+  }
+
+  .layout-shell[data-static-route='home']
+    .fragment-grid-static-home-column
     > .fragment-card[data-static-home-stage='anchor'] {
     content-visibility: visible;
     contain: layout paint;
@@ -363,35 +379,10 @@
 
   .layout-shell[data-static-route='home']
     .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='island'],
-  .layout-shell[data-static-route='home']
-    .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='react'] {
-    contain-intrinsic-size: auto var(--fragment-min-height, 272px);
-  }
-
-  .layout-shell[data-static-route='home']
-    .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='ledger'] {
-    contain-intrinsic-size: auto var(--fragment-min-height, 372px);
-  }
-
-  .layout-shell[data-static-route='home']
-    .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='island']
-    .fragment-card-body,
-  .layout-shell[data-static-route='home']
-    .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='react']
+    > .fragment-card[data-static-home-lcp-stable='true']
     .fragment-card-body {
-    contain-intrinsic-size: auto var(--fragment-min-height, 272px);
-  }
-
-  .layout-shell[data-static-route='home']
-    .fragment-grid-static-home-column
-    > .fragment-card[data-static-home-stage='deferred'][data-static-home-fragment-kind='ledger']
-    .fragment-card-body {
-    contain-intrinsic-size: auto var(--fragment-min-height, 372px);
+    content-visibility: visible;
+    contain-intrinsic-size: auto var(--fragment-min-height, 380px);
   }
 
   .layout-shell[data-static-route='home'] .fragment-card::before,

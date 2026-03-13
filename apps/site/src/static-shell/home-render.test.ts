@@ -339,7 +339,8 @@ describe('renderHomeStaticFragmentHtml', () => {
       fragments: fragments as never,
       languageSeed: {
         fragmentHeaders
-      }
+      },
+      lang: 'en'
     })
 
     expect(state?.cards.map((card) => ({ id: card.id, stage: card.stage, column: card.column }))).toEqual([
@@ -359,10 +360,10 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(state?.cards[2]?.html).toContain('home-demo-compact')
     expect(state?.cards[2]?.html).not.toContain('home-fragment-stub')
     expect(state?.cards[2]?.patchState).toBe('ready')
-    expect(state?.cards[2]?.reservedHeight).toBe(272)
+    expect(state?.cards[2]?.reservedHeight).toBe(489)
     expect(state?.cards[4]?.html).toContain('home-demo-compact')
     expect(state?.cards[4]?.patchState).toBe('ready')
-    expect(state?.cards[4]?.reservedHeight).toBe(272)
-    expect(state?.cards[5]?.reservedHeight).toBe(272)
+    expect(state?.cards[4]?.reservedHeight).toBe(596)
+    expect(state?.cards[5]?.reservedHeight).toBe(489)
   })
 })

@@ -2,7 +2,7 @@ import { component$, useComputed$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import type { FragmentPlanValue } from '../../fragment/types'
-import { loadHybridFragmentResource, resolveRequestLang } from '../fragment-resource'
+import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
@@ -65,7 +65,9 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
             plan,
             fragments,
             lang,
-            initialHtml
+            initialHtml,
+            cookieHeader: request.headers.get('cookie'),
+            viewportHint: resolveViewportHint(request)
           })
         : null,
       languageSeed: createServerLanguageSeed(

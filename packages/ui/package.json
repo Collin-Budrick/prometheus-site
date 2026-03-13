@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./fragment-height": "./src/fragment-height.ts",
     "./global-critical.css": "./src/global-critical.css",
     "./global.css": "./src/global.css",
     "./global-deferred.css": "./src/global-deferred.css",

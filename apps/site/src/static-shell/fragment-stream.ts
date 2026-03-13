@@ -8,6 +8,10 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR
 } from './constants'
 import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
+import {
+  lockFragmentCardHeight,
+  settlePatchedFragmentCardHeight
+} from './fragment-height'
 
 type StreamStaticFragmentsOptions = {
   path: string
@@ -52,6 +56,7 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
     return
   }
 
+  const { lockToken } = lockFragmentCardHeight(card)
   applyHomeFragmentEffects(payload)
   const body = card.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return
@@ -73,6 +78,20 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
   card.dataset.fragmentReady = 'true'
   card.dataset.fragmentStage = 'ready'
   card.dataset.revealLocked = 'false'
+
+  void settlePatchedFragmentCardHeight({
+    card,
+    fragmentId: payload.id,
+    routeContext: {
+      path: routeData.path,
+      lang: routeData.lang,
+      fragmentOrder: routeData.fragmentOrder,
+      planSignature: routeData.planSignature
+    },
+    lockToken
+  }).catch((error) => {
+    console.error('Static fragment height settle failed:', error)
+  })
 }
 
 export const streamStaticFragments = async ({
