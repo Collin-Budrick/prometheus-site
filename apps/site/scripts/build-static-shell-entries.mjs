@@ -18,6 +18,7 @@ const entrypoints = [
   'apps/site/src/static-shell/home-demo-preact-island-runtime.ts',
   'apps/site/src/static-shell/fragment-static-entry.ts',
   'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
+  'apps/site/src/static-shell/store-static-runtime.ts',
   'apps/site/src/static-shell/island-static-entry.ts'
 ]
 

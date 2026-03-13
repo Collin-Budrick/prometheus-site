@@ -15,6 +15,8 @@ import {
 import { getOrCreateRequestCspNonce } from './security/server'
 import { CSP_NONCE_ATTR } from './security/shared'
 import { existsSync } from 'node:fs'
+import { appendStaticAssetVersion } from './static-shell/asset-version'
+import { getStaticShellBuildVersion } from './static-shell/build-version.server'
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   'home-static': 'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
@@ -76,6 +78,7 @@ const hasStaticBootstrapBundle = (pathname: string) => {
 }
 
 const escapeHtmlAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+const STATIC_SHELL_BUILD_VERSION = getStaticShellBuildVersion()
 
 const stripStaticQwikScripts = (html: string) =>
   html
@@ -115,9 +118,9 @@ const stripBlockingDeferredStylesheet = (html: string) =>
 export const injectStaticBootstrap = (html: string, publicBase: string, pathname: string, nonce?: string) => {
   const bundlePath = resolveStaticBootstrapBundlePath(pathname)
   if (!bundlePath) return html
-  const bundleHref = `${publicBase}${bundlePath}`
+  const bundleHref = appendStaticAssetVersion(`${publicBase}${bundlePath}`, STATIC_SHELL_BUILD_VERSION)
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
-    .map((path) => `<link rel="modulepreload" href="${publicBase}${path}">`)
+    .map((path) => `<link rel="modulepreload" href="${appendStaticAssetVersion(`${publicBase}${path}`, STATIC_SHELL_BUILD_VERSION)}">`)
     .join('')
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : ''
   const scriptTag = `<script type="module" src="${bundleHref}"${nonceAttr}></script>`

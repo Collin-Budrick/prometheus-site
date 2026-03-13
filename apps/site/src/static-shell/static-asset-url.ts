@@ -1,3 +1,5 @@
+import { appendStaticAssetVersion, resolveStaticAssetVersion } from './asset-version'
+
 const STATIC_SHELL_BUNDLE_MARKER = 'build/static-shell/'
 
 type ScriptLike = {
@@ -8,6 +10,7 @@ type ScriptLike = {
 type ResolveStaticAssetOptions = {
   origin?: string
   scripts?: ArrayLike<ScriptLike> | Iterable<ScriptLike>
+  version?: string | null
 }
 
 const withTrailingSlash = (value: string) => (value.endsWith('/') ? value : `${value}/`)
@@ -35,4 +38,7 @@ export const resolveStaticAssetBase = ({ origin, scripts }: ResolveStaticAssetOp
 }
 
 export const resolveStaticAssetUrl = (assetPath: string, options?: ResolveStaticAssetOptions) =>
-  new URL(assetPath, resolveStaticAssetBase(options)).toString()
+  appendStaticAssetVersion(
+    new URL(assetPath, resolveStaticAssetBase(options)).toString(),
+    resolveStaticAssetVersion(options)
+  )

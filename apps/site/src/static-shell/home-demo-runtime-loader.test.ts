@@ -21,14 +21,14 @@ describe('home-demo-runtime-loader', () => {
         {
           getAttribute: (name: string) =>
             name === 'src'
-              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-static-entry.js'
+              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-static-entry.js?v=build123'
               : null
         }
       ]
     })
 
     expect(runtimeUrl).toBe(
-      'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js'
+      'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js?v=build123'
     )
   })
 

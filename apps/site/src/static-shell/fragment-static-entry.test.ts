@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS,
   FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS,
-  installFragmentStaticEntry
+  installFragmentStaticEntry,
+  resolveFragmentBootstrapIdleTimeout
 } from './fragment-static-entry'
 
 type Listener = (event?: Event) => void
@@ -55,6 +57,7 @@ class MockWindow {
 class MockDocument {
   readonly listeners: ListenerMap = new Map()
   readyState: DocumentReadyState = 'complete'
+  staticPath = '/store'
 
   addEventListener(type: string, listener: Listener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -70,6 +73,15 @@ class MockDocument {
       this.listeners.delete(type)
     }
   }
+
+  querySelector(selector: string) {
+    if (selector !== '[data-static-fragment-root]') return null
+    return {
+      dataset: {
+        staticPath: this.staticPath
+      }
+    }
+  }
 }
 
 const flushMicrotasks = async () => {
@@ -82,6 +94,7 @@ describe('installFragmentStaticEntry', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     doc.readyState = 'loading'
+    doc.staticPath = '/lab'
     let loadRuntimeCount = 0
 
     installFragmentStaticEntry({
@@ -110,6 +123,7 @@ describe('installFragmentStaticEntry', () => {
   it('starts bootstrap from user intent after load', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
+    doc.staticPath = '/lab'
     let loadRuntimeCount = 0
     let bootstrapCount = 0
 
@@ -140,6 +154,7 @@ describe('installFragmentStaticEntry', () => {
   it('falls back to an idle bootstrap after load', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
+    doc.staticPath = '/lab'
     let loadRuntimeCount = 0
     let bootstrapCount = 0
 
@@ -163,7 +178,47 @@ describe('installFragmentStaticEntry', () => {
 
     expect(loadRuntimeCount).toBe(1)
     expect(bootstrapCount).toBe(1)
-    expect(FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS).toBe(5000)
+    expect(resolveFragmentBootstrapIdleTimeout('/store')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
+    expect(resolveFragmentBootstrapIdleTimeout('/lab')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
+    expect(resolveFragmentBootstrapIdleTimeout('/chat')).toBe(FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
+
+    cleanup()
+  })
+
+  it('uses the lightweight store bootstrap runtime on store idle fallback', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    let loadRuntimeCount = 0
+    let loadStoreRuntimeCount = 0
+    let storeBootstrapCount = 0
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => {
+        loadRuntimeCount += 1
+        return {
+          bootstrapStaticFragmentShell: async () => undefined
+        }
+      },
+      loadStoreRuntime: async () => {
+        loadStoreRuntimeCount += 1
+        return {
+          bootstrapStaticStoreShell: async () => {
+            storeBootstrapCount += 1
+          }
+        }
+      }
+    })
+
+    expect(win.timeouts.size).toBe(1)
+
+    win.runTimeout()
+    await flushMicrotasks()
+
+    expect(loadRuntimeCount).toBe(0)
+    expect(loadStoreRuntimeCount).toBe(1)
+    expect(storeBootstrapCount).toBe(1)
 
     cleanup()
   })

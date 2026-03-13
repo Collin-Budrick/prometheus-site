@@ -39,6 +39,9 @@ export const installHomeDemoEntry = ({
 
   primeTrustedTypesPolicies()
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+    performance.mark('prom:home:demo-entry-install')
+  }
 
   const controller: HomeDemoController = {
     path: data.currentPath,

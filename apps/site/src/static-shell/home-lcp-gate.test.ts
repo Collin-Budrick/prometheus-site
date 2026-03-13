@@ -33,16 +33,16 @@ class MockWindow {
   readonly timers = new Map<number, () => void>()
   nextTimerId = 1
 
-  addEventListener(type: string, listener: () => void) {
+  addEventListener(type: string, listener: (event?: { persisted?: boolean }) => void) {
     const listeners = this.listeners.get(type) ?? new Set()
-    listeners.add(listener)
+    listeners.add(listener as () => void)
     this.listeners.set(type, listeners)
   }
 
-  removeEventListener(type: string, listener: () => void) {
+  removeEventListener(type: string, listener: (event?: { persisted?: boolean }) => void) {
     const listeners = this.listeners.get(type)
     if (!listeners) return
-    listeners.delete(listener)
+    listeners.delete(listener as () => void)
     if (listeners.size === 0) {
       this.listeners.delete(type)
     }
@@ -59,8 +59,8 @@ class MockWindow {
     this.timers.delete(id as unknown as number)
   }
 
-  emit(type: string) {
-    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
+  emit(type: string, event?: { persisted?: boolean }) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
   }
 
   runTimer(id = 1) {
@@ -161,6 +161,23 @@ describe('createHomeFirstLcpGate', () => {
 
     doc.visibilityState = 'hidden'
     doc.emit('visibilitychange')
+    await gate.wait
+
+    expect(MockPerformanceObserver.instances[0]?.disconnected).toBe(true)
+    expect(doc.listeners.size).toBe(0)
+    expect(win.listeners.size).toBe(0)
+  })
+
+  it('resolves on persisted pageshow restores', async () => {
+    const doc = new MockDocument()
+    const win = new MockWindow()
+    const gate = createHomeFirstLcpGate({
+      doc: doc as unknown as Document,
+      win: win as unknown as Window,
+      PerformanceObserverImpl: MockPerformanceObserver as unknown as typeof PerformanceObserver
+    })
+
+    win.emit('pageshow', { persisted: true })
     await gate.wait
 
     expect(MockPerformanceObserver.instances[0]?.disconnected).toBe(true)

@@ -34,7 +34,8 @@ import {
   HOME_STATIC_ROUTE_KIND,
   getStaticShellRouteConfig,
   isHomeStaticPath,
-  isStaticShellPath
+  isStaticShellPath,
+  toCanonicalStaticShellHref
 } from '../static-shell/constants'
 
 const initialFadeDurationMs = 920
@@ -206,7 +207,7 @@ const withLangParam = (href: string, langValue: Lang) => {
   if (!href || !href.startsWith('/')) return href
   const base = typeof window === 'undefined' ? 'http://localhost' : window.location.origin
   try {
-    const url = new URL(href, base)
+    const url = new URL(toCanonicalStaticShellHref(href), base)
     url.searchParams.set(LANG_PREFETCH_PARAM, langValue)
     return `${url.pathname}${url.search}${url.hash}`
   } catch (error) {
@@ -220,12 +221,46 @@ const toPreconnectOrigin = (href: string | undefined, fallbackOrigin: string | n
   if (href.startsWith('http://') || href.startsWith('https://')) {
     try {
       return new URL(href).origin
-      } catch (error) {
-        console.warn('Failed to resolve preconnect origin:', href, error)
-        return null
-      }
+    } catch (error) {
+      console.warn('Failed to resolve preconnect origin:', href, error)
+      return null
+    }
   }
   return fallbackOrigin
+}
+
+const shouldPreferSameOriginDbProxy = (href: string | undefined, currentOrigin: string | null) => {
+  if (!href || !currentOrigin) return false
+  try {
+    const candidateUrl = new URL(href)
+    const originUrl = new URL(currentOrigin)
+    if (candidateUrl.origin === originUrl.origin) return false
+    return candidateUrl.hostname === `db.${originUrl.hostname}`
+  } catch {
+    return false
+  }
+}
+
+const resolvePreconnectSpacetimeDbUri = (currentOrigin: string | null, fallbackHref: string | undefined) => {
+  if (!currentOrigin) return fallbackHref
+  try {
+    const url = new URL(currentOrigin)
+    const hostname = url.hostname
+    const isIpAddress = /^[\d.:]+$/.test(hostname)
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    if (!isIpAddress && !isLocalHost) {
+      if (!hostname.startsWith('db.')) {
+        url.hostname = `db.${hostname}`
+      }
+      url.pathname = '/'
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    }
+  } catch {
+    // Fall back to the configured runtime URL below.
+  }
+  return fallbackHref
 }
 
 const loadNativeHaptics = () => import('../native/haptics')
@@ -284,12 +319,15 @@ const buildPreconnectOrigins = ({
   const origins = new Set<string>()
   const staticRouteConfig = getStaticShellRouteConfig(pathname)
   const isHomeRoute = isHomeStaticPath(pathname)
+  const spacetimeDbUri = resolvePreconnectSpacetimeDbUri(currentOrigin, appConfig.spacetimeDbUri)
   const shouldPreconnectDb =
     !isHomeRoute &&
     (staticRouteConfig
       ? staticRouteConfig.routeKind === FRAGMENT_STATIC_ROUTE_KIND ||
         staticRouteConfig.authPolicy === 'protected'
       : true)
+  const shouldPreconnectDbOrigin =
+    shouldPreconnectDb && !shouldPreferSameOriginDbProxy(spacetimeDbUri, currentOrigin)
   const shouldPreconnectAuth =
     isAuthenticated || pathname === '/login' || staticRouteConfig?.authPolicy === 'protected'
   const shouldPreconnectWebTransport =
@@ -305,8 +343,8 @@ const buildPreconnectOrigins = ({
   }
 
   addOrigin(appConfig.apiBase)
-  if (shouldPreconnectDb) {
-    addOrigin(appConfig.spacetimeDbUri)
+  if (shouldPreconnectDbOrigin) {
+    addOrigin(spacetimeDbUri)
   }
   if (shouldPreconnectAuth) {
     addOrigin(appConfig.spacetimeAuthAuthority)
@@ -572,6 +610,11 @@ export const useShellPreferences = routeLoader$(async (event) => {
   }
 })
 
+export const useStaticShellBuildVersion = routeLoader$(async () => {
+  const { getStaticShellBuildVersion } = await import('../static-shell/build-version.server')
+  return getStaticShellBuildVersion()
+})
+
 export const useInitialFadeState = routeLoader$((_event) => {
   const initialFade = null
   const criticalLite = 'ready'
@@ -609,7 +652,7 @@ export const RouterHead = component$(() => {
   const nonce = useCspNonce()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
-  const shouldDeferManifest = isHomeStaticRoute
+  const shouldDeferManifest = isStaticShellPath(location.url.pathname)
   const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
@@ -971,6 +1014,7 @@ export default component$(() => {
   const location = useLocation()
   const shellPreferences = useShellPreferences()
   const authSession = useAuthSession()
+  const staticShellBuildVersion = useStaticShellBuildVersion()
   const staticRouteConfig = getStaticShellRouteConfig(location.url.pathname)
 
   if (isStaticShellPath(location.url.pathname)) {
@@ -981,6 +1025,7 @@ export default component$(() => {
         lang={shellPreferences.value.lang}
         theme={shellPreferences.value.theme}
         languageSeed={shellPreferences.value.languageSeed}
+        buildVersion={staticShellBuildVersion.value}
         routeKind={
           staticRouteConfig?.routeKind ??
           (isHomeStaticPath(location.url.pathname) ? HOME_STATIC_ROUTE_KIND : FRAGMENT_STATIC_ROUTE_KIND)

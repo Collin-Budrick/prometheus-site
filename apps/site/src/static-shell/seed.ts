@@ -10,6 +10,7 @@ export type StaticShellSeed = {
   authPolicy: StaticShellAuthPolicy
   isAuthenticated: boolean
   snapshotKey: string
+  buildVersion?: string | null
 }
 
 export type StaticShellSnapshot = {

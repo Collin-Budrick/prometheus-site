@@ -3,6 +3,7 @@ import type { JSXNode } from '@builder.io/qwik'
 import type { Lang, UiCopy } from '../lang'
 import { siteBrand, type NavLabelKey } from '../config'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
+import { toCanonicalStaticShellHref } from './constants'
 
 type DockIconComponent = (props: { class?: string; 'aria-hidden'?: string | boolean }) => JSXNode
 
@@ -36,7 +37,7 @@ export const withLangParam = (href: string, langValue: Lang) => {
   if (!href || !href.startsWith('/')) return href
   const base = typeof window === 'undefined' ? 'https://example.com' : window.location.origin
   try {
-    const url = new URL(href, base)
+    const url = new URL(toCanonicalStaticShellHref(href), base)
     url.searchParams.set('lang', langValue)
     return `${url.pathname}${url.search}${url.hash}`
   } catch {

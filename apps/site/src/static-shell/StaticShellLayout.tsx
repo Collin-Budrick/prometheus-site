@@ -28,6 +28,7 @@ type StaticShellLayoutProps = {
   lang: Lang
   theme: Theme
   languageSeed: LanguageSeedPayload
+  buildVersion?: string | null
   routeKind?: typeof HOME_STATIC_ROUTE_KIND | typeof FRAGMENT_STATIC_ROUTE_KIND | typeof ISLAND_STATIC_ROUTE_KIND
 }
 
@@ -45,6 +46,7 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   lang,
   theme,
   languageSeed,
+  buildVersion = null,
   routeKind = FRAGMENT_STATIC_ROUTE_KIND
 }) => {
   const nonce = useCspNonce()
@@ -57,7 +59,8 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
     bootstrapMode: routeConfig?.bootstrapMode ?? 'fragment-static',
     authPolicy: routeConfig?.authPolicy ?? 'public',
     isAuthenticated,
-    snapshotKey: routeConfig?.snapshotKey ?? currentPath
+    snapshotKey: routeConfig?.snapshotKey ?? currentPath,
+    buildVersion
   }
   const copy = {
     ...emptyUiCopy,

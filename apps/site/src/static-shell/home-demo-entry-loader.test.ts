@@ -18,13 +18,13 @@ describe('home-demo-entry-loader', () => {
         {
           getAttribute: (name: string) =>
             name === 'src'
-              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-static-entry.js'
+              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-static-entry.js?v=build123'
               : null
         }
       ]
     })
 
-    expect(runtimeUrl).toBe('https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-entry.js')
+    expect(runtimeUrl).toBe('https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-entry.js?v=build123')
   })
 
   it('reuses the same import promise across repeated loads', async () => {

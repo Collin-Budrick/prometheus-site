@@ -113,7 +113,7 @@ describe('static shell performance invariants', () => {
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
-    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource] = await Promise.all([
+    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
       readSource('../entry.ssr.tsx'),
       readSource('../../scripts/build-static-shell-entries.mjs'),
       readSource('../root.tsx'),
@@ -124,7 +124,12 @@ describe('static shell performance invariants', () => {
       readSource('./home-bootstrap-runtime-loader.ts'),
       readSource('./fragment-static-entry.ts'),
       readSource('./fragment-bootstrap-runtime-loader.ts'),
-      readSource('./home-demo-entry-loader.ts')
+      readSource('./home-demo-entry-loader.ts'),
+      readSource('./store-static-runtime-loader.ts'),
+      readSource('./static-asset-url.ts'),
+      readSource('./asset-version.ts'),
+      readSource('./StaticShellLayout.tsx'),
+      readSource('./seed.ts')
     ])
 
     expect(entrySsrSource).toContain('rel="modulepreload"')
@@ -135,14 +140,20 @@ describe('static shell performance invariants', () => {
     expect(buildScriptSource).toContain('home-demo-react-binary-runtime.ts')
     expect(buildScriptSource).toContain('home-demo-preact-island-runtime.ts')
     expect(buildScriptSource).toContain('fragment-bootstrap-runtime.ts')
+    expect(buildScriptSource).toContain('store-static-runtime.ts')
     expect(buildScriptSource).not.toContain('--splitting')
     expect(rootSource).toContain("global-critical.css?inline")
     expect(layoutSource).toContain("global-deferred.css?url")
     expect(layoutSource).toContain('const shouldPreconnectDb =')
+    expect(layoutSource).toContain('shouldPreferSameOriginDbProxy')
+    expect(layoutSource).toContain('resolvePreconnectSpacetimeDbUri')
     expect(layoutSource).toContain("pathname === '/login'")
-    expect(layoutSource).toContain('addOrigin(appConfig.spacetimeDbUri)')
+    expect(layoutSource).toContain('addOrigin(spacetimeDbUri)')
     expect(layoutSource).toContain('resolveLinkCrossOrigin')
     expect(layoutSource).toContain('fragments\\/bootstrap')
+    expect(layoutSource).toContain('const shouldDeferManifest = isStaticShellPath(location.url.pathname)')
+    expect(layoutSource).toContain('toCanonicalStaticShellHref')
+    expect(layoutSource).toContain('useStaticShellBuildVersion')
     expect(layoutSource).not.toContain("new URL('../components/home-demo-active.css', import.meta.url).href")
     expect(layoutSource).not.toContain('buildHomeDemoStylesheetPreloadMarkup(')
     expect(layoutSource).not.toContain('buildThemeBootstrapScriptMarkup()')
@@ -152,11 +163,24 @@ describe('static shell performance invariants', () => {
     expect(homeDemoEntryLoaderSource).toContain("home-demo-entry.js")
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain("fragment-bootstrap-runtime.js")
+    expect(storeRuntimeLoaderSource).toContain("store-static-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
     expect(fragmentEntrySource).toContain('installFragmentStaticEntry')
     expect(fragmentEntrySource).toContain('loadFragmentBootstrapRuntime')
+    expect(fragmentEntrySource).toContain('loadStoreStaticRuntime')
     expect(fragmentEntrySource).toContain('FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000')
+    expect(fragmentEntrySource).toContain('FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS = 1200')
+    expect(fragmentEntrySource).toContain("STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'")
+    expect(fragmentEntrySource).toContain('resolveFragmentBootstrapIdleTimeout')
     expect(fragmentEntrySource).not.toContain("from './static-bootstrap'")
+    expect(entrySsrSource).toContain('appendStaticAssetVersion')
+    expect(entrySsrSource).toContain('STATIC_SHELL_BUILD_VERSION')
+    expect(staticAssetUrlSource).toContain('appendStaticAssetVersion(')
+    expect(staticAssetUrlSource).toContain('resolveStaticAssetVersion(options)')
+    expect(assetVersionSource).toContain("STATIC_SHELL_ASSET_VERSION_QUERY_PARAM = 'v'")
+    expect(shellLayoutSource).toContain('buildVersion?: string | null')
+    expect(shellLayoutSource).toContain('buildVersion')
+    expect(seedSource).toContain('buildVersion?: string | null')
     const staticHomeRouteSource = await readSource('./StaticHomeRoute.tsx')
     expect(staticHomeRouteSource).toContain("import homeDemoStylesheetHref from './home-static-deferred.css?url'")
     expect(staticHomeRouteSource).toContain("createHomeDemoAssetMap")

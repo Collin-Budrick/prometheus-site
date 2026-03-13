@@ -16,6 +16,10 @@ import {
   STATIC_SHELL_REGION_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
+import {
+  clearStoreStaticBootstrapFlag,
+  consumeRegisteredStoreStaticControllerCleanup
+} from './store-static-controller-state'
 import { createStaticFragmentRouteData } from './static-fragment-model'
 import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
 import { scheduleStaticShellTask } from './scheduler'
@@ -508,8 +512,20 @@ const prewarmRouteConnection = (path: string) => {
 
 const bindRouteControllers = async (controller: StaticFragmentController) => {
   if (normalizeStaticShellRoutePath(controller.path) !== '/store') return
+  const existingCleanup = consumeRegisteredStoreStaticControllerCleanup()
+  if (existingCleanup) {
+    controller.cleanupFns.push(() => {
+      existingCleanup()
+      clearStoreStaticBootstrapFlag()
+    })
+    return
+  }
   const { activateStoreStaticController } = await import('./controllers/store-static-controller')
-  controller.cleanupFns.push(await activateStoreStaticController({ routeData: controller.routeData }))
+  const cleanup = await activateStoreStaticController({ routeData: controller.routeData })
+  controller.cleanupFns.push(() => {
+    cleanup()
+    clearStoreStaticBootstrapFlag()
+  })
 }
 
 export const bootstrapStaticFragmentShell = async () => {

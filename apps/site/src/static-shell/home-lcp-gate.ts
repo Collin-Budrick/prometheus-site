@@ -32,6 +32,13 @@ const createResolvedGate = (): HomeFirstLcpGate => ({
   cleanup: () => undefined
 })
 
+const markHomeLcpRelease = () => {
+  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
+    return
+  }
+  performance.mark('prom:home:lcp-release')
+}
+
 export const createHomeFirstLcpGate = ({
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null,
@@ -63,6 +70,7 @@ export const createHomeFirstLcpGate = ({
 
     doc.removeEventListener('visibilitychange', handleVisibilityChange)
     win.removeEventListener('pagehide', handlePageHide)
+    win.removeEventListener('pageshow', handlePageShow)
 
     if (timeoutId !== null) {
       win.clearTimeout(timeoutId)
@@ -73,6 +81,7 @@ export const createHomeFirstLcpGate = ({
   const finish = () => {
     if (resolved) return
     resolved = true
+    markHomeLcpRelease()
     cleanup()
     resolveWait()
   }
@@ -87,8 +96,15 @@ export const createHomeFirstLcpGate = ({
     finish()
   }
 
+  const handlePageShow = (event?: PageTransitionEvent) => {
+    if (event?.persisted) {
+      finish()
+    }
+  }
+
   doc.addEventListener('visibilitychange', handleVisibilityChange)
   win.addEventListener('pagehide', handlePageHide)
+  win.addEventListener('pageshow', handlePageShow)
   timeoutId = win.setTimeout(finish, timeoutMs)
 
   if (doc.visibilityState === 'hidden') {

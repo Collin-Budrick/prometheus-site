@@ -44,6 +44,25 @@ const normalizeStaticShellPath = (path: string) => {
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
 }
 
+export const toCanonicalStaticShellHref = (href: string) => {
+  if (!href || !href.startsWith('/')) return href
+  try {
+    const url = new URL(href, 'https://prometheus.local')
+    const routeConfig = getStaticShellRouteConfig(url.pathname)
+    if (!routeConfig) {
+      return `${url.pathname}${url.search}${url.hash}`
+    }
+    if (routeConfig.path === '/') {
+      url.pathname = '/'
+    } else {
+      url.pathname = `${routeConfig.path}/`
+    }
+    return `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    return href
+  }
+}
+
 const staticShellRouteConfigs = [
   {
     path: '/',

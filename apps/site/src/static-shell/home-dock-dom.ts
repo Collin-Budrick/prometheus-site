@@ -6,7 +6,8 @@ import { getStaticHomeUiCopy, type HomeStaticUiCopy } from './home-copy-store'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_SHELL_DOCK_REGION,
-  STATIC_SHELL_REGION_ATTR
+  STATIC_SHELL_REGION_ATTR,
+  toCanonicalStaticShellHref
 } from './constants'
 import { readStaticShellSeed, syncStaticDockRootState, type StaticDockState } from './seed-client'
 
@@ -42,7 +43,7 @@ const withLangParam = (href: string, langValue: Lang) => {
   if (!href || !href.startsWith('/')) return href
   const base =
     typeof window === 'undefined' ? 'https://prometheus.test' : window.location.origin
-  const url = new URL(href, base)
+  const url = new URL(toCanonicalStaticShellHref(href), base)
   url.searchParams.set('lang', langValue)
   return `${url.pathname}${url.search}${url.hash}`
 }
