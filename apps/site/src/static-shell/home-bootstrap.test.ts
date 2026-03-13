@@ -7,13 +7,13 @@ import {
 } from './constants'
 import {
   bindHomeFragmentHydration,
-  bindHomeDemoActivation,
   scheduleInitialHomeDemoObservation,
   scheduleHomePostLcpTasks,
-  scheduleStaticHomePaintReady,
-  type HomeDemoController
+  scheduleStaticHomePaintReady
 } from './home-bootstrap'
+import { bindHomeDemoActivation, type HomeDemoController } from './home-demo-controller'
 import type { HomeFirstLcpGate } from './home-lcp-gate'
+import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 
 class MockDemoElement {
   dataset: Record<string, string> = {}
@@ -173,6 +173,11 @@ class MockIntersectionObserver {
 }
 
 const createController = (): HomeDemoController => ({
+  path: '/',
+  lang: 'en',
+  fragmentOrder: [],
+  planSignature: 'test',
+  assets: normalizeHomeDemoAssetMap(),
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
   destroyed: false
@@ -303,13 +308,15 @@ const createHomeBootstrapController = () => ({
   isAuthenticated: false,
   lang: 'en' as const,
   path: '/',
+  fragmentOrder: [],
+  planSignature: 'test',
+  assets: normalizeHomeDemoAssetMap(),
   homeDemoStylesheetHref: null,
   homeFragmentBootstrapHref: null,
   fetchAbort: null,
   cleanupFns: [],
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
-  demoObservationReady: false,
   demoObservationReady: false,
   patchQueue: null
 })
@@ -624,7 +631,6 @@ describe('scheduleInitialHomeDemoObservation', () => {
 
 describe('scheduleHomePostLcpTasks', () => {
   it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
-  it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
@@ -661,7 +667,6 @@ describe('scheduleHomePostLcpTasks', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(observedRoots).toEqual([])
     expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])

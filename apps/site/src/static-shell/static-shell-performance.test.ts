@@ -4,13 +4,14 @@ const readSource = async (path: string) => await Bun.file(new URL(path, import.m
 
 describe('static shell performance invariants', () => {
   it('keeps the home bootstrap on the fast path', async () => {
-    const [bootstrapSource, fragmentBootstrapSource, islandBootstrapSource, snapshotClientSource, streamSource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource] = await Promise.all([
+    const [bootstrapSource, fragmentBootstrapSource, islandBootstrapSource, snapshotClientSource, streamSource, runtimeLoaderSource, runtimeTypesSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource] = await Promise.all([
       readSource('./home-bootstrap.tsx'),
       readSource('./static-bootstrap.ts'),
       readSource('./island-bootstrap.ts'),
       readSource('./snapshot-client.ts'),
       readSource('./home-stream.ts'),
       readSource('./home-demo-runtime-loader.ts'),
+      readSource('./home-demo-runtime-types.ts'),
       readSource('./home-bootstrap-runtime-loader.ts'),
       readSource('./home-render.ts'),
       readSource('../fragment/definitions/home.ts'),
@@ -24,6 +25,7 @@ describe('static shell performance invariants', () => {
 
     expect(bootstrapSource).toContain("from './home-stream'")
     expect(bootstrapSource).toContain("from './home-demo-runtime-loader'")
+    expect(bootstrapSource).toContain("from './home-demo-controller'")
     expect(bootstrapSource).toContain('bindHomeDemoActivation({ controller })')
     expect(bootstrapSource).toContain('scheduleStaticHomePaintReady({')
     expect(bootstrapSource).toContain('scheduleTask = scheduleStaticShellTask')
@@ -47,7 +49,9 @@ describe('static shell performance invariants', () => {
     expect(bootstrapSource).not.toContain('streamHomeFragments')
     expect(bootstrapSource).not.toContain('activateHomeDemo,')
     expect(bootstrapSource).not.toContain('await activateHomeDemos(controller)')
-    expect(runtimeLoaderSource).toContain("build/static-shell/apps/site/src/static-shell/home-demo-runtime.js")
+    expect(runtimeLoaderSource).toContain('HOME_DEMO_RUNTIME_ASSET_PATHS')
+    expect(runtimeTypesSource).toContain("build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js")
+    expect(runtimeTypesSource).toContain("build/static-shell/apps/site/src/static-shell/home-demo-react-binary-runtime.js")
     expect(bootstrapRuntimeLoaderSource).toContain(
       "build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js"
     )
@@ -73,6 +77,7 @@ describe('static shell performance invariants', () => {
     expect(homeRouteSource).toContain("lcpStable: Boolean(entry.critical)")
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR")
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR")
+    expect(homeRouteSource).toContain("homeDemoAssets")
     expect(homeRouteSource).toContain("buildFragmentHeightPlanSignature")
     expect(homeRouteSource).toContain("resolveReservedFragmentHeight({")
     expect(homeRouteSource).toContain("'data-fragment-height-hint': `${card.reservedHeight}`")
@@ -108,7 +113,7 @@ describe('static shell performance invariants', () => {
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
-    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource] = await Promise.all([
+    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource] = await Promise.all([
       readSource('../entry.ssr.tsx'),
       readSource('../../scripts/build-static-shell-entries.mjs'),
       readSource('../root.tsx'),
@@ -118,12 +123,17 @@ describe('static shell performance invariants', () => {
       readSource('./home-demo-runtime-loader.ts'),
       readSource('./home-bootstrap-runtime-loader.ts'),
       readSource('./fragment-static-entry.ts'),
-      readSource('./fragment-bootstrap-runtime-loader.ts')
+      readSource('./fragment-bootstrap-runtime-loader.ts'),
+      readSource('./home-demo-entry-loader.ts')
     ])
 
     expect(entrySsrSource).toContain('rel="modulepreload"')
+    expect(buildScriptSource).toContain('home-demo-entry.ts')
     expect(buildScriptSource).toContain('home-bootstrap-runtime.ts')
-    expect(buildScriptSource).toContain('home-demo-runtime.ts')
+    expect(buildScriptSource).toContain('home-demo-planner-runtime.ts')
+    expect(buildScriptSource).toContain('home-demo-wasm-renderer-runtime.ts')
+    expect(buildScriptSource).toContain('home-demo-react-binary-runtime.ts')
+    expect(buildScriptSource).toContain('home-demo-preact-island-runtime.ts')
     expect(buildScriptSource).toContain('fragment-bootstrap-runtime.ts')
     expect(buildScriptSource).not.toContain('--splitting')
     expect(rootSource).toContain("global-critical.css?inline")
@@ -139,6 +149,7 @@ describe('static shell performance invariants', () => {
     expect(layoutSource).not.toContain('root.style.colorScheme = theme;')
     expect(await readSource('../../../../packages/ui/src/global-deferred.css')).toContain('home-demo-active.css')
     expect(runtimeLoaderSource).not.toContain("import homeDemoStylesheetHref from '../components/home-demo-active.css?url'")
+    expect(homeDemoEntryLoaderSource).toContain("home-demo-entry.js")
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain("fragment-bootstrap-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
@@ -148,6 +159,7 @@ describe('static shell performance invariants', () => {
     expect(fragmentEntrySource).not.toContain("from './static-bootstrap'")
     const staticHomeRouteSource = await readSource('./StaticHomeRoute.tsx')
     expect(staticHomeRouteSource).toContain("import homeDemoStylesheetHref from './home-static-deferred.css?url'")
+    expect(staticHomeRouteSource).toContain("createHomeDemoAssetMap")
     expect(staticHomeRouteSource).not.toContain('buildPrimeHomeFragmentBootstrapScript')
     expect(homeRouteSource).toContain('await loadStaticFragmentResource(path, lang, request)')
     expect(homeRouteSource).not.toContain("'data-home-demo-stylesheet': 'true'")
@@ -155,9 +167,11 @@ describe('static shell performance invariants', () => {
     expect(homeRouteSource).not.toContain('loadHybridFragmentResource')
     expect(homeStaticEntrySource).toContain('installHomeStaticEntry')
     expect(homeStaticEntrySource).toContain('createHomeFirstLcpGate')
-    expect(homeStaticEntrySource).toContain('loadRuntime = loadHomeBootstrapRuntime')
+    expect(homeStaticEntrySource).toContain('loadBootstrapRuntime = loadHomeBootstrapRuntime')
+    expect(homeStaticEntrySource).toContain('loadDemoRuntime = loadHomeDemoEntryRuntime')
     expect(homeStaticEntrySource).toContain('HOME_BOOTSTRAP_INTENT_EVENTS')
     expect(homeStaticEntrySource).toContain('HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000')
+    expect(homeStaticEntrySource).toContain('startDemoEntry()')
     expect(homeStaticEntrySource).toContain("win.addEventListener('load', loadHandler, { once: true })")
     expect(homeStaticEntrySource).not.toContain('requestIdleCallback')
     expect(homeStaticEntrySource).not.toContain("'scroll'")

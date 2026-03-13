@@ -1,0 +1,268 @@
+@layer components {
+  @keyframes wasm-pulse {
+    0% {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    35% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.08);
+    }
+  }
+
+  .wasm-demo {
+    @apply mt-4 rounded-2xl border border-slate-200/70 bg-white/70 p-4;
+    display: grid;
+    gap: 12px;
+    background-color: rgb(var(--surface) / 0.75);
+    border-color: rgb(var(--stroke) / 0.7);
+  }
+
+  .wasm-demo-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .wasm-demo-title,
+  .wasm-demo-panel-title,
+  .wasm-demo-label,
+  .wasm-demo-metric,
+  .wasm-demo-history span,
+  .wasm-demo-note,
+  .wasm-demo-chip {
+    color: rgb(var(--muted));
+  }
+
+  .wasm-demo-title {
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
+  }
+
+  .wasm-demo-action {
+    @apply inline-flex items-center gap-2 rounded-full border border-teal-200/80 bg-teal-50 px-4 py-2;
+    @apply font-mono text-[10px] text-teal-700 uppercase tracking-[0.35em];
+    justify-content: center;
+    line-height: 1;
+    box-shadow: 0 12px 20px rgba(20, 184, 166, 0.2);
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      background-color 160ms ease;
+    background-color: rgb(var(--signal) / 0.12);
+    border-color: rgb(var(--signal) / 0.28);
+    color: rgb(var(--ink-soft));
+  }
+
+  .wasm-demo-action:hover {
+    background: rgb(var(--surface));
+    box-shadow: 0 16px 26px rgba(20, 184, 166, 0.24);
+    transform: translateY(-1px);
+  }
+
+  .wasm-demo-action:focus-visible {
+    outline: 2px solid rgb(var(--signal));
+    outline-offset: 2px;
+  }
+
+  .wasm-demo-subtitle {
+    @apply text-slate-600 text-sm leading-6;
+    color: rgb(var(--muted));
+  }
+
+  .wasm-demo-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .wasm-demo-panel {
+    @apply rounded-2xl border border-slate-200/70 bg-white/80 p-3;
+    display: grid;
+    gap: 8px;
+    min-height: 150px;
+    background-color: rgb(var(--surface) / 0.85);
+    border-color: rgb(var(--stroke) / 0.7);
+  }
+
+  .wasm-demo-panel-title,
+  .wasm-demo-label {
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+  }
+
+  .wasm-demo-input {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    justify-self: center;
+  }
+
+  .wasm-demo-label {
+    min-width: 18px;
+  }
+
+  .wasm-demo-step {
+    @apply inline-flex justify-center items-center bg-white px-2 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-600 uppercase tracking-[0.35em];
+    width: 28px;
+    height: 28px;
+    line-height: 1;
+    letter-spacing: 0;
+    transition: transform 160ms ease;
+    background-color: rgb(var(--surface));
+    border-color: rgb(var(--stroke));
+    color: rgb(var(--muted));
+  }
+
+  .wasm-demo-step:hover {
+    @apply border-teal-200 text-teal-700;
+    transform: translateY(-1px);
+    border-color: rgb(var(--signal) / 0.3);
+    color: rgb(var(--ink-soft));
+  }
+
+  .wasm-demo-value {
+    @apply bg-slate-50 px-3 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[11px] text-slate-700 uppercase tracking-[0.35em];
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    min-width: 64px;
+    text-align: center;
+    background-color: rgb(var(--surface-soft));
+    border-color: rgb(var(--stroke));
+    color: rgb(var(--ink-soft));
+  }
+
+  .wasm-demo-core {
+    @apply rounded-2xl border border-teal-200/60 bg-teal-50/70 p-3;
+    position: relative;
+    text-align: center;
+    background-color: rgb(var(--signal) / 0.12);
+    border-color: rgb(var(--signal) / 0.3);
+  }
+
+  .wasm-demo-core::after {
+    content: "";
+    position: absolute;
+    inset: 10%;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--signal) / 0.35);
+    opacity: 0;
+  }
+
+  .wasm-demo-core.is-active::after {
+    animation: wasm-pulse 1s ease;
+  }
+
+  .wasm-demo-core-value {
+    @apply font-semibold text-slate-900 text-lg;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    color: rgb(var(--ink));
+  }
+
+  .wasm-demo-core-hash {
+    @apply mt-1 font-mono text-[10px] text-teal-700 uppercase tracking-[0.35em];
+    color: rgb(var(--ink-soft));
+  }
+
+  .wasm-demo-bits {
+    @apply bg-slate-50 px-3 py-2 rounded-xl text-center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: rgb(var(--muted));
+    background-color: rgb(var(--surface-soft));
+  }
+
+  .wasm-demo-metrics {
+    display: grid;
+    gap: 8px;
+  }
+
+  .wasm-demo-metric {
+    @apply rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-2;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    display: grid;
+    gap: 4px;
+    background-color: rgb(var(--surface-soft));
+    border-color: rgb(var(--stroke) / 0.7);
+  }
+
+  .wasm-demo-metric::before {
+    content: attr(data-label);
+    display: block;
+  }
+
+  .wasm-demo-metric::after {
+    content: attr(data-value);
+    @apply block font-semibold text-slate-900 text-base;
+    color: rgb(var(--ink));
+  }
+
+  .wasm-demo-bar {
+    @apply h-2 rounded-full bg-slate-200/70;
+    overflow: hidden;
+    background-color: rgb(var(--skeleton-base) / 0.7);
+  }
+
+  .wasm-demo-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, rgb(var(--signal)), rgb(var(--accent)));
+    transition: width 200ms ease;
+  }
+
+  .wasm-demo-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .wasm-demo-history span {
+    @apply bg-white px-2 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    background-color: rgb(var(--surface));
+    border-color: rgb(var(--stroke));
+  }
+
+  .wasm-demo-note {
+    @apply text-slate-500 text-xs;
+  }
+
+  .wasm-demo-footer {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .wasm-demo-chip {
+    @apply inline-flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-full;
+    @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    justify-content: center;
+    line-height: 1;
+    background-color: rgb(var(--surface));
+    border-color: rgb(var(--stroke));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wasm-demo-core.is-active::after {
+      animation: none;
+    }
+  }
+}

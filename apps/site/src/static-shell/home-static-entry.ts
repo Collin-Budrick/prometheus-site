@@ -1,4 +1,5 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
+import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 
 export const HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
@@ -8,22 +9,22 @@ type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
+  __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
 }
-
-type HomeStaticEntryDocument = Document
 
 type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
-  doc?: HomeStaticEntryDocument | null
-  loadRuntime?: typeof loadHomeBootstrapRuntime
+  doc?: Document | null
+  loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
+  loadDemoRuntime?: typeof loadHomeDemoEntryRuntime
   createLcpGate?: typeof createHomeFirstLcpGate
 }
 
 export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
-  loadRuntime = loadHomeBootstrapRuntime,
-  createLcpGate = createHomeFirstLcpGate
+  loadBootstrapRuntime = loadHomeBootstrapRuntime,
+  loadDemoRuntime = loadHomeDemoEntryRuntime,
   createLcpGate = createHomeFirstLcpGate
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
@@ -32,12 +33,14 @@ export const installHomeStaticEntry = ({
 
   win.__PROM_STATIC_HOME_ENTRY__ = true
 
-  let started = false
+  let startedBootstrap = false
+  let startedDemoEntry = false
   let loadHandler: (() => void) | null = null
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  let timeoutId: number | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
   let lcpGateCleanup: (() => void) | null = null
+  let demoEntryCleanup: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
@@ -58,15 +61,28 @@ export const installHomeStaticEntry = ({
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
+    demoEntryCleanup?.()
+    demoEntryCleanup = null
+  }
+
+  const startDemoEntry = () => {
+    if (startedDemoEntry || win.__PROM_STATIC_HOME_DEMO_ENTRY__) return
+    startedDemoEntry = true
+    void loadDemoRuntime()
+      .then(({ installHomeDemoEntry }) => {
+        demoEntryCleanup = installHomeDemoEntry()
+      })
+      .catch((error) => {
+        console.error('Static home demo entry failed:', error)
+      })
   }
 
   const startBootstrap = () => {
-    if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    started = true
+    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    startedBootstrap = true
     win.__PROM_STATIC_HOME_BOOTSTRAP__ = true
-    cleanupTriggers()
 
-    void loadRuntime()
+    void loadBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
       .catch((error) => {
         console.error('Static home bootstrap failed:', error)
@@ -81,14 +97,17 @@ export const installHomeStaticEntry = ({
   }
 
   const armIdleTrigger = () => {
-    if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    timeoutId = win.setTimeout(requestBootstrap, HOME_BOOTSTRAP_IDLE_TIMEOUT_MS)
+    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    timeoutId = win.setTimeout(requestBootstrap, HOME_BOOTSTRAP_IDLE_TIMEOUT_MS) as unknown as number
   }
 
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
     win.__PROM_STATIC_HOME_LCP_RELEASED__ = true
+    lcpGateCleanup?.()
+    lcpGateCleanup = null
+    startDemoEntry()
     if (bootstrapRequested) {
       startBootstrap()
       return
@@ -97,7 +116,7 @@ export const installHomeStaticEntry = ({
   }
 
   const setupBootstrapTriggers = () => {
-    if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       win.addEventListener(eventName, requestBootstrap, eventOptions)
     })
@@ -105,7 +124,7 @@ export const installHomeStaticEntry = ({
     const lcpGate = createLcpGate({ win, doc })
     lcpGateCleanup = lcpGate.cleanup
     void lcpGate.wait.then(() => {
-      if (started || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+      if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
       releaseLcpGate()
     })
   }

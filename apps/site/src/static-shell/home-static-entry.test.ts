@@ -8,6 +8,7 @@ class MockWindow {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
+  __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
   readonly timeouts = new Map<number, () => void>()
   nextTimeoutId = 1
@@ -79,46 +80,66 @@ const createManualGate = () => {
 }
 
 describe('installHomeStaticEntry', () => {
-  it('keeps the fragment bootstrap fetch off the initial home path', async () => {
-  it('keeps the fragment bootstrap fetch off the initial home path', async () => {
+  it('starts the demo entry immediately after the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    let demoEntryLoadCount = 0
+    let demoInstallCount = 0
+    let bootstrapLoadCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadRuntime: async () => ({
-        bootstrapStaticHome: async () => undefined
-      })
+      loadDemoRuntime: async () => {
+        demoEntryLoadCount += 1
+        return {
+          installHomeDemoEntry: () => {
+            demoInstallCount += 1
+            return () => undefined
+          }
+        }
+      },
+      loadBootstrapRuntime: async () => {
+        bootstrapLoadCount += 1
+        return {
+          bootstrapStaticHome: async () => undefined
+        }
+      }
     })
 
-    expect(win.timeouts.size).toBe(0)
-    expect(win.timeouts.size).toBe(0)
+    expect(demoEntryLoadCount).toBe(0)
+    expect(bootstrapLoadCount).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(win.timeouts.size).toBe(1)
+    expect(demoEntryLoadCount).toBe(1)
+    expect(demoInstallCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
+    expect(win.timeouts.size).toBe(1)
 
     cleanup()
   })
 
-  it('does not start bootstrap on early user intent until the LCP gate resolves', async () => {
+  it('does not start bootstrap on early intent until the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
-    let loadRuntimeCount = 0
+    let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadRuntime: async () => {
-        loadRuntimeCount += 1
+      loadDemoRuntime: async () => ({
+        installHomeDemoEntry: () => () => undefined
+      }),
+      loadBootstrapRuntime: async () => {
+        bootstrapLoadCount += 1
         return {
           bootstrapStaticHome: async () => {
             bootstrapCount += 1
@@ -130,15 +151,14 @@ describe('installHomeStaticEntry', () => {
     win.emit('pointerdown')
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(0)
+    expect(bootstrapLoadCount).toBe(0)
     expect(bootstrapCount).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
-    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(manualGate.cleanupCount()).toBe(1)
 
     cleanup()
@@ -148,15 +168,18 @@ describe('installHomeStaticEntry', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
-    let loadRuntimeCount = 0
+    let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadRuntime: async () => {
-        loadRuntimeCount += 1
+      loadDemoRuntime: async () => ({
+        installHomeDemoEntry: () => () => undefined
+      }),
+      loadBootstrapRuntime: async () => {
+        bootstrapLoadCount += 1
         return {
           bootstrapStaticHome: async () => {
             bootstrapCount += 1
@@ -165,24 +188,17 @@ describe('installHomeStaticEntry', () => {
       }
     })
 
-    expect(win.timeouts.size).toBe(0)
-    expect(win.timeouts.size).toBe(0)
-
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(0)
-    expect(win.timeouts.size).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
     expect(win.timeouts.size).toBe(1)
 
-    win.runTimeout()
     win.runTimeout()
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
-    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
-    expect(manualGate.cleanupCount()).toBe(1)
 
     cleanup()
   })

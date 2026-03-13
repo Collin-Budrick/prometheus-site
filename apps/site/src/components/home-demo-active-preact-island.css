@@ -1,0 +1,197 @@
+@layer components {
+  .preact-island {
+    @apply mt-4 rounded-2xl border border-teal-200/80 bg-white/70 p-4;
+    position: relative;
+    overflow: hidden;
+    background-color: rgb(var(--surface) / 0.75);
+    border-color: rgb(var(--signal) / 0.22);
+  }
+
+  .preact-island-ui {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr auto;
+  }
+
+  .preact-island-label {
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
+    grid-column: 1;
+    color: rgb(var(--muted));
+  }
+
+  .preact-island-timer {
+    @apply rounded-full border border-teal-200/70 bg-teal-50 px-3 py-1;
+    @apply font-mono text-[11px] text-teal-700 uppercase tracking-[0.35em];
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    grid-column: 2;
+    justify-self: end;
+    background-color: rgb(var(--signal) / 0.12);
+    border-color: rgb(var(--signal) / 0.28);
+    color: rgb(var(--ink-soft));
+  }
+
+  .preact-island-ui[data-running="false"] .preact-island-timer {
+    @apply border-slate-200/70 bg-slate-100 text-slate-600;
+    background-color: rgb(var(--surface-soft));
+    border-color: rgb(var(--stroke) / 0.7);
+    color: rgb(var(--muted));
+  }
+
+  @keyframes timer-bloom {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .preact-island-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 6px;
+    text-align: center;
+    padding: 18px;
+    min-height: 196px;
+    border-radius: 20px;
+    border: 1px solid rgb(var(--signal) / 0.25);
+    grid-column: 1 / -1;
+    background:
+      radial-gradient(
+        circle at 50% 25%,
+        rgb(var(--signal) / 0.12),
+        rgb(var(--surface) / 0.92) 60%
+      ),
+      linear-gradient(
+        180deg,
+        rgb(var(--surface) / 0.9),
+        rgb(var(--surface-soft) / 0.7)
+      );
+    animation: timer-bloom 420ms ease;
+    overflow: hidden;
+  }
+
+  .preact-island-stage::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border-radius: 999px;
+    border: 1px dashed rgb(var(--muted-faint) / 0.35);
+    pointer-events: none;
+  }
+
+  .preact-island-ui[data-running="true"] .preact-island-stage {
+    animation: timer-bloom 420ms ease;
+  }
+
+  .preact-island-dial {
+    width: 160px;
+    height: 160px;
+    display: block;
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    pointer-events: none;
+  }
+
+  .preact-island-dial-track {
+    fill: none;
+    stroke: rgb(var(--muted-faint) / 0.45);
+    stroke-width: 10;
+  }
+
+  .preact-island-dial-ticks {
+    fill: none;
+    stroke: rgb(var(--muted-faint) / 0.4);
+    stroke-width: 2;
+    stroke-dasharray: 2 6;
+    opacity: 0.6;
+  }
+
+  .preact-island-dial-progress {
+    fill: none;
+    stroke: rgb(var(--signal) / 0.85);
+    stroke-width: 10;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 60px 60px;
+  }
+
+  .preact-island-dial-hand {
+    stroke: rgb(var(--accent) / 0.85);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .preact-island-dial-center-dot {
+    fill: rgb(var(--surface));
+    stroke: rgb(var(--signal) / 0.7);
+    stroke-width: 2;
+  }
+
+  .preact-island-ui[data-running="true"] .preact-island-dial-center-dot {
+    fill: rgb(var(--surface) / 0.9);
+  }
+
+  .preact-island-stage-title,
+  .preact-island-stage-sub {
+    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
+    color: rgb(var(--muted));
+  }
+
+  .preact-island-stage-time {
+    @apply font-semibold text-slate-900 text-2xl;
+    letter-spacing: 0.04em;
+    color: rgb(var(--ink));
+  }
+
+  .preact-island-action {
+    @apply bg-white mt-1 px-4 py-2 border border-slate-200 rounded-full;
+    @apply font-mono text-[11px] text-slate-600 uppercase tracking-[0.35em];
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    grid-column: 1 / -1;
+    justify-self: center;
+    transition:
+      color 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease,
+      box-shadow 160ms ease;
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+    background-color: rgb(var(--surface));
+    border-color: rgb(var(--stroke));
+    color: rgb(var(--muted));
+  }
+
+  .preact-island-action:hover {
+    @apply border-teal-300 text-teal-700;
+    transform: translateY(-1px);
+    box-shadow: 0 14px 22px rgba(20, 184, 166, 0.2);
+    border-color: rgb(var(--signal) / 0.5);
+    color: rgb(var(--ink-soft));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .preact-island-stage,
+    .preact-island-ui[data-running="true"] .preact-island-stage {
+      animation: none;
+    }
+
+    .preact-island-dial-progress,
+    .preact-island-dial-hand {
+      transition: none;
+    }
+  }
+}

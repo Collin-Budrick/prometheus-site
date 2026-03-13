@@ -5,6 +5,7 @@ import {
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
+import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from './seed'
 
 export type HomeStaticRouteData = {
@@ -12,6 +13,7 @@ export type HomeStaticRouteData = {
   path: string
   snapshotKey?: string
   homeDemoStylesheetHref?: string
+  homeDemoAssets?: HomeDemoAssetMap
   fragmentBootstrapHref?: string
   fragmentOrder?: string[]
   planSignature?: string
@@ -27,6 +29,7 @@ export type HomeStaticBootstrapData = {
   shellSeed: LanguageSeedPayload
   routeSeed: LanguageSeedPayload
   homeDemoStylesheetHref: string | null
+  homeDemoAssets: HomeDemoAssetMap | null
   fragmentBootstrapHref: string | null
   fragmentOrder: string[]
   planSignature: string | null
@@ -47,7 +50,7 @@ export const readJsonScript = <T,>(
   doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
 ): T | null => {
   const element = doc?.getElementById(id)
-  if (!isJsonScriptElement(element) || !element.textContent) return null
+  if (!element || !isJsonScriptElement(element) || !element.textContent) return null
   try {
     return JSON.parse(element.textContent) as T
   } catch {
@@ -73,6 +76,7 @@ export const readStaticHomeBootstrapData = ({
     shellSeed: shell?.languageSeed ?? {},
     routeSeed: route?.languageSeed ?? {},
     homeDemoStylesheetHref: route?.homeDemoStylesheetHref ?? null,
+    homeDemoAssets: route?.homeDemoAssets ?? null,
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??
       buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),

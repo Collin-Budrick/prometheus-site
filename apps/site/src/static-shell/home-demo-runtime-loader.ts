@@ -1,41 +1,71 @@
-import type { HomeDemoActivationResult, HomeDemoKind } from './home-demo-activate'
+import type {
+  HomeDemoAssetDescriptor,
+  HomeDemoRuntimeModule
+} from './home-demo-runtime-types'
+import {
+  HOME_DEMO_RUNTIME_ASSET_PATHS
+} from './home-demo-runtime-types'
+import type { HomeDemoKind } from './home-demo-activate'
 import { resolveStaticAssetUrl } from './static-asset-url'
 
-const HOME_DEMO_RUNTIME_ASSET_PATH = 'build/static-shell/apps/site/src/static-shell/home-demo-runtime.js'
-const HOME_DEMO_STYLESHEET_SELECTOR = 'link[data-home-demo-stylesheet]'
+export type { HomeDemoRuntimeModule } from './home-demo-runtime-types'
 
-export type ActivateHomeDemoOptions = {
-  root: Element
-  kind: HomeDemoKind
-  props: Record<string, unknown>
-}
+type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>
 
-export type HomeDemoRuntimeModule = {
-  activateHomeDemo: (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
-}
-
-type LoadHomeDemoRuntimeOptions = {
-  assetUrl?: string
-  stylesheetHref?: string
+type LoadHomeDemoKindOptions = {
+  asset?: HomeDemoAssetDescriptor | null
   importer?: (url: string) => Promise<HomeDemoRuntimeModule>
 }
 
-let homeDemoRuntimePromise: Promise<HomeDemoRuntimeModule> | null = null
-let homeDemoStylesheetPromise: Promise<void> | null = null
+type WarmHomeDemoKindOptions = LoadHomeDemoKindOptions & {
+  doc?: HomeDemoStylesheetDocument | null
+}
 
-const importHomeDemoRuntime = async (url: string) =>
-  (await import(/* @vite-ignore */ url)) as HomeDemoRuntimeModule
-
-type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>
+type EnsureHomeDemoKindStyleOptions = {
+  kind: HomeDemoKind
+  asset?: HomeDemoAssetDescriptor | null
+  doc?: HomeDemoStylesheetDocument | null
+}
 
 type EnsureHomeDemoStylesheetOptions = {
   doc?: HomeDemoStylesheetDocument | null
   href?: string
 }
 
-const whenHomeDemoStylesheetReady = (link: HTMLLinkElement) =>
+const HOME_DEMO_STYLESHEET_SELECTOR = 'link[data-home-demo-stylesheet]'
+
+const modulePromises = new Map<HomeDemoKind, Promise<HomeDemoRuntimeModule>>()
+const stylePromises = new Map<HomeDemoKind, Promise<void>>()
+const warmPromises = new Map<HomeDemoKind, Promise<void>>()
+let combinedHomeDemoStylesheetPromise: Promise<void> | null = null
+
+const markPerformance = (name: string) => {
+  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
+    return
+  }
+  performance.mark(name)
+}
+
+const importHomeDemoRuntime = async (url: string) =>
+  (await import(/* @vite-ignore */ url)) as HomeDemoRuntimeModule
+
+const isAbsoluteUrl = (value: string) => /^https?:\/\//.test(value)
+
+const resolveModuleUrl = (kind: HomeDemoKind, asset?: HomeDemoAssetDescriptor | null) => {
+  const href = asset?.moduleHref || HOME_DEMO_RUNTIME_ASSET_PATHS[kind]
+  if (isAbsoluteUrl(href) || href.startsWith('/')) {
+    return href
+  }
+  return resolveStaticAssetUrl(href)
+}
+
+const getKindStyleSelector = (kind: HomeDemoKind) => `link[data-home-demo-style-kind="${kind}"]`
+const getKindModulePreloadSelector = (kind: HomeDemoKind) =>
+  `link[data-home-demo-module-kind="${kind}"]`
+
+const whenStylesheetReady = (link: HTMLLinkElement) =>
   new Promise<void>((resolve) => {
-    if (link.rel === 'stylesheet' || link.sheet) {
+    if (link.rel === 'stylesheet' && link.sheet) {
       resolve()
       return
     }
@@ -48,32 +78,136 @@ const whenHomeDemoStylesheetReady = (link: HTMLLinkElement) =>
 
     link.addEventListener('load', handleReady, { once: true })
     link.addEventListener('error', handleReady, { once: true })
-    link.setAttribute('rel', 'stylesheet')
-    link.removeAttribute('as')
+    if (link.rel !== 'stylesheet') {
+      link.setAttribute('rel', 'stylesheet')
+      link.removeAttribute('as')
+    }
   })
+
+const ensureModulePreloadLink = (
+  kind: HomeDemoKind,
+  href: string,
+  doc: HomeDemoStylesheetDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  if (!doc) return
+  const existingLink = doc.querySelector(getKindModulePreloadSelector(kind)) as HTMLLinkElement | null
+  if (existingLink) return
+
+  const link = doc.createElement('link')
+  link.setAttribute('rel', 'modulepreload')
+  link.setAttribute('href', href)
+  link.setAttribute('data-home-demo-module-kind', kind)
+  doc.head.appendChild(link)
+}
+
+export const ensureHomeDemoKindStyle = ({
+  kind,
+  asset,
+  doc = typeof document !== 'undefined' ? document : null
+}: EnsureHomeDemoKindStyleOptions) => {
+  const existingPromise = stylePromises.get(kind)
+  if (existingPromise) {
+    return existingPromise
+  }
+
+  const href = asset?.styleHref ?? null
+  if (!doc || !href) {
+    const resolvedPromise = Promise.resolve()
+    stylePromises.set(kind, resolvedPromise)
+    return resolvedPromise
+  }
+
+  const existingLink = doc.querySelector(getKindStyleSelector(kind)) as HTMLLinkElement | null
+  if (existingLink) {
+    const promise = whenStylesheetReady(existingLink)
+    stylePromises.set(kind, promise)
+    return promise
+  }
+
+  const link = doc.createElement('link')
+  link.setAttribute('rel', 'preload')
+  link.setAttribute('as', 'style')
+  link.setAttribute('href', href)
+  link.setAttribute('data-home-demo-style-kind', kind)
+  doc.head.appendChild(link)
+
+  const promise = whenStylesheetReady(link).catch((error) => {
+    console.warn(`Home demo stylesheet failed to load for ${kind}:`, error)
+  })
+  stylePromises.set(kind, promise)
+  return promise
+}
+
+export const resolveHomeDemoRuntimeUrl = (
+  kind: HomeDemoKind,
+  options?: Parameters<typeof resolveStaticAssetUrl>[1]
+) => {
+  const href = HOME_DEMO_RUNTIME_ASSET_PATHS[kind]
+  return resolveStaticAssetUrl(href, options)
+}
+
+export const loadHomeDemoKind = (
+  kind: HomeDemoKind,
+  {
+    asset,
+    importer = importHomeDemoRuntime
+  }: LoadHomeDemoKindOptions = {}
+) => {
+  const existingPromise = modulePromises.get(kind)
+  if (existingPromise) {
+    return existingPromise
+  }
+
+  const promise = importer(resolveModuleUrl(kind, asset))
+  modulePromises.set(kind, promise)
+  return promise
+}
+
+export const warmHomeDemoKind = (
+  kind: HomeDemoKind,
+  asset?: HomeDemoAssetDescriptor | null,
+  {
+    importer = importHomeDemoRuntime,
+    doc = typeof document !== 'undefined' ? document : null
+  }: WarmHomeDemoKindOptions = {}
+) => {
+  const existingPromise = warmPromises.get(kind)
+  if (existingPromise) {
+    return existingPromise
+  }
+
+  markPerformance(`prom:home-demo:warm-start:${kind}`)
+  const moduleHref = resolveModuleUrl(kind, asset)
+  ensureModulePreloadLink(kind, moduleHref, doc)
+
+  const promise = Promise.all([
+    ensureHomeDemoKindStyle({ kind, asset, doc }),
+    loadHomeDemoKind(kind, { asset, importer })
+  ]).then(() => {
+    markPerformance(`prom:home-demo:warm-ready:${kind}`)
+  })
+
+  warmPromises.set(kind, promise)
+  return promise
+}
 
 export const ensureHomeDemoStylesheet = ({
   doc = typeof document !== 'undefined' ? document : null,
   href
 }: EnsureHomeDemoStylesheetOptions = {}) => {
-  if (homeDemoStylesheetPromise) {
-    return homeDemoStylesheetPromise
+  if (combinedHomeDemoStylesheetPromise) {
+    return combinedHomeDemoStylesheetPromise
   }
 
-  if (!doc) {
-    homeDemoStylesheetPromise = Promise.resolve()
-    return homeDemoStylesheetPromise
+  if (!doc || !href) {
+    combinedHomeDemoStylesheetPromise = Promise.resolve()
+    return combinedHomeDemoStylesheetPromise
   }
 
   const existingLink = doc.querySelector(HOME_DEMO_STYLESHEET_SELECTOR) as HTMLLinkElement | null
   if (existingLink) {
-    homeDemoStylesheetPromise = whenHomeDemoStylesheetReady(existingLink)
-    return homeDemoStylesheetPromise
-  }
-
-  if (!href) {
-    homeDemoStylesheetPromise = Promise.resolve()
-    return homeDemoStylesheetPromise
+    combinedHomeDemoStylesheetPromise = whenStylesheetReady(existingLink)
+    return combinedHomeDemoStylesheetPromise
   }
 
   const link = doc.createElement('link')
@@ -81,25 +215,13 @@ export const ensureHomeDemoStylesheet = ({
   link.setAttribute('href', href)
   link.setAttribute('data-home-demo-stylesheet', 'true')
   doc.head.appendChild(link)
-  homeDemoStylesheetPromise = whenHomeDemoStylesheetReady(link)
-  return homeDemoStylesheetPromise
-}
-
-export const resolveHomeDemoRuntimeUrl = (options?: Parameters<typeof resolveStaticAssetUrl>[1]) =>
-  resolveStaticAssetUrl(HOME_DEMO_RUNTIME_ASSET_PATH, options)
-
-export const loadHomeDemoRuntime = ({
-  assetUrl = resolveHomeDemoRuntimeUrl(),
-  stylesheetHref,
-  importer = importHomeDemoRuntime
-}: LoadHomeDemoRuntimeOptions = {}) => {
-  if (!homeDemoRuntimePromise) {
-    homeDemoRuntimePromise = ensureHomeDemoStylesheet({ href: stylesheetHref }).then(() => importer(assetUrl))
-  }
-  return homeDemoRuntimePromise
+  combinedHomeDemoStylesheetPromise = whenStylesheetReady(link)
+  return combinedHomeDemoStylesheetPromise
 }
 
 export const resetHomeDemoRuntimeLoaderForTests = () => {
-  homeDemoRuntimePromise = null
-  homeDemoStylesheetPromise = null
+  modulePromises.clear()
+  stylePromises.clear()
+  warmPromises.clear()
+  combinedHomeDemoStylesheetPromise = null
 }

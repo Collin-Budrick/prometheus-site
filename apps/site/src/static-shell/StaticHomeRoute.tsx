@@ -5,6 +5,7 @@ import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
 import homeDemoStylesheetHref from './home-static-deferred.css?url'
+import { createHomeDemoAssetMap } from './home-demo-assets'
 import {
   emptyPlannerDemoCopy,
   emptyPreactIslandCopy,
@@ -212,6 +213,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
   const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({ lang })
+  const homeDemoAssets = createHomeDemoAssetMap()
   const columns = routeState.cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
     (acc, card) => {
       acc[card.column].push(card)
@@ -310,6 +312,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           authPolicy: routeConfig?.authPolicy ?? 'public',
           bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
           homeDemoStylesheetHref,
+          homeDemoAssets,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,

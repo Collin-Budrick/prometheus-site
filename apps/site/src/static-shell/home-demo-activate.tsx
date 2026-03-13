@@ -32,6 +32,21 @@ const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
 const reactDomPreview = '<section> <h2> <p> <div.badge>'
 let didWarnMissingReactBinaryCopy = false
 
+const scheduleHomeDemoEnhancement = (effect: () => void) => {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    effect()
+    return () => undefined
+  }
+
+  const handle = window.requestAnimationFrame(() => {
+    effect()
+  })
+
+  return () => {
+    window.cancelAnimationFrame(handle)
+  }
+}
+
 const getCurrentLang = (): Lang => {
   return normalizeStaticShellLang(document.documentElement.lang)
 }
@@ -779,6 +794,7 @@ const activatePreactIslandDemo = (
   const dialHand = root.querySelector<SVGLineElement>('.preact-island-dial-hand')
   let remaining = preactCountdownSeconds
   let timeoutHandle = 0
+  let cancelDeferredTick: () => void = () => undefined
 
   const clearTick = () => {
     if (!timeoutHandle) return
@@ -850,10 +866,13 @@ const activatePreactIslandDemo = (
   root.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
-  scheduleTick()
+  cancelDeferredTick = scheduleHomeDemoEnhancement(() => {
+    scheduleTick()
+  })
 
   return {
     cleanup: () => {
+      cancelDeferredTick()
       clearTick()
       root.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -861,23 +880,49 @@ const activatePreactIslandDemo = (
   }
 }
 
+export const activatePlannerHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
+  ensureStaticHomeDemoSeed()
+  return activatePlannerDemo(getRootElement(root))
+}
+
+export const activateWasmRendererHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
+  ensureStaticHomeDemoSeed()
+  return activateWasmRendererDemo(getRootElement(root))
+}
+
+export const activateReactBinaryHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
+  ensureStaticHomeDemoSeed()
+  return activateReactBinaryDemo(getRootElement(root))
+}
+
+export const activatePreactIslandHomeDemo = async ({
+  root,
+  props
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
+  ensureStaticHomeDemoSeed()
+  return activatePreactIslandDemo(getRootElement(root), props)
+}
+
 export const activateHomeDemo = async ({
   root,
   kind,
   props
 }: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult> => {
-  const element = getRootElement(root)
-  ensureStaticHomeDemoSeed()
-
   switch (kind) {
     case 'planner':
-      return activatePlannerDemo(element)
+      return activatePlannerHomeDemo({ root, props })
     case 'wasm-renderer':
-      return activateWasmRendererDemo(element)
+      return activateWasmRendererHomeDemo({ root, props })
     case 'react-binary':
-      return activateReactBinaryDemo(element)
+      return activateReactBinaryHomeDemo({ root, props })
     case 'preact-island':
-      return activatePreactIslandDemo(element, props)
+      return activatePreactIslandHomeDemo({ root, props })
     default:
       throw new Error(`Unsupported home demo: ${kind satisfies never}`)
   }

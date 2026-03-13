@@ -5,11 +5,15 @@ import {
   seedStaticHomeCopy
 } from './home-copy-store'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import type { HomeDemoActivationResult } from './home-demo-activate'
 import {
-  type HomeDemoActivationResult,
-  type HomeDemoKind
-} from './home-demo-activate'
-import { ensureHomeDemoStylesheet, loadHomeDemoRuntime } from './home-demo-runtime-loader'
+  bindHomeDemoActivation,
+  pruneDetachedHomeDemos,
+  type HomeDemoActivationManager,
+  type HomeDemoController
+} from './home-demo-controller'
+import { normalizeHomeDemoAssetMap, type HomeDemoAssetMap } from './home-demo-runtime-types'
+import { ensureHomeDemoStylesheet } from './home-demo-runtime-loader'
 import {
   fetchHomeFragmentBatch,
   fetchHomeFragmentBootstrapSelection
@@ -53,6 +57,9 @@ import {
 } from './snapshot-client'
 import type { StaticHomeCardStage } from './constants'
 
+export { bindHomeDemoActivation, pruneDetachedHomeDemos } from './home-demo-controller'
+export type { HomeDemoController } from './home-demo-controller'
+
 type Theme = 'light' | 'dark'
 
 type HomeControllerState = {
@@ -61,15 +68,13 @@ type HomeControllerState = {
   path: string
   fragmentOrder: string[]
   planSignature: string
-  fragmentOrder: string[]
-  planSignature: string
+  assets: HomeDemoAssetMap
   homeDemoStylesheetHref: string | null
   homeFragmentBootstrapHref: string | null
   fetchAbort: AbortController | null
   cleanupFns: Array<() => void>
   demoRenders: Map<Element, HomeDemoActivationResult>
   pendingDemoRoots: Set<Element>
-  demoObservationReady: boolean
   demoObservationReady: boolean
   patchQueue: StaticHomePatchQueue | null
   destroyed: boolean
@@ -365,39 +370,6 @@ export const scheduleStaticHomePaintReady = ({
   }
 }
 
-export type HomeDemoController = Pick<
-  HomeControllerState,
-  'demoRenders' | 'pendingDemoRoots' | 'destroyed' | 'path' | 'lang' | 'fragmentOrder' | 'planSignature'
->
-export type HomeDemoController = Pick<
-  HomeControllerState,
-  'demoRenders' | 'pendingDemoRoots' | 'destroyed' | 'path' | 'lang' | 'fragmentOrder' | 'planSignature'
->
-
-type ActivateHomeDemoFn = (options: {
-  root: Element
-  kind: HomeDemoKind
-  props: Record<string, unknown>
-}) => Promise<HomeDemoActivationResult>
-
-type HomeDemoActivationManager = {
-  observeWithin: (root: ParentNode) => void
-  destroy: () => void
-}
-
-type ActivateHomeDemosOptions = {
-  activate?: ActivateHomeDemoFn
-  root?: ParentNode
-  limit?: number
-}
-
-type BindHomeDemoActivationOptions = {
-  controller: HomeDemoController
-  activate?: ActivateHomeDemoFn
-  scheduleTask?: typeof scheduleStaticShellTask
-  ObserverImpl?: typeof IntersectionObserver
-}
-
 type ScheduleStaticHomePaintReadyOptions = {
   root?: ParentNode | Element | null
   requestFrame?: typeof requestAnimationFrame
@@ -437,8 +409,6 @@ type HydratableHomeFragmentCard = {
 
 const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = '0px'
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15
-const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
-const HOME_DEMO_ACTIVATION_THRESHOLD = 0.15
 const HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS = 1200
 const HOME_DEMO_OBSERVATION_RETRY_DELAY_MS = 400
 const HOME_DEMO_OBSERVATION_RETRY_ATTEMPTS = 5
@@ -812,15 +782,11 @@ export const bindHomeFragmentHydration = ({
 }
 
 const scheduleHomeDeferredAction = ({
-const scheduleHomeDeferredAction = ({
   controller,
-  idleTimeoutMs,
-  run,
   idleTimeoutMs,
   run,
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null
-}: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
 }: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
   if (!win || !doc) {
     return {
@@ -828,6 +794,9 @@ const scheduleHomeDeferredAction = ({
       trigger: () => false
     }
   }
+
+  const liveWin = win
+  const liveDoc = doc
 
   let cancelled = false
   let started = false
@@ -837,41 +806,40 @@ const scheduleHomeDeferredAction = ({
 
   const cleanupTriggers = () => {
     HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
-      win.removeEventListener(eventName, runDeferredRevalidation, eventOptions)
+      liveWin.removeEventListener(eventName, runDeferredRevalidation, eventOptions)
     })
-    doc.removeEventListener('visibilitychange', handleVisibilityChange)
+    liveDoc.removeEventListener('visibilitychange', handleVisibilityChange)
 
-    if (idleId !== null && typeof win.cancelIdleCallback === 'function') {
-      win.cancelIdleCallback(idleId)
+    if (idleId !== null && typeof liveWin.cancelIdleCallback === 'function') {
+      liveWin.cancelIdleCallback(idleId)
       idleId = null
     }
     if (timeoutId !== null) {
-      win.clearTimeout(timeoutId)
+      liveWin.clearTimeout(timeoutId)
       timeoutId = null
     }
   }
 
   function runDeferredRevalidation() {
-    if (cancelled || started || controller.destroyed || doc.visibilityState === 'hidden') {
+    if (cancelled || started || controller.destroyed || liveDoc.visibilityState === 'hidden') {
       return false
     }
 
     started = true
     cleanupTriggers()
     run()
-    run()
     return true
   }
 
   function handleVisibilityChange() {
-    if (doc.visibilityState !== 'visible') return
+    if (liveDoc.visibilityState !== 'visible') return
     runDeferredRevalidation()
   }
 
   HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
-    win.addEventListener(eventName, runDeferredRevalidation, eventOptions)
+    liveWin.addEventListener(eventName, runDeferredRevalidation, eventOptions)
   })
-  doc.addEventListener('visibilitychange', handleVisibilityChange)
+  liveDoc.addEventListener('visibilitychange', handleVisibilityChange)
 
   const triggerIdleRevalidation = () => {
     idleId = null
@@ -879,17 +847,12 @@ const scheduleHomeDeferredAction = ({
     runDeferredRevalidation()
   }
 
-  if (typeof win.requestIdleCallback === 'function') {
-    idleId = win.requestIdleCallback(triggerIdleRevalidation, {
-      timeout: idleTimeoutMs
+  if (typeof liveWin.requestIdleCallback === 'function') {
+    idleId = liveWin.requestIdleCallback(triggerIdleRevalidation, {
       timeout: idleTimeoutMs
     })
   } else {
-    timeoutId = win.setTimeout(
-      triggerIdleRevalidation,
-      idleTimeoutMs
-      idleTimeoutMs
-    ) as unknown as number
+    timeoutId = liveWin.setTimeout(triggerIdleRevalidation, idleTimeoutMs) as unknown as number
   }
 
   return {
@@ -1044,7 +1007,6 @@ export const scheduleHomePostLcpTasks = ({
   let cancelled = false
   let deferredRevalidation: HomeDeferredRevalidationHandle | null = null
   let deferredDemoObservation: HomeDeferredRevalidationHandle | null = null
-  let deferredDemoObservation: HomeDeferredRevalidationHandle | null = null
   let postLcpStarted = false
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -1077,13 +1039,6 @@ export const scheduleHomePostLcpTasks = ({
       win,
       doc
     })
-    deferredDemoObservation = scheduleHomeDeferredDemoObservation({
-      controller,
-      homeDemoActivation,
-      root,
-      win,
-      doc
-    })
   }
 
   void lcpGate.wait.then(() => {
@@ -1096,368 +1051,8 @@ export const scheduleHomePostLcpTasks = ({
     win?.removeEventListener('pageshow', handlePageShow)
     deferredDemoObservation?.cleanup()
     deferredDemoObservation = null
-    deferredDemoObservation?.cleanup()
-    deferredDemoObservation = null
     deferredRevalidation?.cleanup()
     deferredRevalidation = null
-  }
-}
-
-const isHomeDemoKind = (value: string | undefined): value is HomeDemoKind =>
-  value === 'planner' || value === 'wasm-renderer' || value === 'react-binary' || value === 'preact-island'
-
-const resolveHomeDemoKind = (root: Element) => {
-  const kind = (root as HTMLElement).dataset.demoKind ?? (root as HTMLElement).dataset.homeDemoRoot
-  return isHomeDemoKind(kind) ? kind : null
-}
-
-const isConnectedHomeDemoRoot = (root: Element) =>
-  (root as Element & { isConnected?: boolean }).isConnected !== false
-
-const activateHomeDemoFromRuntime: ActivateHomeDemoFn = async (options) => {
-  const runtime = await loadHomeDemoRuntime({
-    stylesheetHref: activeController?.homeDemoStylesheetHref ?? undefined
-  })
-  return runtime.activateHomeDemo(options)
-}
-
-const shouldSkipHomeDemoRoot = (controller: HomeDemoController, root: Element) =>
-  controller.destroyed ||
-  !isConnectedHomeDemoRoot(root) ||
-  root.getAttribute('data-home-demo-active') === 'true' ||
-  controller.demoRenders.has(root) ||
-  controller.pendingDemoRoots.has(root)
-
-const getImmediateHomeDemoVisibilityRatio = (root: Element) => {
-  if (typeof window === 'undefined' || typeof root.getBoundingClientRect !== 'function') {
-    return null
-  }
-
-  const rect = root.getBoundingClientRect()
-  const width = typeof rect.width === 'number' ? rect.width : rect.right - rect.left
-  const height = typeof rect.height === 'number' ? rect.height : rect.bottom - rect.top
-  if (width <= 0 || height <= 0) {
-    return 0
-  }
-
-  const viewportWidth =
-    typeof window.innerWidth === 'number'
-      ? window.innerWidth
-      : document.documentElement?.clientWidth ?? 0
-  const viewportHeight =
-    typeof window.innerHeight === 'number'
-      ? window.innerHeight
-      : document.documentElement?.clientHeight ?? 0
-  if (viewportWidth <= 0 || viewportHeight <= 0) {
-    return 0
-  }
-
-  const intersectionWidth = Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0)
-  const intersectionHeight = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0)
-  if (intersectionWidth <= 0 || intersectionHeight <= 0) {
-    return 0
-  }
-
-  const visibleArea = intersectionWidth * intersectionHeight
-  const totalArea = width * height
-  if (totalArea <= 0) {
-    return 0
-  }
-
-  return visibleArea / totalArea
-}
-
-export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
-  Array.from(controller.demoRenders.entries()).forEach(([root, result]) => {
-    if (isConnectedHomeDemoRoot(root)) return
-    result.cleanup()
-    controller.demoRenders.delete(root)
-  })
-
-  Array.from(controller.pendingDemoRoots).forEach((root) => {
-    if (isConnectedHomeDemoRoot(root)) return
-    controller.pendingDemoRoots.delete(root)
-  })
-}
-
-const activateHomeDemoRoot = async (
-  controller: HomeDemoController,
-  demoRoot: HTMLElement,
-  activate: ActivateHomeDemoFn = activateHomeDemoFromRuntime
-) => {
-  if (shouldSkipHomeDemoRoot(controller, demoRoot)) return false
-
-  const kind = resolveHomeDemoKind(demoRoot)
-  if (!kind) return false
-
-  controller.pendingDemoRoots.add(demoRoot)
-
-  try {
-    const result = await activate({
-      root: demoRoot,
-      kind,
-      props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
-    })
-
-    if (controller.destroyed || !isConnectedHomeDemoRoot(demoRoot)) {
-      result.cleanup()
-      return false
-    }
-
-    controller.demoRenders.set(demoRoot, result)
-    const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
-    if (fragmentCard) {
-      void persistInitialFragmentCardHeights({
-        root: fragmentCard,
-        routeContext: {
-          path: controller.path,
-          lang: controller.lang,
-          fragmentOrder: controller.fragmentOrder,
-          planSignature: controller.planSignature
-        }
-      }).catch((error) => {
-        console.error('Static home demo height persistence failed:', error)
-      })
-    }
-    const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
-    if (fragmentCard) {
-      void persistInitialFragmentCardHeights({
-        root: fragmentCard,
-        routeContext: {
-          path: controller.path,
-          lang: controller.lang,
-          fragmentOrder: controller.fragmentOrder,
-          planSignature: controller.planSignature
-        }
-      }).catch((error) => {
-        console.error('Static home demo height persistence failed:', error)
-      })
-    }
-    return true
-  } catch (error) {
-    console.error(`Failed to activate home demo: ${kind}`, error)
-    return false
-  } finally {
-    controller.pendingDemoRoots.delete(demoRoot)
-  }
-}
-
-export const activateHomeDemos = async (
-  controller: HomeDemoController,
-  options: ActivateHomeDemosOptions = {}
-) => {
-  if (controller.destroyed) return 0
-
-  pruneDetachedHomeDemos(controller)
-
-  const root = options.root ?? (typeof document !== 'undefined' ? document : null)
-  if (!root) return 0
-
-  const activate = options.activate ?? activateHomeDemoFromRuntime
-  const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
-  let activatedCount = 0
-
-  for (const demoRoot of demoRoots) {
-    if (controller.destroyed) return activatedCount
-    if (typeof options.limit === 'number' && activatedCount >= options.limit) {
-      return activatedCount
-    }
-
-    if (await activateHomeDemoRoot(controller, demoRoot, activate)) {
-      activatedCount += 1
-    }
-  }
-
-  return activatedCount
-}
-
-export const bindHomeDemoActivation = ({
-  controller,
-  activate = activateHomeDemoFromRuntime,
-  scheduleTask = scheduleStaticShellTask,
-  ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
-    .IntersectionObserver
-}: BindHomeDemoActivationOptions): HomeDemoActivationManager => {
-  const observedRoots = new Set<Element>()
-  const observedOrder = new Map<Element, number>()
-  const visibleRoots = new Set<Element>()
-  const queuedRoots = new Set<Element>()
-  const activationQueue: HTMLElement[] = []
-  const observer =
-    typeof ObserverImpl === 'function'
-      ? new ObserverImpl(
-          (entries) => {
-            if (controller.destroyed) return
-
-            entries.forEach((entry) => {
-              const demoRoot = entry.target as HTMLElement
-              if (!observedRoots.has(demoRoot)) return
-
-              if (
-                entry.isIntersecting &&
-                (typeof entry.intersectionRatio !== 'number' ||
-                  entry.intersectionRatio >= HOME_DEMO_ACTIVATION_THRESHOLD)
-              ) {
-                visibleRoots.add(demoRoot)
-                enqueueDemoRoot(demoRoot)
-                return
-              }
-
-              visibleRoots.delete(demoRoot)
-            })
-          },
-          {
-            root: null,
-            rootMargin: HOME_DEMO_ACTIVATION_ROOT_MARGIN,
-            threshold: HOME_DEMO_ACTIVATION_THRESHOLD
-          }
-        )
-      : null
-  let activationInFlight = false
-  let cancelScheduledActivation: (() => void) | null = null
-  let nextObservedOrder = 0
-
-  const pruneQueuedRoots = () => {
-    let index = 0
-    while (index < activationQueue.length) {
-      const demoRoot = activationQueue[index]
-      if (visibleRoots.has(demoRoot) && !shouldSkipHomeDemoRoot(controller, demoRoot)) {
-        index += 1
-        continue
-      }
-
-      queuedRoots.delete(demoRoot)
-      activationQueue.splice(index, 1)
-    }
-  }
-
-  const scheduleNextActivation = () => {
-    if (
-      controller.destroyed ||
-      activationInFlight ||
-      cancelScheduledActivation ||
-      activationQueue.length === 0
-    ) {
-      return
-    }
-
-    cancelScheduledActivation = scheduleTask(
-      () => {
-        cancelScheduledActivation = null
-        if (controller.destroyed) return
-
-        activationInFlight = true
-        void activateNextVisibleHomeDemo().finally(() => {
-          activationInFlight = false
-          if (controller.destroyed) return
-          pruneQueuedRoots()
-          scheduleNextActivation()
-        })
-      },
-      {
-        priority: 'background',
-        timeoutMs: 250,
-        waitForPaint: true
-      }
-    )
-  }
-
-  const enqueueDemoRoot = (demoRoot: HTMLElement) => {
-    if (
-      controller.destroyed ||
-      !visibleRoots.has(demoRoot) ||
-      shouldSkipHomeDemoRoot(controller, demoRoot) ||
-      queuedRoots.has(demoRoot)
-    ) {
-      return
-    }
-
-    queuedRoots.add(demoRoot)
-    const demoRootOrder = observedOrder.get(demoRoot) ?? Number.MAX_SAFE_INTEGER
-    let insertIndex = activationQueue.length
-    while (insertIndex > 0) {
-      const queuedRoot = activationQueue[insertIndex - 1]
-      const queuedRootOrder = observedOrder.get(queuedRoot) ?? Number.MAX_SAFE_INTEGER
-      if (queuedRootOrder <= demoRootOrder) {
-        break
-      }
-      insertIndex -= 1
-    }
-    activationQueue.splice(insertIndex, 0, demoRoot)
-    scheduleNextActivation()
-  }
-
-  const activateNextVisibleHomeDemo = async () => {
-    if (controller.destroyed) return
-
-    pruneDetachedHomeDemos(controller)
-
-    while (activationQueue.length > 0) {
-      const demoRoot = activationQueue.shift()
-      if (!demoRoot) return
-      queuedRoots.delete(demoRoot)
-
-      if (!visibleRoots.has(demoRoot) || shouldSkipHomeDemoRoot(controller, demoRoot)) {
-        continue
-      }
-
-      const activated = await activateHomeDemoRoot(controller, demoRoot, activate)
-      if (activated && observer && observedRoots.delete(demoRoot)) {
-        observer.unobserve(demoRoot)
-        observedOrder.delete(demoRoot)
-        visibleRoots.delete(demoRoot)
-      }
-      if (activated) {
-        return
-      }
-    }
-  }
-
-  return {
-    observeWithin(root) {
-      if (controller.destroyed) return
-
-      pruneDetachedHomeDemos(controller)
-
-      const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
-      demoRoots.forEach((demoRoot) => {
-        if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
-
-        if (!observer) {
-          if (!observedOrder.has(demoRoot)) {
-            observedOrder.set(demoRoot, nextObservedOrder)
-            nextObservedOrder += 1
-          }
-          visibleRoots.add(demoRoot)
-          enqueueDemoRoot(demoRoot)
-          return
-        }
-
-        if (observedRoots.has(demoRoot)) return
-        observedRoots.add(demoRoot)
-        observedOrder.set(demoRoot, nextObservedOrder)
-        nextObservedOrder += 1
-        observer.observe(demoRoot)
-        const immediateVisibilityRatio = getImmediateHomeDemoVisibilityRatio(demoRoot)
-        if (
-          typeof immediateVisibilityRatio === 'number' &&
-          immediateVisibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD
-        ) {
-          visibleRoots.add(demoRoot)
-          enqueueDemoRoot(demoRoot)
-        }
-      })
-    },
-    destroy() {
-      cancelScheduledActivation?.()
-      cancelScheduledActivation = null
-      observer?.disconnect()
-      observedRoots.clear()
-      observedOrder.clear()
-      visibleRoots.clear()
-      queuedRoots.clear()
-      activationQueue.length = 0
-    }
   }
 }
 
@@ -1672,15 +1267,13 @@ export const bootstrapStaticHome = async () => {
     path: data.currentPath,
     fragmentOrder: data.fragmentOrder,
     planSignature: data.planSignature ?? '',
-    fragmentOrder: data.fragmentOrder,
-    planSignature: data.planSignature ?? '',
+    assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
     homeDemoStylesheetHref: data.homeDemoStylesheetHref,
     homeFragmentBootstrapHref: data.fragmentBootstrapHref,
     fetchAbort: null,
     cleanupFns: [],
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),
-    demoObservationReady: false,
     demoObservationReady: false,
     patchQueue: null,
     destroyed: false
@@ -1706,20 +1299,8 @@ export const bootstrapStaticHome = async () => {
       fragmentOrder: data.fragmentOrder,
       planSignature: data.planSignature ?? ''
     },
-    routeContext: {
-      path: controller.path,
-      lang: controller.lang,
-      fragmentOrder: data.fragmentOrder,
-      planSignature: data.planSignature ?? ''
-    },
     onPatchedBody: (body) => {
       pruneDetachedHomeDemos(controller)
-      if (!controller.demoObservationReady) {
-        return
-      }
-      if (!controller.demoObservationReady) {
-        return
-      }
       homeDemoActivation.observeWithin(body)
     }
   })
