@@ -432,6 +432,9 @@ const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = '0px'
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15
 const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
 const HOME_DEMO_ACTIVATION_THRESHOLD = 0.15
+const HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS = 1200
+const HOME_DEMO_OBSERVATION_RETRY_DELAY_MS = 400
+const HOME_DEMO_OBSERVATION_RETRY_ATTEMPTS = 5
 const HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000
 const HOME_DEFERRED_REVALIDATION_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
@@ -480,6 +483,13 @@ type ScheduleHomeDeferredDemoObservationOptions = {
   doc?: HomeDeferredRevalidationDocument | null
 }
 
+type ScheduleInitialHomeDemoObservationOptions = {
+  controller: HomeControllerState
+  homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>
+  root?: ParentNode | null
+  scheduleTask?: typeof scheduleStaticShellTask
+}
+
 const isStaticHomeCardStage = (value: string | null): value is StaticHomeCardStage =>
   value === 'critical' || value === 'anchor' || value === 'deferred'
 
@@ -514,6 +524,20 @@ const collectRefreshableHomeFragmentCards = (root: ParentNode = document): Hydra
     }
     return [{ card, id, stage }]
   })
+
+const armHomeDemoObservation = (
+  controller: HomeControllerState,
+  homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>,
+  root: ParentNode | null
+) => {
+  if (!root || controller.destroyed) {
+    return
+  }
+
+  controller.demoObservationReady = true
+  pruneDetachedHomeDemos(controller)
+  homeDemoActivation.observeWithin(root)
+}
 
 export const bindHomeFragmentHydration = ({
   controller,
@@ -884,8 +908,8 @@ const scheduleHomeDeferredRevalidation = ({
   })
 
 const scheduleHomeDeferredDemoObservation = ({
-  controller: _controller,
-  homeDemoActivation: _homeDemoActivation,
+  controller,
+  homeDemoActivation,
   root = typeof document !== 'undefined' ? document : null,
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null
@@ -897,9 +921,88 @@ const scheduleHomeDeferredDemoObservation = ({
     }
   }
 
-  return {
-    cleanup: () => undefined,
-    trigger: () => false
+  return scheduleHomeDeferredAction({
+    controller,
+    idleTimeoutMs: HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS,
+    win,
+    doc,
+    run: () => {
+      armHomeDemoObservation(controller, homeDemoActivation, root)
+    }
+  })
+}
+
+export const scheduleInitialHomeDemoObservation = ({
+  controller,
+  homeDemoActivation,
+  root = typeof document !== 'undefined' ? document : null,
+  scheduleTask = scheduleStaticShellTask
+}: ScheduleInitialHomeDemoObservationOptions) => {
+  if (!root) {
+    return () => undefined
+  }
+
+  return scheduleTask(
+    () => {
+      armHomeDemoObservation(controller, homeDemoActivation, root)
+    },
+    {
+      priority: 'background',
+      timeoutMs: HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS,
+      waitForPaint: true
+    }
+  )
+}
+
+const scheduleHomeDemoObservationRetries = ({
+  controller,
+  homeDemoActivation,
+  root = typeof document !== 'undefined' ? document : null,
+  setTimer = typeof window !== 'undefined' ? window.setTimeout.bind(window) : null,
+  clearTimer = typeof window !== 'undefined' ? window.clearTimeout.bind(window) : null
+}: {
+  controller: HomeControllerState
+  homeDemoActivation: Pick<HomeDemoActivationManager, 'observeWithin'>
+  root?: ParentNode | null
+  setTimer?: typeof setTimeout | null
+  clearTimer?: typeof clearTimeout | null
+}) => {
+  if (!root || !setTimer || !clearTimer) {
+    return () => undefined
+  }
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+  let attemptsRemaining = HOME_DEMO_OBSERVATION_RETRY_ATTEMPTS
+
+  const queueNext = () => {
+    if (controller.destroyed || attemptsRemaining <= 0) {
+      return
+    }
+
+    attemptsRemaining -= 1
+    timeoutHandle = setTimer(() => {
+      timeoutHandle = null
+      if (controller.destroyed) {
+        return
+      }
+      if (controller.demoRenders.size > 0 || controller.pendingDemoRoots.size > 0) {
+        return
+      }
+      homeDemoActivation.observeWithin(root)
+      if (controller.demoRenders.size > 0 || controller.pendingDemoRoots.size > 0) {
+        return
+      }
+      queueNext()
+    }, HOME_DEMO_OBSERVATION_RETRY_DELAY_MS)
+  }
+
+  queueNext()
+
+  return () => {
+    if (timeoutHandle !== null) {
+      clearTimer(timeoutHandle)
+      timeoutHandle = null
+    }
   }
 }
 
@@ -933,6 +1036,7 @@ export const scheduleHomePostLcpTasks = ({
     if (!event.persisted || controller.destroyed) return
     updateFragmentStatus(controller.lang, 'idle')
     homeFragmentHydration.retryPending()
+    deferredDemoObservation?.trigger()
     if (deferredRevalidation?.trigger()) return
     void refreshAuth(controller).catch((error) => {
       console.error('Static home auth dock refresh failed:', error)
@@ -999,6 +1103,45 @@ const shouldSkipHomeDemoRoot = (controller: HomeDemoController, root: Element) =
   root.getAttribute('data-home-demo-active') === 'true' ||
   controller.demoRenders.has(root) ||
   controller.pendingDemoRoots.has(root)
+
+const getImmediateHomeDemoVisibilityRatio = (root: Element) => {
+  if (typeof window === 'undefined' || typeof root.getBoundingClientRect !== 'function') {
+    return null
+  }
+
+  const rect = root.getBoundingClientRect()
+  const width = typeof rect.width === 'number' ? rect.width : rect.right - rect.left
+  const height = typeof rect.height === 'number' ? rect.height : rect.bottom - rect.top
+  if (width <= 0 || height <= 0) {
+    return 0
+  }
+
+  const viewportWidth =
+    typeof window.innerWidth === 'number'
+      ? window.innerWidth
+      : document.documentElement?.clientWidth ?? 0
+  const viewportHeight =
+    typeof window.innerHeight === 'number'
+      ? window.innerHeight
+      : document.documentElement?.clientHeight ?? 0
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return 0
+  }
+
+  const intersectionWidth = Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0)
+  const intersectionHeight = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0)
+  if (intersectionWidth <= 0 || intersectionHeight <= 0) {
+    return 0
+  }
+
+  const visibleArea = intersectionWidth * intersectionHeight
+  const totalArea = width * height
+  if (totalArea <= 0) {
+    return 0
+  }
+
+  return visibleArea / totalArea
+}
 
 export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
   Array.from(controller.demoRenders.entries()).forEach(([root, result]) => {
@@ -1257,6 +1400,14 @@ export const bindHomeDemoActivation = ({
         observedOrder.set(demoRoot, nextObservedOrder)
         nextObservedOrder += 1
         observer.observe(demoRoot)
+        const immediateVisibilityRatio = getImmediateHomeDemoVisibilityRatio(demoRoot)
+        if (
+          typeof immediateVisibilityRatio === 'number' &&
+          immediateVisibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD
+        ) {
+          visibleRoots.add(demoRoot)
+          enqueueDemoRoot(demoRoot)
+        }
       })
     },
     destroy() {
@@ -1535,6 +1686,7 @@ export const bootstrapStaticHome = async () => {
     scheduleStaticShellTask(
       () => {
         if (controller.destroyed) return
+        armHomeDemoObservation(controller, homeDemoActivation, document)
         homeFragmentHydration.observeWithin(document)
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
@@ -1543,6 +1695,24 @@ export const bootstrapStaticHome = async () => {
       {
         priority: 'background',
         timeoutMs: 600,
+        waitForPaint: true
+      }
+    )
+  )
+  controller.cleanupFns.push(
+    scheduleHomeDemoObservationRetries({
+      controller,
+      homeDemoActivation
+    })
+  )
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(
+      () => {
+        armHomeDemoObservation(controller, homeDemoActivation, document)
+      },
+      {
+        priority: 'background',
+        timeoutMs: HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS,
         waitForPaint: true
       }
     )

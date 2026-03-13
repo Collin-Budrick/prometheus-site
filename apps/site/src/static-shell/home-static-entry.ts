@@ -7,6 +7,7 @@ export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchsta
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
+  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
 }
 
 type HomeStaticEntryDocument = Document
@@ -86,6 +87,7 @@ export const installHomeStaticEntry = ({
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
+    win.__PROM_STATIC_HOME_LCP_RELEASED__ = true
     if (bootstrapRequested) {
       startBootstrap()
       return

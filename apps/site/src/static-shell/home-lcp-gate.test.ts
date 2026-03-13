@@ -28,6 +28,7 @@ class MockDocument {
 }
 
 class MockWindow {
+  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
   readonly listeners: ListenerMap = new Map()
   readonly timers = new Map<number, () => void>()
   nextTimerId = 1
@@ -165,6 +166,25 @@ describe('createHomeFirstLcpGate', () => {
     expect(MockPerformanceObserver.instances[0]?.disconnected).toBe(true)
     expect(doc.listeners.size).toBe(0)
     expect(win.listeners.size).toBe(0)
+  })
+
+  it('resolves immediately when the home static entry already released the LCP gate', async () => {
+    const doc = new MockDocument()
+    const win = new MockWindow()
+    win.__PROM_STATIC_HOME_LCP_RELEASED__ = true
+
+    const gate = createHomeFirstLcpGate({
+      doc: doc as unknown as Document,
+      win: win as unknown as Window,
+      PerformanceObserverImpl: MockPerformanceObserver as unknown as typeof PerformanceObserver
+    })
+
+    await gate.wait
+
+    expect(MockPerformanceObserver.instances.length).toBe(0)
+    expect(doc.listeners.size).toBe(0)
+    expect(win.listeners.size).toBe(0)
+    expect(win.timers.size).toBe(0)
   })
 
   it('cleans up observers and listeners when cancelled before resolving', async () => {

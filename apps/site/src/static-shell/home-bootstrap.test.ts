@@ -8,6 +8,7 @@ import {
 import {
   bindHomeFragmentHydration,
   bindHomeDemoActivation,
+  scheduleInitialHomeDemoObservation,
   scheduleHomePostLcpTasks,
   scheduleStaticHomePaintReady,
   type HomeDemoController
@@ -18,6 +19,14 @@ class MockDemoElement {
   dataset: Record<string, string> = {}
   isConnected = true
   private attrs = new Map<string, string>()
+  private rect = {
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 0,
+    height: 0
+  }
 
   constructor(kind: string, props?: Record<string, unknown>) {
     this.dataset.homeDemoRoot = kind
@@ -37,6 +46,31 @@ class MockDemoElement {
 
   closest() {
     return null
+  }
+
+  setRect(
+    rect: Partial<{
+      top: number
+      left: number
+      right: number
+      bottom: number
+      width: number
+      height: number
+    }>
+  ) {
+    this.rect = {
+      ...this.rect,
+      ...rect
+    }
+  }
+
+  getBoundingClientRect() {
+    return {
+      ...this.rect,
+      x: this.rect.left,
+      y: this.rect.top,
+      toJSON: () => this.rect
+    } as DOMRect
   }
 }
 
@@ -483,6 +517,53 @@ describe('bindHomeDemoActivation', () => {
 
     expect(activationCount).toBe(1)
   })
+
+  it('activates already-visible demo roots even when the observer has not emitted an initial entry yet', async () => {
+    const taskQueue = createTaskQueue()
+    const activations: string[] = []
+    const controller = createController()
+    const planner = new MockDemoElement('planner')
+    const globals = globalThis as typeof globalThis & {
+      window?: { innerWidth?: number; innerHeight?: number }
+    }
+    const originalWindow = globals.window
+    planner.setRect({
+      top: 120,
+      left: 0,
+      right: 420,
+      bottom: 360,
+      width: 420,
+      height: 240
+    })
+
+    globals.window = {
+      ...(originalWindow ?? {}),
+      innerWidth: 1440,
+      innerHeight: 1200
+    }
+
+    try {
+      const manager = bindHomeDemoActivation({
+        controller,
+        scheduleTask: taskQueue.scheduleTask,
+        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        activate: async ({ kind }) => {
+          activations.push(kind)
+          return { cleanup: () => undefined }
+        }
+      })
+
+      manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
+
+      expect(taskQueue.pendingCount()).toBe(1)
+
+      await taskQueue.flushNext()
+
+      expect(activations).toEqual(['planner'])
+    } finally {
+      globals.window = originalWindow
+    }
+  })
 })
 
 describe('scheduleStaticHomePaintReady', () => {
@@ -510,16 +591,48 @@ describe('scheduleStaticHomePaintReady', () => {
   })
 })
 
+describe('scheduleInitialHomeDemoObservation', () => {
+  it('schedules one deferred initial demo observation after bootstrap', async () => {
+    const taskQueue = createTaskQueue()
+    const controller = createHomeBootstrapController()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
+
+    const cleanup = scheduleInitialHomeDemoObservation({
+      controller,
+      homeDemoActivation: {
+        observeWithin: (root) => observedRoots.push(root)
+      },
+      root: demoRoot,
+      scheduleTask: taskQueue.scheduleTask
+    })
+
+    expect(taskQueue.pendingCount()).toBe(1)
+    expect(controller.demoObservationReady).toBe(false)
+    expect(observedRoots).toEqual([])
+
+    await taskQueue.flushNext()
+
+    expect(controller.demoObservationReady).toBe(true)
+    expect(observedRoots).toEqual([demoRoot])
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    cleanup()
+  })
+})
+
 describe('scheduleHomePostLcpTasks', () => {
   it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const controller = createHomeBootstrapController()
+    const demoRoot = {} as ParentNode
     const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
+      controller,
       lcpGate: manualGate.gate,
       homeDemoActivation: {
         observeWithin: (root) => observedRoots.push(root)
@@ -528,7 +641,7 @@ describe('scheduleHomePostLcpTasks', () => {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => previewRefreshCalls.push('retry')
       },
-      root: {} as ParentNode,
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -549,7 +662,8 @@ describe('scheduleHomePostLcpTasks', () => {
     expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
-    expect(win.idleCallbacks.size).toBe(1)
+    expect(controller.demoObservationReady).toBe(false)
+    expect(win.idleCallbacks.size).toBe(2)
     expect(win.timeouts.size).toBe(0)
     expect(win.listenerCount('pageshow')).toBe(1)
 
@@ -562,18 +676,22 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const controller = createHomeBootstrapController()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
+      controller,
       lcpGate: manualGate.gate,
       homeDemoActivation: {
-        observeWithin: () => undefined
+        observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => undefined
       },
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -589,6 +707,8 @@ describe('scheduleHomePostLcpTasks', () => {
 
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([demoRoot])
+    expect(controller.demoObservationReady).toBe(true)
 
     win.emit('keydown')
     win.runIdle()
@@ -596,6 +716,7 @@ describe('scheduleHomePostLcpTasks', () => {
 
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([demoRoot])
     cleanup()
   })
 
@@ -603,18 +724,21 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
       controller: createHomeBootstrapController(),
       lcpGate: manualGate.gate,
       homeDemoActivation: {
-        observeWithin: () => undefined
+        observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => undefined
       },
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -625,10 +749,12 @@ describe('scheduleHomePostLcpTasks', () => {
     manualGate.resolve()
     await flushMicrotasks()
     win.runIdle()
+    win.runIdle(2)
     await flushMicrotasks()
 
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([demoRoot])
     cleanup()
   })
 
@@ -636,18 +762,21 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
       controller: createHomeBootstrapController(),
       lcpGate: manualGate.gate,
       homeDemoActivation: {
-        observeWithin: () => undefined
+        observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => undefined
       },
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -659,16 +788,19 @@ describe('scheduleHomePostLcpTasks', () => {
     manualGate.resolve()
     await flushMicrotasks()
     win.runIdle()
+    win.runIdle(2)
     await flushMicrotasks()
 
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
+    expect(observedRoots).toEqual([])
 
     doc.setVisibility('visible')
     await flushMicrotasks()
 
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([demoRoot])
     cleanup()
   })
 
@@ -676,6 +808,8 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const retryCalls: string[] = []
     const authRefreshCalls: string[] = []
@@ -683,12 +817,13 @@ describe('scheduleHomePostLcpTasks', () => {
       controller: createHomeBootstrapController(),
       lcpGate: manualGate.gate,
       homeDemoActivation: {
-        observeWithin: () => undefined
+        observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => retryCalls.push('retry')
       },
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -705,6 +840,7 @@ describe('scheduleHomePostLcpTasks', () => {
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(retryCalls).toEqual(['retry'])
     expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([demoRoot])
 
     win.emit('pageshow', { persisted: true } as PageTransitionEvent)
     await flushMicrotasks()
@@ -712,6 +848,7 @@ describe('scheduleHomePostLcpTasks', () => {
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(retryCalls).toEqual(['retry', 'retry'])
     expect(authRefreshCalls).toEqual(['refresh', 'refresh'])
+    expect(observedRoots).toEqual([demoRoot])
     cleanup()
   })
 
@@ -719,18 +856,21 @@ describe('scheduleHomePostLcpTasks', () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
     const previewRefreshCalls: string[] = []
     const authRefreshCalls: string[] = []
     const cleanup = scheduleHomePostLcpTasks({
       controller: createHomeBootstrapController(),
       lcpGate: manualGate.gate,
       homeDemoActivation: {
-        observeWithin: () => undefined
+        observeWithin: (root) => observedRoots.push(root)
       },
       homeFragmentHydration: {
         schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
         retryPending: () => undefined
       },
+      root: demoRoot,
       win: win as never,
       doc: doc as never,
       refreshAuth: async () => {
@@ -749,6 +889,7 @@ describe('scheduleHomePostLcpTasks', () => {
 
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
+    expect(observedRoots).toEqual([])
     expect(manualGate.cleanupCount()).toBe(1)
   })
 })

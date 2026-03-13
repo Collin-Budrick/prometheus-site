@@ -12,6 +12,7 @@ type HomeLcpGateDocument = Pick<Document, 'visibilityState' | 'addEventListener'
 
 type HomeLcpGateWindow = Pick<Window, 'addEventListener' | 'removeEventListener' | 'setTimeout' | 'clearTimeout'> & {
   PerformanceObserver?: HomeLcpObserverConstructor
+  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
 }
 
 export type HomeFirstLcpGate = {
@@ -38,6 +39,10 @@ export const createHomeFirstLcpGate = ({
   timeoutMs = HOME_FIRST_LCP_TIMEOUT_MS
 }: CreateHomeFirstLcpGateOptions = {}): HomeFirstLcpGate => {
   if (!win || !doc) {
+    return createResolvedGate()
+  }
+
+  if (win.__PROM_STATIC_HOME_LCP_RELEASED__) {
     return createResolvedGate()
   }
 

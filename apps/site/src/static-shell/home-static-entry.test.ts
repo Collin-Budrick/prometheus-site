@@ -7,6 +7,7 @@ type ListenerMap = Map<string, Set<() => void>>
 class MockWindow {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
+  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
   readonly listeners: ListenerMap = new Map()
   readonly timeouts = new Map<number, () => void>()
   nextTimeoutId = 1
@@ -98,6 +99,7 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(win.timeouts.size).toBe(1)
+    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
 
     cleanup()
   })
@@ -134,6 +136,7 @@ describe('installHomeStaticEntry', () => {
 
     expect(loadRuntimeCount).toBe(1)
     expect(bootstrapCount).toBe(1)
+    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(manualGate.cleanupCount()).toBe(1)
 
     cleanup()
@@ -173,6 +176,7 @@ describe('installHomeStaticEntry', () => {
 
     expect(loadRuntimeCount).toBe(1)
     expect(bootstrapCount).toBe(1)
+    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(manualGate.cleanupCount()).toBe(1)
 
     cleanup()
