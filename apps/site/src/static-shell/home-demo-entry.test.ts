@@ -150,4 +150,31 @@ describe('scheduleHomeCollabEntry', () => {
 
     cleanup()
   })
+
+  it('loads the collab runtime when the collab textarea receives focus', async () => {
+    const win = new MockWindow()
+    const root = new MockElement()
+    const input = new MockElement()
+    root.appendChild(input)
+    const doc = new MockDocument([root])
+    let runtimeLoads = 0
+
+    const cleanup = scheduleHomeCollabEntry({
+      win: win as never,
+      doc: doc as never,
+      loadCollabRuntime: async () => {
+        runtimeLoads += 1
+        return {
+          installHomeCollabEntry: () => () => undefined
+        }
+      }
+    })
+
+    doc.emit('focusin', input)
+    await flushMicrotasks()
+
+    expect(runtimeLoads).toBe(1)
+
+    cleanup()
+  })
 })

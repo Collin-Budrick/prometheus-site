@@ -154,6 +154,7 @@ const dockFragment: FragmentDefinition = {
         {
           class: 'home-collab-root mt-6',
           'data-home-collab-root': 'dock',
+          'data-collab-status-idle': t('Focus to start live sync.'),
           'data-collab-status-connecting': t('Connecting live sync...'),
           'data-collab-status-live': t('Live for everyone on this page'),
           'data-collab-status-reconnecting': t('Reconnecting live sync...'),
@@ -167,18 +168,19 @@ const dockFragment: FragmentDefinition = {
             spellcheck: 'false',
             placeholder: t('Write something. Everyone here sees it live.'),
             'aria-label': t('Shared collaborative text box'),
-            disabled: 'true'
+            readonly: 'true',
+            'aria-busy': 'false'
           }),
           h('div', { class: 'home-collab-toolbar' }, [
             h(
               'span',
               {
                 class: 'home-collab-status',
-                'data-home-collab-status': 'connecting',
+                'data-home-collab-status': 'idle',
                 role: 'status',
                 'aria-live': 'polite'
               },
-              [text('Connecting live sync...')]
+              [text('Focus to start live sync.')]
             ),
             h('span', { class: 'home-collab-note' }, [text('Loro + Garnet')])
           ])

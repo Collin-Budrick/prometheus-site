@@ -500,10 +500,6 @@ export const bindHomeDemoActivation = ({
 
         const viewportSnapshot = viewportSnapshots.get(demoRoot)
 
-        if (allowAutoNearViewWarm && viewportSnapshot?.withinWarmMargin) {
-          warmKindForRoot(demoRoot)
-        }
-
         if ((viewportSnapshot?.visibilityRatio ?? 0) >= HOME_DEMO_ACTIVATION_THRESHOLD) {
           visibleRoots.add(demoRoot)
           enqueueDemoRoot(demoRoot)

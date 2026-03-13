@@ -13,9 +13,9 @@ type HomeDemoEntryWindow = Window & {
 
 const HOME_COLLAB_ROOT_SELECTOR = '[data-home-collab-root]'
 const HOME_COLLAB_STATUS_SELECTOR = '[data-home-collab-status]'
-const HOME_COLLAB_DEFERRED_STATUS_COPY = 'Preparing live sync...'
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS = 1200
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE = 5000
+const HOME_COLLAB_DEFERRED_STATUS_COPY = 'Focus to start live sync.'
+const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS = 15000
+const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE = 20000
 
 type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null
@@ -84,6 +84,7 @@ export const scheduleHomeCollabEntry = ({
 
   const removeIntentListeners = () => {
     doc.removeEventListener('pointerdown', handlePointerDown, true)
+    doc.removeEventListener('focusin', handleFocusIn, true)
     doc.removeEventListener('keydown', handleKeyDown, true)
   }
 
@@ -109,6 +110,13 @@ export const scheduleHomeCollabEntry = ({
     void start()
   }
 
+  const handleFocusIn = (event: Event) => {
+    if (!matchesCollabRoot(event.target)) {
+      return
+    }
+    void start()
+  }
+
   const handleKeyDown = () => {
     const activeElement = doc.activeElement
     if (!matchesCollabRoot(activeElement)) {
@@ -118,6 +126,7 @@ export const scheduleHomeCollabEntry = ({
   }
 
   doc.addEventListener('pointerdown', handlePointerDown, true)
+  doc.addEventListener('focusin', handleFocusIn, true)
   doc.addEventListener('keydown', handleKeyDown, true)
 
   return () => {

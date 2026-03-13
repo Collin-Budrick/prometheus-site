@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -82,6 +83,10 @@ const normalizeBundledAssetPaths = (dir) => {
 const sanitizeBundledWasmSourceMaps = (dir) => {
   const sourceMapSectionName = Buffer.from('sourceMappingURL')
   const disabledSourceMapSectionName = Buffer.from('ignoreMappingURL')
+  const sourceMapUrl = Buffer.from(
+    'https://unpkg.com/loro-crdt-map@1.10.6/bundler/loro_wasm_bg.wasm.map'
+  )
+  const disabledSourceMapUrl = Buffer.from('disabled-wasm-source-map'.padEnd(sourceMapUrl.length, ' '))
 
   for (const entry of readdirSync(dir)) {
     const filePath = path.join(dir, entry)
@@ -105,9 +110,63 @@ const sanitizeBundledWasmSourceMaps = (dir) => {
       disabledSourceMapSectionName.copy(nextSource, markerIndex)
       markerIndex = source.indexOf(sourceMapSectionName, markerIndex + sourceMapSectionName.length)
     }
+
+    let urlIndex = source.indexOf(sourceMapUrl)
+    while (urlIndex !== -1) {
+      disabledSourceMapUrl.copy(nextSource, urlIndex)
+      urlIndex = source.indexOf(sourceMapUrl, urlIndex + sourceMapUrl.length)
+    }
     writeFileSync(filePath, nextSource)
   }
 }
 
+const versionBundledWasmAssetPaths = (dir) => {
+  const wasmVersions = new Map()
+
+  const collectWasmVersions = (currentDir) => {
+    for (const entry of readdirSync(currentDir)) {
+      const filePath = path.join(currentDir, entry)
+      const stat = statSync(filePath)
+      if (stat.isDirectory()) {
+        collectWasmVersions(filePath)
+        continue
+      }
+      if (!filePath.endsWith('.wasm')) {
+        continue
+      }
+      const source = readFileSync(filePath)
+      const version = createHash('sha256').update(source).digest('hex').slice(0, 12)
+      wasmVersions.set(path.basename(filePath), version)
+    }
+  }
+
+  const rewriteWasmUrls = (currentDir) => {
+    for (const entry of readdirSync(currentDir)) {
+      const filePath = path.join(currentDir, entry)
+      const stat = statSync(filePath)
+      if (stat.isDirectory()) {
+        rewriteWasmUrls(filePath)
+        continue
+      }
+      if (!filePath.endsWith('.js')) {
+        continue
+      }
+
+      const source = readFileSync(filePath, 'utf8')
+      let nextSource = source
+      for (const [fileName, version] of wasmVersions) {
+        nextSource = nextSource.replaceAll(`${publicPath}${fileName}`, `${publicPath}${fileName}?v=${version}`)
+      }
+      if (nextSource !== source) {
+        writeFileSync(filePath, nextSource)
+      }
+    }
+  }
+
+  collectWasmVersions(dir)
+  rewriteWasmUrls(dir)
+}
+
 normalizeBundledAssetPaths(outDir)
 sanitizeBundledWasmSourceMaps(outDir)
+versionBundledWasmAssetPaths(outDir)

@@ -98,6 +98,11 @@ const setStatus = (state: HomeCollabState, nextState: 'connecting' | 'live' | 'r
   }
 }
 
+const setTextareaPending = (state: HomeCollabState, pending: boolean) => {
+  state.textarea.readOnly = pending
+  state.textarea.setAttribute('aria-busy', pending ? 'true' : 'false')
+}
+
 const syncTextareaFromDoc = (state: HomeCollabState) => {
   if (!state.doc) {
     return
@@ -194,7 +199,7 @@ const attachRoot = (
     }
     syncTextareaFromDoc(state)
     state.ready = true
-    state.textarea.disabled = false
+    setTextareaPending(state, false)
     setStatus(state, 'live')
   }
 
@@ -203,7 +208,7 @@ const attachRoot = (
       return
     }
 
-    state.textarea.disabled = true
+    setTextareaPending(state, true)
     setStatus(state, state.ready ? 'reconnecting' : 'connecting')
 
     const socket = new WebSocketImpl(resolveHomeCollabWsUrl(window.location.origin))
@@ -251,7 +256,7 @@ const attachRoot = (
       }
       state.socket = null
       state.ready = false
-      state.textarea.disabled = true
+      setTextareaPending(state, true)
       setStatus(state, 'reconnecting')
       scheduleReconnect(state, connect)
     })
@@ -261,7 +266,8 @@ const attachRoot = (
     })
   }
 
-  textarea.disabled = true
+  textarea.disabled = false
+  setTextareaPending(state, true)
   setStatus(state, 'connecting')
 
   const handleInput = () => {

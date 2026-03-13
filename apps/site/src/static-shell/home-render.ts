@@ -159,6 +159,7 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
       {
         class: 'home-collab-root',
         'data-home-collab-root': 'dock',
+        'data-collab-status-idle': 'Focus to start live sync.',
         'data-collab-status-connecting': 'Connecting live sync...',
         'data-collab-status-live': 'Live for everyone on this page',
         'data-collab-status-reconnecting': 'Reconnecting live sync...',
@@ -172,18 +173,19 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
           spellcheck: 'false',
           placeholder: 'Write something. Everyone here sees it live.',
           'aria-label': 'Shared collaborative text box',
-          disabled: 'true'
+          readonly: 'true',
+          'aria-busy': 'false'
         }),
         h('div', { class: 'home-collab-toolbar' }, [
           h(
             'span',
             {
               class: 'home-collab-status',
-              'data-home-collab-status': 'connecting',
+              'data-home-collab-status': 'idle',
               role: 'status',
               'aria-live': 'polite'
             },
-            [t('Connecting live sync...')]
+            [t('Focus to start live sync.')]
           ),
           h('span', { class: 'home-collab-note' }, [t('Loro + Garnet')])
         ])

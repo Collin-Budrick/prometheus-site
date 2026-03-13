@@ -263,6 +263,9 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(dockHtml).toContain('Shared text for everyone on the page.')
     expect(dockHtml).toContain('data-home-collab-root="dock"')
     expect(dockHtml).toContain('data-home-collab-input="true"')
+    expect(dockHtml).toContain('data-collab-status-idle="Focus to start live sync."')
+    expect(dockHtml).toContain('readonly="true"')
+    expect(dockHtml).toContain('data-home-collab-status="idle"')
   })
 
   it('preserves demo props on compact preact previews', () => {

@@ -682,6 +682,77 @@ describe('bindHomeDemoActivation', () => {
       globals.window = originalWindow
     }
   })
+
+  it('caps desktop auto-warmup to the configured visible and near-view budget', () => {
+    const taskQueue = createTaskQueue()
+    const controller = createController()
+    const planner = new MockDemoElement('planner')
+    const island = new MockDemoElement('preact-island')
+    const wasm = new MockDemoElement('wasm-renderer')
+    const react = new MockDemoElement('react-binary')
+    const warmKinds: string[] = []
+    const globals = globalThis as typeof globalThis & {
+      window?: { innerWidth?: number; innerHeight?: number }
+    }
+    const originalWindow = globals.window
+
+    planner.setRect({
+      top: 120,
+      left: 0,
+      right: 420,
+      bottom: 360,
+      width: 420,
+      height: 240
+    })
+    island.setRect({
+      top: 380,
+      left: 0,
+      right: 420,
+      bottom: 620,
+      width: 420,
+      height: 240
+    })
+    wasm.setRect({
+      top: 940,
+      left: 0,
+      right: 420,
+      bottom: 1180,
+      width: 420,
+      height: 240
+    })
+    react.setRect({
+      top: 1220,
+      left: 0,
+      right: 420,
+      bottom: 1460,
+      width: 420,
+      height: 240
+    })
+
+    globals.window = {
+      ...(originalWindow ?? {}),
+      innerWidth: 1440,
+      innerHeight: 900
+    }
+
+    try {
+      const manager = bindHomeDemoActivation({
+        controller,
+        scheduleTask: taskQueue.scheduleTask,
+        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        warmKind: async (kind) => {
+          warmKinds.push(kind)
+        },
+        activate: async () => ({ cleanup: () => undefined })
+      })
+
+      manager.observeWithin(new MockRoot([planner, island, wasm, react]) as unknown as ParentNode)
+
+      expect(warmKinds).toEqual(['planner', 'preact-island', 'wasm-renderer'])
+    } finally {
+      globals.window = originalWindow
+    }
+  })
 })
 
 describe('scheduleStaticHomePaintReady', () => {
