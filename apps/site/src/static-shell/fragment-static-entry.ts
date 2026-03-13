@@ -72,9 +72,12 @@ const replayDeferredInteraction = (target: EventTarget | null) => {
   }
 }
 
-const readStaticFragmentPath = (doc: Pick<Document, 'querySelector'> | null) => {
+const readStaticFragmentPath = (
+  doc: Pick<Document, 'querySelector'> | null,
+  win: Pick<Window, 'location'> | null
+) => {
   const root = doc?.querySelector<HTMLElement>('[data-static-fragment-root]')
-  return normalizeStaticShellRoutePath(root?.dataset.staticPath ?? '')
+  return normalizeStaticShellRoutePath(root?.dataset.staticPath ?? win?.location.pathname ?? '')
 }
 
 export const resolveFragmentBootstrapIdleTimeout = (path: string | null | undefined) =>
@@ -107,7 +110,7 @@ export const installFragmentStaticEntry = ({
   let loadHandler: (() => void) | null = null
   let fragmentTimeoutId: ReturnType<typeof setTimeout> | null = null
   let storeTimeoutId: ReturnType<typeof setTimeout> | null = null
-  const staticPath = readStaticFragmentPath(doc)
+  const staticPath = readStaticFragmentPath(doc, win)
   const idleTimeoutMs = resolveFragmentBootstrapIdleTimeout(staticPath)
   const useStoreFastBootstrap = isStoreStaticFastBootstrapPath(staticPath)
 

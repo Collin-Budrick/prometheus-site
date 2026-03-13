@@ -25,7 +25,7 @@ import { buildSiteCsp, getOrCreateRequestCspNonce } from '../security/server'
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
-  restoreOverlayFocus,
+  restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
 import { StaticShellLayout } from '../static-shell/StaticShellLayout'
@@ -103,6 +103,9 @@ const initialFadeScript = `(function () {
   }
 })();`
 
+const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 5000
+const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 4000
+
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
   return `(function () {
@@ -116,9 +119,9 @@ const buildDeferredManifestScript = (href: string) => {
   };
   var schedule = function () {
     if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(appendManifest, { timeout: 1500 });
+      window.requestIdleCallback(appendManifest, { timeout: ${DEFERRED_MANIFEST_IDLE_TIMEOUT_MS} });
     } else {
-      window.setTimeout(appendManifest, 1200);
+      window.setTimeout(appendManifest, ${DEFERRED_MANIFEST_FALLBACK_DELAY_MS});
     }
   };
   if (document.readyState === 'complete') {
@@ -475,22 +478,27 @@ const ShellSettingsPanel = component$<ShellSettingsPanelProps>((props) => {
     const langDrawer = langDrawerRef.value
     const langDrawerOpen = isOpen && hasMultipleLangs && isLangMenuOpen
 
-    setOverlaySurfaceState(panel, isOpen)
-    setOverlaySurfaceState(langDrawer, langDrawerOpen)
-
     if (isOpen && !wasOpen.value) {
+      setOverlaySurfaceState(panel, true)
       focusOverlayEntry(panel, hasMultipleLangs ? '.settings-lang-trigger' : '.theme-toggle')
     } else if (!isOpen && wasOpen.value) {
-      restoreOverlayFocus(triggerRef.value)
+      restoreOverlayFocusBeforeHide(panel, triggerRef.value)
+      setOverlaySurfaceState(panel, false)
+    } else {
+      setOverlaySurfaceState(panel, isOpen)
     }
 
     if (langDrawerOpen && !wasLangOpen.value) {
+      setOverlaySurfaceState(langDrawer, true)
       focusOverlayEntry(langDrawer, [
         'input[name="topbar-language"]:checked',
         'input[name="topbar-language"]'
       ])
     } else if (isOpen && !langDrawerOpen && wasLangOpen.value) {
-      restoreOverlayFocus(languageTriggerRef.value)
+      restoreOverlayFocusBeforeHide(langDrawer, languageTriggerRef.value)
+      setOverlaySurfaceState(langDrawer, false)
+    } else {
+      setOverlaySurfaceState(langDrawer, langDrawerOpen)
     }
 
     wasOpen.value = isOpen

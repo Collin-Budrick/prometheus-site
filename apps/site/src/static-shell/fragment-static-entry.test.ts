@@ -14,6 +14,7 @@ class MockWindow {
   __PROM_STATIC_FRAGMENT_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
   readonly timeouts = new Map<number, () => void>()
+  location = { pathname: '/store' }
   nextTimeoutId = 1
 
   addEventListener(type: string, listener: Listener) {
@@ -181,6 +182,40 @@ describe('installFragmentStaticEntry', () => {
     expect(resolveFragmentBootstrapIdleTimeout('/store')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
     expect(resolveFragmentBootstrapIdleTimeout('/lab')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
     expect(resolveFragmentBootstrapIdleTimeout('/chat')).toBe(FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
+
+    cleanup()
+  })
+
+  it('falls back to window.location.pathname when the static fragment root is absent', async () => {
+    const win = new MockWindow()
+    win.location.pathname = '/lab/'
+    const doc = new MockDocument()
+    doc.staticPath = ''
+    doc.querySelector = () => null
+    let loadRuntimeCount = 0
+    let bootstrapCount = 0
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => {
+        loadRuntimeCount += 1
+        return {
+          bootstrapStaticFragmentShell: async () => {
+            bootstrapCount += 1
+          }
+        }
+      }
+    })
+
+    expect(win.timeouts.size).toBe(1)
+
+    win.runTimeout()
+    await flushMicrotasks()
+
+    expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapCount).toBe(1)
+    expect(resolveFragmentBootstrapIdleTimeout(win.location.pathname)).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
 
     cleanup()
   })

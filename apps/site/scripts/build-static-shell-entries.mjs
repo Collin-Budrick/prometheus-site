@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,9 +8,11 @@ const siteRoot = path.resolve(scriptDir, '..')
 const repoRoot = path.resolve(siteRoot, '..', '..')
 
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
+const publicPath = '/build/static-shell/'
 const entrypoints = [
   'apps/site/src/static-shell/home-static-entry.ts',
   'apps/site/src/static-shell/home-demo-entry.ts',
+  'apps/site/src/static-shell/home-collab-entry.ts',
   'apps/site/src/static-shell/home-bootstrap-runtime.ts',
   'apps/site/src/static-shell/home-demo-planner-runtime.ts',
   'apps/site/src/static-shell/home-demo-wasm-renderer-runtime.ts',
@@ -38,6 +40,8 @@ for (const entrypoint of entrypoints) {
       '--format',
       'esm',
       '--minify',
+      '--public-path',
+      publicPath,
       '--root',
       '.'
     ],
@@ -52,3 +56,58 @@ for (const entrypoint of entrypoints) {
     process.exit(result.status ?? 1)
   }
 }
+
+const normalizeBundledAssetPaths = (dir) => {
+  for (const entry of readdirSync(dir)) {
+    const filePath = path.join(dir, entry)
+    const stat = statSync(filePath)
+    if (stat.isDirectory()) {
+      normalizeBundledAssetPaths(filePath)
+      continue
+    }
+    if (!filePath.endsWith('.js')) {
+      continue
+    }
+    const source = readFileSync(filePath, 'utf8')
+    const nextSource = source.replace(
+      /(['"])\/build\/static-shell\/(?:\.\.\/)+/g,
+      '$1/build/static-shell/'
+    )
+    if (nextSource !== source) {
+      writeFileSync(filePath, nextSource)
+    }
+  }
+}
+
+const sanitizeBundledWasmSourceMaps = (dir) => {
+  const sourceMapSectionName = Buffer.from('sourceMappingURL')
+  const disabledSourceMapSectionName = Buffer.from('ignoreMappingURL')
+
+  for (const entry of readdirSync(dir)) {
+    const filePath = path.join(dir, entry)
+    const stat = statSync(filePath)
+    if (stat.isDirectory()) {
+      sanitizeBundledWasmSourceMaps(filePath)
+      continue
+    }
+    if (!filePath.endsWith('.wasm')) {
+      continue
+    }
+
+    const source = readFileSync(filePath)
+    let markerIndex = source.indexOf(sourceMapSectionName)
+    if (markerIndex === -1) {
+      continue
+    }
+
+    const nextSource = Buffer.from(source)
+    while (markerIndex !== -1) {
+      disabledSourceMapSectionName.copy(nextSource, markerIndex)
+      markerIndex = source.indexOf(sourceMapSectionName, markerIndex + sourceMapSectionName.length)
+    }
+    writeFileSync(filePath, nextSource)
+  }
+}
+
+normalizeBundledAssetPaths(outDir)
+sanitizeBundledWasmSourceMaps(outDir)

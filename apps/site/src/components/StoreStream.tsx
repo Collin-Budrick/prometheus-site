@@ -13,7 +13,7 @@ import { useSharedLangSignal } from '../shared/lang-bridge'
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
-  restoreOverlayFocus,
+  restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
 import { useStoreSeed } from '../shared/store-seed'
@@ -705,14 +705,17 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     const open = ctx.track(() => sortMenuOpen.value)
     const drawer = sortDrawerRef.value
 
-    setOverlaySurfaceState(drawer, open)
     if (open && !wasSortMenuOpen.value) {
+      setOverlaySurfaceState(drawer, true)
       focusOverlayEntry(drawer, [
         'input[name="store-stream-sort"]:checked',
         'input[name="store-stream-sort"]'
       ])
     } else if (!open && wasSortMenuOpen.value) {
-      restoreOverlayFocus(sortTriggerRef.value)
+      restoreOverlayFocusBeforeHide(drawer, sortTriggerRef.value)
+      setOverlaySurfaceState(drawer, false)
+    } else {
+      setOverlaySurfaceState(drawer, open)
     }
 
     wasSortMenuOpen.value = open

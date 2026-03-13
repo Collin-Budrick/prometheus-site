@@ -17,7 +17,7 @@ import {
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
-  restoreOverlayFocus,
+  restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../../shared/overlay-a11y'
 import {
@@ -209,11 +209,14 @@ export const ContactInvites = component$<ContactInvitesProps>((props) => {
     const open = ctx.track(() => popoverOpen.value)
     const popover = popoverRef.value
 
-    setOverlaySurfaceState(popover, open)
     if (open && !wasPopoverOpen.value) {
+      setOverlaySurfaceState(popover, true)
       focusOverlayEntry(popover, searchInputRef.value)
     } else if (!open && wasPopoverOpen.value) {
-      restoreOverlayFocus(popoverTriggerRef.value)
+      restoreOverlayFocusBeforeHide(popover, popoverTriggerRef.value)
+      setOverlaySurfaceState(popover, false)
+    } else {
+      setOverlaySurfaceState(popover, open)
     }
 
     wasPopoverOpen.value = open

@@ -10,36 +10,12 @@ const baseMeta = {
   runtime: 'edge' as const
 }
 
-const dockIconSizeStyle = 'width:48px;height:48px;padding:8px;box-sizing:border-box;'
-const dockMonogramStyle =
-  'display:flex;align-items:center;justify-content:center;border-radius:999px;font:700 11px/1 system-ui,sans-serif;letter-spacing:0.08em;'
-const DockIconMonograms = {
-  gitHub: { label: 'GH', style: `background:#0f172a;color:#f8fafc;` },
-  googleDrive: { label: 'GD', style: `background:#eef6ff;color:#2563eb;` },
-  notion: { label: 'NO', style: `background:#111827;color:#f9fafb;` },
-  whatsapp: { label: 'WA', style: `background:#dcfce7;color:#166534;` }
-}
-
 const renderHomeCopyBlock = (lead: string, detail?: string) =>
   createElement(
     'p',
     { className: 'home-fragment-copy' },
     createElement('strong', { className: 'home-fragment-copy-lead' }, lead),
     ...(detail ? [detail] : [])
-  )
-
-const renderDockIcon = (label: string, monogram: { label: string; style: string }) =>
-  createElement(
-    'div',
-    {
-      className:
-        'flex aspect-square items-center justify-center rounded-full supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10',
-      style: `${dockIconSizeStyle}${dockMonogramStyle}${monogram.style}`,
-      role: 'listitem',
-      'aria-label': label,
-      title: label
-    },
-    monogram.label
   )
 
 const reactFragment: FragmentDefinition = {
@@ -77,23 +53,46 @@ const dockFragment: FragmentDefinition = {
       createElement(
         'section',
         null,
-        createElement('div', { className: 'meta-line' }, t('react dock')),
-        createElement('h2', null, t('Server-only dock fragment.')),
-        renderHomeCopyBlock(t('MagicUI dock authored in React,'), t('compiled to a static fragment.')),
+        createElement('div', { className: 'meta-line' }, t('live collaborative text')),
+        createElement('h2', null, t('Shared text for everyone on the page.')),
+        renderHomeCopyBlock(
+          t('Anyone on the page can edit the same text box.'),
+          t('Loro syncs updates through Garnet in real time.')
+        ),
         createElement(
           'div',
           {
-            className:
-              'supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 mx-auto mt-6 flex h-[58px] w-max items-center justify-center gap-2 rounded-2xl border p-2 backdrop-blur-md',
-            role: 'list',
-            'aria-label': t('Dock shortcuts')
+            className: 'home-collab-root mt-6',
+            'data-home-collab-root': 'dock',
+            'data-collab-status-connecting': t('Connecting live sync...'),
+            'data-collab-status-live': t('Live for everyone on this page'),
+            'data-collab-status-reconnecting': t('Reconnecting live sync...'),
+            'data-collab-status-error': t('Realtime unavailable')
           },
-          [
-            renderDockIcon('GitHub', DockIconMonograms.gitHub),
-            renderDockIcon('Google Drive', DockIconMonograms.googleDrive),
-            renderDockIcon('Notion', DockIconMonograms.notion),
-            renderDockIcon('WhatsApp', DockIconMonograms.whatsapp)
-          ]
+          createElement('textarea', {
+            className: 'home-collab-textarea',
+            'data-home-collab-input': 'true',
+            rows: 7,
+            spellCheck: false,
+            placeholder: t('Write something. Everyone here sees it live.'),
+            'aria-label': t('Shared collaborative text box'),
+            disabled: true
+          }),
+          createElement(
+            'div',
+            { className: 'home-collab-toolbar' },
+            createElement(
+              'span',
+              {
+                className: 'home-collab-status',
+                'data-home-collab-status': 'connecting',
+                role: 'status',
+                'aria-live': 'polite'
+              },
+              t('Connecting live sync...')
+            ),
+            createElement('span', { className: 'home-collab-note' }, t('Loro + Garnet'))
+          )
         )
       )
     )

@@ -36,6 +36,7 @@
     "@tauri-apps/plugin-updater": "2.10.0",
     "extend": "3.0.2",
     "gridstack": "12.4.2",
+    "loro-crdt": "^1.10.6",
     "nostr-tools": "2.23.3",
     "preact": "11.0.0-experimental.1",
     "react": "19.3.0-canary-fd524fe0-20251121",

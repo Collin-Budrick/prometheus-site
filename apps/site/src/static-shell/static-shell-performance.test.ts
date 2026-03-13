@@ -113,18 +113,20 @@ describe('static shell performance invariants', () => {
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
-    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
+    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, homeDemoEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource, homeCollabEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
       readSource('../entry.ssr.tsx'),
       readSource('../../scripts/build-static-shell-entries.mjs'),
       readSource('../root.tsx'),
       readSource('../routes/layout.tsx'),
       readSource('../routes/home.tsx'),
       readSource('./home-static-entry.ts'),
+      readSource('./home-demo-entry.ts'),
       readSource('./home-demo-runtime-loader.ts'),
       readSource('./home-bootstrap-runtime-loader.ts'),
       readSource('./fragment-static-entry.ts'),
       readSource('./fragment-bootstrap-runtime-loader.ts'),
       readSource('./home-demo-entry-loader.ts'),
+      readSource('./home-collab-entry-loader.ts'),
       readSource('./store-static-runtime-loader.ts'),
       readSource('./static-asset-url.ts'),
       readSource('./asset-version.ts'),
@@ -134,6 +136,7 @@ describe('static shell performance invariants', () => {
 
     expect(entrySsrSource).toContain('rel="modulepreload"')
     expect(buildScriptSource).toContain('home-demo-entry.ts')
+    expect(buildScriptSource).toContain('home-collab-entry.ts')
     expect(buildScriptSource).toContain('home-bootstrap-runtime.ts')
     expect(buildScriptSource).toContain('home-demo-planner-runtime.ts')
     expect(buildScriptSource).toContain('home-demo-wasm-renderer-runtime.ts')
@@ -141,6 +144,9 @@ describe('static shell performance invariants', () => {
     expect(buildScriptSource).toContain('home-demo-preact-island-runtime.ts')
     expect(buildScriptSource).toContain('fragment-bootstrap-runtime.ts')
     expect(buildScriptSource).toContain('store-static-runtime.ts')
+    expect(buildScriptSource).toContain('--public-path')
+    expect(buildScriptSource).toContain('sanitizeBundledWasmSourceMaps')
+    expect(buildScriptSource).toContain("Buffer.from('ignoreMappingURL')")
     expect(buildScriptSource).not.toContain('--splitting')
     expect(rootSource).toContain("global-critical.css?inline")
     expect(layoutSource).toContain("global-deferred.css?url")
@@ -161,6 +167,7 @@ describe('static shell performance invariants', () => {
     expect(await readSource('../../../../packages/ui/src/global-deferred.css')).toContain('home-demo-active.css')
     expect(runtimeLoaderSource).not.toContain("import homeDemoStylesheetHref from '../components/home-demo-active.css?url'")
     expect(homeDemoEntryLoaderSource).toContain("home-demo-entry.js")
+    expect(homeCollabEntryLoaderSource).toContain("home-collab-entry.js")
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain("fragment-bootstrap-runtime.js")
     expect(storeRuntimeLoaderSource).toContain("store-static-runtime.js")
@@ -202,6 +209,8 @@ describe('static shell performance invariants', () => {
     expect(homeStaticEntrySource).not.toContain("'focusin'")
     expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'")
     expect(homeStaticEntrySource).not.toContain('scheduleStaticShellTask(')
+    expect(homeDemoEntrySource).toContain("from './home-collab-entry-loader'")
+    expect(homeDemoEntrySource).not.toContain("from './home-collab-text'")
     expect(entrySsrSource).not.toContain('home-bootstrap-runtime.js')
     expect(entrySsrSource).not.toContain('fragment-bootstrap-runtime.js')
   })

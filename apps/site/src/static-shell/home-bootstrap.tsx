@@ -41,7 +41,7 @@ import { primeTrustedTypesPolicies } from '../security/client'
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
-  restoreOverlayFocus,
+  restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
 import {
@@ -1084,12 +1084,12 @@ const bindShellControls = (controller: HomeControllerState) => {
 
   const closeLanguageMenu = (restoreFocus = false) => {
     const wasOpen = languageDrawer?.dataset.open === 'true'
+    if (restoreFocus && wasOpen && languageMenuToggle) {
+      restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle)
+    }
     setOverlaySurfaceState(languageDrawer, false)
     if (languageMenuToggle) {
       languageMenuToggle.setAttribute('aria-expanded', 'false')
-    }
-    if (restoreFocus && wasOpen && languageMenuToggle) {
-      restoreOverlayFocus(languageMenuToggle)
     }
   }
 
@@ -1097,11 +1097,11 @@ const bindShellControls = (controller: HomeControllerState) => {
     const wasOpen = settingsRoot.dataset.open === 'true'
     settingsRoot.dataset.open = 'false'
     settingsToggle.setAttribute('aria-expanded', 'false')
-    setOverlaySurfaceState(settingsPanel, false)
     closeLanguageMenu(false)
     if (restoreFocus && wasOpen) {
-      restoreOverlayFocus(settingsToggle)
+      restoreOverlayFocusBeforeHide(settingsPanel, settingsToggle)
     }
+    setOverlaySurfaceState(settingsPanel, false)
   }
 
   const toggleSettings = () => {
@@ -1128,7 +1128,8 @@ const bindShellControls = (controller: HomeControllerState) => {
       ])
       return
     }
-    restoreOverlayFocus(languageMenuToggle)
+    restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle)
+    setOverlaySurfaceState(languageDrawer, false)
   }
 
   const handleTheme = () => {

@@ -10,16 +10,6 @@ const baseMeta = {
   runtime: 'edge' as const
 }
 
-const dockIconSizeStyle = 'width:48px;height:48px;padding:8px;box-sizing:border-box;'
-const dockMonogramStyle =
-  'display:flex;align-items:center;justify-content:center;border-radius:999px;font:700 11px/1 system-ui,sans-serif;letter-spacing:0.08em;'
-const DockIconMonograms = {
-  gitHub: { label: 'GH', style: 'background:#0f172a;color:#f8fafc;' },
-  googleDrive: { label: 'GD', style: 'background:#eef6ff;color:#2563eb;' },
-  notion: { label: 'NO', style: 'background:#111827;color:#f9fafb;' },
-  whatsapp: { label: 'WA', style: 'background:#dcfce7;color:#166534;' }
-}
-
 const makeText = (translate: (value: string, params?: Record<string, string | number>) => string) => {
   return (value: string, params?: Record<string, string | number>) => textNode(translate(value, params))
 }
@@ -39,23 +29,6 @@ const renderManifestoCopyBlock = (
     h('strong', { class: 'home-manifest-copy-lead' }, [text(lead)]),
     text(detail)
   ])
-
-const renderDockIcon = (
-  label: string,
-  monogram: { label: string; style: string }
-) =>
-  h(
-    'div',
-    {
-      class:
-        'flex aspect-square items-center justify-center rounded-full supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10',
-      style: `${dockIconSizeStyle}${dockMonogramStyle}${monogram.style}`,
-      role: 'listitem',
-      'aria-label': label,
-      title: label
-    },
-    [textNode(monogram.label)]
-  )
 
 const planner: FragmentDefinition = {
   id: 'fragment://page/home/planner@v1',
@@ -169,22 +142,46 @@ const dockFragment: FragmentDefinition = {
   render: ({ t }) => {
     const text = makeText(t)
     return h('section', null, [
-      h('div', { class: 'meta-line' }, [text('react dock')]),
-      h('h2', null, text('Server-only dock fragment.')),
-      renderHomeCopyBlock(text, 'MagicUI dock authored in React,', 'compiled to a static fragment.'),
+      h('div', { class: 'meta-line' }, [text('live collaborative text')]),
+      h('h2', null, text('Shared text for everyone on the page.')),
+      renderHomeCopyBlock(
+        text,
+        'Anyone on the page can edit the same text box.',
+        'Loro syncs updates through Garnet in real time.'
+      ),
       h(
         'div',
         {
-          class:
-            'supports-backdrop-blur:bg-white/10 supports-backdrop-blur:dark:bg-black/10 mx-auto mt-6 flex h-[58px] w-max items-center justify-center gap-2 rounded-2xl border p-2 backdrop-blur-md',
-          role: 'list',
-          'aria-label': t('Dock shortcuts')
+          class: 'home-collab-root mt-6',
+          'data-home-collab-root': 'dock',
+          'data-collab-status-connecting': t('Connecting live sync...'),
+          'data-collab-status-live': t('Live for everyone on this page'),
+          'data-collab-status-reconnecting': t('Reconnecting live sync...'),
+          'data-collab-status-error': t('Realtime unavailable')
         },
         [
-          renderDockIcon('GitHub', DockIconMonograms.gitHub),
-          renderDockIcon('Google Drive', DockIconMonograms.googleDrive),
-          renderDockIcon('Notion', DockIconMonograms.notion),
-          renderDockIcon('WhatsApp', DockIconMonograms.whatsapp)
+          h('textarea', {
+            class: 'home-collab-textarea',
+            'data-home-collab-input': 'true',
+            rows: '7',
+            spellcheck: 'false',
+            placeholder: t('Write something. Everyone here sees it live.'),
+            'aria-label': t('Shared collaborative text box'),
+            disabled: 'true'
+          }),
+          h('div', { class: 'home-collab-toolbar' }, [
+            h(
+              'span',
+              {
+                class: 'home-collab-status',
+                'data-home-collab-status': 'connecting',
+                role: 'status',
+                'aria-live': 'polite'
+              },
+              [text('Connecting live sync...')]
+            ),
+            h('span', { class: 'home-collab-note' }, [text('Loro + Garnet')])
+          ])
         ]
       )
     ])

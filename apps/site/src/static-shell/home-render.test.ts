@@ -260,9 +260,9 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(reactHtml).toContain('React stays server-only.')
     expect(reactHtml).toContain('react-binary-demo')
-    expect(dockHtml).toContain('Server-only dock fragment.')
-    expect(dockHtml).toContain('aria-label="Dock shortcuts"')
-    expect(dockHtml).toContain('GH')
+    expect(dockHtml).toContain('Shared text for everyone on the page.')
+    expect(dockHtml).toContain('data-home-collab-root="dock"')
+    expect(dockHtml).toContain('data-home-collab-input="true"')
   })
 
   it('preserves demo props on compact preact previews', () => {

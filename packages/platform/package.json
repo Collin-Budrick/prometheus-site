@@ -37,6 +37,7 @@
     "drizzle-zod": "1.0.0-beta.9-e89174b",
     "elysia": "1.4.27",
     "highlight.run": "9.27.1",
+    "loro-crdt": "^1.10.6",
     "postgres": "3.4.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
     "web-push": "3.6.7",

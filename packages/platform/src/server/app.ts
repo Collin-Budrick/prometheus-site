@@ -13,6 +13,7 @@ import { resolveBooleanFlag } from '../runtime'
 import { createPlatformServer, type PlatformServerContext } from './bun'
 import { createFragmentUpdateBroadcaster } from './fragment-updates'
 import { createFragmentRoutes, createFragmentStore } from './fragments'
+import { createHomeCollabRoutes } from './home-collab'
 
 type FeatureFlags = {
   auth: boolean
@@ -144,6 +145,8 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     })
 
     const app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
+
+    createHomeCollabRoutes(app, { cache })
 
     if (platformConfig.environment !== 'production') {
       applyDevCors(app)

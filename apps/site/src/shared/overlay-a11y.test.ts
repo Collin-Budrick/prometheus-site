@@ -4,8 +4,13 @@ import {
   bindOverlayDismiss,
   focusOverlayEntry,
   restoreOverlayFocus,
+  restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from './overlay-a11y'
+
+class MockDocument {
+  activeElement: unknown = null
+}
 
 class MockElement {
   dataset: Record<string, string> = {}
@@ -14,6 +19,8 @@ class MockElement {
   isConnected = true
   tabIndex = -1
   focusCount = 0
+  blurCount = 0
+  ownerDocument: MockDocument | null = null
   private readonly attrs = new Map<string, string>()
   private readonly queries = new Map<string, MockElement | null>()
   private readonly contained = new Set<unknown>([this])
@@ -51,6 +58,16 @@ class MockElement {
 
   focus() {
     this.focusCount += 1
+    if (this.ownerDocument) {
+      this.ownerDocument.activeElement = this
+    }
+  }
+
+  blur() {
+    this.blurCount += 1
+    if (this.ownerDocument?.activeElement === this) {
+      this.ownerDocument.activeElement = null
+    }
   }
 }
 
@@ -81,9 +98,13 @@ class MockEventTarget {
 
 describe('overlay a11y helpers', () => {
   it('manages the interactive shell settings panel hidden state and focus flow', () => {
+    const doc = new MockDocument()
     const trigger = new MockElement()
     const panel = new MockElement()
     const languageToggle = new MockElement()
+    trigger.ownerDocument = doc
+    panel.ownerDocument = doc
+    languageToggle.ownerDocument = doc
 
     panel.setQuery('.settings-lang-trigger', languageToggle)
 
@@ -102,6 +123,26 @@ describe('overlay a11y helpers', () => {
     expect(panel.getAttribute('aria-hidden')).toBe('false')
     expect(languageToggle.focusCount).toBe(1)
     expect(trigger.focusCount).toBe(1)
+  })
+
+  it('moves focus out of an overlay before it is hidden', () => {
+    const doc = new MockDocument()
+    const trigger = new MockElement()
+    const panel = new MockElement()
+    const focusedInput = new MockElement()
+    trigger.ownerDocument = doc
+    panel.ownerDocument = doc
+    focusedInput.ownerDocument = doc
+    panel.include(focusedInput)
+
+    focusedInput.focus()
+    restoreOverlayFocusBeforeHide(panel as unknown as HTMLElement, trigger as unknown as HTMLElement)
+    setOverlaySurfaceState(panel as unknown as HTMLElement, false)
+
+    expect(trigger.focusCount).toBe(1)
+    expect(focusedInput.blurCount).toBe(0)
+    expect(doc.activeElement).toBe(trigger)
+    expect(panel.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('dismisses the static shell settings panel on Escape and ignores pointer events inside the root', () => {

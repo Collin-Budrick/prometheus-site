@@ -23,6 +23,9 @@ const FALLBACK_FOCUSABLE_SELECTOR = [
 const isFocusableElement = (value: unknown): value is HTMLElement =>
   Boolean(value) && typeof (value as { focus?: unknown }).focus === 'function'
 
+const isBlurElement = (value: unknown): value is HTMLElement & { blur: () => void } =>
+  Boolean(value) && typeof (value as { blur?: unknown }).blur === 'function'
+
 const resolveFocusTarget = (root: ParentNode, target: FocusTarget): HTMLElement | null => {
   if (!target) return null
   if (Array.isArray(target)) {
@@ -85,6 +88,39 @@ export const restoreOverlayFocus = (target: HTMLElement | null | undefined) => {
   if ((target as HTMLElement & { isConnected?: boolean }).isConnected === false) return null
   target.focus()
   return target
+}
+
+export const restoreOverlayFocusBeforeHide = (
+  surface: HTMLElement | null | undefined,
+  target: HTMLElement | null | undefined
+) => {
+  const ownerDocument =
+    surface?.ownerDocument ??
+    target?.ownerDocument ??
+    (typeof document !== 'undefined' ? document : null)
+  const activeElement =
+    ownerDocument && 'activeElement' in ownerDocument
+      ? ((ownerDocument as Document & { activeElement?: unknown }).activeElement ?? null)
+      : null
+
+  const focusedWithinSurface =
+    Boolean(surface) && activeElement !== null && typeof surface?.contains === 'function'
+      ? surface.contains(activeElement)
+      : false
+
+  const restoredTarget = restoreOverlayFocus(target)
+  const focusStillWithinSurface =
+    focusedWithinSurface && Boolean(surface) && activeElement !== null && typeof surface?.contains === 'function'
+      ? surface.contains(
+          ((ownerDocument as Document & { activeElement?: unknown } | null)?.activeElement ?? activeElement) as Node
+        )
+      : false
+
+  if (focusStillWithinSurface && isBlurElement(activeElement)) {
+    activeElement.blur()
+  }
+
+  return restoredTarget
 }
 
 export const bindOverlayDismiss = ({

@@ -142,9 +142,9 @@
     },
     "fragment://page/home/dock@v2": {
       "heading": "h2",
-      "metaLine": "react dock",
-      "title": "Server-only dock fragment.",
-      "description": "MagicUI dock authored in React, compiled to a static fragment."
+      "metaLine": "live collaborative text",
+      "title": "Shared text for everyone on the page.",
+      "description": "Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time."
     },
     "fragment://page/store/stream@v1": {
       "heading": "h2",

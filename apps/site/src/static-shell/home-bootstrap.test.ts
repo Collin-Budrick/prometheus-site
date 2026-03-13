@@ -18,6 +18,7 @@ import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 class MockDemoElement {
   dataset: Record<string, string> = {}
   isConnected = true
+  rectReadCount = 0
   private attrs = new Map<string, string>()
   private rect = {
     top: 0,
@@ -65,6 +66,7 @@ class MockDemoElement {
   }
 
   getBoundingClientRect() {
+    this.rectReadCount += 1
     return {
       ...this.rect,
       x: this.rect.left,
@@ -568,6 +570,114 @@ describe('bindHomeDemoActivation', () => {
       await taskQueue.flushNext()
 
       expect(activations).toEqual(['planner'])
+    } finally {
+      globals.window = originalWindow
+    }
+  })
+
+  it('batches initial viewport reads before warming demo assets', () => {
+    const taskQueue = createTaskQueue()
+    const controller = createController()
+    const planner = new MockDemoElement('planner')
+    const island = new MockDemoElement('preact-island')
+    const warmSnapshots: string[] = []
+    const globals = globalThis as typeof globalThis & {
+      window?: { innerWidth?: number; innerHeight?: number }
+    }
+    const originalWindow = globals.window
+
+    planner.setRect({
+      top: 120,
+      left: 0,
+      right: 420,
+      bottom: 360,
+      width: 420,
+      height: 240
+    })
+    island.setRect({
+      top: 420,
+      left: 0,
+      right: 420,
+      bottom: 660,
+      width: 420,
+      height: 240
+    })
+
+    globals.window = {
+      ...(originalWindow ?? {}),
+      innerWidth: 1440,
+      innerHeight: 900
+    }
+
+    try {
+      const manager = bindHomeDemoActivation({
+        controller,
+        scheduleTask: taskQueue.scheduleTask,
+        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        warmKind: async (kind) => {
+          warmSnapshots.push(`${kind}:${planner.rectReadCount}:${island.rectReadCount}`)
+        },
+        activate: async () => ({ cleanup: () => undefined })
+      })
+
+      manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
+
+      expect(planner.rectReadCount).toBe(1)
+      expect(island.rectReadCount).toBe(1)
+      expect(warmSnapshots).toEqual(['planner:1:1', 'preact-island:1:1'])
+    } finally {
+      globals.window = originalWindow
+    }
+  })
+
+  it('skips near-view warmups on mobile-sized viewports', () => {
+    const taskQueue = createTaskQueue()
+    const controller = createController()
+    const planner = new MockDemoElement('planner')
+    const island = new MockDemoElement('preact-island')
+    const warmKinds: string[] = []
+    const globals = globalThis as typeof globalThis & {
+      window?: { innerWidth?: number; innerHeight?: number }
+    }
+    const originalWindow = globals.window
+
+    planner.setRect({
+      top: 120,
+      left: 0,
+      right: 360,
+      bottom: 360,
+      width: 360,
+      height: 240
+    })
+    island.setRect({
+      top: 880,
+      left: 0,
+      right: 360,
+      bottom: 1120,
+      width: 360,
+      height: 240
+    })
+
+    globals.window = {
+      ...(originalWindow ?? {}),
+      innerWidth: 390,
+      innerHeight: 844
+    }
+
+    try {
+      const manager = bindHomeDemoActivation({
+        controller,
+        scheduleTask: taskQueue.scheduleTask,
+        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        warmKind: async (kind) => {
+          warmKinds.push(kind)
+        },
+        activate: async () => ({ cleanup: () => undefined })
+      })
+
+      manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
+
+      expect(warmKinds).toEqual(['planner'])
     } finally {
       globals.window = originalWindow
     }

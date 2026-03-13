@@ -52,6 +52,11 @@ const HOME_DEMO_ACTIVATION_THRESHOLD = 0.15
 const HOME_DEMO_WARM_ROOT_MARGIN = '300px 0px'
 const HOME_DEMO_MOBILE_MAX_WIDTH = 900
 
+type HomeDemoViewportSnapshot = {
+  visibilityRatio: number
+  withinWarmMargin: boolean
+}
+
 const markPerformance = (name: string) => {
   if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
     return
@@ -89,7 +94,7 @@ const shouldSkipHomeDemoRoot = (controller: HomeDemoController, root: Element) =
   controller.demoRenders.has(root) ||
   controller.pendingDemoRoots.has(root)
 
-const getImmediateHomeDemoVisibilityRatio = (root: Element) => {
+const getHomeDemoViewportSnapshot = (root: Element): HomeDemoViewportSnapshot | null => {
   if (typeof window === 'undefined' || typeof root.getBoundingClientRect !== 'function') {
     return null
   }
@@ -97,7 +102,12 @@ const getImmediateHomeDemoVisibilityRatio = (root: Element) => {
   const rect = root.getBoundingClientRect()
   const width = typeof rect.width === 'number' ? rect.width : rect.right - rect.left
   const height = typeof rect.height === 'number' ? rect.height : rect.bottom - rect.top
-  if (width <= 0 || height <= 0) return 0
+  if (width <= 0 || height <= 0) {
+    return {
+      visibilityRatio: 0,
+      withinWarmMargin: false
+    }
+  }
 
   const viewportWidth =
     typeof window.innerWidth === 'number'
@@ -107,42 +117,22 @@ const getImmediateHomeDemoVisibilityRatio = (root: Element) => {
     typeof window.innerHeight === 'number'
       ? window.innerHeight
       : document.documentElement?.clientHeight ?? 0
-  if (viewportWidth <= 0 || viewportHeight <= 0) return 0
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return {
+      visibilityRatio: 0,
+      withinWarmMargin: false
+    }
+  }
 
   const intersectionWidth = Math.min(rect.right, viewportWidth) - Math.max(rect.left, 0)
   const intersectionHeight = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0)
-  if (intersectionWidth <= 0 || intersectionHeight <= 0) return 0
+  const visibilityRatio =
+    intersectionWidth <= 0 || intersectionHeight <= 0 ? 0 : (intersectionWidth * intersectionHeight) / (width * height)
 
-  return (intersectionWidth * intersectionHeight) / (width * height)
-}
-
-const hasRenderableHomeDemoRect = (root: Element) => {
-  if (typeof root.getBoundingClientRect !== 'function') {
-    return false
+  return {
+    visibilityRatio,
+    withinWarmMargin: rect.top < viewportHeight + 300 && rect.bottom > -300
   }
-
-  const rect = root.getBoundingClientRect()
-  const width = typeof rect.width === 'number' ? rect.width : rect.right - rect.left
-  const height = typeof rect.height === 'number' ? rect.height : rect.bottom - rect.top
-  return width > 0 && height > 0
-}
-
-const isWithinWarmMargin = (root: Element) => {
-  if (typeof window === 'undefined' || typeof root.getBoundingClientRect !== 'function') {
-    return false
-  }
-
-  if (!hasRenderableHomeDemoRect(root)) {
-    return false
-  }
-
-  const rect = root.getBoundingClientRect()
-  const viewportHeight =
-    typeof window.innerHeight === 'number'
-      ? window.innerHeight
-      : document.documentElement?.clientHeight ?? 0
-
-  return rect.top < viewportHeight + 300 && rect.bottom > -300
 }
 
 const resolveWarmBudget = () => {
@@ -152,7 +142,7 @@ const resolveWarmBudget = () => {
       : 1280
 
   if (viewportWidth <= HOME_DEMO_MOBILE_MAX_WIDTH) {
-    return { visible: 1, nearView: 1 }
+    return { visible: 1, nearView: 0 }
   }
 
   return { visible: 2, nearView: 1 }
@@ -268,6 +258,8 @@ export const bindHomeDemoActivation = ({
   ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver
 }: BindHomeDemoActivationOptions): HomeDemoActivationManager => {
+  const warmBudget = resolveWarmBudget()
+  const allowAutoNearViewWarm = warmBudget.nearView > 0
   const observedRoots = new Set<Element>()
   const observedOrder = new Map<Element, number>()
   const visibleRoots = new Set<Element>()
@@ -289,8 +281,10 @@ export const bindHomeDemoActivation = ({
     })
   }
 
-  const primeVisibleAndNearViewKinds = (demoRoots: HTMLElement[]) => {
-    const budget = resolveWarmBudget()
+  const primeVisibleAndNearViewKinds = (
+    demoRoots: HTMLElement[],
+    viewportSnapshots: ReadonlyMap<HTMLElement, HomeDemoViewportSnapshot>
+  ) => {
     let visibleKinds = 0
     let nearViewKinds = 0
 
@@ -300,14 +294,15 @@ export const bindHomeDemoActivation = ({
       const kind = resolveHomeDemoKind(demoRoot)
       if (!kind || warmedKinds.has(kind)) return
 
-      const visibilityRatio = getImmediateHomeDemoVisibilityRatio(demoRoot) ?? 0
-      if (visibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD && visibleKinds < budget.visible) {
+      const viewportSnapshot = viewportSnapshots.get(demoRoot)
+      const visibilityRatio = viewportSnapshot?.visibilityRatio ?? 0
+      if (visibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD && visibleKinds < warmBudget.visible) {
         visibleKinds += 1
         warmKindForRoot(demoRoot)
         return
       }
 
-      if (isWithinWarmMargin(demoRoot) && nearViewKinds < budget.nearView) {
+      if (viewportSnapshot?.withinWarmMargin && nearViewKinds < warmBudget.nearView) {
         nearViewKinds += 1
         warmKindForRoot(demoRoot)
       }
@@ -356,6 +351,7 @@ export const bindHomeDemoActivation = ({
               const demoRoot = entry.target as HTMLElement
               if (!observedRoots.has(demoRoot)) return
               if (!entry.isIntersecting) return
+              if (!allowAutoNearViewWarm) return
               warmKindForRoot(demoRoot)
             })
           },
@@ -469,7 +465,17 @@ export const bindHomeDemoActivation = ({
       pruneDetachedHomeDemos(controller)
 
       const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
-      primeVisibleAndNearViewKinds(demoRoots)
+      const viewportSnapshots = new Map<HTMLElement, HomeDemoViewportSnapshot>()
+
+      demoRoots.forEach((demoRoot) => {
+        if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
+        const viewportSnapshot = getHomeDemoViewportSnapshot(demoRoot)
+        if (viewportSnapshot) {
+          viewportSnapshots.set(demoRoot, viewportSnapshot)
+        }
+      })
+
+      primeVisibleAndNearViewKinds(demoRoots, viewportSnapshots)
 
       demoRoots.forEach((demoRoot) => {
         if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
@@ -492,15 +498,13 @@ export const bindHomeDemoActivation = ({
         warmObserver.observe(demoRoot)
         activationObserver.observe(demoRoot)
 
-        if (isWithinWarmMargin(demoRoot)) {
+        const viewportSnapshot = viewportSnapshots.get(demoRoot)
+
+        if (allowAutoNearViewWarm && viewportSnapshot?.withinWarmMargin) {
           warmKindForRoot(demoRoot)
         }
 
-        const immediateVisibilityRatio = getImmediateHomeDemoVisibilityRatio(demoRoot)
-        if (
-          typeof immediateVisibilityRatio === 'number' &&
-          immediateVisibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD
-        ) {
+        if ((viewportSnapshot?.visibilityRatio ?? 0) >= HOME_DEMO_ACTIVATION_THRESHOLD) {
           visibleRoots.add(demoRoot)
           enqueueDemoRoot(demoRoot)
         }

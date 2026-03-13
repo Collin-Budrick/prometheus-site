@@ -166,6 +166,7 @@
         "drizzle-zod": "1.0.0-beta.9-e89174b",
         "elysia": "1.4.27",
         "highlight.run": "9.27.1",
+        "loro-crdt": "^1.10.6",
         "postgres": "3.4.8",
         "react": "19.3.0-canary-fd524fe0-20251121",
         "web-push": "3.6.7",
@@ -1235,6 +1236,8 @@
     "longest-streak": ["longest-streak@3.1.0", "", {}, "sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g=="],
 
     "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "^3.0.0 || ^4.0.0" }, "bin": { "loose-envify": "cli.js" } }, "sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q=="],
+
+    "loro-crdt": ["loro-crdt@1.10.6", "", {}, "sha512-ije6m7wrSRtzdyEd7n+rjgA+UCzfvz2PkjLk5Lf86zf1LgcbWY3g2nE3+7TDADiiX/ziYTovHnGRBiylPt2ipw=="],
 
     "loupe": ["loupe@3.2.1", "", {}, "sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ=="],
 

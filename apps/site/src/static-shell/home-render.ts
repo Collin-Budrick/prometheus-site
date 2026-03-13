@@ -154,7 +154,42 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
       : []),
     h(header.heading ?? 'h2', null, [t(header.title)]),
     ...(shellSummary ? [h('div', { class: 'home-fragment-shell-copy' }, [t(shellSummary)])] : []),
-    h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['GitHub', 'Google Drive', 'Notion', 'WhatsApp']))])
+    h(
+      'div',
+      {
+        class: 'home-collab-root',
+        'data-home-collab-root': 'dock',
+        'data-collab-status-connecting': 'Connecting live sync...',
+        'data-collab-status-live': 'Live for everyone on this page',
+        'data-collab-status-reconnecting': 'Reconnecting live sync...',
+        'data-collab-status-error': 'Realtime unavailable'
+      },
+      [
+        h('textarea', {
+          class: 'home-collab-textarea',
+          'data-home-collab-input': 'true',
+          rows: '7',
+          spellcheck: 'false',
+          placeholder: 'Write something. Everyone here sees it live.',
+          'aria-label': 'Shared collaborative text box',
+          disabled: 'true'
+        }),
+        h('div', { class: 'home-collab-toolbar' }, [
+          h(
+            'span',
+            {
+              class: 'home-collab-status',
+              'data-home-collab-status': 'connecting',
+              role: 'status',
+              'aria-live': 'polite'
+            },
+            [t('Connecting live sync...')]
+          ),
+          h('span', { class: 'home-collab-note' }, [t('Loro + Garnet')])
+        ])
+      ]
+    ),
+    h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['Loro', 'Garnet', 'Realtime']))])
   ])
 }
 
@@ -219,11 +254,11 @@ const buildHomeStaticShellNode = (
       return buildDockShellNode(
         getShellHeader(
           fragmentId,
-          fragmentHeaders,
-          'Server-only dock fragment.',
-          'MagicUI dock authored in React, compiled to a static fragment.'
+          undefined,
+          'Shared text for everyone on the page.',
+          'Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time.'
         ),
-        'Static React dock, server rendered only.'
+        'Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time.'
       )
     default:
       return null
@@ -293,7 +328,7 @@ const buildHomeStaticPreviewNode = (node: RenderNode, copy: HomeStaticCopyBundle
 
   for (const child of children) {
     previewChildren.push(replaceDemoNodes(child, copy))
-    if (child.type === 'element' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
+    if (child.type === 'element' && typeof child.tag === 'string' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
       break
     }
   }
