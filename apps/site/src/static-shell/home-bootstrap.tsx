@@ -61,12 +61,15 @@ type HomeControllerState = {
   path: string
   fragmentOrder: string[]
   planSignature: string
+  fragmentOrder: string[]
+  planSignature: string
   homeDemoStylesheetHref: string | null
   homeFragmentBootstrapHref: string | null
   fetchAbort: AbortController | null
   cleanupFns: Array<() => void>
   demoRenders: Map<Element, HomeDemoActivationResult>
   pendingDemoRoots: Set<Element>
+  demoObservationReady: boolean
   demoObservationReady: boolean
   patchQueue: StaticHomePatchQueue | null
   destroyed: boolean
@@ -362,6 +365,10 @@ export const scheduleStaticHomePaintReady = ({
   }
 }
 
+export type HomeDemoController = Pick<
+  HomeControllerState,
+  'demoRenders' | 'pendingDemoRoots' | 'destroyed' | 'path' | 'lang' | 'fragmentOrder' | 'planSignature'
+>
 export type HomeDemoController = Pick<
   HomeControllerState,
   'demoRenders' | 'pendingDemoRoots' | 'destroyed' | 'path' | 'lang' | 'fragmentOrder' | 'planSignature'
@@ -805,11 +812,15 @@ export const bindHomeFragmentHydration = ({
 }
 
 const scheduleHomeDeferredAction = ({
+const scheduleHomeDeferredAction = ({
   controller,
+  idleTimeoutMs,
+  run,
   idleTimeoutMs,
   run,
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null
+}: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
 }: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
   if (!win || !doc) {
     return {
@@ -848,6 +859,7 @@ const scheduleHomeDeferredAction = ({
     started = true
     cleanupTriggers()
     run()
+    run()
     return true
   }
 
@@ -870,10 +882,12 @@ const scheduleHomeDeferredAction = ({
   if (typeof win.requestIdleCallback === 'function') {
     idleId = win.requestIdleCallback(triggerIdleRevalidation, {
       timeout: idleTimeoutMs
+      timeout: idleTimeoutMs
     })
   } else {
     timeoutId = win.setTimeout(
       triggerIdleRevalidation,
+      idleTimeoutMs
       idleTimeoutMs
     ) as unknown as number
   }
@@ -1030,6 +1044,7 @@ export const scheduleHomePostLcpTasks = ({
   let cancelled = false
   let deferredRevalidation: HomeDeferredRevalidationHandle | null = null
   let deferredDemoObservation: HomeDeferredRevalidationHandle | null = null
+  let deferredDemoObservation: HomeDeferredRevalidationHandle | null = null
   let postLcpStarted = false
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -1062,6 +1077,13 @@ export const scheduleHomePostLcpTasks = ({
       win,
       doc
     })
+    deferredDemoObservation = scheduleHomeDeferredDemoObservation({
+      controller,
+      homeDemoActivation,
+      root,
+      win,
+      doc
+    })
   }
 
   void lcpGate.wait.then(() => {
@@ -1072,6 +1094,8 @@ export const scheduleHomePostLcpTasks = ({
     cancelled = true
     lcpGate.cleanup()
     win?.removeEventListener('pageshow', handlePageShow)
+    deferredDemoObservation?.cleanup()
+    deferredDemoObservation = null
     deferredDemoObservation?.cleanup()
     deferredDemoObservation = null
     deferredRevalidation?.cleanup()
@@ -1181,6 +1205,20 @@ const activateHomeDemoRoot = async (
     }
 
     controller.demoRenders.set(demoRoot, result)
+    const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
+    if (fragmentCard) {
+      void persistInitialFragmentCardHeights({
+        root: fragmentCard,
+        routeContext: {
+          path: controller.path,
+          lang: controller.lang,
+          fragmentOrder: controller.fragmentOrder,
+          planSignature: controller.planSignature
+        }
+      }).catch((error) => {
+        console.error('Static home demo height persistence failed:', error)
+      })
+    }
     const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
     if (fragmentCard) {
       void persistInitialFragmentCardHeights({
@@ -1634,12 +1672,15 @@ export const bootstrapStaticHome = async () => {
     path: data.currentPath,
     fragmentOrder: data.fragmentOrder,
     planSignature: data.planSignature ?? '',
+    fragmentOrder: data.fragmentOrder,
+    planSignature: data.planSignature ?? '',
     homeDemoStylesheetHref: data.homeDemoStylesheetHref,
     homeFragmentBootstrapHref: data.fragmentBootstrapHref,
     fetchAbort: null,
     cleanupFns: [],
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),
+    demoObservationReady: false,
     demoObservationReady: false,
     patchQueue: null,
     destroyed: false
@@ -1665,8 +1706,17 @@ export const bootstrapStaticHome = async () => {
       fragmentOrder: data.fragmentOrder,
       planSignature: data.planSignature ?? ''
     },
+    routeContext: {
+      path: controller.path,
+      lang: controller.lang,
+      fragmentOrder: data.fragmentOrder,
+      planSignature: data.planSignature ?? ''
+    },
     onPatchedBody: (body) => {
       pruneDetachedHomeDemos(controller)
+      if (!controller.demoObservationReady) {
+        return
+      }
       if (!controller.demoObservationReady) {
         return
       }

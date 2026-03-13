@@ -24,6 +24,7 @@ export const installHomeStaticEntry = ({
   doc = typeof document !== 'undefined' ? document : null,
   loadRuntime = loadHomeBootstrapRuntime,
   createLcpGate = createHomeFirstLcpGate
+  createLcpGate = createHomeFirstLcpGate
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined

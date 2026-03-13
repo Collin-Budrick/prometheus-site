@@ -80,6 +80,7 @@ const createManualGate = () => {
 
 describe('installHomeStaticEntry', () => {
   it('keeps the fragment bootstrap fetch off the initial home path', async () => {
+  it('keeps the fragment bootstrap fetch off the initial home path', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -93,6 +94,7 @@ describe('installHomeStaticEntry', () => {
       })
     })
 
+    expect(win.timeouts.size).toBe(0)
     expect(win.timeouts.size).toBe(0)
 
     manualGate.resolve()
@@ -164,13 +166,16 @@ describe('installHomeStaticEntry', () => {
     })
 
     expect(win.timeouts.size).toBe(0)
+    expect(win.timeouts.size).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
     expect(loadRuntimeCount).toBe(0)
     expect(win.timeouts.size).toBe(1)
+    expect(win.timeouts.size).toBe(1)
 
+    win.runTimeout()
     win.runTimeout()
     await flushMicrotasks()
 

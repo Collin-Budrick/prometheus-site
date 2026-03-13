@@ -310,6 +310,7 @@ const createHomeBootstrapController = () => ({
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
   demoObservationReady: false,
+  demoObservationReady: false,
   patchQueue: null
 })
 
@@ -623,6 +624,7 @@ describe('scheduleInitialHomeDemoObservation', () => {
 
 describe('scheduleHomePostLcpTasks', () => {
   it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
+  it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
     const manualGate = createManualLcpGate()
     const win = new MockDeferredWindow()
     const doc = new MockDeferredDocument()
@@ -659,6 +661,7 @@ describe('scheduleHomePostLcpTasks', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
+    expect(observedRoots).toEqual([])
     expect(observedRoots).toEqual([])
     expect(previewRefreshCalls).toEqual([])
     expect(authRefreshCalls).toEqual([])
