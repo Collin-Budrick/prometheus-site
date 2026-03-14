@@ -118,18 +118,21 @@ describe('static shell performance invariants', () => {
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
-    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, homeStaticEntrySource, homeDemoEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, homeDemoEntryLoaderSource, homeCollabEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
+    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, loginRouteSource, homeStaticEntrySource, homeDemoEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, islandEntrySource, islandRuntimeLoaderSource, homeDemoEntryLoaderSource, homeCollabEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
       readSource('../entry.ssr.tsx'),
       readSource('../../scripts/build-static-shell-entries.mjs'),
       readSource('../root.tsx'),
       readSource('../routes/layout.tsx'),
       readSource('../routes/home.tsx'),
+      readSource('../routes/login/index.tsx'),
       readSource('./home-static-entry.ts'),
       readSource('./home-demo-entry.ts'),
       readSource('./home-demo-runtime-loader.ts'),
       readSource('./home-bootstrap-runtime-loader.ts'),
       readSource('./fragment-static-entry.ts'),
       readSource('./fragment-bootstrap-runtime-loader.ts'),
+      readSource('./island-static-entry.ts'),
+      readSource('./island-bootstrap-runtime-loader.ts'),
       readSource('./home-demo-entry-loader.ts'),
       readSource('./home-collab-entry-loader.ts'),
       readSource('./store-static-runtime-loader.ts'),
@@ -149,6 +152,7 @@ describe('static shell performance invariants', () => {
     expect(buildScriptSource).toContain('home-demo-preact-island-runtime.ts')
     expect(buildScriptSource).toContain('fragment-bootstrap-runtime.ts')
     expect(buildScriptSource).toContain('store-static-runtime.ts')
+    expect(buildScriptSource).toContain('island-bootstrap-runtime.ts')
     expect(buildScriptSource).toContain('--public-path')
     expect(buildScriptSource).toContain('sanitizeBundledWasmSourceMaps')
     expect(buildScriptSource).toContain('versionBundledWasmAssetPaths')
@@ -179,8 +183,10 @@ describe('static shell performance invariants', () => {
     expect(homeCollabEntryLoaderSource).toContain("home-collab-entry.js")
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain("fragment-bootstrap-runtime.js")
+    expect(islandRuntimeLoaderSource).toContain("island-bootstrap-runtime.js")
     expect(storeRuntimeLoaderSource).toContain("store-static-runtime.js")
     expect(fragmentRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
+    expect(islandRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
     expect(fragmentEntrySource).toContain('installFragmentStaticEntry')
     expect(fragmentEntrySource).toContain('loadFragmentBootstrapRuntime')
     expect(fragmentEntrySource).toContain('loadStoreStaticRuntime')
@@ -190,6 +196,8 @@ describe('static shell performance invariants', () => {
     expect(fragmentEntrySource).toContain('observeBootstrapRoot')
     expect(fragmentEntrySource).toContain('prewarmFragmentRuntime')
     expect(fragmentEntrySource).not.toContain("from './static-bootstrap'")
+    expect(islandEntrySource).toContain("from './island-bootstrap-runtime-loader'")
+    expect(islandEntrySource).not.toContain("from './island-bootstrap'")
     expect(entrySsrSource).toContain('appendStaticAssetVersion')
     expect(entrySsrSource).toContain('STATIC_SHELL_BUILD_VERSION')
     expect(staticAssetUrlSource).toContain('appendStaticAssetVersion(')
@@ -203,6 +211,12 @@ describe('static shell performance invariants', () => {
     expect(staticHomeRouteSource).toContain("createHomeDemoAssetMap")
     expect(staticHomeRouteSource).not.toContain('buildPrimeHomeFragmentBootstrapScript')
     expect(homeRouteSource).toContain('await loadStaticFragmentResource(path, lang, request)')
+    expect(loginRouteSource).toContain('const loginResource = useLoginResource()')
+    expect(loginRouteSource).toContain('<StaticLoginRoute')
+    expect(loginRouteSource).not.toContain('@features/auth/pages/Login.client')
+    expect(loginRouteSource).not.toContain('useVisibleTask$(')
+    expect(loginRouteSource).not.toContain('loadHybridFragmentResource')
+    expect(loginRouteSource).not.toContain('isStaticShellBuild')
     expect(homeRouteSource).not.toContain("'data-home-demo-stylesheet': 'true'")
     expect(homeRouteSource).not.toContain('buildHomeFragmentBootstrapPreloadLink(lang)')
     expect(homeRouteSource).not.toContain('loadHybridFragmentResource')
@@ -224,8 +238,11 @@ describe('static shell performance invariants', () => {
     expect(homeStaticEntrySource).not.toContain('scheduleStaticShellTask(')
     expect(homeDemoEntrySource).toContain("from './home-collab-entry-loader'")
     expect(homeDemoEntrySource).not.toContain("from './home-collab-text'")
-    expect(entrySsrSource).not.toContain('home-bootstrap-runtime.js')
-    expect(entrySsrSource).not.toContain('fragment-bootstrap-runtime.js')
+    expect(entrySsrSource).toContain('home-bootstrap-runtime.js')
+    expect(entrySsrSource).toContain('home-demo-entry.js')
+    expect(entrySsrSource).toContain('fragment-bootstrap-runtime.js')
+    expect(entrySsrSource).toContain('island-bootstrap-runtime.js')
+    expect(entrySsrSource).toContain('store-static-runtime.js')
   })
 
   it('threads authenticated state through the static shell layout and seed', async () => {

@@ -1,5 +1,4 @@
 import { component$, useStyles$ } from '@builder.io/qwik'
-import type { AuthFormState } from '@features/auth/auth-form-state'
 import authStyles from '@features/auth/auth.css?inline'
 import type { Lang } from '../lang'
 import type { UiCopy } from '../lang/types'
@@ -19,7 +18,6 @@ type StaticLoginRouteProps = {
     | 'loginTitle'
   >
   lang: Lang
-  initialFormState: AuthFormState
 }
 
 export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang }) => {

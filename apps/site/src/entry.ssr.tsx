@@ -10,7 +10,8 @@ import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_ISLAND_DATA_SCRIPT_ID,
   STATIC_PAGE_ROOT_ATTR,
-  isStaticShellPath
+  isStaticShellPath,
+  normalizeStaticShellRoutePath
 } from './static-shell/constants'
 import { getOrCreateRequestCspNonce } from './security/server'
 import { CSP_NONCE_ATTR } from './security/shared'
@@ -25,9 +26,23 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 } as const
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
-  'home-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static']],
-  'fragment-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static']],
-  'island-static': [STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static']]
+  'home-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
+    'build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js',
+    'build/static-shell/apps/site/src/static-shell/home-demo-entry.js'
+  ],
+  'fragment-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static'],
+    'build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js'
+  ],
+  'island-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static'],
+    'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
+  ]
+} as const
+
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
+  '/store': ['build/static-shell/apps/site/src/static-shell/store-static-runtime.js']
 } as const
 
 const STATIC_BOOTSTRAP_BUNDLE_URLS = Object.fromEntries(
@@ -66,9 +81,17 @@ const resolveStaticBootstrapBundlePath = (pathname: string) => {
 }
 
 const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
-  const routeConfig = getStaticShellRouteConfig(pathname)
+  const normalizedPath = normalizeStaticShellRoutePath(pathname)
+  const routeConfig = getStaticShellRouteConfig(normalizedPath)
   if (!routeConfig) return []
-  return STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode]
+  return Array.from(
+    new Set([
+      ...STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode],
+      ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
+        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
+      ] ?? [])
+    ])
+  )
 }
 
 const hasStaticBootstrapBundle = (pathname: string) => {

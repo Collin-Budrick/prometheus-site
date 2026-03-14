@@ -123,12 +123,9 @@ export const buildSiteCsp = ({
     `connect-src ${buildSiteConnectSrc(currentOrigin, config).join(' ')}`,
     `worker-src 'self'`,
     `manifest-src 'self'`,
-    `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME}`
+    `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME}`,
+    `require-trusted-types-for 'script'`
   ]
-
-  if (!relaxedScriptPolicy) {
-    directives.push(`require-trusted-types-for 'script'`)
-  }
 
   return directives.join('; ')
 }

@@ -25,7 +25,7 @@ describe('security/server', () => {
     expect(csp).toContain(`frame-ancestors 'none'`)
   })
 
-  it('relaxes script evaluation and connect-src when direct SpaceTimeDB is enabled', () => {
+  it('keeps Trusted Types enforcement even when direct SpaceTimeDB is enabled', () => {
     const config = resolvePublicAppConfig({
       apiBase: 'https://api.prometheus.dev/api',
       spacetimeDbUri: 'https://db.prometheus.dev',
@@ -41,7 +41,8 @@ describe('security/server', () => {
     expect(csp).toContain(
       `script-src 'nonce-nonce-123' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https: http: 'inline-speculation-rules'`
     )
-    expect(csp).not.toContain(`require-trusted-types-for 'script'`)
+    expect(csp).toContain(`require-trusted-types-for 'script'`)
+    expect(csp).toContain('trusted-types prometheus-server-html prometheus-template-html')
     expect(csp).toContain(`connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://db.prometheus.dev wss://db.prometheus.dev`)
   })
 

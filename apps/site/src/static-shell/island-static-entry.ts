@@ -1,4 +1,4 @@
-import { bootstrapStaticIslandShell } from './island-bootstrap'
+import { loadIslandBootstrapRuntime } from './island-bootstrap-runtime-loader'
 
 declare global {
   interface Window {
@@ -9,7 +9,8 @@ declare global {
 if (typeof window !== 'undefined') {
   window.__PROM_STATIC_ISLAND_ENTRY__ = true
 
-  void bootstrapStaticIslandShell()
+  void loadIslandBootstrapRuntime()
+    .then(({ bootstrapStaticIslandShell }) => bootstrapStaticIslandShell())
     .catch((error) => {
       console.error('Static island bootstrap failed:', error)
     })
