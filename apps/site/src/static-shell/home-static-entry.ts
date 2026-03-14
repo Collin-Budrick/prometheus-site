@@ -1,9 +1,16 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
+import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import {
+  STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_STAGE_ATTR
+} from './constants'
 
-export const HOME_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
+export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = '300px 0px'
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -20,6 +27,57 @@ type InstallHomeStaticEntryOptions = {
   createLcpGate?: typeof createHomeFirstLcpGate
 }
 
+const HOME_FRAGMENT_CARD_SELECTOR = `[${STATIC_FRAGMENT_CARD_ATTR}]`
+const HOME_PENDING_DEFERRED_CARD_SELECTOR = `${HOME_FRAGMENT_CARD_SELECTOR}[${STATIC_HOME_PATCH_STATE_ATTR}="pending"][${STATIC_HOME_STAGE_ATTR}="deferred"]`
+
+const escapeFragmentId = (value: string) => {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value)
+  }
+  return value.replace(/["\\]/g, '\\$&')
+}
+
+const resolveInteractionCard = (target: EventTarget | null) => {
+  if (!target || typeof target !== 'object') {
+    return null
+  }
+
+  const element =
+    'closest' in target && typeof target.closest === 'function'
+      ? (target as Element)
+      : 'parentElement' in target &&
+          (target as { parentElement?: Element | null }).parentElement &&
+          typeof (target as { parentElement?: Element | null }).parentElement?.closest === 'function'
+        ? (target as { parentElement: Element }).parentElement
+        : null
+  return element?.closest<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR) ?? null
+}
+
+const hasStaticHomeFragmentVersionMismatch = (doc: Document) => {
+  if (
+    typeof (doc as Document & { getElementById?: unknown }).getElementById !== 'function' ||
+    typeof doc.querySelector !== 'function'
+  ) {
+    return false
+  }
+
+  const data = readStaticHomeBootstrapData({ doc })
+  if (!data) {
+    return false
+  }
+
+  return Object.entries(data.fragmentVersions).some(([fragmentId, version]) => {
+    const card = doc.querySelector<HTMLElement>(
+      `[data-fragment-id="${escapeFragmentId(fragmentId)}"]`
+    )
+    if (!card) {
+      return false
+    }
+    const renderedVersion = card.getAttribute(STATIC_FRAGMENT_VERSION_ATTR)
+    return typeof renderedVersion === 'string' && renderedVersion !== `${version}`
+  })
+}
+
 export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
@@ -31,42 +89,45 @@ export const installHomeStaticEntry = ({
     return () => undefined
   }
 
-  win.__PROM_STATIC_HOME_ENTRY__ = true
+  const liveWin = win
+  const liveDoc = doc
+
+  liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
   let startedBootstrap = false
   let startedDemoEntry = false
   let loadHandler: (() => void) | null = null
-  let timeoutId: number | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
   let lcpGateCleanup: (() => void) | null = null
   let demoEntryCleanup: (() => void) | null = null
+  let visibilityObserver: IntersectionObserver | null = null
+  const observedCards = new Set<Element>()
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
   const cleanupTriggers = () => {
-    HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
-      win.removeEventListener(eventName, requestBootstrap, eventOptions)
-    })
+    liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
+    liveWin.removeEventListener('touchstart', handlePointerDown, eventOptions)
+    liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
+    liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
 
     if (loadHandler) {
-      win.removeEventListener('load', loadHandler)
+      liveWin.removeEventListener('load', loadHandler)
       loadHandler = null
-    }
-
-    if (timeoutId !== null) {
-      win.clearTimeout(timeoutId)
-      timeoutId = null
     }
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
     demoEntryCleanup?.()
     demoEntryCleanup = null
+    visibilityObserver?.disconnect()
+    visibilityObserver = null
+    observedCards.clear()
   }
 
   const startDemoEntry = () => {
-    if (startedDemoEntry || win.__PROM_STATIC_HOME_DEMO_ENTRY__) return
+    if (startedDemoEntry || liveWin.__PROM_STATIC_HOME_DEMO_ENTRY__) return
     startedDemoEntry = true
     void loadDemoRuntime()
       .then(({ installHomeDemoEntry }) => {
@@ -78,9 +139,12 @@ export const installHomeStaticEntry = ({
   }
 
   const startBootstrap = () => {
-    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
-    win.__PROM_STATIC_HOME_BOOTSTRAP__ = true
+    liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
+    visibilityObserver?.disconnect()
+    visibilityObserver = null
+    observedCards.clear()
 
     void loadBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
@@ -96,47 +160,116 @@ export const installHomeStaticEntry = ({
     }
   }
 
-  const armIdleTrigger = () => {
-    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    timeoutId = win.setTimeout(requestBootstrap, HOME_BOOTSTRAP_IDLE_TIMEOUT_MS) as unknown as number
+  function handlePointerDown(event: Event) {
+    if (!resolveInteractionCard(event.target)) {
+      return
+    }
+    requestBootstrap()
+  }
+
+  function handleFocusIn(event: Event) {
+    if (!resolveInteractionCard(event.target)) {
+      return
+    }
+    requestBootstrap()
+  }
+
+  function handleKeyDown() {
+    if (!resolveInteractionCard(liveDoc.activeElement)) {
+      return
+    }
+    requestBootstrap()
+  }
+
+  const observeDeferredCards = () => {
+    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) {
+      return
+    }
+
+    if (typeof IntersectionObserver !== 'function') {
+      if (
+        typeof liveDoc.querySelector === 'function' &&
+        liveDoc.querySelector(HOME_PENDING_DEFERRED_CARD_SELECTOR)
+      ) {
+        requestBootstrap()
+      }
+      return
+    }
+
+    if (!visibilityObserver) {
+      visibilityObserver = new IntersectionObserver(
+        (entries) => {
+          if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) {
+            return
+          }
+
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) {
+              return
+            }
+            requestBootstrap()
+          })
+        },
+        {
+          root: null,
+          rootMargin: HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN,
+          threshold: 0
+        }
+      )
+    }
+
+    if (typeof liveDoc.querySelectorAll === 'function') {
+      Array.from(liveDoc.querySelectorAll<HTMLElement>(HOME_PENDING_DEFERRED_CARD_SELECTOR)).forEach((card) => {
+        if (observedCards.has(card)) {
+          return
+        }
+        observedCards.add(card)
+        visibilityObserver?.observe(card)
+      })
+    }
   }
 
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
-    win.__PROM_STATIC_HOME_LCP_RELEASED__ = true
+    liveWin.__PROM_STATIC_HOME_LCP_RELEASED__ = true
     lcpGateCleanup?.()
     lcpGateCleanup = null
     startDemoEntry()
+    if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
+      requestBootstrap()
+      return
+    }
     if (bootstrapRequested) {
       startBootstrap()
       return
     }
-    armIdleTrigger()
+    observeDeferredCards()
   }
 
   const setupBootstrapTriggers = () => {
-    if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
-      win.addEventListener(eventName, requestBootstrap, eventOptions)
-    })
+    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
+    liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
+    liveWin.addEventListener('keydown', handleKeyDown, eventOptions)
+    liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
 
-    const lcpGate = createLcpGate({ win, doc })
+    const lcpGate = createLcpGate({ win: liveWin, doc: liveDoc })
     lcpGateCleanup = lcpGate.cleanup
     void lcpGate.wait.then(() => {
-      if (startedBootstrap || win.__PROM_STATIC_HOME_BOOTSTRAP__) return
+      if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
       releaseLcpGate()
     })
   }
 
-  if (doc.readyState === 'complete') {
+  if (liveDoc.readyState === 'complete') {
     setupBootstrapTriggers()
   } else {
     loadHandler = () => {
       loadHandler = null
       setupBootstrapTriggers()
     }
-    win.addEventListener('load', loadHandler, { once: true })
+    liveWin.addEventListener('load', loadHandler, { once: true })
   }
 
   return cleanupTriggers

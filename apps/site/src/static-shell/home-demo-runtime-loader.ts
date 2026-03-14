@@ -17,7 +17,7 @@ type LoadHomeDemoKindOptions = {
   importer?: (url: string) => Promise<HomeDemoRuntimeModule>
 }
 
-type WarmHomeDemoKindOptions = LoadHomeDemoKindOptions & {
+type WarmHomeDemoKindOptions = {
   doc?: HomeDemoStylesheetDocument | null
 }
 
@@ -37,6 +37,7 @@ const HOME_DEMO_STYLESHEET_SELECTOR = 'link[data-home-demo-stylesheet]'
 const modulePromises = new Map<HomeDemoKind, Promise<HomeDemoRuntimeModule>>()
 const stylePromises = new Map<HomeDemoKind, Promise<void>>()
 const warmPromises = new Map<HomeDemoKind, Promise<void>>()
+const preloadPromises = new Map<HomeDemoKind, Promise<void>>()
 let combinedHomeDemoStylesheetPromise: Promise<void> | null = null
 
 const markPerformance = (name: string) => {
@@ -89,15 +90,59 @@ const ensureModulePreloadLink = (
   href: string,
   doc: HomeDemoStylesheetDocument | null = typeof document !== 'undefined' ? document : null
 ) => {
-  if (!doc) return
+  const existingPromise = preloadPromises.get(kind)
+  if (existingPromise) {
+    return existingPromise
+  }
+
+  if (!doc) {
+    const resolvedPromise = Promise.resolve()
+    preloadPromises.set(kind, resolvedPromise)
+    return resolvedPromise
+  }
+
   const existingLink = doc.querySelector(getKindModulePreloadSelector(kind)) as HTMLLinkElement | null
-  if (existingLink) return
+  if (existingLink) {
+    const promise = new Promise<void>((resolve) => {
+      if (existingLink.rel === 'modulepreload') {
+        resolve()
+        return
+      }
+
+      const handleReady = () => {
+        existingLink.removeEventListener('load', handleReady)
+        existingLink.removeEventListener('error', handleReady)
+        resolve()
+      }
+
+      existingLink.addEventListener('load', handleReady, { once: true })
+      existingLink.addEventListener('error', handleReady, { once: true })
+    })
+    preloadPromises.set(kind, promise)
+    return promise
+  }
 
   const link = doc.createElement('link')
   link.setAttribute('rel', 'modulepreload')
   link.setAttribute('href', href)
   link.setAttribute('data-home-demo-module-kind', kind)
   doc.head.appendChild(link)
+
+  const promise = new Promise<void>((resolve) => {
+    const handleReady = () => {
+      link.removeEventListener('load', handleReady)
+      link.removeEventListener('error', handleReady)
+      resolve()
+    }
+
+    link.addEventListener('load', handleReady, { once: true })
+    link.addEventListener('error', handleReady, { once: true })
+    if (typeof window === 'undefined') {
+      resolve()
+    }
+  })
+  preloadPromises.set(kind, promise)
+  return promise
 }
 
 export const ensureHomeDemoKindStyle = ({
@@ -167,7 +212,6 @@ export const warmHomeDemoKind = (
   kind: HomeDemoKind,
   asset?: HomeDemoAssetDescriptor | null,
   {
-    importer = importHomeDemoRuntime,
     doc = typeof document !== 'undefined' ? document : null
   }: WarmHomeDemoKindOptions = {}
 ) => {
@@ -178,11 +222,10 @@ export const warmHomeDemoKind = (
 
   markPerformance(`prom:home-demo:warm-start:${kind}`)
   const moduleHref = resolveModuleUrl(kind, asset)
-  ensureModulePreloadLink(kind, moduleHref, doc)
 
   const promise = Promise.all([
     ensureHomeDemoKindStyle({ kind, asset, doc }),
-    loadHomeDemoKind(kind, { asset, importer })
+    ensureModulePreloadLink(kind, moduleHref, doc)
   ]).then(() => {
     markPerformance(`prom:home-demo:warm-ready:${kind}`)
   })
@@ -223,5 +266,6 @@ export const resetHomeDemoRuntimeLoaderForTests = () => {
   modulePromises.clear()
   stylePromises.clear()
   warmPromises.clear()
+  preloadPromises.clear()
   combinedHomeDemoStylesheetPromise = null
 }

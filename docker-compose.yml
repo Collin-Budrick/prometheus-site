@@ -10,6 +10,10 @@ services:
     depends_on:
       web:
         condition: service_healthy
+      api:
+        condition: service_started
+      spacetimedb:
+        condition: service_healthy
     ports:
       - "${PROMETHEUS_HTTP_PORT:-80}:80"
       - "${PROMETHEUS_HTTPS_PORT:-443}:443"
@@ -21,6 +25,9 @@ services:
       - caddy_config:/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.2
 
   spacetimedb:
     image: clockworklabs/spacetime:v2.0.4
@@ -46,6 +53,9 @@ services:
     volumes:
       - spacetimedb_data:/var/lib/spacetimedb
       - ./infra/spacetimedb/keys:/etc/spacetimedb/keys:ro
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.4
     healthcheck:
       test: ["CMD", "spacetime", "server", "ping", "http://127.0.0.1:3000"]
       interval: 2s
@@ -66,6 +76,9 @@ services:
       XDG_CONFIG_HOME: /tmp/.config
       SPACETIMEAUTH_AUTHORITY: ${SPACETIMEAUTH_AUTHORITY:-https://auth.spacetimedb.com/oidc}
       SPACETIMEAUTH_CLIENT_ID: ${SPACETIMEAUTH_CLIENT_ID:-prometheus-site-dev}
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.9
     command:
       [
         "publish",
@@ -115,6 +128,9 @@ services:
         --maxiothreads "$$io_threads"
     ports:
       - "${PROMETHEUS_GARNET_PORT:-6379}:6379"
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.6
     healthcheck:
       test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/6379'"]
       interval: 2s
@@ -161,6 +177,9 @@ services:
       - "${PROMETHEUS_API_PORT:-4000}:4000"
     volumes:
       - ./infra/spacetimedb/keys:/etc/spacetimedb/keys:ro
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.5
 
   yjs-signaling:
     profiles:
@@ -176,6 +195,9 @@ services:
       PORT: 4444
     expose:
       - "4444"
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.8
 
   webtransport:
     profiles:
@@ -204,6 +226,9 @@ services:
     depends_on:
       api:
         condition: service_started
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.7
 
   web:
     build:
@@ -245,6 +270,9 @@ services:
     depends_on:
       api:
         condition: service_started
+    networks:
+      prometheus_net:
+        ipv4_address: 172.30.0.3
     healthcheck:
       test:
         [
@@ -260,3 +288,10 @@ volumes:
   caddy_data:
   caddy_config:
   spacetimedb_data:
+
+networks:
+  prometheus_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

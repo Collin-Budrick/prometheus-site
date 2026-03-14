@@ -2,7 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import { installHomeStaticEntry } from './home-static-entry'
 import type { HomeFirstLcpGate } from './home-lcp-gate'
 
-type ListenerMap = Map<string, Set<() => void>>
+type MockListener = (event?: { target?: unknown }) => void
+type ListenerMap = Map<string, Set<MockListener>>
 
 class MockWindow {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -13,13 +14,13 @@ class MockWindow {
   readonly timeouts = new Map<number, () => void>()
   nextTimeoutId = 1
 
-  addEventListener(type: string, listener: () => void) {
+  addEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type) ?? new Set()
     listeners.add(listener)
     this.listeners.set(type, listeners)
   }
 
-  removeEventListener(type: string, listener: () => void) {
+  removeEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type)
     if (!listeners) return
     listeners.delete(listener)
@@ -39,8 +40,8 @@ class MockWindow {
     this.timeouts.delete(id as unknown as number)
   }
 
-  emit(type: string) {
-    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
+  emit(type: string, event?: { target?: unknown }) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
   }
 
   runTimeout(id = 1) {
@@ -53,6 +54,43 @@ class MockWindow {
 
 class MockDocument {
   readyState: DocumentReadyState = 'complete'
+  activeElement: unknown = null
+  querySelectorValue: unknown = null
+  listeners: ListenerMap = new Map()
+
+  addEventListener(type: string, listener: MockListener) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: MockListener) {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listeners.delete(type)
+    }
+  }
+
+  emit(type: string, event?: { target?: unknown }) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+  }
+
+  getElementById() {
+    return null
+  }
+
+  querySelector(selector: string) {
+    if (selector.includes('data-static-home-patch-state')) {
+      return this.querySelectorValue
+    }
+    return null
+  }
+
+  querySelectorAll() {
+    return []
+  }
 }
 
 const flushMicrotasks = async () => {
@@ -119,7 +157,7 @@ describe('installHomeStaticEntry', () => {
     expect(demoInstallCount).toBe(1)
     expect(bootstrapLoadCount).toBe(0)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
-    expect(win.timeouts.size).toBe(1)
+    expect(win.timeouts.size).toBe(0)
 
     cleanup()
   })
@@ -148,7 +186,11 @@ describe('installHomeStaticEntry', () => {
       }
     })
 
-    win.emit('pointerdown')
+    const fragmentCardTarget = {
+      closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
+    }
+
+    win.emit('pointerdown', { target: fragmentCardTarget })
     await flushMicrotasks()
 
     expect(bootstrapLoadCount).toBe(0)
@@ -164,12 +206,16 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('starts bootstrap from the idle fallback only after the LCP gate resolves', async () => {
+  it('starts bootstrap when a pending deferred home card becomes visible after the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
+
+    doc.querySelectorValue = {
+      dataset: { fragmentId: 'fragment://page/home/deferred@v1' }
+    }
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -189,12 +235,6 @@ describe('installHomeStaticEntry', () => {
     })
 
     manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(0)
-    expect(win.timeouts.size).toBe(1)
-
-    win.runTimeout()
     await flushMicrotasks()
 
     expect(bootstrapLoadCount).toBe(1)

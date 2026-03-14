@@ -103,14 +103,26 @@ const initialFadeScript = `(function () {
   }
 })();`
 
-const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 5000
-const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 4000
+const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 30000
+const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 24000
 
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
   return `(function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var started = false;
+  var timeoutHandle = 0;
+  var eventOptions = { capture: true, passive: true };
   var appendManifest = function () {
+    if (started) return;
+    started = true;
+    window.removeEventListener('pointerdown', appendManifest, eventOptions);
+    window.removeEventListener('keydown', appendManifest, eventOptions);
+    window.removeEventListener('touchstart', appendManifest, eventOptions);
+    if (timeoutHandle) {
+      window.clearTimeout(timeoutHandle);
+      timeoutHandle = 0;
+    }
     if (document.head.querySelector('link[rel="manifest"]')) return;
     var link = document.createElement('link');
     link.rel = 'manifest';
@@ -118,11 +130,10 @@ const buildDeferredManifestScript = (href: string) => {
     document.head.appendChild(link);
   };
   var schedule = function () {
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(appendManifest, { timeout: ${DEFERRED_MANIFEST_IDLE_TIMEOUT_MS} });
-    } else {
-      window.setTimeout(appendManifest, ${DEFERRED_MANIFEST_FALLBACK_DELAY_MS});
-    }
+    window.addEventListener('pointerdown', appendManifest, eventOptions);
+    window.addEventListener('keydown', appendManifest, eventOptions);
+    window.addEventListener('touchstart', appendManifest, eventOptions);
+    timeoutHandle = window.setTimeout(appendManifest, ${DEFERRED_MANIFEST_FALLBACK_DELAY_MS});
   };
   if (document.readyState === 'complete') {
     schedule();

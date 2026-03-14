@@ -20,7 +20,6 @@ import {
 } from './home-fragment-client'
 import {
   isHomeFragmentBootstrapSubset,
-  primeHomeFragmentBootstrapBytes
 } from './home-fragment-bootstrap'
 import {
   collectStaticHomeKnownVersions,
@@ -1280,13 +1279,6 @@ export const bootstrapStaticHome = async () => {
     destroyed: false
   }
   activeController = controller
-  if (controller.homeFragmentBootstrapHref) {
-    void primeHomeFragmentBootstrapBytes({
-      href: controller.homeFragmentBootstrapHref
-    }).catch((error) => {
-      console.error('Static home fragment bootstrap prefetch failed:', error)
-    })
-  }
 
   const homeDemoActivation = bindHomeDemoActivation({ controller })
   const homeFragmentHydration = bindHomeFragmentHydration({ controller })

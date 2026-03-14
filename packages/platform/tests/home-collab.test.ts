@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'bun:test'
-import { parseHomeCollabUpdateEvent } from '@platform/server/home-collab'
+import {
+  parseHomeCollabUpdateEvent,
+  resolveHomeCollabModeFromUpgradeContext
+} from '@platform/server/home-collab'
 
 describe('home collab websocket payload parsing', () => {
   const payload = {
@@ -26,5 +29,21 @@ describe('home collab websocket payload parsing', () => {
     expect(parseHomeCollabUpdateEvent('not-json')).toBeNull()
     expect(parseHomeCollabUpdateEvent(123)).toBeNull()
     expect(parseHomeCollabUpdateEvent(null)).toBeNull()
+  })
+
+  it('resolves listener mode from websocket request URL search params', () => {
+    expect(
+      resolveHomeCollabModeFromUpgradeContext({
+        request: new Request('https://prometheus.prod/api/home/collab/dock/ws?mode=listener')
+      })
+    ).toBe('listener')
+  })
+
+  it('defaults websocket mode to editor when the query is absent', () => {
+    expect(
+      resolveHomeCollabModeFromUpgradeContext({
+        request: new Request('https://prometheus.prod/api/home/collab/dock/ws')
+      })
+    ).toBe('editor')
   })
 })

@@ -1,17 +1,20 @@
 import { LoroDoc } from 'loro-crdt'
-import { appConfig } from '../public-app-config'
-import { buildPublicApiUrl } from '../shared/public-api-url'
-
-const HOME_COLLAB_ROOT_SELECTOR = '[data-home-collab-root]'
-const HOME_COLLAB_TEXTAREA_SELECTOR = '[data-home-collab-input]'
-const HOME_COLLAB_STATUS_SELECTOR = '[data-home-collab-status]'
-const HOME_COLLAB_RECONNECT_BASE_MS = 800
-const HOME_COLLAB_RECONNECT_MAX_MS = 5000
+import {
+  HOME_COLLAB_RECONNECT_BASE_MS,
+  HOME_COLLAB_RECONNECT_MAX_MS,
+  HOME_COLLAB_ROOT_SELECTOR,
+  HOME_COLLAB_STATUS_SELECTOR,
+  HOME_COLLAB_TEXTAREA_SELECTOR,
+  resolveHomeCollabWsUrl,
+  setHomeCollabStatus,
+  setHomeCollabTextareaState
+} from './home-collab-shared'
 
 type HomeCollabSocketEvent =
   | {
       type: 'home-collab:init'
       snapshot: string
+      text?: string
     }
   | {
       type: 'home-collab:update'
@@ -80,29 +83,6 @@ const createClientId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-const resolveStatusCopy = (root: HTMLElement, state: 'connecting' | 'live' | 'reconnecting' | 'error') =>
-  root.getAttribute(`data-collab-status-${state}`) ??
-  ({
-    connecting: 'Connecting live sync...',
-    live: 'Live for everyone on this page',
-    reconnecting: 'Reconnecting live sync...',
-    error: 'Realtime unavailable'
-  } as const)[state]
-
-const setStatus = (state: HomeCollabState, nextState: 'connecting' | 'live' | 'reconnecting' | 'error') => {
-  const message = resolveStatusCopy(state.root, nextState)
-  state.root.dataset.collabState = nextState
-  if (state.status) {
-    state.status.dataset.homeCollabStatus = nextState
-    state.status.textContent = message
-  }
-}
-
-const setTextareaPending = (state: HomeCollabState, pending: boolean) => {
-  state.textarea.readOnly = pending
-  state.textarea.setAttribute('aria-busy', pending ? 'true' : 'false')
-}
-
 const syncTextareaFromDoc = (state: HomeCollabState) => {
   if (!state.doc) {
     return
@@ -111,12 +91,6 @@ const syncTextareaFromDoc = (state: HomeCollabState) => {
   if (state.textarea.value !== text) {
     state.textarea.value = text
   }
-}
-
-const resolveHomeCollabWsUrl = (origin: string, apiBase = appConfig.apiBase) => {
-  const url = new URL(buildPublicApiUrl('/home/collab/dock/ws', origin, apiBase))
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
 }
 
 const resetDocState = (state: HomeCollabState) => {
@@ -152,10 +126,7 @@ const disposeState = (state: HomeCollabState) => {
   state.socket = null
 }
 
-const scheduleReconnect = (
-  state: HomeCollabState,
-  connect: () => void
-) => {
+const scheduleReconnect = (state: HomeCollabState, connect: () => void) => {
   if (state.destroyed || state.reconnectTimer !== null) {
     return
   }
@@ -167,10 +138,7 @@ const scheduleReconnect = (
   state.reconnectDelayMs = Math.min(delay * 2, HOME_COLLAB_RECONNECT_MAX_MS)
 }
 
-const attachRoot = (
-  root: HTMLElement,
-  WebSocketImpl: typeof WebSocket
-) => {
+const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
   const textarea = root.querySelector<HTMLTextAreaElement>(HOME_COLLAB_TEXTAREA_SELECTOR)
   if (!textarea) {
     return null
@@ -199,8 +167,8 @@ const attachRoot = (
     }
     syncTextareaFromDoc(state)
     state.ready = true
-    setTextareaPending(state, false)
-    setStatus(state, 'live')
+    setHomeCollabTextareaState({ textarea, busy: false, editable: true })
+    setHomeCollabStatus(root, status, 'live')
   }
 
   const connect = () => {
@@ -208,10 +176,10 @@ const attachRoot = (
       return
     }
 
-    setTextareaPending(state, true)
-    setStatus(state, state.ready ? 'reconnecting' : 'connecting')
+    setHomeCollabTextareaState({ textarea, busy: true, editable: false })
+    setHomeCollabStatus(root, status, state.ready ? 'reconnecting' : 'connecting')
 
-    const socket = new WebSocketImpl(resolveHomeCollabWsUrl(window.location.origin))
+    const socket = new WebSocketImpl(resolveHomeCollabWsUrl(window.location.origin, 'editor'))
     state.socket = socket
 
     socket.addEventListener('message', (event) => {
@@ -241,12 +209,12 @@ const attachRoot = (
         }
         state.doc.import(decodeBytesBase64(payload.update))
         syncTextareaFromDoc(state)
-        setStatus(state, 'live')
+        setHomeCollabStatus(root, status, 'live')
         return
       }
 
       if (payload.type === 'error' && typeof payload.error === 'string') {
-        setStatus(state, 'error')
+        setHomeCollabStatus(root, status, 'error')
       }
     })
 
@@ -256,19 +224,19 @@ const attachRoot = (
       }
       state.socket = null
       state.ready = false
-      setTextareaPending(state, true)
-      setStatus(state, 'reconnecting')
+      setHomeCollabTextareaState({ textarea, busy: true, editable: false })
+      setHomeCollabStatus(root, status, 'reconnecting')
       scheduleReconnect(state, connect)
     })
 
     socket.addEventListener('error', () => {
-      setStatus(state, 'reconnecting')
+      setHomeCollabStatus(root, status, 'reconnecting')
     })
   }
 
   textarea.disabled = false
-  setTextareaPending(state, true)
-  setStatus(state, 'connecting')
+  setHomeCollabTextareaState({ textarea, busy: true, editable: false })
+  setHomeCollabStatus(root, status, 'connecting')
 
   const handleInput = () => {
     if (!state.ready || !state.doc) {
@@ -294,6 +262,21 @@ const attachRoot = (
       disposeState(state)
     }
   }
+}
+
+export const attachHomeCollaborativeEditorRoot = ({
+  root,
+  WebSocketImpl = typeof WebSocket !== 'undefined' ? WebSocket : undefined
+}: {
+  root?: HTMLElement | null
+  WebSocketImpl?: typeof WebSocket | undefined
+} = {}) => {
+  if (!root || !WebSocketImpl) {
+    return () => undefined
+  }
+
+  const binding = attachRoot(root, WebSocketImpl)
+  return binding ? binding.destroy : () => undefined
 }
 
 export const bindHomeCollaborativeText = ({

@@ -5,17 +5,19 @@ import {
 } from './home-demo-controller'
 import { loadHomeCollabEntryRuntime } from './home-collab-entry-loader'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import {
+  HOME_COLLAB_DEFERRED_STATUS_COPY,
+  HOME_COLLAB_ROOT_SELECTOR,
+  HOME_COLLAB_STATUS_SELECTOR
+} from './home-collab-shared'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 
 type HomeDemoEntryWindow = Window & {
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
 }
 
-const HOME_COLLAB_ROOT_SELECTOR = '[data-home-collab-root]'
-const HOME_COLLAB_STATUS_SELECTOR = '[data-home-collab-status]'
-const HOME_COLLAB_DEFERRED_STATUS_COPY = 'Focus to start live sync.'
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS = 15000
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE = 20000
+const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS = 2500
+const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE = 3500
 
 type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null
@@ -63,13 +65,27 @@ export const scheduleHomeCollabEntry = ({
 
   let destroyed = false
   let started = false
-  let idleTimer: ReturnType<typeof setTimeout> | null = win.setTimeout(() => {
-    idleTimer = null
-    void start()
-  }, idleTimeoutMs)
-  let destroyHomeCollabEntry = () => undefined
+  let idleHandle: number | null =
+    typeof win.requestIdleCallback === 'function'
+      ? win.requestIdleCallback(() => {
+          idleHandle = null
+          void start()
+        }, { timeout: idleTimeoutMs })
+      : null
+  let idleTimer: number | null =
+    idleHandle === null
+      ? (win.setTimeout(() => {
+          idleTimer = null
+          void start()
+        }, idleTimeoutMs) as unknown as number)
+      : null
+  let destroyHomeCollabEntry: () => void = () => undefined
 
   const clearIdleTimer = () => {
+    if (idleHandle !== null && typeof win.cancelIdleCallback === 'function') {
+      win.cancelIdleCallback(idleHandle)
+      idleHandle = null
+    }
     if (idleTimer === null) {
       return
     }
@@ -88,7 +104,7 @@ export const scheduleHomeCollabEntry = ({
     doc.removeEventListener('keydown', handleKeyDown, true)
   }
 
-  const start = async () => {
+  const start = async (initialTarget: EventTarget | null = null) => {
     if (destroyed || started) {
       return
     }
@@ -100,21 +116,21 @@ export const scheduleHomeCollabEntry = ({
     if (destroyed) {
       return
     }
-    destroyHomeCollabEntry = installHomeCollabEntry()
+    destroyHomeCollabEntry = installHomeCollabEntry({ initialTarget })
   }
 
   const handlePointerDown = (event: Event) => {
     if (!matchesCollabRoot(event.target)) {
       return
     }
-    void start()
+    void start(event.target)
   }
 
   const handleFocusIn = (event: Event) => {
     if (!matchesCollabRoot(event.target)) {
       return
     }
-    void start()
+    void start(event.target)
   }
 
   const handleKeyDown = () => {
@@ -122,7 +138,7 @@ export const scheduleHomeCollabEntry = ({
     if (!matchesCollabRoot(activeElement)) {
       return
     }
-    void start()
+    void start(activeElement)
   }
 
   doc.addEventListener('pointerdown', handlePointerDown, true)
@@ -168,8 +184,7 @@ export const installHomeDemoEntry = ({
     destroyed: false
   }
 
-  let destroyHomeCollabEntry = () => undefined
-  let destroyed = false
+  let destroyHomeCollabEntry: () => void = () => undefined
   const manager = bindHomeDemoActivation({ controller })
   manager.observeWithin(doc)
   destroyHomeCollabEntry = scheduleHomeCollabEntry({
@@ -186,7 +201,6 @@ export const installHomeDemoEntry = ({
   })
 
   return () => {
-    destroyed = true
     destroyHomeCollabEntry()
     manager.destroy()
     destroyHomeDemoController(controller)

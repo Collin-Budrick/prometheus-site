@@ -565,7 +565,10 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
 
-      expect(taskQueue.pendingCount()).toBe(1)
+      expect(taskQueue.pendingCount()).toBe(2)
+
+      await taskQueue.flushNext()
+      expect(activations).toEqual([])
 
       await taskQueue.flushNext()
 
@@ -575,7 +578,7 @@ describe('bindHomeDemoActivation', () => {
     }
   })
 
-  it('batches initial viewport reads before warming demo assets', () => {
+  it('batches initial viewport reads before warming demo assets', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -624,13 +627,14 @@ describe('bindHomeDemoActivation', () => {
 
       expect(planner.rectReadCount).toBe(1)
       expect(island.rectReadCount).toBe(1)
+      await taskQueue.flushNext()
       expect(warmSnapshots).toEqual(['planner:1:1', 'preact-island:1:1'])
     } finally {
       globals.window = originalWindow
     }
   })
 
-  it('skips near-view warmups on mobile-sized viewports', () => {
+  it('skips near-view warmups on mobile-sized viewports', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -677,13 +681,14 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
 
+      await taskQueue.flushNext()
       expect(warmKinds).toEqual(['planner'])
     } finally {
       globals.window = originalWindow
     }
   })
 
-  it('caps desktop auto-warmup to the configured visible and near-view budget', () => {
+  it('caps desktop auto-warmup to the configured visible and near-view budget', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -748,6 +753,7 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner, island, wasm, react]) as unknown as ParentNode)
 
+      await taskQueue.flushNext()
       expect(warmKinds).toEqual(['planner', 'preact-island', 'wasm-renderer'])
     } finally {
       globals.window = originalWindow

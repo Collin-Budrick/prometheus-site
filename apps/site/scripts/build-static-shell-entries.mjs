@@ -14,6 +14,7 @@ const entrypoints = [
   'apps/site/src/static-shell/home-static-entry.ts',
   'apps/site/src/static-shell/home-demo-entry.ts',
   'apps/site/src/static-shell/home-collab-entry.ts',
+  'apps/site/src/static-shell/home-collab-editor-entry.ts',
   'apps/site/src/static-shell/home-bootstrap-runtime.ts',
   'apps/site/src/static-shell/home-demo-planner-runtime.ts',
   'apps/site/src/static-shell/home-demo-wasm-renderer-runtime.ts',

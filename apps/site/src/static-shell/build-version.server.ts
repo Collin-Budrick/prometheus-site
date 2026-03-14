@@ -8,6 +8,7 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
   'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-demo-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
+  'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js',
   'build/static-shell/apps/site/src/static-shell/fragment-static-entry.js',
   'build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js',

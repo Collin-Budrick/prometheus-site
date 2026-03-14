@@ -57,9 +57,8 @@ describe('home-demo-runtime-loader', () => {
     expect(calls).toEqual([asset.moduleHref])
   })
 
-  it('warms styles and JS in parallel and memoizes the warm promise', async () => {
+  it('warms styles and modulepreload links in parallel and memoizes the warm promise', async () => {
     const calls: string[] = []
-    const events: string[] = []
 
     class MockLink {
       rel = 'preload'
@@ -122,7 +121,6 @@ describe('home-demo-runtime-loader', () => {
 
     const importer = async (url: string) => {
       calls.push(url)
-      events.push('import')
       return {
         activateHomeDemo: async () => ({
           cleanup: () => undefined
@@ -136,24 +134,28 @@ describe('home-demo-runtime-loader', () => {
     }
 
     const firstWarm = warmHomeDemoKind('planner', asset, {
-      doc: doc as never,
-      importer
+      doc: doc as never
     })
     const secondWarm = warmHomeDemoKind('planner', asset, {
-      doc: doc as never,
-      importer
+      doc: doc as never
     })
 
     expect(firstWarm).toBe(secondWarm)
-    expect(calls).toEqual([asset.moduleHref])
-    expect(events).toEqual(['import'])
+    expect(calls).toEqual([])
 
     const styleLink = links.find((link) => link.getAttribute('data-home-demo-style-kind') === 'planner')
+    const moduleLink = links.find((link) => link.getAttribute('data-home-demo-module-kind') === 'planner')
     expect(styleLink?.getAttribute('rel')).toBe('stylesheet')
+    expect(moduleLink?.getAttribute('rel')).toBe('modulepreload')
     styleLink?.emit('load')
+    moduleLink?.emit('load')
 
     await firstWarm
     await secondWarm
+
+    const runtimeModule = await loadHomeDemoKind('planner', { asset, importer })
+    expect(runtimeModule).toBeTruthy()
+    expect(calls).toEqual([asset.moduleHref])
   })
 
   it('creates a kind stylesheet link when one does not exist yet', async () => {

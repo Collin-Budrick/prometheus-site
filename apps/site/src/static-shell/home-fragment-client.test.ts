@@ -180,7 +180,10 @@ afterEach(() => {
 
 describe('fetchHomeFragmentBatch', () => {
   it('uses the stable bootstrap GET bundle for home fragment refreshes', async () => {
-    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+    const href = buildHomeFragmentBootstrapHref({
+      lang: 'en',
+      ids: ['fragment://page/home/planner@v1']
+    })
     const requests: Array<{ url: string; method: string | undefined }> = []
 
     globalThis.fetch = (async (input, init) => {
@@ -201,7 +204,10 @@ describe('fetchHomeFragmentBatch', () => {
   })
 
   it('keeps using the bootstrap GET bundle when known fragment versions are provided', async () => {
-    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+    const href = buildHomeFragmentBootstrapHref({
+      lang: 'en',
+      ids: ['fragment://page/home/planner@v1']
+    })
     const requests: Array<{ url: string; method: string | undefined }> = []
 
     globalThis.fetch = (async (input, init) => {
@@ -228,7 +234,10 @@ describe('fetchHomeFragmentBatch', () => {
   })
 
   it('reuses a primed bootstrap bundle instead of issuing a fallback fragment request', async () => {
-    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+    const href = buildHomeFragmentBootstrapHref({
+      lang: 'en',
+      ids: ['fragment://page/home/planner@v1']
+    })
     const win = {} as HomeFragmentBootstrapWindow
     ;(globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window = win
 
@@ -260,8 +269,11 @@ describe('fetchHomeFragmentBatch', () => {
     expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
   })
 
-  it('keeps the primed bootstrap bundle available for later subset hydrations', async () => {
-    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+  it('keeps the primed bootstrap bundle available for repeated subset hydrations of the same selection', async () => {
+    const href = buildHomeFragmentBootstrapHref({
+      lang: 'en',
+      ids: ['fragment://page/home/planner@v1']
+    })
     const win = {} as HomeFragmentBootstrapWindow
     ;(globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window = win
 
@@ -271,16 +283,9 @@ describe('fetchHomeFragmentBatch', () => {
       win,
       fetcher: async () => {
         requestCount += 1
-        return new Response(
-          buildBootstrapPayload(
-            'fragment://page/home/planner@v1',
-            'fragment://page/home/react@v1',
-            'fragment://page/home/island@v1'
-          ),
-          {
-            headers: { 'content-type': 'application/octet-stream' }
-          }
-        )
+        return new Response(buildBootstrapPayload('fragment://page/home/planner@v1'), {
+          headers: { 'content-type': 'application/octet-stream' }
+        })
       }
     })
 
@@ -292,13 +297,13 @@ describe('fetchHomeFragmentBatch', () => {
       lang: 'en',
       bootstrapHref: href
     })
-    const islandPayloads = await fetchHomeFragmentBatch(['fragment://page/home/island@v1'], {
+    const repeatedPlannerPayloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
       lang: 'en',
       bootstrapHref: href
     })
 
     expect(requestCount).toBe(1)
     expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
-    expect(Object.keys(islandPayloads)).toEqual(['fragment://page/home/island@v1'])
+    expect(Object.keys(repeatedPlannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
   })
 })

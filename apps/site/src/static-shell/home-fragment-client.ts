@@ -266,14 +266,49 @@ const selectHomeFragmentPayloads = (ids: string[], payloads: Record<string, Frag
     return acc
   }, {})
 
+const resolveHomeFragmentBootstrapSelectionHref = ({
+  ids,
+  lang,
+  bootstrapHref
+}: {
+  ids: string[]
+  lang?: string
+  bootstrapHref?: string
+}) => {
+  if (!bootstrapHref) {
+    return buildHomeFragmentBootstrapHref({ ids, lang })
+  }
+
+  try {
+    const base =
+      typeof window !== 'undefined' && typeof window.location?.origin === 'string'
+        ? window.location.origin
+        : 'https://prometheus.local'
+    const url = new URL(bootstrapHref, base)
+    url.searchParams.set('ids', ids.join(','))
+    if (lang) {
+      url.searchParams.set('lang', lang)
+    } else {
+      url.searchParams.delete('lang')
+    }
+
+    return url.origin === base ? `${url.pathname}${url.search}${url.hash}` : url.toString()
+  } catch {
+    return buildHomeFragmentBootstrapHref({ ids, lang })
+  }
+}
+
 export const fetchHomeFragmentBootstrapSelection = async (
   ids: string[],
   options: Pick<FetchHomeFragmentBatchOptions, 'bootstrapHref' | 'lang' | 'signal'> = {}
 ) => {
   if (!ids.length) return {}
 
-  const bootstrapHref =
-    options.bootstrapHref ?? buildHomeFragmentBootstrapHref({ lang: options.lang })
+  const bootstrapHref = resolveHomeFragmentBootstrapSelectionHref({
+    ids,
+    lang: options.lang,
+    bootstrapHref: options.bootstrapHref
+  })
   const primedBytes = readPrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
   const bytes =
     (await primedBytes) ??

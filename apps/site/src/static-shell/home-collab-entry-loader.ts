@@ -3,7 +3,7 @@ import { resolveStaticAssetUrl } from './static-asset-url'
 const HOME_COLLAB_ENTRY_ASSET_PATH = 'build/static-shell/apps/site/src/static-shell/home-collab-entry.js'
 
 export type HomeCollabEntryModule = {
-  installHomeCollabEntry: () => () => void
+  installHomeCollabEntry: (options?: { initialTarget?: EventTarget | null }) => () => void
 }
 
 type LoadHomeCollabEntryRuntimeOptions = {

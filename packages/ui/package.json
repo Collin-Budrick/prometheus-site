@@ -13,8 +13,8 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@builder.io/qwik": "1.19.1",
-    "@builder.io/qwik-city": "1.19.1",
+    "@builder.io/qwik": "1.19.2",
+    "@builder.io/qwik-city": "1.19.2",
     "@preact/signals-core": "1.14.0",
     "@qwikest/icons": "^0.0.13",
     "gridstack": "12.4.2",

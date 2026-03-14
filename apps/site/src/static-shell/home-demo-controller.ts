@@ -265,10 +265,12 @@ export const bindHomeDemoActivation = ({
   const visibleRoots = new Set<Element>()
   const queuedRoots = new Set<Element>()
   const activationQueue: HTMLElement[] = []
+  const scheduledWarmRoots = new Set<HTMLElement>()
   const warmedKinds = new Set<HomeDemoKind>()
   let nextObservedOrder = 0
   let activationInFlight = false
   let cancelScheduledActivation: (() => void) | null = null
+  let cancelScheduledWarmup: (() => void) | null = null
 
   const warmKindForRoot = (demoRoot: HTMLElement) => {
     const kind = resolveHomeDemoKind(demoRoot)
@@ -281,12 +283,13 @@ export const bindHomeDemoActivation = ({
     })
   }
 
-  const primeVisibleAndNearViewKinds = (
+  const collectVisibleAndNearViewWarmRoots = (
     demoRoots: HTMLElement[],
     viewportSnapshots: ReadonlyMap<HTMLElement, HomeDemoViewportSnapshot>
   ) => {
     let visibleKinds = 0
     let nearViewKinds = 0
+    const warmRoots: HTMLElement[] = []
 
     demoRoots.forEach((demoRoot) => {
       if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
@@ -298,15 +301,51 @@ export const bindHomeDemoActivation = ({
       const visibilityRatio = viewportSnapshot?.visibilityRatio ?? 0
       if (visibilityRatio >= HOME_DEMO_ACTIVATION_THRESHOLD && visibleKinds < warmBudget.visible) {
         visibleKinds += 1
-        warmKindForRoot(demoRoot)
-        return
-      }
-
-      if (viewportSnapshot?.withinWarmMargin && nearViewKinds < warmBudget.nearView) {
+        warmRoots.push(demoRoot)
+      } else if (viewportSnapshot?.withinWarmMargin && nearViewKinds < warmBudget.nearView) {
         nearViewKinds += 1
-        warmKindForRoot(demoRoot)
+        warmRoots.push(demoRoot)
       }
     })
+
+    return warmRoots
+  }
+
+  const scheduleWarmRoots = (demoRoots: readonly HTMLElement[]) => {
+    if (controller.destroyed) {
+      return
+    }
+
+    demoRoots.forEach((demoRoot) => {
+      scheduledWarmRoots.add(demoRoot)
+    })
+
+    if (scheduledWarmRoots.size === 0 || cancelScheduledWarmup) {
+      return
+    }
+
+    cancelScheduledWarmup = scheduleTask(
+      () => {
+        cancelScheduledWarmup = null
+        if (controller.destroyed) {
+          scheduledWarmRoots.clear()
+          return
+        }
+
+        const nextRoots = Array.from(scheduledWarmRoots)
+        scheduledWarmRoots.clear()
+        nextRoots.forEach((demoRoot) => {
+          if (shouldSkipHomeDemoRoot(controller, demoRoot)) {
+            return
+          }
+          warmKindForRoot(demoRoot)
+        })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 80
+      }
+    )
   }
 
   const activationObserver =
@@ -475,7 +514,8 @@ export const bindHomeDemoActivation = ({
         }
       })
 
-      primeVisibleAndNearViewKinds(demoRoots, viewportSnapshots)
+      const warmRoots = collectVisibleAndNearViewWarmRoots(demoRoots, viewportSnapshots)
+      scheduleWarmRoots(warmRoots)
 
       demoRoots.forEach((demoRoot) => {
         if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
@@ -509,12 +549,15 @@ export const bindHomeDemoActivation = ({
     destroy() {
       cancelScheduledActivation?.()
       cancelScheduledActivation = null
+      cancelScheduledWarmup?.()
+      cancelScheduledWarmup = null
       activationObserver?.disconnect()
       warmObserver?.disconnect()
       observedRoots.clear()
       observedOrder.clear()
       visibleRoots.clear()
       queuedRoots.clear()
+      scheduledWarmRoots.clear()
       activationQueue.length = 0
     }
   }

@@ -1401,7 +1401,7 @@
 
   .home-collab-root[data-collab-state='live'] .home-collab-status {
     border-color: rgb(var(--signal) / 0.3);
-    color: rgb(var(--signal-strong));
+    color: rgb(15 118 110);
   }
 
   .home-collab-root[data-collab-state='reconnecting'] .home-collab-status,
