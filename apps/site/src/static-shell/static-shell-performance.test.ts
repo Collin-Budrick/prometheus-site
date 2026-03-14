@@ -162,6 +162,7 @@ describe('static shell performance invariants', () => {
     expect(layoutSource).toContain('const shouldDeferManifest = isStaticShellPath(location.url.pathname)')
     expect(layoutSource).toContain('toCanonicalStaticShellHref')
     expect(layoutSource).toContain('useStaticShellBuildVersion')
+    expect(layoutSource).toContain('event.isTrusted === false')
     expect(layoutSource).not.toContain('requestIdleCallback(appendManifest')
     expect(layoutSource).not.toContain("new URL('../components/home-demo-active.css', import.meta.url).href")
     expect(layoutSource).not.toContain('buildHomeDemoStylesheetPreloadMarkup(')

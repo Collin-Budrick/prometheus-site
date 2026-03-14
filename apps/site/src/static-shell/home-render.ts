@@ -168,6 +168,8 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
       [
         h('textarea', {
           class: 'home-collab-textarea',
+          id: 'home-collab-dock-input',
+          name: 'home-collab-dock-input',
           'data-home-collab-input': 'true',
           rows: '7',
           spellcheck: 'false',

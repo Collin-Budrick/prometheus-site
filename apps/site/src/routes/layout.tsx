@@ -113,12 +113,16 @@ const buildDeferredManifestScript = (href: string) => {
   var started = false;
   var timeoutHandle = 0;
   var eventOptions = { capture: true, passive: true };
+  var appendManifestFromIntent = function (event) {
+    if (event && event.isTrusted === false) return;
+    appendManifest();
+  };
   var appendManifest = function () {
     if (started) return;
     started = true;
-    window.removeEventListener('pointerdown', appendManifest, eventOptions);
-    window.removeEventListener('keydown', appendManifest, eventOptions);
-    window.removeEventListener('touchstart', appendManifest, eventOptions);
+    window.removeEventListener('pointerdown', appendManifestFromIntent, eventOptions);
+    window.removeEventListener('keydown', appendManifestFromIntent, eventOptions);
+    window.removeEventListener('touchstart', appendManifestFromIntent, eventOptions);
     if (timeoutHandle) {
       window.clearTimeout(timeoutHandle);
       timeoutHandle = 0;
@@ -130,9 +134,9 @@ const buildDeferredManifestScript = (href: string) => {
     document.head.appendChild(link);
   };
   var schedule = function () {
-    window.addEventListener('pointerdown', appendManifest, eventOptions);
-    window.addEventListener('keydown', appendManifest, eventOptions);
-    window.addEventListener('touchstart', appendManifest, eventOptions);
+    window.addEventListener('pointerdown', appendManifestFromIntent, eventOptions);
+    window.addEventListener('keydown', appendManifestFromIntent, eventOptions);
+    window.addEventListener('touchstart', appendManifestFromIntent, eventOptions);
     timeoutHandle = window.setTimeout(appendManifest, ${DEFERRED_MANIFEST_FALLBACK_DELAY_MS});
   };
   if (document.readyState === 'complete') {

@@ -72,6 +72,8 @@ const dockFragment: FragmentDefinition = {
           },
           createElement('textarea', {
             className: 'home-collab-textarea',
+            id: 'home-collab-dock-input',
+            name: 'home-collab-dock-input',
             'data-home-collab-input': 'true',
             rows: 7,
             spellCheck: false,
