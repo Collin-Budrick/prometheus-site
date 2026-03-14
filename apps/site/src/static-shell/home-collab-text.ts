@@ -31,12 +31,14 @@ type HomeCollabState = {
   textarea: HTMLTextAreaElement
   status: HTMLElement | null
   socket: WebSocket | null
+  closingForPageHide: WebSocket | null
   doc: LoroDoc | null
   unsubscribeLocalUpdates: (() => void) | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
   reconnectDelayMs: number
   ready: boolean
   destroyed: boolean
+  suspended: boolean
   clientId: string
   peerId: `${number}`
 }
@@ -127,7 +129,7 @@ const disposeState = (state: HomeCollabState) => {
 }
 
 const scheduleReconnect = (state: HomeCollabState, connect: () => void) => {
-  if (state.destroyed || state.reconnectTimer !== null) {
+  if (state.destroyed || state.suspended || state.reconnectTimer !== null) {
     return
   }
   const delay = state.reconnectDelayMs
@@ -140,7 +142,8 @@ const scheduleReconnect = (state: HomeCollabState, connect: () => void) => {
 
 const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
   const textarea = root.querySelector<HTMLTextAreaElement>(HOME_COLLAB_TEXTAREA_SELECTOR)
-  if (!textarea) {
+  const win = typeof window !== 'undefined' ? window : null
+  if (!textarea || !win) {
     return null
   }
 
@@ -150,12 +153,14 @@ const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
     textarea,
     status,
     socket: null,
+    closingForPageHide: null,
     doc: null,
     unsubscribeLocalUpdates: null,
     reconnectTimer: null,
     reconnectDelayMs: HOME_COLLAB_RECONNECT_BASE_MS,
     ready: false,
     destroyed: false,
+    suspended: false,
     clientId: createClientId(),
     peerId: createRandomPeerId()
   }
@@ -171,15 +176,34 @@ const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
     setHomeCollabStatus(root, status, 'live')
   }
 
+  const clearReconnectTimer = () => {
+    if (state.reconnectTimer === null) {
+      return
+    }
+    clearTimeout(state.reconnectTimer)
+    state.reconnectTimer = null
+  }
+
+  const closeSocketForPageHide = () => {
+    const socket = state.socket
+    state.socket = null
+    if (!socket) {
+      return
+    }
+    state.closingForPageHide = socket
+    socket.close(1000, 'pagehide')
+  }
+
   const connect = () => {
-    if (state.destroyed) {
+    if (state.destroyed || state.suspended) {
       return
     }
 
+    state.suspended = false
     setHomeCollabTextareaState({ textarea, busy: true, editable: false })
     setHomeCollabStatus(root, status, state.ready ? 'reconnecting' : 'connecting')
 
-    const socket = new WebSocketImpl(resolveHomeCollabWsUrl(window.location.origin, 'editor'))
+    const socket = new WebSocketImpl(resolveHomeCollabWsUrl(win.location.origin, 'editor'))
     state.socket = socket
 
     socket.addEventListener('message', (event) => {
@@ -222,7 +246,16 @@ const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
       if (state.destroyed) {
         return
       }
-      state.socket = null
+      if (state.socket === socket) {
+        state.socket = null
+      }
+      if (state.closingForPageHide === socket) {
+        state.closingForPageHide = null
+        return
+      }
+      if (state.suspended) {
+        return
+      }
       state.ready = false
       setHomeCollabTextareaState({ textarea, busy: true, editable: false })
       setHomeCollabStatus(root, status, 'reconnecting')
@@ -255,10 +288,34 @@ const attachRoot = (root: HTMLElement, WebSocketImpl: typeof WebSocket) => {
   resetDocState(state)
   connect()
 
+  const handlePageHide = () => {
+    if (state.destroyed) {
+      return
+    }
+    state.suspended = true
+    clearReconnectTimer()
+    closeSocketForPageHide()
+  }
+
+  const handlePageShow = () => {
+    if (state.destroyed || !state.suspended || state.socket || state.reconnectTimer !== null) {
+      return
+    }
+    state.suspended = false
+    connect()
+  }
+
+  win.addEventListener('pagehide', handlePageHide)
+  win.addEventListener('pageshow', handlePageShow)
+
   return {
     root,
     destroy: () => {
+      state.suspended = false
+      state.closingForPageHide = null
       textarea.removeEventListener('input', handleInput)
+      win.removeEventListener('pagehide', handlePageHide)
+      win.removeEventListener('pageshow', handlePageShow)
       disposeState(state)
     }
   }

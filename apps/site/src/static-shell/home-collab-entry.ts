@@ -40,10 +40,12 @@ type HomeCollabBindingState = {
   textarea: HTMLTextAreaElement
   status: HTMLElement | null
   socket: WebSocket | null
+  closingForPageHide: WebSocket | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
   reconnectDelayMs: number
   ready: boolean
   destroyed: boolean
+  suspended: boolean
   promotingEditor: boolean
   editorCleanup: (() => void) | null
 }
@@ -102,10 +104,12 @@ const applyListenerText = (state: HomeCollabBindingState, text: string) => {
 
 const createBinding = ({
   root,
+  win,
   initialTarget,
   loadEditorRuntime
 }: {
   root: HTMLElement
+  win: Pick<Window, 'addEventListener' | 'removeEventListener' | 'location'>
   initialTarget: EventTarget | null
   loadEditorRuntime: typeof loadHomeCollabEditorRuntime
 }): HomeCollabBinding | null => {
@@ -120,10 +124,12 @@ const createBinding = ({
     textarea,
     status,
     socket: null,
+    closingForPageHide: null,
     reconnectTimer: null,
     reconnectDelayMs: HOME_COLLAB_RECONNECT_BASE_MS,
     ready: false,
     destroyed: false,
+    suspended: false,
     promotingEditor: false,
     editorCleanup: null
   }
@@ -142,11 +148,22 @@ const createBinding = ({
     root.removeEventListener('keydown', handleKeyDown, true)
   }
 
+  const closeSocketForPageHide = () => {
+    const socket = state.socket
+    state.socket = null
+    if (!socket) {
+      return
+    }
+    state.closingForPageHide = socket
+    socket.close(1000, 'pagehide')
+  }
+
   const connectListener = () => {
-    if (state.destroyed || state.promotingEditor || state.editorCleanup) {
+    if (state.destroyed || state.suspended || state.promotingEditor || state.editorCleanup) {
       return
     }
 
+    state.suspended = false
     setHomeCollabTextareaState({
       textarea,
       busy: true,
@@ -154,7 +171,7 @@ const createBinding = ({
     })
     setHomeCollabStatus(root, status, state.ready ? 'reconnecting' : 'connecting')
 
-    const socket = new WebSocket(resolveHomeCollabWsUrl(window.location.origin, 'listener'))
+    const socket = new WebSocket(resolveHomeCollabWsUrl(win.location.origin, 'listener'))
     state.socket = socket
 
     socket.addEventListener('message', (event) => {
@@ -179,7 +196,16 @@ const createBinding = ({
         return
       }
 
-      state.socket = null
+      if (state.socket === socket) {
+        state.socket = null
+      }
+      if (state.closingForPageHide === socket) {
+        state.closingForPageHide = null
+        return
+      }
+      if (state.suspended) {
+        return
+      }
       setHomeCollabTextareaState({
         textarea,
         busy: true,
@@ -213,6 +239,7 @@ const createBinding = ({
     }
 
     state.promotingEditor = true
+    state.suspended = false
     clearReconnectTimer()
     state.socket?.close()
     state.socket = null
@@ -235,7 +262,9 @@ const createBinding = ({
         console.error('Static home collab editor failed:', error)
         state.promotingEditor = false
         setHomeCollabStatus(root, status, 'error')
-        connectListener()
+        if (!state.suspended) {
+          connectListener()
+        }
       })
   }
 
@@ -272,6 +301,33 @@ const createBinding = ({
   root.addEventListener('focusin', handleFocusIn, true)
   root.addEventListener('keydown', handleKeyDown, true)
 
+  const handlePageHide = () => {
+    if (state.destroyed || state.promotingEditor || state.editorCleanup) {
+      return
+    }
+    state.suspended = true
+    clearReconnectTimer()
+    closeSocketForPageHide()
+  }
+
+  const handlePageShow = () => {
+    if (
+      state.destroyed ||
+      !state.suspended ||
+      state.promotingEditor ||
+      state.editorCleanup ||
+      state.socket ||
+      state.reconnectTimer !== null
+    ) {
+      return
+    }
+    state.suspended = false
+    connectListener()
+  }
+
+  win.addEventListener('pagehide', handlePageHide)
+  win.addEventListener('pageshow', handlePageShow)
+
   if (matchesRootTarget(root, initialTarget)) {
     promoteToEditor()
   } else {
@@ -282,8 +338,12 @@ const createBinding = ({
     root,
     destroy: () => {
       state.destroyed = true
+      state.suspended = false
+      state.closingForPageHide = null
       clearReconnectTimer()
       removePromotionListeners()
+      win.removeEventListener('pagehide', handlePageHide)
+      win.removeEventListener('pageshow', handlePageShow)
       state.socket?.close()
       state.socket = null
       state.editorCleanup?.()
@@ -324,6 +384,7 @@ export const installHomeCollabEntry = ({
       }
       const binding = createBinding({
         root: element,
+        win,
         initialTarget: nextInitialTarget,
         loadEditorRuntime
       })
