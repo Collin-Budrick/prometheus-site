@@ -1,4 +1,5 @@
 import type { Lang } from '../../lang'
+import { getUiCopy } from '../../lang/client'
 import { appConfig } from '../../public-app-config'
 import { loadClientAuthSession } from '../auth-client'
 import {
@@ -56,6 +57,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
     return { cleanup() {} }
   }
 
+  const copy = getUiCopy(lang)
   const cleanupFns: Array<() => void> = []
   const configured = isSpacetimeAuthConfigured()
   let busy = !configured
@@ -78,7 +80,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
       }
 
       if (!configured) {
-        setStatus(root, 'error', 'SpacetimeAuth is not configured for this site.')
+        setStatus(root, 'error', copy.authNotConfigured)
         applyBusy()
         return
       }
@@ -111,8 +113,8 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
           root,
           'neutral',
           method === 'magic-link'
-            ? 'Redirecting to hosted magic-link sign-in...'
-            : `Redirecting to hosted ${method} sign-in...`
+            ? copy.authRedirectingMagicLink
+            : copy.authRedirectingProvider.replace('{{method}}', method)
         )
         void startSpacetimeAuthLogin(method, { next: resolveNextPath() }).catch((error) => {
           busy = false
@@ -120,7 +122,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
           setStatus(
             root,
             'error',
-            error instanceof Error ? error.message : 'Unable to start the SpacetimeAuth login flow.'
+            error instanceof Error ? error.message : copy.authStartFailed
           )
         })
       }
@@ -131,7 +133,7 @@ export const mountStaticLoginController = ({ lang }: MountStaticLoginControllerO
   }
 
   if (!configured) {
-    setStatus(root, 'error', 'SpacetimeAuth is not configured for this site.')
+    setStatus(root, 'error', copy.authNotConfigured)
   }
 
   applyBusy()

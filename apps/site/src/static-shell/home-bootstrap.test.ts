@@ -1240,12 +1240,12 @@ describe('bindHomeFragmentHydration', () => {
     expect(taskQueue.pendingCount()).toBe(0)
 
     const observer = MockIntersectionObserver.instances[0]
-    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
+    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: false, intersectionRatio: 0 }])
 
     expect(visibility).toEqual([{ id: 'fragment://page/home/ledger@v1', visible: false }])
     expect(taskQueue.pendingCount()).toBe(0)
 
-    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.2 }])
+    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
 
     expect(visibility).toEqual([
       { id: 'fragment://page/home/ledger@v1', visible: false },

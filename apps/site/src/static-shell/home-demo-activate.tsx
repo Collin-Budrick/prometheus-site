@@ -23,6 +23,7 @@ type ActivateHomeDemoOptions = {
 
 export type HomeDemoActivationResult = {
   cleanup: () => void
+  setViewportActive?: (active: boolean) => void
 }
 
 const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
@@ -123,6 +124,68 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
   root.setAttribute('data-home-demo-active', 'true')
   root.removeAttribute('data-home-preview')
   setTrustedInnerHtml(root, html, 'server')
+}
+
+const isHomeDemoRootInViewport = (root: HTMLElement) => {
+  if (typeof root.getBoundingClientRect !== 'function') {
+    return true
+  }
+
+  const rect = root.getBoundingClientRect()
+  const viewportWidth =
+    typeof window !== 'undefined' && typeof window.innerWidth === 'number'
+      ? window.innerWidth
+      : document.documentElement?.clientWidth ?? 0
+  const viewportHeight =
+    typeof window !== 'undefined' && typeof window.innerHeight === 'number'
+      ? window.innerHeight
+      : document.documentElement?.clientHeight ?? 0
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return true
+  }
+
+  return rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth
+}
+
+const bindHomeDemoViewportPlayback = (
+  root: HTMLElement,
+  onViewportActiveChange: (active: boolean) => void
+) => {
+  let observer: IntersectionObserver | null = null
+  let viewportActive = isHomeDemoRootInViewport(root)
+
+  const setViewportActive = (active: boolean) => {
+    if (viewportActive === active) return
+    viewportActive = active
+    onViewportActiveChange(active)
+  }
+
+  onViewportActiveChange(viewportActive)
+
+  if (typeof IntersectionObserver === 'function') {
+    observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.target !== root) return
+          setViewportActive(entry.isIntersecting && (entry.intersectionRatio ?? 0) > 0)
+        })
+      },
+      {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0
+      }
+    )
+    observer.observe(root)
+  }
+
+  return {
+    cleanup: () => {
+      observer?.disconnect()
+    },
+    setViewportActive
+  }
 }
 
 const warnMissingReactBinaryCopy = () => {
@@ -307,11 +370,22 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   let timeoutHandle = 0
   let disposed = false
   let cacheState = randomPlannerCache(copy.fragments)
+  let viewportActive = true
 
   const stopTimer = () => {
     if (!timeoutHandle) return
     window.clearTimeout(timeoutHandle)
     timeoutHandle = 0
+  }
+
+  const scheduleSequenceStep = () => {
+    if (disposed || timeoutHandle || !isRunning || !viewportActive || document.visibilityState !== 'visible') {
+      return
+    }
+    timeoutHandle = window.setTimeout(() => {
+      timeoutHandle = 0
+      runSequence(stageIndex + 1)
+    }, plannerStepDelayMs)
   }
 
   const showCache = () => stageIndex >= 1
@@ -436,10 +510,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     }
     stageIndex = nextIndex
     update()
-    timeoutHandle = window.setTimeout(() => {
-      timeoutHandle = 0
-      runSequence(nextIndex + 1)
-    }, plannerStepDelayMs)
+    scheduleSequenceStep()
   }
 
   const handleClick = (event: Event) => {
@@ -466,15 +537,36 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     update()
   }
 
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      scheduleSequenceStep()
+      return
+    }
+    stopTimer()
+  }
+
+  const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
+    viewportActive = active
+    if (!active) {
+      stopTimer()
+      return
+    }
+    scheduleSequenceStep()
+  })
+
   root.addEventListener('click', handleClick)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
 
   return {
     cleanup: () => {
       disposed = true
       stopTimer()
+      viewportPlayback.cleanup()
       root.removeEventListener('click', handleClick)
-    }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    },
+    setViewportActive: viewportPlayback.setViewportActive
   }
 }
 
@@ -657,6 +749,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   let stageIndex = 0
   let binaryChunks = [...initialBinaryChunks]
   let timeoutHandle = 0
+  let viewportActive = true
 
   const stopTimer = () => {
     if (!timeoutHandle) return
@@ -674,6 +767,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   const schedule = () => {
     if (timeoutHandle) return
     if (document.visibilityState !== 'visible') return
+    if (!viewportActive) return
     if (copy.stages[stageIndex]?.id !== 'binary') return
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
@@ -764,6 +858,15 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     }
   }
 
+  const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
+    viewportActive = active
+    if (!active) {
+      stopTimer()
+      return
+    }
+    schedule()
+  })
+
   root.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
@@ -771,9 +874,11 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   return {
     cleanup: () => {
       stopTimer()
+      viewportPlayback.cleanup()
       root.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
+    },
+    setViewportActive: viewportPlayback.setViewportActive
   }
 }
 
@@ -795,6 +900,7 @@ const activatePreactIslandDemo = (
   let remaining = preactCountdownSeconds
   let timeoutHandle = 0
   let cancelDeferredTick: () => void = () => undefined
+  let viewportActive = true
 
   const clearTick = () => {
     if (!timeoutHandle) return
@@ -805,6 +911,7 @@ const activatePreactIslandDemo = (
   const scheduleTick = () => {
     if (timeoutHandle) return
     if (document.visibilityState !== 'visible') return
+    if (!viewportActive) return
     if (remaining <= 0) return
     timeoutHandle = window.setTimeout(() => {
       timeoutHandle = 0
@@ -863,6 +970,15 @@ const activatePreactIslandDemo = (
     }
   }
 
+  const viewportPlayback = bindHomeDemoViewportPlayback(root, (active) => {
+    viewportActive = active
+    if (!active) {
+      clearTick()
+      return
+    }
+    scheduleTick()
+  })
+
   root.addEventListener('click', handleClick)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   update()
@@ -874,9 +990,11 @@ const activatePreactIslandDemo = (
     cleanup: () => {
       cancelDeferredTick()
       clearTick()
+      viewportPlayback.cleanup()
       root.removeEventListener('click', handleClick)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
+    },
+    setViewportActive: viewportPlayback.setViewportActive
   }
 }
 

@@ -125,8 +125,9 @@ const LoginFallbackSkeleton = component$(() => (
 ))
 
 const EnabledLoginRoute = component$(() => {
-  const copy = useLangCopy()
   const authFormState = useAuthFormState()
+  const fragmentResource = useFragmentResource()
+  const copy = fragmentResource.value.languageSeed.ui
   const featureRoute = useSignal<NoSerialize<LoginClientRoute> | null>(null)
 
   useVisibleTask$(
@@ -168,6 +169,12 @@ const EnabledLoginRoute = component$(() => {
         authBiometricLoginFailed: copy.value.authBiometricLoginFailed,
         authBiometricLoginCredentialsExpired: copy.value.authBiometricLoginCredentialsExpired,
         socialSectionLabel: copy.value.authSocialSectionLabel,
+        methodsLabel: copy.value.authMethodsLabel,
+        hostedStatus: copy.value.authHostedStatus,
+        notConfiguredStatus: copy.value.authNotConfigured,
+        redirectingMagicLinkStatus: copy.value.authRedirectingMagicLink,
+        redirectingProviderStatus: copy.value.authRedirectingProvider,
+        startFailedStatus: copy.value.authStartFailed,
         closeLabel: copy.value.fragmentClose
       }}
     />
@@ -182,10 +189,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
   const copy = data?.languageSeed.ui
-  const title = loginEnabled ? copy.loginTitle : 'Feature disabled'
-  const description = loginEnabled
-    ? copy.loginDescription
-    : 'This route is disabled in this site configuration.'
+  const title = loginEnabled ? copy.loginTitle : copy.featureUnavailableTitle
+  const description = loginEnabled ? copy.loginDescription : copy.featureUnavailableDescription
 
   return {
     title: `${title} | ${siteBrand.name}`,
@@ -211,10 +216,11 @@ export default component$(() => {
   const data = fragmentResource.value
   if (data.staticLogin) {
     return (
-      <StaticLoginRoute
-        lang={data.lang}
-        initialFormState={authFormState.value}
-      />
+        <StaticLoginRoute
+          copy={data.languageSeed.ui}
+          lang={data.lang}
+          initialFormState={authFormState.value}
+        />
     )
   }
   if (data.staticRoute?.entries.length) {

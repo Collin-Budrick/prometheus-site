@@ -165,9 +165,10 @@ export default component$(() => {
   const localStatusTone = useSignal<'success' | 'error'>('success')
   const bioCount = useComputed$(() => localBio.value.length)
   const colorHex = useComputed$(() => rgbToHex(localColor.value))
+  const profileFallbackName = copy.value.profileAvatarAlt
   const avatarInitials = useComputed$(() => {
-    const source = `${savedName.value || user.email || user.id || 'Profile'}`
-    const cleaned = source.split('@')[0]?.trim() ?? 'Profile'
+    const source = `${savedName.value || user.email || user.id || profileFallbackName}`
+    const cleaned = source.split('@')[0]?.trim() ?? profileFallbackName
     const parts = cleaned.split(/\s+/).filter(Boolean)
     const letters = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '')
     const result = letters.join('')
@@ -202,7 +203,7 @@ export default component$(() => {
     localStatus.value = null
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleAvatarChange = $(async (event: Event) => {
@@ -211,12 +212,12 @@ export default component$(() => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
       localStatusTone.value = 'error'
-      localStatus.value = 'Please choose an image file.'
+      localStatus.value = copy.value.profileImageInvalid
       return
     }
     if (file.size > PROFILE_AVATAR_MAX_BYTES) {
       localStatusTone.value = 'error'
-      localStatus.value = 'Image must be under 1.2MB.'
+      localStatus.value = copy.value.profileImageTooLarge
       return
     }
     const reader = new FileReader()
@@ -227,7 +228,7 @@ export default component$(() => {
     })
     if (!result) {
       localStatusTone.value = 'error'
-      localStatus.value = 'Unable to read that image.'
+      localStatus.value = copy.value.profileImageReadFailed
       return
     }
     localAvatar.value = result
@@ -236,14 +237,14 @@ export default component$(() => {
     }
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleAvatarRemove = $(() => {
     localAvatar.value = null
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleRedInput = $((event: Event) => {
@@ -252,7 +253,7 @@ export default component$(() => {
     localColor.value = { ...localColor.value, r: value }
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleGreenInput = $((event: Event) => {
@@ -261,7 +262,7 @@ export default component$(() => {
     localColor.value = { ...localColor.value, g: value }
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleBlueInput = $((event: Event) => {
@@ -270,7 +271,7 @@ export default component$(() => {
     localColor.value = { ...localColor.value, b: value }
     const saved = persistLocalProfile(localBio.value, localAvatar.value, localColor.value)
     localStatusTone.value = saved ? 'success' : 'error'
-    localStatus.value = saved ? 'Saved locally.' : 'Unable to save locally.'
+    localStatus.value = saved ? copy.value.profileSavedLocal : copy.value.profileSaveLocalFailed
   })
 
   const handleColorPick = $((event: Event) => {
@@ -288,12 +289,12 @@ export default component$(() => {
     const trimmed = nameInput.value.trim()
     if (trimmed.length < 2) {
       statusTone.value = 'error'
-      statusMessage.value = 'Name must be at least 2 characters.'
+      statusMessage.value = copy.value.profileNameTooShort
       return
     }
     if (trimmed.length > 64) {
       statusTone.value = 'error'
-      statusMessage.value = 'Name must be 64 characters or less.'
+      statusMessage.value = copy.value.profileNameTooLong
       return
     }
     if (trimmed === savedName.value) return
@@ -310,7 +311,7 @@ export default component$(() => {
       })
 
       if (!response.ok) {
-        let errorMessage = 'Unable to update name.'
+        let errorMessage = copy.value.profileNameUpdateFailed
         try {
           const payload = (await response.json()) as { error?: string }
           if (payload?.error) errorMessage = payload.error
@@ -327,10 +328,10 @@ export default component$(() => {
       savedName.value = nextName
       nameInput.value = nextName
       statusTone.value = 'success'
-      statusMessage.value = 'Name updated.'
+      statusMessage.value = copy.value.profileNameUpdated
     } catch (error) {
       statusTone.value = 'error'
-      statusMessage.value = error instanceof Error ? error.message : 'Unable to update name.'
+      statusMessage.value = error instanceof Error ? error.message : copy.value.profileNameUpdateFailed
     } finally {
       saving.value = false
     }
@@ -358,7 +359,7 @@ export default component$(() => {
                 class="auth-input"
                 type="text"
                 maxLength={64}
-                placeholder="Nova Lane"
+                placeholder={copy.value.profileNamePlaceholder}
                 value={nameInput.value}
                 data-static-profile-name-input
                 onInput$={handleNameInput}
@@ -379,7 +380,7 @@ export default component$(() => {
             ) : null}
             {user.id ? (
               <div class="profile-row">
-                <span>User ID</span>
+                 <span>{copy.value.profileIdLabel}</span>
                 <strong data-static-profile-id-value>{user.id}</strong>
               </div>
             ) : null}
@@ -403,8 +404,8 @@ export default component$(() => {
           >
             <div class="profile-card-header">
               <div>
-                <p class="profile-card-title">Profile card</p>
-                <p class="profile-card-hint">Stored only on this device.</p>
+                 <p class="profile-card-title">{copy.value.profileCardTitle}</p>
+                 <p class="profile-card-hint">{copy.value.profileCardHint}</p>
               </div>
               <div class="profile-card-swatch" data-static-profile-color-hex>
                 <span>RGB</span>
@@ -413,7 +414,7 @@ export default component$(() => {
             </div>
             <div class="profile-card-body">
               <div class="profile-preview">
-                <p class="profile-preview-name" data-static-profile-preview-name>{nameValue ?? 'Profile'}</p>
+                 <p class="profile-preview-name" data-static-profile-preview-name>{nameValue ?? profileFallbackName}</p>
                 {emailValue ? (
                   <p class="profile-preview-email" data-static-profile-preview-email>
                     {emailValue}
@@ -424,20 +425,20 @@ export default component$(() => {
                   data-empty={localBio.value ? 'false' : 'true'}
                   data-static-profile-preview-bio
                 >
-                  {localBio.value || 'Add a short bio to personalize your profile card.'}
+                   {localBio.value || copy.value.profileBioEmpty}
                 </p>
               </div>
               <div class="profile-avatar-block">
                 <div class="profile-avatar" data-empty={localAvatar.value ? 'false' : 'true'} data-static-profile-avatar>
                   {localAvatar.value ? (
-                    <img src={localAvatar.value} alt="Profile" loading="lazy" />
+                     <img src={localAvatar.value} alt={copy.value.profileAvatarAlt} loading="lazy" />
                   ) : (
                     <span>{avatarInitials.value}</span>
                   )}
                 </div>
                 <div class="profile-avatar-info">
-                  <p class="profile-avatar-title">Profile photo</p>
-                  <p class="profile-avatar-subtitle">PNG or JPG under 1.2MB.</p>
+                   <p class="profile-avatar-title">{copy.value.profilePhotoTitle}</p>
+                   <p class="profile-avatar-subtitle">{copy.value.profilePhotoHint}</p>
                   <div class="profile-avatar-actions">
                     <label class="profile-avatar-upload">
                       <input
@@ -446,7 +447,7 @@ export default component$(() => {
                         data-static-profile-avatar-input
                         onChange$={handleAvatarChange}
                       />
-                      Upload
+                       {copy.value.profilePhotoUploadAction}
                     </label>
                     {localAvatar.value ? (
                       <button
@@ -455,19 +456,19 @@ export default component$(() => {
                         data-static-profile-avatar-remove
                         onClick$={handleAvatarRemove}
                       >
-                        Remove
+                        {copy.value.profilePhotoRemoveAction}
                       </button>
                     ) : null}
                   </div>
                 </div>
               </div>
               <label class="profile-field">
-                <span>Bio</span>
+                <span>{copy.value.profileBioLabel}</span>
                 <textarea
                   class="profile-textarea"
                   maxLength={160}
                   rows={3}
-                  placeholder="Tell us what you are building."
+                   placeholder={copy.value.profileBioPlaceholder}
                   value={localBio.value}
                   data-static-profile-bio
                   onInput$={handleBioInput}
@@ -477,8 +478,8 @@ export default component$(() => {
               <div class="profile-color-picker">
                 <div class="profile-color-header">
                   <div>
-                    <p class="profile-color-title">Card color</p>
-                    <p class="profile-card-hint">Use RGB sliders for precise control.</p>
+                     <p class="profile-color-title">{copy.value.profileColorTitle}</p>
+                     <p class="profile-card-hint">{copy.value.profileColorHint}</p>
                   </div>
                   <label
                     class="profile-color-well"
@@ -489,13 +490,13 @@ export default component$(() => {
                       value={colorHex.value}
                       data-static-profile-color-picker
                       onInput$={handleColorPick}
-                      aria-label="Pick a color"
+                       aria-label={copy.value.profileColorPickerAriaLabel}
                     />
                   </label>
                 </div>
                 <div class="profile-color-row">
                   <div class="profile-color-label">
-                    <span>Red</span>
+                     <span>{copy.value.profileColorRed}</span>
                     <strong>{localColor.value.r}</strong>
                   </div>
                   <input
@@ -514,7 +515,7 @@ export default component$(() => {
                 </div>
                 <div class="profile-color-row">
                   <div class="profile-color-label">
-                    <span>Green</span>
+                     <span>{copy.value.profileColorGreen}</span>
                     <strong>{localColor.value.g}</strong>
                   </div>
                   <input
@@ -533,7 +534,7 @@ export default component$(() => {
                 </div>
                 <div class="profile-color-row">
                   <div class="profile-color-label">
-                    <span>Blue</span>
+                     <span>{copy.value.profileColorBlue}</span>
                     <strong>{localColor.value.b}</strong>
                   </div>
                   <input

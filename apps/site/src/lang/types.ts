@@ -48,8 +48,41 @@ export type UiCopy = {
   authBiometricLoginFailed: string
   authBiometricLoginCredentialsExpired: string
   authSocialSectionLabel: string
+  authMethodsLabel: string
+  authHostedStatus: string
+  authNotConfigured: string
+  authRedirectingMagicLink: string
+  authRedirectingProvider: string
+  authStartFailed: string
   authLogoutLabel: string
   profileNameAction: string
+  profileNamePlaceholder: string
+  profileIdLabel: string
+  profileCardTitle: string
+  profileCardHint: string
+  profileBioLabel: string
+  profileBioPlaceholder: string
+  profileBioEmpty: string
+  profilePhotoTitle: string
+  profilePhotoHint: string
+  profilePhotoUploadAction: string
+  profilePhotoRemoveAction: string
+  profileAvatarAlt: string
+  profileColorTitle: string
+  profileColorHint: string
+  profileColorPickerAriaLabel: string
+  profileColorRed: string
+  profileColorGreen: string
+  profileColorBlue: string
+  profileSavedLocal: string
+  profileSaveLocalFailed: string
+  profileImageInvalid: string
+  profileImageTooLarge: string
+  profileImageReadFailed: string
+  profileNameTooShort: string
+  profileNameTooLong: string
+  profileNameUpdateFailed: string
+  profileNameUpdated: string
   settingsChatTitle: string
   settingsChatDescription: string
   settingsChatReadReceipts: string
@@ -97,6 +130,7 @@ export type UiCopy = {
   settingsNativeTextZoomAriaLabel: string
   settingsNativePrivacyShieldAction: string
   settingsNativePrivacyShieldHint: string
+  settingsLogoutFailed: string
   networkOfflineTitle: string
   networkOfflineHint: string
   networkOnlineTitle: string

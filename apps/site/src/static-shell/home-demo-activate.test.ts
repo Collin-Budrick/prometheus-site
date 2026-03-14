@@ -25,6 +25,7 @@ class MockElement {
   dataset: Record<string, string> = {}
   disabled = false
   tabIndex = 0
+  style: Record<string, string> = {}
   ownerDocument: MockDocument | null = null
   parentElement: MockElement | null = null
   lastInnerHtmlValue: unknown = null
@@ -53,6 +54,9 @@ class MockElement {
     this.childNodes = []
     if (this.className === 'react-binary-demo') {
       buildReactBinaryDemoTree(this)
+    }
+    if (this.className === 'preact-island-ui') {
+      buildPreactIslandDemoTree(this)
     }
   }
 
@@ -103,6 +107,33 @@ class MockElement {
   removeEventListener(type: string, listener: (event: Event) => void) {
     const listeners = this.listeners.get(type)
     listeners?.delete(listener)
+  }
+
+  dispatchEvent(event: Event) {
+    const targetEvent = event as Event & { target?: EventTarget | null }
+    if (!targetEvent.target) {
+      Object.defineProperty(targetEvent, 'target', {
+        configurable: true,
+        value: this
+      })
+    }
+
+    let current: MockElement | null = this
+    while (current) {
+      current.listeners.get(event.type)?.forEach((listener) => listener(targetEvent))
+      current = current.parentElement
+    }
+
+    return true
+  }
+
+  closest(selector: string) {
+    let current: MockElement | null = this
+    while (current) {
+      if (current.matches(selector)) return current
+      current = current.parentElement
+    }
+    return null
   }
 
   querySelector(selector: string) {
@@ -167,6 +198,11 @@ class MockDocument {
 
   removeEventListener(type: string, listener: (event: Event) => void) {
     this.listeners.get(type)?.delete(listener)
+  }
+
+  dispatchEvent(event: Event) {
+    this.listeners.get(event.type)?.forEach((listener) => listener(event))
+    return true
   }
 
   createElement(tagName: string) {
@@ -241,6 +277,24 @@ const buildReactBinaryDemoTree = (root: MockElement) => {
   footer.append(createElement(root, 'span', 'react-binary-chip'))
 
   root.replaceChildren(header, steps, track, footer)
+}
+
+const buildPreactIslandDemoTree = (root: MockElement) => {
+  const label = createElement(root, 'div', 'preact-island-label')
+  const timer = createElement(root, 'div', 'preact-island-timer')
+  const stage = createElement(root, 'div', 'preact-island-stage')
+  const dial = createElement(root, 'svg', 'preact-island-dial')
+  const progress = createElement(root, 'circle', 'preact-island-dial-progress')
+  const hand = createElement(root, 'line', 'preact-island-dial-hand')
+  dial.append(progress, hand)
+  stage.append(
+    dial,
+    createElement(root, 'div', 'preact-island-stage-title'),
+    createElement(root, 'div', 'preact-island-stage-time'),
+    createElement(root, 'div', 'preact-island-stage-sub')
+  )
+  const action = createElement(root, 'button', 'preact-island-action')
+  root.replaceChildren(label, timer, stage, action)
 }
 
 const shellSeed = {
@@ -460,5 +514,71 @@ describe('home-demo-activate', () => {
     } finally {
       console.warn = originalWarn
     }
+  })
+
+  it('pauses and resumes the preact countdown when viewport playback changes', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'preact-island',
+      props: {}
+    })
+
+    const stageTime = root.querySelector('.preact-island-stage-time')
+    expect(stageTime?.textContent).toBe('1:00')
+
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const tickingValue = stageTime?.textContent
+    expect(tickingValue).toBe('0:59')
+
+    result.setViewportActive?.(false)
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(stageTime?.textContent).toBe(tickingValue)
+
+    result.setViewportActive?.(true)
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(stageTime?.textContent).toBe('0:58')
+
+    result.cleanup()
+  })
+
+  it('pauses and resumes the react binary stream animation when viewport playback changes', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    const actionButton = root.querySelector('.react-binary-action')
+    expect(actionButton).toBeTruthy()
+    actionButton?.dispatchEvent(new Event('click'))
+
+    const bits = root.querySelector('.react-binary-bits span')
+    const initialBits = bits?.textContent
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    const advancedBits = bits?.textContent
+    expect(advancedBits).not.toBe(initialBits)
+
+    result.setViewportActive?.(false)
+    const pausedBits = bits?.textContent
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(bits?.textContent).toBe(pausedBits)
+
+    result.setViewportActive?.(true)
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(bits?.textContent).not.toBe(pausedBits)
+
+    result.cleanup()
   })
 })

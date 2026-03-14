@@ -119,8 +119,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
   const labCopy = data?.languageSeed.lab
-  const title = labEnabled ? labCopy.title : 'Feature disabled'
-  const description = labEnabled ? labCopy.description : 'This route is disabled in this site configuration.'
+  const title = labEnabled ? labCopy.title : data?.languageSeed.ui.featureUnavailableTitle
+  const description = labEnabled ? labCopy.description : data?.languageSeed.ui.featureUnavailableDescription
 
   return {
     title: `${title} | ${siteBrand.name}`,

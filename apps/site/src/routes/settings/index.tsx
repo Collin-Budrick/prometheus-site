@@ -215,7 +215,7 @@ export default component$(() => {
       await clearNativeAuthCredentials()
       window.location.assign(logoutUrl)
     } catch (error) {
-      logoutMessage.value = error instanceof Error ? error.message : 'Unable to sign out.'
+      logoutMessage.value = error instanceof Error ? error.message : copy.value.settingsLogoutFailed
     } finally {
       logoutBusy.value = false
     }

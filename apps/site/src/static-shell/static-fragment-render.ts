@@ -55,7 +55,7 @@ const normalizeStoreItem = (value: unknown): StaticStoreItem | null => {
   if (!isRecord(value)) return null
   const id = toInteger(value.id)
   if (id <= 0) return null
-  const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Item ${id}`
+  const name = typeof value.name === 'string' ? value.name.trim() : ''
   const price = toNumber(value.price)
   const quantity = Math.max(0, toInteger(value.quantity))
   const scoreRaw = toNumber(value.score)
@@ -99,6 +99,16 @@ const formatPrice = (value: number) =>
     maximumFractionDigits: 2
   }).format(Number.isFinite(value) ? value : 0)
 
+const interpolate = (value: string, params: Record<string, string | number>) =>
+  value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
+
+const formatLabeledValue = (label: string, value: string | number) => `${label} ${value}`
+
+const resolveStoreItemName = (item: StaticStoreItem | StaticCartItem) => {
+  if (item.name && item.name !== `Item ${item.id}`) return item.name
+  return interpolate(t('Item {{id}}'), { id: item.id })
+}
+
 const resolveAvatarText = (user: StaticInviteUser) => {
   const source = user.name?.trim() || user.email || user.id
   return source
@@ -123,6 +133,15 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
   const queuedCount = context.storeSeed?.cart?.queuedCount ?? 0
   const placeholder = attrs?.['data-placeholder'] ?? 'Search the store...'
   const emptyLabel = query ? 'No matching items.' : 'Catalog is empty.'
+  const resultsLabel = t('results')
+  const itemsLabel = t('items')
+  const idLabel = t('ID')
+  const qtyLabel = t('Qty')
+  const scoreLabel = t('Score')
+  const deleteLabel = t('Delete item')
+  const addLabel = t('Add to cart')
+  const outOfStockLabel = t('Out of stock')
+  const queuedActionsLabel = t('Queued actions')
 
   return h('div', {
     class: attrs?.class ?? 'store-stream',
@@ -148,12 +167,14 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
       ]),
       h('div', { class: 'store-stream-sort' }, [h('span', undefined, [t(query ? 'Filtered catalog' : 'Live catalog')])]),
       queuedCount > 0
-        ? h('div', { class: 'store-stream-queue', 'aria-live': 'polite' }, [t(`Queued: ${queuedCount}`)])
+        ? h('div', { class: 'store-stream-queue', 'aria-live': 'polite' }, [
+            t(`${queuedActionsLabel}: ${queuedCount}`)
+          ])
         : null
       ]),
       h('div', { class: 'store-stream-meta' }, [
         h('span', undefined, [t(query ? 'SpaceTimeDB search' : 'SpaceTimeDB snapshot')]),
-        h('span', undefined, [t(query ? `${total} results` : `${visibleItems.length} items`)])
+        h('span', undefined, [t(query ? `${total} ${resultsLabel}` : `${visibleItems.length} ${itemsLabel}`)])
       ]),
     h('div', { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' }, [
       visibleItems.length === 0
@@ -169,27 +190,27 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
                 class: 'store-stream-delete',
                 type: 'button',
                 disabled: true,
-                'aria-label': 'Delete item',
-                title: 'Delete item'
+                'aria-label': deleteLabel,
+                title: deleteLabel
               }, [t('X')]),
               h('div', undefined, [
-                h('div', { class: 'store-stream-row-title' }, [t(item.name)]),
+                h('div', { class: 'store-stream-row-title' }, [t(resolveStoreItemName(item))]),
                 h('div', { class: 'store-stream-row-meta' }, [
-                  h('span', undefined, [t(`ID ${item.id}`)]),
-                  h('span', undefined, [t(`Qty ${item.quantity}`)])
+                  h('span', undefined, [t(formatLabeledValue(idLabel, item.id))]),
+                  h('span', undefined, [t(formatLabeledValue(qtyLabel, item.quantity))])
                 ])
               ]),
               h('div', { class: 'store-stream-row-meta store-stream-row-meta-secondary' }, [
                 item.score !== undefined
-                  ? h('span', { class: 'store-stream-score' }, [t(`Score ${item.score.toFixed(2)}`)])
+                  ? h('span', { class: 'store-stream-score' }, [t(formatLabeledValue(scoreLabel, item.score.toFixed(2)))])
                   : null,
                 h('button', {
                   class: `store-stream-add${item.quantity === 0 ? ' is-out' : ''}`,
                   type: 'button',
                   disabled: true,
-                  'aria-label': item.quantity === 0 ? 'Out of stock' : 'Add to cart',
-                  title: item.quantity === 0 ? 'Out of stock' : 'Add to cart'
-                }, [t(item.quantity === 0 ? 'Out of stock' : 'Add to cart')]),
+                  'aria-label': item.quantity === 0 ? outOfStockLabel : addLabel,
+                  title: item.quantity === 0 ? outOfStockLabel : addLabel
+                }, [t(item.quantity === 0 ? outOfStockLabel : addLabel)]),
                 h('span', { class: 'store-stream-row-price' }, [t(formatPrice(item.price))])
               ])
             ])
@@ -266,6 +287,8 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
   const totalLabel = attrs?.['data-total'] ?? 'Total'
   const dropLabel = attrs?.['data-drop'] ?? 'Drop to add'
   const removeLabel = attrs?.['data-remove'] ?? 'Remove item'
+  const idLabel = t('ID')
+  const qtyLabel = t('Qty')
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
 
   return h('div', {
@@ -300,10 +323,10 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
                 'aria-label': removeLabel,
                 title: removeLabel
               }, [t('X')]),
-              h('div', { class: 'store-cart-item-title' }, [t(item.name)]),
-              h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [t(`ID ${item.id}`)])]),
+              h('div', { class: 'store-cart-item-title' }, [t(resolveStoreItemName(item))]),
+              h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [t(formatLabeledValue(idLabel, item.id))])]),
               h('div', { class: 'store-cart-item-footer' }, [
-                h('span', { class: 'store-cart-qty' }, [t(`Qty ${item.qty}`)]),
+                h('span', { class: 'store-cart-qty' }, [t(formatLabeledValue(qtyLabel, item.qty))]),
                 h('span', { class: 'store-cart-price' }, [t(formatPrice(item.price * item.qty))])
               ])
             ])
@@ -361,7 +384,7 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
       ]),
       h('div', { class: 'chat-invites-header-actions' }, [
         h('span', { class: 'chat-invites-status-note', 'data-tone': 'neutral' }, [
-          t(`${incoming.length + outgoing.length} pending`)
+          t(`${incoming.length + outgoing.length} ${t('pending')}`)
         ])
       ])
     ]),

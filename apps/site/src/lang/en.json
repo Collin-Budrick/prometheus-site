@@ -113,7 +113,41 @@
     "featureUnavailableMeta": "Unavailable",
     "featureUnavailableTitle": "This feature is disabled",
     "featureUnavailableDescription": "Enable the feature in site config to expose this route.",
-    "featureUnavailableAction": "Return home"
+    "featureUnavailableAction": "Return home",
+    "authMethodsLabel": "Authentication methods",
+    "authHostedStatus": "Hosted sign-in completes on SpacetimeAuth and returns here with an OIDC session.",
+    "authNotConfigured": "SpacetimeAuth is not configured for this site.",
+    "authRedirectingMagicLink": "Redirecting to hosted magic-link sign-in...",
+    "authRedirectingProvider": "Redirecting to hosted {{method}} sign-in...",
+    "authStartFailed": "Unable to start the SpacetimeAuth login flow.",
+    "profileNamePlaceholder": "Nova Lane",
+    "profileIdLabel": "User ID",
+    "profileCardTitle": "Profile card",
+    "profileCardHint": "Stored only on this device.",
+    "profileBioLabel": "Bio",
+    "profileBioPlaceholder": "Tell us what you are building.",
+    "profileBioEmpty": "Add a short bio to personalize your profile card.",
+    "profilePhotoTitle": "Profile photo",
+    "profilePhotoHint": "PNG or JPG under 1.2MB.",
+    "profilePhotoUploadAction": "Upload",
+    "profilePhotoRemoveAction": "Remove",
+    "profileAvatarAlt": "Profile",
+    "profileColorTitle": "Card color",
+    "profileColorHint": "Use RGB sliders for precise control.",
+    "profileColorPickerAriaLabel": "Pick a color",
+    "profileColorRed": "Red",
+    "profileColorGreen": "Green",
+    "profileColorBlue": "Blue",
+    "profileSavedLocal": "Saved locally.",
+    "profileSaveLocalFailed": "Unable to save locally.",
+    "profileImageInvalid": "Please choose an image file.",
+    "profileImageTooLarge": "Image must be under 1.2MB.",
+    "profileImageReadFailed": "Unable to read that image.",
+    "profileNameTooShort": "Name must be at least 2 characters.",
+    "profileNameTooLong": "Name must be 64 characters or less.",
+    "profileNameUpdateFailed": "Unable to update name.",
+    "profileNameUpdated": "Name updated.",
+    "settingsLogoutFailed": "Unable to sign out."
   },
   "fragmentHeaders": {
     "fragment://page/home/planner@v1": {
@@ -163,6 +197,12 @@
       "metaLine": "contact invites",
       "title": "Invite and manage contacts.",
       "description": "Search by name or identity to send invites, accept or decline requests, and keep your contact list in sync."
+    },
+    "fragment://page/store/stream@v5": {
+      "heading": "h2",
+      "metaLine": "store stream",
+      "title": "Realtime store feed.",
+      "description": "SpaceTimeDB now serves as the live source of truth, with direct subscriptions keeping the feed current as items change."
     }
   },
   "lab": {
@@ -206,10 +246,36 @@
         }
       ],
       "fragments": [
-        { "id": "hero", "label": "Hero shell", "deps": [], "runtime": "edge" },
-        { "id": "planner", "label": "Planner core", "deps": ["hero"], "runtime": "edge" },
-        { "id": "ledger", "label": "Ledger stream", "deps": ["planner"], "runtime": "node" },
-        { "id": "react", "label": "React authoring", "deps": ["planner"], "runtime": "node" }
+        {
+          "id": "hero",
+          "label": "Hero shell",
+          "deps": [],
+          "runtime": "edge"
+        },
+        {
+          "id": "planner",
+          "label": "Planner core",
+          "deps": [
+            "hero"
+          ],
+          "runtime": "edge"
+        },
+        {
+          "id": "ledger",
+          "label": "Ledger stream",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        },
+        {
+          "id": "react",
+          "label": "React authoring",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        }
       ],
       "labels": {
         "dependencies": "Dependencies",
@@ -309,6 +375,7 @@
     }
   },
   "fragments": {
+    "1": "1",
     "fragment manifesto": "fragment manifesto",
     "The render tree is the artifact.": "The render tree is the artifact.",
     "HTML remains the fallback surface.": "HTML remains the fallback surface.",
@@ -390,7 +457,6 @@
     "Add item": "Add item",
     "Neural render pack": "Neural render pack",
     "19.00": "19.00",
-    "1": "1",
     "Validated by drizzle-zod and streamed over realtime updates.": "Validated on write and streamed over realtime updates.",
     "Name must be at least 2 characters.": "Name must be at least 2 characters.",
     "Price must be a non-negative number.": "Price must be a non-negative number.",
@@ -446,6 +512,34 @@
     "Read receipts": "Read receipts",
     "Typing indicators": "Typing indicators",
     "Archive messages": "Archive messages",
-    "Typing…": "Typing…"
+    "Typing…": "Typing…",
+    "Dependency resolution, cache hit checks, and runtime selection happen up front.": "Dependency resolution, cache hit checks, and runtime selection happen up front.",
+    "Rendering only occurs on cache miss; revalidation runs asynchronously.": "Rendering only occurs on cache miss; revalidation runs asynchronously.",
+    "Critical transforms run inside WebAssembly for deterministic, edge-safe execution.": "Critical transforms run inside WebAssembly for deterministic, edge-safe execution.",
+    "Numeric outputs feed fragment composition without touching HTML.": "Numeric outputs feed fragment composition without touching HTML.",
+    "Preact loads only inside the island boundary.": "Preact loads only inside the island boundary.",
+    "No shared state, no routing ownership, no global hydration.": "No shared state, no routing ownership, no global hydration.",
+    "React fragments compile into binary trees without client hydration.": "React fragments compile into binary trees without client hydration.",
+    "The DOM remains owned by Qwik.": "The DOM remains owned by Qwik.",
+    "Shared text for everyone on the page.": "Shared text for everyone on the page.",
+    "Anyone on the page can edit the same text box.": "Anyone on the page can edit the same text box.",
+    "Loro syncs updates through Garnet in real time.": "Loro syncs updates through Garnet in real time.",
+    "Write something. Everyone here sees it live.": "Write something. Everyone here sees it live.",
+    "Shared collaborative text box": "Shared collaborative text box",
+    "Focus to start live sync.": "Focus to start live sync.",
+    "Connecting live sync...": "Connecting live sync...",
+    "Live for everyone on this page": "Live for everyone on this page",
+    "Reconnecting live sync...": "Reconnecting live sync...",
+    "Realtime unavailable": "Realtime unavailable",
+    "Live catalog": "Live catalog",
+    "Filtered catalog": "Filtered catalog",
+    "Live snapshot": "Live snapshot",
+    "Search snapshot": "Search snapshot",
+    "No matching items.": "No matching items.",
+    "Catalog is empty.": "Catalog is empty.",
+    "Adding...": "Adding...",
+    "Deleting...": "Deleting...",
+    "Removing...": "Removing...",
+    "Item {{id}}": "Item {{id}}"
   }
 }

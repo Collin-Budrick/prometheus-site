@@ -109,7 +109,7 @@ const normalizeItem = (value: unknown): StoreItem | null => {
   const record = value as Record<string, unknown>
   const id = Number(record.id)
   if (!Number.isFinite(id)) return null
-  const name = typeof record.name === 'string' && record.name.trim() !== '' ? record.name : `Item ${id}`
+  const name = typeof record.name === 'string' ? record.name.trim() : ''
   const price = parsePrice(record.price)
   const score = parseScore(record.score)
   const quantity = parseQuantity(record.quantity)
@@ -136,6 +136,11 @@ const infinitySymbol = '\u221e'
 const formatQuantity = (value: number) => (value < 0 ? infinitySymbol : String(value))
 const interpolate = (value: string, params: Record<string, string | number>) =>
   value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
+const resolveStoreItemName = (copy: Record<string, string> | undefined, item: StoreItem) => {
+  if (item.name && item.name !== `Item ${item.id}`) return item.name
+  const template = copy?.['Item {{id}}'] ?? 'Item {{id}}'
+  return interpolate(template, { id: item.id })
+}
 
 const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
   if (typeof window === 'undefined') {
@@ -247,7 +252,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   const statusLabel = useComputed$(() => {
     const copy = fragmentCopy.value
     const resolve = (value: string) => copy?.[value] ?? value
-    if (streamState.value === 'live') return resolve('Live stream')
+    if (streamState.value === 'live') return resolve('Realtime stream')
     if (streamState.value === 'connecting') return resolve('Connecting')
     if (streamState.value === 'offline') return resolve('Offline')
     if (streamState.value === 'error') return resolve(streamError.value ?? 'Stream error')
@@ -877,7 +882,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
                   X
                 </button>
                 <div>
-                  <div class="store-stream-row-title">{item.name}</div>
+                  <div class="store-stream-row-title">{resolveStoreItemName(copy, item)}</div>
                   <div class="store-stream-row-meta">
                     <span>
                       {idLabel} {item.id}

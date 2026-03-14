@@ -35,6 +35,7 @@ import {
   readCache,
   recordLatencySample,
   releaseCacheLock,
+  shouldIgnoreCacheLockReleaseError,
   writeCache
 } from '../cache-helpers'
 import type { FragmentUpdateBroadcaster, FragmentUpdateEvent } from './fragment-updates'
@@ -133,6 +134,7 @@ export const createFragmentStore = (cache: CacheClient): FragmentStore => {
           cache.client.del(commandOptions, key)
         )
       } catch (error) {
+        if (shouldIgnoreCacheLockReleaseError(error)) return
         console.warn('Failed to release fragment cache lock:', { key, error })
       }
     },

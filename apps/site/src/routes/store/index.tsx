@@ -166,8 +166,8 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
   const copy = data?.languageSeed.ui
-  const title = storeEnabled ? copy.storeTitle : 'Feature disabled'
-  const description = storeEnabled ? copy.storeDescription : 'This route is disabled in this site configuration.'
+  const title = storeEnabled ? copy.storeTitle : copy.featureUnavailableTitle
+  const description = storeEnabled ? copy.storeDescription : copy.featureUnavailableDescription
 
   return {
     title: `${title} | ${siteBrand.name}`,

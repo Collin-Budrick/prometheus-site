@@ -1,4 +1,5 @@
 import type { Lang } from '../../lang'
+import { getUiCopy } from '../../lang/client'
 import {
   buildLocalProfilePayload,
   clampChannel,
@@ -46,9 +47,9 @@ const parseHexColor = (value: string): ProfileColor | null => {
   }
 }
 
-const resolveAvatarInitials = (name: string, user?: ProfileUser) => {
-  const source = name || user?.email || user?.id || 'Profile'
-  const cleaned = source.split('@')[0]?.trim() ?? 'Profile'
+const resolveAvatarInitials = (name: string, fallback: string, user?: ProfileUser) => {
+  const source = name || user?.email || user?.id || fallback
+  const cleaned = source.split('@')[0]?.trim() ?? fallback
   const parts = cleaned.split(/\s+/).filter(Boolean)
   const result = parts
     .slice(0, 2)
@@ -114,6 +115,7 @@ export const syncAvatarPreview = (
   avatarRoot: HTMLElement,
   avatar: string | null,
   displayName: string,
+  avatarAlt = 'Profile',
   user?: ProfileUser
 ) => {
   avatarRoot.dataset.empty = avatar ? 'false' : 'true'
@@ -121,19 +123,24 @@ export const syncAvatarPreview = (
   if (avatar) {
     const image = document.createElement('img')
     image.src = avatar
-    image.alt = 'Profile'
+    image.alt = avatarAlt
     image.loading = 'lazy'
     replaceNodeChildren(avatarRoot, image)
     return
   }
 
   const initials = document.createElement('span')
-  initials.textContent = resolveAvatarInitials(displayName, user)
+  initials.textContent = resolveAvatarInitials(displayName, avatarAlt, user)
   replaceNodeChildren(avatarRoot, initials)
 }
 
-const updateProfileCard = (root: HTMLElement, state: ControllerState, user?: ProfileUser) => {
-  const displayName = state.savedName || user?.email || user?.id || 'Profile'
+const updateProfileCard = (
+  root: HTMLElement,
+  state: ControllerState,
+  copy: ReturnType<typeof getUiCopy>,
+  user?: ProfileUser
+) => {
+  const displayName = state.savedName || user?.email || user?.id || copy.profileAvatarAlt
   const displayEmail = user?.email ?? ''
   const previewName = root.querySelector<HTMLElement>('[data-static-profile-preview-name]')
   const previewEmail = root.querySelector<HTMLElement>('[data-static-profile-preview-email]')
@@ -156,11 +163,11 @@ const updateProfileCard = (root: HTMLElement, state: ControllerState, user?: Pro
   }
   if (previewBio) {
     const bio = state.bio.trim()
-    previewBio.textContent = bio || 'Add a short bio to personalize your profile card.'
+    previewBio.textContent = bio || copy.profileBioEmpty
     previewBio.dataset.empty = bio ? 'false' : 'true'
   }
   if (avatarRoot) {
-    syncAvatarPreview(avatarRoot, state.avatar, displayName, user)
+    syncAvatarPreview(avatarRoot, state.avatar, displayName, copy.profileAvatarAlt, user)
   }
   if (colorHex) {
     colorHex.textContent = rgbToHex(state.color)
@@ -202,12 +209,13 @@ const syncSaveButton = (button: HTMLButtonElement | null, state: ControllerState
     trimmedName === state.savedName
 }
 
-export const mountStaticProfileController = ({ user }: MountStaticProfileControllerOptions) => {
+export const mountStaticProfileController = ({ lang, user }: MountStaticProfileControllerOptions) => {
   const root = document.querySelector<HTMLElement>('[data-static-profile-root]')
   if (!root) {
     return { cleanup() {} }
   }
 
+  const copy = getUiCopy(lang)
   const cleanupFns: Array<() => void> = []
   const nameInput = root.querySelector<HTMLInputElement>('[data-static-profile-name-input]')
   const bioInput = root.querySelector<HTMLTextAreaElement>('[data-static-profile-bio]')
@@ -233,7 +241,7 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
     bioInput.value = state.bio
   }
 
-  updateProfileCard(root, state, user)
+  updateProfileCard(root, state, copy, user)
   syncSaveButton(actionButton, state)
 
   const handleNameInput = () => {
@@ -248,9 +256,9 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
       root,
       '[data-static-profile-local-status]',
       saved ? 'success' : 'error',
-      saved ? 'Saved locally.' : 'Unable to save locally.'
+      saved ? copy.profileSavedLocal : copy.profileSaveLocalFailed
     )
-    updateProfileCard(root, state, user)
+    updateProfileCard(root, state, copy, user)
   }
 
   const handleBioInput = () => {
@@ -282,11 +290,11 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
     if (state.saving) return
     const trimmed = state.currentName.trim()
     if (trimmed.length < 2) {
-      setStatus(root, '[data-static-profile-status]', 'error', 'Name must be at least 2 characters.')
+      setStatus(root, '[data-static-profile-status]', 'error', copy.profileNameTooShort)
       return
     }
     if (trimmed.length > 64) {
-      setStatus(root, '[data-static-profile-status]', 'error', 'Name must be 64 characters or less.')
+      setStatus(root, '[data-static-profile-status]', 'error', copy.profileNameTooLong)
       return
     }
     if (trimmed === state.savedName) return
@@ -303,7 +311,7 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
       })
 
       if (!response.ok) {
-        let errorMessage = 'Unable to update name.'
+        let errorMessage = copy.profileNameUpdateFailed
         try {
           const payload = (await response.json()) as { error?: string }
           if (payload?.error) errorMessage = payload.error
@@ -320,14 +328,14 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
       if (nameInput) {
         nameInput.value = state.savedName
       }
-      updateProfileCard(root, state, { ...user, name: state.savedName })
-      setStatus(root, '[data-static-profile-status]', 'success', 'Name updated.')
+      updateProfileCard(root, state, copy, { ...user, name: state.savedName })
+      setStatus(root, '[data-static-profile-status]', 'success', copy.profileNameUpdated)
     } catch (error) {
       setStatus(
         root,
         '[data-static-profile-status]',
         'error',
-        error instanceof Error ? error.message : 'Unable to update name.'
+        error instanceof Error ? error.message : copy.profileNameUpdateFailed
       )
     } finally {
       state.saving = false
@@ -355,11 +363,11 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
       const file = avatarInput.files?.[0]
       if (!file) return
       if (!file.type.startsWith('image/')) {
-        setStatus(root, '[data-static-profile-local-status]', 'error', 'Please choose an image file.')
+        setStatus(root, '[data-static-profile-local-status]', 'error', copy.profileImageInvalid)
         return
       }
       if (file.size > PROFILE_AVATAR_MAX_BYTES) {
-        setStatus(root, '[data-static-profile-local-status]', 'error', 'Image must be under 1.2MB.')
+        setStatus(root, '[data-static-profile-local-status]', 'error', copy.profileImageTooLarge)
         return
       }
       const reader = new FileReader()
@@ -370,7 +378,7 @@ export const mountStaticProfileController = ({ user }: MountStaticProfileControl
       })
       avatarInput.value = ''
       if (!result) {
-        setStatus(root, '[data-static-profile-local-status]', 'error', 'Unable to read that image.')
+        setStatus(root, '[data-static-profile-local-status]', 'error', copy.profileImageReadFailed)
         return
       }
       state.avatar = result

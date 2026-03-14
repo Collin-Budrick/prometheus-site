@@ -1,4 +1,5 @@
 import type { StaticFragmentRouteData } from '../fragment-static-data'
+import { getFragmentTextCopy } from '../../lang/client'
 import { setTrustedInnerHtml } from '../../security/client'
 import type { StoreSeed } from '../../shared/store-seed'
 import {
@@ -34,6 +35,7 @@ type StoreCartSnapshotItem = {
 
 type StoreStaticState = {
   cart: StoreCartSnapshotItem[]
+  copy: Record<string, string>
   destroyed: boolean
   form: StoreCreateState
   inventory: StoreInventorySnapshot
@@ -63,7 +65,16 @@ const escapeHtml = (value: string) =>
     .replaceAll("'", '&#39;')
 
 const formatPrice = (value: number) => `$${value.toFixed(2)}`
-const formatQuantity = (value: number) => (value < 0 ? 'infinite' : `${value}`)
+const formatQuantity = (value: number) => (value < 0 ? '\u221e' : `${value}`)
+const interpolate = (value: string, params: Record<string, string | number>) =>
+  value.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params[key] ?? ''))
+const resolveCopy = (copy: Record<string, string>, key: string) => copy[key] ?? key
+const formatLabeledValue = (label: string, value: string | number) => `${label} ${value}`
+const resolveStoreItemName = (copy: Record<string, string>, id: number, name: string) => {
+  const trimmed = name.trim()
+  if (trimmed && trimmed !== `Item ${id}`) return trimmed
+  return interpolate(resolveCopy(copy, 'Item {{id}}'), { id })
+}
 
 const parseNumberInput = (value: string) => {
   const parsed = Number.parseFloat(value)
@@ -88,7 +99,7 @@ const normalizeInventoryItem = (value: unknown): StoreInventoryItem | null => {
   if (!Number.isFinite(price) || !Number.isFinite(quantity)) return null
   return {
     id,
-    name: name || `Item ${id}`,
+    name,
     price,
     quantity
   }
@@ -104,7 +115,7 @@ const normalizeStoreCartSnapshotItem = (value: unknown): StoreCartSnapshotItem |
   if (!Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return null
   return {
     id,
-    name: name || `Item ${id}`,
+    name,
     price,
     qty: Math.floor(qty)
   }
@@ -268,6 +279,7 @@ const ensureStatusNode = (root: HTMLElement, className: string) => {
 const renderStoreStream = (state: StoreStaticState) => {
   const root = getStoreStreamRoot()
   if (!root) return
+  const copy = state.copy
 
   const searchInput = root.querySelector<HTMLInputElement>('input[type="search"]')
   if (searchInput) {
@@ -277,14 +289,14 @@ const renderStoreStream = (state: StoreStaticState) => {
 
   const statusCopy =
     state.inventory.status === 'connecting'
-      ? 'Connecting'
+      ? resolveCopy(copy, 'Connecting')
       : state.inventory.status === 'error'
-        ? state.inventory.error ?? 'Stream error'
+        ? state.inventory.error ?? resolveCopy(copy, 'Stream error')
         : state.inventory.status === 'offline'
-          ? 'Offline'
+          ? resolveCopy(copy, 'Offline')
           : state.inventory.status === 'live'
-            ? 'Live stream'
-            : 'Idle'
+            ? resolveCopy(copy, 'Realtime stream')
+            : resolveCopy(copy, 'Idle')
   const statusLabel = root.querySelector<HTMLElement>('.sr-only')
   if (statusLabel) {
     statusLabel.textContent = statusCopy
@@ -295,28 +307,34 @@ const renderStoreStream = (state: StoreStaticState) => {
   const filteredItems = getFilteredInventoryItems(state)
   const metaValues = root.querySelectorAll<HTMLElement>('.store-stream-meta span')
   if (metaValues.length >= 2) {
-    metaValues[1].textContent = state.query.trim() ? `${filteredItems.length} results` : `${filteredItems.length} items`
+    metaValues[1].textContent = state.query.trim()
+      ? `${filteredItems.length} ${resolveCopy(copy, 'results')}`
+      : `${filteredItems.length} ${resolveCopy(copy, 'items')}`
   }
 
   const panel = root.querySelector<HTMLElement>('.store-stream-panel')
   if (!panel) return
 
   if (state.inventory.status === 'connecting' && filteredItems.length === 0) {
-    setTrustedInnerHtml(panel, '<div class="store-stream-empty" role="listitem">Loading items...</div>', 'template')
+    setTrustedInnerHtml(
+      panel,
+      `<div class="store-stream-empty" role="listitem">${escapeHtml(resolveCopy(copy, 'Loading items...'))}</div>`,
+      'template'
+    )
     return
   }
 
   if (state.inventory.status === 'error' && filteredItems.length === 0) {
     setTrustedInnerHtml(
       panel,
-      `<div class="store-stream-empty" role="listitem">${escapeHtml(state.inventory.error ?? 'Stream error')}</div>`,
+      `<div class="store-stream-empty" role="listitem">${escapeHtml(state.inventory.error ?? resolveCopy(copy, 'Stream error'))}</div>`,
       'template'
     )
     return
   }
 
   if (filteredItems.length === 0) {
-    const label = state.query.trim() ? 'No matches yet.' : 'Catalog is empty.'
+    const label = state.query.trim() ? resolveCopy(copy, 'No matches yet.') : resolveCopy(copy, 'Catalog is empty.')
     setTrustedInnerHtml(
       panel,
       `<div class="store-stream-empty" role="listitem">${escapeHtml(label)}</div>`,
@@ -332,10 +350,17 @@ const renderStoreStream = (state: StoreStaticState) => {
         const isDeleting = state.pendingDeleteIds.has(item.id)
         const isAdding = state.pendingAddIds.has(item.id)
         const isOutOfStock = item.quantity === 0
-        const addLabel = isOutOfStock ? 'Out of stock' : isAdding ? 'Adding...' : 'Add to cart'
-        const deleteLabel = isDeleting ? 'Deleting...' : 'Delete item'
+        const addLabel = isOutOfStock
+          ? resolveCopy(copy, 'Out of stock')
+          : isAdding
+            ? resolveCopy(copy, 'Adding...')
+            : resolveCopy(copy, 'Add to cart')
+        const deleteLabel = isDeleting ? resolveCopy(copy, 'Deleting...') : resolveCopy(copy, 'Delete item')
+        const itemName = resolveStoreItemName(copy, item.id, item.name)
+        const idLabel = formatLabeledValue(resolveCopy(copy, 'ID'), item.id)
+        const qtyLabel = formatLabeledValue(resolveCopy(copy, 'Qty'), formatQuantity(item.quantity))
 
-        return `<div class="store-stream-row${isDeleting ? ' is-deleting' : ''}" role="listitem" data-item-id="${item.id}" style="--stagger-index:${index}"><button class="store-stream-delete" type="button" data-store-delete="${item.id}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}"${isDeleting ? ' disabled' : ''}>X</button><div><div class="store-stream-row-title">${escapeHtml(item.name)}</div><div class="store-stream-row-meta"><span>ID ${item.id}</span><span>Qty ${escapeHtml(formatQuantity(item.quantity))}</span></div></div><div class="store-stream-row-meta store-stream-row-meta-secondary"><button class="store-stream-add${isOutOfStock ? ' is-out' : ''}" type="button" data-store-add="${item.id}" aria-label="${escapeHtml(addLabel)}" title="${escapeHtml(addLabel)}"${isOutOfStock || isAdding ? ' disabled' : ''}>${escapeHtml(addLabel)}</button><span class="store-stream-row-price">${escapeHtml(formatPrice(item.price))}</span></div></div>`
+        return `<div class="store-stream-row${isDeleting ? ' is-deleting' : ''}" role="listitem" data-item-id="${item.id}" style="--stagger-index:${index}"><button class="store-stream-delete" type="button" data-store-delete="${item.id}" aria-label="${escapeHtml(deleteLabel)}" title="${escapeHtml(deleteLabel)}"${isDeleting ? ' disabled' : ''}>X</button><div><div class="store-stream-row-title">${escapeHtml(itemName)}</div><div class="store-stream-row-meta"><span>${escapeHtml(idLabel)}</span><span>${escapeHtml(qtyLabel)}</span></div></div><div class="store-stream-row-meta store-stream-row-meta-secondary"><button class="store-stream-add${isOutOfStock ? ' is-out' : ''}" type="button" data-store-add="${item.id}" aria-label="${escapeHtml(addLabel)}" title="${escapeHtml(addLabel)}"${isOutOfStock || isAdding ? ' disabled' : ''}>${escapeHtml(addLabel)}</button><span class="store-stream-row-price">${escapeHtml(formatPrice(item.price))}</span></div></div>`
       })
       .join(''),
     'template'
@@ -355,6 +380,7 @@ const canSubmitCreateForm = (state: StoreStaticState) => {
 const renderStoreCreateForm = (state: StoreStaticState) => {
   const root = getStoreCreateRoot()
   if (!root) return
+  const copy = state.copy
 
   root.dataset.state = state.form.status
 
@@ -383,7 +409,8 @@ const renderStoreCreateForm = (state: StoreStaticState) => {
   }
   if (submitButton) {
     submitButton.disabled = !canSubmitCreateForm(state)
-    submitButton.textContent = state.form.status === 'saving' ? 'Saving...' : 'Add item'
+    submitButton.textContent =
+      state.form.status === 'saving' ? resolveCopy(copy, 'Saving...') : resolveCopy(copy, 'Add item')
   }
 
   const statusNode = ensureStatusNode(root, 'store-create-status')
@@ -395,6 +422,7 @@ const renderStoreCreateForm = (state: StoreStaticState) => {
 const renderStoreCart = (state: StoreStaticState) => {
   const root = getStoreCartRoot()
   if (!root) return
+  const copy = state.copy
 
   root.dataset.state = state.cart.length > 0 ? 'filled' : 'empty'
 
@@ -410,8 +438,8 @@ const renderStoreCart = (state: StoreStaticState) => {
   if (state.cart.length === 0) {
     setTrustedInnerHtml(
       dropzone,
-      '<div class="store-cart-drop-hint" aria-hidden="true">Drop to add</div>' +
-        '<div class="store-cart-empty">Cart is empty.</div>',
+      `<div class="store-cart-drop-hint" aria-hidden="true">${escapeHtml(resolveCopy(copy, 'Drop to add'))}</div>` +
+        `<div class="store-cart-empty">${escapeHtml(resolveCopy(copy, 'Cart is empty.'))}</div>`,
       'template'
     )
     return
@@ -419,12 +447,15 @@ const renderStoreCart = (state: StoreStaticState) => {
 
   setTrustedInnerHtml(
     dropzone,
-    '<div class="store-cart-drop-hint" aria-hidden="true">Drop to add</div>' +
+    `<div class="store-cart-drop-hint" aria-hidden="true">${escapeHtml(resolveCopy(copy, 'Drop to add'))}</div>` +
       `<div class="store-cart-list" role="list">${state.cart
         .map((item, index) => {
           const isRemoving = state.pendingRemoveIds.has(item.id)
-          const removeLabel = isRemoving ? 'Removing...' : 'Remove item'
-          return `<div class="store-cart-item${isRemoving ? ' is-removing' : ''}" role="listitem" data-cart-id="${item.id}" style="--stagger-index:${index}"><button class="store-cart-remove" type="button" data-cart-remove="${item.id}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}"${isRemoving ? ' disabled' : ''}>X</button><div class="store-cart-item-title">${escapeHtml(item.name)}</div><div class="store-cart-item-meta"><span>ID ${item.id}</span></div><div class="store-cart-item-footer"><span class="store-cart-qty">Qty ${item.qty}</span><span class="store-cart-price">${escapeHtml(formatPrice(item.price * item.qty))}</span></div></div>`
+          const removeLabel = isRemoving ? resolveCopy(copy, 'Removing...') : resolveCopy(copy, 'Remove item')
+          const itemName = resolveStoreItemName(copy, item.id, item.name)
+          const idLabel = formatLabeledValue(resolveCopy(copy, 'ID'), item.id)
+          const qtyLabel = formatLabeledValue(resolveCopy(copy, 'Qty'), item.qty)
+          return `<div class="store-cart-item${isRemoving ? ' is-removing' : ''}" role="listitem" data-cart-id="${item.id}" style="--stagger-index:${index}"><button class="store-cart-remove" type="button" data-cart-remove="${item.id}" aria-label="${escapeHtml(removeLabel)}" title="${escapeHtml(removeLabel)}"${isRemoving ? ' disabled' : ''}>X</button><div class="store-cart-item-title">${escapeHtml(itemName)}</div><div class="store-cart-item-meta"><span>${escapeHtml(idLabel)}</span></div><div class="store-cart-item-footer"><span class="store-cart-qty">${escapeHtml(qtyLabel)}</span><span class="store-cart-price">${escapeHtml(formatPrice(item.price * item.qty))}</span></div></div>`
         })
         .join('')}</div>`,
     'template'
@@ -580,14 +611,22 @@ const handleCreateSubmit = async (state: StoreStaticState, scheduleRender: () =>
 
     state.form = {
       digital: false,
-      message: created ? `Added item #${created.id}` : 'Item created.',
+      message: created
+        ? interpolate(resolveCopy(state.copy, 'Added item #{{id}}'), { id: created.id })
+        : resolveCopy(state.copy, 'Item created.'),
       name: '',
       price: '',
       quantity: '1',
       status: 'success'
     }
   } catch (error) {
-    setCreateFormMessage(state, 'error', error instanceof Error ? error.message : 'Request failed')
+    setCreateFormMessage(
+      state,
+      'error',
+      error instanceof Error
+        ? error.message
+        : interpolate(resolveCopy(state.copy, 'Request failed: {{status}}'), { status: 'unknown' })
+    )
   } finally {
     scheduleRender()
   }
@@ -600,6 +639,7 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
 
   const state: StoreStaticState = {
     cart: readInitialCart(routeData),
+    copy: getFragmentTextCopy(routeData.lang),
     destroyed: false,
     form: {
       digital: false,

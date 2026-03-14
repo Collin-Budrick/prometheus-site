@@ -28,6 +28,19 @@ const withValkeyTimeout = async <T>(
   }
 }
 
+const isAbortLikeError = (error: unknown) => {
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') return true
+    return error.message.toLowerCase().includes('aborted')
+  }
+  if (typeof error === 'string') {
+    return error.toLowerCase().includes('aborted')
+  }
+  return false
+}
+
+export const shouldIgnoreCacheLockReleaseError = (error: unknown) => isAbortLikeError(error)
+
 const parseEnvSeconds = (value: string | undefined, fallback: number, name: string) => {
   if (value === undefined) return fallback
   const parsed = Number.parseInt(value, 10)
@@ -176,6 +189,7 @@ export const releaseCacheLock = async (cache: CacheClient, key: string, token: s
       cache.client.del(commandOptions, key)
     )
   } catch (error) {
+    if (shouldIgnoreCacheLockReleaseError(error)) return
     console.warn('Failed to release fragment cache lock:', { key, error })
   }
 }

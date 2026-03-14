@@ -113,7 +113,41 @@
     "featureUnavailableMeta": "利用不可",
     "featureUnavailableTitle": "この機能は無効です",
     "featureUnavailableDescription": "このルートを公開するにはサイト設定で機能を有効にしてください。",
-    "featureUnavailableAction": "ホームに戻る"
+    "featureUnavailableAction": "ホームに戻る",
+    "authMethodsLabel": "認証方法",
+    "authHostedStatus": "ホスト型サインインは SpacetimeAuth 上で完了し、OIDC セッションでここに戻ります。",
+    "authNotConfigured": "このサイトでは SpacetimeAuth が設定されていません。",
+    "authRedirectingMagicLink": "ホスト型のマジックリンク認証にリダイレクトしています...",
+    "authRedirectingProvider": "ホスト型の{{method}}認証にリダイレクトしています...",
+    "authStartFailed": "SpacetimeAuth のログインを開始できませんでした。",
+    "profileNamePlaceholder": "Nova Lane",
+    "profileIdLabel": "ユーザーID",
+    "profileCardTitle": "プロフィールカード",
+    "profileCardHint": "このデバイスにのみ保存されます。",
+    "profileBioLabel": "自己紹介",
+    "profileBioPlaceholder": "何を作っているか教えてください。",
+    "profileBioEmpty": "短い自己紹介を追加してプロフィールカードを整えましょう。",
+    "profilePhotoTitle": "プロフィール写真",
+    "profilePhotoHint": "1.2MB 未満の PNG または JPG。",
+    "profilePhotoUploadAction": "アップロード",
+    "profilePhotoRemoveAction": "削除",
+    "profileAvatarAlt": "プロフィール",
+    "profileColorTitle": "カードカラー",
+    "profileColorHint": "細かく調整するには RGB スライダーを使ってください。",
+    "profileColorPickerAriaLabel": "色を選択",
+    "profileColorRed": "赤",
+    "profileColorGreen": "緑",
+    "profileColorBlue": "青",
+    "profileSavedLocal": "このデバイスに保存しました。",
+    "profileSaveLocalFailed": "このデバイスへの保存に失敗しました。",
+    "profileImageInvalid": "画像ファイルを選択してください。",
+    "profileImageTooLarge": "画像は 1.2MB 未満にしてください。",
+    "profileImageReadFailed": "画像を読み込めませんでした。",
+    "profileNameTooShort": "名前は 2 文字以上にしてください。",
+    "profileNameTooLong": "名前は 64 文字以内にしてください。",
+    "profileNameUpdateFailed": "名前を更新できませんでした。",
+    "profileNameUpdated": "名前を更新しました。",
+    "settingsLogoutFailed": "サインアウトできませんでした。"
   },
   "fragmentHeaders": {
     "fragment://page/home/planner@v1": {
@@ -163,6 +197,12 @@
       "metaLine": "連絡先招待",
       "title": "連絡先を招待して管理。",
       "description": "メールで検索して招待を送信し、承認や拒否で連絡先を整理します。"
+    },
+    "fragment://page/store/stream@v5": {
+      "heading": "h2",
+      "metaLine": "ストアストリーム",
+      "title": "リアルタイムのストアフィード。",
+      "description": "SpaceTimeDBが正の情報源のまま、Garnetがキャッシュヒットを高速化し、アイテムの更新がリアルタイムで流れ込みます。"
     }
   },
   "lab": {
@@ -206,10 +246,36 @@
         }
       ],
       "fragments": [
-        { "id": "hero", "label": "ヒーローシェル", "deps": [], "runtime": "edge" },
-        { "id": "planner", "label": "プランナーコア", "deps": ["hero"], "runtime": "edge" },
-        { "id": "ledger", "label": "レジャーストリーム", "deps": ["planner"], "runtime": "node" },
-        { "id": "react", "label": "Reactオーサリング", "deps": ["planner"], "runtime": "node" }
+        {
+          "id": "hero",
+          "label": "ヒーローシェル",
+          "deps": [],
+          "runtime": "edge"
+        },
+        {
+          "id": "planner",
+          "label": "プランナーコア",
+          "deps": [
+            "hero"
+          ],
+          "runtime": "edge"
+        },
+        {
+          "id": "ledger",
+          "label": "レジャーストリーム",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        },
+        {
+          "id": "react",
+          "label": "Reactオーサリング",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        }
       ],
       "labels": {
         "dependencies": "依存関係",
@@ -309,11 +375,12 @@
     }
   },
   "fragments": {
-    "Resumable by default": "標準でレジューム可能",
-    "Fragment caching with async revalidation": "フラグメント単位のキャッシュと非同期再検証",
-    "Deterministic binary DOM replay": "決定的なバイナリDOMリプレイ",
-    "HTML remains the fallback surface.": "HTMLはフォールバックの表層として残ります。",
-    "Deterministic binary fragments handle replay, caching, and instant patching.": "決定的なバイナリフラグメントが再生、キャッシュ、即時パッチを担います。",
+    "1": "1",
+    "Resumable by default": "デフォルトで再開可能",
+    "Fragment caching with async revalidation": "非同期再検証付きフラグメントキャッシュ",
+    "Deterministic binary DOM replay": "決定的なバイナリ DOM リプレイ",
+    "HTML remains the fallback surface.": "HTML はフォールバックの表示面として残ります。",
+    "Deterministic binary fragments handle replay, caching, and instant patching.": "決定的なバイナリフラグメントが再生、キャッシュ、即時パッチ適用を担います。",
     "fragment addressable": "フラグメントアドレス指定",
     "edge-primary": "エッジ優先",
     "Binary-first. Fragment-native. Zero hydration.": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",
@@ -358,7 +425,7 @@
     "Realtime stream": "リアルタイムストリーム",
     "Postgres": "SpaceTimeDB",
     "Valkey": "Garnet",
-    "Realtime": "Realtime",
+    "Realtime": "リアルタイム",
     "Search the store...": "ストアを検索...",
     "Search": "検索",
     "Search store items": "ストアアイテムを検索",
@@ -403,7 +470,6 @@
     "Add item": "アイテム追加",
     "Neural render pack": "ニューラルレンダーパック",
     "19.00": "19.00",
-    "1": "1",
     "Validated by drizzle-zod and streamed over realtime updates.": "drizzle-zodで検証し、更新をリアルタイムにストリームします。",
     "Name must be at least 2 characters.": "名前は2文字以上で入力してください。",
     "Price must be a non-negative number.": "価格は0以上の数値にしてください。",
@@ -466,6 +532,41 @@
     "No renderer registered for {{id}}.": "{{id}} 用のレンダラーが登録されていません。",
     "render error": "レンダーエラー",
     "Fragment failed to render": "フラグメントのレンダリングに失敗しました",
-    "Last error: {{error}}": "最後のエラー: {{error}}"
+    "Last error: {{error}}": "最後のエラー: {{error}}",
+    "Dependency resolution, cache hit checks, and runtime selection happen up front.": "依存関係の解決、キャッシュヒットの確認、ランタイムの選択が先に行われます。",
+    "Rendering only occurs on cache miss; revalidation runs asynchronously.": "レンダリングはキャッシュミス時のみ行われ、再検証は非同期で実行されます。",
+    "Critical transforms run inside WebAssembly for deterministic, edge-safe execution.": "重要な変換は決定的でエッジ安全な実行のために WebAssembly 内で行われます。",
+    "Numeric outputs feed fragment composition without touching HTML.": "数値出力が HTML に触れずにフラグメント合成を駆動します。",
+    "Preact loads only inside the island boundary.": "Preact はアイランド境界の内側でのみ読み込まれます。",
+    "No shared state, no routing ownership, no global hydration.": "共有状態も、ルーティングの所有権も、グローバルなハイドレーションもありません。",
+    "React fragments compile into binary trees without client hydration.": "React フラグメントはクライアントハイドレーションなしでバイナリツリーにコンパイルされます。",
+    "The DOM remains owned by Qwik.": "DOM の所有権は Qwik に残ります。",
+    "Shared text for everyone on the page.": "このページにいる全員に共有されるテキストです。",
+    "Anyone on the page can edit the same text box.": "このページの全員が同じテキストボックスを編集できます。",
+    "Loro syncs updates through Garnet in real time.": "Loro は更新を Garnet 経由でリアルタイム同期します。",
+    "Write something. Everyone here sees it live.": "何か入力してください。ここにいる全員にリアルタイムで表示されます。",
+    "Shared collaborative text box": "共有コラボレーションテキストボックス",
+    "Focus to start live sync.": "フォーカスしてライブ同期を開始します。",
+    "Connecting live sync...": "ライブ同期に接続しています...",
+    "Live for everyone on this page": "このページの全員にライブ反映中",
+    "Reconnecting live sync...": "ライブ同期に再接続しています...",
+    "Realtime unavailable": "リアルタイム接続を利用できません",
+    "fragment manifesto": "フラグメント宣言",
+    "The render tree is the artifact.": "レンダーツリーそのものが成果物です。",
+    "SpaceTimeDB": "SpaceTimeDB",
+    "Direct": "直接",
+    "SpaceTimeDB search": "SpaceTimeDB 検索",
+    "SpaceTimeDB snapshot": "SpaceTimeDB スナップショット",
+    "SpaceTimeDB stream": "SpaceTimeDB ストリーム",
+    "Live catalog": "ライブカタログ",
+    "Filtered catalog": "絞り込みカタログ",
+    "Live snapshot": "ライブスナップショット",
+    "Search snapshot": "検索スナップショット",
+    "No matching items.": "一致するアイテムがありません。",
+    "Catalog is empty.": "カタログは空です。",
+    "Adding...": "追加しています...",
+    "Deleting...": "削除しています...",
+    "Removing...": "取り除いています...",
+    "Item {{id}}": "アイテム {{id}}"
   }
 }

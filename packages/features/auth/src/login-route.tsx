@@ -32,6 +32,12 @@ export type AuthCopy = {
   authBiometricLoginFailed: string
   authBiometricLoginCredentialsExpired: string
   socialSectionLabel: string
+  methodsLabel: string
+  hostedStatus: string
+  notConfiguredStatus: string
+  redirectingMagicLinkStatus: string
+  redirectingProviderStatus: string
+  startFailedStatus: string
   closeLabel: string
 }
 
@@ -59,6 +65,12 @@ const defaultAuthCopy: AuthCopy = {
   authBiometricLoginFailed: 'Biometric authentication was canceled or failed.',
   authBiometricLoginCredentialsExpired: 'Saved credentials expired. Sign in manually and re-enable remember me.',
   socialSectionLabel: 'Or continue with',
+  methodsLabel: 'Authentication methods',
+  hostedStatus: 'Hosted sign-in completes on SpacetimeAuth and returns here with an OIDC session.',
+  notConfiguredStatus: 'SpacetimeAuth is not configured for this site.',
+  redirectingMagicLinkStatus: 'Redirecting to hosted magic-link sign-in...',
+  redirectingProviderStatus: 'Redirecting to hosted {{method}} sign-in...',
+  startFailedStatus: 'Unable to start the SpacetimeAuth login flow.',
   closeLabel: 'Close'
 }
 
@@ -116,7 +128,7 @@ export const LoginRoute = component$<{
       }
     } else {
       statusTone.value = 'error'
-      statusMessage.value = 'SpacetimeAuth is not configured for this site.'
+      statusMessage.value = resolvedCopy.notConfiguredStatus
     }
 
     ready.value = true
@@ -128,16 +140,15 @@ export const LoginRoute = component$<{
     statusTone.value = 'neutral'
     statusMessage.value =
       method === 'magic-link'
-        ? 'Redirecting to hosted magic-link sign-in...'
-        : `Redirecting to hosted ${method} sign-in...`
+        ? resolvedCopy.redirectingMagicLinkStatus
+        : resolvedCopy.redirectingProviderStatus.replace('{{method}}', method)
 
     try {
       await startSpacetimeAuthLogin(method, { next: nextPath.value })
     } catch (error) {
       pendingMethod.value = null
       statusTone.value = 'error'
-      statusMessage.value =
-        error instanceof Error ? error.message : 'Unable to start the SpacetimeAuth login flow.'
+      statusMessage.value = error instanceof Error ? error.message : resolvedCopy.startFailedStatus
     }
   })
 
@@ -164,10 +175,10 @@ export const LoginRoute = component$<{
             </div>
 
             <div class="auth-panels">
-              <div class="auth-panel" data-panel="login" role="group" aria-label="Authentication methods">
+              <div class="auth-panel" data-panel="login" role="group" aria-label={resolvedCopy.methodsLabel}>
                 <div class="auth-actions">
                   <button class="auth-primary" type="button" disabled={busy} onClick$={() => handleLogin('magic-link')}>
-                    Magic link
+                    {resolvedCopy.actionLabel}
                   </button>
                 </div>
 
@@ -194,7 +205,7 @@ export const LoginRoute = component$<{
                 </div>
 
                 <div class="auth-status" role="status" aria-live="polite" data-tone="neutral">
-                  Hosted sign-in completes on SpacetimeAuth and returns here with an OIDC session.
+                  {resolvedCopy.hostedStatus}
                 </div>
               </div>
             </div>

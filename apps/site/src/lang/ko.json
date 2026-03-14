@@ -113,7 +113,41 @@
     "featureUnavailableMeta": "사용 불가",
     "featureUnavailableTitle": "이 기능은 비활성화되었습니다",
     "featureUnavailableDescription": "이 라우트를 노출하려면 사이트 설정에서 기능을 활성화하세요.",
-    "featureUnavailableAction": "홈으로 돌아가기"
+    "featureUnavailableAction": "홈으로 돌아가기",
+    "authMethodsLabel": "인증 방법",
+    "authHostedStatus": "호스팅된 로그인은 SpacetimeAuth에서 완료되고 OIDC 세션과 함께 이 화면으로 돌아옵니다.",
+    "authNotConfigured": "이 사이트에는 SpacetimeAuth가 설정되어 있지 않습니다.",
+    "authRedirectingMagicLink": "호스팅된 매직 링크 로그인으로 이동하는 중...",
+    "authRedirectingProvider": "호스팅된 {{method}} 로그인으로 이동하는 중...",
+    "authStartFailed": "SpacetimeAuth 로그인 흐름을 시작할 수 없습니다.",
+    "profileNamePlaceholder": "Nova Lane",
+    "profileIdLabel": "사용자 ID",
+    "profileCardTitle": "프로필 카드",
+    "profileCardHint": "이 기기에만 저장됩니다.",
+    "profileBioLabel": "소개",
+    "profileBioPlaceholder": "무엇을 만들고 있는지 알려주세요.",
+    "profileBioEmpty": "짧은 소개를 추가해 프로필 카드를 완성해 보세요.",
+    "profilePhotoTitle": "프로필 사진",
+    "profilePhotoHint": "1.2MB 이하의 PNG 또는 JPG.",
+    "profilePhotoUploadAction": "업로드",
+    "profilePhotoRemoveAction": "삭제",
+    "profileAvatarAlt": "프로필",
+    "profileColorTitle": "카드 색상",
+    "profileColorHint": "정밀하게 조정하려면 RGB 슬라이더를 사용하세요.",
+    "profileColorPickerAriaLabel": "색상 선택",
+    "profileColorRed": "빨강",
+    "profileColorGreen": "초록",
+    "profileColorBlue": "파랑",
+    "profileSavedLocal": "이 기기에 저장했습니다.",
+    "profileSaveLocalFailed": "이 기기에 저장하지 못했습니다.",
+    "profileImageInvalid": "이미지 파일을 선택해 주세요.",
+    "profileImageTooLarge": "이미지는 1.2MB 이하여야 합니다.",
+    "profileImageReadFailed": "이미지를 읽을 수 없습니다.",
+    "profileNameTooShort": "이름은 2자 이상이어야 합니다.",
+    "profileNameTooLong": "이름은 64자 이하여야 합니다.",
+    "profileNameUpdateFailed": "이름을 업데이트할 수 없습니다.",
+    "profileNameUpdated": "이름을 업데이트했습니다.",
+    "settingsLogoutFailed": "로그아웃할 수 없습니다."
   },
   "fragmentHeaders": {
     "fragment://page/home/planner@v1": {
@@ -163,6 +197,12 @@
       "metaLine": "연락처 초대",
       "title": "연락처를 초대하고 관리하세요.",
       "description": "이메일로 검색해 초대를 보내고 수락 또는 거절로 연락처를 관리합니다."
+    },
+    "fragment://page/store/stream@v5": {
+      "heading": "h2",
+      "metaLine": "스토어 스트림",
+      "title": "실시간 스토어 피드.",
+      "description": "SpaceTimeDB가 사실의 원본을 유지하고 Garnet이 캐시 히트를 가속하며 아이템 업데이트가 실시간으로 스트리밍됩니다."
     }
   },
   "lab": {
@@ -206,10 +246,36 @@
         }
       ],
       "fragments": [
-        { "id": "hero", "label": "히어로 쉘", "deps": [], "runtime": "edge" },
-        { "id": "planner", "label": "플래너 코어", "deps": ["hero"], "runtime": "edge" },
-        { "id": "ledger", "label": "레저 스트림", "deps": ["planner"], "runtime": "node" },
-        { "id": "react", "label": "React 작성", "deps": ["planner"], "runtime": "node" }
+        {
+          "id": "hero",
+          "label": "히어로 쉘",
+          "deps": [],
+          "runtime": "edge"
+        },
+        {
+          "id": "planner",
+          "label": "플래너 코어",
+          "deps": [
+            "hero"
+          ],
+          "runtime": "edge"
+        },
+        {
+          "id": "ledger",
+          "label": "레저 스트림",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        },
+        {
+          "id": "react",
+          "label": "React 작성",
+          "deps": [
+            "planner"
+          ],
+          "runtime": "node"
+        }
       ],
       "labels": {
         "dependencies": "의존성",
@@ -309,11 +375,12 @@
     }
   },
   "fragments": {
-    "Resumable by default": "기본은 재개 가능",
-    "Fragment caching with async revalidation": "프래그먼트 캐싱과 비동기 재검증",
-    "Deterministic binary DOM replay": "결정적인 바이너리 DOM 재생",
-    "HTML remains the fallback surface.": "HTML은 폴백 표면으로만 남습니다.",
-    "Deterministic binary fragments handle replay, caching, and instant patching.": "결정적인 바이너리 프래그먼트가 재생, 캐싱, 즉시 패치를 맡습니다.",
+    "1": "1",
+    "Resumable by default": "기본적으로 재개 가능",
+    "Fragment caching with async revalidation": "비동기 재검증이 포함된 프래그먼트 캐싱",
+    "Deterministic binary DOM replay": "결정적 바이너리 DOM 재생",
+    "HTML remains the fallback surface.": "HTML은 폴백 표면으로 남습니다.",
+    "Deterministic binary fragments handle replay, caching, and instant patching.": "결정적 바이너리 프래그먼트가 재생, 캐싱, 즉시 패치를 처리합니다.",
     "fragment addressable": "프래그먼트 주소 지정",
     "edge-primary": "엣지 우선",
     "Binary-first. Fragment-native. Zero hydration.": "바이너리 우선. 프래그먼트 네이티브. 하이드레이션 0.",
@@ -358,7 +425,7 @@
     "Realtime stream": "실시간 스트림",
     "Postgres": "SpaceTimeDB",
     "Valkey": "Garnet",
-    "Realtime": "Realtime",
+    "Realtime": "실시간",
     "Search the store...": "스토어 검색...",
     "Search": "검색",
     "Search store items": "스토어 아이템 검색",
@@ -403,7 +470,6 @@
     "Add item": "아이템 추가",
     "Neural render pack": "뉴럴 렌더 팩",
     "19.00": "19.00",
-    "1": "1",
     "Validated by drizzle-zod and streamed over realtime updates.": "drizzle-zod로 검증하고 업데이트를 실시간으로 스트리밍합니다.",
     "Name must be at least 2 characters.": "이름은 2자 이상이어야 합니다.",
     "Price must be a non-negative number.": "가격은 0 이상의 숫자여야 합니다.",
@@ -466,6 +532,41 @@
     "No renderer registered for {{id}}.": "{{id}}에 등록된 렌더러가 없습니다.",
     "render error": "렌더 오류",
     "Fragment failed to render": "프래그먼트 렌더 실패",
-    "Last error: {{error}}": "마지막 오류: {{error}}"
+    "Last error: {{error}}": "마지막 오류: {{error}}",
+    "Dependency resolution, cache hit checks, and runtime selection happen up front.": "의존성 해석, 캐시 히트 확인, 런타임 선택이 먼저 수행됩니다.",
+    "Rendering only occurs on cache miss; revalidation runs asynchronously.": "렌더링은 캐시 미스일 때만 수행되고 재검증은 비동기로 진행됩니다.",
+    "Critical transforms run inside WebAssembly for deterministic, edge-safe execution.": "핵심 변환은 결정적이고 엣지에 안전한 실행을 위해 WebAssembly 내부에서 수행됩니다.",
+    "Numeric outputs feed fragment composition without touching HTML.": "숫자 출력이 HTML을 건드리지 않고 프래그먼트 구성을 구동합니다.",
+    "Preact loads only inside the island boundary.": "Preact는 아일랜드 경계 안에서만 로드됩니다.",
+    "No shared state, no routing ownership, no global hydration.": "공유 상태도, 라우팅 소유권도, 전역 하이드레이션도 없습니다.",
+    "React fragments compile into binary trees without client hydration.": "React 프래그먼트는 클라이언트 하이드레이션 없이 바이너리 트리로 컴파일됩니다.",
+    "The DOM remains owned by Qwik.": "DOM의 소유권은 계속 Qwik에 있습니다.",
+    "Shared text for everyone on the page.": "이 페이지의 모두에게 공유되는 텍스트입니다.",
+    "Anyone on the page can edit the same text box.": "이 페이지의 누구나 같은 텍스트 상자를 편집할 수 있습니다.",
+    "Loro syncs updates through Garnet in real time.": "Loro는 Garnet을 통해 업데이트를 실시간으로 동기화합니다.",
+    "Write something. Everyone here sees it live.": "무언가 입력해 보세요. 여기 있는 모두가 실시간으로 보게 됩니다.",
+    "Shared collaborative text box": "공유 협업 텍스트 상자",
+    "Focus to start live sync.": "포커스하여 실시간 동기화를 시작하세요.",
+    "Connecting live sync...": "실시간 동기화에 연결하는 중...",
+    "Live for everyone on this page": "이 페이지의 모두에게 실시간 반영 중",
+    "Reconnecting live sync...": "실시간 동기화에 다시 연결하는 중...",
+    "Realtime unavailable": "실시간 연결을 사용할 수 없습니다",
+    "fragment manifesto": "프래그먼트 선언",
+    "The render tree is the artifact.": "렌더 트리 자체가 결과물입니다.",
+    "SpaceTimeDB": "SpaceTimeDB",
+    "Direct": "직접",
+    "SpaceTimeDB search": "SpaceTimeDB 검색",
+    "SpaceTimeDB snapshot": "SpaceTimeDB 스냅샷",
+    "SpaceTimeDB stream": "SpaceTimeDB 스트림",
+    "Live catalog": "실시간 카탈로그",
+    "Filtered catalog": "필터링된 카탈로그",
+    "Live snapshot": "실시간 스냅샷",
+    "Search snapshot": "검색 스냅샷",
+    "No matching items.": "일치하는 항목이 없습니다.",
+    "Catalog is empty.": "카탈로그가 비어 있습니다.",
+    "Adding...": "추가하는 중...",
+    "Deleting...": "삭제하는 중...",
+    "Removing...": "제거하는 중...",
+    "Item {{id}}": "항목 {{id}}"
   }
 }

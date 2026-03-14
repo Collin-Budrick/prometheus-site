@@ -1,4 +1,5 @@
 import type { Lang } from '../../lang'
+import { getUiCopy } from '../../lang/client'
 import { ensureFriendCode, rotateFriendCode } from '../../components/contact-invites/friend-code'
 import { writeServiceWorkerOptOutCookie } from '../../shared/service-worker-seed'
 import { defaultChatSettings, loadChatSettings, saveChatSettings, type ChatSettings } from '../../shared/chat-settings'
@@ -89,6 +90,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     return { cleanup() {} }
   }
 
+  const copy = getUiCopy(lang)
   const cleanupFns: Array<() => void> = []
   const logoutButton = document.querySelector<HTMLButtonElement>('[data-static-route-action]')
   const readReceiptsButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="read-receipts"]')
@@ -152,7 +154,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
     try {
       window.localStorage.setItem('fragment:sw-opt-out', swOptOut ? '1' : '0')
     } catch {
-      setStatus(root, '[data-static-settings-sw-status]', 'error', 'Unable to store offline preference.')
+      setStatus(root, '[data-static-settings-sw-status]', 'error', copy.settingsOfflineStorageError)
       return
     }
     writeServiceWorkerOptOutCookie(swOptOut)
@@ -161,44 +163,44 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
       root,
       '[data-static-settings-sw-status]',
       'info',
-      swOptOut ? 'Offline cache disabled.' : 'Offline cache enabled.'
+      swOptOut ? copy.settingsOfflineDisabled : copy.settingsOfflineEnabled
     )
   }
 
   const handleOfflineRefresh = () => {
     if (nativeRuntime) return
     window.dispatchEvent(new CustomEvent('prom:sw-refresh-cache'))
-    setStatus(root, '[data-static-settings-sw-status]', 'info', 'Refreshing offline cache...')
+    setStatus(root, '[data-static-settings-sw-status]', 'info', copy.settingsOfflineRefreshPending)
   }
 
   const handleOfflineCleanup = () => {
     if (nativeRuntime) return
     window.dispatchEvent(new CustomEvent('prom:sw-clear-cache'))
-    setStatus(root, '[data-static-settings-sw-status]', 'info', 'Clearing offline cache...')
+    setStatus(root, '[data-static-settings-sw-status]', 'info', copy.settingsOfflineCleanupPending)
   }
 
   const handleCopyFriendCode = async () => {
     const value = friendCodeField?.value?.trim() ?? ''
     if (!value || !navigator.clipboard?.writeText) {
-      setStatus(root, '[data-static-settings-friend-status]', 'error', 'Unable to copy friend code.')
+      setStatus(root, '[data-static-settings-friend-status]', 'error', copy.settingsInviteUnavailable)
       return
     }
     try {
       await navigator.clipboard.writeText(value)
-      setStatus(root, '[data-static-settings-friend-status]', 'success', 'Friend code copied.')
+      setStatus(root, '[data-static-settings-friend-status]', 'success', copy.settingsInviteCopied)
     } catch {
-      setStatus(root, '[data-static-settings-friend-status]', 'error', 'Unable to copy friend code.')
+      setStatus(root, '[data-static-settings-friend-status]', 'error', copy.settingsInviteUnavailable)
     }
   }
 
   const handleRotateFriendCode = () => {
     const value = resolveFriendCodeUser(user)
     if (!value || !friendCodeField) {
-      setStatus(root, '[data-static-settings-friend-status]', 'error', 'Invite code unavailable.')
+      setStatus(root, '[data-static-settings-friend-status]', 'error', copy.settingsInviteUnavailable)
       return
     }
     friendCodeField.value = rotateFriendCode(value)
-    setStatus(root, '[data-static-settings-friend-status]', 'success', 'Friend code rotated.')
+    setStatus(root, '[data-static-settings-friend-status]', 'success', copy.settingsInviteRotated)
   }
 
   const handlePrivacyAlwaysOnClick = () => {
@@ -236,7 +238,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
           root,
           '[data-static-settings-logout-status]',
           'error',
-          error instanceof Error ? error.message : 'Unable to sign out.'
+          error instanceof Error ? error.message : copy.settingsLogoutFailed
         )
       } finally {
         logoutBusy = false
@@ -248,15 +250,15 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   }
 
   const handleCacheRefreshed = () => {
-    setStatus(root, '[data-static-settings-sw-status]', 'success', 'Offline cache refreshed.')
+    setStatus(root, '[data-static-settings-sw-status]', 'success', copy.settingsOfflineRefreshSuccess)
   }
 
   const handleCacheCleared = () => {
-    setStatus(root, '[data-static-settings-sw-status]', 'success', 'Offline cache cleared.')
+    setStatus(root, '[data-static-settings-sw-status]', 'success', copy.settingsOfflineCleanupSuccess)
   }
 
   const handleSyncRequested = () => {
-    setStatus(root, '[data-static-settings-sw-status]', 'info', 'Offline sync queued.')
+    setStatus(root, '[data-static-settings-sw-status]', 'info', copy.settingsOfflineSyncQueued)
   }
 
   const handleCopyFriendCodeClick = () => {
