@@ -1,4 +1,13 @@
-import { normalizeFragmentHeight, persistFragmentHeight } from '@prometheus/ui/fragment-height'
+import {
+  getFragmentHeightViewport,
+  normalizeFragmentHeight,
+  parseFragmentHeightLayout,
+  persistFragmentHeight,
+  readFragmentHeightCookieHeights,
+  readFragmentStableHeight,
+  resolveFragmentHeightWidthBucket,
+  resolveReservedFragmentHeight
+} from '@prometheus/ui/fragment-height'
 
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
@@ -10,6 +19,7 @@ export type FragmentHeightRouteContext = {
   lang: string
   fragmentOrder: string[]
   planSignature: string
+  versionSignature?: string | null
 }
 
 const getFragmentHeightContext = (
@@ -28,6 +38,7 @@ const getFragmentHeightContext = (
     path: routeContext.path,
     lang: routeContext.lang,
     planSignature: routeContext.planSignature,
+    versionSignature: routeContext.versionSignature,
     planIndex,
     planCount: routeContext.fragmentOrder.length
   }
@@ -39,6 +50,85 @@ const readCardHeightHint = (card: HTMLElement) =>
       card.style.getPropertyValue('--fragment-min-height') ??
       null
   ) ?? 0
+
+const readCardHeightLayout = (card: HTMLElement) =>
+  parseFragmentHeightLayout(card.getAttribute('data-fragment-height-layout'))
+
+const readCardWidth = (card: HTMLElement) => {
+  const width = Math.ceil(card.getBoundingClientRect().width)
+  return width > 0 ? width : null
+}
+
+const resolveCardHeightBucket = (card: HTMLElement) => {
+  const layout = readCardHeightLayout(card)
+  if (!layout) {
+    return { layout: null, viewport: getFragmentHeightViewport(), cardWidth: null, widthBucket: null }
+  }
+  const cardWidth = readCardWidth(card)
+  const viewport = getFragmentHeightViewport(cardWidth ?? undefined)
+  const widthBucket = resolveFragmentHeightWidthBucket({
+    layout,
+    viewport,
+    cardWidth
+  })
+  return { layout, viewport, cardWidth, widthBucket }
+}
+
+const readLearnedCardHeight = (
+  card: HTMLElement,
+  fragmentId: string,
+  routeContext?: FragmentHeightRouteContext | null
+) => {
+  if (!routeContext) {
+    return null
+  }
+
+  const persistenceContext = getFragmentHeightContext(routeContext, fragmentId)
+  if (!persistenceContext) {
+    return null
+  }
+
+  const { layout, viewport, cardWidth, widthBucket } = resolveCardHeightBucket(card)
+  if (!layout) {
+    return null
+  }
+
+  const stableHeight = readFragmentStableHeight({
+    fragmentId,
+    path: persistenceContext.path,
+    lang: persistenceContext.lang,
+    viewport,
+    planSignature: persistenceContext.planSignature,
+    versionSignature: persistenceContext.versionSignature,
+    widthBucket
+  })
+  const cookieHeights =
+    typeof document !== 'undefined'
+      ? readFragmentHeightCookieHeights(document.cookie, {
+          path: persistenceContext.path,
+          lang: persistenceContext.lang,
+          viewport,
+          planSignature: persistenceContext.planSignature,
+          versionSignature: persistenceContext.versionSignature,
+          widthBucket
+        })
+      : null
+  const cookieHeight =
+    persistenceContext.planIndex >= 0 ? cookieHeights?.[persistenceContext.planIndex] ?? null : null
+
+  const resolvedHeight = resolveReservedFragmentHeight({
+    layout,
+    viewport,
+    cardWidth,
+    cookieHeight,
+    stableHeight
+  })
+
+  return {
+    height: resolvedHeight,
+    widthBucket
+  }
+}
 
 const measureFragmentCardHeight = (
   card: HTMLElement,
@@ -126,18 +216,49 @@ const waitForStableFrames = (
     })
   })
 
+const primeFragmentCardReservedHeight = ({
+  card,
+  fragmentId,
+  routeContext,
+  reservedHeight
+}: {
+  card: HTMLElement
+  fragmentId: string
+  routeContext?: FragmentHeightRouteContext | null
+  reservedHeight?: number | null
+}) => {
+  const floorHeight = Math.max(
+    normalizeFragmentHeight(reservedHeight) ?? 0,
+    readCardHeightHint(card)
+  )
+  const learned = readLearnedCardHeight(card, fragmentId, routeContext)
+  const nextReservedHeight = Math.max(floorHeight, learned?.height ?? 0)
+
+  if (nextReservedHeight > 0 && nextReservedHeight > readCardHeightHint(card)) {
+    card.style.setProperty('--fragment-min-height', `${nextReservedHeight}px`)
+    card.setAttribute('data-fragment-height-hint', `${nextReservedHeight}`)
+  }
+
+  return {
+    reservedHeight: nextReservedHeight,
+    widthBucket: learned?.widthBucket ?? null
+  }
+}
+
 const applyMeasuredFragmentCardHeight = ({
   card,
   fragmentId,
   routeContext,
   measuredHeight,
-  reservedHeight
+  reservedHeight,
+  widthBucket
 }: {
   card: HTMLElement
   fragmentId: string
   routeContext?: FragmentHeightRouteContext | null
   measuredHeight: number
   reservedHeight?: number | null
+  widthBucket?: string | null
 }) => {
   const floorHeight = Math.max(
     normalizeFragmentHeight(reservedHeight) ?? 0,
@@ -157,8 +278,23 @@ const applyMeasuredFragmentCardHeight = ({
     persistFragmentHeight({
       fragmentId,
       height: settledHeight,
-      context: persistenceContext
+      context: persistenceContext,
+      widthBucket
     })
+  }
+
+  if (settledHeight > floorHeight) {
+    card.dispatchEvent(
+      new CustomEvent('prom:fragment-height-miss', {
+        bubbles: true,
+        detail: {
+          fragmentId,
+          reservedHeight: floorHeight,
+          height: settledHeight,
+          widthBucket
+        }
+      })
+    )
   }
 
   card.dispatchEvent(
@@ -201,14 +337,19 @@ export const persistInitialFragmentCardHeights = async ({
       {
         card,
         fragmentId,
-        fallbackHeight: readCardHeightHint(card)
+        ...primeFragmentCardReservedHeight({
+          card,
+          fragmentId,
+          routeContext,
+          reservedHeight: readCardHeightHint(card)
+        })
       }
     ]
   })
 
   await Promise.all(targets.map(({ card }) => waitForImages(card)))
   const measuredHeights = await Promise.all(
-    targets.map(({ card, fallbackHeight }) => waitForStableFrames(card, fallbackHeight))
+    targets.map(({ card, reservedHeight }) => waitForStableFrames(card, reservedHeight))
   )
 
   return measuredHeights.map((measuredHeight, index) => {
@@ -221,7 +362,8 @@ export const persistInitialFragmentCardHeights = async ({
       fragmentId: target.fragmentId,
       routeContext,
       measuredHeight,
-      reservedHeight: target.fallbackHeight
+      reservedHeight: target.reservedHeight,
+      widthBucket: target.widthBucket
     })
   })
 }
@@ -239,7 +381,13 @@ export const settlePatchedFragmentCardHeight = async ({
   lockToken: string
   reservedHeight?: number | null
 }) => {
-  const fallbackHeight = normalizeFragmentHeight(reservedHeight) ?? readCardHeightHint(card)
+  const primed = primeFragmentCardReservedHeight({
+    card,
+    fragmentId,
+    routeContext,
+    reservedHeight
+  })
+  const fallbackHeight = primed.reservedHeight
   await waitForImages(card)
   const settledHeight = await waitForStableFrames(card, fallbackHeight)
   if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) {
@@ -251,7 +399,8 @@ export const settlePatchedFragmentCardHeight = async ({
     fragmentId,
     routeContext,
     measuredHeight: settledHeight,
-    reservedHeight: fallbackHeight
+    reservedHeight: fallbackHeight,
+    widthBucket: primed.widthBucket
   })
   if (nextHeight === null) {
     card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)

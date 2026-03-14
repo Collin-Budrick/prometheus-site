@@ -178,6 +178,7 @@ export const installHomeDemoEntry = ({
     lang: data.lang,
     fragmentOrder: data.fragmentOrder,
     planSignature: data.planSignature ?? '',
+    versionSignature: data.versionSignature ?? '',
     assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),

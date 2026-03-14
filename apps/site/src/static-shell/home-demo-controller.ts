@@ -16,6 +16,7 @@ export type HomeDemoRouteContext = {
   lang: Lang
   fragmentOrder: string[]
   planSignature: string
+  versionSignature?: string | null
 }
 
 export type HomeDemoController = HomeDemoRouteContext & {
@@ -205,7 +206,8 @@ const activateHomeDemoRoot = async (
           path: controller.path,
           lang: controller.lang,
           fragmentOrder: controller.fragmentOrder,
-          planSignature: controller.planSignature
+          planSignature: controller.planSignature,
+          versionSignature: controller.versionSignature
         }
       }).catch((error) => {
         console.error('Static home demo height persistence failed:', error)

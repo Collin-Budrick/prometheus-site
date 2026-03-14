@@ -221,32 +221,103 @@ export const homeFragments: FragmentPlanEntry[] = [
   {
     id: 'fragment://page/home/manifest@v1',
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 489,
+      heightHint: { desktop: 489, mobile: 489 },
+      heightProfile: {
+        desktop: [{ maxWidth: 1440, height: 489 }],
+        mobile: [{ maxWidth: 768, height: 489 }]
+      }
+    }
   },
   {
     id: 'fragment://page/home/planner@v1',
     critical: false,
-    layout: { column: 'span 5', size: 'big', minHeight: 640, heightHint: { desktop: 1054, mobile: 986 } }
+    layout: {
+      column: 'span 5',
+      size: 'big',
+      minHeight: 640,
+      heightHint: { desktop: 1054, mobile: 986 },
+      heightProfile: {
+        desktop: [
+          { maxWidth: 560, height: 1128 },
+          { maxWidth: 760, height: 1054 }
+        ],
+        mobile: [
+          { maxWidth: 480, height: 1048 },
+          { maxWidth: 768, height: 986 }
+        ]
+      }
+    }
   },
   {
     id: 'fragment://page/home/ledger@v1',
     critical: false,
-    layout: { column: 'span 7', size: 'tall', minHeight: 904, heightHint: { desktop: 1023, mobile: 904 } }
+    layout: {
+      column: 'span 7',
+      size: 'tall',
+      minHeight: 904,
+      heightHint: { desktop: 1023, mobile: 904 },
+      heightProfile: {
+        desktop: [
+          { maxWidth: 720, height: 1104 },
+          { maxWidth: 980, height: 1023 }
+        ],
+        mobile: [{ maxWidth: 768, height: 904 }]
+      }
+    }
   },
   {
     id: 'fragment://page/home/island@v1',
     critical: false,
-    layout: { column: 'span 5', minHeight: 489, heightHint: { desktop: 489, mobile: 389 } }
+    layout: {
+      column: 'span 5',
+      minHeight: 489,
+      heightHint: { desktop: 489, mobile: 389 },
+      heightProfile: {
+        desktop: [
+          { maxWidth: 560, height: 544 },
+          { maxWidth: 760, height: 489 }
+        ],
+        mobile: [
+          { maxWidth: 480, height: 428 },
+          { maxWidth: 768, height: 389 }
+        ]
+      }
+    }
   },
   {
     id: 'fragment://page/home/react@v1',
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 596, mobile: 489 } }
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 489,
+      heightHint: { desktop: 596, mobile: 489 },
+      heightProfile: {
+        desktop: [
+          { maxWidth: 880, height: 648 },
+          { maxWidth: 1440, height: 596 }
+        ],
+        mobile: [{ maxWidth: 768, height: 489 }]
+      }
+    }
   },
   {
     id: 'fragment://page/home/dock@v2',
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 489,
+      heightHint: { desktop: 489, mobile: 489 },
+      heightProfile: {
+        desktop: [{ maxWidth: 1440, height: 489 }],
+        mobile: [{ maxWidth: 768, height: 489 }]
+      }
+    }
   }
 ] satisfies FragmentPlanEntry[]
 

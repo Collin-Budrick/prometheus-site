@@ -1,6 +1,13 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import {
+  getFragmentHeightViewport,
   persistFragmentHeight,
+  readFragmentHeightCookieHeights,
+  readFragmentStableHeight,
+  resolveFragmentHeightWidthBucket,
+  resolveReservedFragmentHeight,
+  serializeFragmentHeightLayout,
+  type FragmentHeightLayout,
   type FragmentHeightPersistenceContext
 } from './fragment-height'
 
@@ -169,6 +176,11 @@ const waitForFragmentCssReady = (fragmentId: string, listener: () => void) => {
   }
 }
 
+const resolveCardWidth = (element: HTMLElement) => {
+  const rect = Math.ceil(element.getBoundingClientRect().width)
+  return rect > 0 ? rect : null
+}
+
 type FragmentInitialStage =
   | 'waiting-payload'
   | 'waiting-css'
@@ -190,6 +202,7 @@ export type FragmentCardProps = {
   fragmentHasCss?: boolean
   fragmentStage?: FragmentInitialStage
   reservedHeight?: number | null
+  fragmentHeightLayout?: FragmentHeightLayout | null
   revealLocked?: boolean
   expandable?: boolean
   draggable?: boolean
@@ -618,6 +631,94 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
+        const fragmentId = ctx.track(() => props.fragmentId)
+        const reservedHeight = ctx.track(() => props.reservedHeight ?? null)
+        const settled = ctx.track(() => hasSettledOnce.value)
+        const persistence = ctx.track(() => props.fragmentHeightPersistence ?? null)
+        ctx.track(() => serializeFragmentHeightLayout(props.fragmentHeightLayout ?? null))
+        const card = cardRef.value
+        const layout = props.fragmentHeightLayout
+        if (!card || !fragmentId || !persistence || !layout || settled) return
+
+        let canceled = false
+        let observer: ResizeObserver | null = null
+        let lastBucket = ''
+
+        const applyLearnedReservedHeight = () => {
+          if (canceled) return
+          const cardWidth = resolveCardWidth(card)
+          const viewport = getFragmentHeightViewport(cardWidth ?? undefined)
+          const widthBucket =
+            resolveFragmentHeightWidthBucket({
+              layout,
+              viewport,
+              cardWidth
+            }) ?? ''
+          if (widthBucket === lastBucket && resolvedHeightHint.value !== null) {
+            return
+          }
+          lastBucket = widthBucket
+
+          const stableHeight = readFragmentStableHeight({
+            fragmentId,
+            path: persistence.path,
+            lang: persistence.lang,
+            viewport,
+            planSignature: persistence.planSignature,
+            versionSignature: persistence.versionSignature,
+            widthBucket
+          })
+          const cookieHeights =
+            typeof document !== 'undefined'
+              ? readFragmentHeightCookieHeights(document.cookie, {
+                  path: persistence.path,
+                  lang: persistence.lang,
+                  viewport,
+                  planSignature: persistence.planSignature,
+                  versionSignature: persistence.versionSignature,
+                  widthBucket
+                })
+              : null
+          const cookieHeight =
+            persistence.planIndex >= 0 ? cookieHeights?.[persistence.planIndex] ?? null : null
+          const nextReservedHeight = resolveReservedFragmentHeight({
+            layout,
+            viewport,
+            cardWidth,
+            cookieHeight,
+            stableHeight
+          })
+
+          if (nextReservedHeight <= 0) return
+          if ((resolvedHeightHint.value ?? reservedHeight ?? 0) >= nextReservedHeight) return
+          resolvedHeightHint.value = nextReservedHeight
+          if (finalMeasuredHeight.value === null) {
+            lockedHeight.value = Math.max(lockedHeight.value ?? 0, nextReservedHeight)
+          }
+        }
+
+        applyLearnedReservedHeight()
+
+        if (typeof ResizeObserver === 'undefined') {
+          return
+        }
+
+        observer = new ResizeObserver(() => {
+          if (hasSettledOnce.value) return
+          applyLearnedReservedHeight()
+        })
+        observer.observe(card)
+
+        ctx.cleanup(() => {
+          canceled = true
+          observer?.disconnect()
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
         const loaded = ctx.track(() => Boolean(props.fragmentLoaded))
         const activeId = ctx.track(() => props.fragmentId)
         const settled = ctx.track(() => hasSettledOnce.value)
@@ -707,6 +808,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           : images.filter((image) => !(image.complete && image.naturalWidth >= 0))
         const finalizeReveal = () => {
           if (cancelled) return
+          const previousReservedHeight = resolvedHeightHint.value ?? reservedHeight ?? 0
           const measured = Math.max(
             Math.ceil(card.scrollHeight),
             Math.ceil(card.getBoundingClientRect().height),
@@ -726,12 +828,34 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               hasSettledOnce.value = true
               forceReveal.value = false
               revealScheduled.value = false
+              const cardWidth = resolveCardWidth(card)
+              const widthBucket = props.fragmentHeightLayout
+                ? resolveFragmentHeightWidthBucket({
+                    layout: props.fragmentHeightLayout,
+                    viewport: getFragmentHeightViewport(cardWidth ?? undefined),
+                    cardWidth
+                  })
+                : null
               if (props.fragmentId && finalMeasuredHeight.value) {
                 persistFragmentHeight({
                   fragmentId: props.fragmentId,
                   height: finalMeasuredHeight.value,
-                  context: props.fragmentHeightPersistence
+                  context: props.fragmentHeightPersistence,
+                  widthBucket
                 })
+              }
+              if (props.fragmentId && finalMeasuredHeight.value > previousReservedHeight) {
+                card.dispatchEvent(
+                  new CustomEvent('prom:fragment-height-miss', {
+                    bubbles: true,
+                    detail: {
+                      fragmentId: props.fragmentId,
+                      reservedHeight: previousReservedHeight,
+                      height: finalMeasuredHeight.value,
+                      widthBucket
+                    }
+                  })
+                )
               }
               card.dispatchEvent(
                 new CustomEvent(STABLE_HEIGHT_EVENT, {
@@ -854,6 +978,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-critical={critical ? 'true' : undefined}
           data-fragment-id={fragmentId}
           data-fragment-height-hint={resolvedHeightHint.value ? `${resolvedHeightHint.value}` : undefined}
+          data-fragment-height-layout={serializeFragmentHeightLayout(props.fragmentHeightLayout ?? null) ?? undefined}
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           data-fragment-stage={currentStage.value}

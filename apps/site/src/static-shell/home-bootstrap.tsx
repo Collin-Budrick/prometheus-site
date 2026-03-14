@@ -67,6 +67,7 @@ type HomeControllerState = {
   path: string
   fragmentOrder: string[]
   planSignature: string
+  versionSignature: string
   assets: HomeDemoAssetMap
   homeDemoStylesheetHref: string | null
   homeFragmentBootstrapHref: string | null
@@ -1267,6 +1268,7 @@ export const bootstrapStaticHome = async () => {
     path: data.currentPath,
     fragmentOrder: data.fragmentOrder,
     planSignature: data.planSignature ?? '',
+    versionSignature: data.versionSignature ?? '',
     assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
     homeDemoStylesheetHref: data.homeDemoStylesheetHref,
     homeFragmentBootstrapHref: data.fragmentBootstrapHref,
@@ -1290,7 +1292,8 @@ export const bootstrapStaticHome = async () => {
       path: controller.path,
       lang: controller.lang,
       fragmentOrder: data.fragmentOrder,
-      planSignature: data.planSignature ?? ''
+      planSignature: data.planSignature ?? '',
+      versionSignature: data.versionSignature ?? ''
     },
     onPatchedBody: (body) => {
       pruneDetachedHomeDemos(controller)
@@ -1350,7 +1353,8 @@ export const bootstrapStaticHome = async () => {
             path: controller.path,
             lang: controller.lang,
             fragmentOrder: data.fragmentOrder,
-            planSignature: data.planSignature ?? ''
+            planSignature: data.planSignature ?? '',
+            versionSignature: data.versionSignature ?? ''
           }
         }).catch((error) => {
           console.error('Static home fragment height persistence failed:', error)

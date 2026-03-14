@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { h, t } from '@core/fragment/tree'
 import {
-  buildFragmentHeightCookieValue,
   buildFragmentHeightPlanSignature
 } from '@prometheus/ui/fragment-height'
 import { buildStaticFragmentRouteModel } from './static-fragment-model'
@@ -25,15 +24,7 @@ describe('static-fragment-model', () => {
       ]
     } as const
     const planSignature = buildFragmentHeightPlanSignature(plan.fragments.map((entry) => entry.id))
-    const cookieHeader = `prom_frag_h=${encodeURIComponent(
-      buildFragmentHeightCookieValue({
-        path: '/store',
-        lang: 'en',
-        viewport: 'desktop',
-        planSignature,
-        heights: [700, 460]
-      })
-    )}`
+    const cookieHeader = `prom_frag_h=${encodeURIComponent(`v1|%2Fstore|en|desktop|${planSignature}|700,460`)}`
 
     const model = buildStaticFragmentRouteModel({
       plan: plan as never,

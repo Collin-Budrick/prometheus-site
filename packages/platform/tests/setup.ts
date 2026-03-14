@@ -265,6 +265,7 @@ const createValkeyDuplicate = () => {
   return {
     commandOptions: valkey.commandOptions,
     get: (...args: Parameters<typeof valkey.get>) => valkey.get(...args),
+    mGet: (...args: Parameters<typeof valkey.mGet>) => valkey.mGet(...args),
     set: (...args: Parameters<typeof valkey.set>) => valkey.set(...args),
     keys: (...args: Parameters<typeof valkey.keys>) => valkey.keys(...args),
     del: (...args: Parameters<typeof valkey.del>) => valkey.del(...args),
@@ -306,6 +307,11 @@ const valkey = {
     const [key] = stripValkeyCommandOptions(args)
     if (typeof key !== 'string') return null
     return cacheStorage.get(key) ?? null
+  },
+  async mGet(...args: unknown[]) {
+    const [keys] = stripValkeyCommandOptions(args)
+    if (!Array.isArray(keys)) return []
+    return keys.map((key) => (typeof key === 'string' ? cacheStorage.get(key) ?? null : null))
   },
   async set(...args: unknown[]) {
     const [key, value, options] = stripValkeyCommandOptions(args) as [

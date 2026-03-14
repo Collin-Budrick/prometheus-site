@@ -1140,19 +1140,49 @@ export const storeFragments: FragmentPlanEntry[] = [
   {
     id: storeStream.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 579, heightHint: { desktop: 633, mobile: 633 } },
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 579,
+      heightHint: { desktop: 633, mobile: 633 },
+      heightProfile: {
+        desktop: [
+          { maxWidth: 960, height: 704 },
+          { maxWidth: 1440, height: 633 }
+        ],
+        mobile: [{ maxWidth: 768, height: 633 }]
+      }
+    },
     renderHtml: false
   },
   {
     id: storeCart.id,
     critical: true,
-    layout: { column: 'span 12', size: 'small', minHeight: 440, heightHint: { desktop: 440, mobile: 440 } },
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 440,
+      heightHint: { desktop: 440, mobile: 440 },
+      heightProfile: {
+        desktop: [{ maxWidth: 1440, height: 440 }],
+        mobile: [{ maxWidth: 768, height: 440 }]
+      }
+    },
     renderHtml: false
   },
   {
     id: storeCreate.id,
     critical: false,
-    layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } },
+    layout: {
+      column: 'span 12',
+      size: 'small',
+      minHeight: 489,
+      heightHint: { desktop: 489, mobile: 489 },
+      heightProfile: {
+        desktop: [{ maxWidth: 1440, height: 489 }],
+        mobile: [{ maxWidth: 768, height: 489 }]
+      }
+    },
     renderHtml: false
   }
 ]

@@ -5,6 +5,7 @@ import {
 } from '@prometheus/ui'
 import {
   buildFragmentHeightPlanSignature,
+  buildFragmentHeightVersionSignature,
   getFragmentHeightViewport,
   readFragmentHeightCookieHeights,
   resolveReservedFragmentHeight
@@ -82,6 +83,16 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
   const isStaticHome = isStaticHomeShellMode(shellMode)
   const nonce = useCspNonce()
   const planSignature = buildFragmentHeightPlanSignature(planEntries.map((entry) => entry.id))
+  const versionSignature = buildFragmentHeightVersionSignature(
+    planEntries.reduce<Record<string, number>>((acc, entry) => {
+      const value = entry.cache?.updatedAt
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        acc[entry.id] = value
+      }
+      return acc
+    }, {}),
+    planEntries.map((entry) => entry.id)
+  )
   const planIndexById = new Map(planEntries.map((entry, index) => [entry.id, index]))
   const cookieHeights =
     typeof document !== 'undefined'
@@ -89,7 +100,8 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           path,
           lang: langSignal.value,
           viewport: getFragmentHeightViewport(),
-          planSignature
+          planSignature,
+          versionSignature
         })
       : null
 
@@ -236,7 +248,9 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
               ? readFragmentStableHeight({
                   fragmentId: entry.id,
                   path,
-                  lang: langSignal.value
+                  lang: langSignal.value,
+                  planSignature,
+                  versionSignature
                 })
               : null
           const reservedHeight = entry
@@ -299,11 +313,13 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       fragmentHasCss={fragmentHasCss}
                       fragmentStage={fragmentStage}
                       reservedHeight={reservedHeight}
+                      fragmentHeightLayout={entry.layout}
                       revealLocked={true}
                       fragmentHeightPersistence={{
                         path,
                         lang: langSignal.value,
                         planSignature,
+                        versionSignature,
                         planIndex,
                         planCount: planEntries.length
                       }}

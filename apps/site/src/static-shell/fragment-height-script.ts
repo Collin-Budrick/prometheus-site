@@ -1,6 +1,7 @@
 const FRAGMENT_HEIGHT_COOKIE_NAME = 'prom_frag_h'
 const FRAGMENT_HEIGHT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 const FRAGMENT_HEIGHT_DESKTOP_MIN_WIDTH = 1025
+const FRAGMENT_HEIGHT_BUCKET_STEP = 160
 
 const serializeJson = (value: unknown) =>
   JSON.stringify(value)
@@ -12,15 +13,17 @@ export const buildFragmentHeightPersistenceScript = ({
   path,
   lang,
   fragmentOrder,
-  planSignature
+  planSignature,
+  versionSignature
 }: {
   path: string
   lang: string
   fragmentOrder: string[]
   planSignature: string
+  versionSignature?: string | null
 }) =>
   `(() => {
-  const route = ${serializeJson({ path, lang, fragmentOrder, planSignature })};
+  const route = ${serializeJson({ path, lang, fragmentOrder, planSignature, versionSignature: versionSignature ?? '' })};
   if (!Array.isArray(route.fragmentOrder) || route.fragmentOrder.length === 0 || !route.planSignature) return;
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -41,9 +44,40 @@ export const buildFragmentHeightPersistenceScript = ({
     return Math.max(1, Math.round(parsed));
   };
 
-  const getViewport = () => window.innerWidth >= ${FRAGMENT_HEIGHT_DESKTOP_MIN_WIDTH} ? 'desktop' : 'mobile';
+  const normalizeWidth = (value) => {
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number.parseFloat(value)
+          : Number.NaN;
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.max(1, Math.round(parsed));
+  };
 
-  const buildStorageKey = (fragmentId, viewport) =>
+  const normalizeBucket = (value) => {
+    const trimmed = String(value || '').trim();
+    return trimmed ? trimmed : null;
+  };
+
+  const getViewport = (width) => {
+    const resolvedWidth = normalizeWidth(width) ?? window.innerWidth;
+    return resolvedWidth >= ${FRAGMENT_HEIGHT_DESKTOP_MIN_WIDTH} ? 'desktop' : 'mobile';
+  };
+
+  const buildStorageKey = (fragmentId, viewport, widthBucket) =>
+    [
+      'fragment:stable-height:v2',
+      encodeURIComponent(normalizePath(route.path)),
+      encodeURIComponent(String(route.lang)),
+      viewport,
+      encodeURIComponent(route.planSignature),
+      encodeURIComponent(route.versionSignature || ''),
+      encodeURIComponent(normalizeBucket(widthBucket) || ''),
+      encodeURIComponent(fragmentId)
+    ].join(':');
+
+  const buildLegacyStorageKey = (fragmentId, viewport) =>
     [
       'fragment:stable-height:v1',
       encodeURIComponent(normalizePath(route.path)),
@@ -67,11 +101,31 @@ export const buildFragmentHeightPersistenceScript = ({
     return null;
   };
 
-  const readCookieHeights = (viewport) => {
+  const readCookieHeights = (viewport, widthBucket) => {
     const raw = readCookieValue();
     if (!raw) return null;
-    const [version, rawPath, rawLang, rawViewport, rawSignature, rawHeights] = raw.split('|');
-    if (version !== 'v1') return null;
+    const parts = raw.split('|');
+    if (parts[0] === 'v2') {
+      const [, rawPath, rawLang, rawViewport, rawSignature, rawVersionSignature, rawWidthBucket, rawHeights] = parts;
+      const cookiePath = normalizePath(rawPath ? decodeURIComponent(rawPath) : '');
+      const cookieLang = rawLang ? decodeURIComponent(rawLang) : '';
+      const cookieVersionSignature = rawVersionSignature ? decodeURIComponent(rawVersionSignature) : '';
+      const cookieWidthBucket = normalizeBucket(rawWidthBucket ? decodeURIComponent(rawWidthBucket) : '');
+      if (
+        cookiePath !== normalizePath(route.path) ||
+        cookieLang !== route.lang ||
+        rawViewport !== viewport ||
+        rawSignature !== route.planSignature ||
+        cookieVersionSignature !== (route.versionSignature || '') ||
+        cookieWidthBucket !== normalizeBucket(widthBucket)
+      ) {
+        return null;
+      }
+      return (rawHeights ?? '').split(',').map((value) => normalizeHeight(value));
+    }
+
+    if (parts[0] !== 'v1') return null;
+    const [, rawPath, rawLang, rawViewport, rawSignature, rawHeights] = parts;
     const cookiePath = normalizePath(rawPath ? decodeURIComponent(rawPath) : '');
     const cookieLang = rawLang ? decodeURIComponent(rawLang) : '';
     if (
@@ -85,28 +139,108 @@ export const buildFragmentHeightPersistenceScript = ({
     return (rawHeights ?? '').split(',').map((value) => normalizeHeight(value));
   };
 
-  const writeCookieHeight = (planIndex, height) => {
+  const writeCookieHeight = (planIndex, height, widthBucket) => {
     const viewport = getViewport();
-    const existing = readCookieHeights(viewport) ?? [];
-    const heights = Array.from(
-      { length: Math.max(route.fragmentOrder.length, existing.length) },
-      (_, index) => existing[index] ?? null
-    );
+    const existing = readCookieHeights(viewport, widthBucket) ?? [];
+    const heights = Array.from({ length: Math.max(route.fragmentOrder.length, existing.length) }, (_, index) => existing[index] ?? null);
     if (planIndex >= 0 && planIndex < heights.length) {
       heights[planIndex] = normalizeHeight(height);
     }
     const value = [
-      'v1',
+      'v2',
       encodeURIComponent(normalizePath(route.path)),
       encodeURIComponent(route.lang),
       viewport,
       route.planSignature,
+      encodeURIComponent(route.versionSignature || ''),
+      encodeURIComponent(normalizeBucket(widthBucket) || ''),
       heights.map((entry) => normalizeHeight(entry) ?? '').join(',')
     ].join('|');
     document.cookie =
       '${FRAGMENT_HEIGHT_COOKIE_NAME}=' +
       encodeURIComponent(value) +
       '; path=/; max-age=${FRAGMENT_HEIGHT_COOKIE_MAX_AGE_SECONDS}; samesite=lax';
+  };
+
+  const readCardHint = (card) =>
+    normalizeHeight(card.getAttribute('data-fragment-height-hint')) ??
+    normalizeHeight(getComputedStyle(card).getPropertyValue('--fragment-min-height')) ??
+    0;
+
+  const readLayout = (card) => {
+    const raw = card.getAttribute('data-fragment-height-layout');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveProfileBucket = (layout, viewport, cardWidth) => {
+    const buckets = Array.isArray(layout?.heightProfile?.[viewport]) ? layout.heightProfile[viewport] : null;
+    if (!buckets || buckets.length === 0) return null;
+    const normalized = buckets
+      .map((entry) => {
+        const maxWidth = normalizeWidth(entry?.maxWidth);
+        const height = normalizeHeight(entry?.height);
+        if (maxWidth === null || height === null) return null;
+        return { maxWidth, height };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.maxWidth - right.maxWidth);
+    if (!normalized.length) return null;
+    const width = normalizeWidth(cardWidth);
+    const selected =
+      width === null
+        ? normalized[0]
+        : normalized.find((entry) => width <= entry.maxWidth) ?? normalized[normalized.length - 1];
+    return selected ? { height: selected.height, widthBucket: 'profile:' + selected.maxWidth } : null;
+  };
+
+  const resolveWidthBucket = (layout, viewport, cardWidth) => {
+    const profileBucket = resolveProfileBucket(layout, viewport, cardWidth);
+    if (profileBucket) return profileBucket.widthBucket;
+    const width = normalizeWidth(cardWidth);
+    if (width === null) return null;
+    const upperBound = Math.max(
+      ${FRAGMENT_HEIGHT_BUCKET_STEP},
+      Math.ceil(width / ${FRAGMENT_HEIGHT_BUCKET_STEP}) * ${FRAGMENT_HEIGHT_BUCKET_STEP}
+    );
+    return 'width:' + upperBound;
+  };
+
+  const resolveReservedHeight = ({ layout, viewport, cardWidth, cookieHeight, stableHeight, fallbackHeight }) => {
+    const profileHeight = resolveProfileBucket(layout, viewport, cardWidth)?.height ?? null;
+    const authoredHint = normalizeHeight(layout?.heightHint?.[viewport]);
+    const minHeight = normalizeHeight(layout?.minHeight);
+    const size = layout?.size === 'small'
+      ? 440
+      : layout?.size === 'big'
+        ? 640
+        : layout?.size === 'tall'
+          ? 904
+          : null;
+    const fallback = minHeight ?? normalizeHeight(size) ?? normalizeHeight(fallbackHeight) ?? 180;
+    const floor = Math.max(fallback, profileHeight ?? 0, authoredHint ?? 0);
+    const candidate =
+      normalizeHeight(stableHeight) ??
+      normalizeHeight(cookieHeight) ??
+      profileHeight ??
+      authoredHint ??
+      fallback;
+    return Math.max(candidate ?? 180, floor);
+  };
+
+  const readStableHeight = (fragmentId, viewport, widthBucket) => {
+    try {
+      const stable = normalizeHeight(window.localStorage.getItem(buildStorageKey(fragmentId, viewport, widthBucket)));
+      if (stable !== null) return stable;
+      return normalizeHeight(window.localStorage.getItem(buildLegacyStorageKey(fragmentId, viewport)));
+    } catch {
+      return null;
+    }
   };
 
   const waitForImages = (card) =>
@@ -167,19 +301,38 @@ export const buildFragmentHeightPersistenceScript = ({
     }
   };
 
+  const buildTarget = (card) => {
+    const fragmentId = card.getAttribute('data-fragment-id');
+    if (!fragmentId) return null;
+    const planIndex = route.fragmentOrder.indexOf(fragmentId);
+    if (planIndex < 0) return null;
+    const layout = readLayout(card);
+    const cardWidth = normalizeWidth(card.getBoundingClientRect?.().width || 0);
+    const viewport = getViewport(cardWidth);
+    const widthBucket = resolveWidthBucket(layout, viewport, cardWidth);
+    const cookieHeights = readCookieHeights(viewport, widthBucket);
+    const cookieHeight = cookieHeights?.[planIndex] ?? null;
+    const stableHeight = readStableHeight(fragmentId, viewport, widthBucket);
+    const reservedHeight = resolveReservedHeight({
+      layout,
+      viewport,
+      cardWidth,
+      cookieHeight,
+      stableHeight,
+      fallbackHeight: readCardHint(card)
+    });
+
+    if (reservedHeight > readCardHint(card)) {
+      card.style.setProperty('--fragment-min-height', reservedHeight + 'px');
+      card.setAttribute('data-fragment-height-hint', String(reservedHeight));
+    }
+
+    return { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight };
+  };
+
   const persistHeights = async () => {
     const targets = Array.from(document.querySelectorAll('.fragment-card[data-fragment-id]'))
-      .map((card) => {
-        const fragmentId = card.getAttribute('data-fragment-id');
-        if (!fragmentId) return null;
-        const planIndex = route.fragmentOrder.indexOf(fragmentId);
-        if (planIndex < 0) return null;
-        const reservedHeight =
-          normalizeHeight(card.getAttribute('data-fragment-height-hint')) ??
-          normalizeHeight(getComputedStyle(card).getPropertyValue('--fragment-min-height')) ??
-          0;
-        return { card, fragmentId, planIndex, reservedHeight };
-      })
+      .map((card) => buildTarget(card))
       .filter(Boolean);
 
     await Promise.all(targets.map(({ card }) => waitForImages(card)));
@@ -188,15 +341,23 @@ export const buildFragmentHeightPersistenceScript = ({
     );
 
     targets.forEach((target, index) => {
-      const { card, fragmentId, planIndex, reservedHeight } = target;
+      const { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight } = target;
       const settledHeight = Math.max(normalizeHeight(measuredHeights[index]) ?? 0, reservedHeight);
       if (settledHeight <= 0) return;
       card.style.setProperty('--fragment-min-height', settledHeight + 'px');
       card.setAttribute('data-fragment-height-hint', String(settledHeight));
       try {
-        window.localStorage.setItem(buildStorageKey(fragmentId, getViewport()), String(settledHeight));
+        window.localStorage.setItem(buildStorageKey(fragmentId, viewport, widthBucket), String(settledHeight));
       } catch {}
-      writeCookieHeight(planIndex, settledHeight);
+      writeCookieHeight(planIndex, settledHeight, widthBucket);
+      if (settledHeight > reservedHeight) {
+        card.dispatchEvent(
+          new CustomEvent('prom:fragment-height-miss', {
+            bubbles: true,
+            detail: { fragmentId, reservedHeight, height: settledHeight, widthBucket }
+          })
+        );
+      }
       card.dispatchEvent(
         new CustomEvent('prom:fragment-stable-height', {
           bubbles: true,

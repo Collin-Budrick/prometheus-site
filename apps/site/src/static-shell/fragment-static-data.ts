@@ -11,6 +11,7 @@ export type StaticFragmentRouteData = {
   bootstrapMode: 'fragment-static'
   fragmentOrder: string[]
   planSignature: string
+  versionSignature: string
   fragmentVersions: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null

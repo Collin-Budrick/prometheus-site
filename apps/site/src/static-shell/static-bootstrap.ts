@@ -443,7 +443,8 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
     path: model.path,
     lang: model.lang,
     fragmentOrder: model.routeData.fragmentOrder,
-    planSignature: model.routeData.planSignature
+    planSignature: model.routeData.planSignature,
+    versionSignature: model.routeData.versionSignature
   })
 
   return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`
@@ -598,7 +599,8 @@ export const bootstrapStaticFragmentShell = async () => {
             path: controller.path,
             lang: controller.lang,
             fragmentOrder: controller.routeData.fragmentOrder,
-            planSignature: controller.routeData.planSignature
+            planSignature: controller.routeData.planSignature,
+            versionSignature: controller.routeData.versionSignature
           }
         }).catch((error) => {
           console.error('Static fragment height persistence failed:', error)

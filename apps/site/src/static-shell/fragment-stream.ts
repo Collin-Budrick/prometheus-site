@@ -86,7 +86,8 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
       path: routeData.path,
       lang: routeData.lang,
       fragmentOrder: routeData.fragmentOrder,
-      planSignature: routeData.planSignature
+      planSignature: routeData.planSignature,
+      versionSignature: routeData.versionSignature
     },
     lockToken
   }).catch((error) => {

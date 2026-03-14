@@ -17,6 +17,7 @@ export type HomeStaticRouteData = {
   fragmentBootstrapHref?: string
   fragmentOrder?: string[]
   planSignature?: string
+  versionSignature?: string
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -33,6 +34,7 @@ export type HomeStaticBootstrapData = {
   fragmentBootstrapHref: string | null
   fragmentOrder: string[]
   planSignature: string | null
+  versionSignature: string | null
   fragmentVersions: Record<string, number>
 }
 
@@ -82,6 +84,7 @@ export const readStaticHomeBootstrapData = ({
       buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
     fragmentOrder: route?.fragmentOrder ?? [],
     planSignature: route?.planSignature ?? null,
+    versionSignature: route?.versionSignature ?? null,
     fragmentVersions: route?.fragmentVersions ?? {}
   }
 }

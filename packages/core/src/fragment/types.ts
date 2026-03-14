@@ -59,6 +59,16 @@ export type FragmentPayload = {
 
 export type FragmentPayloadMap = Record<string, FragmentPayload>
 
+export type FragmentHeightProfileBucket = {
+  maxWidth: number
+  height: number
+}
+
+export type FragmentHeightProfile = {
+  desktop?: FragmentHeightProfileBucket[]
+  mobile?: FragmentHeightProfileBucket[]
+}
+
 export type FragmentPlanEntry = {
   id: string
   critical: boolean
@@ -71,6 +81,7 @@ export type FragmentPlanEntry = {
       desktop?: number
       mobile?: number
     }
+    heightProfile?: FragmentHeightProfile
   }
   expandable?: boolean
   fullWidth?: boolean

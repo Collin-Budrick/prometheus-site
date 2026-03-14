@@ -1,6 +1,7 @@
 import type { Lang } from '../../shared/lang-store'
 import { normalizeFragmentShellPath } from './shell-cache'
 import {
+  buildFragmentStableHeightKey as buildFragmentStableHeightKeyValue,
   clearFragmentStableHeight as clearFragmentStableHeightValue,
   getFragmentHeightViewport as getStableHeightViewportValue,
   readFragmentStableHeight as readFragmentStableHeightValue,
@@ -9,7 +10,6 @@ import {
 } from '@prometheus/ui/fragment-height'
 
 export const INITIAL_TASKS_EVENT = 'prom:fragment-initial-tasks'
-const STABLE_HEIGHT_CACHE_PREFIX = 'fragment:stable-height:v1'
 
 type FragmentInitialTaskEntry = {
   pending: Set<string>
@@ -41,6 +41,9 @@ export type FragmentStableHeightKeyInput = {
   path: string
   lang: Lang | string
   viewport?: FragmentStableHeightViewport
+  planSignature?: string | null
+  versionSignature?: string | null
+  widthBucket?: string | null
 }
 
 const hostTasks = new WeakMap<HTMLElement, FragmentInitialTaskEntry>()
@@ -156,15 +159,20 @@ export const buildFragmentStableHeightKey = ({
   fragmentId,
   path,
   lang,
-  viewport
+  viewport,
+  planSignature,
+  versionSignature,
+  widthBucket
 }: FragmentStableHeightKeyInput) =>
-  [
-    STABLE_HEIGHT_CACHE_PREFIX,
-    encodeURIComponent(normalizeFragmentShellPath(path)),
-    encodeURIComponent(String(lang)),
-    viewport ?? getStableHeightViewport(),
-    encodeURIComponent(fragmentId)
-  ].join(':')
+  buildFragmentStableHeightKeyValue({
+    fragmentId,
+    path: normalizeFragmentShellPath(path),
+    lang: String(lang),
+    viewport,
+    planSignature,
+    versionSignature,
+    widthBucket
+  })
 
 export const readFragmentStableHeight = (input: FragmentStableHeightKeyInput) => {
   try {

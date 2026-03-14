@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
 import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
+import { serializeFragmentHeightLayout } from '@prometheus/ui/fragment-height'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -57,6 +58,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               data-reveal-locked="false"
               data-draggable="false"
               data-fragment-height-hint={`${entry.reservedHeight}`}
+              data-fragment-height-layout={serializeFragmentHeightLayout(entry.layout) ?? undefined}
               data-size={entry.size}
               style={style}
               {...{
@@ -83,7 +85,8 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
           path: model.path,
           lang: model.lang,
           fragmentOrder: model.routeData.fragmentOrder,
-          planSignature: model.routeData.planSignature
+          planSignature: model.routeData.planSignature,
+          versionSignature: model.routeData.versionSignature
         })}
       />
     </section>

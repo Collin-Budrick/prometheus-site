@@ -216,6 +216,34 @@ const isFragmentPlanEntry = (value: unknown): value is FragmentPlanEntry => {
     value.layout.size !== 'tall'
   )
     return false
+  if (value.layout.minHeight !== undefined && typeof value.layout.minHeight !== 'number') return false
+  if (value.layout.heightHint !== undefined) {
+    if (!isRecord(value.layout.heightHint)) return false
+    if (value.layout.heightHint.desktop !== undefined && typeof value.layout.heightHint.desktop !== 'number') {
+      return false
+    }
+    if (value.layout.heightHint.mobile !== undefined && typeof value.layout.heightHint.mobile !== 'number') {
+      return false
+    }
+  }
+  if (value.layout.heightProfile !== undefined) {
+    if (!isRecord(value.layout.heightProfile)) return false
+    for (const key of ['desktop', 'mobile'] as const) {
+      const buckets = value.layout.heightProfile[key]
+      if (buckets === undefined) continue
+      if (
+        !Array.isArray(buckets) ||
+        !buckets.every(
+          (bucket) =>
+            isRecord(bucket) &&
+            typeof bucket.maxWidth === 'number' &&
+            typeof bucket.height === 'number'
+        )
+      ) {
+        return false
+      }
+    }
+  }
   if (value.dependsOn !== undefined && !isStringArray(value.dependsOn)) return false
   if (value.runtime !== undefined && value.runtime !== 'edge' && value.runtime !== 'node') return false
   if (value.renderHtml !== undefined && typeof value.renderHtml !== 'boolean') return false
@@ -587,7 +615,6 @@ const normalizeCacheStatus = (cache?: FragmentCacheStatus | null) =>
 
 const normalizePlanForEtag = (plan: FragmentPlan) => ({
   path: plan.path,
-  createdAt: plan.createdAt,
   fragments: plan.fragments.map((entry) => ({
     id: entry.id,
     critical: entry.critical,
@@ -949,6 +976,112 @@ const buildFragmentBundle = async (
 ) => {
   const frames = await buildFragmentFrames(ids, lang, getFragmentEntry, protocol, knownVersions, plan, refresh)
   return concatPayloads(frames.map((frame) => frame.frame))
+}
+
+export type WarmFragmentRouteArtifactsOptions = {
+  path: string
+  lang: FragmentLang
+  cache: CacheClient
+  service: FragmentService
+  store: FragmentStore
+  protocols?: FragmentProtocol[]
+}
+
+export type WarmFragmentRouteArtifactsResult = {
+  path: string
+  lang: FragmentLang
+  etag: string
+  fragmentIds: string[]
+  plan: FragmentPlanPayload
+}
+
+const warmCompressedFragmentVariants = async ({
+  fragmentIds,
+  lang,
+  cache,
+  service,
+  protocols = [1, 2]
+}: {
+  fragmentIds: readonly string[]
+  lang: FragmentLang
+  cache: CacheClient
+  service: FragmentService
+  protocols?: FragmentProtocol[]
+}) => {
+  const uniqueIds = dedupeFragmentIds(fragmentIds)
+  if (uniqueIds.length === 0) return
+
+  const entries = await Promise.all(
+    uniqueIds.map(async (id) => [id, await service.getFragmentEntry(id, { lang })] as const)
+  )
+
+  await Promise.all(
+    entries.flatMap(([id, entry]) =>
+      protocols.flatMap((protocol) =>
+        supportedEncodings.map(async (encoding) => {
+          const payload = buildDeliveryPayload(id, entry, protocol)
+          const compressedPayload = await compressFragmentPayload(payload, encoding)
+          if (compressedPayload === null) return
+          await writeCompressedFragmentPayload(
+            cache,
+            buildCompressedFragmentCacheKey(entry.meta.cacheKey, encoding, protocol),
+            compressedPayload,
+            Math.max(1, Math.ceil(entry.meta.ttl))
+          )
+        })
+      )
+    )
+  )
+}
+
+export const warmFragmentRouteArtifacts = async ({
+  path,
+  lang,
+  cache,
+  service,
+  store,
+  protocols = [1, 2]
+}: WarmFragmentRouteArtifactsOptions): Promise<WarmFragmentRouteArtifactsResult> => {
+  const fragmentsByCacheKey = new Map<string, StoredFragment>()
+  const initialPlan = await service.getFragmentPlan(path, lang, { fragmentsByCacheKey })
+
+  const fragmentIds = dedupeFragmentIds([
+    ...initialPlan.fragments.map((entry) => entry.id),
+    ...collectBootFragmentTargets(initialPlan).ids
+  ])
+
+  await prefetchFragments(fragmentIds, lang, service, fragmentsByCacheKey)
+  const warmedPlan = await service.getFragmentPlan(path, lang, {
+    fragmentsByCacheKey: new Map<string, StoredFragment>()
+  })
+  const basePlan = stripInitialFragments(warmedPlan)
+  const version = getPlanEtagVersion(path, lang)
+  const etag = buildPlanEtag(basePlan, `${version.global}:${version.entry}`)
+  const initialPayload = await buildInitialFragments(basePlan, lang, store, service, 1, fragmentsByCacheKey)
+
+  await warmCompressedFragmentVariants({
+    fragmentIds,
+    lang,
+    cache,
+    service,
+    protocols
+  })
+
+  await writeCache(cache, buildFragmentPlanCacheKey(path, lang), basePlan, fragmentPlanCacheTtlSeconds)
+  await writeCache(
+    cache,
+    buildFragmentInitialCacheKey(path, lang, etag),
+    initialPayload,
+    fragmentInitialCacheTtlSeconds
+  )
+
+  return {
+    path,
+    lang,
+    etag,
+    fragmentIds,
+    plan: basePlan
+  }
 }
 
 const buildFetchGroups = (plan: FragmentPlanPayload) =>

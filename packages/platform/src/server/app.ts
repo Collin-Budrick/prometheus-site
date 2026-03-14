@@ -1,18 +1,18 @@
 import { Elysia, type AnyElysia } from 'elysia'
 import { createFragmentService } from '@core/fragment/service'
-import type { FragmentLang, FragmentTranslator } from '@core/fragment/i18n'
+import { defaultFragmentLang, type FragmentLang, type FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
 import { PromptBodyError, readPromptBody, sendServerOnlinePush } from '@features/messaging'
 import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
-import { checkEarlyLimit, recordLatencySample } from '../cache-helpers'
+import { checkEarlyLimit, invalidatePlanCache, recordLatencySample } from '../cache-helpers'
 import { createLogger } from '../logger'
 import { getClientIp } from '../network'
 import type { RateLimiter } from '../rate-limit'
 import { resolveBooleanFlag } from '../runtime'
 import { createPlatformServer, type PlatformServerContext } from './bun'
 import { createFragmentUpdateBroadcaster } from './fragment-updates'
-import { createFragmentRoutes, createFragmentStore } from './fragments'
+import { createFragmentRoutes, createFragmentStore, warmFragmentRouteArtifacts } from './fragments'
 import { createHomeCollabRoutes } from './home-collab'
 
 type FeatureFlags = {
@@ -40,6 +40,7 @@ const jsonError = (status: number, error: string, meta: Record<string, unknown> 
 
 const rateLimitWindowMs = 60_000
 const rateLimitMaxRequests = 60
+const HOT_FRAGMENT_ROUTE_PATHS = ['/', '/store'] as const
 
 const applyDevCors = (app: AnyElysia) => {
   const allowMethods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
@@ -119,12 +120,14 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     ...options.features
   }
 
-  const fragmentUpdates = createFragmentUpdateBroadcaster()
+  let warmFragmentArtifacts: (() => Promise<void>) | null = null
 
   const buildApp = (context: PlatformServerContext) => {
     const { cache, rateLimiter, spacetime } = context
     const valkey = cache.client
     const isValkeyReady = cache.isReady
+    const fragmentUpdates = createFragmentUpdateBroadcaster(cache)
+    const fragmentPathIndex = new Map<string, Set<string>>()
 
     const fragmentStore = createFragmentStore(cache)
     const fragmentService = createFragmentService({
@@ -134,6 +137,53 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         fragmentUpdates.notifyFragment({ id, lang, updatedAt: entry.updatedAt })
       }
     })
+
+    const indexWarmPlan = (path: string, fragmentIds: readonly string[]) => {
+      fragmentIds.forEach((id) => {
+        const paths = fragmentPathIndex.get(id) ?? new Set<string>()
+        paths.add(path)
+        fragmentPathIndex.set(id, paths)
+      })
+    }
+
+    fragmentUpdates.subscribe((event) => {
+      if (event.type === 'path') {
+        fragmentService.clearPlanMemo(event.path, event.lang)
+        void invalidatePlanCache(cache, event.path, event.lang)
+        return
+      }
+
+      const affectedPaths = fragmentPathIndex.get(event.id)
+      if (!affectedPaths || affectedPaths.size === 0) {
+        fragmentService.clearPlanMemo()
+        void invalidatePlanCache(cache)
+        return
+      }
+
+      affectedPaths.forEach((path) => {
+        fragmentService.clearPlanMemo(path, event.lang)
+        void invalidatePlanCache(cache, path, event.lang)
+      })
+    })
+
+    warmFragmentArtifacts = async () => {
+      const warmed = await Promise.all(
+        HOT_FRAGMENT_ROUTE_PATHS.map((path) =>
+          warmFragmentRouteArtifacts({
+            path,
+            lang: defaultFragmentLang,
+            cache,
+            service: fragmentService,
+            store: fragmentStore
+          })
+        )
+      )
+
+      fragmentPathIndex.clear()
+      warmed.forEach((entry) => {
+        indexWarmPlan(entry.path, entry.fragmentIds)
+      })
+    }
 
     const fragmentRoutes = createFragmentRoutes({
       cache,
@@ -270,6 +320,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         }).catch((error: unknown) => {
           logger.warn('Server online push failed', { error })
         })
+      }
+
+      if (warmFragmentArtifacts) {
+        await warmFragmentArtifacts()
       }
     }
   })

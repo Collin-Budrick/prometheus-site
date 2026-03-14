@@ -34,8 +34,11 @@ import { getHomeStaticFragmentKind } from './home-render'
 import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import {
   buildFragmentHeightPlanSignature,
+  buildFragmentHeightVersionSignature,
   readFragmentStableHeight,
-  resolveReservedFragmentHeight
+  resolveReservedFragmentHeight,
+  serializeFragmentHeightLayout,
+  type FragmentHeightLayout
 } from '@prometheus/ui/fragment-height'
 
 type StaticHomeRouteProps = {
@@ -66,6 +69,7 @@ type StaticHomeRenderedCard = {
   html: string
   column: '1' | '2'
   stage: StaticHomeCardStage
+  layout: FragmentHeightLayout
   reservedHeight: number
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
@@ -79,6 +83,7 @@ type StaticHomeRouteState = {
   fragmentVersions: Record<string, number>
   fragmentOrder: string[]
   planSignature: string
+  versionSignature: string
   cards: StaticHomeRenderedCard[]
 }
 
@@ -138,6 +143,7 @@ export const buildStaticHomeRouteState = ({
     }
     return acc
   }, {})
+  const versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder)
 
   const anchorColumns = new Set<'1' | '2'>()
 
@@ -174,7 +180,9 @@ export const buildStaticHomeRouteState = ({
       stableHeight: readFragmentStableHeight({
         fragmentId: entry.id,
         path: plan.path,
-        lang
+        lang,
+        planSignature,
+        versionSignature
       })
     }) ?? DEFAULT_RESERVED_CARD_HEIGHT
 
@@ -186,6 +194,7 @@ export const buildStaticHomeRouteState = ({
       html,
       column,
       stage,
+      layout: entry.layout,
       fragmentKind,
       reservedHeight,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
@@ -200,6 +209,7 @@ export const buildStaticHomeRouteState = ({
     fragmentVersions,
     fragmentOrder,
     planSignature,
+    versionSignature,
     cards
   }
 }
@@ -281,6 +291,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   data-reveal-locked="false"
                   data-draggable="false"
                   data-size={card.size}
+                  data-fragment-height-layout={serializeFragmentHeightLayout(card.layout) ?? undefined}
                   style={style}
                   {...{
                     [STATIC_FRAGMENT_CARD_ATTR]: 'true',
@@ -316,6 +327,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,
+          versionSignature: routeState.versionSignature,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}
@@ -326,7 +338,8 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           path: plan.path,
           lang,
           fragmentOrder: routeState.fragmentOrder,
-          planSignature: routeState.planSignature
+          planSignature: routeState.planSignature,
+          versionSignature: routeState.versionSignature
         })}
       />
     </section>
