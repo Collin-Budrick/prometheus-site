@@ -423,6 +423,20 @@ export const createFragmentClient = (
     signal?: AbortSignal
     lang?: string
     knownVersions?: FragmentKnownVersions
+    ids?: string[]
+  }
+
+  const appendFragmentIds = (params: URLSearchParams, ids: string[] | undefined) => {
+    if (!Array.isArray(ids) || ids.length === 0) return
+    const normalized = Array.from(
+      new Set(
+        ids
+          .map((id) => id.trim())
+          .filter((id) => id !== '')
+      )
+    )
+    if (!normalized.length) return
+    params.set('ids', normalized.join(','))
   }
 
   const fetchFragmentBatch = async (
@@ -737,6 +751,7 @@ export const createFragmentClient = (
     const params = new URLSearchParams({ path })
     appendProtocol(params)
     appendKnownVersions(params, options.knownVersions)
+    appendFragmentIds(params, options.ids)
     if (options.lang) {
       params.set('lang', options.lang)
     }
@@ -804,6 +819,7 @@ export const createFragmentClient = (
     if (options.lang) {
       url.searchParams.set('lang', options.lang)
     }
+    appendFragmentIds(url.searchParams, options.ids)
     if (preferDatagrams && supportsDatagrams) {
       url.searchParams.set('datagrams', '1')
     }

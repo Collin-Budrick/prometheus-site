@@ -16,6 +16,7 @@ import {
 type StreamStaticFragmentsOptions = {
   path: string
   lang: string
+  ids?: string[]
   signal: AbortSignal
   routeData: StaticFragmentRouteData
   onFragment: (payload: FragmentPayload) => void
@@ -98,6 +99,7 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
 export const streamStaticFragments = async ({
   path,
   lang,
+  ids,
   signal,
   routeData,
   onFragment,
@@ -107,6 +109,7 @@ export const streamStaticFragments = async ({
     patchStaticFragmentCard(payload, routeData)
     onFragment(payload)
   }, onError, {
+    ids,
     signal,
     lang,
     knownVersions: collectKnownVersions()

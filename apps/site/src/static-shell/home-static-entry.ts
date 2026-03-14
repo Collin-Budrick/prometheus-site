@@ -5,12 +5,14 @@ import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR
 } from './constants'
+import { appConfig } from '../public-app-config'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
-export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = '300px 0px'
+export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -28,7 +30,37 @@ type InstallHomeStaticEntryOptions = {
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = `[${STATIC_FRAGMENT_CARD_ATTR}]`
-const HOME_PENDING_DEFERRED_CARD_SELECTOR = `${HOME_FRAGMENT_CARD_SELECTOR}[${STATIC_HOME_PATCH_STATE_ATTR}="pending"][${STATIC_HOME_STAGE_ATTR}="deferred"]`
+
+const isAutoBootstrapHomeCardStage = (value: string | null) => value === 'anchor' || value === 'deferred'
+const isRefreshableHomeFragmentKind = (value: string | null) =>
+  value === 'planner' || value === 'ledger' || value === 'island' || value === 'react'
+
+const isAutoBootstrapHomeCard = (card: Element) => {
+  const stage =
+    typeof (card as Element).getAttribute === 'function'
+      ? card.getAttribute(STATIC_HOME_STAGE_ATTR)
+      : null
+  if (!isAutoBootstrapHomeCardStage(stage)) {
+    return false
+  }
+
+  const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
+  if (patchState === 'pending') {
+    return true
+  }
+
+  return (
+    patchState === 'ready' &&
+    isRefreshableHomeFragmentKind(card.getAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR))
+  )
+}
+
+const collectAutoBootstrapHomeCards = (root: Pick<Document, 'querySelectorAll'>) =>
+  typeof root.querySelectorAll === 'function'
+    ? Array.from(root.querySelectorAll<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR)).filter((card) =>
+        isAutoBootstrapHomeCard(card)
+      )
+    : []
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -99,6 +131,7 @@ export const installHomeStaticEntry = ({
   let loadHandler: (() => void) | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
+  let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
   let lcpGateCleanup: (() => void) | null = null
   let demoEntryCleanup: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
@@ -138,6 +171,11 @@ export const installHomeStaticEntry = ({
       })
   }
 
+  const prewarmBootstrapRuntime = () => {
+    bootstrapRuntimePromise ??= loadBootstrapRuntime()
+    return bootstrapRuntimePromise
+  }
+
   const startBootstrap = () => {
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
@@ -146,9 +184,10 @@ export const installHomeStaticEntry = ({
     visibilityObserver = null
     observedCards.clear()
 
-    void loadBootstrapRuntime()
+    void prewarmBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
       .catch((error) => {
+        bootstrapRuntimePromise = null
         console.error('Static home bootstrap failed:', error)
       })
   }
@@ -181,16 +220,13 @@ export const installHomeStaticEntry = ({
     requestBootstrap()
   }
 
-  const observeDeferredCards = () => {
+  const observeAutoBootstrapCards = () => {
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) {
       return
     }
 
     if (typeof IntersectionObserver !== 'function') {
-      if (
-        typeof liveDoc.querySelector === 'function' &&
-        liveDoc.querySelector(HOME_PENDING_DEFERRED_CARD_SELECTOR)
-      ) {
+      if (collectAutoBootstrapHomeCards(liveDoc).length > 0) {
         requestBootstrap()
       }
       return
@@ -218,15 +254,13 @@ export const installHomeStaticEntry = ({
       )
     }
 
-    if (typeof liveDoc.querySelectorAll === 'function') {
-      Array.from(liveDoc.querySelectorAll<HTMLElement>(HOME_PENDING_DEFERRED_CARD_SELECTOR)).forEach((card) => {
-        if (observedCards.has(card)) {
-          return
-        }
-        observedCards.add(card)
-        visibilityObserver?.observe(card)
-      })
-    }
+    collectAutoBootstrapHomeCards(liveDoc).forEach((card) => {
+      if (observedCards.has(card)) {
+        return
+      }
+      observedCards.add(card)
+      visibilityObserver?.observe(card)
+    })
   }
 
   const releaseLcpGate = () => {
@@ -236,6 +270,10 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup?.()
     lcpGateCleanup = null
     startDemoEntry()
+    void prewarmBootstrapRuntime().catch((error) => {
+      bootstrapRuntimePromise = null
+      console.error('Static home bootstrap prewarm failed:', error)
+    })
     if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
       requestBootstrap()
       return
@@ -244,7 +282,7 @@ export const installHomeStaticEntry = ({
       startBootstrap()
       return
     }
-    observeDeferredCards()
+    observeAutoBootstrapCards()
   }
 
   const setupBootstrapTriggers = () => {

@@ -57,8 +57,8 @@ type PublicAppConfigTarget = typeof globalThis & {
 
 declare const __PUBLIC_APP_CONFIG__: Partial<PublicAppConfig> | undefined
 
-const DEFAULT_FRAGMENT_VISIBILITY_MARGIN = '60% 0px'
-const DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD = 0.4
+const DEFAULT_FRAGMENT_VISIBILITY_MARGIN = '0px'
+const DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD = 0
 
 const publicEnv =
   typeof import.meta !== 'undefined'
@@ -102,17 +102,6 @@ const defaultPublicAppConfig: PublicAppConfig = {
   p2pWakuRelays: [],
   p2pCrdtSignaling: [],
   p2pIceServers: []
-}
-
-const hasPublicEnvValue = (
-  key: string,
-  env: PublicEnv | undefined = publicEnv
-) => {
-  const value = env?.[key]
-  if (typeof value === 'string') {
-    return value.trim() !== ''
-  }
-  return typeof value === 'boolean'
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -229,23 +218,17 @@ export const resolvePublicAppConfig = (
   rawConfig: Partial<PublicAppConfig> | undefined = getDefinedPublicConfig(),
   env: PublicEnv | undefined = publicEnv
 ): PublicAppConfig => {
+  void env
   const fragmentVisibilityMargin =
-    hasPublicEnvValue('VITE_FRAGMENT_VISIBILITY_MARGIN', env) || hasPublicEnvValue('FRAGMENT_VISIBILITY_MARGIN', env)
-      ? normalizeString(rawConfig?.fragmentVisibilityMargin) || '0px'
-      : normalizeString(rawConfig?.fragmentVisibilityMargin) === '0px'
-        ? DEFAULT_FRAGMENT_VISIBILITY_MARGIN
-        : normalizeString(rawConfig?.fragmentVisibilityMargin) || DEFAULT_FRAGMENT_VISIBILITY_MARGIN
-
-  const fragmentVisibilityThreshold =
-    hasPublicEnvValue('VITE_FRAGMENT_VISIBILITY_THRESHOLD', env) ||
-    hasPublicEnvValue('FRAGMENT_VISIBILITY_THRESHOLD', env)
-      ? normalizeNumber(rawConfig?.fragmentVisibilityThreshold, 0, { min: 0, max: 1 })
-      : normalizeNumber(rawConfig?.fragmentVisibilityThreshold, 0, { min: 0, max: 1 }) === 0
-        ? DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD
-        : normalizeNumber(rawConfig?.fragmentVisibilityThreshold, DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD, {
-            min: 0,
-            max: 1
-          })
+    normalizeString(rawConfig?.fragmentVisibilityMargin) || DEFAULT_FRAGMENT_VISIBILITY_MARGIN
+  const fragmentVisibilityThreshold = normalizeNumber(
+    rawConfig?.fragmentVisibilityThreshold,
+    DEFAULT_FRAGMENT_VISIBILITY_THRESHOLD,
+    {
+      min: 0,
+      max: 1
+    }
+  )
 
   const webTransportBase = normalizeApiBase(rawConfig?.webTransportBase) || resolveImplicitWebTransportBase()
 

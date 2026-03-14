@@ -18,6 +18,7 @@ type StreamHomeFragmentsOptions = {
   lang?: string
   knownVersions?: FragmentKnownVersions
   live?: boolean
+  ids?: string[]
 }
 
 type FetchHomeFragmentBatchOptions = {
@@ -266,6 +267,19 @@ const selectHomeFragmentPayloads = (ids: string[], payloads: Record<string, Frag
     return acc
   }, {})
 
+const appendFragmentIds = (params: URLSearchParams, ids: string[] | undefined) => {
+  if (!Array.isArray(ids) || ids.length === 0) return
+  const normalized = Array.from(
+    new Set(
+      ids
+        .map((id) => id.trim())
+        .filter((id) => id !== '')
+    )
+  )
+  if (!normalized.length) return
+  params.set('ids', normalized.join(','))
+}
+
 const resolveHomeFragmentBootstrapSelectionHref = ({
   ids,
   lang,
@@ -398,6 +412,7 @@ export const streamHomeFragmentFrames = async (
   if (options.live === false) {
     params.set('live', '0')
   }
+  appendFragmentIds(params, options.ids)
 
   const response = await fetch(`${getPublicFragmentApiBase()}/fragments/stream?${params.toString()}`, {
     signal: options.signal

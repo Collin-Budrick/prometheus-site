@@ -178,4 +178,75 @@ describe('fragment client V2 decoding', () => {
 
     expect(seen).toEqual([definition.id])
   })
+
+  it('passes explicit fragment ids to fetch streaming', async () => {
+    let requestedUrl = ''
+
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requestedUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close()
+          }
+        }),
+        {
+          headers: { 'content-type': 'application/octet-stream' }
+        }
+      )
+    }) as unknown as typeof fetch
+
+    const client = createFragmentClient({
+      getApiBase: () => 'http://api.test',
+      getFragmentProtocol: () => 2
+    })
+
+    await client.streamFragments('/', () => {}, undefined, {
+      ids: ['fragment://visible/a', 'fragment://visible/b', 'fragment://visible/a']
+    })
+
+    expect(requestedUrl).toContain('/fragments/stream?')
+    expect(requestedUrl).toContain(
+      `ids=${encodeURIComponent('fragment://visible/a,fragment://visible/b')}`
+    )
+  })
+
+  it('passes explicit fragment ids to webtransport streaming', async () => {
+    let transportUrl = ''
+
+    ;(globalThis as typeof globalThis & { WebTransport?: unknown }).WebTransport = class extends ResettingWebTransport {
+      constructor(url: string) {
+        super()
+        transportUrl = url
+      }
+    }
+
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close()
+          }
+        }),
+        {
+          headers: { 'content-type': 'application/octet-stream' }
+        }
+      )) as unknown as typeof fetch
+
+    const client = createFragmentClient({
+      getApiBase: () => 'https://api.test',
+      getWebTransportBase: () => 'https://transport.test',
+      getFragmentProtocol: () => 2,
+      isWebTransportPreferred: () => true
+    })
+
+    await client.streamFragments('/', () => {}, undefined, {
+      ids: ['fragment://visible/a', 'fragment://visible/b']
+    })
+
+    expect(transportUrl).toContain('/fragments/transport?')
+    expect(transportUrl).toContain(
+      `ids=${encodeURIComponent('fragment://visible/a,fragment://visible/b')}`
+    )
+  })
 })

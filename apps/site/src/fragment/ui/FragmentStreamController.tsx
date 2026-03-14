@@ -18,10 +18,8 @@ import { runLangViewTransition } from '../../shared/view-transitions'
 import { appConfig } from '../../public-app-config'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
-import { shouldHoldStaticHomeStartup } from './fragment-shell-mode'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
-import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
 import type { FragmentShellMode } from './fragment-shell-types'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
@@ -91,27 +89,11 @@ export const FragmentStreamController = component$(
     preserveFragmentEffects,
     initialLang,
     dynamicCriticalIds
-  }: FragmentStreamControllerProps) => {
-    const langSignal = useSharedLangSignal()
-    const lastLang = useSignal<string | null>(initialLang ?? null)
-    const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
-    const lifecyclePaused = useSignal(false)
-    const deferredStartupReady = useSignal(
-      typeof window !== 'undefined' ? isClientBootIntentReady() : false
-    )
-
-    useVisibleTask$(
-      (ctx) => {
-        if (deferredStartupReady.value) return
-        const cancel = runAfterClientIntentIdle(() => {
-          deferredStartupReady.value = true
-        })
-        ctx.cleanup(() => {
-          cancel()
-        })
-      },
-      { strategy: 'document-ready' }
-    )
+    }: FragmentStreamControllerProps) => {
+      const langSignal = useSharedLangSignal()
+      const lastLang = useSignal<string | null>(initialLang ?? null)
+      const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
+      const lifecyclePaused = useSignal(false)
 
     useVisibleTask$(
       (ctx) => {
@@ -139,11 +121,9 @@ export const FragmentStreamController = component$(
         const isPaused = ctx.track(() =>
           (typeof paused === 'boolean' ? paused : paused ? paused.value : false) || lifecyclePaused.value
         )
-        const streamController = FRAGMENT_STREAMING_ENABLED ? new AbortController() : null
         const fetchControllers = new Set<AbortController>()
         const inFlight = new Set<string>()
         const pending = new Map<string, FragmentPayload>()
-        const deferred = new Map<string, FragmentPayload>()
         const queued = new Set<string>()
         const observed = new WeakSet<Element>()
         const elementsById = new Map<string, HTMLElement>()
@@ -153,8 +133,10 @@ export const FragmentStreamController = component$(
         let flushHandle: number | null = null
         let hmrTimer: number | null = null
         let hmrClearCachesPending = false
+        let streamRefreshTimer: number | null = null
+        let streamController: AbortController | null = null
+        let activeStreamKey = ''
         const activeLang = ctx.track(() => langSignal.value)
-        const allowDeferredStartup = ctx.track(() => deferredStartupReady.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
         const refreshIds = new Set<string>()
@@ -220,15 +202,7 @@ export const FragmentStreamController = component$(
         const dynamicCriticalSeed = dynamicCriticalIds?.value ?? []
         const dynamicCriticalSet = new Set<string>()
         const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
-        const shouldDeferOffscreen = FRAGMENT_STREAMING_ENABLED && canObserve
         const hasMissingCriticalFragments = criticalIds.some((id) => !fragments.value[id])
-        const deferFullStartup =
-          shellMode !== 'static-home' && !allowDeferredStartup && !langChanged && !hasMissingCriticalFragments
-        const holdStaticHomeStartup = shouldHoldStaticHomeStartup({
-          shellMode,
-          startupReady: allowDeferredStartup,
-          langChanged
-        })
 
         if (!canObserve) {
           Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
@@ -240,69 +214,10 @@ export const FragmentStreamController = component$(
           })
         }
 
-        if (deferFullStartup) {
-          status.value = 'idle'
-          ctx.cleanup(() => {
-            active = false
-            dynamicCriticalUpdater.value = null
-          })
-          return
-        }
-
-        const scheduleIdle = (callback: () => void) => {
-          const idleApi = window as {
-            requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
-            cancelIdleCallback?: (handle: number) => void
-          }
-
-          if (idleApi.requestIdleCallback) {
-            const handle = idleApi.requestIdleCallback(callback, { timeout: 1200 })
-            return () => {
-              idleApi.cancelIdleCallback?.(handle)
-            }
-          }
-          const handle = window.setTimeout(callback, 180)
-          return () => window.clearTimeout(handle)
-        }
-
         const enqueuePayload = (payload: FragmentPayload) => {
           pending.set(payload.id, payload)
           queued.add(payload.id)
           scheduleFlush()
-        }
-
-        const releaseDeferred = (ids?: string[]) => {
-          const targets = ids ?? Array.from(deferred.keys())
-          targets.forEach((id) => {
-            const payload = deferred.get(id)
-            if (!payload) return
-            deferred.delete(id)
-            enqueuePayload(payload)
-          })
-        }
-
-        let idleCancel: (() => void) | null = null
-
-        const scheduleIdleRelease = () => {
-          if (idleCancel) return
-          idleCancel = scheduleIdle(() => {
-            idleCancel = null
-            if (!active) return
-            if (FRAGMENT_STREAMING_ENABLED) {
-              releaseDeferred()
-              return
-            }
-            const idleIds = allIds.filter((id) => {
-              if (isCriticalId(id)) return false
-              if (visibleIds.has(id)) return false
-              if (fragments.value[id] && !refreshIds.has(id)) return false
-              if (inFlight.has(id) || pending.has(id) || deferred.has(id)) return false
-              return true
-            })
-            if (idleIds.length) {
-              requestFragments(idleIds)
-            }
-          })
         }
 
         const queuePayload = (payload: FragmentPayload) => {
@@ -311,11 +226,6 @@ export const FragmentStreamController = component$(
           if (refreshIds.has(payload.id)) {
             refreshIds.delete(payload.id)
             refreshQueue.add(payload.id)
-          }
-          if (shouldDeferOffscreen && !isCriticalId(normalized.id) && !visibleIds.has(normalized.id)) {
-            deferred.set(normalized.id, normalized)
-            scheduleIdleRelease()
-            return
           }
           enqueuePayload(normalized)
         }
@@ -404,6 +314,112 @@ export const FragmentStreamController = component$(
           planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
         }
 
+        const getStreamTargetIds = () =>
+          canObserve
+            ? planValue.fragments
+                .map((entry) => entry.id)
+                .filter((id) => visibleIds.has(id))
+            : allIds
+
+        const stopLiveStream = () => {
+          if (streamRefreshTimer !== null) {
+            window.clearTimeout(streamRefreshTimer)
+            streamRefreshTimer = null
+          }
+          if (streamController) {
+            streamController.abort()
+            streamController = null
+          }
+          activeStreamKey = ''
+        }
+
+        const startLiveStream = (ids: string[]) => {
+          if (!FRAGMENT_STREAMING_ENABLED || !active) return
+          const orderedIds = planValue.fragments
+            .map((entry) => entry.id)
+            .filter((id) => ids.includes(id))
+          const streamIds = orderedIds.length ? orderedIds : ids
+          const streamKey = streamIds.join('\u0000')
+          if (streamKey === activeStreamKey) {
+            return
+          }
+
+          if (streamController) {
+            streamController.abort()
+            streamController = null
+          }
+
+          activeStreamKey = streamKey
+          if (!streamIds.length) {
+            markIdle()
+            return
+          }
+
+          recordFragmentStartupDebug({
+            kind: 'stream-start',
+            shellMode,
+            startupReady: true,
+            ids: streamIds,
+            nonCriticalIds: streamIds.filter((id) => !isCriticalId(id))
+          })
+
+          const nextStreamController = new AbortController()
+          streamController = nextStreamController
+          setStreaming()
+
+          streamFragments(
+            path,
+            (payload) => queuePayload(payload),
+            undefined,
+            {
+              signal: nextStreamController.signal,
+              lang: activeLang,
+              knownVersions: buildKnownVersions(),
+              ids: streamIds
+            }
+          )
+            .then(() => {
+              if (!active) return
+              if (streamController !== nextStreamController || nextStreamController.signal.aborted) {
+                return
+              }
+              const missing = streamIds.filter((id) => !fragments.value[id] && !pending.has(id))
+              if (missing.length) {
+                requestFragments(missing)
+              }
+              streamController = null
+              activeStreamKey = ''
+              markIdle()
+            })
+            .catch((error) => {
+              if (!active) return
+              if (streamController !== nextStreamController) {
+                return
+              }
+              streamController = null
+              activeStreamKey = ''
+              if ((error as Error)?.name === 'AbortError' || nextStreamController.signal.aborted) {
+                markIdle()
+                return
+              }
+              console.error('Fragment stream failed', error)
+              status.value = 'error'
+              requestFragments(streamIds)
+            })
+        }
+
+        const scheduleStreamRefresh = (delayMs = 0) => {
+          if (!FRAGMENT_STREAMING_ENABLED || !active) return
+          if (streamRefreshTimer !== null) {
+            window.clearTimeout(streamRefreshTimer)
+          }
+          streamRefreshTimer = window.setTimeout(() => {
+            streamRefreshTimer = null
+            if (!active) return
+            startLiveStream(getStreamTargetIds())
+          }, delayMs)
+        }
+
         const scheduleHmrRefresh = (payload?: FragmentHmrEventPayload) => {
           if (payload?.clearCaches) {
             hmrClearCachesPending = true
@@ -420,15 +436,16 @@ export const FragmentStreamController = component$(
             }
             markAllForRefresh()
             pending.clear()
-            deferred.clear()
             queued.clear()
             refreshQueue.clear()
             if (!observer) {
               requestFragments(planValue.fragments.map((entry) => entry.id))
+              scheduleStreamRefresh()
               return
             }
             observeTargets()
             requestFragments(planValue.fragments.map((entry) => entry.id))
+            scheduleStreamRefresh()
           }, 75)
         }
 
@@ -449,7 +466,7 @@ export const FragmentStreamController = component$(
           recordFragmentStartupDebug({
             kind: 'fetch',
             shellMode,
-            startupReady: allowDeferredStartup,
+            startupReady: true,
             ids: fetchable,
             nonCriticalIds: fetchable.filter((id) => !isCriticalId(id))
           })
@@ -531,13 +548,12 @@ export const FragmentStreamController = component$(
         const cleanupController = () => {
           active = false
           dynamicCriticalUpdater.value = null
-          streamController?.abort()
+          stopLiveStream()
           fetchControllers.forEach((ctrl) => ctrl.abort())
           fetchControllers.clear()
           observer?.disconnect()
           inFlight.clear()
           pending.clear()
-          deferred.clear()
           visibleIds.clear()
           queued.clear()
           if (flushHandle !== null) {
@@ -549,25 +565,12 @@ export const FragmentStreamController = component$(
             window.clearTimeout(hmrTimer)
             hmrTimer = null
           }
-          if (idleCancel) {
-            idleCancel()
-            idleCancel = null
-          }
           if (import.meta.hot) {
             import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
           }
           if (!preserveFragmentEffects) {
             teardownFragmentEffects(Object.keys(fragments.value))
           }
-        }
-
-        if (holdStaticHomeStartup) {
-          status.value = 'idle'
-          if (hasMissingCriticalFragments) {
-            requestFragments(Array.from(staticCriticalIds))
-          }
-          ctx.cleanup(cleanupController)
-          return
         }
 
         const promoteDynamicCritical = (ids: string[]) => {
@@ -581,10 +584,6 @@ export const FragmentStreamController = component$(
               applyFragmentEffects(payload)
             }
           })
-          releaseDeferred(newlyCritical)
-          if (!FRAGMENT_STREAMING_ENABLED) {
-            requestFragments(newlyCritical)
-          }
         }
 
         if (dynamicCriticalSeed.length) {
@@ -592,52 +591,11 @@ export const FragmentStreamController = component$(
         }
         dynamicCriticalUpdater.value = promoteDynamicCritical
 
-        if (FRAGMENT_STREAMING_ENABLED && streamController) {
-          recordFragmentStartupDebug({
-            kind: 'stream-start',
-            shellMode,
-            startupReady: allowDeferredStartup,
-            ids: allIds,
-            nonCriticalIds: allIds.filter((id) => !isCriticalId(id))
-          })
-          setStreaming()
-          streamFragments(
-            path,
-            (payload) => queuePayload(payload),
-            undefined,
-            {
-              signal: streamController.signal,
-              lang: activeLang,
-              knownVersions: buildKnownVersions()
-            }
-          )
-            .then(() => {
-              if (!active) return
-              const missing = allIds.filter((id) => !fragments.value[id] && !pending.has(id) && !deferred.has(id))
-              if (missing.length) {
-                requestFragments(missing)
-              }
-              markIdle()
-            })
-            .catch((error) => {
-              if (!active) return
-              if ((error as Error)?.name === 'AbortError' || streamController.signal.aborted) {
-                markIdle()
-                return
-              }
-              console.error('Fragment stream failed', error)
-              status.value = 'error'
-              const fallback = allIds.filter((id) => !fragments.value[id] && !pending.has(id) && !deferred.has(id))
-              if (fallback.length) {
-                requestFragments(fallback)
-              }
-            })
-        }
-
         if (canObserve) {
           observer = new IntersectionObserver(
             (entries) => {
               const ready: string[] = []
+              let removedVisibleId = false
               entries.forEach((entry) => {
                 const target = entry.target as HTMLElement
                 const id = target.dataset.fragmentId
@@ -650,14 +608,16 @@ export const FragmentStreamController = component$(
                   }
                   ready.push(id)
                 } else {
-                  visibleIds.delete(id)
+                  removedVisibleId = visibleIds.delete(id) || removedVisibleId
                 }
               })
               if (ready.length) {
-                if (!FRAGMENT_STREAMING_ENABLED) {
-                  requestFragments(ready)
-                }
-                releaseDeferred(ready)
+                requestFragments(ready)
+                scheduleStreamRefresh()
+                return
+              }
+              if (removedVisibleId) {
+                scheduleStreamRefresh(120)
               }
             },
             { rootMargin: FRAGMENT_ROOT_MARGIN, threshold: FRAGMENT_THRESHOLD }
@@ -669,7 +629,6 @@ export const FragmentStreamController = component$(
               if (observed.has(element)) return
               const id = element.dataset.fragmentId
               if (!id) return
-              if (!FRAGMENT_STREAMING_ENABLED && fragments.value[id] && !refreshIds.has(id)) return
               observer?.observe(element)
               observed.add(element)
               elementsById.set(id, element)
@@ -679,22 +638,13 @@ export const FragmentStreamController = component$(
           observeTargets()
         }
 
-        if (!FRAGMENT_STREAMING_ENABLED) {
-          if (!canObserve) {
-            requestFragments(allIds)
-            ctx.cleanup(() => {
-              active = false
-              if (!preserveFragmentEffects) {
-                teardownFragmentEffects(Object.keys(fragments.value))
-              }
-            })
-            return
-          }
+        if (hasMissingCriticalFragments) {
           requestFragments(Array.from(staticCriticalIds))
         }
 
-        if (canObserve || shouldDeferOffscreen) {
-          scheduleIdleRelease()
+        if (!canObserve) {
+          requestFragments(allIds)
+          scheduleStreamRefresh()
         }
 
         ctx.cleanup(() => {
@@ -706,7 +656,6 @@ export const FragmentStreamController = component$(
 
     useVisibleTask$(
       (ctx) => {
-        if (!deferredStartupReady.value) return
         const ids = ctx.track(() => dynamicCriticalIds?.value ?? [])
         if (!ids.length) return
         dynamicCriticalUpdater.value?.(ids)

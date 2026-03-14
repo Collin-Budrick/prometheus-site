@@ -1,11 +1,12 @@
 import { loadFragmentBootstrapRuntime } from './fragment-bootstrap-runtime-loader'
 import { normalizeStaticShellRoutePath } from './constants'
 import { loadStoreStaticRuntime } from './store-static-runtime-loader'
+import { appConfig } from '../public-app-config'
 
-export const FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS = 5000
-export const FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS = 1200
 export const FRAGMENT_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'focusin'] as const
 export const STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'
+export const FRAGMENT_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
+export const FRAGMENT_BOOTSTRAP_VISIBILITY_THRESHOLD = appConfig.fragmentVisibilityThreshold
 
 type FragmentStaticEntryWindow = Window & {
   __PROM_STATIC_FRAGMENT_BOOTSTRAP__?: boolean
@@ -20,8 +21,6 @@ type InstallFragmentStaticEntryOptions = {
   loadStoreRuntime?: typeof loadStoreStaticRuntime
   win?: FragmentStaticEntryWindow | null
 }
-
-const FAST_FRAGMENT_BOOTSTRAP_ROUTE_PATHS = new Set(['/store', '/lab'])
 
 const STATIC_FRAGMENT_INTERACTIVE_SELECTOR = [
   '[data-static-fragment-root] button',
@@ -80,11 +79,6 @@ const readStaticFragmentPath = (
   return normalizeStaticShellRoutePath(root?.dataset.staticPath ?? win?.location.pathname ?? '')
 }
 
-export const resolveFragmentBootstrapIdleTimeout = (path: string | null | undefined) =>
-  path && FAST_FRAGMENT_BOOTSTRAP_ROUTE_PATHS.has(normalizeStaticShellRoutePath(path))
-    ? FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS
-    : FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS
-
 const isStoreStaticFastBootstrapPath = (path: string | null | undefined) =>
   normalizeStaticShellRoutePath(path ?? '') === STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH
 
@@ -104,36 +98,49 @@ export const installFragmentStaticEntry = ({
   let fragmentBootstrapRequested = false
   let fragmentBootstrapped = false
   let fragmentBootstrapPromise: Promise<void> | null = null
+  let fragmentRuntimePromise: ReturnType<typeof loadRuntime> | null = null
   let storeBootstrapRequested = false
   let storeBootstrapped = false
   let storeBootstrapPromise: Promise<void> | null = null
+  let storeRuntimePromise: ReturnType<typeof loadStoreRuntime> | null = null
   let loadHandler: (() => void) | null = null
-  let fragmentTimeoutId: ReturnType<typeof setTimeout> | null = null
-  let storeTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let visibilityObserver: IntersectionObserver | null = null
   const staticPath = readStaticFragmentPath(doc, win)
-  const idleTimeoutMs = resolveFragmentBootstrapIdleTimeout(staticPath)
   const useStoreFastBootstrap = isStoreStaticFastBootstrapPath(staticPath)
 
   const passiveEventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const clickEventOptions: AddEventListenerOptions = { capture: true, passive: false }
+  const readBootstrapRoot = () => doc.querySelector<HTMLElement>('[data-static-fragment-root]')
+
+  const prewarmFragmentRuntime = () => {
+    fragmentRuntimePromise ??= loadRuntime()
+    return fragmentRuntimePromise
+  }
+
+  const prewarmStoreRuntime = () => {
+    if (!useStoreFastBootstrap) return null
+    storeRuntimePromise ??= loadStoreRuntime()
+    return storeRuntimePromise
+  }
+
+  const resolveIntentTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return null
+    if (target.closest(STATIC_SHELL_INTERACTIVE_SELECTOR)) {
+      return 'shell'
+    }
+    if (target.closest(STATIC_FRAGMENT_INTERACTIVE_SELECTOR)) {
+      return 'fragment'
+    }
+    if (target.closest('[data-static-fragment-root]')) {
+      return 'root'
+    }
+    return null
+  }
 
   const removeIntentTriggers = () => {
-    const handler = useStoreFastBootstrap ? requestStoreBootstrap : requestFragmentBootstrap
     FRAGMENT_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
-      win.removeEventListener(eventName, handler, passiveEventOptions)
+      win.removeEventListener(eventName, handleBootstrapIntent, passiveEventOptions)
     })
-  }
-
-  const clearFragmentTimeout = () => {
-    if (fragmentTimeoutId === null) return
-    win.clearTimeout(fragmentTimeoutId)
-    fragmentTimeoutId = null
-  }
-
-  const clearStoreTimeout = () => {
-    if (storeTimeoutId === null) return
-    win.clearTimeout(storeTimeoutId)
-    storeTimeoutId = null
   }
 
   const cleanupTriggers = () => {
@@ -144,9 +151,8 @@ export const installFragmentStaticEntry = ({
       win.removeEventListener('load', loadHandler)
       loadHandler = null
     }
-
-    clearFragmentTimeout()
-    clearStoreTimeout()
+    visibilityObserver?.disconnect()
+    visibilityObserver = null
   }
 
   const startFragmentBootstrap = () => {
@@ -156,7 +162,7 @@ export const installFragmentStaticEntry = ({
 
     cleanupTriggers()
     win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__ = true
-    fragmentBootstrapPromise = loadRuntime()
+    fragmentBootstrapPromise = prewarmFragmentRuntime()
       .then(({ bootstrapStaticFragmentShell }) => bootstrapStaticFragmentShell())
       .then(() => {
         fragmentBootstrapped = true
@@ -175,12 +181,11 @@ export const installFragmentStaticEntry = ({
       return storeBootstrapPromise ?? Promise.resolve()
     }
 
-    clearStoreTimeout()
-    storeBootstrapPromise = loadStoreRuntime()
+    cleanupTriggers()
+    storeBootstrapPromise = (prewarmStoreRuntime() ?? loadStoreRuntime())
       .then(({ bootstrapStaticStoreShell }) => bootstrapStaticStoreShell())
       .then(() => {
         storeBootstrapped = true
-        removeIntentTriggers()
       })
       .catch((error) => {
         storeBootstrapPromise = null
@@ -208,6 +213,20 @@ export const installFragmentStaticEntry = ({
     void startStoreBootstrap().catch((error) => {
       console.error('Static store bootstrap failed:', error)
     })
+  }
+
+  function handleBootstrapIntent(event?: Event) {
+    const target = resolveIntentTarget(event?.target ?? doc?.activeElement ?? null)
+    if (!target) return
+    if (target === 'shell') {
+      requestFragmentBootstrap()
+      return
+    }
+    if (useStoreFastBootstrap) {
+      requestStoreBootstrap()
+      return
+    }
+    requestFragmentBootstrap()
   }
 
   function handleBootstrapSensitiveClick(event: Event) {
@@ -259,26 +278,74 @@ export const installFragmentStaticEntry = ({
       })
   }
 
-  const armIdleTrigger = () => {
-    if (useStoreFastBootstrap) {
-      if (!storeBootstrapped && !storeBootstrapPromise) {
-        storeTimeoutId = win.setTimeout(requestStoreBootstrap, idleTimeoutMs)
+  const observeBootstrapRoot = () => {
+    if (
+      fragmentBootstrapped ||
+      fragmentBootstrapPromise ||
+      win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__
+    ) {
+      return
+    }
+
+    const root = readBootstrapRoot()
+    if (!root) return
+
+    if (typeof IntersectionObserver !== 'function') {
+      if (useStoreFastBootstrap) {
+        requestStoreBootstrap()
+      } else {
+        requestFragmentBootstrap()
       }
       return
     }
 
-    if (fragmentBootstrapped || fragmentBootstrapPromise) return
-    fragmentTimeoutId = win.setTimeout(requestFragmentBootstrap, idleTimeoutMs)
+    if (!visibilityObserver) {
+      visibilityObserver = new IntersectionObserver(
+        (entries) => {
+          if (
+            fragmentBootstrapped ||
+            fragmentBootstrapPromise ||
+            win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__
+          ) {
+            return
+          }
+
+          if (!entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+            return
+          }
+
+          if (useStoreFastBootstrap) {
+            requestStoreBootstrap()
+            return
+          }
+          requestFragmentBootstrap()
+        },
+        {
+          root: null,
+          rootMargin: FRAGMENT_BOOTSTRAP_VISIBILITY_ROOT_MARGIN,
+          threshold: FRAGMENT_BOOTSTRAP_VISIBILITY_THRESHOLD
+        }
+      )
+    }
+
+    visibilityObserver.observe(root)
   }
 
   const setupBootstrapTriggers = () => {
     if (armed || fragmentBootstrapped || fragmentBootstrapPromise || win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__) return
     armed = true
-    const intentHandler = useStoreFastBootstrap ? requestStoreBootstrap : requestFragmentBootstrap
     FRAGMENT_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
-      win.addEventListener(eventName, intentHandler, passiveEventOptions)
+      win.addEventListener(eventName, handleBootstrapIntent, passiveEventOptions)
     })
     doc.addEventListener('click', handleBootstrapSensitiveClick, clickEventOptions)
+    void prewarmFragmentRuntime().catch((error) => {
+      fragmentRuntimePromise = null
+      console.error('Static fragment runtime prewarm failed:', error)
+    })
+    void prewarmStoreRuntime()?.catch((error) => {
+      storeRuntimePromise = null
+      console.error('Static store runtime prewarm failed:', error)
+    })
     if (useStoreFastBootstrap && storeBootstrapRequested) {
       requestStoreBootstrap()
       return
@@ -287,7 +354,7 @@ export const installFragmentStaticEntry = ({
       requestFragmentBootstrap()
       return
     }
-    armIdleTrigger()
+    observeBootstrapRoot()
   }
 
   if (doc.readyState === 'complete') {

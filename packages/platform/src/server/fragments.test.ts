@@ -177,7 +177,7 @@ const createStoredFragment = (id: string): StoredFragment => ({
   }
 })
 
-const createRouteApp = () => {
+const createRouteApp = (config: { enableWebTransportFragments?: boolean } = {}) => {
   const fragments = new Map(
     [
       'fragment://page/home/planner@v1',
@@ -213,7 +213,7 @@ const createRouteApp = () => {
     ]]
   }
 
-  const options: FragmentRouteOptions = {
+  const routeOptions: FragmentRouteOptions = {
     cache: {
       isReady: () => false,
       client: {} as never
@@ -236,11 +236,11 @@ const createRouteApp = () => {
     updates: {
       subscribe: () => () => undefined
     } as never,
-    enableWebTransportFragments: false,
+    enableWebTransportFragments: config.enableWebTransportFragments ?? false,
     environment: 'test'
   }
 
-  return createFragmentRoutes(options)
+  return createFragmentRoutes(routeOptions)
 }
 
 describe('createFragmentRoutes bootstrap ids', () => {
@@ -264,5 +264,40 @@ describe('createFragmentRoutes bootstrap ids', () => {
       'fragment://page/home/react@v1',
       'fragment://page/home/planner@v1'
     ])
+  })
+})
+
+describe('createFragmentRoutes scoped streams', () => {
+  it('returns only the requested protocol 2 fragment ids from /stream', async () => {
+    const app = createRouteApp()
+
+    const response = await app.handle(
+      new Request(
+        'http://site.test/fragments/stream?path=/&protocol=2&live=0&ids=' +
+          encodeURIComponent('fragment://page/home/react@v1')
+      )
+    )
+
+    expect(response.status).toBe(200)
+
+    const frames = parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    expect(frames.map((frame) => frame.id)).toEqual(['fragment://page/home/react@v1'])
+  })
+
+  it('returns only the requested protocol 2 fragment ids from /transport', async () => {
+    const app = createRouteApp({ enableWebTransportFragments: true })
+
+    const response = await app.handle(
+      new Request(
+        'http://site.test/fragments/transport?path=/&protocol=2&live=0&ids=' +
+          encodeURIComponent('fragment://page/home/planner@v1')
+      )
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-fragment-transport')).toBe('webtransport-proxy')
+
+    const frames = parseFragmentFrames(new Uint8Array(await response.arrayBuffer()))
+    expect(frames.map((frame) => frame.id)).toEqual(['fragment://page/home/planner@v1'])
   })
 })

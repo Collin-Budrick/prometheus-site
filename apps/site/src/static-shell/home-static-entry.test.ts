@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import { installHomeStaticEntry } from './home-static-entry'
 import type { HomeFirstLcpGate } from './home-lcp-gate'
+import {
+  STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_HOME_FRAGMENT_KIND_ATTR,
+  STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_STAGE_ATTR
+} from './constants'
 
 type MockListener = (event?: { target?: unknown }) => void
 type ListenerMap = Map<string, Set<MockListener>>
@@ -56,6 +62,7 @@ class MockDocument {
   readyState: DocumentReadyState = 'complete'
   activeElement: unknown = null
   querySelectorValue: unknown = null
+  querySelectorAllValue: unknown[] = []
   listeners: ListenerMap = new Map()
 
   addEventListener(type: string, listener: MockListener) {
@@ -82,14 +89,32 @@ class MockDocument {
   }
 
   querySelector(selector: string) {
-    if (selector.includes('data-static-home-patch-state')) {
+    if (selector.includes('data-fragment-id') || selector.includes('data-static-home-patch-state')) {
       return this.querySelectorValue
     }
     return null
   }
 
   querySelectorAll() {
-    return []
+    return this.querySelectorAllValue
+  }
+}
+
+class MockFragmentCard {
+  private readonly attrs = new Map<string, string>([[STATIC_FRAGMENT_CARD_ATTR, 'true']])
+
+  constructor(
+    stage: 'critical' | 'anchor' | 'deferred',
+    patchState: 'pending' | 'ready',
+    fragmentKind: 'planner' | 'ledger' | 'island' | 'react' | 'dock' = 'planner'
+  ) {
+    this.attrs.set(STATIC_HOME_STAGE_ATTR, stage)
+    this.attrs.set(STATIC_HOME_PATCH_STATE_ATTR, patchState)
+    this.attrs.set(STATIC_HOME_FRAGMENT_KIND_ATTR, fragmentKind)
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null
   }
 }
 
@@ -155,7 +180,7 @@ describe('installHomeStaticEntry', () => {
 
     expect(demoEntryLoadCount).toBe(1)
     expect(demoInstallCount).toBe(1)
-    expect(bootstrapLoadCount).toBe(0)
+    expect(bootstrapLoadCount).toBe(1)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.timeouts.size).toBe(0)
 
@@ -213,9 +238,42 @@ describe('installHomeStaticEntry', () => {
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
-    doc.querySelectorValue = {
-      dataset: { fragmentId: 'fragment://page/home/deferred@v1' }
-    }
+    doc.querySelectorAllValue = [new MockFragmentCard('deferred', 'pending')]
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      loadDemoRuntime: async () => ({
+        installHomeDemoEntry: () => () => undefined
+      }),
+      loadBootstrapRuntime: async () => {
+        bootstrapLoadCount += 1
+        return {
+          bootstrapStaticHome: async () => {
+            bootstrapCount += 1
+          }
+        }
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapCount).toBe(1)
+
+    cleanup()
+  })
+
+  it('starts bootstrap when a ready compact demo card is present after the LCP gate resolves', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const manualGate = createManualGate()
+    let bootstrapLoadCount = 0
+    let bootstrapCount = 0
+
+    doc.querySelectorAllValue = [new MockFragmentCard('anchor', 'ready', 'planner')]
 
     const cleanup = installHomeStaticEntry({
       win: win as never,

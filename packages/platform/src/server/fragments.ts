@@ -1089,12 +1089,49 @@ const buildFetchGroups = (plan: FragmentPlanPayload) =>
     ? plan.fetchGroups
     : [plan.fragments.map((entry) => entry.id)]
 
+const resolveRequestedPlanFragmentIds = (plan: FragmentPlanPayload, explicitIds: readonly string[] = []) => {
+  if (explicitIds.length === 0) {
+    return plan.fragments.map((entry) => entry.id)
+  }
+
+  const entryById = new Map(plan.fragments.map((entry) => [entry.id, entry]))
+  const required = new Set<string>()
+  const stack = [...explicitIds]
+
+  while (stack.length) {
+    const id = stack.pop()
+    if (!id || required.has(id)) continue
+    const entry = entryById.get(id)
+    if (!entry) continue
+    required.add(id)
+    ;(entry.dependsOn ?? []).forEach((dep) => {
+      if (!required.has(dep)) {
+        stack.push(dep)
+      }
+    })
+  }
+
+  return plan.fragments
+    .map((entry) => entry.id)
+    .filter((id) => required.has(id))
+}
+
+const buildStreamFetchGroups = (plan: FragmentPlanPayload, explicitIds: readonly string[] = []) => {
+  if (explicitIds.length === 0) {
+    return buildFetchGroups(plan)
+  }
+
+  const requestedIds = resolveRequestedPlanFragmentIds(plan, explicitIds)
+  return requestedIds.length > 0 ? [requestedIds] : []
+}
+
 const createLiveFragmentStream = (options: {
   path: string
   lang: FragmentLang
   protocol: FragmentProtocol
   liveUpdates?: boolean
   knownVersions?: FragmentKnownVersions
+  ids?: string[]
   getFragmentPlan: FragmentService['getFragmentPlan']
   getFragmentEntry: FragmentService['getFragmentEntry']
   clearPlanMemo: FragmentService['clearPlanMemo']
@@ -1113,6 +1150,7 @@ const createLiveFragmentStream = (options: {
     signal
   } = options
   const knownVersions: FragmentKnownVersions = { ...(options.knownVersions ?? {}) }
+  const explicitIds = dedupeFragmentIds(options.ids ?? [])
   const heartbeatFrame = buildFragmentHeartbeatFrame()
 
   let cleanup = () => {}
@@ -1152,7 +1190,7 @@ const createLiveFragmentStream = (options: {
       }
 
       const sendPlan = async (plan: FragmentPlanPayload, refresh: boolean) => {
-        for (const group of buildFetchGroups(plan)) {
+        for (const group of buildStreamFetchGroups(plan, explicitIds)) {
           if (closed || group.length === 0) continue
           const frames = await buildFragmentFrames(
             group,
@@ -1208,7 +1246,7 @@ const createLiveFragmentStream = (options: {
         clearPlanMemo(path, lang)
         const nextPlan = await getFragmentPlan(path, lang)
         currentPlan = nextPlan
-        currentFragmentIds = new Set(nextPlan.fragments.map((entry) => entry.id))
+        currentFragmentIds = new Set(resolveRequestedPlanFragmentIds(nextPlan, explicitIds))
         await sendPlan(nextPlan, true)
       }
 
@@ -1251,7 +1289,7 @@ const createLiveFragmentStream = (options: {
       runSerial(async () => {
         const plan = await getFragmentPlan(path, lang)
         currentPlan = plan
-        currentFragmentIds = new Set(plan.fragments.map((entry) => entry.id))
+        currentFragmentIds = new Set(resolveRequestedPlanFragmentIds(plan, explicitIds))
         await sendPlan(plan, false)
         if (!liveUpdates) {
           close()
@@ -1541,6 +1579,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const liveUpdates =
         typeof query.live === 'string' ? isTruthyParam(query.live) : true
       const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
+      const explicitIds = resolveExplicitFragmentIds(typeof query.ids === 'string' ? query.ids : undefined)
       const stream =
         protocol === 2
           ? createLiveFragmentStream({
@@ -1549,6 +1588,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
               protocol,
               liveUpdates,
               knownVersions,
+              ids: explicitIds,
               getFragmentPlan,
               getFragmentEntry,
               clearPlanMemo,
@@ -1579,6 +1619,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         path: t.Optional(t.String()),
         protocol: t.Optional(t.String()),
         known: t.Optional(t.String()),
+        ids: t.Optional(t.String()),
         live: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })
@@ -1607,6 +1648,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
       const liveUpdates =
         typeof query.live === 'string' ? isTruthyParam(query.live) : true
       const knownVersions = resolveKnownVersions(typeof query.known === 'string' ? query.known : undefined)
+      const explicitIds = resolveExplicitFragmentIds(typeof query.ids === 'string' ? query.ids : undefined)
       const start = performance.now()
       const stream =
         protocol === 2
@@ -1616,6 +1658,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
               protocol,
               liveUpdates,
               knownVersions,
+              ids: explicitIds,
               getFragmentPlan,
               getFragmentEntry,
               clearPlanMemo,
@@ -1639,6 +1682,7 @@ export const createFragmentRoutes = (options: FragmentRouteOptions) => {
         path: t.Optional(t.String()),
         protocol: t.Optional(t.String()),
         known: t.Optional(t.String()),
+        ids: t.Optional(t.String()),
         live: t.Optional(t.String()),
         lang: t.Optional(t.String())
       })

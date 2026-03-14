@@ -3,32 +3,24 @@ import { describe, expect, it } from 'bun:test'
 import { buildPublicApiUrl, resolvePublicAppConfig } from '../public-app-config'
 
 describe('resolvePublicAppConfig', () => {
-  it('falls back to client-friendly visibility defaults when platform defaults were injected', () => {
+  it('defaults fragment visibility to exact viewport intersection', () => {
     const config = resolvePublicAppConfig({
-      apiBase: '/api',
-      fragmentVisibilityMargin: '0px',
-      fragmentVisibilityThreshold: 0
+      apiBase: '/api'
     })
-
-    expect(config.fragmentVisibilityMargin).toBe('60% 0px')
-    expect(config.fragmentVisibilityThreshold).toBe(0.4)
-  })
-
-  it('preserves explicit visibility settings when env values were provided', () => {
-    const config = resolvePublicAppConfig(
-      {
-        apiBase: '/api',
-        fragmentVisibilityMargin: '0px',
-        fragmentVisibilityThreshold: 0
-      },
-      {
-        VITE_FRAGMENT_VISIBILITY_MARGIN: '0px',
-        VITE_FRAGMENT_VISIBILITY_THRESHOLD: '0'
-      }
-    )
 
     expect(config.fragmentVisibilityMargin).toBe('0px')
     expect(config.fragmentVisibilityThreshold).toBe(0)
+  })
+
+  it('preserves explicit visibility settings', () => {
+    const config = resolvePublicAppConfig({
+      apiBase: '/api',
+      fragmentVisibilityMargin: '15px',
+      fragmentVisibilityThreshold: 0.25
+    })
+
+    expect(config.fragmentVisibilityMargin).toBe('15px')
+    expect(config.fragmentVisibilityThreshold).toBe(0.25)
   })
 
   it('normalizes browser-facing URLs and flags', () => {

@@ -1,21 +1,62 @@
-import { describe, expect, it } from 'bun:test'
-import {
-  FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS,
-  FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS,
-  installFragmentStaticEntry,
-  resolveFragmentBootstrapIdleTimeout
-} from './fragment-static-entry'
+import { afterEach, describe, expect, it } from 'bun:test'
+import { installFragmentStaticEntry } from './fragment-static-entry'
 
 type Listener = (event?: Event) => void
 type ListenerMap = Map<string, Set<Listener>>
+
+const originalIntersectionObserver = globalThis.IntersectionObserver
+
+class MockStaticRoot {
+  dataset: { staticPath: string }
+
+  constructor(staticPath: string) {
+    this.dataset = { staticPath }
+  }
+}
+
+class MockIntersectionObserver {
+  static instances: MockIntersectionObserver[] = []
+
+  readonly targets = new Set<object>()
+
+  constructor(
+    readonly callback: IntersectionObserverCallback,
+    readonly options?: IntersectionObserverInit
+  ) {
+    MockIntersectionObserver.instances.push(this)
+  }
+
+  observe(target: object) {
+    this.targets.add(target)
+  }
+
+  disconnect() {
+    this.targets.clear()
+  }
+
+  emit(target: object, options: { isIntersecting?: boolean; intersectionRatio?: number } = {}) {
+    this.callback(
+      [
+        {
+          target,
+          isIntersecting: options.isIntersecting ?? true,
+          intersectionRatio: options.intersectionRatio ?? 1
+        } as IntersectionObserverEntry
+      ],
+      this as never
+    )
+  }
+
+  static reset() {
+    MockIntersectionObserver.instances = []
+  }
+}
 
 class MockWindow {
   __PROM_STATIC_FRAGMENT_BOOTSTRAP__?: boolean
   __PROM_STATIC_FRAGMENT_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
-  readonly timeouts = new Map<number, () => void>()
   location = { pathname: '/store' }
-  nextTimeoutId = 1
 
   addEventListener(type: string, listener: Listener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -32,33 +73,19 @@ class MockWindow {
     }
   }
 
-  setTimeout(callback: () => void) {
-    const id = this.nextTimeoutId
-    this.nextTimeoutId += 1
-    this.timeouts.set(id, callback)
-    return id as unknown as ReturnType<typeof setTimeout>
-  }
-
-  clearTimeout(id: ReturnType<typeof setTimeout>) {
-    this.timeouts.delete(id as unknown as number)
-  }
-
   emit(type: string) {
     ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener())
-  }
-
-  runTimeout(id = 1) {
-    const callback = this.timeouts.get(id)
-    if (!callback) return
-    this.timeouts.delete(id)
-    callback()
   }
 }
 
 class MockDocument {
   readonly listeners: ListenerMap = new Map()
   readyState: DocumentReadyState = 'complete'
-  staticPath = '/store'
+  root: MockStaticRoot | null
+
+  constructor(staticPath = '/store') {
+    this.root = new MockStaticRoot(staticPath)
+  }
 
   addEventListener(type: string, listener: Listener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -76,12 +103,10 @@ class MockDocument {
   }
 
   querySelector(selector: string) {
-    if (selector !== '[data-static-fragment-root]') return null
-    return {
-      dataset: {
-        staticPath: this.staticPath
-      }
+    if (selector === '[data-static-fragment-root]') {
+      return this.root
     }
+    return null
   }
 }
 
@@ -90,41 +115,52 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
-describe('installFragmentStaticEntry', () => {
-  it('waits until window load before arming fragment bootstrap triggers', async () => {
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    doc.readyState = 'loading'
-    doc.staticPath = '/lab'
-    let loadRuntimeCount = 0
+afterEach(() => {
+  globalThis.IntersectionObserver = originalIntersectionObserver
+  MockIntersectionObserver.reset()
+})
 
-    installFragmentStaticEntry({
+describe('installFragmentStaticEntry', () => {
+  it('waits until window load before prewarming the runtime and observing the root', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
+    const win = new MockWindow()
+    const doc = new MockDocument('/lab')
+    doc.readyState = 'loading'
+    let loadRuntimeCount = 0
+    let bootstrapCount = 0
+
+    const cleanup = installFragmentStaticEntry({
       win: win as never,
       doc: doc as never,
       loadRuntime: async () => {
         loadRuntimeCount += 1
         return {
-          bootstrapStaticFragmentShell: async () => undefined
+          bootstrapStaticFragmentShell: async () => {
+            bootstrapCount += 1
+          }
         }
       }
     })
 
-    win.emit('pointerdown')
-    await flushMicrotasks()
-
     expect(loadRuntimeCount).toBe(0)
-    expect(win.timeouts.size).toBe(0)
+    expect(MockIntersectionObserver.instances.length).toBe(0)
 
     win.emit('load')
     await flushMicrotasks()
 
-    expect(win.timeouts.size).toBe(1)
+    expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+    expect(MockIntersectionObserver.instances.length).toBe(1)
+
+    cleanup()
   })
 
-  it('starts bootstrap from user intent after load', async () => {
+  it('starts bootstrap when the static fragment root intersects the viewport', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
     const win = new MockWindow()
-    const doc = new MockDocument()
-    doc.staticPath = '/lab'
+    const doc = new MockDocument('/lab')
     let loadRuntimeCount = 0
     let bootstrapCount = 0
 
@@ -141,118 +177,84 @@ describe('installFragmentStaticEntry', () => {
       }
     })
 
-    expect(win.timeouts.size).toBe(1)
-
-    win.emit('pointerdown')
     await flushMicrotasks()
 
     expect(loadRuntimeCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+
+    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
+      isIntersecting: true,
+      intersectionRatio: 1
+    })
+    await flushMicrotasks()
+
     expect(bootstrapCount).toBe(1)
 
     cleanup()
   })
 
-  it('falls back to an idle bootstrap after load', async () => {
+  it('does not bootstrap while the root stays offscreen', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
     const win = new MockWindow()
-    const doc = new MockDocument()
-    doc.staticPath = '/lab'
-    let loadRuntimeCount = 0
+    const doc = new MockDocument('/lab')
     let bootstrapCount = 0
 
     const cleanup = installFragmentStaticEntry({
       win: win as never,
       doc: doc as never,
-      loadRuntime: async () => {
-        loadRuntimeCount += 1
-        return {
-          bootstrapStaticFragmentShell: async () => {
-            bootstrapCount += 1
-          }
+      loadRuntime: async () => ({
+        bootstrapStaticFragmentShell: async () => {
+          bootstrapCount += 1
         }
-      }
+      })
     })
 
-    expect(win.timeouts.size).toBe(1)
-
-    win.runTimeout()
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-    expect(resolveFragmentBootstrapIdleTimeout('/store')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
-    expect(resolveFragmentBootstrapIdleTimeout('/lab')).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
-    expect(resolveFragmentBootstrapIdleTimeout('/chat')).toBe(FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
+    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
+      isIntersecting: false,
+      intersectionRatio: 0
+    })
+    await flushMicrotasks()
+
+    expect(bootstrapCount).toBe(0)
 
     cleanup()
   })
 
-  it('falls back to window.location.pathname when the static fragment root is absent', async () => {
+  it('uses the lightweight store runtime when the store root becomes visible', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
     const win = new MockWindow()
-    win.location.pathname = '/lab/'
-    const doc = new MockDocument()
-    doc.staticPath = ''
-    doc.querySelector = () => null
-    let loadRuntimeCount = 0
-    let bootstrapCount = 0
-
-    const cleanup = installFragmentStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      loadRuntime: async () => {
-        loadRuntimeCount += 1
-        return {
-          bootstrapStaticFragmentShell: async () => {
-            bootstrapCount += 1
-          }
-        }
-      }
-    })
-
-    expect(win.timeouts.size).toBe(1)
-
-    win.runTimeout()
-    await flushMicrotasks()
-
-    expect(loadRuntimeCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-    expect(resolveFragmentBootstrapIdleTimeout(win.location.pathname)).toBe(FAST_FRAGMENT_BOOTSTRAP_IDLE_TIMEOUT_MS)
-
-    cleanup()
-  })
-
-  it('uses the lightweight store bootstrap runtime on store idle fallback', async () => {
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    let loadRuntimeCount = 0
-    let loadStoreRuntimeCount = 0
+    const doc = new MockDocument('/store')
+    let fragmentBootstrapCount = 0
     let storeBootstrapCount = 0
 
     const cleanup = installFragmentStaticEntry({
       win: win as never,
       doc: doc as never,
-      loadRuntime: async () => {
-        loadRuntimeCount += 1
-        return {
-          bootstrapStaticFragmentShell: async () => undefined
+      loadRuntime: async () => ({
+        bootstrapStaticFragmentShell: async () => {
+          fragmentBootstrapCount += 1
         }
-      },
-      loadStoreRuntime: async () => {
-        loadStoreRuntimeCount += 1
-        return {
-          bootstrapStaticStoreShell: async () => {
-            storeBootstrapCount += 1
-          }
+      }),
+      loadStoreRuntime: async () => ({
+        bootstrapStaticStoreShell: async () => {
+          storeBootstrapCount += 1
         }
-      }
+      })
     })
 
-    expect(win.timeouts.size).toBe(1)
-
-    win.runTimeout()
     await flushMicrotasks()
 
-    expect(loadRuntimeCount).toBe(0)
-    expect(loadStoreRuntimeCount).toBe(1)
+    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
+      isIntersecting: true,
+      intersectionRatio: 1
+    })
+    await flushMicrotasks()
+
+    expect(fragmentBootstrapCount).toBe(0)
     expect(storeBootstrapCount).toBe(1)
 
     cleanup()

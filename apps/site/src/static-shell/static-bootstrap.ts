@@ -41,6 +41,7 @@ import {
   restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
+import { appConfig } from '../public-app-config'
 
 type Theme = 'light' | 'dark'
 
@@ -52,9 +53,11 @@ type StaticFragmentController = {
   authPolicy: StaticShellSeed['authPolicy']
   streamAbort: AbortController | null
   streamRetryTimer: number
+  streamStartCancel: (() => void) | null
   cleanupFns: Array<() => void>
   destroyed: boolean
   routeData: StaticFragmentRouteData
+  visibleFragmentIds: Set<string>
 }
 
 const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
@@ -65,6 +68,8 @@ const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
 const STATIC_LANG_PREFERENCE_KEY = 'prometheus:pref:locale'
 const DARK_THEME_COLOR = '#0f172a'
 const LIGHT_THEME_COLOR = '#f97316'
+const STATIC_FRAGMENT_STREAM_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
+const STATIC_FRAGMENT_STREAM_THRESHOLD = appConfig.fragmentVisibilityThreshold
 
 let activeController: StaticFragmentController | null = null
 let fragmentStreamRuntimePromise: Promise<typeof import('./fragment-stream')> | null = null
@@ -201,6 +206,13 @@ const refreshThemeButton = (lang: Lang) => {
 }
 
 const hasStaticFragmentRoot = () => Boolean(document.querySelector('[data-static-fragment-root]'))
+const collectStaticFragmentCardIds = () =>
+  Array.from(document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`))
+    .map((element) => element.dataset.fragmentId)
+    .filter((id): id is string => Boolean(id))
+
+const collectVisibleStreamIds = (controller: Pick<StaticFragmentController, 'routeData' | 'visibleFragmentIds'>) =>
+  controller.routeData.fragmentOrder.filter((id) => controller.visibleFragmentIds.has(id))
 
 const readShellSeed = () => readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
 
@@ -344,6 +356,8 @@ const bindShellControls = (controller: StaticFragmentController) => {
 }
 
 const stopConnections = (controller: StaticFragmentController) => {
+  controller.streamStartCancel?.()
+  controller.streamStartCancel = null
   if (controller.streamAbort) {
     controller.streamAbort.abort()
     controller.streamAbort = null
@@ -368,6 +382,13 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
     controller.streamAbort.abort()
   }
 
+  const visibleIds = collectVisibleStreamIds(controller)
+  if (visibleIds.length === 0) {
+    controller.streamAbort = null
+    updateFragmentStatus(controller.lang, 'idle')
+    return
+  }
+
   const streamAbort = new AbortController()
   controller.streamAbort = streamAbort
   updateFragmentStatus(controller.lang, 'streaming')
@@ -377,6 +398,7 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
     await runtime.streamStaticFragments({
       path: controller.routeData.path,
       lang: controller.lang,
+      ids: visibleIds,
       signal: streamAbort.signal,
       routeData: controller.routeData,
       onFragment: () => {
@@ -402,8 +424,10 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
 
 const scheduleDeferredStreamStart = (controller: StaticFragmentController, delayMs = 1800) => {
   if (!hasStaticFragmentRoot()) return
+  controller.streamStartCancel?.()
   const cancelSchedule = scheduleStaticShellTask(
     () => {
+      controller.streamStartCancel = null
       if (controller.destroyed || document.visibilityState === 'hidden') return
       void startDeferredStream(controller)
     },
@@ -413,7 +437,64 @@ const scheduleDeferredStreamStart = (controller: StaticFragmentController, delay
       timeoutMs: delayMs > 0 ? delayMs : 120
     }
   )
-  controller.cleanupFns.push(cancelSchedule)
+  controller.streamStartCancel = () => {
+    cancelSchedule()
+    controller.streamStartCancel = null
+  }
+}
+
+const observeVisibleStaticFragments = (controller: StaticFragmentController) => {
+  const cardIds = collectStaticFragmentCardIds()
+  if (!cardIds.length) return () => undefined
+
+  const cards = Array.from(document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`)).filter((card) =>
+    Boolean(card.dataset.fragmentId)
+  )
+  const ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
+    .IntersectionObserver
+
+  if (typeof ObserverImpl !== 'function') {
+    cardIds.forEach((id) => controller.visibleFragmentIds.add(id))
+    scheduleDeferredStreamStart(controller, 0)
+    return () => {
+      controller.visibleFragmentIds.clear()
+    }
+  }
+
+  const observer = new ObserverImpl(
+    (entries) => {
+      let changed = false
+      entries.forEach((entry) => {
+        const id = (entry.target as HTMLElement).dataset.fragmentId
+        if (!id) return
+        const isVisible = entry.isIntersecting || entry.intersectionRatio > 0
+        if (isVisible) {
+          if (!controller.visibleFragmentIds.has(id)) {
+            controller.visibleFragmentIds.add(id)
+            changed = true
+          }
+          return
+        }
+        if (controller.visibleFragmentIds.delete(id)) {
+          changed = true
+        }
+      })
+      if (!changed) return
+      scheduleDeferredStreamStart(controller, controller.visibleFragmentIds.size > 0 ? 0 : 120)
+    },
+    {
+      root: null,
+      rootMargin: STATIC_FRAGMENT_STREAM_ROOT_MARGIN,
+      threshold: STATIC_FRAGMENT_STREAM_THRESHOLD
+    }
+  )
+
+  cards.forEach((card) => observer.observe(card))
+
+  return () => {
+    observer.disconnect()
+    controller.visibleFragmentIds.clear()
+  }
 }
 
 const destroyController = async (controller: StaticFragmentController | null) => {
@@ -568,9 +649,11 @@ export const bootstrapStaticFragmentShell = async () => {
     authPolicy: shellSeed.authPolicy,
     streamAbort: null,
     streamRetryTimer: 0,
+    streamStartCancel: null,
     cleanupFns: [],
     destroyed: false,
-    routeData
+    routeData,
+    visibleFragmentIds: new Set<string>()
   }
   activeController = controller
 
@@ -616,6 +699,7 @@ export const bootstrapStaticFragmentShell = async () => {
   bindShellControls(controller)
   prewarmRouteConnection(controller.path)
   await bindRouteControllers(controller)
+  controller.cleanupFns.push(observeVisibleStaticFragments(controller))
   updateFragmentStatus(controller.lang, 'idle')
 
   const handlePageHide = () => {
