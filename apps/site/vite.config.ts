@@ -145,6 +145,7 @@ const withBase = (value: string) => {
   return `${base}${trimmed}`
 }
 const staticCacheControl = 'public, max-age=31536000, immutable'
+const revalidateCacheControl = 'public, max-age=0, must-revalidate'
 const brotliQuality = 6
 const stripPublicBase = (pathname: string) => {
   if (publicBase === './' || publicBase === '/') return pathname
@@ -156,9 +157,17 @@ const stripPublicBase = (pathname: string) => {
   return pathname
 }
 const isStaticCachePath = (pathname: string) =>
-  /^\/(?:build|assets|icons)\//.test(pathname) ||
-  /^\/favicon\.[^/]+$/.test(pathname) ||
+  /^\/(?:build|assets)\//.test(pathname) ||
+  /^\/(?:icons\/[^/]*[-.][A-Za-z0-9_-]{8,}\.[^/]+|favicon(?:[-.][^/.]+)*[-.][A-Za-z0-9_-]{8,}\.[^/]+)$/.test(pathname)
+const isRevalidatedControlPath = (pathname: string) =>
+  pathname === '/service-worker.js' ||
+  pathname === '/q-manifest.json' ||
   pathname === '/manifest.webmanifest'
+const resolveCacheControl = (pathname: string) => {
+  if (isRevalidatedControlPath(pathname)) return revalidateCacheControl
+  if (isStaticCachePath(pathname)) return staticCacheControl
+  return null
+}
 const pwaPrecacheEntries = [
   { url: withBase('/'), revision: null },
   { url: withBase('/offline/'), revision: null },
@@ -518,7 +527,8 @@ const staticCacheHeadersPlugin = (): Plugin => {
     }
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
     const pathName = stripPublicBase(url.pathname)
-    if (!isStaticCachePath(pathName)) {
+    const cacheControl = resolveCacheControl(pathName)
+    if (!cacheControl) {
       next()
       return
     }
@@ -526,7 +536,7 @@ const staticCacheHeadersPlugin = (): Plugin => {
     let headerSet = false
     res.writeHead = ((...args: Parameters<typeof originalWriteHead>) => {
       if (!headerSet) {
-        res.setHeader('Cache-Control', staticCacheControl)
+        res.setHeader('Cache-Control', cacheControl)
         headerSet = true
       }
       return originalWriteHead(...args)
