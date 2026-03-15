@@ -44,8 +44,12 @@ type JsonScriptElement = {
 
 export type StaticHomeBootstrapDocument = Pick<Document, 'getElementById'>
 
-const isJsonScriptElement = (value: unknown): value is JsonScriptElement =>
-  Boolean(value) && typeof value === 'object' && 'textContent' in value
+const isJsonScriptElement = (value: unknown): value is JsonScriptElement => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  return 'textContent' in value
+}
 
 export const readJsonScript = <T,>(
   id: string,

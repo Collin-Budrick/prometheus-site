@@ -8,7 +8,7 @@ import { getPublicFragmentApiBase } from '../shared/public-fragment-config'
 import { FragmentStreamError } from './fragment-stream-error'
 import {
   buildHomeFragmentBootstrapHref,
-  readPrimedHomeFragmentBootstrapBytes,
+  consumePrimedHomeFragmentBootstrapBytes,
   fetchHomeFragmentBootstrapBytes,
   isHomeFragmentBootstrapSubset
 } from './home-fragment-bootstrap'
@@ -323,7 +323,7 @@ export const fetchHomeFragmentBootstrapSelection = async (
     lang: options.lang,
     bootstrapHref: options.bootstrapHref
   })
-  const primedBytes = readPrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
+  const primedBytes = consumePrimedHomeFragmentBootstrapBytes({ href: bootstrapHref })
   const bytes =
     (await primedBytes) ??
     (await fetchHomeFragmentBootstrapBytes({

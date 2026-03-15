@@ -4,7 +4,7 @@ const readSource = async (path: string) => await Bun.file(new URL(path, import.m
 
 describe('static shell performance invariants', () => {
   it('keeps the home bootstrap on the fast path', async () => {
-    const [bootstrapSource, fragmentBootstrapSource, islandBootstrapSource, snapshotClientSource, streamSource, runtimeLoaderSource, runtimeTypesSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource] = await Promise.all([
+    const [bootstrapSource, fragmentBootstrapSource, islandBootstrapSource, snapshotClientSource, streamSource, runtimeLoaderSource, runtimeTypesSource, bootstrapRuntimeLoaderSource, homeRenderSource, homeDefinitionSource, homeServerDefinitionSource, homeRouteSource, homeFragmentClientSource, globalCriticalSource, homeDemoPreviewSource, plannerDemoSource, fragmentHeightScriptSource, homeDemoEntrySource] = await Promise.all([
       readSource('./home-bootstrap.tsx'),
       readSource('./static-bootstrap.ts'),
       readSource('./island-bootstrap.ts'),
@@ -20,7 +20,9 @@ describe('static shell performance invariants', () => {
       readSource('./home-fragment-client.ts'),
       readSource('../../../../packages/ui/src/global-critical.css'),
       readSource('../components/HomeDemoPreview.tsx'),
-      readSource('../components/PlannerDemo.tsx')
+      readSource('../components/PlannerDemo.tsx'),
+      readSource('./fragment-height-script.ts'),
+      readSource('./home-demo-entry.ts')
     ])
 
     expect(bootstrapSource).toContain("from './home-stream'")
@@ -47,6 +49,8 @@ describe('static shell performance invariants', () => {
     expect(bootstrapSource).toContain('await demoStylesheetReady')
     expect(bootstrapSource).toContain("homeFragmentHydration.observeWithin(document)")
     expect(bootstrapSource).toContain('scheduleHomePostLcpTasks({')
+    expect(bootstrapSource).toContain('getHomeDemoControllerBinding')
+    expect(bootstrapSource).toContain('demoObservationReady: Boolean(existingDemoBinding)')
     expect(bootstrapSource).not.toContain('observeStaticHomePatchVisibility({')
     expect(bootstrapSource).not.toContain('streamHomeFragments')
     expect(bootstrapSource).not.toContain('activateHomeDemo,')
@@ -61,8 +65,10 @@ describe('static shell performance invariants', () => {
     expect(bootstrapRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
     expect(homeFragmentClientSource).toContain('export const fetchHomeFragmentBatch = async')
     expect(homeFragmentClientSource).toContain('buildHomeFragmentBootstrapHref')
-    expect(homeFragmentClientSource).toContain('readPrimedHomeFragmentBootstrapBytes')
+    expect(homeFragmentClientSource).toContain('consumePrimedHomeFragmentBootstrapBytes')
     expect(homeFragmentClientSource).toContain('fetchHomeFragmentBootstrapBytes')
+    expect(homeDemoEntrySource).toContain('getHomeDemoControllerBinding')
+    expect(homeDemoEntrySource).not.toContain("from './home-collab-entry-loader'")
     expect(streamSource).toContain('STATIC_HOME_PATCH_STATE_ATTR')
     expect(streamSource).toContain('STATIC_HOME_STAGE_ATTR')
     expect(streamSource).not.toContain('isEagerHomeDemoFragment')
@@ -115,6 +121,8 @@ describe('static shell performance invariants', () => {
     expect(homeServerDefinitionSource).toContain("className: 'home-fragment-copy'")
     expect(homeDemoPreviewSource).not.toContain('useStyles$(homeDemoActiveStyles)')
     expect(plannerDemoSource).not.toContain('useStyles$(homeDemoActiveStyles)')
+    expect(fragmentHeightScriptSource).toContain("window.requestIdleCallback(() => start(), { timeout: 1200 })")
+    expect(fragmentHeightScriptSource).toContain('currentStableHeight === null && isCardVisible(card)')
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
@@ -217,18 +225,24 @@ describe('static shell performance invariants', () => {
     expect(loginRouteSource).not.toContain('useVisibleTask$(')
     expect(loginRouteSource).not.toContain('loadHybridFragmentResource')
     expect(loginRouteSource).not.toContain('isStaticShellBuild')
-    expect(homeRouteSource).not.toContain("'data-home-demo-stylesheet': 'true'")
-    expect(homeRouteSource).not.toContain('buildHomeFragmentBootstrapPreloadLink(lang)')
+    expect(homeRouteSource).toContain("import homeDemoStylesheetHref from '../static-shell/home-static-deferred.css?url'")
+    expect(homeRouteSource).toContain("import { buildHomeFragmentBootstrapPreloadLink } from '../static-shell/home-fragment-bootstrap'")
+    expect(homeRouteSource).toContain('buildHomeFragmentBootstrapPreloadLink(lang)')
     expect(homeRouteSource).not.toContain('loadHybridFragmentResource')
     expect(homeStaticEntrySource).toContain('installHomeStaticEntry')
     expect(homeStaticEntrySource).toContain('createHomeFirstLcpGate')
     expect(homeStaticEntrySource).toContain('loadBootstrapRuntime = loadHomeBootstrapRuntime')
+    expect(homeStaticEntrySource).toContain('loadCollabRuntime = loadHomeCollabEntryRuntime')
     expect(homeStaticEntrySource).toContain('loadDemoRuntime = loadHomeDemoEntryRuntime')
+    expect(homeStaticEntrySource).toContain('primeBootstrap = primeHomeFragmentBootstrapBytes')
     expect(homeStaticEntrySource).toContain('HOME_BOOTSTRAP_INTENT_EVENTS')
     expect(homeStaticEntrySource).toContain('HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN')
+    expect(homeStaticEntrySource).toContain('HOME_COLLAB_ROOT_SELECTOR')
     expect(homeStaticEntrySource).toContain('readStaticHomeBootstrapData')
     expect(homeStaticEntrySource).toContain('collectAutoBootstrapHomeCards')
     expect(homeStaticEntrySource).toContain('isRefreshableHomeFragmentKind')
+    expect(homeStaticEntrySource).toContain('primeBootstrapRequest')
+    expect(homeStaticEntrySource).toContain('startCollabEntry')
     expect(homeStaticEntrySource).toContain('startDemoEntry()')
     expect(homeStaticEntrySource).toContain("liveWin.addEventListener('load', loadHandler, { once: true })")
     expect(homeStaticEntrySource).not.toContain('requestIdleCallback')
@@ -236,7 +250,9 @@ describe('static shell performance invariants', () => {
     expect(homeStaticEntrySource).toContain("'focusin'")
     expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'")
     expect(homeStaticEntrySource).not.toContain('scheduleStaticShellTask(')
-    expect(homeDemoEntrySource).toContain("from './home-collab-entry-loader'")
+    expect(homeDemoEntrySource).toContain("from './home-demo-controller-state'")
+    expect(homeDemoEntrySource).toContain("from './home-demo-performance'")
+    expect(homeDemoEntrySource).not.toContain("from './home-collab-entry-loader'")
     expect(homeDemoEntrySource).not.toContain("from './home-collab-text'")
     expect(entrySsrSource).toContain('home-bootstrap-runtime.js')
     expect(entrySsrSource).toContain('home-demo-entry.js')

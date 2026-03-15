@@ -501,7 +501,7 @@ describe('bindHomeDemoActivation', () => {
     expect(taskQueue.pendingCount()).toBe(0)
   })
 
-  it('does not activate demos that are only barely intersecting', async () => {
+  it('activates demos as soon as they intersect at the zero threshold', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -520,9 +520,6 @@ describe('bindHomeDemoActivation', () => {
     const observer = MockIntersectionObserver.instances[0]
 
     observer?.emit([{ target: planner as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
-    expect(taskQueue.pendingCount()).toBe(0)
-
-    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true, intersectionRatio: 0.2 }])
     expect(taskQueue.pendingCount()).toBe(1)
 
     await taskQueue.flushNext()
@@ -530,7 +527,7 @@ describe('bindHomeDemoActivation', () => {
     expect(activationCount).toBe(1)
   })
 
-  it('activates already-visible demo roots even when the observer has not emitted an initial entry yet', async () => {
+  it('falls back to viewport geometry when IntersectionObserver is unavailable', async () => {
     const taskQueue = createTaskQueue()
     const activations: string[] = []
     const controller = createController()
@@ -558,7 +555,6 @@ describe('bindHomeDemoActivation', () => {
       const manager = bindHomeDemoActivation({
         controller,
         scheduleTask: taskQueue.scheduleTask,
-        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
         activate: async ({ kind }) => {
           activations.push(kind)
           return { cleanup: () => undefined }
@@ -580,7 +576,7 @@ describe('bindHomeDemoActivation', () => {
     }
   })
 
-  it('batches initial viewport reads before warming demo assets', async () => {
+  it('does not read geometry eagerly before warming demo assets when observers exist', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -627,10 +623,19 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
 
-      expect(planner.rectReadCount).toBe(1)
-      expect(island.rectReadCount).toBe(1)
-      await taskQueue.flushNext()
-      expect(warmSnapshots).toEqual(['planner:1:1', 'preact-island:1:1'])
+      expect(planner.rectReadCount).toBe(0)
+      expect(island.rectReadCount).toBe(0)
+      expect(warmSnapshots).toEqual([])
+
+      MockIntersectionObserver.instances.forEach((observer) => {
+        observer.emit([
+          { target: planner as unknown as Element, isIntersecting: true },
+          { target: island as unknown as Element, isIntersecting: true }
+        ])
+      })
+      await flushMicrotasks()
+
+      expect(warmSnapshots).toEqual(['planner:0:0', 'preact-island:0:0'])
     } finally {
       globals.window = originalWindow
     }
@@ -683,14 +688,23 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
 
-      await taskQueue.flushNext()
+      const activationObserver = MockIntersectionObserver.instances[0]
+      const warmObserver = MockIntersectionObserver.instances[1]
+
+      activationObserver?.emit([{ target: planner as unknown as Element, isIntersecting: true }])
+      warmObserver?.emit([
+        { target: planner as unknown as Element, isIntersecting: true },
+        { target: island as unknown as Element, isIntersecting: true }
+      ])
+      await flushMicrotasks()
+
       expect(warmKinds).toEqual(['planner'])
     } finally {
       globals.window = originalWindow
     }
   })
 
-  it('caps desktop auto-warmup to the configured visible and near-view budget', async () => {
+  it('warms visible demos first and caps near-view warmups to the configured desktop budget', async () => {
     const taskQueue = createTaskQueue()
     const controller = createController()
     const planner = new MockDemoElement('planner')
@@ -755,7 +769,19 @@ describe('bindHomeDemoActivation', () => {
 
       manager.observeWithin(new MockRoot([planner, island, wasm, react]) as unknown as ParentNode)
 
-      await taskQueue.flushNext()
+      const activationObserver = MockIntersectionObserver.instances[0]
+      const warmObserver = MockIntersectionObserver.instances[1]
+
+      activationObserver?.emit([
+        { target: planner as unknown as Element, isIntersecting: true },
+        { target: island as unknown as Element, isIntersecting: true }
+      ])
+      warmObserver?.emit([
+        { target: wasm as unknown as Element, isIntersecting: true },
+        { target: react as unknown as Element, isIntersecting: true }
+      ])
+      await flushMicrotasks()
+
       expect(warmKinds).toEqual(['planner', 'preact-island', 'wasm-renderer'])
     } finally {
       globals.window = originalWindow
@@ -914,6 +940,52 @@ describe('scheduleHomePostLcpTasks', () => {
     expect(previewRefreshCalls).toEqual(['refresh'])
     expect(authRefreshCalls).toEqual(['refresh'])
     expect(observedRoots).toEqual([demoRoot])
+    cleanup()
+  })
+
+  it('skips deferred demo observation when an existing controller already owns it', async () => {
+    const manualGate = createManualLcpGate()
+    const win = new MockDeferredWindow()
+    const doc = new MockDeferredDocument()
+    const controller = createHomeBootstrapController()
+    const demoRoot = {} as ParentNode
+    const observedRoots: ParentNode[] = []
+    const previewRefreshCalls: string[] = []
+    const authRefreshCalls: string[] = []
+
+    controller.demoObservationReady = true
+
+    const cleanup = scheduleHomePostLcpTasks({
+      controller,
+      lcpGate: manualGate.gate,
+      homeDemoActivation: {
+        observeWithin: (root) => observedRoots.push(root)
+      },
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
+        retryPending: () => undefined
+      },
+      root: demoRoot,
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push('refresh')
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(win.idleCallbacks.size).toBe(1)
+    expect(observedRoots).toEqual([])
+
+    win.emit('pointerdown')
+    await flushMicrotasks()
+
+    expect(previewRefreshCalls).toEqual(['refresh'])
+    expect(authRefreshCalls).toEqual(['refresh'])
+    expect(observedRoots).toEqual([])
+
     cleanup()
   })
 

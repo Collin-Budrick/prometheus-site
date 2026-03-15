@@ -1,19 +1,66 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { installHomeStaticEntry } from './home-static-entry'
 import type { HomeFirstLcpGate } from './home-lcp-gate'
 import {
   STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
-  STATIC_HOME_STAGE_ATTR
+  STATIC_HOME_STAGE_ATTR,
+  STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
+import { HOME_COLLAB_ROOT_SELECTOR } from './home-collab-shared'
 
 type MockListener = (event?: { target?: unknown }) => void
 type ListenerMap = Map<string, Set<MockListener>>
 
+class MockScriptElement {
+  constructor(readonly textContent: string) {}
+}
+
+class MockIntersectionObserver {
+  static instances: MockIntersectionObserver[] = []
+  readonly observed = new Set<Element>()
+
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    MockIntersectionObserver.instances.push(this)
+  }
+
+  observe(target: Element) {
+    this.observed.add(target)
+  }
+
+  unobserve(target: Element) {
+    this.observed.delete(target)
+  }
+
+  disconnect() {
+    this.observed.clear()
+  }
+
+  emit(entries: Array<{ target: Element; isIntersecting: boolean; intersectionRatio?: number }>) {
+    this.callback(
+      entries.map(
+        ({ target, isIntersecting, intersectionRatio }) =>
+          ({
+            target,
+            isIntersecting,
+            intersectionRatio: typeof intersectionRatio === 'number' ? intersectionRatio : isIntersecting ? 1 : 0
+          }) as IntersectionObserverEntry
+      ),
+      this as unknown as IntersectionObserver
+    )
+  }
+
+  static reset() {
+    MockIntersectionObserver.instances.length = 0
+  }
+}
+
 class MockWindow {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
+  __PROM_STATIC_HOME_COLLAB_ENTRY__?: boolean
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
@@ -62,7 +109,8 @@ class MockDocument {
   readyState: DocumentReadyState = 'complete'
   activeElement: unknown = null
   querySelectorValue: unknown = null
-  querySelectorAllValue: unknown[] = []
+  fragmentCards: unknown[] = []
+  collabRoots: unknown[] = []
   listeners: ListenerMap = new Map()
 
   addEventListener(type: string, listener: MockListener) {
@@ -84,7 +132,33 @@ class MockDocument {
     ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
   }
 
-  getElementById() {
+  getElementById(id: string) {
+    if (id === STATIC_SHELL_SEED_SCRIPT_ID) {
+      return new MockScriptElement(
+        JSON.stringify({
+          currentPath: '/',
+          snapshotKey: '/',
+          isAuthenticated: false,
+          lang: 'en',
+          languageSeed: {}
+        })
+      )
+    }
+
+    if (id === STATIC_HOME_DATA_SCRIPT_ID) {
+      return new MockScriptElement(
+        JSON.stringify({
+          path: '/',
+          lang: 'en',
+          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/planner@v1',
+          fragmentOrder: ['fragment://page/home/planner@v1'],
+          fragmentVersions: {},
+          languageSeed: {},
+          homeDemoAssets: {}
+        })
+      )
+    }
+
     return null
   }
 
@@ -95,8 +169,14 @@ class MockDocument {
     return null
   }
 
-  querySelectorAll() {
-    return this.querySelectorAllValue
+  querySelectorAll(selector?: string) {
+    if (selector === HOME_COLLAB_ROOT_SELECTOR) {
+      return this.collabRoots
+    }
+    if (selector?.includes(STATIC_FRAGMENT_CARD_ATTR)) {
+      return this.fragmentCards
+    }
+    return []
   }
 }
 
@@ -115,6 +195,16 @@ class MockFragmentCard {
 
   getAttribute(name: string) {
     return this.attrs.get(name) ?? null
+  }
+}
+
+class MockCollabRoot {
+  constructor(private readonly visible = true) {}
+
+  getBoundingClientRect() {
+    return this.visible
+      ? ({ top: 0, left: 0, right: 320, bottom: 240 } as DOMRect)
+      : ({ top: 1600, left: 0, right: 320, bottom: 1840 } as DOMRect)
   }
 }
 
@@ -141,6 +231,14 @@ const createManualGate = () => {
     cleanupCount: () => cleanupCount
   }
 }
+
+const originalIntersectionObserver = globalThis.IntersectionObserver
+
+afterEach(() => {
+  ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
+    originalIntersectionObserver
+  MockIntersectionObserver.reset()
+})
 
 describe('installHomeStaticEntry', () => {
   it('starts the demo entry immediately after the LCP gate resolves', async () => {
@@ -187,12 +285,13 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('does not start bootstrap on early intent until the LCP gate resolves', async () => {
+  it('primes bootstrap bytes on early intent but waits for the LCP gate before patching', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
+    let bootstrapPrimeCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -208,6 +307,10 @@ describe('installHomeStaticEntry', () => {
             bootstrapCount += 1
           }
         }
+      },
+      primeBootstrap: async () => {
+        bootstrapPrimeCount += 1
+        return new Uint8Array([1, 2, 3])
       }
     })
 
@@ -218,12 +321,14 @@ describe('installHomeStaticEntry', () => {
     win.emit('pointerdown', { target: fragmentCardTarget })
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(0)
+    expect(bootstrapPrimeCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
+    expect(bootstrapPrimeCount).toBe(1)
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
     expect(manualGate.cleanupCount()).toBe(1)
@@ -232,13 +337,17 @@ describe('installHomeStaticEntry', () => {
   })
 
   it('starts bootstrap when a pending deferred home card becomes visible after the LCP gate resolves', async () => {
+    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver
+
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const card = new MockFragmentCard('deferred', 'pending')
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
-    doc.querySelectorAllValue = [new MockFragmentCard('deferred', 'pending')]
+    doc.fragmentCards = [card]
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -247,6 +356,7 @@ describe('installHomeStaticEntry', () => {
       loadDemoRuntime: async () => ({
         installHomeDemoEntry: () => () => undefined
       }),
+      primeBootstrap: async () => new Uint8Array([1]),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
         return {
@@ -261,19 +371,33 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+
+    const cardObserver = MockIntersectionObserver.instances.find((observer) =>
+      observer.observed.has(card as unknown as Element)
+    )
+    expect(cardObserver).toBeDefined()
+
+    cardObserver?.emit([{ target: card as unknown as Element, isIntersecting: true }])
+    await flushMicrotasks()
+
     expect(bootstrapCount).toBe(1)
 
     cleanup()
   })
 
-  it('starts bootstrap when a ready compact demo card is present after the LCP gate resolves', async () => {
+  it('starts bootstrap when a ready compact demo card becomes visible after the LCP gate resolves', async () => {
+    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver
+
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const card = new MockFragmentCard('anchor', 'ready', 'planner')
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
-    doc.querySelectorAllValue = [new MockFragmentCard('anchor', 'ready', 'planner')]
+    doc.fragmentCards = [card]
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -282,6 +406,7 @@ describe('installHomeStaticEntry', () => {
       loadDemoRuntime: async () => ({
         installHomeDemoEntry: () => () => undefined
       }),
+      primeBootstrap: async () => new Uint8Array([1]),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
         return {
@@ -296,7 +421,71 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+
+    const cardObserver = MockIntersectionObserver.instances.find((observer) =>
+      observer.observed.has(card as unknown as Element)
+    )
+    expect(cardObserver).toBeDefined()
+
+    cardObserver?.emit([{ target: card as unknown as Element, isIntersecting: true }])
+    await flushMicrotasks()
+
     expect(bootstrapCount).toBe(1)
+
+    cleanup()
+  })
+
+  it('loads the collab runtime only when the collab root enters the viewport', async () => {
+    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver
+
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const manualGate = createManualGate()
+    const collabRoot = new MockCollabRoot()
+    let collabLoadCount = 0
+    let collabInstallCount = 0
+
+    doc.collabRoots = [collabRoot]
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      loadDemoRuntime: async () => ({
+        installHomeDemoEntry: () => () => undefined
+      }),
+      loadBootstrapRuntime: async () => ({
+        bootstrapStaticHome: async () => undefined
+      }),
+      loadCollabRuntime: async () => {
+        collabLoadCount += 1
+        return {
+          installHomeCollabEntry: () => {
+            collabInstallCount += 1
+            return () => undefined
+          }
+        }
+      }
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(collabLoadCount).toBe(0)
+    expect(collabInstallCount).toBe(0)
+
+    const collabObserver = MockIntersectionObserver.instances.find((observer) =>
+      observer.observed.has(collabRoot as unknown as Element)
+    )
+    expect(collabObserver).toBeDefined()
+
+    collabObserver?.emit([{ target: collabRoot as unknown as Element, isIntersecting: true }])
+    await flushMicrotasks()
+
+    expect(collabLoadCount).toBe(1)
+    expect(collabInstallCount).toBe(1)
 
     cleanup()
   })

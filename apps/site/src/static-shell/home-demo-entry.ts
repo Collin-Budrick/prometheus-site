@@ -3,26 +3,22 @@ import {
   bindHomeDemoActivation,
   type HomeDemoController
 } from './home-demo-controller'
-import { loadHomeCollabEntryRuntime } from './home-collab-entry-loader'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
-  HOME_COLLAB_DEFERRED_STATUS_COPY,
-  HOME_COLLAB_ROOT_SELECTOR,
-  HOME_COLLAB_STATUS_SELECTOR
-} from './home-collab-shared'
+  clearHomeDemoControllerBinding,
+  getHomeDemoControllerBinding,
+  setHomeDemoControllerBinding
+} from './home-demo-controller-state'
+import { markHomeDemoPerformance } from './home-demo-performance'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 
 type HomeDemoEntryWindow = Window & {
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
 }
 
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS = 2500
-const HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE = 3500
-
 type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null
   doc?: Document | null
-  loadCollabRuntime?: typeof loadHomeCollabEntryRuntime
 }
 
 const destroyHomeDemoController = (controller: HomeDemoController) => {
@@ -34,129 +30,9 @@ const destroyHomeDemoController = (controller: HomeDemoController) => {
   controller.pendingDemoRoots.clear()
 }
 
-type ScheduleHomeCollabEntryOptions = {
-  win: HomeDemoEntryWindow
-  doc: Document
-  loadCollabRuntime?: typeof loadHomeCollabEntryRuntime
-}
-
-export const scheduleHomeCollabEntry = ({
-  win,
-  doc,
-  loadCollabRuntime = loadHomeCollabEntryRuntime
-}: ScheduleHomeCollabEntryOptions) => {
-  const roots = Array.from(doc.querySelectorAll<HTMLElement>(HOME_COLLAB_ROOT_SELECTOR))
-  if (roots.length === 0) {
-    return () => undefined
-  }
-
-  const idleTimeoutMs =
-    typeof win.matchMedia === 'function' && win.matchMedia('(max-width: 767px)').matches
-      ? HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS_MOBILE
-      : HOME_DEFERRED_COLLAB_IDLE_TIMEOUT_MS
-
-  roots.forEach((root) => {
-    const status =
-      typeof root.querySelector === 'function'
-        ? root.querySelector<HTMLElement>(HOME_COLLAB_STATUS_SELECTOR)
-        : null
-    status?.replaceChildren(HOME_COLLAB_DEFERRED_STATUS_COPY)
-  })
-
-  let destroyed = false
-  let started = false
-  let idleHandle: number | null =
-    typeof win.requestIdleCallback === 'function'
-      ? win.requestIdleCallback(() => {
-          idleHandle = null
-          void start()
-        }, { timeout: idleTimeoutMs })
-      : null
-  let idleTimer: number | null =
-    idleHandle === null
-      ? (win.setTimeout(() => {
-          idleTimer = null
-          void start()
-        }, idleTimeoutMs) as unknown as number)
-      : null
-  let destroyHomeCollabEntry: () => void = () => undefined
-
-  const clearIdleTimer = () => {
-    if (idleHandle !== null && typeof win.cancelIdleCallback === 'function') {
-      win.cancelIdleCallback(idleHandle)
-      idleHandle = null
-    }
-    if (idleTimer === null) {
-      return
-    }
-    win.clearTimeout(idleTimer)
-    idleTimer = null
-  }
-
-  const matchesCollabRoot = (target: EventTarget | null) =>
-    typeof Node !== 'undefined' &&
-    target instanceof Node &&
-    roots.some((root) => root.contains(target))
-
-  const removeIntentListeners = () => {
-    doc.removeEventListener('pointerdown', handlePointerDown, true)
-    doc.removeEventListener('focusin', handleFocusIn, true)
-    doc.removeEventListener('keydown', handleKeyDown, true)
-  }
-
-  const start = async (initialTarget: EventTarget | null = null) => {
-    if (destroyed || started) {
-      return
-    }
-    started = true
-    clearIdleTimer()
-    removeIntentListeners()
-
-    const { installHomeCollabEntry } = await loadCollabRuntime()
-    if (destroyed) {
-      return
-    }
-    destroyHomeCollabEntry = installHomeCollabEntry({ initialTarget })
-  }
-
-  const handlePointerDown = (event: Event) => {
-    if (!matchesCollabRoot(event.target)) {
-      return
-    }
-    void start(event.target)
-  }
-
-  const handleFocusIn = (event: Event) => {
-    if (!matchesCollabRoot(event.target)) {
-      return
-    }
-    void start(event.target)
-  }
-
-  const handleKeyDown = () => {
-    const activeElement = doc.activeElement
-    if (!matchesCollabRoot(activeElement)) {
-      return
-    }
-    void start(activeElement)
-  }
-
-  doc.addEventListener('pointerdown', handlePointerDown, true)
-  doc.addEventListener('focusin', handleFocusIn, true)
-  doc.addEventListener('keydown', handleKeyDown, true)
-
-  return () => {
-    destroyed = true
-    clearIdleTimer()
-    removeIntentListeners()
-    destroyHomeCollabEntry()
-  }
-}
-
 export const installHomeDemoEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeDemoEntryWindow) : null,
-  doc = typeof document !== 'undefined' ? document : null,
-  loadCollabRuntime = loadHomeCollabEntryRuntime
+  doc = typeof document !== 'undefined' ? document : null
 }: InstallHomeDemoEntryOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
     return () => undefined
@@ -169,8 +45,14 @@ export const installHomeDemoEntry = ({
 
   primeTrustedTypesPolicies()
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true
-  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
-    performance.mark('prom:home:demo-entry-install')
+  markHomeDemoPerformance('prom:home:demo-entry-install')
+
+  const existingBinding = getHomeDemoControllerBinding(win)
+  if (existingBinding && !existingBinding.controller.destroyed) {
+    existingBinding.manager.observeWithin(doc)
+    return () => {
+      win.__PROM_STATIC_HOME_DEMO_ENTRY__ = false
+    }
   }
 
   const controller: HomeDemoController = {
@@ -185,24 +67,15 @@ export const installHomeDemoEntry = ({
     destroyed: false
   }
 
-  let destroyHomeCollabEntry: () => void = () => undefined
   const manager = bindHomeDemoActivation({ controller })
   manager.observeWithin(doc)
-  destroyHomeCollabEntry = scheduleHomeCollabEntry({
-    win,
-    doc,
-    loadCollabRuntime: async () => {
-      try {
-        return await loadCollabRuntime()
-      } catch (error) {
-        console.error('Static home collab entry failed:', error)
-        throw error
-      }
-    }
-  })
+  const binding = setHomeDemoControllerBinding({
+    controller,
+    manager
+  }, win)
 
   return () => {
-    destroyHomeCollabEntry()
+    clearHomeDemoControllerBinding(binding, win)
     manager.destroy()
     destroyHomeDemoController(controller)
     win.__PROM_STATIC_HOME_DEMO_ENTRY__ = false

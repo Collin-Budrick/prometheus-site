@@ -159,6 +159,7 @@ export const writeCache = async (cache: CacheClient, key: string, value: unknown
       cache.client.set(commandOptions, key, JSON.stringify(value), { EX: ttlSeconds })
     )
   } catch (error) {
+    if (shouldIgnoreCacheLockReleaseError(error)) return
     console.warn('Failed to write cache entry', { key, error })
   }
 }

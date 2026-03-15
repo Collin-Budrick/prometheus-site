@@ -6,6 +6,7 @@ import {
   HOME_DEMO_RUNTIME_ASSET_PATHS
 } from './home-demo-runtime-types'
 import type { HomeDemoKind } from './home-demo-activate'
+import { markHomeDemoPerformance } from './home-demo-performance'
 import { resolveStaticAssetUrl } from './static-asset-url'
 
 export type { HomeDemoRuntimeModule } from './home-demo-runtime-types'
@@ -39,13 +40,6 @@ const stylePromises = new Map<HomeDemoKind, Promise<void>>()
 const warmPromises = new Map<HomeDemoKind, Promise<void>>()
 const preloadPromises = new Map<HomeDemoKind, Promise<void>>()
 let combinedHomeDemoStylesheetPromise: Promise<void> | null = null
-
-const markPerformance = (name: string) => {
-  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
-    return
-  }
-  performance.mark(name)
-}
 
 const importHomeDemoRuntime = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomeDemoRuntimeModule
@@ -220,14 +214,14 @@ export const warmHomeDemoKind = (
     return existingPromise
   }
 
-  markPerformance(`prom:home-demo:warm-start:${kind}`)
+  markHomeDemoPerformance(`prom:home-demo:warm-start:${kind}`, { detailed: true })
   const moduleHref = resolveModuleUrl(kind, asset)
 
   const promise = Promise.all([
     ensureHomeDemoKindStyle({ kind, asset, doc }),
     ensureModulePreloadLink(kind, moduleHref, doc)
   ]).then(() => {
-    markPerformance(`prom:home-demo:warm-ready:${kind}`)
+    markHomeDemoPerformance(`prom:home-demo:warm-ready:${kind}`, { detailed: true })
   })
 
   warmPromises.set(kind, promise)

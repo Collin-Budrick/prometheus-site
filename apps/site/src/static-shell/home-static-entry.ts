@@ -1,5 +1,7 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
+import { loadHomeCollabEntryRuntime } from './home-collab-entry-loader'
 import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
+import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
@@ -9,6 +11,7 @@ import {
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR
 } from './constants'
+import { HOME_COLLAB_ROOT_SELECTOR } from './home-collab-shared'
 import { appConfig } from '../public-app-config'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
@@ -17,6 +20,7 @@ export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilit
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
+  __PROM_STATIC_HOME_COLLAB_ENTRY__?: boolean
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
 }
@@ -25,11 +29,14 @@ type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
   doc?: Document | null
   loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
+  loadCollabRuntime?: typeof loadHomeCollabEntryRuntime
   loadDemoRuntime?: typeof loadHomeDemoEntryRuntime
+  primeBootstrap?: typeof primeHomeFragmentBootstrapBytes
   createLcpGate?: typeof createHomeFirstLcpGate
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = `[${STATIC_FRAGMENT_CARD_ATTR}]`
+const HOME_COLLAB_VISIBILITY_ROOT_MARGIN = '0px'
 
 const isAutoBootstrapHomeCardStage = (value: string | null) => value === 'anchor' || value === 'deferred'
 const isRefreshableHomeFragmentKind = (value: string | null) =>
@@ -61,6 +68,28 @@ const collectAutoBootstrapHomeCards = (root: Pick<Document, 'querySelectorAll'>)
         isAutoBootstrapHomeCard(card)
       )
     : []
+
+const isElementInViewport = (element: Element) => {
+  if (typeof (element as HTMLElement).getBoundingClientRect !== 'function') {
+    return true
+  }
+
+  const rect = (element as HTMLElement).getBoundingClientRect()
+  const viewportWidth =
+    typeof window !== 'undefined' && typeof window.innerWidth === 'number'
+      ? window.innerWidth
+      : document.documentElement?.clientWidth ?? 0
+  const viewportHeight =
+    typeof window !== 'undefined' && typeof window.innerHeight === 'number'
+      ? window.innerHeight
+      : document.documentElement?.clientHeight ?? 0
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return true
+  }
+
+  return rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth
+}
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -114,7 +143,9 @@ export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   loadBootstrapRuntime = loadHomeBootstrapRuntime,
+  loadCollabRuntime = loadHomeCollabEntryRuntime,
   loadDemoRuntime = loadHomeDemoEntryRuntime,
+  primeBootstrap = primeHomeFragmentBootstrapBytes,
   createLcpGate = createHomeFirstLcpGate
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
@@ -127,15 +158,20 @@ export const installHomeStaticEntry = ({
   liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
   let startedBootstrap = false
+  let startedCollabEntry = false
   let startedDemoEntry = false
   let loadHandler: (() => void) | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
+  let bootstrapPrimePromise: Promise<Uint8Array> | null = null
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
+  let collabEntryCleanup: (() => void) | null = null
+  let collabVisibilityObserver: IntersectionObserver | null = null
   let lcpGateCleanup: (() => void) | null = null
   let demoEntryCleanup: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
   const observedCards = new Set<Element>()
+  const observedCollabRoots = new Set<Element>()
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
 
@@ -152,10 +188,15 @@ export const installHomeStaticEntry = ({
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
+    collabEntryCleanup?.()
+    collabEntryCleanup = null
     demoEntryCleanup?.()
     demoEntryCleanup = null
+    collabVisibilityObserver?.disconnect()
+    collabVisibilityObserver = null
     visibilityObserver?.disconnect()
     visibilityObserver = null
+    observedCollabRoots.clear()
     observedCards.clear()
   }
 
@@ -176,6 +217,39 @@ export const installHomeStaticEntry = ({
     return bootstrapRuntimePromise
   }
 
+  const primeBootstrapRequest = () => {
+    const data = readStaticHomeBootstrapData({ doc: liveDoc })
+    const bootstrapHref = data?.fragmentBootstrapHref
+    if (!bootstrapHref || bootstrapPrimePromise) {
+      return bootstrapPrimePromise
+    }
+
+    bootstrapPrimePromise = primeBootstrap({ href: bootstrapHref }).catch((error) => {
+      bootstrapPrimePromise = null
+      console.error('Static home bootstrap prime failed:', error)
+      throw error
+    })
+
+    return bootstrapPrimePromise
+  }
+
+  const startCollabEntry = (initialTarget: EventTarget | null = null) => {
+    if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) return
+    startedCollabEntry = true
+    collabVisibilityObserver?.disconnect()
+    collabVisibilityObserver = null
+    observedCollabRoots.clear()
+
+    void loadCollabRuntime()
+      .then(({ installHomeCollabEntry }) => {
+        collabEntryCleanup = installHomeCollabEntry({ initialTarget })
+      })
+      .catch((error) => {
+        startedCollabEntry = false
+        console.error('Static home collab entry failed:', error)
+      })
+  }
+
   const startBootstrap = () => {
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
@@ -194,6 +268,11 @@ export const installHomeStaticEntry = ({
 
   function requestBootstrap() {
     bootstrapRequested = true
+    void prewarmBootstrapRuntime().catch((error) => {
+      bootstrapRuntimePromise = null
+      console.error('Static home bootstrap prewarm failed:', error)
+    })
+    void primeBootstrapRequest()?.catch(() => undefined)
     if (lcpGateReleased) {
       startBootstrap()
     }
@@ -263,6 +342,58 @@ export const installHomeStaticEntry = ({
     })
   }
 
+  const observeCollabRoots = () => {
+    if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) {
+      return
+    }
+
+    const roots =
+      typeof liveDoc.querySelectorAll === 'function'
+        ? Array.from(liveDoc.querySelectorAll<HTMLElement>(HOME_COLLAB_ROOT_SELECTOR))
+        : []
+    if (!roots.length) {
+      return
+    }
+
+    if (typeof IntersectionObserver !== 'function') {
+      const visibleRoot = roots.find((root) => isElementInViewport(root))
+      if (visibleRoot) {
+        startCollabEntry(visibleRoot)
+      }
+      return
+    }
+
+    if (!collabVisibilityObserver) {
+      collabVisibilityObserver = new IntersectionObserver(
+        (entries) => {
+          if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) {
+            return
+          }
+
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) {
+              return
+            }
+            startCollabEntry(entry.target)
+          })
+        },
+        {
+          root: null,
+          rootMargin: HOME_COLLAB_VISIBILITY_ROOT_MARGIN,
+          threshold: 0
+        }
+      )
+    }
+
+    roots.forEach((root) => {
+      if (observedCollabRoots.has(root)) {
+        return
+      }
+      observedCollabRoots.add(root)
+      collabVisibilityObserver?.observe(root)
+    })
+  }
+
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
@@ -270,6 +401,7 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup?.()
     lcpGateCleanup = null
     startDemoEntry()
+    observeCollabRoots()
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)

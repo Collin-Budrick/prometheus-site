@@ -12,6 +12,11 @@ import {
   type HomeDemoActivationManager,
   type HomeDemoController
 } from './home-demo-controller'
+import {
+  clearHomeDemoControllerBinding,
+  getHomeDemoControllerBinding,
+  setHomeDemoControllerBinding
+} from './home-demo-controller-state'
 import { normalizeHomeDemoAssetMap, type HomeDemoAssetMap } from './home-demo-runtime-types'
 import { ensureHomeDemoStylesheet } from './home-demo-runtime-loader'
 import {
@@ -1032,13 +1037,15 @@ export const scheduleHomePostLcpTasks = ({
       win,
       doc
     })
-    deferredDemoObservation = scheduleHomeDeferredDemoObservation({
-      controller,
-      homeDemoActivation,
-      root,
-      win,
-      doc
-    })
+    if (!controller.demoObservationReady) {
+      deferredDemoObservation = scheduleHomeDeferredDemoObservation({
+        controller,
+        homeDemoActivation,
+        root,
+        win,
+        doc
+      })
+    }
   }
 
   void lcpGate.wait.then(() => {
@@ -1191,6 +1198,10 @@ const stopHomeHydrationFetches = (controller: HomeControllerState) => {
 
 const destroyController = async (controller: HomeControllerState | null) => {
   if (!controller) return
+  const existingBinding = getHomeDemoControllerBinding()
+  if (existingBinding?.controller === controller) {
+    clearHomeDemoControllerBinding(existingBinding)
+  }
   controller.destroyed = true
   stopHomeHydrationFetches(controller)
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
@@ -1262,29 +1273,49 @@ export const bootstrapStaticHome = async () => {
   applyShellLanguageSeed(data.lang, data.shellSeed, data.routeSeed)
   await destroyController(activeController)
 
-  const controller: HomeControllerState = {
-    isAuthenticated: data.isAuthenticated,
-    lang: data.lang,
-    path: data.currentPath,
-    fragmentOrder: data.fragmentOrder,
-    planSignature: data.planSignature ?? '',
-    versionSignature: data.versionSignature ?? '',
-    assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
-    homeDemoStylesheetHref: data.homeDemoStylesheetHref,
-    homeFragmentBootstrapHref: data.fragmentBootstrapHref,
-    fetchAbort: null,
-    cleanupFns: [],
-    demoRenders: new Map(),
-    pendingDemoRoots: new Set(),
-    demoObservationReady: false,
-    patchQueue: null,
-    destroyed: false
-  }
+  const existingDemoBinding = getHomeDemoControllerBinding()
+  const controller: HomeControllerState = Object.assign(
+    (existingDemoBinding?.controller ?? {
+      demoRenders: new Map(),
+      pendingDemoRoots: new Set()
+    }) as HomeControllerState,
+    {
+      isAuthenticated: data.isAuthenticated,
+      lang: data.lang,
+      path: data.currentPath,
+      fragmentOrder: data.fragmentOrder,
+      planSignature: data.planSignature ?? '',
+      versionSignature: data.versionSignature ?? '',
+      assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
+      homeDemoStylesheetHref: data.homeDemoStylesheetHref,
+      homeFragmentBootstrapHref: data.fragmentBootstrapHref,
+      fetchAbort: null,
+      cleanupFns: [],
+      demoObservationReady: Boolean(existingDemoBinding),
+      patchQueue: null,
+      destroyed: false
+    }
+  )
   activeController = controller
 
-  const homeDemoActivation = bindHomeDemoActivation({ controller })
+  const homeDemoActivation =
+    existingDemoBinding?.controller === controller
+      ? existingDemoBinding.manager
+      : bindHomeDemoActivation({ controller })
+  if (existingDemoBinding?.controller !== controller) {
+    setHomeDemoControllerBinding({
+      controller,
+      manager: homeDemoActivation
+    })
+  }
   const homeFragmentHydration = bindHomeFragmentHydration({ controller })
-  controller.cleanupFns.push(() => homeDemoActivation.destroy())
+  controller.cleanupFns.push(() => {
+    const binding = getHomeDemoControllerBinding()
+    if (binding?.controller === controller) {
+      clearHomeDemoControllerBinding(binding)
+    }
+    homeDemoActivation.destroy()
+  })
   controller.cleanupFns.push(() => homeFragmentHydration.destroy())
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
@@ -1313,7 +1344,9 @@ export const bootstrapStaticHome = async () => {
     scheduleStaticShellTask(
       () => {
         if (controller.destroyed) return
-        armHomeDemoObservation(controller, homeDemoActivation, document)
+        if (!existingDemoBinding) {
+          armHomeDemoObservation(controller, homeDemoActivation, document)
+        }
         homeFragmentHydration.observeWithin(document)
         void syncHomeDockIfNeeded(controller).catch((error) => {
           console.error('Static home dock sync failed:', error)
@@ -1326,24 +1359,26 @@ export const bootstrapStaticHome = async () => {
       }
     )
   )
-  controller.cleanupFns.push(
-    scheduleHomeDemoObservationRetries({
-      controller,
-      homeDemoActivation
-    })
-  )
-  controller.cleanupFns.push(
-    scheduleStaticShellTask(
-      () => {
-        armHomeDemoObservation(controller, homeDemoActivation, document)
-      },
-      {
-        priority: 'background',
-        timeoutMs: HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS,
-        waitForPaint: true
-      }
+  if (!existingDemoBinding) {
+    controller.cleanupFns.push(
+      scheduleHomeDemoObservationRetries({
+        controller,
+        homeDemoActivation
+      })
     )
-  )
+    controller.cleanupFns.push(
+      scheduleStaticShellTask(
+        () => {
+          armHomeDemoObservation(controller, homeDemoActivation, document)
+        },
+        {
+          priority: 'background',
+          timeoutMs: HOME_DEFERRED_DEMO_OBSERVATION_IDLE_TIMEOUT_MS,
+          waitForPaint: true
+        }
+      )
+    )
+  }
   controller.cleanupFns.push(
     scheduleStaticShellTask(
       () => {

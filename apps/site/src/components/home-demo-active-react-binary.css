@@ -157,15 +157,39 @@
 
   .react-binary-panel {
     @apply rounded-2xl border border-slate-200/70 bg-white/80 p-3;
+    position: relative;
     display: grid;
     gap: 8px;
     min-height: 150px;
+    overflow: hidden;
     transition:
       border-color 180ms ease,
-      box-shadow 180ms ease,
-      transform 180ms ease;
+      transform 180ms ease,
+      background-color 180ms ease;
     background-color: rgb(var(--surface) / 0.85);
     border-color: rgb(var(--stroke) / 0.7);
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+  }
+
+  .react-binary-panel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(circle at 20% 12%, var(--react-binary-panel-glow, transparent), transparent 60%),
+      linear-gradient(135deg, var(--react-binary-panel-surface, transparent), transparent 72%);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
+
+  .react-binary-panel > * {
+    position: relative;
+    z-index: 1;
   }
 
   .react-binary-panel-title {
@@ -175,17 +199,19 @@
   .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"] {
     border-color: rgb(var(--accent) / 0.5);
     background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.95));
-    box-shadow: 0 14px 26px rgba(249, 115, 22, 0.16);
     opacity: 1;
     transform: translateY(-2px);
+    --react-binary-panel-glow: rgb(var(--accent) / 0.16);
+    --react-binary-panel-surface: rgb(var(--accent) / 0.12);
   }
 
   .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
     border-color: rgb(var(--accent) / 0.55);
     background: linear-gradient(135deg, rgb(var(--accent) / 0.1), rgb(var(--surface) / 0.95));
-    box-shadow: 0 14px 26px rgba(249, 115, 22, 0.2);
     opacity: 1;
     transform: translateY(-2px);
+    --react-binary-panel-glow: rgb(var(--accent) / 0.2);
+    --react-binary-panel-surface: rgb(var(--accent) / 0.14);
   }
 
   .react-binary-panel[data-panel="binary"] .react-binary-panel-title,
@@ -198,9 +224,17 @@
   .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
     border-color: rgb(var(--signal) / 0.55);
     background: linear-gradient(135deg, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.95));
-    box-shadow: 0 14px 26px rgba(20, 184, 166, 0.18);
     opacity: 1;
     transform: translateY(-2px);
+    --react-binary-panel-glow: rgb(var(--signal) / 0.18);
+    --react-binary-panel-surface: rgb(var(--signal) / 0.14);
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"]::after,
+  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"]::after,
+  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"]::after {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   .react-binary-demo[data-stage="binary"] .react-binary-connector::before {

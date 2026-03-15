@@ -153,7 +153,8 @@ const bindHomeDemoViewportPlayback = (
   onViewportActiveChange: (active: boolean) => void
 ) => {
   let observer: IntersectionObserver | null = null
-  let viewportActive = isHomeDemoRootInViewport(root)
+  const canObserveViewport = typeof IntersectionObserver === 'function'
+  let viewportActive = canObserveViewport ? true : isHomeDemoRootInViewport(root)
 
   const setViewportActive = (active: boolean) => {
     if (viewportActive === active) return
@@ -163,7 +164,7 @@ const bindHomeDemoViewportPlayback = (
 
   onViewportActiveChange(viewportActive)
 
-  if (typeof IntersectionObserver === 'function') {
+  if (canObserveViewport) {
     observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {

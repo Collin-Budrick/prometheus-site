@@ -243,6 +243,27 @@ export const buildFragmentHeightPersistenceScript = ({
     }
   };
 
+  const readCurrentStableHeight = (fragmentId, viewport, widthBucket) => {
+    try {
+      return normalizeHeight(window.localStorage.getItem(buildStorageKey(fragmentId, viewport, widthBucket)));
+    } catch {
+      return null;
+    }
+  };
+
+  const isCardVisible = (card) => {
+    if (typeof card.getBoundingClientRect !== 'function') {
+      return true;
+    }
+    const rect = card.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+      return true;
+    }
+    return rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth;
+  };
+
   const waitForImages = (card) =>
     new Promise((resolve) => {
       const pendingImages = Array.from(card.querySelectorAll('img')).filter(
@@ -321,26 +342,40 @@ export const buildFragmentHeightPersistenceScript = ({
       stableHeight,
       fallbackHeight: readCardHint(card)
     });
+    const currentStableHeight = readCurrentStableHeight(fragmentId, viewport, widthBucket);
 
     if (reservedHeight > readCardHint(card)) {
       card.style.setProperty('--fragment-min-height', reservedHeight + 'px');
       card.setAttribute('data-fragment-height-hint', String(reservedHeight));
     }
 
-    return { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight };
+    return {
+      card,
+      fragmentId,
+      planIndex,
+      viewport,
+      widthBucket,
+      reservedHeight,
+      shouldMeasure: currentStableHeight === null && isCardVisible(card)
+    };
   };
 
   const persistHeights = async () => {
     const targets = Array.from(document.querySelectorAll('.fragment-card[data-fragment-id]'))
       .map((card) => buildTarget(card))
       .filter(Boolean);
+    const measurableTargets = targets.filter((target) => target.shouldMeasure);
 
-    await Promise.all(targets.map(({ card }) => waitForImages(card)));
+    if (measurableTargets.length === 0) {
+      return;
+    }
+
+    await Promise.all(measurableTargets.map(({ card }) => waitForImages(card)));
     const measuredHeights = await Promise.all(
-      targets.map(({ card, reservedHeight }) => waitForStableHeight(card, reservedHeight))
+      measurableTargets.map(({ card, reservedHeight }) => waitForStableHeight(card, reservedHeight))
     );
 
-    targets.forEach((target, index) => {
+    measurableTargets.forEach((target, index) => {
       const { card, fragmentId, planIndex, viewport, widthBucket, reservedHeight } = target;
       const settledHeight = Math.max(normalizeHeight(measuredHeights[index]) ?? 0, reservedHeight);
       if (settledHeight <= 0) return;
@@ -371,10 +406,18 @@ export const buildFragmentHeightPersistenceScript = ({
     void nextFrame().then(() => nextFrame()).then(() => persistHeights());
   };
 
+  const scheduleStart = () => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => start(), { timeout: 1200 });
+      return;
+    }
+    window.setTimeout(start, 240);
+  };
+
   if (document.readyState === 'complete') {
-    start();
+    scheduleStart();
     return;
   }
 
-  window.addEventListener('load', start, { once: true });
+  window.addEventListener('load', scheduleStart, { once: true });
 })();`
