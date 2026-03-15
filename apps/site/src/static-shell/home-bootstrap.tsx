@@ -1131,12 +1131,19 @@ const bindShellControls = (controller: HomeControllerState) => {
     .forEach((input) => {
       const handleChange = () => {
         const nextLang = input.dataset.lang as Lang | undefined;
-        if (!nextLang || nextLang === controller.lang) {
-          closeMenus(false);
+        input.blur();
+        const finalizeLanguageChange = () => {
+          closeMenus(true);
+          if (!nextLang || nextLang === controller.lang) {
+            return;
+          }
+          void swapStaticHomeLanguage(nextLang);
+        };
+        if (typeof queueMicrotask === "function") {
+          queueMicrotask(finalizeLanguageChange);
           return;
         }
-        closeMenus(false);
-        void swapStaticHomeLanguage(nextLang);
+        finalizeLanguageChange();
       };
 
       input.addEventListener("change", handleChange);

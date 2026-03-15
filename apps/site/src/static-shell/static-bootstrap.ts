@@ -1,16 +1,20 @@
-import { getFragmentTextCopy, getUiCopy, seedLanguageResources } from '../lang/client'
-import type { Lang } from '../lang'
+import {
+  getFragmentTextCopy,
+  getUiCopy,
+  seedLanguageResources,
+} from "../lang/client";
+import type { Lang } from "../lang";
 import {
   getCspNonce,
   installTrustedTypesFunctionBridge,
   primeTrustedTypesPolicies,
-  setTrustedInnerHtml
-} from '../security/client'
-import type { StaticFragmentRouteData } from './fragment-static-data'
-import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
-import type { StaticShellSeed } from './seed'
-import type { StaticFragmentRouteModel } from './static-fragment-model'
-import { persistInitialFragmentCardHeights } from './fragment-height'
+  setTrustedInnerHtml,
+} from "../security/client";
+import type { StaticFragmentRouteData } from "./fragment-static-data";
+import { buildFragmentHeightPersistenceScript } from "./fragment-height-script";
+import type { StaticShellSeed } from "./seed";
+import type { StaticFragmentRouteModel } from "./static-fragment-model";
+import { persistInitialFragmentCardHeights } from "./fragment-height";
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -18,398 +22,475 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_SHELL_MAIN_REGION,
   normalizeStaticShellRoutePath,
-  STATIC_SHELL_REGION_ATTR
-} from './constants'
+  STATIC_SHELL_REGION_ATTR,
+} from "./constants";
 import {
   clearStoreStaticBootstrapFlag,
-  consumeRegisteredStoreStaticControllerCleanup
-} from './store-static-controller-state'
-import { createStaticFragmentRouteData } from './static-fragment-model'
-import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
-import { scheduleStaticShellTask } from './scheduler'
+  consumeRegisteredStoreStaticControllerCleanup,
+} from "./store-static-controller-state";
+import { createStaticFragmentRouteData } from "./static-fragment-model";
+import {
+  loadClientAuthSession,
+  redirectProtectedStaticRouteToLogin,
+} from "./auth-client";
+import { scheduleStaticShellTask } from "./scheduler";
 import {
   staticDockRootNeedsSync,
   readStaticShellSeed,
   syncStaticDockRootState,
-  writeStaticShellSeed
-} from './seed-client'
-import { loadStaticShellLanguageSeed } from './language-seed-client'
+  writeStaticShellSeed,
+} from "./seed-client";
+import { loadStaticShellLanguageSeed } from "./language-seed-client";
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
   resolvePreferredStaticShellLang,
-  updateStaticShellUrlLang
-} from './snapshot-client'
-import { shouldRetryFragmentStream } from './fragment-stream-error'
+  updateStaticShellUrlLang,
+} from "./snapshot-client";
+import { shouldRetryFragmentStream } from "./fragment-stream-error";
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
   restoreOverlayFocusBeforeHide,
-  setOverlaySurfaceState
-} from '../shared/overlay-a11y'
-import { appConfig } from '../public-app-config'
+  setOverlaySurfaceState,
+} from "../shared/overlay-a11y";
+import { appConfig } from "../public-app-config";
 
-type Theme = 'light' | 'dark'
+type Theme = "light" | "dark";
 
 type StaticFragmentController = {
-  isAuthenticated: boolean
-  lang: Lang
-  path: string
-  snapshotKey: string
-  authPolicy: StaticShellSeed['authPolicy']
-  streamAbort: AbortController | null
-  streamRetryTimer: number
-  streamStartCancel: (() => void) | null
-  cleanupFns: Array<() => void>
-  destroyed: boolean
-  routeData: StaticFragmentRouteData
-  visibleFragmentIds: Set<string>
-}
+  isAuthenticated: boolean;
+  lang: Lang;
+  path: string;
+  snapshotKey: string;
+  authPolicy: StaticShellSeed["authPolicy"];
+  streamAbort: AbortController | null;
+  streamRetryTimer: number;
+  streamStartCancel: (() => void) | null;
+  cleanupFns: Array<() => void>;
+  destroyed: boolean;
+  routeData: StaticFragmentRouteData;
+  visibleFragmentIds: Set<string>;
+};
 
-const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
-const STATIC_THEME_COOKIE_KEY = 'prometheus-theme'
-const STATIC_THEME_PREFERENCE_KEY = 'prometheus:pref:theme'
-const STATIC_LANG_STORAGE_KEY = 'prometheus-lang'
-const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
-const STATIC_LANG_PREFERENCE_KEY = 'prometheus:pref:locale'
-const DARK_THEME_COLOR = '#0f172a'
-const LIGHT_THEME_COLOR = '#f97316'
-const STATIC_FRAGMENT_STREAM_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
-const STATIC_FRAGMENT_STREAM_THRESHOLD = appConfig.fragmentVisibilityThreshold
+const STATIC_THEME_STORAGE_KEY = "prometheus-theme";
+const STATIC_THEME_COOKIE_KEY = "prometheus-theme";
+const STATIC_THEME_PREFERENCE_KEY = "prometheus:pref:theme";
+const STATIC_LANG_STORAGE_KEY = "prometheus-lang";
+const STATIC_LANG_COOKIE_KEY = "prometheus-lang";
+const STATIC_LANG_PREFERENCE_KEY = "prometheus:pref:locale";
+const DARK_THEME_COLOR = "#0f172a";
+const LIGHT_THEME_COLOR = "#f97316";
+const STATIC_FRAGMENT_STREAM_ROOT_MARGIN = appConfig.fragmentVisibilityMargin;
+const STATIC_FRAGMENT_STREAM_THRESHOLD = appConfig.fragmentVisibilityThreshold;
 
-let activeController: StaticFragmentController | null = null
-let fragmentStreamRuntimePromise: Promise<typeof import('./fragment-stream')> | null = null
-let languageSwapInFlight = false
+let activeController: StaticFragmentController | null = null;
+let fragmentStreamRuntimePromise: Promise<
+  typeof import("./fragment-stream")
+> | null = null;
+let languageSwapInFlight = false;
 
-const readJsonScript = <T,>(id: string): T | null => {
-  const element = document.getElementById(id)
-  if (!(element instanceof HTMLScriptElement) || !element.textContent) return null
+const readJsonScript = <T>(id: string): T | null => {
+  const element = document.getElementById(id);
+  if (!(element instanceof HTMLScriptElement) || !element.textContent)
+    return null;
   try {
-    return JSON.parse(element.textContent) as T
+    return JSON.parse(element.textContent) as T;
   } catch {
-    return null
+    return null;
   }
-}
+};
 
-installTrustedTypesFunctionBridge()
+installTrustedTypesFunctionBridge();
 
 const serializeJson = (value: unknown) =>
   JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 
-const escapeHtmlAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+const escapeHtmlAttr = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
-    window.localStorage.setItem(key, value)
+    window.localStorage.setItem(key, value);
   } catch {
     // Ignore storage failures.
   }
-}
+};
 
 const setThemeCookie = (value: Theme) => {
-  document.cookie = `${STATIC_THEME_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`
-}
+  document.cookie = `${STATIC_THEME_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+};
 
 const setLangCookie = (value: Lang) => {
-  document.cookie = `${STATIC_LANG_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`
-}
+  document.cookie = `${STATIC_LANG_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+};
 
 const setDocumentTheme = (value: Theme) => {
-  document.documentElement.dataset.theme = value
-  document.documentElement.style.colorScheme = value
-  const meta = document.querySelector('meta[name="theme-color"]')
+  document.documentElement.dataset.theme = value;
+  document.documentElement.style.colorScheme = value;
+  const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) {
-    meta.setAttribute('content', value === 'dark' ? DARK_THEME_COLOR : LIGHT_THEME_COLOR)
+    meta.setAttribute(
+      "content",
+      value === "dark" ? DARK_THEME_COLOR : LIGHT_THEME_COLOR,
+    );
   }
-}
+};
 
 const persistStaticTheme = (value: Theme) => {
-  setDocumentTheme(value)
-  writeLocalStorageValue(STATIC_THEME_STORAGE_KEY, value)
-  writeLocalStorageValue(STATIC_THEME_PREFERENCE_KEY, value)
-  setThemeCookie(value)
-}
+  setDocumentTheme(value);
+  writeLocalStorageValue(STATIC_THEME_STORAGE_KEY, value);
+  writeLocalStorageValue(STATIC_THEME_PREFERENCE_KEY, value);
+  setThemeCookie(value);
+};
 
 const setDocumentLang = (value: Lang) => {
-  document.documentElement.lang = value
-}
+  document.documentElement.lang = value;
+};
 
 const persistStaticLang = (value: Lang) => {
-  setDocumentLang(value)
-  writeLocalStorageValue(STATIC_LANG_STORAGE_KEY, value)
-  writeLocalStorageValue(STATIC_LANG_PREFERENCE_KEY, value)
-  setLangCookie(value)
-}
+  setDocumentLang(value);
+  writeLocalStorageValue(STATIC_LANG_STORAGE_KEY, value);
+  writeLocalStorageValue(STATIC_LANG_PREFERENCE_KEY, value);
+  setLangCookie(value);
+};
 
-const updateFragmentStatus = (lang: Lang, state: 'idle' | 'streaming' | 'error') => {
-  const element = document.querySelector<HTMLElement>('[data-static-fragment-status]')
-  if (!element) return
-  const copy = getUiCopy(lang)
+const updateFragmentStatus = (
+  lang: Lang,
+  state: "idle" | "streaming" | "error",
+) => {
+  const element = document.querySelector<HTMLElement>(
+    "[data-static-fragment-status]",
+  );
+  if (!element) return;
+  const copy = getUiCopy(lang);
   const label =
-    state === 'streaming'
+    state === "streaming"
       ? copy.fragmentStatusStreaming
-      : state === 'error'
+      : state === "error"
         ? copy.fragmentStatusStalled
-        : copy.fragmentStatusIdle
-  element.dataset.state = state
-  element.setAttribute('aria-label', label)
-}
+        : copy.fragmentStatusIdle;
+  element.dataset.state = state;
+  element.setAttribute("aria-label", label);
+};
 
 const loadFragmentStreamRuntime = () => {
   if (!fragmentStreamRuntimePromise) {
-    fragmentStreamRuntimePromise = import('./fragment-stream')
+    fragmentStreamRuntimePromise = import("./fragment-stream");
   }
-  return fragmentStreamRuntimePromise
-}
+  return fragmentStreamRuntimePromise;
+};
 
 const syncStaticFragmentDockIfNeeded = async (
-  controller: Pick<StaticFragmentController, 'isAuthenticated' | 'lang' | 'path'>
+  controller: Pick<
+    StaticFragmentController,
+    "isAuthenticated" | "lang" | "path"
+  >,
 ) => {
   const dockState = {
     currentPath: controller.path,
     isAuthenticated: controller.isAuthenticated,
-    lang: controller.lang
-  }
+    lang: controller.lang,
+  };
 
   if (!staticDockRootNeedsSync(dockState)) {
-    syncStaticDockRootState(dockState)
-    return
+    syncStaticDockRootState(dockState);
+    return;
   }
 
-  const dockRoot = syncStaticDockRootState(dockState)
-  if (!dockRoot) return
+  const dockRoot = syncStaticDockRootState(dockState);
+  if (!dockRoot) return;
 
-  const { syncStaticDockMarkup } = await import('./home-dock-dom')
+  const { syncStaticDockMarkup } = await import("./home-dock-dom");
   syncStaticDockMarkup({
     root: dockRoot,
     lang: controller.lang,
     currentPath: controller.path,
     isAuthenticated: controller.isAuthenticated,
     force: true,
-    lockMetrics: true
-  })
-}
+    lockMetrics: true,
+  });
+};
 
-const refreshStaticFragmentDockAuthIfNeeded = async (controller: StaticFragmentController) => {
-  const session = await loadClientAuthSession()
-  if (controller.destroyed) return
-  const isAuthenticated = session.status === 'authenticated'
-  if (controller.isAuthenticated === isAuthenticated) return
-  controller.isAuthenticated = isAuthenticated
-  writeStaticShellSeed({ isAuthenticated })
-  await syncStaticFragmentDockIfNeeded(controller)
-}
+const refreshStaticFragmentDockAuthIfNeeded = async (
+  controller: StaticFragmentController,
+) => {
+  const session = await loadClientAuthSession();
+  if (controller.destroyed) return;
+  const isAuthenticated = session.status === "authenticated";
+  if (controller.isAuthenticated === isAuthenticated) return;
+  controller.isAuthenticated = isAuthenticated;
+  writeStaticShellSeed({ isAuthenticated });
+  await syncStaticFragmentDockIfNeeded(controller);
+};
 
 const refreshThemeButton = (lang: Lang) => {
-  const button = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
-  if (!button) return
-  const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
-  const copy = getUiCopy(lang)
-  button.dataset.theme = theme
-  button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
-  button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
-}
+  const button = document.querySelector<HTMLButtonElement>(
+    "[data-static-theme-toggle]",
+  );
+  if (!button) return;
+  const theme =
+    document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const copy = getUiCopy(lang);
+  button.dataset.theme = theme;
+  button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+  button.setAttribute(
+    "aria-label",
+    theme === "dark" ? copy.themeAriaToLight : copy.themeAriaToDark,
+  );
+};
 
-const hasStaticFragmentRoot = () => Boolean(document.querySelector('[data-static-fragment-root]'))
+const hasStaticFragmentRoot = () =>
+  Boolean(document.querySelector("[data-static-fragment-root]"));
 const collectStaticFragmentCardIds = () =>
-  Array.from(document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`))
+  Array.from(
+    document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`),
+  )
     .map((element) => element.dataset.fragmentId)
-    .filter((id): id is string => Boolean(id))
+    .filter((id): id is string => Boolean(id));
 
-const collectVisibleStreamIds = (controller: Pick<StaticFragmentController, 'routeData' | 'visibleFragmentIds'>) =>
-  controller.routeData.fragmentOrder.filter((id) => controller.visibleFragmentIds.has(id))
+const collectVisibleStreamIds = (
+  controller: Pick<
+    StaticFragmentController,
+    "routeData" | "visibleFragmentIds"
+  >,
+) =>
+  controller.routeData.fragmentOrder.filter((id) =>
+    controller.visibleFragmentIds.has(id),
+  );
 
-const readShellSeed = () => readStaticShellSeed()
+const readShellSeed = () => readStaticShellSeed();
 
 const readRouteData = (shellSeed: StaticShellSeed) =>
   readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID) ??
   createStaticFragmentRouteData({
     path: shellSeed.currentPath || window.location.pathname,
-    lang: shellSeed.lang
-  })
+    lang: shellSeed.lang,
+  });
 
 const swapStaticFragmentLanguage = async (nextLang: Lang) => {
-  if (languageSwapInFlight) return
-  const shellSeed = readShellSeed()
-  if (!shellSeed || shellSeed.lang === nextLang) return
-  languageSwapInFlight = true
+  if (languageSwapInFlight) return;
+  const shellSeed = readShellSeed();
+  if (!shellSeed || shellSeed.lang === nextLang) return;
+  languageSwapInFlight = true;
 
   try {
-    const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
-    const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, nextLang)
-    await destroyController(activeController)
-    activeController = null
+    const snapshot = await loadStaticShellSnapshot(
+      shellSeed.snapshotKey,
+      nextLang,
+    );
+    const languageSeed = await loadStaticShellLanguageSeed(
+      shellSeed.currentPath || window.location.pathname,
+      nextLang,
+    );
+    await destroyController(activeController);
+    activeController = null;
     applyStaticShellSnapshot(snapshot, {
       dockState: {
         lang: nextLang,
         currentPath: shellSeed.currentPath || window.location.pathname,
-        isAuthenticated: shellSeed.isAuthenticated ?? false
-      }
-    })
+        isAuthenticated: shellSeed.isAuthenticated ?? false,
+      },
+    });
     writeStaticShellSeed({
       lang: nextLang,
       currentPath: shellSeed.currentPath || window.location.pathname,
       snapshotKey: shellSeed.snapshotKey,
       languageSeed,
-      isAuthenticated: shellSeed.isAuthenticated
-    })
-    persistStaticLang(nextLang)
-    updateStaticShellUrlLang(nextLang)
-    await bootstrapStaticFragmentShell()
+      isAuthenticated: shellSeed.isAuthenticated,
+    });
+    persistStaticLang(nextLang);
+    updateStaticShellUrlLang(nextLang);
+    await bootstrapStaticFragmentShell();
   } catch (error) {
-    console.error('Failed to switch static fragment language:', error)
+    console.error("Failed to switch static fragment language:", error);
   } finally {
-    languageSwapInFlight = false
+    languageSwapInFlight = false;
   }
-}
+};
 
 const bindShellControls = (controller: StaticFragmentController) => {
-  const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
-  const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
-  const settingsPanel = document.querySelector<HTMLElement>('.settings-dropdown')
-  const languageMenuToggle = document.querySelector<HTMLButtonElement>('[data-static-language-menu-toggle]')
-  const languageDrawer = document.querySelector<HTMLElement>('.settings-lang-drawer')
-  const themeToggle = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
+  const settingsRoot = document.querySelector<HTMLElement>(".topbar-settings");
+  const settingsToggle = document.querySelector<HTMLButtonElement>(
+    "[data-static-settings-toggle]",
+  );
+  const settingsPanel =
+    document.querySelector<HTMLElement>(".settings-dropdown");
+  const languageMenuToggle = document.querySelector<HTMLButtonElement>(
+    "[data-static-language-menu-toggle]",
+  );
+  const languageDrawer = document.querySelector<HTMLElement>(
+    ".settings-lang-drawer",
+  );
+  const themeToggle = document.querySelector<HTMLButtonElement>(
+    "[data-static-theme-toggle]",
+  );
 
-  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle) return
+  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle)
+    return;
 
   const closeLanguageMenu = (restoreFocus = false) => {
-    const wasOpen = languageDrawer?.dataset.open === 'true'
+    const wasOpen = languageDrawer?.dataset.open === "true";
     if (restoreFocus && wasOpen && languageMenuToggle) {
-      restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle)
+      restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle);
     }
-    setOverlaySurfaceState(languageDrawer, false)
+    setOverlaySurfaceState(languageDrawer, false);
     if (languageMenuToggle) {
-      languageMenuToggle.setAttribute('aria-expanded', 'false')
+      languageMenuToggle.setAttribute("aria-expanded", "false");
     }
-  }
+  };
 
   const closeMenus = (restoreFocus = false) => {
-    const wasOpen = settingsRoot.dataset.open === 'true'
-    settingsRoot.dataset.open = 'false'
-    settingsToggle.setAttribute('aria-expanded', 'false')
-    closeLanguageMenu(false)
+    const wasOpen = settingsRoot.dataset.open === "true";
+    settingsRoot.dataset.open = "false";
+    settingsToggle.setAttribute("aria-expanded", "false");
+    closeLanguageMenu(false);
     if (restoreFocus && wasOpen) {
-      restoreOverlayFocusBeforeHide(settingsPanel, settingsToggle)
+      restoreOverlayFocusBeforeHide(settingsPanel, settingsToggle);
     }
-    setOverlaySurfaceState(settingsPanel, false)
-  }
+    setOverlaySurfaceState(settingsPanel, false);
+  };
 
   const toggleSettings = () => {
-    const next = settingsRoot.dataset.open !== 'true'
-    settingsRoot.dataset.open = next ? 'true' : 'false'
-    settingsToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
+    const next = settingsRoot.dataset.open !== "true";
+    settingsRoot.dataset.open = next ? "true" : "false";
+    settingsToggle.setAttribute("aria-expanded", next ? "true" : "false");
     if (!next) {
-      closeMenus(false)
-      return
+      closeMenus(false);
+      return;
     }
-    setOverlaySurfaceState(settingsPanel, true)
-    focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle)
-  }
+    setOverlaySurfaceState(settingsPanel, true);
+    focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle);
+  };
 
   const toggleLanguageMenu = () => {
-    if (!languageDrawer || !languageMenuToggle) return
-    const next = languageDrawer.dataset.open !== 'true'
-    setOverlaySurfaceState(languageDrawer, next)
-    languageMenuToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
+    if (!languageDrawer || !languageMenuToggle) return;
+    const next = languageDrawer.dataset.open !== "true";
+    setOverlaySurfaceState(languageDrawer, next);
+    languageMenuToggle.setAttribute("aria-expanded", next ? "true" : "false");
     if (next) {
       focusOverlayEntry(languageDrawer, [
         'input[name="static-topbar-language"]:checked',
-        'input[name="static-topbar-language"]'
-      ])
-      return
+        'input[name="static-topbar-language"]',
+      ]);
+      return;
     }
-    restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle)
-    setOverlaySurfaceState(languageDrawer, false)
-  }
+    restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle);
+    setOverlaySurfaceState(languageDrawer, false);
+  };
 
   const handleThemeClick = () => {
-    const nextTheme: Theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
-    persistStaticTheme(nextTheme)
-    refreshThemeButton(controller.lang)
-  }
+    const nextTheme: Theme =
+      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    persistStaticTheme(nextTheme);
+    refreshThemeButton(controller.lang);
+  };
 
-  settingsToggle.addEventListener('click', toggleSettings)
-  themeToggle.addEventListener('click', handleThemeClick)
-  controller.cleanupFns.push(() => settingsToggle.removeEventListener('click', toggleSettings))
-  controller.cleanupFns.push(() => themeToggle.removeEventListener('click', handleThemeClick))
+  settingsToggle.addEventListener("click", toggleSettings);
+  themeToggle.addEventListener("click", handleThemeClick);
+  controller.cleanupFns.push(() =>
+    settingsToggle.removeEventListener("click", toggleSettings),
+  );
+  controller.cleanupFns.push(() =>
+    themeToggle.removeEventListener("click", handleThemeClick),
+  );
   controller.cleanupFns.push(
     bindOverlayDismiss({
       root: settingsRoot,
       onDismiss: () => {
-        if (settingsRoot.dataset.open !== 'true' && languageDrawer?.dataset.open !== 'true') {
-          return
+        if (
+          settingsRoot.dataset.open !== "true" &&
+          languageDrawer?.dataset.open !== "true"
+        ) {
+          return;
         }
-        closeMenus(true)
-      }
-    })
-  )
+        closeMenus(true);
+      },
+    }),
+  );
 
   if (languageMenuToggle && languageDrawer) {
-    languageMenuToggle.addEventListener('click', toggleLanguageMenu)
-    controller.cleanupFns.push(() => languageMenuToggle.removeEventListener('click', toggleLanguageMenu))
+    languageMenuToggle.addEventListener("click", toggleLanguageMenu);
+    controller.cleanupFns.push(() =>
+      languageMenuToggle.removeEventListener("click", toggleLanguageMenu),
+    );
   }
 
-  document.querySelectorAll<HTMLInputElement>('[data-static-language-option]').forEach((input) => {
-    const handleChange = () => {
-      const nextLang = input.dataset.lang as Lang | undefined
-      closeMenus(false)
-      if (!nextLang || nextLang === controller.lang) return
-      void swapStaticFragmentLanguage(nextLang)
-    }
+  document
+    .querySelectorAll<HTMLInputElement>("[data-static-language-option]")
+    .forEach((input) => {
+      const handleChange = () => {
+        const nextLang = input.dataset.lang as Lang | undefined;
+        input.blur();
+        const finalizeLanguageChange = () => {
+          closeMenus(true);
+          if (!nextLang || nextLang === controller.lang) return;
+          void swapStaticFragmentLanguage(nextLang);
+        };
+        if (typeof queueMicrotask === "function") {
+          queueMicrotask(finalizeLanguageChange);
+          return;
+        }
+        finalizeLanguageChange();
+      };
 
-    input.addEventListener('change', handleChange)
-    controller.cleanupFns.push(() => input.removeEventListener('change', handleChange))
-  })
+      input.addEventListener("change", handleChange);
+      controller.cleanupFns.push(() =>
+        input.removeEventListener("change", handleChange),
+      );
+    });
 
-  setOverlaySurfaceState(settingsPanel, false)
-  closeLanguageMenu(false)
-  refreshThemeButton(controller.lang)
-}
+  setOverlaySurfaceState(settingsPanel, false);
+  closeLanguageMenu(false);
+  refreshThemeButton(controller.lang);
+};
 
 const stopConnections = (controller: StaticFragmentController) => {
-  controller.streamStartCancel?.()
-  controller.streamStartCancel = null
+  controller.streamStartCancel?.();
+  controller.streamStartCancel = null;
   if (controller.streamAbort) {
-    controller.streamAbort.abort()
-    controller.streamAbort = null
+    controller.streamAbort.abort();
+    controller.streamAbort = null;
   }
   if (controller.streamRetryTimer) {
-    window.clearTimeout(controller.streamRetryTimer)
-    controller.streamRetryTimer = 0
+    window.clearTimeout(controller.streamRetryTimer);
+    controller.streamRetryTimer = 0;
   }
-}
+};
 
-const scheduleStreamRetry = (controller: StaticFragmentController, delayMs: number) => {
-  if (controller.destroyed || !hasStaticFragmentRoot()) return
+const scheduleStreamRetry = (
+  controller: StaticFragmentController,
+  delayMs: number,
+) => {
+  if (controller.destroyed || !hasStaticFragmentRoot()) return;
   controller.streamRetryTimer = window.setTimeout(() => {
-    controller.streamRetryTimer = 0
-    void startDeferredStream(controller)
-  }, delayMs)
-}
+    controller.streamRetryTimer = 0;
+    void startDeferredStream(controller);
+  }, delayMs);
+};
 
 const startDeferredStream = async (controller: StaticFragmentController) => {
-  if (controller.destroyed || !hasStaticFragmentRoot()) return
+  if (controller.destroyed || !hasStaticFragmentRoot()) return;
   if (controller.streamAbort) {
-    controller.streamAbort.abort()
+    controller.streamAbort.abort();
   }
 
-  const visibleIds = collectVisibleStreamIds(controller)
+  const visibleIds = collectVisibleStreamIds(controller);
   if (visibleIds.length === 0) {
-    controller.streamAbort = null
-    updateFragmentStatus(controller.lang, 'idle')
-    return
+    controller.streamAbort = null;
+    updateFragmentStatus(controller.lang, "idle");
+    return;
   }
 
-  const streamAbort = new AbortController()
-  controller.streamAbort = streamAbort
-  updateFragmentStatus(controller.lang, 'streaming')
+  const streamAbort = new AbortController();
+  controller.streamAbort = streamAbort;
+  updateFragmentStatus(controller.lang, "streaming");
 
   try {
-    const runtime = await loadFragmentStreamRuntime()
+    const runtime = await loadFragmentStreamRuntime();
     await runtime.streamStaticFragments({
       path: controller.routeData.path,
       lang: controller.lang,
@@ -417,242 +498,288 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
       signal: streamAbort.signal,
       routeData: controller.routeData,
       onFragment: () => {
-        updateFragmentStatus(controller.lang, 'streaming')
+        updateFragmentStatus(controller.lang, "streaming");
       },
       onError: () => {
-        updateFragmentStatus(controller.lang, 'error')
-      }
-    })
-    if (!controller.destroyed && controller.streamAbort === streamAbort && !streamAbort.signal.aborted) {
-      updateFragmentStatus(controller.lang, 'idle')
-      scheduleStreamRetry(controller, 2000)
+        updateFragmentStatus(controller.lang, "error");
+      },
+    });
+    if (
+      !controller.destroyed &&
+      controller.streamAbort === streamAbort &&
+      !streamAbort.signal.aborted
+    ) {
+      updateFragmentStatus(controller.lang, "idle");
+      scheduleStreamRetry(controller, 2000);
     }
   } catch (error) {
-    if (controller.destroyed || controller.streamAbort !== streamAbort || streamAbort.signal.aborted) return
-    console.error('Static fragment stream failed:', error)
-    updateFragmentStatus(controller.lang, 'error')
+    if (
+      controller.destroyed ||
+      controller.streamAbort !== streamAbort ||
+      streamAbort.signal.aborted
+    )
+      return;
+    console.error("Static fragment stream failed:", error);
+    updateFragmentStatus(controller.lang, "error");
     if (shouldRetryFragmentStream(error)) {
-      scheduleStreamRetry(controller, 2000)
+      scheduleStreamRetry(controller, 2000);
     }
   }
-}
+};
 
-const scheduleDeferredStreamStart = (controller: StaticFragmentController, delayMs = 1800) => {
-  if (!hasStaticFragmentRoot()) return
-  controller.streamStartCancel?.()
+const scheduleDeferredStreamStart = (
+  controller: StaticFragmentController,
+  delayMs = 1800,
+) => {
+  if (!hasStaticFragmentRoot()) return;
+  controller.streamStartCancel?.();
   const cancelSchedule = scheduleStaticShellTask(
     () => {
-      controller.streamStartCancel = null
-      if (controller.destroyed || document.visibilityState === 'hidden') return
-      void startDeferredStream(controller)
+      controller.streamStartCancel = null;
+      if (controller.destroyed || document.visibilityState === "hidden") return;
+      void startDeferredStream(controller);
     },
     {
       delayMs,
-      priority: 'background',
-      timeoutMs: delayMs > 0 ? delayMs : 120
-    }
-  )
+      priority: "background",
+      timeoutMs: delayMs > 0 ? delayMs : 120,
+    },
+  );
   controller.streamStartCancel = () => {
-    cancelSchedule()
-    controller.streamStartCancel = null
-  }
-}
+    cancelSchedule();
+    controller.streamStartCancel = null;
+  };
+};
 
-const observeVisibleStaticFragments = (controller: StaticFragmentController) => {
-  const cardIds = collectStaticFragmentCardIds()
-  if (!cardIds.length) return () => undefined
+const observeVisibleStaticFragments = (
+  controller: StaticFragmentController,
+) => {
+  const cardIds = collectStaticFragmentCardIds();
+  if (!cardIds.length) return () => undefined;
 
-  const cards = Array.from(document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`)).filter((card) =>
-    Boolean(card.dataset.fragmentId)
-  )
-  const ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
-    .IntersectionObserver
-
-  if (typeof ObserverImpl !== 'function') {
-    cardIds.forEach((id) => controller.visibleFragmentIds.add(id))
-    scheduleDeferredStreamStart(controller, 0)
-    return () => {
-      controller.visibleFragmentIds.clear()
+  const cards = Array.from(
+    document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`),
+  ).filter((card) => Boolean(card.dataset.fragmentId));
+  const ObserverImpl = (
+    globalThis as typeof globalThis & {
+      IntersectionObserver?: typeof IntersectionObserver;
     }
+  ).IntersectionObserver;
+
+  if (typeof ObserverImpl !== "function") {
+    cardIds.forEach((id) => controller.visibleFragmentIds.add(id));
+    scheduleDeferredStreamStart(controller, 0);
+    return () => {
+      controller.visibleFragmentIds.clear();
+    };
   }
 
   const observer = new ObserverImpl(
     (entries) => {
-      let changed = false
+      let changed = false;
       entries.forEach((entry) => {
-        const id = (entry.target as HTMLElement).dataset.fragmentId
-        if (!id) return
-        const isVisible = entry.isIntersecting || entry.intersectionRatio > 0
+        const id = (entry.target as HTMLElement).dataset.fragmentId;
+        if (!id) return;
+        const isVisible = entry.isIntersecting || entry.intersectionRatio > 0;
         if (isVisible) {
           if (!controller.visibleFragmentIds.has(id)) {
-            controller.visibleFragmentIds.add(id)
-            changed = true
+            controller.visibleFragmentIds.add(id);
+            changed = true;
           }
-          return
+          return;
         }
         if (controller.visibleFragmentIds.delete(id)) {
-          changed = true
+          changed = true;
         }
-      })
-      if (!changed) return
-      scheduleDeferredStreamStart(controller, controller.visibleFragmentIds.size > 0 ? 0 : 120)
+      });
+      if (!changed) return;
+      scheduleDeferredStreamStart(
+        controller,
+        controller.visibleFragmentIds.size > 0 ? 0 : 120,
+      );
     },
     {
       root: null,
       rootMargin: STATIC_FRAGMENT_STREAM_ROOT_MARGIN,
-      threshold: STATIC_FRAGMENT_STREAM_THRESHOLD
-    }
-  )
+      threshold: STATIC_FRAGMENT_STREAM_THRESHOLD,
+    },
+  );
 
-  cards.forEach((card) => observer.observe(card))
+  cards.forEach((card) => observer.observe(card));
 
   return () => {
-    observer.disconnect()
-    controller.visibleFragmentIds.clear()
-  }
-}
+    observer.disconnect();
+    controller.visibleFragmentIds.clear();
+  };
+};
 
-const destroyController = async (controller: StaticFragmentController | null) => {
-  if (!controller) return
-  controller.destroyed = true
-  stopConnections(controller)
-  controller.cleanupFns.splice(0).forEach((cleanup) => cleanup())
-}
+const destroyController = async (
+  controller: StaticFragmentController | null,
+) => {
+  if (!controller) return;
+  controller.destroyed = true;
+  stopConnections(controller);
+  controller.cleanupFns.splice(0).forEach((cleanup) => cleanup());
+};
 
 const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
-  const leftCount = Math.ceil(model.entries.length / 2)
-  const nonce = getCspNonce()
-  const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : ''
+  const leftCount = Math.ceil(model.entries.length / 2);
+  const nonce = getCspNonce();
+  const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const inlineStyles = model.inlineStyles
-    .map((fragment) => `<style${nonceAttr} data-fragment-css="${fragment.id}">${fragment.css}</style>`)
-    .join('')
+    .map(
+      (fragment) =>
+        `<style${nonceAttr} data-fragment-css="${fragment.id}">${fragment.css}</style>`,
+    )
+    .join("");
   const entries = model.entries
     .map((entry, index) => {
-      const column = index < leftCount ? '1' : '2'
-      const versionAttr = entry.version ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"` : ''
-      const sizeAttr = entry.size ? ` data-size="${entry.size}"` : ''
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`
+      const column = index < leftCount ? "1" : "2";
+      const versionAttr = entry.version
+        ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"`
+        : "";
+      const sizeAttr = entry.size ? ` data-size="${entry.size}"` : "";
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
-    .join('')
+    .join("");
 
   const heightScript = buildFragmentHeightPersistenceScript({
     path: model.path,
     lang: model.lang,
     fragmentOrder: model.routeData.fragmentOrder,
     planSignature: model.routeData.planSignature,
-    versionSignature: model.routeData.versionSignature
-  })
+    versionSignature: model.routeData.versionSignature,
+  });
 
-  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`
-}
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-path="${model.path}" data-static-lang="${model.lang}"><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`;
+};
 
-const hydrateProtectedStaticFragments = async (controller: StaticFragmentController) => {
-  const [{ fetchFragmentBatch, fetchFragmentPlan }, { buildStaticFragmentRouteModel }] = await Promise.all([
-    import('../fragment/client'),
-    import('./static-fragment-model')
-  ])
-  const plan = await fetchFragmentPlan(controller.path, controller.lang)
+const hydrateProtectedStaticFragments = async (
+  controller: StaticFragmentController,
+) => {
+  const [
+    { fetchFragmentBatch, fetchFragmentPlan },
+    { buildStaticFragmentRouteModel },
+  ] = await Promise.all([
+    import("../fragment/client"),
+    import("./static-fragment-model"),
+  ]);
+  const plan = await fetchFragmentPlan(controller.path, controller.lang);
   const fragments = await fetchFragmentBatch(
     plan.fragments.map((entry) => ({ id: entry.id })),
     {
-      lang: controller.lang
-    }
-  )
+      lang: controller.lang,
+    },
+  );
   const model = buildStaticFragmentRouteModel({
     plan,
     fragments,
     lang: controller.lang,
     fragmentCopy: getFragmentTextCopy(controller.lang),
     storeSeed: controller.routeData.storeSeed ?? null,
-    contactInvitesSeed: controller.routeData.contactInvitesSeed ?? null
-  })
-  const mainRegion = document.querySelector<HTMLElement>(`[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`)
-  if (!mainRegion) return
-  setTrustedInnerHtml(mainRegion, buildStaticFragmentMarkup(model), 'server')
-  controller.routeData = model.routeData
-}
+    contactInvitesSeed: controller.routeData.contactInvitesSeed ?? null,
+  });
+  const mainRegion = document.querySelector<HTMLElement>(
+    `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`,
+  );
+  if (!mainRegion) return;
+  setTrustedInnerHtml(mainRegion, buildStaticFragmentMarkup(model), "server");
+  controller.routeData = model.routeData;
+};
 
 const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
   void (async () => {
     try {
-      const session = await loadClientAuthSession()
-      if (controller.destroyed) return
-      if (session.status !== 'authenticated') {
-        redirectProtectedStaticRouteToLogin(controller.lang)
-        return
+      const session = await loadClientAuthSession();
+      if (controller.destroyed) return;
+      if (session.status !== "authenticated") {
+        redirectProtectedStaticRouteToLogin(controller.lang);
+        return;
       }
       if (!controller.isAuthenticated) {
-        controller.isAuthenticated = true
-        writeStaticShellSeed({ isAuthenticated: true })
-        await syncStaticFragmentDockIfNeeded(controller)
+        controller.isAuthenticated = true;
+        writeStaticShellSeed({ isAuthenticated: true });
+        await syncStaticFragmentDockIfNeeded(controller);
       }
       if (!hasStaticFragmentRoot()) {
-        await hydrateProtectedStaticFragments(controller)
+        await hydrateProtectedStaticFragments(controller);
       }
-      scheduleDeferredStreamStart(controller, 0)
+      scheduleDeferredStreamStart(controller, 0);
     } catch (error) {
       if (!controller.destroyed) {
-        console.error('Protected static fragment auth upgrade failed:', error)
+        console.error("Protected static fragment auth upgrade failed:", error);
       }
     }
-  })()
-}
+  })();
+};
 
 const bindRouteControllers = async (controller: StaticFragmentController) => {
-  if (normalizeStaticShellRoutePath(controller.path) !== '/store') return
-  const existingCleanup = consumeRegisteredStoreStaticControllerCleanup()
+  if (normalizeStaticShellRoutePath(controller.path) !== "/store") return;
+  const existingCleanup = consumeRegisteredStoreStaticControllerCleanup();
   if (existingCleanup) {
     controller.cleanupFns.push(() => {
-      existingCleanup()
-      clearStoreStaticBootstrapFlag()
-    })
-    return
+      existingCleanup();
+      clearStoreStaticBootstrapFlag();
+    });
+    return;
   }
-  const { activateStoreStaticController } = await import('./controllers/store-static-controller')
-  const cleanup = await activateStoreStaticController({ routeData: controller.routeData })
+  const { activateStoreStaticController } =
+    await import("./controllers/store-static-controller");
+  const cleanup = await activateStoreStaticController({
+    routeData: controller.routeData,
+  });
   controller.cleanupFns.push(() => {
-    cleanup()
-    clearStoreStaticBootstrapFlag()
-  })
-}
+    cleanup();
+    clearStoreStaticBootstrapFlag();
+  });
+};
 
 export const bootstrapStaticFragmentShell = async () => {
-  const shellSeed = readShellSeed()
-  if (!shellSeed) return
-  primeTrustedTypesPolicies()
-  const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang)
+  const shellSeed = readShellSeed();
+  if (!shellSeed) return;
+  primeTrustedTypesPolicies();
+  const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang);
   if (preferredLang !== shellSeed.lang) {
     try {
-      const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
-      const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, preferredLang)
+      const snapshot = await loadStaticShellSnapshot(
+        shellSeed.snapshotKey,
+        preferredLang,
+      );
+      const languageSeed = await loadStaticShellLanguageSeed(
+        shellSeed.currentPath || window.location.pathname,
+        preferredLang,
+      );
       applyStaticShellSnapshot(snapshot, {
         dockState: {
           lang: preferredLang,
           currentPath: shellSeed.currentPath || window.location.pathname,
-          isAuthenticated: shellSeed.isAuthenticated ?? false
-        }
-      })
+          isAuthenticated: shellSeed.isAuthenticated ?? false,
+        },
+      });
       writeStaticShellSeed({
         lang: preferredLang,
         currentPath: shellSeed.currentPath || window.location.pathname,
         snapshotKey: shellSeed.snapshotKey,
         languageSeed,
-        isAuthenticated: shellSeed.isAuthenticated
-      })
-      persistStaticLang(preferredLang)
-      updateStaticShellUrlLang(preferredLang)
-      await bootstrapStaticFragmentShell()
-      return
+        isAuthenticated: shellSeed.isAuthenticated,
+      });
+      persistStaticLang(preferredLang);
+      updateStaticShellUrlLang(preferredLang);
+      await bootstrapStaticFragmentShell();
+      return;
     } catch (error) {
-      console.error('Failed to restore preferred fragment language snapshot:', error)
+      console.error(
+        "Failed to restore preferred fragment language snapshot:",
+        error,
+      );
     }
   }
 
-  seedLanguageResources(shellSeed.lang, shellSeed.languageSeed ?? {})
-  setDocumentLang(shellSeed.lang)
-  await destroyController(activeController)
+  seedLanguageResources(shellSeed.lang, shellSeed.languageSeed ?? {});
+  setDocumentLang(shellSeed.lang);
+  await destroyController(activeController);
 
-  const routeData = readRouteData(shellSeed)
+  const routeData = readRouteData(shellSeed);
   const controller: StaticFragmentController = {
     isAuthenticated: shellSeed.isAuthenticated ?? false,
     lang: shellSeed.lang,
@@ -665,83 +792,90 @@ export const bootstrapStaticFragmentShell = async () => {
     cleanupFns: [],
     destroyed: false,
     routeData,
-    visibleFragmentIds: new Set<string>()
-  }
-  activeController = controller
+    visibleFragmentIds: new Set<string>(),
+  };
+  activeController = controller;
 
-  await syncStaticFragmentDockIfNeeded(controller)
+  await syncStaticFragmentDockIfNeeded(controller);
   controller.cleanupFns.push(
     scheduleStaticShellTask(
       () => {
-        if (controller.destroyed || controller.authPolicy === 'protected') return
-        void refreshStaticFragmentDockAuthIfNeeded(controller).catch((error) => {
-          console.error('Static fragment auth dock refresh failed:', error)
-        })
+        if (controller.destroyed || controller.authPolicy === "protected")
+          return;
+        void refreshStaticFragmentDockAuthIfNeeded(controller).catch(
+          (error) => {
+            console.error("Static fragment auth dock refresh failed:", error);
+          },
+        );
       },
       {
-        priority: 'background',
+        priority: "background",
         timeoutMs: 600,
-        waitForPaint: true
-      }
-    )
-  )
+        waitForPaint: true,
+      },
+    ),
+  );
   controller.cleanupFns.push(
     scheduleStaticShellTask(
       () => {
-        if (controller.destroyed) return
+        if (controller.destroyed) return;
         void persistInitialFragmentCardHeights({
           routeContext: {
             path: controller.path,
             lang: controller.lang,
             fragmentOrder: controller.routeData.fragmentOrder,
             planSignature: controller.routeData.planSignature,
-            versionSignature: controller.routeData.versionSignature
-          }
+            versionSignature: controller.routeData.versionSignature,
+          },
         }).catch((error) => {
-          console.error('Static fragment height persistence failed:', error)
-        })
+          console.error("Static fragment height persistence failed:", error);
+        });
       },
       {
-        priority: 'background',
+        priority: "background",
         timeoutMs: 1200,
-        waitForPaint: true
-      }
-    )
-  )
-  bindShellControls(controller)
-  await bindRouteControllers(controller)
-  controller.cleanupFns.push(observeVisibleStaticFragments(controller))
-  updateFragmentStatus(controller.lang, 'idle')
+        waitForPaint: true,
+      },
+    ),
+  );
+  bindShellControls(controller);
+  await bindRouteControllers(controller);
+  controller.cleanupFns.push(observeVisibleStaticFragments(controller));
+  updateFragmentStatus(controller.lang, "idle");
 
   const handlePageHide = () => {
-    stopConnections(controller)
-  }
+    stopConnections(controller);
+  };
 
   const handlePageShow = (event: PageTransitionEvent) => {
-    if (!event.persisted || controller.destroyed) return
-    updateFragmentStatus(controller.lang, 'idle')
-    if (controller.authPolicy === 'protected') {
-      scheduleProtectedAuthUpgrade(controller)
-      return
+    if (!event.persisted || controller.destroyed) return;
+    updateFragmentStatus(controller.lang, "idle");
+    if (controller.authPolicy === "protected") {
+      scheduleProtectedAuthUpgrade(controller);
+      return;
     }
-    void syncStaticFragmentDockIfNeeded(controller)
+    void syncStaticFragmentDockIfNeeded(controller);
     void refreshStaticFragmentDockAuthIfNeeded(controller).catch((error) => {
-      console.error('Static fragment auth dock refresh failed:', error)
-    })
-    scheduleDeferredStreamStart(controller, 0)
+      console.error("Static fragment auth dock refresh failed:", error);
+    });
+    scheduleDeferredStreamStart(controller, 0);
+  };
+
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
+  controller.cleanupFns.push(() =>
+    window.removeEventListener("pagehide", handlePageHide),
+  );
+  controller.cleanupFns.push(() =>
+    window.removeEventListener("pageshow", handlePageShow),
+  );
+
+  if (controller.authPolicy === "protected") {
+    scheduleProtectedAuthUpgrade(controller);
+    return;
   }
 
-  window.addEventListener('pagehide', handlePageHide)
-  window.addEventListener('pageshow', handlePageShow)
-  controller.cleanupFns.push(() => window.removeEventListener('pagehide', handlePageHide))
-  controller.cleanupFns.push(() => window.removeEventListener('pageshow', handlePageShow))
+  scheduleDeferredStreamStart(controller);
+};
 
-  if (controller.authPolicy === 'protected') {
-    scheduleProtectedAuthUpgrade(controller)
-    return
-  }
-
-  scheduleDeferredStreamStart(controller)
-}
-
-export const bootstrapStaticShell = bootstrapStaticFragmentShell
+export const bootstrapStaticShell = bootstrapStaticFragmentShell;
