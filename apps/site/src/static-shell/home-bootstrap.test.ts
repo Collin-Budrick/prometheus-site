@@ -1,78 +1,82 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from "bun:test";
 import {
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
-  STATIC_HOME_STAGE_ATTR
-} from './constants'
+  STATIC_HOME_STAGE_ATTR,
+} from "./constants";
 import {
   bindHomeFragmentHydration,
-  scheduleInitialHomeDemoObservation,
+  requestHomeDemoObserve,
   scheduleHomePostLcpTasks,
-  scheduleStaticHomePaintReady
-} from './home-bootstrap'
-import { bindHomeDemoActivation, type HomeDemoController } from './home-demo-controller'
-import type { HomeFirstLcpGate } from './home-lcp-gate'
-import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
+  scheduleStaticHomePaintReady,
+} from "./home-bootstrap";
+import {
+  bindHomeDemoActivation,
+  type HomeDemoController,
+} from "./home-demo-controller";
+import { HOME_DEMO_OBSERVE_EVENT } from "./home-demo-observe-event";
+import type { HomeFirstLcpGate } from "./home-lcp-gate";
+import { normalizeHomeDemoAssetMap } from "./home-demo-runtime-types";
 
 class MockDemoElement {
-  dataset: Record<string, string> = {}
-  isConnected = true
-  rectReadCount = 0
-  private attrs = new Map<string, string>()
+  dataset: Record<string, string> = {};
+  isConnected = true;
+  rectReadCount = 0;
+  private attrs = new Map<string, string>();
   private rect = {
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
     width: 0,
-    height: 0
-  }
+    height: 0,
+  };
 
   constructor(kind: string, props?: Record<string, unknown>) {
-    this.dataset.homeDemoRoot = kind
-    this.dataset.demoKind = kind
+    this.dataset.homeDemoRoot = kind;
+    this.dataset.demoKind = kind;
     if (props) {
-      this.setAttribute('data-demo-props', JSON.stringify(props))
+      this.setAttribute("data-demo-props", JSON.stringify(props));
     }
   }
 
   getAttribute(name: string) {
-    return this.attrs.get(name) ?? null
+    return this.attrs.get(name) ?? null;
   }
 
   setAttribute(name: string, value: string) {
-    this.attrs.set(name, value)
+    this.attrs.set(name, value);
   }
 
   closest() {
-    return null
+    return null;
   }
 
   setRect(
     rect: Partial<{
-      top: number
-      left: number
-      right: number
-      bottom: number
-      width: number
-      height: number
-    }>
+      top: number;
+      left: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+    }>,
   ) {
     this.rect = {
       ...this.rect,
-      ...rect
-    }
+      ...rect,
+    };
   }
 
   getBoundingClientRect() {
-    this.rectReadCount += 1
+    this.rectReadCount += 1;
     return {
       ...this.rect,
       x: this.rect.left,
       y: this.rect.top,
-      toJSON: () => this.rect
-    } as DOMRect
+      toJSON: () => this.rect,
+    } as DOMRect;
   }
 }
 
@@ -80,512 +84,564 @@ class MockRoot {
   constructor(private readonly demoRoots: MockDemoElement[]) {}
 
   querySelectorAll<T>() {
-    return this.demoRoots as unknown as T[]
+    return this.demoRoots as unknown as T[];
   }
 }
 
 class MockStaticHomeRoot {
   private attrs = new Map<string, string>([
-    ['data-static-home-root', 'true'],
-    [STATIC_HOME_PAINT_ATTR, 'initial']
-  ])
+    ["data-static-home-root", "true"],
+    [STATIC_HOME_PAINT_ATTR, "initial"],
+  ]);
 
   getAttribute(name: string) {
-    return this.attrs.get(name) ?? null
+    return this.attrs.get(name) ?? null;
   }
 
   setAttribute(name: string, value: string) {
-    this.attrs.set(name, value)
+    this.attrs.set(name, value);
   }
 }
 
 class MockStaticHomeDocumentRoot extends MockStaticHomeRoot {
   constructor(private readonly cards: MockFragmentCard[]) {
-    super()
+    super();
   }
 
   querySelectorAll<T>() {
-    return this.cards as unknown as T[]
+    return this.cards as unknown as T[];
   }
 }
 
 class MockFragmentCard {
-  dataset: Record<string, string> = {}
-  isConnected = true
-  private attrs = new Map<string, string>([['data-static-fragment-card', 'true']])
+  dataset: Record<string, string> = {};
+  isConnected = true;
+  private attrs = new Map<string, string>([
+    ["data-static-fragment-card", "true"],
+  ]);
 
   constructor(
     id: string,
-    stage: 'anchor' | 'deferred',
-    patchState: 'pending' | 'ready' = 'pending',
-    kind: 'planner' | 'ledger' | 'island' | 'react' | 'dock' = 'planner'
+    stage: "anchor" | "deferred",
+    patchState: "pending" | "ready" = "pending",
+    kind: "planner" | "ledger" | "island" | "react" | "dock" = "planner",
   ) {
-    this.dataset.fragmentId = id
-    this.setAttribute(STATIC_HOME_STAGE_ATTR, stage)
-    this.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, patchState)
-    this.setAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR, kind)
+    this.dataset.fragmentId = id;
+    this.setAttribute(STATIC_HOME_STAGE_ATTR, stage);
+    this.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, patchState);
+    this.setAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR, kind);
   }
 
   getAttribute(name: string) {
-    return this.attrs.get(name) ?? null
+    return this.attrs.get(name) ?? null;
   }
 
   setAttribute(name: string, value: string) {
-    this.attrs.set(name, value)
+    this.attrs.set(name, value);
   }
 }
 
 class MockIntersectionObserver {
-  static instances: MockIntersectionObserver[] = []
-  readonly observed = new Set<Element>()
+  static instances: MockIntersectionObserver[] = [];
+  readonly observed = new Set<Element>();
 
   constructor(private readonly callback: IntersectionObserverCallback) {
-    MockIntersectionObserver.instances.push(this)
+    MockIntersectionObserver.instances.push(this);
   }
 
   observe(target: Element) {
-    this.observed.add(target)
+    this.observed.add(target);
   }
 
   unobserve(target: Element) {
-    this.observed.delete(target)
+    this.observed.delete(target);
   }
 
   disconnect() {
-    this.observed.clear()
+    this.observed.clear();
   }
 
-  emit(entries: Array<{ target: Element; isIntersecting: boolean; intersectionRatio?: number }>) {
+  emit(
+    entries: Array<{
+      target: Element;
+      isIntersecting: boolean;
+      intersectionRatio?: number;
+    }>,
+  ) {
     this.callback(
       entries.map(
         ({ target, isIntersecting, intersectionRatio }) =>
           ({
             target,
             isIntersecting,
-            intersectionRatio: typeof intersectionRatio === 'number' ? intersectionRatio : isIntersecting ? 1 : 0
-          }) as IntersectionObserverEntry
+            intersectionRatio:
+              typeof intersectionRatio === "number"
+                ? intersectionRatio
+                : isIntersecting
+                  ? 1
+                  : 0,
+          }) as IntersectionObserverEntry,
       ),
-      this as unknown as IntersectionObserver
-    )
+      this as unknown as IntersectionObserver,
+    );
   }
 
   static reset() {
-    MockIntersectionObserver.instances.length = 0
+    MockIntersectionObserver.instances.length = 0;
   }
 }
 
 const createController = (): HomeDemoController => ({
-  path: '/',
-  lang: 'en',
+  path: "/",
+  lang: "en",
   fragmentOrder: [],
-  planSignature: 'test',
-  versionSignature: 'v:test',
+  planSignature: "test",
+  versionSignature: "v:test",
   assets: normalizeHomeDemoAssetMap(),
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
-  destroyed: false
-})
+  destroyed: false,
+});
 
 const flushMicrotasks = async () => {
-  await Promise.resolve()
-  await Promise.resolve()
-}
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 const createManualLcpGate = () => {
-  let resolveWait!: () => void
-  let cleanupCount = 0
+  let resolveWait!: () => void;
+  let cleanupCount = 0;
   const gate: HomeFirstLcpGate = {
     wait: new Promise<void>((resolve) => {
-      resolveWait = resolve
+      resolveWait = resolve;
     }),
     cleanup: () => {
-      cleanupCount += 1
-    }
-  }
+      cleanupCount += 1;
+    },
+  };
 
   return {
     gate,
     resolve: () => resolveWait(),
-    cleanupCount: () => cleanupCount
-  }
-}
+    cleanupCount: () => cleanupCount,
+  };
+};
 
-type MockWindowListener = (event?: unknown) => void
+type MockWindowListener = (event?: unknown) => void;
 
 class MockDeferredWindow {
-  private readonly listeners = new Map<string, Set<MockWindowListener>>()
-  readonly timeouts = new Map<number, () => void>()
-  readonly idleCallbacks = new Map<number, () => void>()
-  nextTimeoutId = 1
-  nextIdleId = 1
+  private readonly listeners = new Map<string, Set<MockWindowListener>>();
+  readonly timeouts = new Map<number, () => void>();
+  readonly idleCallbacks = new Map<number, () => void>();
+  nextTimeoutId = 1;
+  nextIdleId = 1;
 
   addEventListener(type: string, listener: MockWindowListener) {
-    const listeners = this.listeners.get(type) ?? new Set()
-    listeners.add(listener)
-    this.listeners.set(type, listeners)
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
   }
 
   removeEventListener(type: string, listener: MockWindowListener) {
-    const listeners = this.listeners.get(type)
-    if (!listeners) return
-    listeners.delete(listener)
+    const listeners = this.listeners.get(type);
+    if (!listeners) return;
+    listeners.delete(listener);
     if (listeners.size === 0) {
-      this.listeners.delete(type)
+      this.listeners.delete(type);
     }
   }
 
   setTimeout(callback: () => void) {
-    const id = this.nextTimeoutId
-    this.nextTimeoutId += 1
-    this.timeouts.set(id, callback)
-    return id as unknown as ReturnType<typeof setTimeout>
+    const id = this.nextTimeoutId;
+    this.nextTimeoutId += 1;
+    this.timeouts.set(id, callback);
+    return id as unknown as ReturnType<typeof setTimeout>;
   }
 
   clearTimeout(id: ReturnType<typeof setTimeout>) {
-    this.timeouts.delete(id as unknown as number)
+    this.timeouts.delete(id as unknown as number);
   }
 
   requestIdleCallback(callback: IdleRequestCallback) {
-    const id = this.nextIdleId
-    this.nextIdleId += 1
+    const id = this.nextIdleId;
+    this.nextIdleId += 1;
     this.idleCallbacks.set(id, () =>
       callback({
         didTimeout: false,
-        timeRemaining: () => 50
-      } as IdleDeadline)
-    )
-    return id
+        timeRemaining: () => 50,
+      } as IdleDeadline),
+    );
+    return id;
   }
 
   cancelIdleCallback(id: number) {
-    this.idleCallbacks.delete(id)
+    this.idleCallbacks.delete(id);
   }
 
   emit(type: string, event?: unknown) {
-    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+    (this.listeners.get(type) ?? new Set()).forEach((listener) =>
+      listener(event),
+    );
   }
 
   runIdle(id = 1) {
-    const callback = this.idleCallbacks.get(id)
-    if (!callback) return
-    this.idleCallbacks.delete(id)
-    callback()
+    const callback = this.idleCallbacks.get(id);
+    if (!callback) return;
+    this.idleCallbacks.delete(id);
+    callback();
   }
 
   listenerCount(type: string) {
-    return this.listeners.get(type)?.size ?? 0
+    return this.listeners.get(type)?.size ?? 0;
   }
 }
 
 class MockDeferredDocument {
-  visibilityState: DocumentVisibilityState = 'visible'
-  private readonly listeners = new Map<string, Set<MockWindowListener>>()
+  visibilityState: DocumentVisibilityState = "visible";
+  private readonly listeners = new Map<string, Set<MockWindowListener>>();
 
   addEventListener(type: string, listener: MockWindowListener) {
-    const listeners = this.listeners.get(type) ?? new Set()
-    listeners.add(listener)
-    this.listeners.set(type, listeners)
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
   }
 
   removeEventListener(type: string, listener: MockWindowListener) {
-    const listeners = this.listeners.get(type)
-    if (!listeners) return
-    listeners.delete(listener)
+    const listeners = this.listeners.get(type);
+    if (!listeners) return;
+    listeners.delete(listener);
     if (listeners.size === 0) {
-      this.listeners.delete(type)
+      this.listeners.delete(type);
     }
   }
 
   emit(type: string, event?: unknown) {
-    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+    (this.listeners.get(type) ?? new Set()).forEach((listener) =>
+      listener(event),
+    );
+  }
+
+  dispatchEvent(event: Event) {
+    this.emit(event.type, event);
+    return true;
   }
 
   setVisibility(state: DocumentVisibilityState) {
-    this.visibilityState = state
-    this.emit('visibilitychange')
+    this.visibilityState = state;
+    this.emit("visibilitychange");
   }
 }
 
 const createHomeBootstrapController = () => ({
   destroyed: false,
   isAuthenticated: false,
-  lang: 'en' as const,
-  path: '/',
+  lang: "en" as const,
+  path: "/",
   fragmentOrder: [],
-  planSignature: 'test',
-  versionSignature: 'v:test',
-  assets: normalizeHomeDemoAssetMap(),
+  planSignature: "test",
+  versionSignature: "v:test",
   homeDemoStylesheetHref: null,
   homeFragmentBootstrapHref: null,
   fetchAbort: null,
   cleanupFns: [],
-  demoRenders: new Map(),
-  pendingDemoRoots: new Set(),
-  demoObservationReady: false,
-  patchQueue: null
-})
+  patchQueue: null,
+});
 
 const createHomeFragmentPayload = (id: string) =>
   ({
     id,
     meta: { cacheKey: `${id}:1` },
     head: [],
-    css: '',
+    css: "",
     cacheUpdatedAt: 1,
-    tree: { type: 'element', tag: 'section', attrs: {}, children: [] }
-  }) as const
+    tree: { type: "element", tag: "section", attrs: {}, children: [] },
+  }) as const;
 
 const createTaskQueue = () => {
-  const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
+  const tasks: Array<{ callback: () => void; cancelled: boolean }> = [];
 
   return {
     scheduleTask: ((callback: () => void) => {
-      const task = { callback, cancelled: false }
-      tasks.push(task)
+      const task = { callback, cancelled: false };
+      tasks.push(task);
       return () => {
-        task.cancelled = true
-      }
-    }) as typeof import('./scheduler').scheduleStaticShellTask,
+        task.cancelled = true;
+      };
+    }) as typeof import("./scheduler").scheduleStaticShellTask,
     pendingCount: () => tasks.filter((task) => !task.cancelled).length,
     flushNext: async () => {
       while (tasks.length > 0) {
-        const task = tasks.shift()
-        if (!task || task.cancelled) continue
-        task.callback()
-        await flushMicrotasks()
-        return
+        const task = tasks.shift();
+        if (!task || task.cancelled) continue;
+        task.callback();
+        await flushMicrotasks();
+        return;
       }
-    }
-  }
-}
+    },
+  };
+};
 
 const createAnimationFrameQueue = () => {
-  let nextId = 1
-  const frames = new Map<number, FrameRequestCallback>()
+  let nextId = 1;
+  const frames = new Map<number, FrameRequestCallback>();
 
   return {
     requestFrame: ((callback: FrameRequestCallback) => {
-      const id = nextId
-      nextId += 1
-      frames.set(id, callback)
-      return id
+      const id = nextId;
+      nextId += 1;
+      frames.set(id, callback);
+      return id;
     }) as typeof requestAnimationFrame,
     cancelFrame: ((id: number) => {
-      frames.delete(id)
+      frames.delete(id);
     }) as typeof cancelAnimationFrame,
     pendingCount: () => frames.size,
     flushNext: () => {
-      const nextEntry = frames.entries().next()
-      if (nextEntry.done) return
-      const [id, callback] = nextEntry.value
-      frames.delete(id)
-      callback(0)
-    }
-  }
-}
+      const nextEntry = frames.entries().next();
+      if (nextEntry.done) return;
+      const [id, callback] = nextEntry.value;
+      frames.delete(id);
+      callback(0);
+    },
+  };
+};
 
 afterEach(() => {
-  MockIntersectionObserver.reset()
-})
+  MockIntersectionObserver.reset();
+});
 
-describe('bindHomeDemoActivation', () => {
-  it('does not activate home demos until they become visible and activates them one task at a time in order', async () => {
-    const taskQueue = createTaskQueue()
-    const activations: Array<{ kind: string; props: Record<string, unknown> }> = []
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    const island = new MockDemoElement('preact-island', { label: 'Mission clock' })
+describe("bindHomeDemoActivation", () => {
+  it("does not activate home demos until they become visible and activates them one task at a time in order", async () => {
+    const taskQueue = createTaskQueue();
+    const activations: Array<{ kind: string; props: Record<string, unknown> }> =
+      [];
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const island = new MockDemoElement("preact-island", {
+      label: "Mission clock",
+    });
     const manager = bindHomeDemoActivation({
       controller,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       activate: async ({ kind, props }) => {
-        activations.push({ kind, props })
-        return { cleanup: () => undefined }
-      }
-    })
+        activations.push({ kind, props });
+        return { cleanup: () => undefined };
+      },
+    });
 
-    manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
+    manager.observeWithin(
+      new MockRoot([planner, island]) as unknown as ParentNode,
+    );
 
-    expect(activations).toEqual([])
-    expect(taskQueue.pendingCount()).toBe(0)
+    expect(activations).toEqual([]);
+    expect(taskQueue.pendingCount()).toBe(0);
 
-    const observer = MockIntersectionObserver.instances[0]
-    expect(observer).toBeDefined()
+    const observer = MockIntersectionObserver.instances[0];
+    expect(observer).toBeDefined();
 
     observer?.emit([
       { target: planner as unknown as Element, isIntersecting: true },
-      { target: island as unknown as Element, isIntersecting: true }
-    ])
+      { target: island as unknown as Element, isIntersecting: true },
+    ]);
 
-    expect(taskQueue.pendingCount()).toBe(1)
-    expect(activations).toEqual([])
+    expect(taskQueue.pendingCount()).toBe(1);
+    expect(activations).toEqual([]);
 
-    await taskQueue.flushNext()
+    await taskQueue.flushNext();
 
-    expect(activations).toEqual([{ kind: 'planner', props: {} }])
-    expect(taskQueue.pendingCount()).toBe(1)
+    expect(activations).toEqual([{ kind: "planner", props: {} }]);
+    expect(taskQueue.pendingCount()).toBe(1);
 
-    await taskQueue.flushNext()
+    await taskQueue.flushNext();
 
     expect(activations).toEqual([
-      { kind: 'planner', props: {} },
-      { kind: 'preact-island', props: { label: 'Mission clock' } }
-    ])
-  })
+      { kind: "planner", props: {} },
+      { kind: "preact-island", props: { label: "Mission clock" } },
+    ]);
+  });
 
-  it('cleans up detached demos and activates replacement roots after a patch or language swap', async () => {
-    const taskQueue = createTaskQueue()
-    const activations: Array<{ kind: string; props: Record<string, unknown> }> = []
-    const cleanups: string[] = []
-    const controller = createController()
-    const englishIsland = new MockDemoElement('preact-island', { label: 'Mission clock' })
+  it("cleans up detached demos and activates replacement roots after a patch or language swap", async () => {
+    const taskQueue = createTaskQueue();
+    const activations: Array<{ kind: string; props: Record<string, unknown> }> =
+      [];
+    const cleanups: string[] = [];
+    const controller = createController();
+    const englishIsland = new MockDemoElement("preact-island", {
+      label: "Mission clock",
+    });
     const manager = bindHomeDemoActivation({
       controller,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       activate: async ({ kind, props }) => {
-        activations.push({ kind, props })
-        const label = typeof props.label === 'string' ? props.label : 'unknown'
-        return { cleanup: () => cleanups.push(`cleanup:${kind}:${label}`) }
-      }
-    })
+        activations.push({ kind, props });
+        const label = typeof props.label === "string" ? props.label : "unknown";
+        return { cleanup: () => cleanups.push(`cleanup:${kind}:${label}`) };
+      },
+    });
 
-    manager.observeWithin(new MockRoot([englishIsland]) as unknown as ParentNode)
-    const observer = MockIntersectionObserver.instances[0]
-    observer?.emit([{ target: englishIsland as unknown as Element, isIntersecting: true }])
-    await taskQueue.flushNext()
+    manager.observeWithin(
+      new MockRoot([englishIsland]) as unknown as ParentNode,
+    );
+    const observer = MockIntersectionObserver.instances[0];
+    observer?.emit([
+      { target: englishIsland as unknown as Element, isIntersecting: true },
+    ]);
+    await taskQueue.flushNext();
 
-    englishIsland.isConnected = false
-    const japaneseIsland = new MockDemoElement('preact-island', { label: 'Orbital timer' })
-    manager.observeWithin(new MockRoot([japaneseIsland]) as unknown as ParentNode)
+    englishIsland.isConnected = false;
+    const japaneseIsland = new MockDemoElement("preact-island", {
+      label: "Orbital timer",
+    });
+    manager.observeWithin(
+      new MockRoot([japaneseIsland]) as unknown as ParentNode,
+    );
 
-    expect(cleanups).toEqual(['cleanup:preact-island:Mission clock'])
+    expect(cleanups).toEqual(["cleanup:preact-island:Mission clock"]);
 
-    observer?.emit([{ target: japaneseIsland as unknown as Element, isIntersecting: true }])
-    await taskQueue.flushNext()
+    observer?.emit([
+      { target: japaneseIsland as unknown as Element, isIntersecting: true },
+    ]);
+    await taskQueue.flushNext();
 
     expect(activations).toEqual([
-      { kind: 'preact-island', props: { label: 'Mission clock' } },
-      { kind: 'preact-island', props: { label: 'Orbital timer' } }
-    ])
-    expect(controller.demoRenders.has(japaneseIsland as unknown as Element)).toBe(true)
-  })
+      { kind: "preact-island", props: { label: "Mission clock" } },
+      { kind: "preact-island", props: { label: "Orbital timer" } },
+    ]);
+    expect(
+      controller.demoRenders.has(japaneseIsland as unknown as Element),
+    ).toBe(true);
+  });
 
-  it('does not double-activate the same root on repeated visibility events', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    let activationCount = 0
+  it("does not double-activate the same root on repeated visibility events", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    let activationCount = 0;
     const manager = bindHomeDemoActivation({
       controller,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       activate: async () => {
-        activationCount += 1
-        return { cleanup: () => undefined }
-      }
-    })
+        activationCount += 1;
+        return { cleanup: () => undefined };
+      },
+    });
 
-    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
-    const observer = MockIntersectionObserver.instances[0]
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
+    const observer = MockIntersectionObserver.instances[0];
 
-    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true }])
-    await taskQueue.flushNext()
+    observer?.emit([
+      { target: planner as unknown as Element, isIntersecting: true },
+    ]);
+    await taskQueue.flushNext();
 
-    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true }])
-    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
-    await taskQueue.flushNext()
+    observer?.emit([
+      { target: planner as unknown as Element, isIntersecting: true },
+    ]);
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
+    await taskQueue.flushNext();
 
-    expect(activationCount).toBe(1)
-    expect(taskQueue.pendingCount()).toBe(0)
-  })
+    expect(activationCount).toBe(1);
+    expect(taskQueue.pendingCount()).toBe(0);
+  });
 
-  it('activates demos as soon as they intersect at the zero threshold', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    let activationCount = 0
+  it("activates demos as soon as they intersect at the zero threshold", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    let activationCount = 0;
     const manager = bindHomeDemoActivation({
       controller,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       activate: async () => {
-        activationCount += 1
-        return { cleanup: () => undefined }
-      }
-    })
+        activationCount += 1;
+        return { cleanup: () => undefined };
+      },
+    });
 
-    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
-    const observer = MockIntersectionObserver.instances[0]
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
+    const observer = MockIntersectionObserver.instances[0];
 
-    observer?.emit([{ target: planner as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
-    expect(taskQueue.pendingCount()).toBe(1)
+    observer?.emit([
+      {
+        target: planner as unknown as Element,
+        isIntersecting: true,
+        intersectionRatio: 0.1,
+      },
+    ]);
+    expect(taskQueue.pendingCount()).toBe(1);
 
-    await taskQueue.flushNext()
+    await taskQueue.flushNext();
 
-    expect(activationCount).toBe(1)
-  })
+    expect(activationCount).toBe(1);
+  });
 
-  it('falls back to viewport geometry when IntersectionObserver is unavailable', async () => {
-    const taskQueue = createTaskQueue()
-    const activations: string[] = []
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
+  it("falls back to viewport geometry when IntersectionObserver is unavailable", async () => {
+    const taskQueue = createTaskQueue();
+    const activations: string[] = [];
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
     const globals = globalThis as typeof globalThis & {
-      window?: { innerWidth?: number; innerHeight?: number }
-    }
-    const originalWindow = globals.window
+      window?: { innerWidth?: number; innerHeight?: number };
+    };
+    const originalWindow = globals.window;
     planner.setRect({
       top: 120,
       left: 0,
       right: 420,
       bottom: 360,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
 
     globals.window = {
       ...(originalWindow ?? {}),
       innerWidth: 1440,
-      innerHeight: 1200
-    }
+      innerHeight: 1200,
+    };
 
     try {
       const manager = bindHomeDemoActivation({
         controller,
         scheduleTask: taskQueue.scheduleTask,
         activate: async ({ kind }) => {
-          activations.push(kind)
-          return { cleanup: () => undefined }
-        }
-      })
+          activations.push(kind);
+          return { cleanup: () => undefined };
+        },
+      });
 
-      manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode)
+      manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
 
-      expect(taskQueue.pendingCount()).toBe(2)
+      expect(taskQueue.pendingCount()).toBe(2);
 
-      await taskQueue.flushNext()
-      expect(activations).toEqual([])
+      await taskQueue.flushNext();
+      expect(activations).toEqual([]);
 
-      await taskQueue.flushNext()
+      await taskQueue.flushNext();
 
-      expect(activations).toEqual(['planner'])
+      expect(activations).toEqual(["planner"]);
     } finally {
-      globals.window = originalWindow
+      globals.window = originalWindow;
     }
-  })
+  });
 
-  it('does not read geometry eagerly before warming demo assets when observers exist', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    const island = new MockDemoElement('preact-island')
-    const warmSnapshots: string[] = []
+  it("does not read geometry eagerly before warming demo assets when observers exist", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const island = new MockDemoElement("preact-island");
+    const warmSnapshots: string[] = [];
     const globals = globalThis as typeof globalThis & {
-      window?: { innerWidth?: number; innerHeight?: number }
-    }
-    const originalWindow = globals.window
+      window?: { innerWidth?: number; innerHeight?: number };
+    };
+    const originalWindow = globals.window;
 
     planner.setRect({
       top: 120,
@@ -593,64 +649,69 @@ describe('bindHomeDemoActivation', () => {
       right: 420,
       bottom: 360,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
     island.setRect({
       top: 420,
       left: 0,
       right: 420,
       bottom: 660,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
 
     globals.window = {
       ...(originalWindow ?? {}),
       innerWidth: 1440,
-      innerHeight: 900
-    }
+      innerHeight: 900,
+    };
 
     try {
       const manager = bindHomeDemoActivation({
         controller,
         scheduleTask: taskQueue.scheduleTask,
-        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        ObserverImpl:
+          MockIntersectionObserver as unknown as typeof IntersectionObserver,
         warmKind: async (kind) => {
-          warmSnapshots.push(`${kind}:${planner.rectReadCount}:${island.rectReadCount}`)
+          warmSnapshots.push(
+            `${kind}:${planner.rectReadCount}:${island.rectReadCount}`,
+          );
         },
-        activate: async () => ({ cleanup: () => undefined })
-      })
+        activate: async () => ({ cleanup: () => undefined }),
+      });
 
-      manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
+      manager.observeWithin(
+        new MockRoot([planner, island]) as unknown as ParentNode,
+      );
 
-      expect(planner.rectReadCount).toBe(0)
-      expect(island.rectReadCount).toBe(0)
-      expect(warmSnapshots).toEqual([])
+      expect(planner.rectReadCount).toBe(0);
+      expect(island.rectReadCount).toBe(0);
+      expect(warmSnapshots).toEqual([]);
 
       MockIntersectionObserver.instances.forEach((observer) => {
         observer.emit([
           { target: planner as unknown as Element, isIntersecting: true },
-          { target: island as unknown as Element, isIntersecting: true }
-        ])
-      })
-      await flushMicrotasks()
+          { target: island as unknown as Element, isIntersecting: true },
+        ]);
+      });
+      await flushMicrotasks();
 
-      expect(warmSnapshots).toEqual(['planner:0:0', 'preact-island:0:0'])
+      expect(warmSnapshots).toEqual(["planner:0:0", "preact-island:0:0"]);
     } finally {
-      globals.window = originalWindow
+      globals.window = originalWindow;
     }
-  })
+  });
 
-  it('skips near-view warmups on mobile-sized viewports', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    const island = new MockDemoElement('preact-island')
-    const warmKinds: string[] = []
+  it("skips near-view warmups on mobile-sized viewports", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const island = new MockDemoElement("preact-island");
+    const warmKinds: string[] = [];
     const globals = globalThis as typeof globalThis & {
-      window?: { innerWidth?: number; innerHeight?: number }
-    }
-    const originalWindow = globals.window
+      window?: { innerWidth?: number; innerHeight?: number };
+    };
+    const originalWindow = globals.window;
 
     planner.setRect({
       top: 120,
@@ -658,64 +719,69 @@ describe('bindHomeDemoActivation', () => {
       right: 360,
       bottom: 360,
       width: 360,
-      height: 240
-    })
+      height: 240,
+    });
     island.setRect({
       top: 880,
       left: 0,
       right: 360,
       bottom: 1120,
       width: 360,
-      height: 240
-    })
+      height: 240,
+    });
 
     globals.window = {
       ...(originalWindow ?? {}),
       innerWidth: 390,
-      innerHeight: 844
-    }
+      innerHeight: 844,
+    };
 
     try {
       const manager = bindHomeDemoActivation({
         controller,
         scheduleTask: taskQueue.scheduleTask,
-        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        ObserverImpl:
+          MockIntersectionObserver as unknown as typeof IntersectionObserver,
         warmKind: async (kind) => {
-          warmKinds.push(kind)
+          warmKinds.push(kind);
         },
-        activate: async () => ({ cleanup: () => undefined })
-      })
+        activate: async () => ({ cleanup: () => undefined }),
+      });
 
-      manager.observeWithin(new MockRoot([planner, island]) as unknown as ParentNode)
+      manager.observeWithin(
+        new MockRoot([planner, island]) as unknown as ParentNode,
+      );
 
-      const activationObserver = MockIntersectionObserver.instances[0]
-      const warmObserver = MockIntersectionObserver.instances[1]
+      const activationObserver = MockIntersectionObserver.instances[0];
+      const warmObserver = MockIntersectionObserver.instances[1];
 
-      activationObserver?.emit([{ target: planner as unknown as Element, isIntersecting: true }])
+      activationObserver?.emit([
+        { target: planner as unknown as Element, isIntersecting: true },
+      ]);
       warmObserver?.emit([
         { target: planner as unknown as Element, isIntersecting: true },
-        { target: island as unknown as Element, isIntersecting: true }
-      ])
-      await flushMicrotasks()
+        { target: island as unknown as Element, isIntersecting: true },
+      ]);
+      await flushMicrotasks();
 
-      expect(warmKinds).toEqual(['planner'])
+      expect(warmKinds).toEqual(["planner"]);
     } finally {
-      globals.window = originalWindow
+      globals.window = originalWindow;
     }
-  })
+  });
 
-  it('warms visible demos first and caps near-view warmups to the configured desktop budget', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createController()
-    const planner = new MockDemoElement('planner')
-    const island = new MockDemoElement('preact-island')
-    const wasm = new MockDemoElement('wasm-renderer')
-    const react = new MockDemoElement('react-binary')
-    const warmKinds: string[] = []
+  it("warms visible demos first and caps near-view warmups to the configured desktop budget", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const island = new MockDemoElement("preact-island");
+    const wasm = new MockDemoElement("wasm-renderer");
+    const react = new MockDemoElement("react-binary");
+    const warmKinds: string[] = [];
     const globals = globalThis as typeof globalThis & {
-      window?: { innerWidth?: number; innerHeight?: number }
-    }
-    const originalWindow = globals.window
+      window?: { innerWidth?: number; innerHeight?: number };
+    };
+    const originalWindow = globals.window;
 
     planner.setRect({
       top: 120,
@@ -723,756 +789,722 @@ describe('bindHomeDemoActivation', () => {
       right: 420,
       bottom: 360,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
     island.setRect({
       top: 380,
       left: 0,
       right: 420,
       bottom: 620,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
     wasm.setRect({
       top: 940,
       left: 0,
       right: 420,
       bottom: 1180,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
     react.setRect({
       top: 1220,
       left: 0,
       right: 420,
       bottom: 1460,
       width: 420,
-      height: 240
-    })
+      height: 240,
+    });
 
     globals.window = {
       ...(originalWindow ?? {}),
       innerWidth: 1440,
-      innerHeight: 900
-    }
+      innerHeight: 900,
+    };
 
     try {
       const manager = bindHomeDemoActivation({
         controller,
         scheduleTask: taskQueue.scheduleTask,
-        ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        ObserverImpl:
+          MockIntersectionObserver as unknown as typeof IntersectionObserver,
         warmKind: async (kind) => {
-          warmKinds.push(kind)
+          warmKinds.push(kind);
         },
-        activate: async () => ({ cleanup: () => undefined })
-      })
+        activate: async () => ({ cleanup: () => undefined }),
+      });
 
-      manager.observeWithin(new MockRoot([planner, island, wasm, react]) as unknown as ParentNode)
+      manager.observeWithin(
+        new MockRoot([planner, island, wasm, react]) as unknown as ParentNode,
+      );
 
-      const activationObserver = MockIntersectionObserver.instances[0]
-      const warmObserver = MockIntersectionObserver.instances[1]
+      const activationObserver = MockIntersectionObserver.instances[0];
+      const warmObserver = MockIntersectionObserver.instances[1];
 
       activationObserver?.emit([
         { target: planner as unknown as Element, isIntersecting: true },
-        { target: island as unknown as Element, isIntersecting: true }
-      ])
+        { target: island as unknown as Element, isIntersecting: true },
+      ]);
       warmObserver?.emit([
         { target: wasm as unknown as Element, isIntersecting: true },
-        { target: react as unknown as Element, isIntersecting: true }
-      ])
-      await flushMicrotasks()
+        { target: react as unknown as Element, isIntersecting: true },
+      ]);
+      await flushMicrotasks();
 
-      expect(warmKinds).toEqual(['planner', 'preact-island', 'wasm-renderer'])
+      expect(warmKinds).toEqual(["planner", "preact-island", "wasm-renderer"]);
     } finally {
-      globals.window = originalWindow
+      globals.window = originalWindow;
     }
-  })
-})
+  });
+});
 
-describe('scheduleStaticHomePaintReady', () => {
-  it('flips the home paint attribute to ready only after two animation frames', () => {
-    const frameQueue = createAnimationFrameQueue()
-    const root = new MockStaticHomeRoot()
-
-    const cleanup = scheduleStaticHomePaintReady({
-      root: root as unknown as Element,
-      requestFrame: frameQueue.requestFrame,
-      cancelFrame: frameQueue.cancelFrame
-    })
-
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('initial')
-    expect(frameQueue.pendingCount()).toBe(1)
-
-    frameQueue.flushNext()
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('initial')
-    expect(frameQueue.pendingCount()).toBe(1)
-
-    frameQueue.flushNext()
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
-
-    cleanup()
-  })
-})
-
-describe('scheduleInitialHomeDemoObservation', () => {
-  it('schedules one deferred initial demo observation after bootstrap', async () => {
-    const taskQueue = createTaskQueue()
-    const controller = createHomeBootstrapController()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-
-    const cleanup = scheduleInitialHomeDemoObservation({
-      controller,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      root: demoRoot,
-      scheduleTask: taskQueue.scheduleTask
-    })
-
-    expect(taskQueue.pendingCount()).toBe(1)
-    expect(controller.demoObservationReady).toBe(false)
-    expect(observedRoots).toEqual([])
-
-    await taskQueue.flushNext()
-
-    expect(controller.demoObservationReady).toBe(true)
-    expect(observedRoots).toEqual([demoRoot])
-    expect(taskQueue.pendingCount()).toBe(0)
-
-    cleanup()
-  })
-})
-
-describe('scheduleHomePostLcpTasks', () => {
-  it('arms deferred revalidation and demo observation only after the LCP gate resolves', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const controller = createHomeBootstrapController()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller,
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => previewRefreshCalls.push('retry')
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    await flushMicrotasks()
-
-    expect(observedRoots).toEqual([])
-    expect(previewRefreshCalls).toEqual([])
-    expect(authRefreshCalls).toEqual([])
-    expect(win.idleCallbacks.size).toBe(0)
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(observedRoots).toEqual([])
-    expect(previewRefreshCalls).toEqual([])
-    expect(authRefreshCalls).toEqual([])
-    expect(controller.demoObservationReady).toBe(false)
-    expect(win.idleCallbacks.size).toBe(2)
-    expect(win.timeouts.size).toBe(0)
-    expect(win.listenerCount('pageshow')).toBe(1)
-
-    cleanup()
-    expect(manualGate.cleanupCount()).toBe(1)
-    expect(win.listenerCount('pageshow')).toBe(0)
-  })
-
-  it('runs deferred revalidation on first user intent after the LCP gate resolves', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const controller = createHomeBootstrapController()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller,
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => undefined
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    win.emit('pointerdown')
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-    expect(controller.demoObservationReady).toBe(true)
-
-    win.emit('keydown')
-    win.runIdle()
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-    cleanup()
-  })
-
-  it('skips deferred demo observation when an existing controller already owns it', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const controller = createHomeBootstrapController()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-
-    controller.demoObservationReady = true
-
-    const cleanup = scheduleHomePostLcpTasks({
-      controller,
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => undefined
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(win.idleCallbacks.size).toBe(1)
-    expect(observedRoots).toEqual([])
-
-    win.emit('pointerdown')
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([])
-
-    cleanup()
-  })
-
-  it('runs deferred revalidation from the idle fallback when there is no user intent', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => undefined
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-    win.runIdle()
-    win.runIdle(2)
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-    cleanup()
-  })
-
-  it('runs deferred revalidation when the page becomes visible again before it starts', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => undefined
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    doc.setVisibility('hidden')
-    manualGate.resolve()
-    await flushMicrotasks()
-    win.runIdle()
-    win.runIdle(2)
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual([])
-    expect(authRefreshCalls).toEqual([])
-    expect(observedRoots).toEqual([])
-
-    doc.setVisibility('visible')
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-    cleanup()
-  })
-
-  it('retries pending hydration and revalidates auth on persisted pageshow', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const retryCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => retryCalls.push('retry')
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(retryCalls).toEqual(['retry'])
-    expect(authRefreshCalls).toEqual(['refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-
-    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual(['refresh'])
-    expect(retryCalls).toEqual(['retry', 'retry'])
-    expect(authRefreshCalls).toEqual(['refresh', 'refresh'])
-    expect(observedRoots).toEqual([demoRoot])
-    cleanup()
-  })
-
-  it('cancels pending deferred revalidation triggers during cleanup', async () => {
-    const manualGate = createManualLcpGate()
-    const win = new MockDeferredWindow()
-    const doc = new MockDeferredDocument()
-    const demoRoot = {} as ParentNode
-    const observedRoots: ParentNode[] = []
-    const previewRefreshCalls: string[] = []
-    const authRefreshCalls: string[] = []
-    const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
-      lcpGate: manualGate.gate,
-      homeDemoActivation: {
-        observeWithin: (root) => observedRoots.push(root)
-      },
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => previewRefreshCalls.push('refresh'),
-        retryPending: () => undefined
-      },
-      root: demoRoot,
-      win: win as never,
-      doc: doc as never,
-      refreshAuth: async () => {
-        authRefreshCalls.push('refresh')
-      }
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-    cleanup()
-
-    win.emit('pointerdown')
-    win.runIdle()
-    win.emit('pageshow', { persisted: true } as PageTransitionEvent)
-    await flushMicrotasks()
-
-    expect(previewRefreshCalls).toEqual([])
-    expect(authRefreshCalls).toEqual([])
-    expect(observedRoots).toEqual([])
-    expect(manualGate.cleanupCount()).toBe(1)
-  })
-})
-
-describe('bindHomeFragmentHydration', () => {
-  it('schedules anchor hydration only after the home paint attribute flips to ready', async () => {
-    const frameQueue = createAnimationFrameQueue()
-    const taskQueue = createTaskQueue()
-    const anchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor')
-    const deferred = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred')
-    const root = new MockStaticHomeDocumentRoot([anchor, deferred])
-    const fetchCalls: string[][] = []
-    const enqueued: string[] = []
-    const hydration = bindHomeFragmentHydration({
-      controller: {
-        destroyed: false,
-        lang: 'en',
-        fetchAbort: null,
-        patchQueue: {
-          enqueue: (payload) => enqueued.push(payload.id),
-          setVisible: () => undefined,
-          flushNow: () => undefined,
-          destroy: () => undefined
-        }
-      },
-      root: root as unknown as ParentNode,
-      scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
-      fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
-      }
-    })
+describe("scheduleStaticHomePaintReady", () => {
+  it("flips the home paint attribute to ready only after two animation frames", () => {
+    const frameQueue = createAnimationFrameQueue();
+    const root = new MockStaticHomeRoot();
 
     const cleanup = scheduleStaticHomePaintReady({
       root: root as unknown as Element,
       requestFrame: frameQueue.requestFrame,
       cancelFrame: frameQueue.cancelFrame,
-      onReady: () => hydration.scheduleAnchorHydration()
-    })
+    });
 
-    expect(fetchCalls).toEqual([])
-    expect(taskQueue.pendingCount()).toBe(0)
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("initial");
+    expect(frameQueue.pendingCount()).toBe(1);
 
-    frameQueue.flushNext()
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('initial')
-    expect(taskQueue.pendingCount()).toBe(0)
+    frameQueue.flushNext();
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("initial");
+    expect(frameQueue.pendingCount()).toBe(1);
 
-    frameQueue.flushNext()
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
-    expect(taskQueue.pendingCount()).toBe(1)
+    frameQueue.flushNext();
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("ready");
 
-    await taskQueue.flushNext()
-    await flushMicrotasks()
+    cleanup();
+  });
+});
 
-    expect(fetchCalls).toEqual([['fragment://page/home/planner@v1']])
-    expect(enqueued).toEqual(['fragment://page/home/planner@v1'])
+describe("requestHomeDemoObserve", () => {
+  it("dispatches the internal demo observe event with the requested root", () => {
+    const doc = new MockDeferredDocument();
+    const observedRoots: ParentNode[] = [];
+    const root = {} as ParentNode;
 
-    cleanup()
-    hydration.destroy()
-  })
+    doc.addEventListener(HOME_DEMO_OBSERVE_EVENT, (event) => {
+      observedRoots.push(
+        ((event as CustomEvent<{ root?: ParentNode | null }>).detail.root ??
+          null) as ParentNode,
+      );
+    });
 
-  it('starts the home demo stylesheet load before patching fetched home fragments', async () => {
-    const taskQueue = createTaskQueue()
-    const anchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor')
-    const root = new MockStaticHomeDocumentRoot([anchor])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const callOrder: string[] = []
-    const enqueued: string[] = []
-    let resolveStylesheet!: () => void
-    const stylesheetReady = new Promise<void>((resolve) => {
-      resolveStylesheet = () => {
-        callOrder.push('stylesheet:ready')
-        resolve()
-      }
-    })
+    expect(requestHomeDemoObserve({ root, doc: doc as never })).toBe(true);
+    expect(observedRoots).toEqual([root]);
+  });
+});
+
+describe("scheduleHomePostLcpTasks", () => {
+  it("arms deferred revalidation only after the LCP gate resolves", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const controller = createHomeBootstrapController();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller,
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => previewRefreshCalls.push("retry"),
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual([]);
+    expect(win.idleCallbacks.size).toBe(0);
+
+    manualGate.resolve();
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual([]);
+    expect(win.idleCallbacks.size).toBe(1);
+    expect(win.timeouts.size).toBe(0);
+    expect(win.listenerCount("pageshow")).toBe(1);
+
+    cleanup();
+    expect(manualGate.cleanupCount()).toBe(1);
+    expect(win.listenerCount("pageshow")).toBe(0);
+  });
+
+  it("runs deferred revalidation on first user intent after the LCP gate resolves", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const controller = createHomeBootstrapController();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller,
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    manualGate.resolve();
+    await flushMicrotasks();
+
+    win.emit("pointerdown");
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+
+    win.emit("keydown");
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+    cleanup();
+  });
+
+  it("runs deferred revalidation from the idle fallback when there is no user intent", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    manualGate.resolve();
+    await flushMicrotasks();
+    win.runIdle();
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+    cleanup();
+  });
+
+  it("runs deferred revalidation when the page becomes visible again before it starts", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    doc.setVisibility("hidden");
+    manualGate.resolve();
+    await flushMicrotasks();
+    win.runIdle();
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual([]);
+
+    doc.setVisibility("visible");
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+    cleanup();
+  });
+
+  it("retries pending hydration and revalidates auth on persisted pageshow", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const previewRefreshCalls: string[] = [];
+    const retryCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => retryCalls.push("retry"),
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    manualGate.resolve();
+    await flushMicrotasks();
+
+    win.emit("pageshow", { persisted: true } as PageTransitionEvent);
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(retryCalls).toEqual(["retry"]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+
+    win.emit("pageshow", { persisted: true } as PageTransitionEvent);
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(retryCalls).toEqual(["retry", "retry"]);
+    expect(authRefreshCalls).toEqual(["refresh", "refresh"]);
+    cleanup();
+  });
+
+  it("cancels pending deferred revalidation triggers during cleanup", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    manualGate.resolve();
+    await flushMicrotasks();
+    cleanup();
+
+    win.emit("pointerdown");
+    win.runIdle();
+    win.emit("pageshow", { persisted: true } as PageTransitionEvent);
+    await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual([]);
+    expect(manualGate.cleanupCount()).toBe(1);
+  });
+});
+
+describe("bindHomeFragmentHydration", () => {
+  it("schedules anchor hydration only after the home paint attribute flips to ready", async () => {
+    const frameQueue = createAnimationFrameQueue();
+    const taskQueue = createTaskQueue();
+    const anchor = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+    );
+    const deferred = new MockFragmentCard(
+      "fragment://page/home/ledger@v1",
+      "deferred",
+    );
+    const root = new MockStaticHomeDocumentRoot([anchor, deferred]);
+    const fetchCalls: string[][] = [];
+    const enqueued: string[] = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
-        homeDemoStylesheetHref: '/assets/home-static-deferred.css',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: (payload) => enqueued.push(payload.id),
           setVisible: () => undefined,
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      fetchBatch: async (ids) => {
+        fetchCalls.push(ids);
+        return Object.fromEntries(
+          ids.map((id) => [id, createHomeFragmentPayload(id)]),
+        );
+      },
+    });
+
+    const cleanup = scheduleStaticHomePaintReady({
+      root: root as unknown as Element,
+      requestFrame: frameQueue.requestFrame,
+      cancelFrame: frameQueue.cancelFrame,
+      onReady: () => hydration.scheduleAnchorHydration(),
+    });
+
+    expect(fetchCalls).toEqual([]);
+    expect(taskQueue.pendingCount()).toBe(0);
+
+    frameQueue.flushNext();
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("initial");
+    expect(taskQueue.pendingCount()).toBe(0);
+
+    frameQueue.flushNext();
+    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("ready");
+    expect(taskQueue.pendingCount()).toBe(1);
+
+    await taskQueue.flushNext();
+    await flushMicrotasks();
+
+    expect(fetchCalls).toEqual([["fragment://page/home/planner@v1"]]);
+    expect(enqueued).toEqual(["fragment://page/home/planner@v1"]);
+
+    cleanup();
+    hydration.destroy();
+  });
+
+  it("starts the home demo stylesheet load before patching fetched home fragments", async () => {
+    const taskQueue = createTaskQueue();
+    const anchor = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+    );
+    const root = new MockStaticHomeDocumentRoot([anchor]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const callOrder: string[] = [];
+    const enqueued: string[] = [];
+    let resolveStylesheet!: () => void;
+    const stylesheetReady = new Promise<void>((resolve) => {
+      resolveStylesheet = () => {
+        callOrder.push("stylesheet:ready");
+        resolve();
+      };
+    });
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: "en",
+        homeDemoStylesheetHref: "/assets/home-static-deferred.css",
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: (payload) => enqueued.push(payload.id),
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
       ensureDemoStylesheet: async () => {
-        callOrder.push('stylesheet:start')
-        await stylesheetReady
+        callOrder.push("stylesheet:start");
+        await stylesheetReady;
       },
       fetchBatch: async (ids) => {
-        callOrder.push('fetch:start')
-        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
-      }
-    })
+        callOrder.push("fetch:start");
+        return Object.fromEntries(
+          ids.map((id) => [id, createHomeFragmentPayload(id)]),
+        );
+      },
+    });
 
-    hydration.scheduleAnchorHydration()
-    expect(taskQueue.pendingCount()).toBe(1)
+    hydration.scheduleAnchorHydration();
+    expect(taskQueue.pendingCount()).toBe(1);
 
-    await taskQueue.flushNext()
-    await flushMicrotasks()
+    await taskQueue.flushNext();
+    await flushMicrotasks();
 
-    expect(callOrder).toEqual(['stylesheet:start', 'fetch:start'])
-    expect(enqueued).toEqual([])
+    expect(callOrder).toEqual(["stylesheet:start", "fetch:start"]);
+    expect(enqueued).toEqual([]);
 
-    resolveStylesheet()
-    await flushMicrotasks()
+    resolveStylesheet();
+    await flushMicrotasks();
 
-    expect(callOrder).toEqual(['stylesheet:start', 'fetch:start', 'stylesheet:ready'])
-    expect(enqueued).toEqual(['fragment://page/home/planner@v1'])
+    expect(callOrder).toEqual([
+      "stylesheet:start",
+      "fetch:start",
+      "stylesheet:ready",
+    ]);
+    expect(enqueued).toEqual(["fragment://page/home/planner@v1"]);
 
-    hydration.destroy()
-  })
+    hydration.destroy();
+  });
 
-  it('does not fetch deferred cards until they become visible', async () => {
-    const taskQueue = createTaskQueue()
-    const deferred = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred')
-    const root = new MockStaticHomeDocumentRoot([deferred])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const fetchCalls: string[][] = []
-    const visibility: Array<{ id: string; visible: boolean }> = []
+  it("does not fetch deferred cards until they become visible", async () => {
+    const taskQueue = createTaskQueue();
+    const deferred = new MockFragmentCard(
+      "fragment://page/home/ledger@v1",
+      "deferred",
+    );
+    const root = new MockStaticHomeDocumentRoot([deferred]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const fetchCalls: string[][] = [];
+    const visibility: Array<{ id: string; visible: boolean }> = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: (id, visible) => visibility.push({ id, visible }),
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
-      }
-    })
+        fetchCalls.push(ids);
+        return Object.fromEntries(
+          ids.map((id) => [id, createHomeFragmentPayload(id)]),
+        );
+      },
+    });
 
-    hydration.observeWithin(root as unknown as ParentNode)
+    hydration.observeWithin(root as unknown as ParentNode);
 
-    expect(fetchCalls).toEqual([])
-    expect(taskQueue.pendingCount()).toBe(0)
+    expect(fetchCalls).toEqual([]);
+    expect(taskQueue.pendingCount()).toBe(0);
 
-    const observer = MockIntersectionObserver.instances[0]
-    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: false, intersectionRatio: 0 }])
-
-    expect(visibility).toEqual([{ id: 'fragment://page/home/ledger@v1', visible: false }])
-    expect(taskQueue.pendingCount()).toBe(0)
-
-    observer?.emit([{ target: deferred as unknown as Element, isIntersecting: true, intersectionRatio: 0.1 }])
+    const observer = MockIntersectionObserver.instances[0];
+    observer?.emit([
+      {
+        target: deferred as unknown as Element,
+        isIntersecting: false,
+        intersectionRatio: 0,
+      },
+    ]);
 
     expect(visibility).toEqual([
-      { id: 'fragment://page/home/ledger@v1', visible: false },
-      { id: 'fragment://page/home/ledger@v1', visible: true }
-    ])
-    expect(taskQueue.pendingCount()).toBe(1)
+      { id: "fragment://page/home/ledger@v1", visible: false },
+    ]);
+    expect(taskQueue.pendingCount()).toBe(0);
 
-    await taskQueue.flushNext()
-    await flushMicrotasks()
+    observer?.emit([
+      {
+        target: deferred as unknown as Element,
+        isIntersecting: true,
+        intersectionRatio: 0.1,
+      },
+    ]);
 
-    expect(fetchCalls).toEqual([['fragment://page/home/ledger@v1']])
-    hydration.destroy()
-  })
+    expect(visibility).toEqual([
+      { id: "fragment://page/home/ledger@v1", visible: false },
+      { id: "fragment://page/home/ledger@v1", visible: true },
+    ]);
+    expect(taskQueue.pendingCount()).toBe(1);
 
-  it('retries hydration only for cards that are still pending', async () => {
-    const taskQueue = createTaskQueue()
-    const readyAnchor = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready')
-    const pendingAnchor = new MockFragmentCard('fragment://page/home/ledger@v1', 'anchor', 'pending')
-    const root = new MockStaticHomeDocumentRoot([readyAnchor, pendingAnchor])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const fetchCalls: string[][] = []
+    await taskQueue.flushNext();
+    await flushMicrotasks();
+
+    expect(fetchCalls).toEqual([["fragment://page/home/ledger@v1"]]);
+    hydration.destroy();
+  });
+
+  it("retries hydration only for cards that are still pending", async () => {
+    const taskQueue = createTaskQueue();
+    const readyAnchor = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+      "ready",
+    );
+    const pendingAnchor = new MockFragmentCard(
+      "fragment://page/home/ledger@v1",
+      "anchor",
+      "pending",
+    );
+    const root = new MockStaticHomeDocumentRoot([readyAnchor, pendingAnchor]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const fetchCalls: string[][] = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
       fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
-      }
-    })
+        fetchCalls.push(ids);
+        return Object.fromEntries(
+          ids.map((id) => [id, createHomeFragmentPayload(id)]),
+        );
+      },
+    });
 
-    hydration.retryPending()
-    await taskQueue.flushNext()
-    await flushMicrotasks()
+    hydration.retryPending();
+    await taskQueue.flushNext();
+    await flushMicrotasks();
 
-    expect(fetchCalls).toEqual([['fragment://page/home/ledger@v1']])
-    hydration.destroy()
-  })
+    expect(fetchCalls).toEqual([["fragment://page/home/ledger@v1"]]);
+    hydration.destroy();
+  });
 
-  it('does not fetch seeded preview cards during the initial anchor hydration pass', () => {
-    const taskQueue = createTaskQueue()
-    const readyPlanner = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready', 'planner')
-    const readyLedger = new MockFragmentCard('fragment://page/home/ledger@v1', 'deferred', 'ready', 'ledger')
-    const root = new MockStaticHomeDocumentRoot([readyPlanner, readyLedger])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const fetchCalls: string[][] = []
+  it("does not fetch seeded preview cards during the initial anchor hydration pass", () => {
+    const taskQueue = createTaskQueue();
+    const readyPlanner = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+      "ready",
+      "planner",
+    );
+    const readyLedger = new MockFragmentCard(
+      "fragment://page/home/ledger@v1",
+      "deferred",
+      "ready",
+      "ledger",
+    );
+    const root = new MockStaticHomeDocumentRoot([readyPlanner, readyLedger]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const fetchCalls: string[][] = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return {}
-      }
-    })
+        fetchCalls.push(ids);
+        return {};
+      },
+    });
 
-    hydration.observeWithin(root as unknown as ParentNode)
-    hydration.scheduleAnchorHydration()
+    hydration.observeWithin(root as unknown as ParentNode);
+    hydration.scheduleAnchorHydration();
 
-    expect(taskQueue.pendingCount()).toBe(0)
-    expect(fetchCalls).toEqual([])
+    expect(taskQueue.pendingCount()).toBe(0);
+    expect(fetchCalls).toEqual([]);
 
-    hydration.destroy()
-  })
+    hydration.destroy();
+  });
 
-  it('refreshes seeded preview anchors only after preview refreshes are enabled', async () => {
-    const taskQueue = createTaskQueue()
-    const readyPlanner = new MockFragmentCard('fragment://page/home/planner@v1', 'anchor', 'ready', 'planner')
-    const root = new MockStaticHomeDocumentRoot([readyPlanner])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const fetchCalls: string[][] = []
+  it("refreshes seeded preview anchors only after preview refreshes are enabled", async () => {
+    const taskQueue = createTaskQueue();
+    const readyPlanner = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+      "ready",
+      "planner",
+    );
+    const root = new MockStaticHomeDocumentRoot([readyPlanner]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const fetchCalls: string[][] = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
       fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return {}
-      }
-    })
+        fetchCalls.push(ids);
+        return {};
+      },
+    });
 
-    hydration.schedulePreviewRefreshes()
-    expect(taskQueue.pendingCount()).toBe(1)
+    hydration.schedulePreviewRefreshes();
+    expect(taskQueue.pendingCount()).toBe(1);
 
-    await taskQueue.flushNext()
-    await flushMicrotasks()
+    await taskQueue.flushNext();
+    await flushMicrotasks();
 
-    expect(fetchCalls).toEqual([['fragment://page/home/planner@v1']])
-    hydration.destroy()
-  })
+    expect(fetchCalls).toEqual([["fragment://page/home/planner@v1"]]);
+    hydration.destroy();
+  });
 
-  it('does not refetch a dock card that is already marked ready', async () => {
-    const taskQueue = createTaskQueue()
-    const readyDock = new MockFragmentCard('fragment://page/home/dock@v2', 'deferred', 'ready', 'dock')
-    const root = new MockStaticHomeDocumentRoot([readyDock])
-    root.setAttribute(STATIC_HOME_PAINT_ATTR, 'ready')
-    const fetchCalls: string[][] = []
+  it("does not refetch a dock card that is already marked ready", async () => {
+    const taskQueue = createTaskQueue();
+    const readyDock = new MockFragmentCard(
+      "fragment://page/home/dock@v2",
+      "deferred",
+      "ready",
+      "dock",
+    );
+    const root = new MockStaticHomeDocumentRoot([readyDock]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const fetchCalls: string[][] = [];
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
-        lang: 'en',
+        lang: "en",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
           flushNow: () => undefined,
-          destroy: () => undefined
-        }
+          destroy: () => undefined,
+        },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
-      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
       fetchBatch: async (ids) => {
-        fetchCalls.push(ids)
-        return Object.fromEntries(ids.map((id) => [id, createHomeFragmentPayload(id)]))
-      }
-    })
+        fetchCalls.push(ids);
+        return Object.fromEntries(
+          ids.map((id) => [id, createHomeFragmentPayload(id)]),
+        );
+      },
+    });
 
-    hydration.observeWithin(root as unknown as ParentNode)
-    hydration.retryPending()
+    hydration.observeWithin(root as unknown as ParentNode);
+    hydration.retryPending();
 
-    expect(taskQueue.pendingCount()).toBe(0)
-    expect(fetchCalls).toEqual([])
+    expect(taskQueue.pendingCount()).toBe(0);
+    expect(fetchCalls).toEqual([]);
 
-    hydration.destroy()
-  })
-})
+    hydration.destroy();
+  });
+});
