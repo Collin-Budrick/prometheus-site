@@ -8,6 +8,7 @@ import {
   resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight
 } from '@prometheus/ui/fragment-height'
+import { startStaticShellPerformanceMeasure } from './static-shell-performance'
 
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
@@ -59,25 +60,43 @@ const readCardWidth = (card: HTMLElement) => {
   return width > 0 ? width : null
 }
 
-const resolveCardHeightBucket = (card: HTMLElement) => {
+type FragmentCardMetrics = {
+  cardWidth: number | null
+  rectHeight: number
+  contentHeight: number
+}
+
+const readFragmentCardMetrics = (card: HTMLElement): FragmentCardMetrics => {
+  const rect =
+    typeof card.getBoundingClientRect === 'function' ? card.getBoundingClientRect() : ({ width: 0, height: 0 } as DOMRect)
+  const rawWidth = Math.ceil(rect.width)
+  return {
+    cardWidth: rawWidth > 0 ? rawWidth : null,
+    rectHeight: Math.ceil(rect.height),
+    contentHeight: Math.ceil(card.scrollHeight)
+  }
+}
+
+const resolveCardHeightBucket = (card: HTMLElement, cardWidth: number | null = null) => {
   const layout = readCardHeightLayout(card)
   if (!layout) {
     return { layout: null, viewport: getFragmentHeightViewport(), cardWidth: null, widthBucket: null }
   }
-  const cardWidth = readCardWidth(card)
-  const viewport = getFragmentHeightViewport(cardWidth ?? undefined)
+  const resolvedCardWidth = cardWidth ?? readCardWidth(card)
+  const viewport = getFragmentHeightViewport(resolvedCardWidth ?? undefined)
   const widthBucket = resolveFragmentHeightWidthBucket({
     layout,
     viewport,
-    cardWidth
+    cardWidth: resolvedCardWidth
   })
-  return { layout, viewport, cardWidth, widthBucket }
+  return { layout, viewport, cardWidth: resolvedCardWidth, widthBucket }
 }
 
 const readLearnedCardHeight = (
   card: HTMLElement,
   fragmentId: string,
-  routeContext?: FragmentHeightRouteContext | null
+  routeContext?: FragmentHeightRouteContext | null,
+  cardMetrics?: FragmentCardMetrics | null
 ) => {
   if (!routeContext) {
     return null
@@ -88,7 +107,10 @@ const readLearnedCardHeight = (
     return null
   }
 
-  const { layout, viewport, cardWidth, widthBucket } = resolveCardHeightBucket(card)
+  const { layout, viewport, cardWidth, widthBucket } = resolveCardHeightBucket(
+    card,
+    cardMetrics?.cardWidth ?? null
+  )
   if (!layout) {
     return null
   }
@@ -133,22 +155,27 @@ const readLearnedCardHeight = (
 const measureFragmentCardHeight = (
   card: HTMLElement,
   fallbackHeight = 0,
-  includeContentHeight = false
+  includeContentHeight = false,
+  metrics: FragmentCardMetrics = readFragmentCardMetrics(card)
 ) =>
   Math.max(
     includeContentHeight ||
     (typeof (card as Element).getAttribute === 'function' &&
       (card as Element).getAttribute(FRAGMENT_HEIGHT_LOCK_ATTR) === 'true')
-      ? Math.ceil(card.scrollHeight)
+      ? metrics.contentHeight
       : 0,
-    Math.ceil(card.getBoundingClientRect().height),
+    metrics.rectHeight,
     normalizeFragmentHeight(fallbackHeight) ?? 0
   )
 
 export const lockFragmentCardHeight = (card: HTMLElement, reservedHeight?: number | null) => {
   const lockToken = `${nextFragmentHeightLockId++}`
   const fallbackHeight = normalizeFragmentHeight(reservedHeight) ?? readCardHeightHint(card)
-  const lockHeight = Math.max(measureFragmentCardHeight(card, fallbackHeight, true), fallbackHeight)
+  const cardMetrics = readFragmentCardMetrics(card)
+  const lockHeight = Math.max(
+    measureFragmentCardHeight(card, fallbackHeight, true, cardMetrics),
+    fallbackHeight
+  )
 
   card.setAttribute(FRAGMENT_HEIGHT_LOCK_ATTR, 'true')
   card.setAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR, lockToken)
@@ -202,7 +229,8 @@ const waitForStableFrames = (
 ): Promise<number> =>
   new Promise((resolve) => {
     scheduleFrame(() => {
-      const nextHeight = measureFragmentCardHeight(card, reservedHeight)
+      const cardMetrics = readFragmentCardMetrics(card)
+      const nextHeight = measureFragmentCardHeight(card, reservedHeight, false, cardMetrics)
       if (lastHeight >= 0 && Math.abs(nextHeight - lastHeight) <= 1) {
         if (remaining <= 1) {
           resolve(nextHeight)
@@ -231,7 +259,12 @@ const primeFragmentCardReservedHeight = ({
     normalizeFragmentHeight(reservedHeight) ?? 0,
     readCardHeightHint(card)
   )
-  const learned = readLearnedCardHeight(card, fragmentId, routeContext)
+  const learned = readLearnedCardHeight(
+    card,
+    fragmentId,
+    routeContext,
+    routeContext ? readFragmentCardMetrics(card) : null
+  )
   const nextReservedHeight = Math.max(floorHeight, learned?.height ?? 0)
 
   if (nextReservedHeight > 0 && nextReservedHeight > readCardHeightHint(card)) {
@@ -314,7 +347,9 @@ export const persistInitialFragmentCardHeights = async ({
   root?: ParentNode | null
   routeContext?: FragmentHeightRouteContext | null
 }) => {
+  const finishPersistMeasure = startStaticShellPerformanceMeasure('prom:fragment-height:persist')
   if (!root) {
+    finishPersistMeasure()
     return []
   }
 
@@ -347,25 +382,29 @@ export const persistInitialFragmentCardHeights = async ({
     ]
   })
 
-  await Promise.all(targets.map(({ card }) => waitForImages(card)))
-  const measuredHeights = await Promise.all(
-    targets.map(({ card, reservedHeight }) => waitForStableFrames(card, reservedHeight))
-  )
+  try {
+    await Promise.all(targets.map(({ card }) => waitForImages(card)))
+    const measuredHeights = await Promise.all(
+      targets.map(({ card, reservedHeight }) => waitForStableFrames(card, reservedHeight))
+    )
 
-  return measuredHeights.map((measuredHeight, index) => {
-    const target = targets[index]
-    if (!target) {
-      return null
-    }
-    return applyMeasuredFragmentCardHeight({
-      card: target.card,
-      fragmentId: target.fragmentId,
-      routeContext,
-      measuredHeight,
-      reservedHeight: target.reservedHeight,
-      widthBucket: target.widthBucket
+    return measuredHeights.map((measuredHeight, index) => {
+      const target = targets[index]
+      if (!target) {
+        return null
+      }
+      return applyMeasuredFragmentCardHeight({
+        card: target.card,
+        fragmentId: target.fragmentId,
+        routeContext,
+        measuredHeight,
+        reservedHeight: target.reservedHeight,
+        widthBucket: target.widthBucket
+      })
     })
-  })
+  } finally {
+    finishPersistMeasure()
+  }
 }
 
 export const settlePatchedFragmentCardHeight = async ({

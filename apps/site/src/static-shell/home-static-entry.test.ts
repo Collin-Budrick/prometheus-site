@@ -225,6 +225,34 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
+const createScheduledTaskQueue = () => {
+  const callbacks: Array<() => void> = []
+
+  return {
+    scheduleTask(callback: () => void) {
+      callbacks.push(callback)
+      return () => {
+        const index = callbacks.indexOf(callback)
+        if (index >= 0) {
+          callbacks.splice(index, 1)
+        }
+      }
+    },
+    runNext() {
+      const callback = callbacks.shift()
+      callback?.()
+    },
+    runAll() {
+      while (callbacks.length > 0) {
+        this.runNext()
+      }
+    },
+    size() {
+      return callbacks.length
+    }
+  }
+}
+
 const createManualGate = () => {
   let resolveWait!: () => void
   let cleanupCount = 0
@@ -257,6 +285,7 @@ describe('installHomeStaticEntry', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createScheduledTaskQueue()
     let demoEntryLoadCount = 0
     let demoInstallCount = 0
     let bootstrapLoadCount = 0
@@ -279,7 +308,9 @@ describe('installHomeStaticEntry', () => {
         return {
           bootstrapStaticHome: async () => undefined
         }
-      }
+      },
+      primeBootstrap: async () => new Uint8Array([1]),
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     expect(demoEntryLoadCount).toBe(0)
@@ -288,8 +319,18 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
+    expect(taskQueue.size()).toBe(4)
+    expect(demoEntryLoadCount).toBe(0)
+    expect(bootstrapLoadCount).toBe(0)
+
+    taskQueue.runNext()
+    await flushMicrotasks()
     expect(demoEntryLoadCount).toBe(1)
     expect(demoInstallCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
+
+    taskQueue.runNext()
+    await flushMicrotasks()
     expect(bootstrapLoadCount).toBe(1)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.timeouts.size).toBe(0)
@@ -301,6 +342,7 @@ describe('installHomeStaticEntry', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createScheduledTaskQueue()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
     let bootstrapPrimeCount = 0
@@ -323,7 +365,8 @@ describe('installHomeStaticEntry', () => {
       primeBootstrap: async () => {
         bootstrapPrimeCount += 1
         return new Uint8Array([1, 2, 3])
-      }
+      },
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     const fragmentCardTarget = {
@@ -342,8 +385,14 @@ describe('installHomeStaticEntry', () => {
 
     expect(bootstrapPrimeCount).toBe(1)
     expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
     expect(manualGate.cleanupCount()).toBe(1)
+
+    taskQueue.runAll()
+    await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapCount).toBe(1)
 
     cleanup()
   })
@@ -352,6 +401,7 @@ describe('installHomeStaticEntry', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createScheduledTaskQueue()
     const events: string[] = []
 
     const cleanup = installHomeStaticEntry({
@@ -366,6 +416,7 @@ describe('installHomeStaticEntry', () => {
           events.push('bootstrap')
         }
       }),
+      primeBootstrap: async () => new Uint8Array([1]),
       schedulePaintReady: (({ root, readyAttr, onReady }) => {
         events.push('schedule-paint')
         ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
@@ -374,10 +425,16 @@ describe('installHomeStaticEntry', () => {
       }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
       releaseReadyStagger: (() => {
         events.push('release-stagger')
-      }) as typeof import('@prometheus/ui/ready-stagger').releaseQueuedReadyStaggerWithin
+      }) as typeof import('@prometheus/ui/ready-stagger').releaseQueuedReadyStaggerWithin,
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(events).toEqual([])
+
+    taskQueue.runAll()
     await flushMicrotasks()
 
     expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
@@ -394,6 +451,7 @@ describe('installHomeStaticEntry', () => {
     const doc = new MockDocument()
     const manualGate = createManualGate()
     const card = new MockFragmentCard('deferred', 'pending')
+    const taskQueue = createScheduledTaskQueue()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
@@ -414,14 +472,20 @@ describe('installHomeStaticEntry', () => {
             bootstrapCount += 1
           }
         }
-      }
+      },
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
     expect(bootstrapCount).toBe(0)
+
+    taskQueue.runAll()
+    await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
 
     const cardObserver = MockIntersectionObserver.instances.find((observer) =>
       observer.observed.has(card as unknown as Element)
@@ -444,6 +508,7 @@ describe('installHomeStaticEntry', () => {
     const doc = new MockDocument()
     const manualGate = createManualGate()
     const card = new MockFragmentCard('anchor', 'ready', 'planner')
+    const taskQueue = createScheduledTaskQueue()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
 
@@ -464,14 +529,20 @@ describe('installHomeStaticEntry', () => {
             bootstrapCount += 1
           }
         }
-      }
+      },
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
     expect(bootstrapCount).toBe(0)
+
+    taskQueue.runAll()
+    await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
 
     const cardObserver = MockIntersectionObserver.instances.find((observer) =>
       observer.observed.has(card as unknown as Element)
@@ -494,6 +565,7 @@ describe('installHomeStaticEntry', () => {
     const doc = new MockDocument()
     const manualGate = createManualGate()
     const collabRoot = new MockCollabRoot()
+    const taskQueue = createScheduledTaskQueue()
     let collabLoadCount = 0
     let collabInstallCount = 0
 
@@ -509,6 +581,7 @@ describe('installHomeStaticEntry', () => {
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => undefined
       }),
+      primeBootstrap: async () => new Uint8Array([1]),
       loadCollabRuntime: async () => {
         collabLoadCount += 1
         return {
@@ -517,10 +590,14 @@ describe('installHomeStaticEntry', () => {
             return () => undefined
           }
         }
-      }
+      },
+      scheduleTask: taskQueue.scheduleTask as never
     })
 
     manualGate.resolve()
+    await flushMicrotasks()
+
+    taskQueue.runAll()
     await flushMicrotasks()
 
     expect(collabLoadCount).toBe(0)

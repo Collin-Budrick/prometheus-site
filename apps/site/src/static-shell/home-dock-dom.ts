@@ -3,6 +3,7 @@ import type { Lang } from '../lang'
 import { setTrustedInnerHtml, setTrustedTemplateHtml } from '../security/client'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { getStaticHomeUiCopy, type HomeStaticUiCopy } from './home-copy-store'
+import { startStaticShellPerformanceMeasure } from './static-shell-performance'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_SHELL_DOCK_REGION,
@@ -128,15 +129,27 @@ const parseDockShell = (html: string) => {
   return isHtmlElement(next) ? next : null
 }
 
-const lockDockGeometry = (dockShell: HTMLElement) => {
-  if (typeof dockShell.getBoundingClientRect !== 'function') return () => undefined
-  const rect = dockShell.getBoundingClientRect()
-  if (rect.width === 0 && rect.height === 0) return () => undefined
+type DockGeometrySnapshot = {
+  width: number
+  height: number
+}
 
+const readDockGeometrySnapshot = (dockShell: HTMLElement): DockGeometrySnapshot | null => {
+  if (typeof dockShell.getBoundingClientRect !== 'function') return null
+  const rect = dockShell.getBoundingClientRect()
+  if (rect.width === 0 && rect.height === 0) return null
+  return {
+    width: rect.width,
+    height: rect.height
+  }
+}
+
+const lockDockGeometry = (dockShell: HTMLElement, geometrySnapshot: DockGeometrySnapshot | null) => {
+  if (!geometrySnapshot) return () => undefined
   const previousWidth = dockShell.style.width
   const previousHeight = dockShell.style.height
-  dockShell.style.width = `${rect.width}px`
-  dockShell.style.height = `${rect.height}px`
+  dockShell.style.width = `${geometrySnapshot.width}px`
+  dockShell.style.height = `${geometrySnapshot.height}px`
 
   let released = false
   return () => {
@@ -171,6 +184,7 @@ export const syncStaticDockMarkup = ({
   force = false,
   lockMetrics = false
 }: SyncStaticDockOptions) => {
+  const finishDockSyncMeasure = startStaticShellPerformanceMeasure('prom:home:dock-sync')
   const nextMode = isAuthenticated ? 'auth' : 'public'
   const shouldUpdate =
     force ||
@@ -180,6 +194,7 @@ export const syncStaticDockMarkup = ({
     !root.firstElementChild
 
   if (!shouldUpdate) {
+    finishDockSyncMeasure()
     return false
   }
 
@@ -189,7 +204,8 @@ export const syncStaticDockMarkup = ({
   if (currentShell?.classList.contains('dock-shell')) {
     const nextShell = parseDockShell(nextDockHtml)
     if (nextShell) {
-      const unlockMetrics = lockMetrics ? lockDockGeometry(currentShell) : () => undefined
+      const geometrySnapshot = lockMetrics ? readDockGeometrySnapshot(currentShell) : null
+      const unlockMetrics = lockMetrics ? lockDockGeometry(currentShell, geometrySnapshot) : () => undefined
       currentShell.setAttribute('data-dock-mode', nextMode)
       currentShell.style.setProperty('--dock-count', `${getDockCount(isAuthenticated)}`)
       setTrustedInnerHtml(currentShell, nextShell.innerHTML, 'template')
@@ -202,5 +218,6 @@ export const syncStaticDockMarkup = ({
   }
 
   syncStaticDockRootState({ currentPath, isAuthenticated, lang })
+  finishDockSyncMeasure()
   return true
 }

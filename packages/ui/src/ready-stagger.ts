@@ -159,14 +159,13 @@ export const queueReadyStaggerOnVisible = (element: HTMLElement, options: QueueR
     return queueReadyStagger(element, options)
   }
 
-  if (isReadyStaggerElementVisible(element)) {
-    return queueReadyStagger(element, options)
-  }
-
   element.style.setProperty(READY_STAGGER_DELAY_VAR, '0ms')
   element.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
 
   if (typeof ObserverImpl !== 'function') {
+    if (isReadyStaggerElementVisible(element)) {
+      return queueReadyStagger(element, options)
+    }
     return queueReadyStagger(element, {
       ...options,
       immediate: true

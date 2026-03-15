@@ -440,10 +440,11 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).not.toContain("'scroll'");
     expect(homeStaticEntrySource).toContain("'focusin'");
     expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'");
-    expect(homeStaticEntrySource).not.toContain("scheduleStaticShellTask(");
+    expect(homeStaticEntrySource).toContain("scheduleStaticShellTask");
     expect(homeDemoEntrySource).toContain("./home-demo-controller-state");
     expect(homeDemoEntrySource).toContain("./home-demo-observe-event");
     expect(homeDemoEntrySource).toContain("./home-demo-performance");
+    expect(homeDemoEntrySource).toContain("./scheduler");
     expect(homeDemoEntrySource).not.toContain(
       "from './home-collab-entry-loader'",
     );

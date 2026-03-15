@@ -44,6 +44,55 @@ const dedupeFragmentIds = (ids: readonly string[]) => {
   return unique
 }
 
+const resolveHomeFragmentBootstrapUrl = (href: string) => {
+  const base =
+    typeof window !== 'undefined' && typeof window.location?.origin === 'string'
+      ? window.location.origin
+      : 'https://prometheus.local'
+  return new URL(href, base)
+}
+
+const parseHomeFragmentBootstrapSelection = (href: string) => {
+  try {
+    const url = resolveHomeFragmentBootstrapUrl(href)
+    return {
+      origin: url.origin,
+      pathname: url.pathname,
+      protocol: url.searchParams.get('protocol') ?? '',
+      lang: url.searchParams.get('lang') ?? '',
+      ids: dedupeFragmentIds((url.searchParams.get('ids') ?? '').split(','))
+    }
+  } catch {
+    return null
+  }
+}
+
+const matchesPrimedHomeFragmentBootstrapSelection = (
+  requestedHref: string,
+  primedHref: string
+) => {
+  if (requestedHref === primedHref) {
+    return true
+  }
+
+  const requested = parseHomeFragmentBootstrapSelection(requestedHref)
+  const primed = parseHomeFragmentBootstrapSelection(primedHref)
+  if (!requested || !primed) {
+    return false
+  }
+
+  if (
+    requested.origin !== primed.origin ||
+    requested.pathname !== primed.pathname ||
+    requested.protocol !== primed.protocol ||
+    requested.lang !== primed.lang
+  ) {
+    return false
+  }
+
+  return requested.ids.length > 0 && requested.ids.every((id) => primed.ids.includes(id))
+}
+
 export const fetchHomeFragmentBootstrapBytes = async ({
   href,
   fetcher = fetch as FetchLike,
@@ -150,7 +199,9 @@ export const readPrimedHomeFragmentBootstrapBytes = ({
   win?: HomeFragmentBootstrapWindow | null
 }) => {
   const existing = win?.[HOME_FRAGMENT_BOOTSTRAP_STATE_KEY]
-  return existing?.href === href ? existing.bytesPromise : null
+  return existing && matchesPrimedHomeFragmentBootstrapSelection(href, existing.href)
+    ? existing.bytesPromise
+    : null
 }
 
 export const consumePrimedHomeFragmentBootstrapBytes = ({
@@ -160,11 +211,7 @@ export const consumePrimedHomeFragmentBootstrapBytes = ({
   href: string
   win?: HomeFragmentBootstrapWindow | null
 }) => {
-  const bytesPromise = readPrimedHomeFragmentBootstrapBytes({ href, win })
-  if (win?.[HOME_FRAGMENT_BOOTSTRAP_STATE_KEY]?.href === href) {
-    delete win[HOME_FRAGMENT_BOOTSTRAP_STATE_KEY]
-  }
-  return bytesPromise
+  return readPrimedHomeFragmentBootstrapBytes({ href, win })
 }
 
 export const resetHomeFragmentBootstrapStateForTests = (win?: HomeFragmentBootstrapWindow | null) => {

@@ -18,6 +18,11 @@ import {
 } from "./home-demo-observe-event";
 import { markHomeDemoPerformance } from "./home-demo-performance";
 import { normalizeHomeDemoAssetMap } from "./home-demo-runtime-types";
+import { scheduleStaticShellTask } from "./scheduler";
+import {
+  measureStaticShellPerformance,
+  markStaticShellPerformance,
+} from "./static-shell-performance";
 
 type HomeDemoEntryWindow = Window & {
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean;
@@ -26,6 +31,7 @@ type HomeDemoEntryWindow = Window & {
 type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null;
   doc?: Document | null;
+  scheduleTask?: typeof scheduleStaticShellTask;
 };
 
 type HomeDemoObserveDocument = Pick<
@@ -95,6 +101,7 @@ const bindHomeDemoObserveRequests = ({
 export const installHomeDemoEntry = ({
   win = typeof window !== "undefined" ? (window as HomeDemoEntryWindow) : null,
   doc = typeof document !== "undefined" ? document : null,
+  scheduleTask = scheduleStaticShellTask,
 }: InstallHomeDemoEntryOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
     return () => undefined;
@@ -110,6 +117,27 @@ export const installHomeDemoEntry = ({
   markHomeDemoPerformance("prom:home:demo-entry-install");
   const observeRoot = doc as unknown as ParentNode;
 
+  const scheduleInitialObserve = (
+    binding: NonNullable<ReturnType<typeof getHomeDemoControllerBinding>>,
+  ) =>
+    scheduleTask(
+      () => {
+        markStaticShellPerformance("prom:home:demo-observe-start");
+        binding.manager.observeWithin(observeRoot);
+        markStaticShellPerformance("prom:home:demo-observe-ready");
+        measureStaticShellPerformance(
+          "prom:home:demo-observe",
+          "prom:home:demo-observe-start",
+          "prom:home:demo-observe-ready",
+        );
+      },
+      {
+        priority: "user-visible",
+        timeoutMs: 0,
+        preferIdle: false,
+      },
+    );
+
   const existingBinding = getHomeDemoControllerBinding(win);
   if (existingBinding && !existingBinding.controller.destroyed) {
     syncHomeDemoController(existingBinding.controller, data);
@@ -117,8 +145,15 @@ export const installHomeDemoEntry = ({
       binding: existingBinding,
       doc,
     });
-    existingBinding.manager.observeWithin(observeRoot);
+    const cleanupInitialObserve = scheduleInitialObserve(existingBinding);
+    markStaticShellPerformance("prom:home:demo-entry-install-ready");
+    measureStaticShellPerformance(
+      "prom:home:demo-entry-install-duration",
+      "prom:home:demo-entry-install",
+      "prom:home:demo-entry-install-ready",
+    );
     return () => {
+      cleanupInitialObserve();
       cleanupObserveRequests();
       win.__PROM_STATIC_HOME_DEMO_ENTRY__ = false;
     };
@@ -148,9 +183,16 @@ export const installHomeDemoEntry = ({
     binding,
     doc,
   });
-  manager.observeWithin(observeRoot);
+  const cleanupInitialObserve = scheduleInitialObserve(binding);
+  markStaticShellPerformance("prom:home:demo-entry-install-ready");
+  measureStaticShellPerformance(
+    "prom:home:demo-entry-install-duration",
+    "prom:home:demo-entry-install",
+    "prom:home:demo-entry-install-ready",
+  );
 
   return () => {
+    cleanupInitialObserve();
     cleanupObserveRequests();
     clearHomeDemoControllerBinding(binding, win);
     manager.destroy();

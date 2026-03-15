@@ -8,6 +8,27 @@ const unwrapTrustedHtml = (value: unknown) =>
     ? String((value as { __html: unknown }).__html ?? '')
     : String(value ?? '')
 
+const createMockTemplateElement = () => {
+  let markup = ''
+
+  return {
+    content: {
+      firstElementChild: null as Element | null
+    },
+    get innerHTML() {
+      return markup
+    },
+    set innerHTML(value: unknown) {
+      markup = unwrapTrustedHtml(value).trim()
+      this.content.firstElementChild = markup
+        ? ({
+            innerHTML: markup
+          } as Element)
+        : null
+    }
+  }
+}
+
 class MockDockRoot {
   dataset: Record<string, string> = {}
   firstElementChild: Element | null = null
@@ -49,11 +70,17 @@ describe('syncStaticDockMarkup', () => {
     dockRoot.firstElementChild = null
     dockRoot.innerHTML = ''
     globalThis.document = {
-      querySelector: () => dockRoot as unknown as HTMLElement
+      querySelector: () => dockRoot as unknown as HTMLElement,
+      createElement: (tagName: string) =>
+        tagName === 'template' ? createMockTemplateElement() : null
     } as unknown as Document
     globalThis.window = {
       location: {
         origin: 'https://prometheus.test'
+      },
+      setTimeout: (callback: () => void) => {
+        callback()
+        return 1
       }
     } as never
     ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
@@ -85,7 +112,7 @@ describe('syncStaticDockMarkup', () => {
     expect(dockRoot.innerHTML).toContain('data-dock-mode="auth"')
     expect(dockRoot.innerHTML).toContain('<nav class="dock-nav" aria-label="Dock">')
     expect(dockRoot.innerHTML).toContain('<ul class="dock">')
-    expect(dockRoot.innerHTML).toContain('/dashboard?lang=en')
+    expect(dockRoot.innerHTML).toContain('/dashboard/?lang=en')
     expect(dockRoot.innerHTML).toContain('aria-current="page"')
     expect(dockRoot.dataset.staticDockMode).toBe('auth')
     expect(dockRoot.dataset.staticDockLang).toBe('en')
@@ -133,5 +160,40 @@ describe('syncStaticDockMarkup', () => {
     })
 
     expect(updated).toBe(false)
+  })
+
+  it('captures dock geometry once before replacing the shell markup', () => {
+    let geometryReadCount = 0
+    dockRoot.dataset.staticDockLang = 'en'
+    dockRoot.dataset.staticDockMode = 'public'
+    dockRoot.dataset.staticDockPath = '/'
+    dockRoot.innerHTML = '<div class="dock-shell"></div>'
+    dockRoot.firstElementChild = {
+      classList: {
+        contains: (value: string) => value === 'dock-shell'
+      },
+      innerHTML: '<div class="dock"></div>',
+      style: {
+        width: '',
+        height: '',
+        setProperty: () => undefined
+      },
+      setAttribute: () => undefined,
+      getBoundingClientRect() {
+        geometryReadCount += 1
+        return { width: 240, height: 64 }
+      }
+    } as unknown as Element
+
+    const updated = syncStaticDockMarkup({
+      root: dockRoot as unknown as HTMLElement,
+      lang: 'en',
+      currentPath: '/store',
+      isAuthenticated: false,
+      lockMetrics: true
+    })
+
+    expect(updated).toBe(true)
+    expect(geometryReadCount).toBe(1)
   })
 })

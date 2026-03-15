@@ -108,6 +108,29 @@ const createController = (): HomeDemoController => ({
   destroyed: false,
 });
 
+const createScheduledTaskQueue = () => {
+  const callbacks: Array<() => void> = [];
+
+  return {
+    scheduleTask(callback: () => void) {
+      callbacks.push(callback);
+      return () => {
+        const index = callbacks.indexOf(callback);
+        if (index >= 0) {
+          callbacks.splice(index, 1);
+        }
+      };
+    },
+    runNext() {
+      const callback = callbacks.shift();
+      callback?.();
+    },
+    size() {
+      return callbacks.length;
+    },
+  };
+};
+
 afterEach(() => {
   clearHomeDemoControllerBinding();
 });
@@ -116,6 +139,7 @@ describe("installHomeDemoEntry", () => {
   it("reuses an existing singleton controller binding instead of creating another one", () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
+    const taskQueue = createScheduledTaskQueue();
     const observedRoots: ParentNode[] = [];
     const existingBinding = setHomeDemoControllerBinding(
       {
@@ -131,7 +155,13 @@ describe("installHomeDemoEntry", () => {
     const cleanup = installHomeDemoEntry({
       win,
       doc: doc as never,
+      scheduleTask: taskQueue.scheduleTask as never,
     });
+
+    expect(observedRoots).toEqual([]);
+    expect(taskQueue.size()).toBe(1);
+
+    taskQueue.runNext();
 
     expect(observedRoots).toEqual([doc as unknown as ParentNode]);
     expect(getHomeDemoControllerBinding(win)).toBe(existingBinding);
@@ -145,16 +175,19 @@ describe("installHomeDemoEntry", () => {
   it("creates and clears the singleton controller binding when no binding exists yet", () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
+    const taskQueue = createScheduledTaskQueue();
 
     const cleanup = installHomeDemoEntry({
       win,
       doc: doc as never,
+      scheduleTask: taskQueue.scheduleTask as never,
     });
 
     const binding = getHomeDemoControllerBinding(win);
     expect(binding).not.toBeNull();
     expect(binding?.controller.path).toBe("/");
     expect(win.__PROM_STATIC_HOME_DEMO_ENTRY__).toBe(true);
+    expect(taskQueue.size()).toBe(1);
 
     cleanup();
 
@@ -165,6 +198,7 @@ describe("installHomeDemoEntry", () => {
   it("re-observes patched roots via the internal bootstrap event and syncs route context", () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
+    const taskQueue = createScheduledTaskQueue();
     const observedRoots: ParentNode[] = [];
     const binding = setHomeDemoControllerBinding(
       {
@@ -180,7 +214,11 @@ describe("installHomeDemoEntry", () => {
     const cleanup = installHomeDemoEntry({
       win,
       doc: doc as never,
+      scheduleTask: taskQueue.scheduleTask as never,
     });
+
+    expect(observedRoots).toEqual([]);
+    taskQueue.runNext();
 
     doc.setScriptText(
       STATIC_HOME_DATA_SCRIPT_ID,

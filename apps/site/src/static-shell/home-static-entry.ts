@@ -15,6 +15,9 @@ import { HOME_COLLAB_ROOT_SELECTOR } from './home-collab-shared'
 import { appConfig } from '../public-app-config'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
+import { scheduleStaticShellTask } from './scheduler'
+import { createLayoutSnapshot } from './layout-snapshot'
+import { markStaticShellPerformance, measureStaticShellPerformance } from './static-shell-performance'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
@@ -37,6 +40,7 @@ type InstallHomeStaticEntryOptions = {
   createLcpGate?: typeof createHomeFirstLcpGate
   releaseReadyStagger?: typeof releaseQueuedReadyStaggerWithin
   schedulePaintReady?: typeof scheduleStaticRoutePaintReady
+  scheduleTask?: typeof scheduleStaticShellTask
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
@@ -73,28 +77,6 @@ const collectAutoBootstrapHomeCards = (root: Pick<Document, 'querySelectorAll'>)
         isAutoBootstrapHomeCard(card)
       )
     : []
-
-const isElementInViewport = (element: Element) => {
-  if (typeof (element as HTMLElement).getBoundingClientRect !== 'function') {
-    return true
-  }
-
-  const rect = (element as HTMLElement).getBoundingClientRect()
-  const viewportWidth =
-    typeof window !== 'undefined' && typeof window.innerWidth === 'number'
-      ? window.innerWidth
-      : document.documentElement?.clientWidth ?? 0
-  const viewportHeight =
-    typeof window !== 'undefined' && typeof window.innerHeight === 'number'
-      ? window.innerHeight
-      : document.documentElement?.clientHeight ?? 0
-
-  if (viewportWidth <= 0 || viewportHeight <= 0) {
-    return true
-  }
-
-  return rect.bottom > 0 && rect.right > 0 && rect.top < viewportHeight && rect.left < viewportWidth
-}
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -153,7 +135,8 @@ export const installHomeStaticEntry = ({
   primeBootstrap = primeHomeFragmentBootstrapBytes,
   createLcpGate = createHomeFirstLcpGate,
   releaseReadyStagger = releaseQueuedReadyStaggerWithin,
-  schedulePaintReady = scheduleStaticRoutePaintReady
+  schedulePaintReady = scheduleStaticRoutePaintReady,
+  scheduleTask = scheduleStaticShellTask
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -178,6 +161,7 @@ export const installHomeStaticEntry = ({
   let demoEntryCleanup: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
   let paintReadyCleanup: (() => void) | null = null
+  const scheduledReleaseTasks = new Set<() => void>()
   const observedCards = new Set<Element>()
   const observedCollabRoots = new Set<Element>()
 
@@ -207,8 +191,31 @@ export const installHomeStaticEntry = ({
     visibilityObserver = null
     paintReadyCleanup?.()
     paintReadyCleanup = null
+    scheduledReleaseTasks.forEach((cleanup) => cleanup())
+    scheduledReleaseTasks.clear()
     observedCollabRoots.clear()
     observedCards.clear()
+  }
+
+  const scheduleReleaseTask = (
+    callback: () => void,
+    priority: 'background' | 'user-visible' | 'user-blocking' = 'user-visible',
+    timeoutMs = 0
+  ) => {
+    let cleanup = () => undefined
+    cleanup = scheduleTask(
+      () => {
+        scheduledReleaseTasks.delete(cleanup)
+        callback()
+      },
+      {
+        priority,
+        timeoutMs,
+        preferIdle: false
+      }
+    )
+    scheduledReleaseTasks.add(cleanup)
+    return cleanup
   }
 
   const startDemoEntry = () => {
@@ -235,10 +242,26 @@ export const installHomeStaticEntry = ({
       return bootstrapPrimePromise
     }
 
+    markStaticShellPerformance('prom:home:bootstrap-prime-start')
     bootstrapPrimePromise = primeBootstrap({ href: bootstrapHref }).catch((error) => {
+      markStaticShellPerformance('prom:home:bootstrap-prime-ready')
+      measureStaticShellPerformance(
+        'prom:home:bootstrap-prime',
+        'prom:home:bootstrap-prime-start',
+        'prom:home:bootstrap-prime-ready'
+      )
       bootstrapPrimePromise = null
       console.error('Static home bootstrap prime failed:', error)
       throw error
+    })
+
+    void bootstrapPrimePromise.then(() => {
+      markStaticShellPerformance('prom:home:bootstrap-prime-ready')
+      measureStaticShellPerformance(
+        'prom:home:bootstrap-prime',
+        'prom:home:bootstrap-prime-start',
+        'prom:home:bootstrap-prime-ready'
+      )
     })
 
     return bootstrapPrimePromise
@@ -367,7 +390,8 @@ export const installHomeStaticEntry = ({
     }
 
     if (typeof IntersectionObserver !== 'function') {
-      const visibleRoot = roots.find((root) => isElementInViewport(root))
+      const layoutSnapshot = createLayoutSnapshot({ win: liveWin, doc: liveDoc })
+      const visibleRoot = roots.find((root) => layoutSnapshot.isVisible(root))
       if (visibleRoot) {
         startCollabEntry(visibleRoot)
       }
@@ -411,42 +435,52 @@ export const installHomeStaticEntry = ({
     liveWin.__PROM_STATIC_HOME_LCP_RELEASED__ = true
     lcpGateCleanup?.()
     lcpGateCleanup = null
-    startDemoEntry()
-    observeCollabRoots()
-    void prewarmBootstrapRuntime().catch((error) => {
-      bootstrapRuntimePromise = null
-      console.error('Static home bootstrap prewarm failed:', error)
+    markStaticShellPerformance('prom:home:lcp-release-start')
+    void primeBootstrapRequest()?.catch(() => undefined)
+    scheduleReleaseTask(() => {
+      startDemoEntry()
     })
-    paintReadyCleanup ??= schedulePaintReady({
-      root: readStaticHomeRoot(),
-      readyAttr: STATIC_HOME_PAINT_ATTR,
-      requestFrame:
-        typeof liveWin.requestAnimationFrame === 'function'
-          ? liveWin.requestAnimationFrame.bind(liveWin)
-          : undefined,
-      cancelFrame:
-        typeof liveWin.cancelAnimationFrame === 'function'
-          ? liveWin.cancelAnimationFrame.bind(liveWin)
-          : undefined,
-      setTimer: liveWin.setTimeout.bind(liveWin),
-      clearTimer: liveWin.clearTimeout.bind(liveWin),
-      onReady: () => {
-        releaseReadyStagger({
-          root: liveDoc,
-          queuedSelector: HOME_READY_STAGGER_SELECTOR,
-          group: 'static-home-ready'
-        })
-        if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
-          requestBootstrap()
-          return
-        }
-        if (bootstrapRequested) {
-          startBootstrap()
-          return
-        }
-        observeAutoBootstrapCards()
-      }
+    scheduleReleaseTask(() => {
+      void prewarmBootstrapRuntime().catch((error) => {
+        bootstrapRuntimePromise = null
+        console.error('Static home bootstrap prewarm failed:', error)
+      })
     })
+    scheduleReleaseTask(() => {
+      observeCollabRoots()
+    }, 'background', 16)
+    scheduleReleaseTask(() => {
+      paintReadyCleanup ??= schedulePaintReady({
+        root: readStaticHomeRoot(),
+        readyAttr: STATIC_HOME_PAINT_ATTR,
+        requestFrame:
+          typeof liveWin.requestAnimationFrame === 'function'
+            ? liveWin.requestAnimationFrame.bind(liveWin)
+            : undefined,
+        cancelFrame:
+          typeof liveWin.cancelAnimationFrame === 'function'
+            ? liveWin.cancelAnimationFrame.bind(liveWin)
+            : undefined,
+        setTimer: liveWin.setTimeout.bind(liveWin),
+        clearTimer: liveWin.clearTimeout.bind(liveWin),
+        onReady: () => {
+          releaseReadyStagger({
+            root: liveDoc,
+            queuedSelector: HOME_READY_STAGGER_SELECTOR,
+            group: 'static-home-ready'
+          })
+          if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
+            requestBootstrap()
+            return
+          }
+          if (bootstrapRequested) {
+            startBootstrap()
+            return
+          }
+          observeAutoBootstrapCards()
+        }
+      })
+    }, 'user-visible', 16)
   }
 
   const setupBootstrapTriggers = () => {

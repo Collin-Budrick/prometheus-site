@@ -306,4 +306,40 @@ describe('fetchHomeFragmentBatch', () => {
     expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
     expect(Object.keys(repeatedPlannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
   })
+
+  it('reuses a primed full bootstrap bundle for subset home fragment selections', async () => {
+    const fullHref = buildHomeFragmentBootstrapHref({
+      lang: 'en',
+      ids: ['fragment://page/home/planner@v1', 'fragment://page/home/react@v1']
+    })
+    const win = {} as HomeFragmentBootstrapWindow
+    ;(globalThis as typeof globalThis & { window?: HomeFragmentBootstrapWindow }).window = win
+
+    let requestCount = 0
+    await primeHomeFragmentBootstrapBytes({
+      href: fullHref,
+      win,
+      fetcher: async () => {
+        requestCount += 1
+        return new Response(
+          buildBootstrapPayload('fragment://page/home/planner@v1', 'fragment://page/home/react@v1'),
+          {
+            headers: { 'content-type': 'application/octet-stream' }
+          }
+        )
+      }
+    })
+
+    globalThis.fetch = (async () => {
+      throw new Error('Unexpected subset bootstrap fetch')
+    }) as typeof fetch
+
+    const plannerPayloads = await fetchHomeFragmentBatch(['fragment://page/home/planner@v1'], {
+      lang: 'en',
+      bootstrapHref: fullHref
+    })
+
+    expect(requestCount).toBe(1)
+    expect(Object.keys(plannerPayloads)).toEqual(['fragment://page/home/planner@v1'])
+  })
 })

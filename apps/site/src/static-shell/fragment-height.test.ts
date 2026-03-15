@@ -7,22 +7,39 @@ import {
 
 class MockCard {
   dataset: Record<string, string> = {}
-  style = {
-    height: '',
-    setProperty: (name: string, value: string) => {
-      this.styles.set(name, value)
-    },
-    getPropertyValue: (name: string) => this.styles.get(name) ?? ''
+  style: {
+    height: string
+    setProperty: (name: string, value: string) => void
+    getPropertyValue: (name: string) => string
   }
+  private styleHeight = ''
 
   private readonly attrs = new Map<string, string>()
   private readonly styles = new Map<string, string>()
   private listeners = new Map<string, Array<(event: Event) => void>>()
+  private wroteDuringMeasurement = false
+  failOnPostWriteMeasure = false
 
   constructor(
     private scrollValue: number,
     private rectValue: number
-  ) {}
+  ) {
+    const self = this
+    this.style = {
+      get height() {
+        return self.styleHeight
+      },
+      set height(value: string) {
+        self.wroteDuringMeasurement = true
+        self.styleHeight = value
+      },
+      setProperty: (name: string, value: string) => {
+        self.wroteDuringMeasurement = true
+        self.styles.set(name, value)
+      },
+      getPropertyValue: (name: string) => self.styles.get(name) ?? ''
+    }
+  }
 
   setMeasuredHeight(nextHeight: number) {
     this.scrollValue = nextHeight
@@ -30,6 +47,7 @@ class MockCard {
   }
 
   setAttribute(name: string, value: string) {
+    this.wroteDuringMeasurement = true
     this.attrs.set(name, value)
   }
 
@@ -46,10 +64,16 @@ class MockCard {
   }
 
   get scrollHeight() {
+    if (this.failOnPostWriteMeasure && this.wroteDuringMeasurement) {
+      throw new Error('measured scrollHeight after mutating the card')
+    }
     return this.scrollValue
   }
 
   getBoundingClientRect() {
+    if (this.failOnPostWriteMeasure && this.wroteDuringMeasurement) {
+      throw new Error('measured bounding rect after mutating the card')
+    }
     return { height: this.rectValue }
   }
 
@@ -69,6 +93,16 @@ class MockCard {
 }
 
 describe('fragment height patch helpers', () => {
+  it('locks a fragment card without reading geometry after mutating it', () => {
+    const card = new MockCard(260, 240)
+    card.failOnPostWriteMeasure = true
+
+    const { lockHeight } = lockFragmentCardHeight(card as unknown as HTMLElement, 220)
+
+    expect(lockHeight).toBe(260)
+    expect(card.style.height).toBe('260px')
+  })
+
   it('locks to the current rendered height and releases after the patched content settles', async () => {
     const card = new MockCard(260, 240) as unknown as HTMLElement
     card.setAttribute('data-fragment-height-hint', '200')

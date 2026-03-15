@@ -4,6 +4,7 @@ type ScheduleStaticShellTaskOptions = {
   delayMs?: number
   priority?: TaskPriority
   timeoutMs?: number
+  preferIdle?: boolean
   waitForLoad?: boolean
   waitForPaint?: boolean
 }
@@ -31,7 +32,8 @@ type IdleHandles = {
 const scheduleIdleTask = (
   callback: () => void,
   timeout = 120,
-  priority: TaskPriority = 'background'
+  priority: TaskPriority = 'background',
+  preferIdle = true
 ) => {
   const globals = globalThis as SchedulerGlobals
   const scheduler = globals.scheduler
@@ -83,7 +85,9 @@ const scheduleIdleTask = (
     }
   }
 
-  if (idleApi?.requestIdleCallback) {
+  if (!preferIdle) {
+    handles.timeout = window.setTimeout(run, Math.max(timeout, 0))
+  } else if (idleApi?.requestIdleCallback) {
     handles.idle = idleApi.requestIdleCallback(run, { timeout })
   } else {
     handles.timeout = window.setTimeout(run, timeout)
@@ -107,6 +111,7 @@ export const scheduleStaticShellTask = (
     delayMs = 0,
     priority = 'background',
     timeoutMs = 120,
+    preferIdle = true,
     waitForLoad = false,
     waitForPaint = false
   }: ScheduleStaticShellTaskOptions = {}
@@ -150,7 +155,7 @@ export const scheduleStaticShellTask = (
     cancelIdleTask = scheduleIdleTask(() => {
       if (cancelled) return
       callback()
-    }, timeoutMs, priority)
+    }, timeoutMs, priority, preferIdle)
   }
 
   const queueAfterPaint = () => {

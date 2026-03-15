@@ -547,34 +547,6 @@ const isQueuedStaticHomeReadyStaggerCard = (
         "critical",
   );
 
-const isElementInViewport = (element: Element) => {
-  if (typeof (element as HTMLElement).getBoundingClientRect !== "function") {
-    return true;
-  }
-
-  const rect = (element as HTMLElement).getBoundingClientRect();
-  const doc = typeof document !== "undefined" ? document : null;
-  const viewportWidth =
-    typeof window !== "undefined" && typeof window.innerWidth === "number"
-      ? window.innerWidth
-      : doc?.documentElement?.clientWidth ?? 0;
-  const viewportHeight =
-    typeof window !== "undefined" && typeof window.innerHeight === "number"
-      ? window.innerHeight
-      : doc?.documentElement?.clientHeight ?? 0;
-
-  if (viewportWidth <= 0 || viewportHeight <= 0) {
-    return true;
-  }
-
-  return (
-    rect.bottom > 0 &&
-    rect.right > 0 &&
-    rect.top < viewportHeight &&
-    rect.left < viewportWidth
-  );
-};
-
 export const bindStaticHomeReadyStagger = ({
   root = document,
   queueReady = queueReadyStagger,
@@ -629,10 +601,6 @@ export const bindStaticHomeReadyStagger = ({
         if (armed) {
           releaseCard(card);
         }
-        return;
-      }
-      if (armed && isElementInViewport(card)) {
-        releaseCard(card);
         return;
       }
       if (observedCards.has(card)) return;
