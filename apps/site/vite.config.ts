@@ -62,9 +62,22 @@ type EarlyHint = {
   crossorigin?: boolean
 }
 
+type QwikManifestBundle = {
+  imports?: string[]
+}
+
+type QwikManifestInjection = {
+  tag?: string
+  location?: string
+  attributes?: Record<string, unknown>
+}
+
 type QwikManifest = {
+  bundles?: Record<string, QwikManifestBundle>
   core?: string
+  injections?: QwikManifestInjection[]
   preloader?: string
+  qwikLoader?: string
 }
 
 const placeholderShellAssets = new Set(['/assets/app.css', '/assets/app.js'])
@@ -186,8 +199,56 @@ const sanitizeHints = (raw: EarlyHint[]) => {
   return Array.from(unique.values())
 }
 
-const buildManifestHints = (_manifest: QwikManifest | null): EarlyHint[] => {
-  return []
+const normalizeManifestHref = (href?: string | null) => {
+  const trimmed = href?.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
+  if (publicBase === './') {
+    if (trimmed.startsWith('./')) return trimmed
+    return `./${trimmed.replace(/^\/+/, '').replace(/^\.\/+/, '')}`
+  }
+  const normalizedBase = publicBase.endsWith('/') ? publicBase : `${publicBase}/`
+  const withoutRelativePrefix = trimmed.replace(/^\.\/+/, '')
+  if (trimmed.startsWith(normalizedBase) || withoutRelativePrefix.startsWith(normalizedBase)) {
+    return trimmed.startsWith(normalizedBase) ? trimmed : withoutRelativePrefix
+  }
+  return withBase(withoutRelativePrefix)
+}
+
+const normalizeManifestBundleHref = (bundleName?: string | null) => {
+  const trimmed = bundleName?.trim()
+  if (!trimmed) return null
+  const normalizedBundleName = trimmed.replace(/^\.\/+/, '').replace(/^\/+/, '').replace(/^build\//, '')
+  return normalizeManifestHref(`build/${normalizedBundleName}`)
+}
+
+const buildBundleModulepreloadHint = (
+  manifest: QwikManifest,
+  bundleName: string | undefined,
+  options?: Pick<EarlyHint, 'crossorigin'>
+) => {
+  const resolvedBundle = bundleName?.trim()
+  if (!resolvedBundle || !manifest.bundles?.[resolvedBundle]) return null
+  const href = normalizeManifestBundleHref(resolvedBundle)
+  if (!href) return null
+  return {
+    href,
+    rel: 'modulepreload',
+    ...(options ?? {})
+  } satisfies EarlyHint
+}
+
+const buildManifestHints = (manifest: QwikManifest | null): EarlyHint[] => {
+  if (!manifest) return []
+
+  return [
+    // The shell already emits its own stylesheet preload/link pair. Duplicating that work via
+    // 103/Link causes "preloaded but not used" warnings in Chrome, so keep Early Hints to the
+    // direct bootstrap modulepreloads only.
+    buildBundleModulepreloadHint(manifest, manifest.qwikLoader),
+    buildBundleModulepreloadHint(manifest, manifest.preloader, { crossorigin: true }),
+    buildBundleModulepreloadHint(manifest, manifest.core)
+  ].filter((hint): hint is EarlyHint => Boolean(hint))
 }
 
 const isProtobufEvalWarning = (warning: RollupLog) => {
@@ -250,6 +311,34 @@ const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {
 
 const earlyHintsPlugin = (): Plugin => {
   const sentSymbol = Symbol('early-hints-sent')
+  const getContentType = (headers: unknown) => {
+    if (!headers) return undefined
+    if (Array.isArray(headers)) {
+      for (let index = 0; index < headers.length - 1; index += 2) {
+        const name = headers[index]
+        if (typeof name === 'string' && name.toLowerCase() === 'content-type') {
+          return headers[index + 1]
+        }
+      }
+      return undefined
+    }
+    if (typeof headers === 'object') {
+      const entries = Object.entries(headers as Record<string, unknown>)
+      const match = entries.find(([name]) => name.toLowerCase() === 'content-type')
+      return match?.[1]
+    }
+    return undefined
+  }
+  const isHtmlContentType = (value: unknown) => {
+    if (typeof value === 'string') return value.toLowerCase().includes('text/html')
+    if (Array.isArray(value)) return value.some((entry) => typeof entry === 'string' && entry.toLowerCase().includes('text/html'))
+    return false
+  }
+  const isHtmlResponse = (res: ServerResponse, args: Parameters<ServerResponse['writeHead']>) => {
+    const headers = args.length > 1 ? (typeof args[1] === 'string' ? args[2] : args[1]) : undefined
+    const contentType = getContentType(headers) ?? res.getHeader('Content-Type')
+    return isHtmlContentType(contentType)
+  }
 
   const attach = (
     middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void },
@@ -267,11 +356,21 @@ const earlyHintsPlugin = (): Plugin => {
       }
       try {
         const shellHints = await resolveShellHints()
-        const hints = sanitizeHints(shellHints).filter((hint) => hint.rel === 'modulepreload')
-        const links = hints.map(buildLinkHeader).filter((value): value is string => Boolean(value))
+        const links = sanitizeHints(shellHints).map(buildLinkHeader).filter((value): value is string => Boolean(value))
         if (links.length) {
-          ;(res as unknown as Record<symbol, boolean>)[sentSymbol] = true
-          res.setHeader('X-Early-Hints', links)
+          const originalWriteHead = res.writeHead.bind(res)
+          res.writeHead = ((...args: Parameters<ServerResponse['writeHead']>) => {
+            if (
+              !res.headersSent &&
+              !res.writableEnded &&
+              !(res as unknown as Record<symbol, boolean>)[sentSymbol] &&
+              isHtmlResponse(res, args)
+            ) {
+              ;(res as unknown as Record<symbol, boolean>)[sentSymbol] = true
+              res.setHeader('X-Early-Hints', links)
+            }
+            return originalWriteHead(...args)
+          }) as typeof res.writeHead
         }
       } catch {
         // ignore early hints failures
