@@ -21,6 +21,7 @@ services:
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./infra/caddy/certs:/etc/caddy/certs:ro
+      - ./apps/site/dist:/srv/web/dist:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
@@ -270,6 +271,9 @@ services:
     depends_on:
       api:
         condition: service_started
+    volumes:
+      - ./apps/site/dist:/app/apps/site/dist:ro
+      - ./apps/site/server:/app/apps/site/server:ro
     networks:
       prometheus_net:
         ipv4_address: 172.30.0.3

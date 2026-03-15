@@ -395,6 +395,13 @@ const previewBuildApiBase =
   `http://127.0.0.1:${previewApiPort}`
 const previewWebTransportBase =
   process.env.VITE_WEBTRANSPORT_BASE?.trim() || resolvedWebTransportBase
+const composeStaticRoot = '/srv/web/dist'
+const composeStaticSiteOptions = {
+  servePrecompressed: true,
+  staticRoot: composeStaticRoot,
+  encode: 'br gzip',
+  stripAcceptEncoding: true
+}
 
 const composeEnv = {
   ...process.env,
@@ -434,6 +441,70 @@ const composeEnv = {
   WEBTRANSPORT_ENABLE_DATAGRAMS: previewEnableWebTransportDatagramsServer,
   WEBTRANSPORT_MAX_DATAGRAM_SIZE: previewWebTransportMaxDatagramSize
 }
+const composeSiteBuildEnv = {
+  ...process.env,
+  VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
+  VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
+  VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
+  VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
+  VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
+  VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT,
+  VITE_HIGHLIGHT_PROJECT_ID: composeEnv.VITE_HIGHLIGHT_PROJECT_ID,
+  VITE_HIGHLIGHT_PRIVACY: composeEnv.VITE_HIGHLIGHT_PRIVACY,
+  VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
+  VITE_HIGHLIGHT_SAMPLE_RATE: composeEnv.VITE_HIGHLIGHT_SAMPLE_RATE,
+  VITE_P2P_CRDT_SIGNALING: composeEnv.VITE_P2P_CRDT_SIGNALING,
+  VITE_P2P_RELAY_BASES: composeEnv.VITE_P2P_RELAY_BASES,
+  VITE_P2P_NOSTR_RELAYS: composeEnv.VITE_P2P_NOSTR_RELAYS,
+  VITE_P2P_WAKU_RELAYS: composeEnv.VITE_P2P_WAKU_RELAYS,
+  VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
+  VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW,
+  VITE_PUBLIC_BASE: process.env.VITE_PUBLIC_BASE?.trim() || '',
+  VITE_SPACETIMEAUTH_AUTHORITY:
+    process.env.VITE_SPACETIMEAUTH_AUTHORITY?.trim() ||
+    process.env.SPACETIMEAUTH_AUTHORITY?.trim() ||
+    'https://auth.spacetimedb.com/oidc',
+  VITE_SPACETIMEAUTH_CLIENT_ID:
+    process.env.VITE_SPACETIMEAUTH_CLIENT_ID?.trim() ||
+    process.env.SPACETIMEAUTH_CLIENT_ID?.trim() ||
+    'prometheus-site-dev',
+  VITE_SPACETIMEDB_MODULE:
+    process.env.VITE_SPACETIMEDB_MODULE?.trim() ||
+    process.env.SPACETIMEDB_MODULE?.trim() ||
+    'prometheus-site-local'
+}
+const composeSiteDistManifestPath = path.join(root, 'apps', 'site', 'dist', 'q-manifest.json')
+
+const logSpawnFailure = (
+  label: string,
+  result: ReturnType<typeof spawnSync>
+) => {
+  if (result.error) {
+    console.warn(`[preview] ${label} failed to start: ${result.error.message}`)
+  }
+  if (result.signal) {
+    console.warn(`[preview] ${label} terminated by signal: ${result.signal}`)
+  }
+  if (typeof result.status === 'number') {
+    console.warn(`[preview] ${label} exited with ${result.status}`)
+  }
+}
+
+const buildComposeSiteDist = () => {
+  const result = spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'build'], {
+    stdio: 'inherit',
+    cwd: root,
+    env: composeSiteBuildEnv
+  })
+  if (result.status !== 0) {
+    logSpawnFailure('Compose static site build', result)
+    process.exit(result.status ?? 1)
+  }
+}
 
 const waitForApiHealth = async (port: string) => {
   const timeoutMs = 30000
@@ -456,20 +527,6 @@ const waitForApiHealth = async (port: string) => {
 
 const buildNativeBundle = async () => {
   await waitForApiHealth(previewApiPort)
-  const logSpawnFailure = (
-    label: string,
-    result: ReturnType<typeof spawnSync>
-  ) => {
-    if (result.error) {
-      console.warn(`[preview] ${label} failed to start: ${result.error.message}`)
-    }
-    if (result.signal) {
-      console.warn(`[preview] ${label} terminated by signal: ${result.signal}`)
-    }
-    if (typeof result.status === 'number') {
-      console.warn(`[preview] ${label} exited with ${result.status}`)
-    }
-  }
   const buildEnv = {
     ...process.env,
     PROMETHEUS_WEB_HOST: previewWebHost,
@@ -566,13 +623,14 @@ const buildNativeBundle = async () => {
       bunBin,
       ['run', '--cwd', 'apps/tauri', ...tauriLaunchArgs],
       {
-      stdio: 'inherit',
-      cwd: root,
-      env: {
-        ...buildEnv,
-        VITE_TAURI: '1'
+        stdio: 'inherit',
+        cwd: root,
+        env: {
+          ...buildEnv,
+          VITE_TAURI: '1'
+        }
       }
-    })
+    )
     if (tauriResult.status !== 0) {
       const label = tauriTarget === 'desktop' ? 'Tauri launch' : `Tauri ${tauriTarget} launch`
       logSpawnFailure(label, tauriResult)
@@ -582,14 +640,8 @@ const buildNativeBundle = async () => {
 }
 
 const { configChanged } = ensureCaddyConfig('http://web:4173', 'http://web:4173', {
-  dev: {
-    encode: 'br gzip',
-    stripAcceptEncoding: true
-  },
-  prod: {
-    encode: 'br gzip',
-    stripAcceptEncoding: true
-  }
+  dev: composeStaticSiteOptions,
+  prod: composeStaticSiteOptions
 })
 let keepContainers = false
 
@@ -602,6 +654,48 @@ type BuildTarget = {
 
 const cacheKeyPrefix = 'preview'
 const cache = loadBuildCache()
+const webBuildInputs = [
+  'package.json',
+  'bun.lock',
+  'tsconfig.base.json',
+  'apps/site/Dockerfile',
+  'apps/site',
+  'packages'
+]
+const webBuildExtra = {
+  VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
+  VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
+  VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
+  VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
+  VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
+  VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
+  VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
+  VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
+  VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT,
+  VITE_HIGHLIGHT_PROJECT_ID: composeEnv.VITE_HIGHLIGHT_PROJECT_ID,
+  VITE_HIGHLIGHT_PRIVACY: composeEnv.VITE_HIGHLIGHT_PRIVACY,
+  VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
+  VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
+  VITE_HIGHLIGHT_SAMPLE_RATE: composeEnv.VITE_HIGHLIGHT_SAMPLE_RATE,
+  VITE_P2P_CRDT_SIGNALING: composeEnv.VITE_P2P_CRDT_SIGNALING,
+  VITE_P2P_RELAY_BASES: composeEnv.VITE_P2P_RELAY_BASES,
+  VITE_P2P_NOSTR_RELAYS: composeEnv.VITE_P2P_NOSTR_RELAYS,
+  VITE_P2P_WAKU_RELAYS: composeEnv.VITE_P2P_WAKU_RELAYS,
+  VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
+  VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW,
+  VITE_PUBLIC_BASE: composeSiteBuildEnv.VITE_PUBLIC_BASE,
+  VITE_SPACETIMEAUTH_AUTHORITY: composeSiteBuildEnv.VITE_SPACETIMEAUTH_AUTHORITY,
+  VITE_SPACETIMEAUTH_CLIENT_ID: composeSiteBuildEnv.VITE_SPACETIMEAUTH_CLIENT_ID,
+  VITE_SPACETIMEDB_MODULE: composeSiteBuildEnv.VITE_SPACETIMEDB_MODULE
+}
+const composeSiteDistCacheKey = `${cacheKeyPrefix}:site-dist`
+const composeSiteDistFingerprint = computeFingerprint(webBuildInputs, webBuildExtra)
+const needsComposeSiteDistBuild =
+  !isTauriMode &&
+  (!existsSync(composeSiteDistManifestPath) || cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint)
+if (needsComposeSiteDistBuild) {
+  buildComposeSiteDist()
+}
 const buildTargets: BuildTarget[] = [
   {
     service: 'api',
@@ -619,35 +713,8 @@ const buildTargets: BuildTarget[] = [
   {
     service: 'web',
     cacheKey: `${cacheKeyPrefix}:web`,
-    inputs: [
-      'package.json',
-      'bun.lock',
-      'tsconfig.base.json',
-      'apps/site/Dockerfile',
-      'apps/site',
-      'packages'
-    ],
-    extra: {
-      VITE_API_BASE: composeEnv.PROMETHEUS_VITE_API_BASE,
-      VITE_SPACETIMEDB_URI: composeEnv.VITE_SPACETIMEDB_URI,
-      VITE_WEBTRANSPORT_BASE: composeEnv.PROMETHEUS_VITE_WEBTRANSPORT_BASE,
-      VITE_ENABLE_PREFETCH: composeEnv.VITE_ENABLE_PREFETCH,
-      VITE_ENABLE_WEBTRANSPORT_FRAGMENTS: composeEnv.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS,
-      VITE_ENABLE_WEBTRANSPORT_DATAGRAMS: composeEnv.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS,
-      VITE_ENABLE_FRAGMENT_COMPRESSION: composeEnv.VITE_ENABLE_FRAGMENT_COMPRESSION,
-      VITE_ENABLE_ANALYTICS: composeEnv.VITE_ENABLE_ANALYTICS,
-      VITE_ENABLE_HIGHLIGHT: composeEnv.VITE_ENABLE_HIGHLIGHT,
-      VITE_HIGHLIGHT_PROJECT_ID: composeEnv.VITE_HIGHLIGHT_PROJECT_ID,
-      VITE_HIGHLIGHT_PRIVACY: composeEnv.VITE_HIGHLIGHT_PRIVACY,
-      VITE_HIGHLIGHT_SESSION_RECORDING: composeEnv.VITE_HIGHLIGHT_SESSION_RECORDING,
-      VITE_HIGHLIGHT_CANVAS_SAMPLING: composeEnv.VITE_HIGHLIGHT_CANVAS_SAMPLING,
-      VITE_P2P_CRDT_SIGNALING: composeEnv.VITE_P2P_CRDT_SIGNALING,
-      VITE_P2P_RELAY_BASES: composeEnv.VITE_P2P_RELAY_BASES,
-      VITE_P2P_NOSTR_RELAYS: composeEnv.VITE_P2P_NOSTR_RELAYS,
-      VITE_P2P_WAKU_RELAYS: composeEnv.VITE_P2P_WAKU_RELAYS,
-      VITE_P2P_PEERJS_SERVER: composeEnv.VITE_P2P_PEERJS_SERVER,
-      VITE_DISABLE_SW: composeEnv.VITE_DISABLE_SW
-    }
+    inputs: webBuildInputs,
+    extra: webBuildExtra
   },
   {
     service: 'caddy',
@@ -733,6 +800,12 @@ if (configChanged && running.has('caddy')) {
 
 for (const target of buildResults) {
   cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
+}
+if (!isTauriMode) {
+  cache[composeSiteDistCacheKey] = {
+    fingerprint: composeSiteDistFingerprint,
+    updatedAt: new Date().toISOString()
+  }
 }
 saveBuildCache(cache)
 
