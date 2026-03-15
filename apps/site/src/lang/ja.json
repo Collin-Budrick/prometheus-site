@@ -176,9 +176,9 @@
     },
     "fragment://page/home/dock@v2": {
       "heading": "h2",
-      "metaLine": "Reactドック",
-      "title": "サーバー専用ドックフラグメント。",
-      "description": "Reactで作成したMagicUIドックを静的フラグメントにコンパイルします。"
+      "metaLine": "ライブ共同編集テキスト",
+      "title": "このページにいる全員に共有されるテキストです。",
+      "description": "このページの全員が同じテキストボックスを編集でき、Loro は更新を Garnet 経由でリアルタイム同期します。"
     },
     "fragment://page/store/stream@v1": {
       "heading": "h2",
@@ -385,6 +385,7 @@
     "edge-primary": "エッジ優先",
     "Binary-first. Fragment-native. Zero hydration.": "バイナリ優先。フラグメントネイティブ。ハイドレーションゼロ。",
     "The render tree is the artifact. HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.": "レンダーツリーが成果物です。HTMLはフォールバックです。すべての表面は再生、キャッシュ、即時パッチのために決定的なバイナリフラグメントにコンパイルされます。",
+    "HTML is a fallback. Every surface is compiled into deterministic binary fragments for replay, caching, and instant patching.": "HTMLはフォールバックです。すべての表面は再生、キャッシュ、即時パッチのために決定的なバイナリフラグメントにコンパイルされます。",
     "TTFB < 10ms target": "TTFB < 10ms 目標",
     "KV as source of truth": "KVを信頼できる唯一のソースに",
     "Qwik-owned DOM": "Qwikが所有するDOM",
@@ -493,6 +494,8 @@
     "Invites": "招待",
     "Online": "オンライン",
     "No invites yet.": "招待はまだありません。",
+    "Search by user ID to connect.": "ユーザー ID で検索して接続します。",
+    "Search by user ID": "ユーザー ID で検索",
     "Unable to load invites.": "招待を読み込めません。",
     "Unable to search.": "検索できません。",
     "Invite unavailable.": "招待を処理できません。",

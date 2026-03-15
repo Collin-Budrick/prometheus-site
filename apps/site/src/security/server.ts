@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { appConfig, type PublicAppConfig } from '../public-app-config'
 import {
   CSP_NONCE_SHARED_MAP_KEY,
+  TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
   TRUSTED_TYPES_SERVER_POLICY_NAME,
   TRUSTED_TYPES_TEMPLATE_POLICY_NAME
 } from './shared'
@@ -123,7 +124,7 @@ export const buildSiteCsp = ({
     `connect-src ${buildSiteConnectSrc(currentOrigin, config).join(' ')}`,
     `worker-src 'self'`,
     `manifest-src 'self'`,
-    `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME}`,
+    `trusted-types ${TRUSTED_TYPES_SERVER_POLICY_NAME} ${TRUSTED_TYPES_TEMPLATE_POLICY_NAME} ${TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME}`,
     `require-trusted-types-for 'script'`
   ]
 

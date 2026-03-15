@@ -64,6 +64,7 @@ export const storeUiKeys = [
   'storeTitle',
   'storeDescription',
   'storeAction',
+  'fragmentClose',
   'featureUnavailableMeta',
   'featureUnavailableTitle',
   'featureUnavailableDescription',
@@ -75,6 +76,7 @@ export const loginUiKeys = [
   'loginTitle',
   'loginDescription',
   'loginAction',
+  'fragmentClose',
   'loginTab',
   'signupTab',
   'signupTitle',
@@ -107,7 +109,15 @@ export const loginUiKeys = [
 export const protectedUiKeys = [
   'protectedMetaLine',
   'protectedDescription',
-  'protectedAction'
+  'protectedAction',
+  'fragmentClose'
+] as const satisfies readonly UiCopyKey[]
+
+export const offlineUiKeys = [
+  'networkOfflineTitle',
+  'networkOfflineHint',
+  'networkRetrySync',
+  'fragmentClose'
 ] as const satisfies readonly UiCopyKey[]
 
 export const profileUiKeys = [
@@ -210,7 +220,7 @@ export const loginLanguageSelection: LanguageResourceSelection = {
 }
 
 export const labLanguageSelection: LanguageResourceSelection = {
-  ui: ['featureUnavailableMeta', 'featureUnavailableTitle', 'featureUnavailableDescription', 'featureUnavailableAction'],
+  ui: ['featureUnavailableMeta', 'featureUnavailableTitle', 'featureUnavailableDescription', 'featureUnavailableAction', 'fragmentClose'],
   lab: true
 }
 
@@ -228,6 +238,10 @@ export const profileLanguageSelection: LanguageResourceSelection = {
 
 export const settingsLanguageSelection: LanguageResourceSelection = {
   ui: [...protectedUiKeys, 'navSettings', ...settingsUiKeys]
+}
+
+export const offlineLanguageSelection: LanguageResourceSelection = {
+  ui: offlineUiKeys
 }
 
 export const emptyLabCopy: LabPageCopy = {
@@ -567,5 +581,6 @@ export const resolveRouteLanguageSelection = (pathName: string): LanguageResourc
   if (path.startsWith('/dashboard')) return dashboardLanguageSelection
   if (path.startsWith('/profile')) return profileLanguageSelection
   if (path.startsWith('/settings')) return settingsLanguageSelection
+  if (path.startsWith('/offline')) return offlineLanguageSelection
   return {}
 }

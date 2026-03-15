@@ -1,4 +1,5 @@
 import type { FragmentPayload } from '@core/fragment/types'
+import { getFragmentTextCopy } from '../lang/client'
 import { setTrustedInnerHtml } from '../security/client'
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
@@ -65,6 +66,7 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
   setTrustedInnerHtml(
     body,
     `<div class="fragment-html">${renderStaticFragmentPayloadHtml(payload, {
+      copy: getFragmentTextCopy(routeData.lang),
       storeSeed: routeData.storeSeed,
       contactInvitesSeed: routeData.contactInvitesSeed
     })}</div>`,

@@ -31,7 +31,8 @@ describe('static shell performance invariants', () => {
     expect(bootstrapSource).toContain('bindHomeDemoActivation({ controller })')
     expect(bootstrapSource).toContain('scheduleStaticHomePaintReady({')
     expect(bootstrapSource).toContain('scheduleTask = scheduleStaticShellTask')
-    expect(bootstrapSource).toContain('writeStaticShellSeed({ isAuthenticated:')
+    expect(bootstrapSource).toContain('writeStaticShellSeed({')
+    expect(bootstrapSource).toContain('isAuthenticated')
     expect(bootstrapSource).toContain('createStaticHomePatchQueue({')
     expect(bootstrapSource).toContain('bindHomeFragmentHydration({ controller })')
     expect(bootstrapSource).toContain('createHomeFirstLcpGate()')
@@ -107,8 +108,8 @@ describe('static shell performance invariants', () => {
     expect(snapshotClientSource).toContain('syncStaticDockMarkup({')
     expect(fragmentBootstrapSource).not.toContain('}, 48)')
     expect(fragmentBootstrapSource).toContain('refreshStaticFragmentDockAuthIfNeeded(controller)')
-    expect(fragmentBootstrapSource).toContain('prewarmRouteConnection(controller.path)')
-    expect(fragmentBootstrapSource).toContain("import('../shared/spacetime-client')")
+    expect(fragmentBootstrapSource).not.toContain('prewarmRouteConnection(controller.path)')
+    expect(fragmentBootstrapSource).not.toContain("import('../shared/spacetime-client')")
     expect(fragmentBootstrapSource).toContain('visibleFragmentIds')
     expect(fragmentBootstrapSource).toContain('collectVisibleStreamIds(controller)')
     expect(fragmentBootstrapSource).toContain('ids: visibleIds')
@@ -126,7 +127,7 @@ describe('static shell performance invariants', () => {
   })
 
   it('preloads the static shell bootstrap and avoids split entry builds', async () => {
-    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, loginRouteSource, homeStaticEntrySource, homeDemoEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, islandEntrySource, islandRuntimeLoaderSource, homeDemoEntryLoaderSource, homeCollabEntryLoaderSource, storeRuntimeLoaderSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
+    const [entrySsrSource, buildScriptSource, rootSource, layoutSource, homeRouteSource, loginRouteSource, homeStaticEntrySource, homeDemoEntrySource, runtimeLoaderSource, bootstrapRuntimeLoaderSource, fragmentEntrySource, fragmentRuntimeLoaderSource, islandEntrySource, islandRuntimeLoaderSource, homeDemoEntryLoaderSource, homeCollabEntryLoaderSource, storeRuntimeLoaderSource, storeRuntimeSource, storeControllerSource, staticAssetUrlSource, assetVersionSource, shellLayoutSource, seedSource] = await Promise.all([
       readSource('../entry.ssr.tsx'),
       readSource('../../scripts/build-static-shell-entries.mjs'),
       readSource('../root.tsx'),
@@ -144,6 +145,8 @@ describe('static shell performance invariants', () => {
       readSource('./home-demo-entry-loader.ts'),
       readSource('./home-collab-entry-loader.ts'),
       readSource('./store-static-runtime-loader.ts'),
+      readSource('./store-static-runtime.ts'),
+      readSource('./controllers/store-static-controller.ts'),
       readSource('./static-asset-url.ts'),
       readSource('./asset-version.ts'),
       readSource('./StaticShellLayout.tsx'),
@@ -193,6 +196,9 @@ describe('static shell performance invariants', () => {
     expect(fragmentRuntimeLoaderSource).toContain("fragment-bootstrap-runtime.js")
     expect(islandRuntimeLoaderSource).toContain("island-bootstrap-runtime.js")
     expect(storeRuntimeLoaderSource).toContain("store-static-runtime.js")
+    expect(storeRuntimeSource).not.toContain('prewarmSpacetimeConnection()')
+    expect(storeControllerSource).toContain('ensureLiveInventory(state, scheduleRender)')
+    expect(storeControllerSource).not.toContain('const unsubscribe = subscribeStoreInventory(')
     expect(fragmentRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
     expect(islandRuntimeLoaderSource).toContain('import(/* @vite-ignore */ url)')
     expect(fragmentEntrySource).toContain('installFragmentStaticEntry')

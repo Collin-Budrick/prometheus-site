@@ -3,7 +3,7 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
-import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { emptyUiCopy, loginLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
@@ -43,8 +43,8 @@ export const useLoginResource = routeLoader$<LoginResource>(async ({ request }) 
   }
 })
 
-const DisabledLoginRoute = component$(() => {
-  const copy = useLangCopy()
+const DisabledLoginRoute = component$<{ lang: Lang }>(({ lang }) => {
+  const copy = useLangCopy(useSharedLangSignal(lang))
   return (
     <StaticRouteTemplate
       metaLine={copy.value.featureUnavailableMeta}
@@ -91,7 +91,7 @@ export default component$(() => {
   if (!loginEnabled) {
     return (
       <StaticPageRoot>
-        <DisabledLoginRoute />
+        <DisabledLoginRoute lang={data.lang} />
       </StaticPageRoot>
     )
   }

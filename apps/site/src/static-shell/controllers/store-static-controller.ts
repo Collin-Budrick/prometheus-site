@@ -39,6 +39,8 @@ type StoreStaticState = {
   destroyed: boolean
   form: StoreCreateState
   inventory: StoreInventorySnapshot
+  inventoryCleanup: (() => void) | null
+  liveInventoryStarted: boolean
   observer: MutationObserver | null
   pendingAddIds: Set<number>
   pendingDeleteIds: Set<number>
@@ -462,6 +464,34 @@ const renderStoreCart = (state: StoreStaticState) => {
   )
 }
 
+const ensureLiveInventory = (state: StoreStaticState, scheduleRender: () => void) => {
+  if (state.destroyed || state.liveInventoryStarted) return
+  state.liveInventoryStarted = true
+  state.inventory = {
+    ...state.inventory,
+    error: null,
+    status: state.inventory.status === 'live' ? 'live' : 'connecting'
+  }
+  scheduleRender()
+
+  try {
+    state.inventoryCleanup = subscribeStoreInventory((snapshot) => {
+      if (state.destroyed) return
+      state.inventory = snapshot
+      scheduleRender()
+    })
+  } catch (error) {
+    state.liveInventoryStarted = false
+    state.inventoryCleanup = null
+    state.inventory = {
+      ...state.inventory,
+      error: error instanceof Error ? error.message : String(error),
+      status: 'error'
+    }
+    scheduleRender()
+  }
+}
+
 const attachObserver = (state: StoreStaticState, routeData: StaticFragmentRouteData, scheduleRender: () => void) => {
   state.observer?.disconnect()
   const root = document.querySelector<HTMLElement>('[data-static-fragment-root]')
@@ -532,12 +562,13 @@ const handleAddToCart = async (state: StoreStaticState, id: number, scheduleRend
   const item = state.inventory.items.find((entry) => entry.id === id)
   if (!item || item.quantity === 0) return
 
+  ensureLiveInventory(state, scheduleRender)
   state.pendingAddIds.add(id)
   scheduleRender()
 
   try {
     const result = await executeStoreCommandDirect({ type: 'consume', id })
-    if (result.ok) {
+    if (result?.ok) {
       addCartItem(state, item)
       if (result.item) {
         updateInventoryQuantity(state, result.item.id, result.item.quantity)
@@ -555,12 +586,13 @@ const handleRemoveFromCart = async (state: StoreStaticState, id: number, schedul
   const item = state.cart.find((entry) => entry.id === id)
   if (!item) return
 
+  ensureLiveInventory(state, scheduleRender)
   state.pendingRemoveIds.add(id)
   scheduleRender()
 
   try {
     const result = await executeStoreCommandDirect({ type: 'restore', id, amount: item.qty })
-    if (result.ok) {
+    if (result?.ok) {
       state.cart = state.cart.filter((entry) => entry.id !== id)
       if (result.item) {
         updateInventoryQuantity(state, result.item.id, result.item.quantity)
@@ -576,6 +608,7 @@ const handleRemoveFromCart = async (state: StoreStaticState, id: number, schedul
 const handleDeleteItem = async (state: StoreStaticState, id: number, scheduleRender: () => void) => {
   if (state.pendingDeleteIds.has(id)) return
 
+  ensureLiveInventory(state, scheduleRender)
   state.pendingDeleteIds.add(id)
   scheduleRender()
 
@@ -595,6 +628,7 @@ const handleDeleteItem = async (state: StoreStaticState, id: number, scheduleRen
 const handleCreateSubmit = async (state: StoreStaticState, scheduleRender: () => void) => {
   if (!canSubmitCreateForm(state)) return
 
+  ensureLiveInventory(state, scheduleRender)
   setCreateFormMessage(state, 'saving', null)
   scheduleRender()
 
@@ -653,6 +687,8 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
       ...emptyInventorySnapshot,
       items: readInitialInventory(routeData)
     },
+    inventoryCleanup: null,
+    liveInventoryStarted: false,
     observer: null,
     pendingAddIds: new Set<number>(),
     pendingDeleteIds: new Set<number>(),
@@ -747,19 +783,14 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
   document.addEventListener('input', handleInput)
   document.addEventListener('change', handleChange)
 
-  const unsubscribe = subscribeStoreInventory((snapshot) => {
-    if (state.destroyed) return
-    state.inventory = snapshot
-    scheduleRender()
-  })
-
   syncRouteData(state, routeData)
   renderAll(state, routeData, scheduleRender)
 
   return () => {
     state.destroyed = true
     state.observer?.disconnect()
-    unsubscribe()
+    state.inventoryCleanup?.()
+    state.inventoryCleanup = null
     document.removeEventListener('click', handleClick)
     document.removeEventListener('input', handleInput)
     document.removeEventListener('change', handleChange)

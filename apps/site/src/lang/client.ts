@@ -23,14 +23,19 @@ import {
 } from './selection'
 
 type LanguageModule = { default: LanguagePack }
+type LanguageModuleLoader = () => Promise<LanguageModule>
 
-const modules = (() => {
-  try {
-    return import.meta.glob<LanguageModule>('./*.json')
-  } catch {
-    return {}
-  }
-})()
+const createLanguageModuleLoader = (
+  loader: () => Promise<unknown>
+): LanguageModuleLoader => {
+  return async () => (await loader()) as LanguageModule
+}
+
+const languageModules: Record<string, LanguageModuleLoader> = {
+  en: createLanguageModuleLoader(() => import('./en.json')),
+  ja: createLanguageModuleLoader(() => import('./ja.json')),
+  ko: createLanguageModuleLoader(() => import('./ko.json'))
+}
 const languageSeedCache = new Map<string, LanguageSeedPayload>()
 const fullPackCache = new Map<string, LanguagePack>()
 
@@ -42,7 +47,7 @@ const clonePayload = (payload: LanguageSeedPayload): LanguageSeedPayload => ({
   fragmentHeaders: payload.fragmentHeaders ? { ...payload.fragmentHeaders } : undefined
 })
 
-const getModuleLoader = (lang: string) => modules[`./${lang}.json`]
+const getModuleLoader = (lang: string) => languageModules[lang]
 
 const loadLanguagePackModule = async (lang: string): Promise<LanguagePack> => {
   const cached = fullPackCache.get(lang)

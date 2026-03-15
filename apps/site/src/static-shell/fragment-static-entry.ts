@@ -2,6 +2,7 @@ import { loadFragmentBootstrapRuntime } from './fragment-bootstrap-runtime-loade
 import { normalizeStaticShellRoutePath } from './constants'
 import { loadStoreStaticRuntime } from './store-static-runtime-loader'
 import { appConfig } from '../public-app-config'
+import { installTrustedTypesFunctionBridge } from '../security/client'
 
 export const FRAGMENT_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'focusin'] as const
 export const STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'
@@ -92,6 +93,7 @@ export const installFragmentStaticEntry = ({
     return () => undefined
   }
 
+  installTrustedTypesFunctionBridge()
   win.__PROM_STATIC_FRAGMENT_ENTRY__ = true
 
   let armed = false
@@ -143,16 +145,19 @@ export const installFragmentStaticEntry = ({
     })
   }
 
-  const cleanupTriggers = () => {
-    removeIntentTriggers()
-    doc.removeEventListener('click', handleBootstrapSensitiveClick, clickEventOptions)
-
+  const cleanupBootstrapObservation = () => {
     if (loadHandler) {
       win.removeEventListener('load', loadHandler)
       loadHandler = null
     }
     visibilityObserver?.disconnect()
     visibilityObserver = null
+  }
+
+  const cleanupTriggers = () => {
+    removeIntentTriggers()
+    doc.removeEventListener('click', handleBootstrapSensitiveClick, clickEventOptions)
+    cleanupBootstrapObservation()
   }
 
   const startFragmentBootstrap = () => {
@@ -181,7 +186,7 @@ export const installFragmentStaticEntry = ({
       return storeBootstrapPromise ?? Promise.resolve()
     }
 
-    cleanupTriggers()
+    cleanupBootstrapObservation()
     storeBootstrapPromise = (prewarmStoreRuntime() ?? loadStoreRuntime())
       .then(({ bootstrapStaticStoreShell }) => bootstrapStaticStoreShell())
       .then(() => {

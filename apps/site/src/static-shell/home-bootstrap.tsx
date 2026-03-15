@@ -53,6 +53,7 @@ import {
   syncStaticDockRootState,
   writeStaticShellSeed
 } from './seed-client'
+import { loadStaticShellLanguageSeed } from './language-seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -1221,6 +1222,7 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
 
   try {
     const snapshot = await loadStaticShellSnapshot(current.snapshotKey, nextLang)
+    const languageSeed = await loadStaticShellLanguageSeed(current.currentPath, nextLang)
 
     await destroyController(activeController)
     activeController = null
@@ -1232,7 +1234,13 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
         isAuthenticated: current.isAuthenticated
       }
     })
-    writeStaticShellSeed({ isAuthenticated: current.isAuthenticated })
+    writeStaticShellSeed({
+      lang: nextLang,
+      currentPath: current.currentPath,
+      snapshotKey: current.snapshotKey,
+      languageSeed,
+      isAuthenticated: current.isAuthenticated
+    })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
 
@@ -1252,6 +1260,7 @@ export const bootstrapStaticHome = async () => {
   if (preferredLang !== data.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(data.snapshotKey, preferredLang)
+      const languageSeed = await loadStaticShellLanguageSeed(data.currentPath, preferredLang)
       applyStaticShellSnapshot(snapshot, {
         dockState: {
           lang: preferredLang,
@@ -1259,7 +1268,13 @@ export const bootstrapStaticHome = async () => {
           isAuthenticated: data.isAuthenticated
         }
       })
-      writeStaticShellSeed({ isAuthenticated: data.isAuthenticated })
+      writeStaticShellSeed({
+        lang: preferredLang,
+        currentPath: data.currentPath,
+        snapshotKey: data.snapshotKey,
+        languageSeed,
+        isAuthenticated: data.isAuthenticated
+      })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticHome()

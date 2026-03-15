@@ -114,7 +114,8 @@ const copy: HomeStaticCopyBundle = {
     readySub: 'Ready to rerun.',
     activeSub: 'Counting down.',
     reset: 'Reset'
-  }
+  },
+  fragments: {}
 }
 
 const fragmentHeaders: Record<string, FragmentHeaderCopy> = {

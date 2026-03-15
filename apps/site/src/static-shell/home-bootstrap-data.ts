@@ -7,6 +7,7 @@ import {
 import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from './seed'
+import { readStaticShellSeed } from './seed-client'
 
 export type HomeStaticRouteData = {
   lang: Lang
@@ -69,7 +70,7 @@ export const readStaticHomeBootstrapData = ({
 }: {
   doc?: StaticHomeBootstrapDocument | null
 } = {}): HomeStaticBootstrapData | null => {
-  const shell = readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID, doc)
+  const shell = readStaticShellSeed(doc) ?? readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID, doc)
   const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID, doc)
   if (!shell && !route) return null
 

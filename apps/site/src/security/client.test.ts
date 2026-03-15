@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import {
   applyCspNonce,
   asTrustedHtml,
+  asTrustedScript,
   getCspNonce,
+  installTrustedTypesFunctionBridge,
   primeTrustedTypesPolicies,
   setTrustedInnerHtml,
   setTrustedTemplateHtml
@@ -15,12 +17,23 @@ type TrustedHtmlMock = {
 
 const originalDocument = globalThis.document
 const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+const originalFunction = globalThis.Function
 const originalTrustedTypePolicies = (globalThis as typeof globalThis & { __PROM_TT_POLICIES__?: unknown })
   .__PROM_TT_POLICIES__
+const originalTrustedTypeFunctionBridge = (
+  globalThis as typeof globalThis & {
+    __PROM_TT_FUNCTION_BRIDGE__?: unknown
+  }
+).__PROM_TT_FUNCTION_BRIDGE__
 
 const createTrustedTypesMock = () => ({
   createPolicy: (name: string) => ({
     createHTML: (input: string) =>
+      ({
+        __html: input,
+        policy: name
+      }) as never as TrustedHtmlMock,
+    createScript: (input: string) =>
       ({
         __html: input,
         policy: name
@@ -40,6 +53,13 @@ afterEach(() => {
       originalTrustedTypePolicies
   } else {
     delete (globalThis as typeof globalThis & { __PROM_TT_POLICIES__?: unknown }).__PROM_TT_POLICIES__
+  }
+  globalThis.Function = originalFunction
+  if (originalTrustedTypeFunctionBridge !== undefined) {
+    ;(globalThis as typeof globalThis & { __PROM_TT_FUNCTION_BRIDGE__?: unknown }).__PROM_TT_FUNCTION_BRIDGE__ =
+      originalTrustedTypeFunctionBridge
+  } else {
+    delete (globalThis as typeof globalThis & { __PROM_TT_FUNCTION_BRIDGE__?: unknown }).__PROM_TT_FUNCTION_BRIDGE__
   }
 })
 
@@ -84,12 +104,36 @@ describe('security/client', () => {
         __PROM_TT_POLICIES__?: Partial<Record<string, { createHTML: (input: string) => TrustedHtmlMock }>>
       }
     ).__PROM_TT_POLICIES__
+    const serverTrusted = primed.server?.createHTML?.('<p>server</p>') as TrustedHtmlMock | undefined
+    const templateTrusted = primed.template?.createHTML?.('<p>template</p>') as TrustedHtmlMock | undefined
 
-    expect(primed.server?.createHTML('<p>server</p>').policy).toBe('prometheus-server-html')
-    expect(primed.template?.createHTML('<p>template</p>').policy).toBe('prometheus-template-html')
+    expect(serverTrusted?.policy).toBe('prometheus-server-html')
+    expect(templateTrusted?.policy).toBe('prometheus-template-html')
     expect(Object.keys(cachedPolicies ?? {}).sort()).toEqual([
       'prometheus-server-html',
       'prometheus-template-html'
     ])
+  })
+
+  it('creates trusted scripts and bridges Function calls when Trusted Types require script objects', () => {
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = createTrustedTypesMock()
+
+    const capturedArgs: unknown[][] = []
+    const fakeFunction = function (...args: unknown[]) {
+      capturedArgs.push(args)
+      return originalFunction(...args.map((arg) => String((arg as { __html?: string })?.__html ?? arg)))
+    } as unknown as FunctionConstructor
+
+    globalThis.Function = fakeFunction
+
+    const trustedScript = asTrustedScript('return 7') as TrustedHtmlMock
+    expect(trustedScript.policy).toBe('prometheus-runtime-script')
+
+    expect(installTrustedTypesFunctionBridge()).toBe(true)
+    const generated = globalThis.Function('return 7') as () => number
+
+    expect(capturedArgs).toHaveLength(1)
+    expect((capturedArgs[0]?.[0] as TrustedHtmlMock).policy).toBe('prometheus-runtime-script')
+    expect(generated()).toBe(7)
   })
 })

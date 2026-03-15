@@ -1,5 +1,5 @@
-import { DbConnection } from '@prometheus/spacetimedb-client'
 import type { DbConnection as SpacetimeDbConnection } from '@prometheus/spacetimedb-client'
+import { installTrustedTypesFunctionBridge } from '../security/client'
 import { resolveSpacetimeDbClientConfig } from './spacetime-auth'
 
 export type SpacetimeConnectionStatus = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
@@ -29,6 +29,8 @@ type StoredPreferredUri = {
   uri: string
 }
 
+type SpacetimeClientModule = typeof import('@prometheus/spacetimedb-client')
+
 let snapshot: SpacetimeConnectionSnapshot = {
   connection: null,
   error: null,
@@ -44,8 +46,17 @@ let connectionGeneration = 0
 let reconnectAttempt = 0
 let reconnectTimer: number | null = null
 let browserEventsBound = false
+let spacetimeClientModulePromise: Promise<SpacetimeClientModule> | null = null
 
 const listeners = new Set<SnapshotListener>()
+
+export const loadSpacetimeClient = async (): Promise<SpacetimeClientModule> => {
+  if (!spacetimeClientModulePromise) {
+    installTrustedTypesFunctionBridge()
+    spacetimeClientModulePromise = import('@prometheus/spacetimedb-client')
+  }
+  return await spacetimeClientModulePromise
+}
 
 const cloneSnapshot = () => ({ ...snapshot })
 
@@ -351,7 +362,7 @@ export const ensureSpacetimeConnection = async (
     }
 
     disconnectCurrentConnection()
-    const attemptConnection = (candidateIndex: number) => {
+    const attemptConnection = async (candidateIndex: number) => {
       const attemptId = ++activeAttemptId
       const candidateUri = candidateUris[candidateIndex] ?? uri
       let connectTimeoutId: number | null = null
@@ -387,9 +398,9 @@ export const ensureSpacetimeConnection = async (
           } catch {
             // Ignore teardown failures while moving to the next candidate.
           }
-          attemptConnection(candidateIndex + 1)
-          return
-        }
+            void attemptConnection(candidateIndex + 1)
+            return
+          }
 
         updateSnapshot({
           connection: null,
@@ -405,6 +416,7 @@ export const ensureSpacetimeConnection = async (
       }
 
       try {
+        const { DbConnection } = await loadSpacetimeClient()
         if (candidateUris[candidateIndex + 1]) {
           connectTimeoutId = window.setTimeout(() => {
             failOrRetry(`Timed out connecting to ${candidateUri}.`)
@@ -444,7 +456,7 @@ export const ensureSpacetimeConnection = async (
             if (isStaleAttempt()) return
             const nextCandidate = candidateUris[candidateIndex + 1]
             if (!settled && nextCandidate) {
-              attemptConnection(candidateIndex + 1)
+              void attemptConnection(candidateIndex + 1)
               return
             }
             updateSnapshot({
@@ -467,7 +479,7 @@ export const ensureSpacetimeConnection = async (
       }
     }
 
-    attemptConnection(0)
+    void attemptConnection(0)
   })
 
   return connectionPromise

@@ -3,7 +3,7 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
-import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -130,7 +130,7 @@ export default component$(() => {
   useStyles$(settingsStyles)
   const data = useSettingsData()
   useLanguageSeed(data.value.lang, data.value.languageSeed)
-  const copy = useLangCopy()
+  const copy = useLangCopy(useSharedLangSignal(data.value.lang))
   const logoutBusy = useSignal(false)
   const logoutMessage = useSignal<string | null>(null)
   const chatSettings = useSignal<ChatSettings>(data.value.chatSettings ?? { ...defaultChatSettings })

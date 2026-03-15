@@ -3,7 +3,7 @@ import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHa
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
-import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -21,7 +21,7 @@ import {
   type ProfilePayload
 } from '../../shared/profile-storage'
 import profileStyles from './profile.css?inline'
-import { profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { emptyUiCopy, profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
@@ -127,7 +127,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useProfileData)
   const lang = data?.lang ?? defaultLang
-  const copy = data?.languageSeed.ui
+  const copy = { ...emptyUiCopy, ...(data?.languageSeed.ui ?? {}) }
   const description = copy.protectedDescription.replace('{{label}}', copy.navProfile)
 
   return {
@@ -148,7 +148,7 @@ export default component$(() => {
   useStyles$(profileStyles)
   const data = useProfileData()
   useLanguageSeed(data.value.lang, data.value.languageSeed)
-  const copy = useLangCopy()
+  const copy = useLangCopy(useSharedLangSignal(data.value.lang))
   const user = data.value.user
   const localProfile = data.value.localProfile
   const savedName = useSignal(user.name ?? '')

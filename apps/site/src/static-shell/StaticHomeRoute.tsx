@@ -107,6 +107,9 @@ const createStaticHomeCopyBundle = (languageSeed: LanguageSeedPayload) => ({
   preactIsland: {
     ...emptyPreactIslandCopy,
     ...(languageSeed.demos?.preactIsland ?? {})
+  },
+  fragments: {
+    ...(languageSeed.fragments ?? {})
   }
 })
 

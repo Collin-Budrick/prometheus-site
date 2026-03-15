@@ -1,4 +1,3 @@
-import { prewarmSpacetimeConnection } from '../shared/spacetime-client'
 import { normalizeStaticShellRoutePath, STATIC_FRAGMENT_DATA_SCRIPT_ID } from './constants'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import {
@@ -33,7 +32,6 @@ export const bootstrapStaticStoreShell = async () => {
   }
 
   performance.mark?.('prom:store:fast-bootstrap-start')
-  prewarmSpacetimeConnection()
 
   const { activateStoreStaticController } = await import('./controllers/store-static-controller')
   if (hasRegisteredStoreStaticController()) {

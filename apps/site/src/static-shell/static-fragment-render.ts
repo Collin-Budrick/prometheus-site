@@ -6,6 +6,7 @@ import type { StoreSeed } from '../shared/store-seed'
 type StaticFragmentRenderContext = {
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
+  copy?: Record<string, string> | null
 }
 
 type StaticStoreItem = {
@@ -104,9 +105,11 @@ const interpolate = (value: string, params: Record<string, string | number>) =>
 
 const formatLabeledValue = (label: string, value: string | number) => `${label} ${value}`
 
-const resolveStoreItemName = (item: StaticStoreItem | StaticCartItem) => {
+const translateStaticText = (context: StaticFragmentRenderContext, value: string) => context.copy?.[value] ?? t(value)
+
+const resolveStoreItemName = (item: StaticStoreItem | StaticCartItem, context: StaticFragmentRenderContext) => {
   if (item.name && item.name !== `Item ${item.id}`) return item.name
-  return interpolate(t('Item {{id}}'), { id: item.id })
+  return interpolate(translateStaticText(context, 'Item {{id}}'), { id: item.id })
 }
 
 const resolveAvatarText = (user: StaticInviteUser) => {
@@ -133,15 +136,15 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
   const queuedCount = context.storeSeed?.cart?.queuedCount ?? 0
   const placeholder = attrs?.['data-placeholder'] ?? 'Search the store...'
   const emptyLabel = query ? 'No matching items.' : 'Catalog is empty.'
-  const resultsLabel = t('results')
-  const itemsLabel = t('items')
-  const idLabel = t('ID')
-  const qtyLabel = t('Qty')
-  const scoreLabel = t('Score')
-  const deleteLabel = t('Delete item')
-  const addLabel = t('Add to cart')
-  const outOfStockLabel = t('Out of stock')
-  const queuedActionsLabel = t('Queued actions')
+  const resultsLabel = translateStaticText(context, 'results')
+  const itemsLabel = translateStaticText(context, 'items')
+  const idLabel = translateStaticText(context, 'ID')
+  const qtyLabel = translateStaticText(context, 'Qty')
+  const scoreLabel = translateStaticText(context, 'Score')
+  const deleteLabel = translateStaticText(context, 'Delete item')
+  const addLabel = translateStaticText(context, 'Add to cart')
+  const outOfStockLabel = translateStaticText(context, 'Out of stock')
+  const queuedActionsLabel = translateStaticText(context, 'Queued actions')
 
   return h('div', {
     class: attrs?.class ?? 'store-stream',
@@ -160,25 +163,25 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
           }),
           h('div', { class: 'store-stream-field-status', 'aria-live': 'polite' }, [
             h('span', { class: 'store-stream-status-dot', 'aria-hidden': 'true' }),
-            h('span', { class: 'sr-only' }, [t(query ? 'Search snapshot' : 'Live snapshot')])
+            h('span', { class: 'sr-only' }, [translateStaticText(context, query ? 'Search snapshot' : 'Live snapshot')])
           ])
         ]),
-        query ? h('button', { class: 'store-stream-clear', type: 'button', disabled: true }, [t('Clear')]) : null
+        query ? h('button', { class: 'store-stream-clear', type: 'button', disabled: true }, [translateStaticText(context, 'Clear')]) : null
       ]),
-      h('div', { class: 'store-stream-sort' }, [h('span', undefined, [t(query ? 'Filtered catalog' : 'Live catalog')])]),
+      h('div', { class: 'store-stream-sort' }, [h('span', undefined, [translateStaticText(context, query ? 'Filtered catalog' : 'Live catalog')])]),
       queuedCount > 0
         ? h('div', { class: 'store-stream-queue', 'aria-live': 'polite' }, [
-            t(`${queuedActionsLabel}: ${queuedCount}`)
+            translateStaticText(context, `${queuedActionsLabel}: ${queuedCount}`)
           ])
         : null
       ]),
       h('div', { class: 'store-stream-meta' }, [
-        h('span', undefined, [t(query ? 'SpaceTimeDB search' : 'SpaceTimeDB snapshot')]),
-        h('span', undefined, [t(query ? `${total} ${resultsLabel}` : `${visibleItems.length} ${itemsLabel}`)])
+        h('span', undefined, [translateStaticText(context, query ? 'SpaceTimeDB search' : 'SpaceTimeDB snapshot')]),
+        h('span', undefined, [translateStaticText(context, query ? `${total} ${resultsLabel}` : `${visibleItems.length} ${itemsLabel}`)])
       ]),
     h('div', { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' }, [
       visibleItems.length === 0
-        ? h('div', { class: 'store-stream-empty', role: 'listitem' }, [t(emptyLabel)])
+        ? h('div', { class: 'store-stream-empty', role: 'listitem' }, [translateStaticText(context, emptyLabel)])
         : visibleItems.map((item, index) =>
             h('div', {
               class: 'store-stream-row',
@@ -192,17 +195,17 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
                 disabled: true,
                 'aria-label': deleteLabel,
                 title: deleteLabel
-              }, [t('X')]),
+              }, [translateStaticText(context, 'X')]),
               h('div', undefined, [
-                h('div', { class: 'store-stream-row-title' }, [t(resolveStoreItemName(item))]),
+                h('div', { class: 'store-stream-row-title' }, [translateStaticText(context, resolveStoreItemName(item, context))]),
                 h('div', { class: 'store-stream-row-meta' }, [
-                  h('span', undefined, [t(formatLabeledValue(idLabel, item.id))]),
-                  h('span', undefined, [t(formatLabeledValue(qtyLabel, item.quantity))])
+                  h('span', undefined, [translateStaticText(context, formatLabeledValue(idLabel, item.id))]),
+                  h('span', undefined, [translateStaticText(context, formatLabeledValue(qtyLabel, item.quantity))])
                 ])
               ]),
               h('div', { class: 'store-stream-row-meta store-stream-row-meta-secondary' }, [
                 item.score !== undefined
-                  ? h('span', { class: 'store-stream-score' }, [t(formatLabeledValue(scoreLabel, item.score.toFixed(2)))])
+                  ? h('span', { class: 'store-stream-score' }, [translateStaticText(context, formatLabeledValue(scoreLabel, item.score.toFixed(2)))])
                   : null,
                 h('button', {
                   class: `store-stream-add${item.quantity === 0 ? ' is-out' : ''}`,
@@ -210,8 +213,8 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
                   disabled: true,
                   'aria-label': item.quantity === 0 ? outOfStockLabel : addLabel,
                   title: item.quantity === 0 ? outOfStockLabel : addLabel
-                }, [t(item.quantity === 0 ? outOfStockLabel : addLabel)]),
-                h('span', { class: 'store-stream-row-price' }, [t(formatPrice(item.price))])
+                }, [translateStaticText(context, item.quantity === 0 ? outOfStockLabel : addLabel)]),
+                h('span', { class: 'store-stream-row-price' }, [translateStaticText(context, formatPrice(item.price))])
               ])
             ])
           )
@@ -219,7 +222,10 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
   ])
 }
 
-const renderStoreCreateNode = (attrs: Record<string, string> | undefined): RenderNode => {
+const renderStoreCreateNode = (
+  attrs: Record<string, string> | undefined,
+  context: StaticFragmentRenderContext
+): RenderNode => {
   const nameLabel = attrs?.['data-name-label'] ?? 'Item name'
   const priceLabel = attrs?.['data-price-label'] ?? 'Price'
   const quantityLabel = attrs?.['data-quantity-label'] ?? 'Quantity'
@@ -233,7 +239,7 @@ const renderStoreCreateNode = (attrs: Record<string, string> | undefined): Rende
     h('form', { class: 'store-create-form' }, [
       h('div', { class: 'store-create-grid' }, [
         h('label', { class: 'store-create-input' }, [
-          h('span', undefined, [t(nameLabel)]),
+          h('span', undefined, [translateStaticText(context, nameLabel)]),
           h('input', {
             type: 'text',
             name: 'name',
@@ -242,7 +248,7 @@ const renderStoreCreateNode = (attrs: Record<string, string> | undefined): Rende
           })
         ]),
         h('label', { class: 'store-create-input' }, [
-          h('span', undefined, [t(priceLabel)]),
+          h('span', undefined, [translateStaticText(context, priceLabel)]),
           h('input', {
             type: 'number',
             name: 'price',
@@ -251,7 +257,7 @@ const renderStoreCreateNode = (attrs: Record<string, string> | undefined): Rende
           })
         ]),
         h('div', { class: 'store-create-input store-create-input-quantity', 'data-digital': 'false' }, [
-          h('label', { class: 'store-create-label', for: 'store-create-quantity-static' }, [t(quantityLabel)]),
+          h('label', { class: 'store-create-label', for: 'store-create-quantity-static' }, [translateStaticText(context, quantityLabel)]),
           h('div', { class: 'store-create-quantity-row' }, [
             h('div', { class: 'store-create-field' }, [
               h('input', {
@@ -266,14 +272,14 @@ const renderStoreCreateNode = (attrs: Record<string, string> | undefined): Rende
             h('label', { class: 'store-create-digital' }, [
               h('input', { type: 'checkbox', disabled: true }),
               h('span', { class: 'store-create-digital-indicator', 'aria-hidden': 'true' }),
-              h('span', { class: 'store-create-digital-text' }, [t('Digital product')])
+              h('span', { class: 'store-create-digital-text' }, [translateStaticText(context, 'Digital product')])
             ])
           ])
         ]),
-        h('button', { class: 'store-create-submit', type: 'button', disabled: true }, [t(submitLabel)])
+        h('button', { class: 'store-create-submit', type: 'button', disabled: true }, [translateStaticText(context, submitLabel)])
       ])
     ]),
-    helper ? h('p', { class: 'store-create-helper' }, [t(helper)]) : null
+    helper ? h('p', { class: 'store-create-helper' }, [translateStaticText(context, helper)]) : null
   ])
 }
 
@@ -287,8 +293,8 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
   const totalLabel = attrs?.['data-total'] ?? 'Total'
   const dropLabel = attrs?.['data-drop'] ?? 'Drop to add'
   const removeLabel = attrs?.['data-remove'] ?? 'Remove item'
-  const idLabel = t('ID')
-  const qtyLabel = t('Qty')
+  const idLabel = translateStaticText(context, 'ID')
+  const qtyLabel = translateStaticText(context, 'Qty')
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
 
   return h('div', {
@@ -297,18 +303,18 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
   }, [
     h('div', { class: 'store-cart-header' }, [
       h('div', undefined, [
-        h('p', { class: 'store-cart-title' }, [t(title)]),
-        h('p', { class: 'store-cart-helper' }, [t(helper)])
+        h('p', { class: 'store-cart-title' }, [translateStaticText(context, title)]),
+        h('p', { class: 'store-cart-helper' }, [translateStaticText(context, helper)])
       ]),
       h('div', { class: 'store-cart-total' }, [
-        h('span', undefined, [t(totalLabel)]),
-        h('strong', undefined, [t(formatPrice(total))])
+        h('span', undefined, [translateStaticText(context, totalLabel)]),
+        h('strong', undefined, [translateStaticText(context, formatPrice(total))])
       ])
     ]),
     h('div', { class: 'store-cart-dropzone' }, [
-      h('div', { class: 'store-cart-drop-hint', 'aria-hidden': 'true' }, [t(dropLabel)]),
+      h('div', { class: 'store-cart-drop-hint', 'aria-hidden': 'true' }, [translateStaticText(context, dropLabel)]),
       items.length === 0
-        ? h('div', { class: 'store-cart-empty' }, [t(empty)])
+        ? h('div', { class: 'store-cart-empty' }, [translateStaticText(context, empty)])
         : h('div', { class: 'store-cart-list', role: 'list' }, items.map((item, index) =>
             h('div', {
               class: 'store-cart-item',
@@ -322,12 +328,12 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
                 disabled: true,
                 'aria-label': removeLabel,
                 title: removeLabel
-              }, [t('X')]),
-              h('div', { class: 'store-cart-item-title' }, [t(resolveStoreItemName(item))]),
-              h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [t(formatLabeledValue(idLabel, item.id))])]),
+              }, [translateStaticText(context, 'X')]),
+              h('div', { class: 'store-cart-item-title' }, [translateStaticText(context, resolveStoreItemName(item, context))]),
+              h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [translateStaticText(context, formatLabeledValue(idLabel, item.id))])]),
               h('div', { class: 'store-cart-item-footer' }, [
-                h('span', { class: 'store-cart-qty' }, [t(formatLabeledValue(qtyLabel, item.qty))]),
-                h('span', { class: 'store-cart-price' }, [t(formatPrice(item.price * item.qty))])
+                h('span', { class: 'store-cart-qty' }, [translateStaticText(context, formatLabeledValue(qtyLabel, item.qty))]),
+                h('span', { class: 'store-cart-price' }, [translateStaticText(context, formatPrice(item.price * item.qty))])
               ])
             ])
           ))
@@ -335,28 +341,34 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
   ])
 }
 
-const renderInviteList = (label: string, invites: StaticInvite[], emptyLabel: string, accent = false) =>
+const renderInviteList = (
+  label: string,
+  invites: StaticInvite[],
+  emptyLabel: string,
+  accent = false,
+  context: StaticFragmentRenderContext = {}
+) =>
   h('div', { class: 'chat-invites-subsection' }, [
     h('div', { class: 'chat-invites-subheader' }, [
-      h('span', undefined, [t(label)]),
+      h('span', undefined, [translateStaticText(context, label)]),
       h('span', {
         class: 'chat-invites-subcount',
         ...(accent && invites.length > 0 ? { 'data-alert': 'true' } : {})
-      }, [t(String(invites.length))])
+      }, [translateStaticText(context, String(invites.length))])
     ]),
     h('div', { class: 'chat-invites-list' }, [
       invites.length === 0
-        ? h('div', { class: 'chat-invites-empty' }, [t(emptyLabel)])
+        ? h('div', { class: 'chat-invites-empty' }, [translateStaticText(context, emptyLabel)])
         : invites.map((invite, index) =>
             h('div', {
               class: 'chat-invites-item',
               style: `--stagger-index:${index}`
             }, [
               h('div', { class: 'chat-invites-item-heading' }, [
-                h('div', { class: 'chat-invites-avatar' }, [t(resolveAvatarText(invite.user))]),
+                h('div', { class: 'chat-invites-avatar' }, [translateStaticText(context, resolveAvatarText(invite.user))]),
                 h('div', undefined, [
-                  h('div', { class: 'chat-invites-item-name' }, [t(resolveInviteDisplayName(invite.user))]),
-                  h('div', { class: 'chat-invites-item-meta' }, [t(resolveInviteMeta(invite.user))])
+                  h('div', { class: 'chat-invites-item-name' }, [translateStaticText(context, resolveInviteDisplayName(invite.user))]),
+                  h('div', { class: 'chat-invites-item-meta' }, [translateStaticText(context, resolveInviteMeta(invite.user))])
                 ])
               ])
             ])
@@ -379,20 +391,20 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
   return h('div', { class: attrs?.class ?? 'chat-invites' }, [
     h('div', { class: 'chat-invites-header' }, [
       h('div', undefined, [
-        h('div', { class: 'chat-invites-title' }, [t(title)]),
-        h('p', { class: 'chat-invites-helper' }, [t(helper)])
+        h('div', { class: 'chat-invites-title' }, [translateStaticText(context, title)]),
+        h('p', { class: 'chat-invites-helper' }, [translateStaticText(context, helper)])
       ]),
       h('div', { class: 'chat-invites-header-actions' }, [
         h('span', { class: 'chat-invites-status-note', 'data-tone': 'neutral' }, [
-          t(`${incoming.length + outgoing.length} ${t('pending')}`)
+          translateStaticText(context, `${incoming.length + outgoing.length} ${translateStaticText(context, 'pending')}`)
         ])
       ])
     ]),
     h('section', { class: 'chat-invites-results' }, [
-      h('div', { class: 'chat-invites-results-header' }, [h('span', undefined, [t(title)])]),
-      renderInviteList(incomingLabel, incoming, emptyLabel, true),
-      renderInviteList(outgoingLabel, outgoing, emptyLabel),
-      renderInviteList(contactsLabel, contacts, emptyLabel)
+      h('div', { class: 'chat-invites-results-header' }, [h('span', undefined, [translateStaticText(context, title)])]),
+      renderInviteList(incomingLabel, incoming, emptyLabel, true, context),
+      renderInviteList(outgoingLabel, outgoing, emptyLabel, false, context),
+      renderInviteList(contactsLabel, contacts, emptyLabel, false, context)
     ])
   ])
 }
@@ -401,7 +413,7 @@ const replaceStaticNodes = (node: RenderNode, context: StaticFragmentRenderConte
   if (node.type !== 'element') return { ...node }
 
   if (node.tag === 'store-stream') return renderStoreStreamNode(node.attrs, context)
-  if (node.tag === 'store-create') return renderStoreCreateNode(node.attrs)
+  if (node.tag === 'store-create') return renderStoreCreateNode(node.attrs, context)
   if (node.tag === 'store-cart') return renderStoreCartNode(node.attrs, context)
   if (node.tag === 'contact-invites') return renderContactInvitesNode(node.attrs, context)
 

@@ -2,7 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
-import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -11,7 +11,12 @@ import type { FragmentPlanValue } from '../../fragment/types'
 import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
 import { emptyInviteGroups } from '../../components/contact-invites/data'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
-import { chatLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
+import {
+  chatLanguageSelection,
+  emptyUiCopy,
+  withFragmentHeaderSelection,
+  type LanguageSeedPayload
+} from '../../lang/selection'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import {
@@ -46,7 +51,7 @@ type FragmentResource = {
   lang: Lang
   staticRoute: StaticFragmentRouteModel | null
   contactInvitesSeed: ContactInvitesSeed | null
-  languageSeed: LanguageSeedPayload | null
+  languageSeed: LanguageSeedPayload
 }
 
 const loadContactInvitesSeed = async (_request: Request): Promise<ContactInvitesSeed> => ({
@@ -72,15 +77,21 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
 
   try {
     const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
-    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
+    const fragmentEntries = plan?.fragments ?? []
+    const fragmentHeaderIds = fragmentEntries.map((entry) => entry.id)
+    const languageSeed = createServerLanguageSeed(
+      lang,
+      withFragmentHeaderSelection(chatLanguageSelection, fragmentHeaderIds)
+    )
     return {
       plan,
       path: planPath,
       lang,
-      staticRoute: plan.fragments.length
+      staticRoute: fragmentEntries.length
         ? buildStaticFragmentRouteModel({
             plan,
             fragments,
+            fragmentCopy: languageSeed.fragments,
             lang,
             initialHtml,
             contactInvitesSeed,
@@ -89,10 +100,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
           })
         : null,
       contactInvitesSeed,
-      languageSeed: createServerLanguageSeed(
-        lang,
-        withFragmentHeaderSelection({ fragmentHeaders: [] }, fragmentHeaderIds)
-      )
+      languageSeed
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for chat', error)
@@ -102,7 +110,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
       lang,
       staticRoute: null,
       contactInvitesSeed,
-      languageSeed: null
+      languageSeed: createServerLanguageSeed(lang, chatLanguageSelection)
     }
   }
 })
@@ -113,7 +121,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useChatData)
   const fragmentData = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
-  const copy = data?.languageSeed.ui
+  const copy = { ...emptyUiCopy, ...(data?.languageSeed.ui ?? {}) }
   const description = copy.protectedDescription.replace('{{label}}', copy.navChat)
 
   return {
@@ -137,7 +145,7 @@ export default component$(() => {
   useLanguageSeed(data.value.lang, data.value.languageSeed)
   useLanguageSeed(fragmentResource.value.lang, fragmentResource.value.languageSeed)
   const fragmentData = fragmentResource.value
-  const copy = useLangCopy()
+  const copy = useLangCopy(useSharedLangSignal(data.value.lang))
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navChat)
 

@@ -67,4 +67,81 @@ describe('static-fragment-model', () => {
     expect(model.routeData.fragmentOrder).toEqual(plan.fragments.map((entry) => entry.id))
     expect(model.routeData.planSignature).toBe(planSignature)
   })
+
+  it('renders static fragment replacements from the provided fragment copy', () => {
+    const plan = {
+      path: '/store',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/store/stream@v5',
+          critical: true,
+          layout: { column: 'span 12' }
+        },
+        {
+          id: 'fragment://page/store/create@v1',
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/store/stream@v5': {
+          id: 'fragment://page/store/stream@v5',
+          tree: h('store-stream', { class: 'store-stream' }, []),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'stream:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 1
+        },
+        'fragment://page/store/create@v1': {
+          id: 'fragment://page/store/create@v1',
+          tree: h('store-create', { class: 'store-create' }, []),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'create:1',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 2
+        }
+      },
+      fragmentCopy: {
+        'Search the store...': 'ストアを検索...',
+        'Live snapshot': 'ライブスナップショット',
+        'Live catalog': 'ライブカタログ',
+        'SpaceTimeDB snapshot': 'SpaceTimeDB スナップショット',
+        'Catalog is empty.': 'カタログは空です。',
+        'items': '件',
+        'Digital product': 'デジタル商品',
+        'Add item': 'アイテム追加',
+        'Item name': 'アイテム名',
+        'Price': '価格',
+        'Quantity': '数量'
+      },
+      lang: 'ja',
+      storeSeed: {
+        stream: { items: [], sort: 'id', dir: 'asc' },
+        cart: { items: [], queuedCount: 0 }
+      }
+    })
+
+    expect(model.entries[0]?.html).toContain('ライブカタログ')
+    expect(model.entries[0]?.html).toContain('SpaceTimeDB スナップショット')
+    expect(model.entries[0]?.html).toContain('カタログは空です。')
+    expect(model.entries[1]?.html).toContain('デジタル商品')
+    expect(model.entries[1]?.html).toContain('アイテム追加')
+  })
 })

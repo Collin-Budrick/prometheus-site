@@ -40,6 +40,7 @@ type BuildStaticFragmentRouteModelOptions = {
   plan: FragmentPlanValue
   fragments: FragmentPayloadValue
   lang: Lang
+  fragmentCopy?: Record<string, string> | null
   initialHtml?: Record<string, string> | null
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
@@ -88,6 +89,7 @@ export const buildStaticFragmentRouteModel = ({
   plan,
   fragments,
   lang,
+  fragmentCopy,
   initialHtml,
   storeSeed,
   contactInvitesSeed,
@@ -134,6 +136,7 @@ export const buildStaticFragmentRouteModel = ({
       initialHtml?.[entry.id] ??
       (fragment
         ? renderStaticFragmentPayloadHtml(fragment, {
+            copy: fragmentCopy,
             storeSeed,
             contactInvitesSeed
           })

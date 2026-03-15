@@ -15,6 +15,7 @@ export type HomeStaticCopyBundle = {
   wasmRenderer: WasmRendererDemoCopy
   reactBinary: ReactBinaryDemoCopy
   preactIsland: PreactIslandCopy
+  fragments: Record<string, string>
 }
 
 export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island' | 'react' | 'dock' | 'unknown'
@@ -48,6 +49,15 @@ const normalizeHeaderMeta = (value?: string | string[]) => {
   if (!value) return ''
   return Array.isArray(value) ? joinMeta(value) : value
 }
+
+const resolveFragmentText = (copy: HomeStaticCopyBundle, value: string) =>
+  copy.fragments[value] ?? value
+
+const joinFragmentSentences = (copy: HomeStaticCopyBundle, values: string[]) =>
+  values
+    .map((value) => resolveFragmentText(copy, value).trim())
+    .filter(Boolean)
+    .join(' ')
 
 const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   class: `home-demo-compact home-demo-compact--${kind}`,
@@ -146,8 +156,16 @@ const buildDemoShellNode = (
   ])
 }
 
-const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
+const buildDockShellNode = (copy: HomeStaticCopyBundle, header: FragmentHeaderCopy, summary: string) => {
   const shellSummary = summary || header.description || ''
+  const collabPlaceholder = 'Write something. Everyone here sees it live.'
+  const collabAriaLabel = 'Shared collaborative text box'
+  const statusIdle = 'Focus to start live sync.'
+  const statusConnecting = 'Connecting live sync...'
+  const statusLive = 'Live for everyone on this page'
+  const statusReconnecting = 'Reconnecting live sync...'
+  const statusError = 'Realtime unavailable'
+  const noteRealtime = 'Realtime'
   return h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
     ...(normalizeHeaderMeta(header.metaLine)
       ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
@@ -159,11 +177,11 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
       {
         class: 'home-collab-root',
         'data-home-collab-root': 'dock',
-        'data-collab-status-idle': 'Focus to start live sync.',
-        'data-collab-status-connecting': 'Connecting live sync...',
-        'data-collab-status-live': 'Live for everyone on this page',
-        'data-collab-status-reconnecting': 'Reconnecting live sync...',
-        'data-collab-status-error': 'Realtime unavailable'
+        'data-collab-status-idle': resolveFragmentText(copy, statusIdle),
+        'data-collab-status-connecting': resolveFragmentText(copy, statusConnecting),
+        'data-collab-status-live': resolveFragmentText(copy, statusLive),
+        'data-collab-status-reconnecting': resolveFragmentText(copy, statusReconnecting),
+        'data-collab-status-error': resolveFragmentText(copy, statusError)
       },
       [
         h('textarea', {
@@ -173,8 +191,8 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
           'data-home-collab-input': 'true',
           rows: '7',
           spellcheck: 'false',
-          placeholder: 'Write something. Everyone here sees it live.',
-          'aria-label': 'Shared collaborative text box',
+          placeholder: resolveFragmentText(copy, collabPlaceholder),
+          'aria-label': resolveFragmentText(copy, collabAriaLabel),
           readonly: 'true',
           'aria-busy': 'false'
         }),
@@ -187,13 +205,15 @@ const buildDockShellNode = (header: FragmentHeaderCopy, summary: string) => {
               role: 'status',
               'aria-live': 'polite'
             },
-            [t('Focus to start live sync.')]
+            [t(resolveFragmentText(copy, statusIdle))]
           ),
           h('span', { class: 'home-collab-note' }, [t('Loro + Garnet')])
         ])
       ]
     ),
-    h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(['Loro', 'Garnet', 'Realtime']))])
+    h('div', { class: 'home-fragment-shell-meta' }, [
+      t(joinMeta(['Loro', 'Garnet', resolveFragmentText(copy, noteRealtime)]))
+    ])
   ])
 }
 
@@ -256,13 +276,20 @@ const buildHomeStaticShellNode = (
     }
     case 'dock':
       return buildDockShellNode(
+        copy,
         getShellHeader(
           fragmentId,
-          undefined,
-          'Shared text for everyone on the page.',
-          'Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time.'
+          fragmentHeaders,
+          resolveFragmentText(copy, 'Shared text for everyone on the page.'),
+          joinFragmentSentences(copy, [
+            'Anyone on the page can edit the same text box.',
+            'Loro syncs updates through Garnet in real time.'
+          ])
         ),
-        'Anyone on the page can edit the same text box. Loro syncs updates through Garnet in real time.'
+        joinFragmentSentences(copy, [
+          'Anyone on the page can edit the same text box.',
+          'Loro syncs updates through Garnet in real time.'
+        ])
       )
     default:
       return null
@@ -312,10 +339,11 @@ const buildHomeStaticStubForFragment = (
         getShellHeader(
           fragmentId,
           fragmentHeaders,
-          'Server-only dock fragment.',
-          'MagicUI dock authored in React, compiled to a static fragment.'
+          resolveFragmentText(copy, 'Server-only dock fragment.'),
+          resolveFragmentText(copy, 'MagicUI dock authored in React, compiled to a static fragment.')
         ),
-        fragmentHeaders?.[fragmentId]?.description || 'MagicUI dock authored in React, compiled to a static fragment.'
+        fragmentHeaders?.[fragmentId]?.description ||
+          resolveFragmentText(copy, 'MagicUI dock authored in React, compiled to a static fragment.')
       )
     default:
       return null

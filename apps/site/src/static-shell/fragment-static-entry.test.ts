@@ -259,4 +259,36 @@ describe('installFragmentStaticEntry', () => {
 
     cleanup()
   })
+
+  it('keeps shell bootstrap listeners armed after store fast bootstrap runs', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
+    const win = new MockWindow()
+    const doc = new MockDocument('/store')
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => ({
+        bootstrapStaticFragmentShell: async () => undefined
+      }),
+      loadStoreRuntime: async () => ({
+        bootstrapStaticStoreShell: async () => undefined
+      })
+    })
+
+    await flushMicrotasks()
+
+    MockIntersectionObserver.instances[0]?.emit(doc.root as object, {
+      isIntersecting: true,
+      intersectionRatio: 1
+    })
+    await flushMicrotasks()
+
+    expect(doc.listeners.has('click')).toBe(true)
+    expect(win.listeners.has('pointerdown')).toBe(true)
+    expect(win.listeners.has('focusin')).toBe(true)
+
+    cleanup()
+  })
 })

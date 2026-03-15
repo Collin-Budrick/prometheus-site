@@ -9,7 +9,13 @@ import { siteBrand, siteFeatures } from '../../config'
 import { getLabCopy } from '../../shared/lab-copy'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
-import { labLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../../lang/selection'
+import {
+  emptyLabCopy,
+  emptyUiCopy,
+  labLanguageSelection,
+  withFragmentHeaderSelection,
+  type LanguageSeedPayload
+} from '../../lang/selection'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
@@ -55,25 +61,28 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
 
   try {
     const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
-    const fragmentHeaderIds = plan.fragments.map((entry) => entry.id)
+    const fragmentEntries = plan?.fragments ?? []
+    const fragmentHeaderIds = fragmentEntries.map((entry) => entry.id)
+    const languageSeed = createServerLanguageSeed(
+      lang,
+      withFragmentHeaderSelection(labLanguageSelection, fragmentHeaderIds)
+    )
     return {
       plan,
       path: planPath,
       lang,
-      staticRoute: plan.fragments.length
+      staticRoute: fragmentEntries.length
         ? buildStaticFragmentRouteModel({
             plan,
             fragments,
+            fragmentCopy: languageSeed.fragments,
             lang,
             initialHtml,
             cookieHeader: request.headers.get('cookie'),
             viewportHint: resolveViewportHint(request)
           })
         : null,
-      languageSeed: createServerLanguageSeed(
-        lang,
-        withFragmentHeaderSelection(labLanguageSelection, fragmentHeaderIds)
-      )
+      languageSeed
     }
   } catch (error) {
     console.error('Fragment plan fetch failed for lab', error)
@@ -87,8 +96,8 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   }
 })
 
-const DisabledLabRoute = component$(() => {
-  const copy = useLangCopy()
+const DisabledLabRoute = component$<{ lang: Lang }>(({ lang }) => {
+  const copy = useLangCopy(useSharedLangSignal(lang))
   return (
     <StaticRouteTemplate
       metaLine={copy.value.featureUnavailableMeta}
@@ -100,9 +109,9 @@ const DisabledLabRoute = component$(() => {
   )
 })
 
-const EnabledLabRoute = component$(() => {
-  const langSignal = useSharedLangSignal()
-  const uiCopy = useLangCopy()
+const EnabledLabRoute = component$<{ lang: Lang }>(({ lang }) => {
+  const langSignal = useSharedLangSignal(lang)
+  const uiCopy = useLangCopy(langSignal)
   const resolvedCopy = useComputed$<LabCopy>(() => ({
     ...getLabCopy(langSignal.value),
     closeLabel: uiCopy.value.fragmentClose
@@ -118,9 +127,10 @@ export const LabSkeleton = labEnabled ? FeatureLabSkeleton : StaticRouteSkeleton
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useFragmentResource)
   const lang = data?.lang ?? defaultLang
-  const labCopy = data?.languageSeed.lab
-  const title = labEnabled ? labCopy.title : data?.languageSeed.ui.featureUnavailableTitle
-  const description = labEnabled ? labCopy.description : data?.languageSeed.ui.featureUnavailableDescription
+  const labCopy = data?.languageSeed.lab ?? emptyLabCopy
+  const uiCopy = { ...emptyUiCopy, ...(data?.languageSeed.ui ?? {}) }
+  const title = labEnabled ? labCopy.title : uiCopy.featureUnavailableTitle
+  const description = labEnabled ? labCopy.description : uiCopy.featureUnavailableDescription
 
   return {
     title: `${title} | ${siteBrand.name}`,
@@ -154,7 +164,7 @@ export default component$(() => {
   }
   return (
     <StaticPageRoot>
-      <RouteComponent />
+      <RouteComponent lang={data.lang} />
     </StaticPageRoot>
   )
 })

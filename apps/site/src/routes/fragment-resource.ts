@@ -8,6 +8,7 @@ import { defaultLang, normalizeLang, readLangFromCookie, resolveLangParam, type 
 import { readFragmentCriticalFromCookie } from '../fragment/ui/shell-cache'
 import { selectInitialFragmentIds } from '../fragment/initial-selection'
 import { isHomeStaticPath } from '../static-shell/constants'
+import { createFragmentTranslator } from '../fragment/definitions/i18n'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue
@@ -54,7 +55,8 @@ const loadStaticFragmentService = async () => {
         import('../fragment/definitions/chat')
       ])
       return createFragmentService({
-        store: createMemoryFragmentStore()
+        store: createMemoryFragmentStore(),
+        createTranslator: createFragmentTranslator
       })
     })()
   }

@@ -1,6 +1,11 @@
-import { getUiCopy, seedLanguageResources } from '../lang/client'
+import { getFragmentTextCopy, getUiCopy, seedLanguageResources } from '../lang/client'
 import type { Lang } from '../lang'
-import { getCspNonce, primeTrustedTypesPolicies, setTrustedInnerHtml } from '../security/client'
+import {
+  getCspNonce,
+  installTrustedTypesFunctionBridge,
+  primeTrustedTypesPolicies,
+  setTrustedInnerHtml
+} from '../security/client'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import type { StaticShellSeed } from './seed'
@@ -13,8 +18,7 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_SHELL_MAIN_REGION,
   normalizeStaticShellRoutePath,
-  STATIC_SHELL_REGION_ATTR,
-  STATIC_SHELL_SEED_SCRIPT_ID
+  STATIC_SHELL_REGION_ATTR
 } from './constants'
 import {
   clearStoreStaticBootstrapFlag,
@@ -25,9 +29,11 @@ import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './au
 import { scheduleStaticShellTask } from './scheduler'
 import {
   staticDockRootNeedsSync,
+  readStaticShellSeed,
   syncStaticDockRootState,
   writeStaticShellSeed
 } from './seed-client'
+import { loadStaticShellLanguageSeed } from './language-seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -84,6 +90,8 @@ const readJsonScript = <T,>(id: string): T | null => {
     return null
   }
 }
+
+installTrustedTypesFunctionBridge()
 
 const serializeJson = (value: unknown) =>
   JSON.stringify(value)
@@ -214,7 +222,7 @@ const collectStaticFragmentCardIds = () =>
 const collectVisibleStreamIds = (controller: Pick<StaticFragmentController, 'routeData' | 'visibleFragmentIds'>) =>
   controller.routeData.fragmentOrder.filter((id) => controller.visibleFragmentIds.has(id))
 
-const readShellSeed = () => readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
+const readShellSeed = () => readStaticShellSeed()
 
 const readRouteData = (shellSeed: StaticShellSeed) =>
   readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID) ??
@@ -231,6 +239,7 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
 
   try {
     const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
+    const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, nextLang)
     await destroyController(activeController)
     activeController = null
     applyStaticShellSnapshot(snapshot, {
@@ -240,7 +249,13 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
         isAuthenticated: shellSeed.isAuthenticated ?? false
       }
     })
-    writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
+    writeStaticShellSeed({
+      lang: nextLang,
+      currentPath: shellSeed.currentPath || window.location.pathname,
+      snapshotKey: shellSeed.snapshotKey,
+      languageSeed,
+      isAuthenticated: shellSeed.isAuthenticated
+    })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
     await bootstrapStaticFragmentShell()
@@ -547,6 +562,7 @@ const hydrateProtectedStaticFragments = async (controller: StaticFragmentControl
     plan,
     fragments,
     lang: controller.lang,
+    fragmentCopy: getFragmentTextCopy(controller.lang),
     storeSeed: controller.routeData.storeSeed ?? null,
     contactInvitesSeed: controller.routeData.contactInvitesSeed ?? null
   })
@@ -582,17 +598,6 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
   })()
 }
 
-const prewarmRouteConnection = (path: string) => {
-  if (normalizeStaticShellRoutePath(path) !== '/store') return
-  void import('../shared/spacetime-client')
-    .then(({ prewarmSpacetimeConnection }) => {
-      prewarmSpacetimeConnection()
-    })
-    .catch((error) => {
-      console.warn('Failed to prewarm the SpaceTimeDB connection:', error)
-    })
-}
-
 const bindRouteControllers = async (controller: StaticFragmentController) => {
   if (normalizeStaticShellRoutePath(controller.path) !== '/store') return
   const existingCleanup = consumeRegisteredStoreStaticControllerCleanup()
@@ -619,6 +624,7 @@ export const bootstrapStaticFragmentShell = async () => {
   if (preferredLang !== shellSeed.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
+      const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, preferredLang)
       applyStaticShellSnapshot(snapshot, {
         dockState: {
           lang: preferredLang,
@@ -626,7 +632,13 @@ export const bootstrapStaticFragmentShell = async () => {
           isAuthenticated: shellSeed.isAuthenticated ?? false
         }
       })
-      writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
+      writeStaticShellSeed({
+        lang: preferredLang,
+        currentPath: shellSeed.currentPath || window.location.pathname,
+        snapshotKey: shellSeed.snapshotKey,
+        languageSeed,
+        isAuthenticated: shellSeed.isAuthenticated
+      })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticFragmentShell()
@@ -697,7 +709,6 @@ export const bootstrapStaticFragmentShell = async () => {
     )
   )
   bindShellControls(controller)
-  prewarmRouteConnection(controller.path)
   await bindRouteControllers(controller)
   controller.cleanupFns.push(observeVisibleStaticFragments(controller))
   updateFragmentStatus(controller.lang, 'idle')

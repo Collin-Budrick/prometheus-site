@@ -21,7 +21,9 @@ describe('security/server', () => {
     expect(csp).toContain(`https:`)
     expect(csp).toContain(`http:`)
     expect(csp).toContain(`require-trusted-types-for 'script'`)
-    expect(csp).toContain('trusted-types prometheus-server-html prometheus-template-html')
+    expect(csp).toContain(
+      'trusted-types prometheus-server-html prometheus-template-html prometheus-runtime-script'
+    )
     expect(csp).toContain(`frame-ancestors 'none'`)
   })
 
@@ -42,7 +44,9 @@ describe('security/server', () => {
       `script-src 'nonce-nonce-123' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https: http: 'inline-speculation-rules'`
     )
     expect(csp).toContain(`require-trusted-types-for 'script'`)
-    expect(csp).toContain('trusted-types prometheus-server-html prometheus-template-html')
+    expect(csp).toContain(
+      'trusted-types prometheus-server-html prometheus-template-html prometheus-runtime-script'
+    )
     expect(csp).toContain(`connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://db.prometheus.dev wss://db.prometheus.dev`)
   })
 

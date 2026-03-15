@@ -2,12 +2,12 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
-import { useLangCopy, useLanguageSeed } from '../../shared/lang-bridge'
+import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../shared/auth-session'
-import { dashboardLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { dashboardLanguageSelection, emptyUiCopy, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
@@ -36,7 +36,7 @@ export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useDashboardData)
   const lang = data?.lang ?? defaultLang
-  const copy = data?.languageSeed.ui
+  const copy = { ...emptyUiCopy, ...(data?.languageSeed.ui ?? {}) }
   const description = copy.protectedDescription.replace('{{label}}', copy.navDashboard)
 
   return {
@@ -56,7 +56,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 export default component$(() => {
   const data = useDashboardData()
   useLanguageSeed(data.value.lang, data.value.languageSeed)
-  const copy = useLangCopy()
+  const copy = useLangCopy(useSharedLangSignal(data.value.lang))
   void data.value
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navDashboard)
 

@@ -1,9 +1,10 @@
-import { Identity, type SubscriptionHandle } from '@prometheus/spacetimedb-client'
+import type { SubscriptionHandle } from '@prometheus/spacetimedb-client'
 import type { ContactInviteGroups, ContactInviteUser, ContactSearchResult } from '../components/contact-invites/data'
 import { emptyInviteGroups } from '../components/contact-invites/data'
 import {
   ensureSpacetimeConnection,
   getSpacetimeConnectionSnapshot,
+  loadSpacetimeClient,
   subscribeSpacetimeConnection,
   type SpacetimeConnectionSnapshot
 } from './spacetime-client'
@@ -413,6 +414,7 @@ export const sendContactInviteDirect = async (identity: string) => {
   if (!connection) {
     throw new Error('SpaceTimeDB connection unavailable.')
   }
+  const { Identity } = await loadSpacetimeClient()
   await connection.reducers.sendContactInvite({
     inviteeIdentity: Identity.fromString(identity)
   })

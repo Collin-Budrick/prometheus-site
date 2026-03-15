@@ -1,19 +1,20 @@
 import type { Lang } from '../lang'
 import { getUiCopy, seedLanguageResources } from '../lang/client'
-import { primeTrustedTypesPolicies } from '../security/client'
+import { installTrustedTypesFunctionBridge, primeTrustedTypesPolicies } from '../security/client'
 import type { StaticShellSeed, StaticIslandRouteData, StaticIslandRouteKind } from './seed'
 import {
-  STATIC_ISLAND_DATA_SCRIPT_ID,
-  STATIC_SHELL_SEED_SCRIPT_ID
+  STATIC_ISLAND_DATA_SCRIPT_ID
 } from './constants'
 import { createStaticIslandRouteData } from './island-static-data'
 import { loadClientAuthSession, redirectProtectedStaticRouteToLogin } from './auth-client'
 import { scheduleStaticShellTask } from './scheduler'
 import {
   staticDockRootNeedsSync,
+  readStaticShellSeed,
   syncStaticDockRootState,
   writeStaticShellSeed
 } from './seed-client'
+import { loadStaticShellLanguageSeed } from './language-seed-client'
 import {
   applyStaticShellSnapshot,
   loadStaticShellSnapshot,
@@ -56,6 +57,8 @@ const readJsonScript = <T,>(id: string): T | null => {
     return null
   }
 }
+
+installTrustedTypesFunctionBridge()
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
@@ -148,7 +151,7 @@ const refreshThemeButton = (lang: Lang) => {
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
 }
 
-const readShellSeed = () => readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID)
+const readShellSeed = () => readStaticShellSeed()
 
 const resolveIslandKindFromPath = (path: string): StaticIslandRouteKind => {
   if (path.startsWith('/login')) return 'login'
@@ -173,6 +176,7 @@ const swapStaticIslandLanguage = async (nextLang: Lang) => {
 
   try {
     const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, nextLang)
+    const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, nextLang)
     await destroyController(activeController)
     activeController = null
     applyStaticShellSnapshot(snapshot, {
@@ -182,7 +186,13 @@ const swapStaticIslandLanguage = async (nextLang: Lang) => {
         isAuthenticated: shellSeed.isAuthenticated ?? false
       }
     })
-    writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
+    writeStaticShellSeed({
+      lang: nextLang,
+      currentPath: shellSeed.currentPath || window.location.pathname,
+      snapshotKey: shellSeed.snapshotKey,
+      languageSeed,
+      isAuthenticated: shellSeed.isAuthenticated
+    })
     persistStaticLang(nextLang)
     updateStaticShellUrlLang(nextLang)
     await bootstrapStaticIslandShell()
@@ -347,6 +357,7 @@ export const bootstrapStaticIslandShell = async () => {
   if (preferredLang !== shellSeed.lang) {
     try {
       const snapshot = await loadStaticShellSnapshot(shellSeed.snapshotKey, preferredLang)
+      const languageSeed = await loadStaticShellLanguageSeed(shellSeed.currentPath || window.location.pathname, preferredLang)
       applyStaticShellSnapshot(snapshot, {
         dockState: {
           lang: preferredLang,
@@ -354,7 +365,13 @@ export const bootstrapStaticIslandShell = async () => {
           isAuthenticated: shellSeed.isAuthenticated ?? false
         }
       })
-      writeStaticShellSeed({ isAuthenticated: shellSeed.isAuthenticated })
+      writeStaticShellSeed({
+        lang: preferredLang,
+        currentPath: shellSeed.currentPath || window.location.pathname,
+        snapshotKey: shellSeed.snapshotKey,
+        languageSeed,
+        isAuthenticated: shellSeed.isAuthenticated
+      })
       persistStaticLang(preferredLang)
       updateStaticShellUrlLang(preferredLang)
       await bootstrapStaticIslandShell()
