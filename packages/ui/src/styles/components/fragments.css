@@ -3,6 +3,10 @@
     @apply space-y-5 mt-6;
   }
 
+  .fragment-shell > * {
+    min-width: 0;
+  }
+
   .fragment-status {
     @apply inline-flex items-center gap-2 rounded-full border border-amber-200/70 bg-white/70 px-4 py-2;
     @apply font-mono text-[11px] text-slate-600 uppercase tracking-[0.35em];
@@ -385,8 +389,7 @@
     contain-intrinsic-size: auto var(--fragment-min-height, 380px);
   }
 
-  .layout-shell[data-static-route='home'] .fragment-card::before,
-  .layout-shell[data-static-route='home'] .fragment-card::after {
+  .layout-shell[data-static-route='home'] .fragment-card::before {
     display: none;
   }
 
@@ -420,11 +423,14 @@
   .layout-shell[data-static-route='home']
     [data-static-home-root][data-home-paint='initial']
     .fragment-grid-static-home-column
-    > .fragment-card:not([data-static-home-lcp-stable='true'])::before,
+    > .fragment-card:not([data-static-home-lcp-stable='true'])::after {
+    display: none;
+  }
+
   .layout-shell[data-static-route='home']
     [data-static-home-root][data-home-paint='initial']
     .fragment-grid-static-home-column
-    > .fragment-card:not([data-static-home-lcp-stable='true'])::after {
+    > .fragment-card:not([data-static-home-lcp-stable='true'])::before {
     display: none;
   }
 
@@ -926,20 +932,22 @@
     background:
       radial-gradient(
         circle at top right,
-        rgb(var(--accent) / 0.18),
-        transparent 45%
+        rgb(var(--accent) / 0.22),
+        transparent 44%
       ),
       radial-gradient(
         circle at bottom left,
-        rgb(var(--signal) / 0.18),
-        transparent 40%
+        rgb(var(--signal) / 0.2),
+        transparent 38%
       );
     opacity: 0;
     transition: opacity 200ms ease;
     pointer-events: none;
   }
 
-  .fragment-card:hover::after {
+  .fragment-card:hover::after,
+  .fragment-card:focus-visible::after,
+  .fragment-card:focus-within::after {
     opacity: 1;
   }
 

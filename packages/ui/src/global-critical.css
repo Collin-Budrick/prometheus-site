@@ -438,6 +438,10 @@ body {
   gap: 1.5rem;
 }
 
+.fragment-shell > * {
+  min-width: 0;
+}
+
 .fragment-grid {
   display: flex;
   flex-direction: column;
@@ -490,6 +494,33 @@ body {
 
 .fragment-card[data-fragment-height-locked='true'] {
   overflow: hidden;
+}
+
+.fragment-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgb(var(--accent) / 0.22),
+      transparent 44%
+    ),
+    radial-gradient(
+      circle at bottom left,
+      rgb(var(--signal) / 0.2),
+      transparent 38%
+    );
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
+.fragment-card:hover::after,
+.fragment-card:focus-visible::after,
+.fragment-card:focus-within::after {
+  opacity: 1;
 }
 
 .fragment-card-body {

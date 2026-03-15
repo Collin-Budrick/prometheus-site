@@ -659,7 +659,14 @@ export const onRequest: RequestHandler = async (event) => {
     const requestUrl = new URL(request.url)
     const nonce = getOrCreateRequestCspNonce(event)
     const planHints = getPlanEarlyHints(requestUrl.pathname, request)
-    headers.set('Content-Security-Policy', buildSiteCsp({ nonce, currentOrigin: requestUrl.origin }))
+    headers.set(
+      'Content-Security-Policy',
+      buildSiteCsp({
+        nonce,
+        currentOrigin: requestUrl.origin,
+        pathname: requestUrl.pathname
+      })
+    )
     headers.set('Cross-Origin-Opener-Policy', 'same-origin')
     headers.set('X-Frame-Options', 'DENY')
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {

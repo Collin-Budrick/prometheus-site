@@ -7,6 +7,7 @@ describe('security/server', () => {
     const csp = buildSiteCsp({
       nonce: 'nonce-123',
       currentOrigin: 'https://prometheus.dev',
+      pathname: '/store',
       config: resolvePublicAppConfig({
         spacetimeDbUri: '',
         spacetimeDbModule: ''
@@ -37,6 +38,7 @@ describe('security/server', () => {
     const csp = buildSiteCsp({
       nonce: 'nonce-123',
       currentOrigin: 'https://prometheus.dev',
+      pathname: '/store',
       config
     })
 
@@ -48,6 +50,23 @@ describe('security/server', () => {
       'trusted-types prometheus-server-html prometheus-template-html prometheus-runtime-script'
     )
     expect(csp).toContain(`connect-src 'self' https://prometheus.dev https://api.prometheus.dev wss://api.prometheus.dev https://db.prometheus.dev wss://db.prometheus.dev`)
+  })
+
+  it('allows wasm compilation on the home route without enabling general eval', () => {
+    const csp = buildSiteCsp({
+      nonce: 'nonce-123',
+      currentOrigin: 'https://prometheus.dev',
+      pathname: '/',
+      config: resolvePublicAppConfig({
+        spacetimeDbUri: '',
+        spacetimeDbModule: ''
+      })
+    })
+
+    expect(csp).toContain(
+      `script-src 'nonce-nonce-123' 'strict-dynamic' 'unsafe-inline' 'wasm-unsafe-eval' https: http: 'inline-speculation-rules'`
+    )
+    expect(csp).not.toContain(`'unsafe-eval'`)
   })
 
   it('expands connect-src for api, websocket, webtransport, and analytics origins', () => {

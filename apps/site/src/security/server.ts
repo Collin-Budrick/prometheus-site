@@ -1,6 +1,7 @@
 import type { RequestEvent } from '@builder.io/qwik-city'
 import { randomBytes } from 'node:crypto'
 import { appConfig, type PublicAppConfig } from '../public-app-config'
+import { isHomeStaticPath } from '../static-shell/constants'
 import {
   CSP_NONCE_SHARED_MAP_KEY,
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
@@ -15,6 +16,7 @@ type RequestLike = {
 type SiteCspOptions = {
   nonce: string
   currentOrigin: string
+  pathname?: string
   config?: PublicAppConfig
 }
 
@@ -98,16 +100,25 @@ export const buildSiteConnectSrc = (
 const requiresDynamicScriptEvaluation = (config: PublicAppConfig) =>
   Boolean(config.spacetimeDbUri || config.spacetimeDbModule)
 
+const requiresWebAssemblyCompilation = (pathname: string | undefined) =>
+  Boolean(pathname && isHomeStaticPath(pathname))
+
 export const buildSiteCsp = ({
   nonce,
   currentOrigin,
+  pathname,
   config = appConfig
 }: SiteCspOptions) => {
   const relaxedScriptPolicy = requiresDynamicScriptEvaluation(config)
+  const requiresWasmCompilation = requiresWebAssemblyCompilation(pathname)
   const scriptSrcTokens = [`'nonce-${nonce}'`, `'strict-dynamic'`, `'unsafe-inline'`, 'https:', 'http:', "'inline-speculation-rules'"]
 
   if (relaxedScriptPolicy) {
     scriptSrcTokens.splice(3, 0, "'unsafe-eval'")
+  }
+
+  if (requiresWasmCompilation) {
+    scriptSrcTokens.splice(relaxedScriptPolicy ? 4 : 3, 0, "'wasm-unsafe-eval'")
   }
 
   const directives = [
