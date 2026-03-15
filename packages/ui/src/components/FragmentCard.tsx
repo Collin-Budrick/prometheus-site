@@ -10,6 +10,7 @@ import {
   type FragmentHeightLayout,
   type FragmentHeightPersistenceContext
 } from './fragment-height'
+import { claimReadyStaggerDelay, shouldSkipReadyStagger } from '../ready-stagger'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link], [data-drag-handle]'
@@ -329,6 +330,9 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const pendingTaskKeys = useSignal<string[]>([])
     const pendingTaskCount = useSignal(0)
     const revealScheduled = useSignal(false)
+    const readyStaggerState = useSignal<'queued' | 'done' | undefined>(undefined)
+    const readyStaggerDelay = useSignal('0ms')
+    const readyStaggerApplied = useSignal(false)
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
@@ -743,6 +747,45 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
 
     useVisibleTask$(
       (ctx) => {
+        const activeId = ctx.track(() => props.fragmentId)
+        const ready = ctx.track(() => fragmentReady.value)
+        const inView = ctx.track(() => isInView.value)
+        const settled = ctx.track(() => hasSettledOnce.value)
+        if (!activeId || !ready || !inView || !settled || readyStaggerApplied.value) return
+
+        readyStaggerApplied.value = true
+        if (disableMotion || critical || shouldSkipReadyStagger()) {
+          readyStaggerDelay.value = '0ms'
+          readyStaggerState.value = undefined
+          return
+        }
+
+        const delayMs = claimReadyStaggerDelay({ group: 'fragment-ready' })
+        readyStaggerDelay.value = `${delayMs}ms`
+        readyStaggerState.value = 'queued'
+
+        let releaseFrame = 0
+        const release = () => {
+          readyStaggerState.value = 'done'
+        }
+
+        if (typeof requestAnimationFrame === 'function') {
+          releaseFrame = requestAnimationFrame(release)
+        } else {
+          release()
+        }
+
+        ctx.cleanup(() => {
+          if (releaseFrame) {
+            cancelAnimationFrame(releaseFrame)
+          }
+        })
+      },
+      { strategy: 'document-idle' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
         const inView = ctx.track(() => isInView.value)
         const baseStage = ctx.track(() => props.fragmentStage ?? 'waiting-payload')
         const reservedHeight = ctx.track(() => props.reservedHeight ?? null)
@@ -940,6 +983,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
       gridColumn: resolvedColumn,
       gridRow: resolvedRow,
       '--motion-delay': `${motionDelay}ms`,
+      '--ready-stagger-delay': readyStaggerDelay.value,
       '--layout-version': `${layoutVersion}`,
       ...(resolvedHeightHint.value ? { '--fragment-min-height': `${resolvedHeightHint.value}px` } : {}),
       ...(lockedHeight.value ? { height: `${lockedHeight.value}px` } : {})
@@ -982,6 +1026,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-fragment-loaded={props.fragmentLoaded ? 'true' : undefined}
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           data-fragment-stage={currentStage.value}
+          data-ready-stagger-state={readyStaggerState.value}
           data-reveal-locked={revealLocked.value ? 'true' : 'false'}
           onClick$={canToggleExpand ? handleToggle : undefined}
         >

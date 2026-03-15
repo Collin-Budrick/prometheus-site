@@ -8,9 +8,18 @@ const originalIntersectionObserver = globalThis.IntersectionObserver
 
 class MockStaticRoot {
   dataset: { staticPath: string }
+  private attrs = new Map<string, string>([['data-static-fragment-paint', 'initial']])
 
   constructor(staticPath: string) {
     this.dataset = { staticPath }
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value)
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null
   }
 }
 
@@ -56,6 +65,8 @@ class MockWindow {
   __PROM_STATIC_FRAGMENT_BOOTSTRAP__?: boolean
   __PROM_STATIC_FRAGMENT_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
+  readonly timeouts = new Map<number, () => void>()
+  nextTimeoutId = 1
   location = { pathname: '/store' }
 
   addEventListener(type: string, listener: Listener) {
@@ -71,6 +82,17 @@ class MockWindow {
     if (listeners.size === 0) {
       this.listeners.delete(type)
     }
+  }
+
+  setTimeout(callback: () => void) {
+    const id = this.nextTimeoutId
+    this.nextTimeoutId += 1
+    this.timeouts.set(id, callback)
+    return id as unknown as ReturnType<typeof setTimeout>
+  }
+
+  clearTimeout(id: ReturnType<typeof setTimeout>) {
+    this.timeouts.delete(id as unknown as number)
   }
 
   emit(type: string) {
@@ -107,6 +129,10 @@ class MockDocument {
       return this.root
     }
     return null
+  }
+
+  querySelectorAll() {
+    return []
   }
 }
 
@@ -288,6 +314,41 @@ describe('installFragmentStaticEntry', () => {
     expect(doc.listeners.has('click')).toBe(true)
     expect(win.listeners.has('pointerdown')).toBe(true)
     expect(win.listeners.has('focusin')).toBe(true)
+
+    cleanup()
+  })
+
+  it('releases queued SSR cards from the entry path without starting bootstrap', async () => {
+    globalThis.IntersectionObserver = MockIntersectionObserver as never
+
+    const win = new MockWindow()
+    const doc = new MockDocument('/lab')
+    let releaseCount = 0
+    let bootstrapCount = 0
+
+    const cleanup = installFragmentStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      loadRuntime: async () => ({
+        bootstrapStaticFragmentShell: async () => {
+          bootstrapCount += 1
+        }
+      }),
+      schedulePaintReady: (({ root, readyAttr, onReady }) => {
+        ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
+        onReady?.()
+        return () => undefined
+      }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
+      releaseReadyStagger: (() => {
+        releaseCount += 1
+      }) as typeof import('@prometheus/ui/ready-stagger').releaseQueuedReadyStaggerWithin
+    })
+
+    await flushMicrotasks()
+
+    expect(doc.root?.getAttribute('data-static-fragment-paint')).toBe('ready')
+    expect(releaseCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
 
     cleanup()
   })

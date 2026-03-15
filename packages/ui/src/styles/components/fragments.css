@@ -315,10 +315,15 @@
     --motion-fade-duration: 1200ms;
     --motion-fade-distance: 8px;
     --motion-fade-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --ready-stagger-duration: 320ms;
+    --ready-stagger-delay: 0ms;
     box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
     background-color: rgb(var(--surface) / 0.9);
     border-color: rgb(var(--accent) / 0.2);
     isolation: isolate;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--ready-stagger-duration) ease;
   }
 
   .fragment-card[data-fragment-id] {
@@ -393,7 +398,7 @@
     display: none;
   }
 
-  .layout-shell[data-static-route='home'] .fragment-card-body {
+  .layout-shell[data-static-route='home'] .fragment-card:not([data-ready-stagger-state]) {
     transition: none;
   }
 
@@ -611,19 +616,19 @@
   .fragment-card-body {
     position: relative;
     z-index: 2;
-    transition: opacity 200ms ease, visibility 0ms linear 200ms;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--ready-stagger-duration) ease;
   }
 
-  .fragment-html {
-    display: contents;
+  .fragment-card[data-ready-stagger-state='queued'] {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
 
-  .fragment-lazy-root {
-    display: contents;
-  }
-
-  .fragment-card[data-critical='true'] .fragment-card-body {
-    transition: none;
+  .fragment-card[data-ready-stagger-state='done'] {
+    transition-delay: var(--ready-stagger-delay);
   }
 
   .fragment-card-loader {
@@ -664,11 +669,25 @@
     pointer-events: auto;
   }
 
+  .fragment-card[data-fragment-ready='true']:not([data-ready-stagger-state='queued']) {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: var(--ready-stagger-delay);
+  }
+
   .fragment-card[data-fragment-id][data-fragment-ready='true'] .fragment-card-body {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transition-delay: 0ms;
+  }
+
+  .fragment-html {
+    display: contents;
+  }
+
+  .fragment-lazy-root {
+    display: contents;
   }
 
   .fragment-card[data-fragment-id][data-fragment-ready='true'] .fragment-card-loader {
@@ -1201,6 +1220,14 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .fragment-card[data-ready-stagger-state='queued']:not([data-reveal-locked='true']),
+    .fragment-card[data-ready-stagger-state='done'] {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition: none;
+    }
+
     .loader::before {
       animation: none;
       opacity: 0.35;

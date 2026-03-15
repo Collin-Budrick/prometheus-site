@@ -7,9 +7,11 @@ import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
+  STATIC_FRAGMENT_PAINT_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR
 } from './constants'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
+import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
 
 type StaticFragmentRouteProps = {
   model: StaticFragmentRouteModel
@@ -32,12 +34,18 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       data-static-fragment-root
       data-static-path={model.path}
       data-static-lang={model.lang}
+      {...{ [STATIC_FRAGMENT_PAINT_ATTR]: 'initial' }}
     >
       {model.inlineStyles.map((fragment) => (
         <style key={fragment.id} nonce={nonce || undefined} data-fragment-css={fragment.id}>
           {fragment.css}
         </style>
       ))}
+      <noscript>
+        <style nonce={nonce || undefined}>
+          {"[data-static-fragment-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;}"}
+        </style>
+      </noscript>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {entries.map((entry, index) => {
           const column = index < leftCount ? '1' : '2'
@@ -63,7 +71,8 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               style={style}
               {...{
                 [STATIC_FRAGMENT_CARD_ATTR]: 'true',
-                [STATIC_FRAGMENT_VERSION_ATTR]: entry.version ? `${entry.version}` : undefined
+                [STATIC_FRAGMENT_VERSION_ATTR]: entry.version ? `${entry.version}` : undefined,
+                [READY_STAGGER_STATE_ATTR]: 'queued'
               }}
             >
               <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: entry.id }}>

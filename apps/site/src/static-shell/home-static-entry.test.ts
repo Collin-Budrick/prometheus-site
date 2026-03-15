@@ -112,6 +112,15 @@ class MockDocument {
   fragmentCards: unknown[] = []
   collabRoots: unknown[] = []
   listeners: ListenerMap = new Map()
+  homeRoot = {
+    attrs: new Map<string, string>([['data-home-paint', 'initial']]),
+    getAttribute(name: string) {
+      return this.attrs.get(name) ?? null
+    },
+    setAttribute(name: string, value: string) {
+      this.attrs.set(name, value)
+    }
+  }
 
   addEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -163,6 +172,9 @@ class MockDocument {
   }
 
   querySelector(selector: string) {
+    if (selector === '[data-static-home-root]') {
+      return this.homeRoot
+    }
     if (selector.includes('data-fragment-id') || selector.includes('data-static-home-patch-state')) {
       return this.querySelectorValue
     }
@@ -332,6 +344,44 @@ describe('installHomeStaticEntry', () => {
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
     expect(manualGate.cleanupCount()).toBe(1)
+
+    cleanup()
+  })
+
+  it('releases queued SSR cards after the LCP gate before starting home bootstrap', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const manualGate = createManualGate()
+    const events: string[] = []
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      loadDemoRuntime: async () => ({
+        installHomeDemoEntry: () => () => undefined
+      }),
+      loadBootstrapRuntime: async () => ({
+        bootstrapStaticHome: async () => {
+          events.push('bootstrap')
+        }
+      }),
+      schedulePaintReady: (({ root, readyAttr, onReady }) => {
+        events.push('schedule-paint')
+        ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
+        onReady?.()
+        return () => undefined
+      }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
+      releaseReadyStagger: (() => {
+        events.push('release-stagger')
+      }) as typeof import('@prometheus/ui/ready-stagger').releaseQueuedReadyStaggerWithin
+    })
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
+    expect(events).toEqual(['schedule-paint', 'release-stagger'])
 
     cleanup()
   })

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { h } from '@core/fragment/tree'
+import {
+  READY_STAGGER_DELAY_VAR,
+  READY_STAGGER_STATE_ATTR,
+  resetReadyStaggerBatchesForTests
+} from '@prometheus/ui/ready-stagger'
 import { seedLanguageResources, resetLanguageClientCacheForTests } from '../lang/client'
 import { patchStaticFragmentCard } from './fragment-stream'
 import type { StaticFragmentRouteData } from './fragment-static-data'
@@ -27,6 +32,7 @@ class MockCardElement {
   dataset: Record<string, string> = {
     fragmentId: TEST_FRAGMENT_ID
   }
+  isConnected = true
   style = new MockStyle()
   scrollHeight = 489
   private attrs = new Map<string, string>([
@@ -136,6 +142,7 @@ describe('patchStaticFragmentCard', () => {
   })
 
   afterEach(() => {
+    resetReadyStaggerBatchesForTests()
     resetLanguageClientCacheForTests()
     globalThis.document = originalDocument
     globalThis.window = originalWindow
@@ -221,5 +228,7 @@ describe('patchStaticFragmentCard', () => {
     expect(body.innerHTML).not.toContain('Digital product')
     expect(body.innerHTML).toContain('アイテム追加')
     expect(card.getAttribute('data-fragment-version')).toBe('2')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
   })
 })

@@ -3,6 +3,9 @@ import { normalizeStaticShellRoutePath } from './constants'
 import { loadStoreStaticRuntime } from './store-static-runtime-loader'
 import { appConfig } from '../public-app-config'
 import { installTrustedTypesFunctionBridge } from '../security/client'
+import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
+import { scheduleStaticRoutePaintReady } from './static-route-paint'
+import { STATIC_FRAGMENT_PAINT_ATTR } from './constants'
 
 export const FRAGMENT_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'focusin'] as const
 export const STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'
@@ -21,6 +24,8 @@ type InstallFragmentStaticEntryOptions = {
   loadRuntime?: typeof loadFragmentBootstrapRuntime
   loadStoreRuntime?: typeof loadStoreStaticRuntime
   win?: FragmentStaticEntryWindow | null
+  releaseReadyStagger?: typeof releaseQueuedReadyStaggerWithin
+  schedulePaintReady?: typeof scheduleStaticRoutePaintReady
 }
 
 const STATIC_FRAGMENT_INTERACTIVE_SELECTOR = [
@@ -29,6 +34,8 @@ const STATIC_FRAGMENT_INTERACTIVE_SELECTOR = [
   '[data-static-fragment-root] select',
   '[data-static-fragment-root] textarea'
 ].join(', ')
+const STATIC_FRAGMENT_READY_STAGGER_SELECTOR =
+  '[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]'
 
 const STATIC_SHELL_INTERACTIVE_SELECTOR = [
   '[data-static-settings-toggle]',
@@ -87,7 +94,9 @@ export const installFragmentStaticEntry = ({
   doc = typeof document !== 'undefined' ? document : null,
   loadRuntime = loadFragmentBootstrapRuntime,
   loadStoreRuntime = loadStoreStaticRuntime,
-  win = typeof window !== 'undefined' ? (window as FragmentStaticEntryWindow) : null
+  win = typeof window !== 'undefined' ? (window as FragmentStaticEntryWindow) : null,
+  releaseReadyStagger = releaseQueuedReadyStaggerWithin,
+  schedulePaintReady = scheduleStaticRoutePaintReady
 }: InstallFragmentStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -107,6 +116,7 @@ export const installFragmentStaticEntry = ({
   let storeRuntimePromise: ReturnType<typeof loadStoreRuntime> | null = null
   let loadHandler: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
+  let paintReadyCleanup: (() => void) | null = null
   const staticPath = readStaticFragmentPath(doc, win)
   const useStoreFastBootstrap = isStoreStaticFastBootstrapPath(staticPath)
 
@@ -152,6 +162,8 @@ export const installFragmentStaticEntry = ({
     }
     visibilityObserver?.disconnect()
     visibilityObserver = null
+    paintReadyCleanup?.()
+    paintReadyCleanup = null
   }
 
   const cleanupTriggers = () => {
@@ -350,6 +362,23 @@ export const installFragmentStaticEntry = ({
     void prewarmStoreRuntime()?.catch((error) => {
       storeRuntimePromise = null
       console.error('Static store runtime prewarm failed:', error)
+    })
+    paintReadyCleanup ??= schedulePaintReady({
+      root: readBootstrapRoot(),
+      readyAttr: STATIC_FRAGMENT_PAINT_ATTR,
+      requestFrame:
+        typeof win.requestAnimationFrame === 'function' ? win.requestAnimationFrame.bind(win) : undefined,
+      cancelFrame:
+        typeof win.cancelAnimationFrame === 'function' ? win.cancelAnimationFrame.bind(win) : undefined,
+      setTimer: win.setTimeout.bind(win),
+      clearTimer: win.clearTimeout.bind(win),
+      onReady: () => {
+        releaseReadyStagger({
+          root: doc,
+          queuedSelector: STATIC_FRAGMENT_READY_STAGGER_SELECTOR,
+          group: 'static-fragment-ready'
+        })
+      }
     })
     if (useStoreFastBootstrap && storeBootstrapRequested) {
       requestStoreBootstrap()

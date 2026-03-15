@@ -1,5 +1,9 @@
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { FragmentPayload } from '@core/fragment/types'
+import {
+  applyImmediateReadyStagger,
+  queueReadyStaggerOnVisible
+} from '@prometheus/ui/ready-stagger'
 import type { Lang } from '../lang'
 import { setTrustedInnerHtml } from '../security/client'
 import {
@@ -172,6 +176,11 @@ export const patchStaticHomeFragmentCard = ({
   targetCard.dataset.fragmentReady = 'true'
   targetCard.dataset.fragmentStage = 'ready'
   targetCard.dataset.revealLocked = 'false'
+  if (targetCard.dataset.critical === 'true') {
+    applyImmediateReadyStagger(targetCard)
+  } else {
+    queueReadyStaggerOnVisible(targetCard, { group: 'static-home-patch', replay: true })
+  }
 
   void settlePatchedFragmentCardHeight({
     card: targetCard,

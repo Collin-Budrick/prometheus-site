@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { h, t } from '@core/fragment/tree'
 import type { FragmentPayload } from '@core/fragment/types'
 import {
+  READY_STAGGER_DELAY_VAR,
+  READY_STAGGER_STATE_ATTR,
+  resetReadyStaggerBatchesForTests
+} from '@prometheus/ui/ready-stagger'
+import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_STAGE_ATTR,
@@ -16,11 +21,17 @@ const unwrapTrustedHtml = (value: unknown) =>
 
 class MockElement {
   dataset: Record<string, string> = {}
-  style = {
-    height: '',
-    setProperty: (_name: string, _value: string) => undefined,
-    getPropertyValue: (_name: string) => ''
-  }
+  isConnected = true
+  style = (() => {
+    const props = new Map<string, string>()
+    return {
+      height: '',
+      setProperty: (name: string, value: string) => {
+        props.set(name, value)
+      },
+      getPropertyValue: (name: string) => props.get(name) ?? ''
+    }
+  })()
   private html = ''
   private attrs = new Map<string, string>()
   private body: MockElement | null = null
@@ -60,7 +71,7 @@ class MockElement {
   }
 
   getBoundingClientRect() {
-    return { height: 0 }
+    return { width: 640, height: 489, top: 0, left: 0, right: 640, bottom: 489 }
   }
 
   querySelector<T>(selector: string) {
@@ -176,6 +187,7 @@ describe('home-stream patching', () => {
   })
 
   afterEach(() => {
+    resetReadyStaggerBatchesForTests()
     ;(globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement = originalHTMLElement
     if (originalTrustedTypes !== undefined) {
       ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
@@ -201,6 +213,8 @@ describe('home-stream patching', () => {
     expect(result).toBe('patched')
     expect(body.innerHTML).toContain('Patched planner')
     expect(card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
   })
 
   it('treats same-version ready cards as stale', () => {

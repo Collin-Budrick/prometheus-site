@@ -40,6 +40,7 @@ import {
   serializeFragmentHeightLayout,
   type FragmentHeightLayout
 } from '@prometheus/ui/fragment-height'
+import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -248,6 +249,11 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           {fragment.css}
         </style>
       ))}
+      <noscript>
+        <style nonce={nonce || undefined}>
+          {"[data-static-home-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;}"}
+        </style>
+      </noscript>
       <div class="fragment-grid" data-fragment-grid="intro">
         <div class="fragment-slot" data-variant="text" data-critical="true" style={{ gridColumn: '1 / -1' }}>
           <article
@@ -260,6 +266,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-fragment-ready="true"
             data-fragment-stage="ready"
             data-reveal-locked="false"
+            {...{ [READY_STAGGER_STATE_ATTR]: 'queued' }}
           >
             <div class="fragment-card-body">
               <div
@@ -303,6 +310,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+                    [READY_STAGGER_STATE_ATTR]: 'queued',
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >

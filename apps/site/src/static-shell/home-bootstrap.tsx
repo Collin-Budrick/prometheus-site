@@ -14,6 +14,10 @@ import {
   createStaticHomePatchQueue,
   type StaticHomePatchQueue,
 } from "./home-stream";
+import {
+  queueReadyStagger,
+  READY_STAGGER_STATE_ATTR,
+} from "@prometheus/ui/ready-stagger";
 import { persistInitialFragmentCardHeights } from "./fragment-height";
 import {
   STATIC_HOME_FRAGMENT_KIND_ATTR,
@@ -405,12 +409,24 @@ type HomeFragmentHydrationManager = {
   destroy: () => void;
 };
 
+type StaticHomeReadyStaggerManager = {
+  observeWithin: (root: ParentNode) => void;
+  releaseVisible: () => void;
+  destroy: () => void;
+};
+
 type BindHomeFragmentHydrationOptions = {
   controller: HomeFragmentHydrationController;
   root?: ParentNode;
   fetchBatch?: typeof fetchHomeFragmentBatch;
   ensureDemoStylesheet?: typeof ensureHomeDemoStylesheet;
   scheduleTask?: typeof scheduleStaticShellTask;
+  ObserverImpl?: typeof IntersectionObserver;
+};
+
+type BindStaticHomeReadyStaggerOptions = {
+  root?: ParentNode;
+  queueReady?: typeof queueReadyStagger;
   ObserverImpl?: typeof IntersectionObserver;
 };
 
@@ -422,6 +438,8 @@ type HydratableHomeFragmentCard = {
 
 const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = "0px";
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0;
+const HOME_READY_STAGGER_ROOT_MARGIN = "0px";
+const HOME_READY_STAGGER_THRESHOLD = 0.01;
 const HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000;
 const HOME_DEFERRED_REVALIDATION_INTENT_EVENTS = [
   "pointerdown",
@@ -516,6 +534,126 @@ const collectRefreshableHomeFragmentCards = (
     }
     return [{ card, id, stage }];
   });
+
+const isQueuedStaticHomeReadyStaggerCard = (
+  card: Element | null,
+): card is HTMLElement =>
+  Boolean(
+    card &&
+      typeof (card as HTMLElement).getAttribute === "function" &&
+      (card as HTMLElement).getAttribute(READY_STAGGER_STATE_ATTR) ===
+        "queued" &&
+      (card as HTMLElement).getAttribute(STATIC_HOME_STAGE_ATTR) !==
+        "critical",
+  );
+
+const isElementInViewport = (element: Element) => {
+  if (typeof (element as HTMLElement).getBoundingClientRect !== "function") {
+    return true;
+  }
+
+  const rect = (element as HTMLElement).getBoundingClientRect();
+  const doc = typeof document !== "undefined" ? document : null;
+  const viewportWidth =
+    typeof window !== "undefined" && typeof window.innerWidth === "number"
+      ? window.innerWidth
+      : doc?.documentElement?.clientWidth ?? 0;
+  const viewportHeight =
+    typeof window !== "undefined" && typeof window.innerHeight === "number"
+      ? window.innerHeight
+      : doc?.documentElement?.clientHeight ?? 0;
+
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return true;
+  }
+
+  return (
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < viewportHeight &&
+    rect.left < viewportWidth
+  );
+};
+
+export const bindStaticHomeReadyStagger = ({
+  root = document,
+  queueReady = queueReadyStagger,
+  ObserverImpl = (
+    globalThis as typeof globalThis & {
+      IntersectionObserver?: typeof IntersectionObserver;
+    }
+  ).IntersectionObserver,
+}: BindStaticHomeReadyStaggerOptions = {}): StaticHomeReadyStaggerManager => {
+  const observedCards = new Set<Element>();
+  const releasedIds = new Set<string>();
+  let armed = false;
+
+  const releaseCard = (card: HTMLElement) => {
+    const fragmentId = card.dataset.fragmentId;
+    if (!fragmentId || releasedIds.has(fragmentId)) return;
+    releasedIds.add(fragmentId);
+    queueReady(card, { group: "static-home-ready", replay: true });
+    observer?.unobserve(card);
+    observedCards.delete(card);
+  };
+
+  const observer =
+    typeof ObserverImpl === "function"
+      ? new ObserverImpl(
+          (entries) => {
+            if (!armed) return;
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              const card = entry.target as HTMLElement;
+              if (!isQueuedStaticHomeReadyStaggerCard(card)) return;
+              releaseCard(card);
+            });
+          },
+          {
+            root: null,
+            rootMargin: HOME_READY_STAGGER_ROOT_MARGIN,
+            threshold: HOME_READY_STAGGER_THRESHOLD,
+          },
+        )
+      : null;
+
+  const observeWithin = (nextRoot: ParentNode) => {
+    Array.from(
+      nextRoot.querySelectorAll<HTMLElement>(
+        `[data-static-fragment-card][${READY_STAGGER_STATE_ATTR}="queued"]`,
+      ),
+    ).forEach((card) => {
+      if (!isQueuedStaticHomeReadyStaggerCard(card)) return;
+      if (releasedIds.has(card.dataset.fragmentId ?? "")) return;
+      if (!observer) {
+        if (armed) {
+          releaseCard(card);
+        }
+        return;
+      }
+      if (armed && isElementInViewport(card)) {
+        releaseCard(card);
+        return;
+      }
+      if (observedCards.has(card)) return;
+      observedCards.add(card);
+      observer.observe(card);
+    });
+  };
+
+  return {
+    observeWithin,
+    releaseVisible() {
+      armed = true;
+      observeWithin(root);
+    },
+    destroy() {
+      observer?.disconnect();
+      observedCards.clear();
+      releasedIds.clear();
+    },
+  };
+};
 
 export const bindHomeFragmentHydration = ({
   controller,
