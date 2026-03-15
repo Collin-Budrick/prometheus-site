@@ -12,6 +12,7 @@ import {
 import { resolveStaticAssetUrl } from './static-asset-url'
 import { STATIC_SHELL_SNAPSHOT_MANIFEST_PATH } from './snapshot'
 import type { StaticDockState } from './seed-client'
+import { replayStaticSnapshotReadyStagger } from './snapshot-ready-stagger'
 
 const STATIC_LANG_STORAGE_KEYS = ['prometheus-lang', 'prometheus:pref:locale'] as const
 const STATIC_LANG_COOKIE_KEY = 'prometheus-lang'
@@ -141,6 +142,7 @@ export const applyStaticShellSnapshot = (
   replaceStaticShellRegionHtml(STATIC_SHELL_MAIN_REGION, snapshot.regions.main)
   replaceStaticShellDockRegion(snapshot.regions.dock, options.dockState)
   document.title = snapshot.title
+  replayStaticSnapshotReadyStagger()
 }
 
 export const updateStaticShellUrlLang = (lang: Lang) => {

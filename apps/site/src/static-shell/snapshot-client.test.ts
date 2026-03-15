@@ -167,6 +167,6 @@ describe('snapshot-client', () => {
     expect(dockRegion?.dataset.staticDockMode).toBe('auth')
     expect(dockRegion?.dataset.staticDockPath).toBe('/chat')
     expect(dockRegion?.innerHTML).toContain('data-dock-mode="auth"')
-    expect(dockRegion?.innerHTML).toContain('/chat?lang=ja')
+    expect(dockRegion?.innerHTML).toContain('/chat/?lang=ja')
   })
 })
