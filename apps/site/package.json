@@ -46,7 +46,7 @@
   "devDependencies": {
     "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.9",
     "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.9",
-    "@serwist/vite": "9.5.6",
+    "@serwist/vite": "9.5.7",
     "@storybook/addon-a11y": "10.3.0-alpha.17",
     "@storybook/addon-docs": "10.3.0-alpha.17",
     "@storybook/builder-vite": "10.3.0-alpha.17",
@@ -62,7 +62,7 @@
     "tailwindcss": "4.2.1",
     "typescript": "6.0.1-rc",
     "vite": "8.0.0-beta.18",
-    "vite-plugin-compression2": "2.5.1"
+    "vite-plugin-compression2": "2.5.2"
   },
   "optionalDependencies": {
     "@oxlint/win32-arm64": "1.43.0"
