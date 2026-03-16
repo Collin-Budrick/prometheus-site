@@ -35,6 +35,8 @@ type StaticInvite = {
   user: StaticInviteUser
 }
 
+const staticReplacementTags = new Set(['store-stream', 'store-create', 'store-cart', 'contact-invites'])
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
@@ -423,6 +425,12 @@ const replaceStaticNodes = (node: RenderNode, context: StaticFragmentRenderConte
   }
 }
 
+const hasStaticReplacementNode = (node: RenderNode): boolean => {
+  if (node.type !== 'element') return false
+  if (staticReplacementTags.has(node.tag)) return true
+  return (node.children ?? []).some((child) => hasStaticReplacementNode(child))
+}
+
 export const renderStaticFragmentTreeHtml = (node: RenderNode, context: StaticFragmentRenderContext = {}) =>
   renderToHtml(replaceStaticNodes(node, context))
 
@@ -431,6 +439,6 @@ export const renderStaticFragmentPayloadHtml = (
   context: StaticFragmentRenderContext = {}
 ) => {
   const html = payload.html?.trim()
-  if (html) return html
+  if (html && !hasStaticReplacementNode(payload.tree)) return html
   return renderStaticFragmentTreeHtml(payload.tree, context)
 }

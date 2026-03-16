@@ -10,6 +10,7 @@ import { defaultLang, type Lang } from '../../shared/lang-store'
 import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
 import type { StoreSeed } from '../../shared/store-seed'
 import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../shared/store-sort'
+import { loadServerStoreInventory } from '../../shared/store-inventory.server'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import {
   emptyUiCopy,
@@ -47,9 +48,10 @@ const loadStoreSeed = async (
   const cookieHeader = request.headers.get('cookie')
   const cartItems = readStoreCartSnapshotFromCookie(cookieHeader)
   const queued = readStoreCartQueueFromCookie(cookieHeader)
+  const inventoryItems = await loadServerStoreInventory(request)
 
   return {
-    stream: { items: [], sort: sortParams.sort, dir: sortParams.dir },
+    stream: { items: inventoryItems, sort: sortParams.sort, dir: sortParams.dir },
     cart: { items: cartItems, queuedCount: queued.length }
   }
 }
@@ -75,7 +77,7 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   try {
     const { plan, fragments, path: planPath, initialHtml } = isStaticShellBuild()
       ? await loadStaticFragmentResource(path, lang, request)
-      : await loadHybridFragmentResource(path, appConfig, lang, request)
+      : await loadHybridFragmentResource(path, appConfig, lang, request, { includeAllFragments: true })
     const fragmentEntries = plan?.fragments ?? []
     const fragmentHeaderIds = fragmentEntries.map((entry) => entry.id)
     const languageSeed = createServerLanguageSeed(

@@ -105,6 +105,7 @@ describe('static-fragment-model', () => {
         },
         'fragment://page/store/create@v1': {
           id: 'fragment://page/store/create@v1',
+          html: '<store-create class="store-create"></store-create>',
           tree: h('store-create', { class: 'store-create' }, []),
           head: [],
           css: '',
@@ -143,5 +144,49 @@ describe('static-fragment-model', () => {
     expect(model.entries[0]?.html).toContain('カタログは空です。')
     expect(model.entries[1]?.html).toContain('デジタル商品')
     expect(model.entries[1]?.html).toContain('アイテム追加')
+  })
+
+  it('renders custom fragment tags from tree payloads even when raw html is present', () => {
+    const plan = {
+      path: '/store',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/store/create@v1',
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/store/create@v1': {
+          id: 'fragment://page/store/create@v1',
+          html: '<store-create class="store-create"></store-create>',
+          tree: h('store-create', { class: 'store-create' }, []),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'create:2',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 2
+        }
+      },
+      lang: 'en',
+      storeSeed: {
+        stream: { items: [], sort: 'id', dir: 'asc' },
+        cart: { items: [], queuedCount: 0 }
+      }
+    })
+
+    expect(model.entries[0]?.html).toContain('store-create-submit')
+    expect(model.entries[0]?.html).toContain('Digital product')
+    expect(model.entries[0]?.html).not.toContain('<store-create')
   })
 })

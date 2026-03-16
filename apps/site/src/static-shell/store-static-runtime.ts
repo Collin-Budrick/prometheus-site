@@ -1,11 +1,18 @@
-import { normalizeStaticShellRoutePath, STATIC_FRAGMENT_DATA_SCRIPT_ID } from './constants'
+import {
+  normalizeStaticShellRoutePath,
+  STATIC_FRAGMENT_DATA_SCRIPT_ID,
+  STATIC_FRAGMENT_PAINT_ATTR
+} from './constants'
 import type { StaticFragmentRouteData } from './fragment-static-data'
 import {
   hasRegisteredStoreStaticController,
   registerStoreStaticControllerCleanup
 } from './store-static-controller-state'
+import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 
 const STORE_STATIC_ROUTE_PATH = '/store'
+const STATIC_FRAGMENT_READY_STAGGER_SELECTOR =
+  '[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]'
 
 const readJsonScript = <T,>(id: string) => {
   const element = document.getElementById(id)
@@ -40,5 +47,12 @@ export const bootstrapStaticStoreShell = async () => {
 
   const cleanup = await activateStoreStaticController({ routeData })
   registerStoreStaticControllerCleanup(cleanup)
+  const root = document.querySelector<HTMLElement>('[data-static-fragment-root]')
+  root?.setAttribute(STATIC_FRAGMENT_PAINT_ATTR, 'ready')
+  releaseQueuedReadyStaggerWithin({
+    root: document,
+    queuedSelector: STATIC_FRAGMENT_READY_STAGGER_SELECTOR,
+    group: 'static-fragment-ready'
+  })
   performance.mark?.('prom:store:fast-bootstrap-end')
 }

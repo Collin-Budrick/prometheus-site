@@ -60,7 +60,13 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   }
 
   try {
-    const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(path, appConfig, lang, request)
+    const { plan, fragments, path: planPath, initialHtml } = await loadHybridFragmentResource(
+      path,
+      appConfig,
+      lang,
+      request,
+      { includeAllFragments: true }
+    )
     const fragmentEntries = plan?.fragments ?? []
     const fragmentHeaderIds = fragmentEntries.map((entry) => entry.id)
     const languageSeed = createServerLanguageSeed(

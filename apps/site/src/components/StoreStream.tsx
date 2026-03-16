@@ -55,6 +55,9 @@ type StoreItem = {
   score?: number
 }
 
+const isStaticShellStoreSurface = (root: HTMLElement | undefined) =>
+  Boolean(root?.closest('[data-static-fragment-root]'))
+
 const compareStoreItems = (left: StoreItem, right: StoreItem, key: StoreSortKey, dir: StoreSortDir) => {
   let result = 0
 
@@ -430,6 +433,12 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
   useVisibleTask$(
     (ctx) => {
       if (typeof window === 'undefined') return
+      const root = rootRef.value
+      ctx.track(() => rootRef.value)
+      if (isStaticShellStoreSurface(root)) {
+        setStoreCommandSender(null)
+        return
+      }
       const cleanup = subscribeStoreInventory((snapshot) => {
         inventoryItems.value = snapshot.items.map((item) => ({ ...item }))
         streamState.value = snapshot.status

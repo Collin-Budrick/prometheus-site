@@ -17,6 +17,10 @@ export type HybridFragmentResource = {
   initialHtml?: Record<string, string>
 }
 
+type LoadHybridFragmentResourceOptions = {
+  includeAllFragments?: boolean
+}
+
 const readPlanInitialHtml = (plan: FragmentPlanValue | undefined) =>
   (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
 
@@ -74,7 +78,8 @@ export const loadHybridFragmentResource = async (
   path: string,
   config: { apiBase: string },
   lang?: string,
-  request?: Request
+  request?: Request,
+  options: LoadHybridFragmentResourceOptions = {}
 ): Promise<HybridFragmentResource> => {
   const { resolveServerApiBase } = await import('../shared/api-base.server')
   const resolvedApiBase = resolveServerApiBase(config.apiBase, request)
@@ -82,11 +87,15 @@ export const loadHybridFragmentResource = async (
   const dynamicCriticalIds = request && !isHomeStaticPath(path)
     ? readFragmentCriticalFromCookie(request.headers.get('cookie'), path, viewport)
     : []
+  const selectRequestedIds = (resolvedPlan: FragmentPlanValue) =>
+    options.includeAllFragments
+      ? resolvedPlan.fragments.map((entry) => entry.id)
+      : selectInitialFragmentIds(resolvedPlan, { dynamicCriticalIds })
   const cached = fragmentPlanCache.get(path, lang)
   if (cached?.plan && (cached.initialFragments || cached.initialHtml)) {
     const cachedPlan = cached.plan
-    const initialIds = selectInitialFragmentIds(cachedPlan, { dynamicCriticalIds })
-    const fallbackFragments = pickFragments(cached.initialFragments, initialIds)
+    const requestedIds = selectRequestedIds(cachedPlan as FragmentPlanValue)
+    const fallbackFragments = pickFragments(cached.initialFragments, requestedIds)
     return {
       plan: cachedPlan as FragmentPlanValue,
       fragments: fallbackFragments,
@@ -106,9 +115,10 @@ export const loadHybridFragmentResource = async (
       throw error
     }
     console.warn('Fragment plan fetch failed, using cached entry', error)
+    const requestedIds = selectRequestedIds(cached.plan as FragmentPlanValue)
     const fallbackFragments = pickFragments(
       cached.initialFragments,
-      selectInitialFragmentIds(cached.plan as FragmentPlanValue, { dynamicCriticalIds })
+      requestedIds
     )
     return {
       plan: cached.plan as FragmentPlanValue,
@@ -118,9 +128,9 @@ export const loadHybridFragmentResource = async (
     }
   }
 
-  const initialIds = selectInitialFragmentIds(plan, { dynamicCriticalIds })
-  let fragments: FragmentPayloadMap = pickFragments(initialFragments, initialIds)
-  const missingIds = initialIds.filter((id) => !fragments[id])
+  const requestedIds = selectRequestedIds(plan)
+  let fragments: FragmentPayloadMap = pickFragments(initialFragments, requestedIds)
+  const missingIds = requestedIds.filter((id) => !fragments[id])
 
   if (missingIds.length) {
     try {
