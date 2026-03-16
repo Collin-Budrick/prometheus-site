@@ -937,22 +937,6 @@ const scheduleHomeDeferredAuthRefresh = ({
     },
   });
 
-const scheduleHomePreviewRefresh = ({
-  controller,
-  homeFragmentHydration,
-  win = typeof window !== "undefined" ? window : null,
-  doc = typeof document !== "undefined" ? document : null,
-}: ScheduleHomeDeferredRevalidationOptions): HomeDeferredRevalidationHandle =>
-  scheduleHomeDeferredAction({
-    controller,
-    triggerOnVisibilityChange: false,
-    win,
-    doc,
-    run: () => {
-      homeFragmentHydration.schedulePreviewRefreshes();
-    },
-  });
-
 type ScheduleHomePostLcpTasksOptions = {
   controller: HomeControllerState;
   lcpGate?: HomeFirstLcpGate;
@@ -975,7 +959,6 @@ export const scheduleHomePostLcpTasks = ({
 }: ScheduleHomePostLcpTasksOptions) => {
   let cancelled = false;
   let deferredAuthRefresh: HomeDeferredRevalidationHandle | null = null;
-  let deferredPreviewRefresh: HomeDeferredRevalidationHandle | null = null;
   let postLcpStarted = false;
 
   const handlePageShow = (event: PageTransitionEvent) => {
@@ -993,16 +976,11 @@ export const scheduleHomePostLcpTasks = ({
   const startPostLcpTasks = () => {
     if (cancelled || controller.destroyed || postLcpStarted) return;
     postLcpStarted = true;
+    homeFragmentHydration.schedulePreviewRefreshes();
     deferredAuthRefresh = scheduleHomeDeferredAuthRefresh({
       controller,
       homeFragmentHydration,
       refreshAuth,
-      win,
-      doc,
-    });
-    deferredPreviewRefresh = scheduleHomePreviewRefresh({
-      controller,
-      homeFragmentHydration,
       win,
       doc,
     });
@@ -1018,8 +996,6 @@ export const scheduleHomePostLcpTasks = ({
     win?.removeEventListener("pageshow", handlePageShow);
     deferredAuthRefresh?.cleanup();
     deferredAuthRefresh = null;
-    deferredPreviewRefresh?.cleanup();
-    deferredPreviewRefresh = null;
   };
 };
 

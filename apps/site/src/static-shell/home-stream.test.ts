@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { h, t } from '@core/fragment/tree'
 import type { FragmentPayload } from '@core/fragment/types'
 import {
-  READY_STAGGER_DELAY_VAR,
   READY_STAGGER_STATE_ATTR,
   resetReadyStaggerBatchesForTests
 } from '@prometheus/ui/ready-stagger'
@@ -118,6 +117,31 @@ class MockRoot {
 
 const originalHTMLElement = (globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement
 const originalTrustedTypes = (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+const originalCancelAnimationFrame = globalThis.cancelAnimationFrame
+
+const createAnimationFrameQueue = () => {
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let nextId = 1
+
+  return {
+    requestFrame: ((callback: FrameRequestCallback) => {
+      const id = nextId++
+      callbacks.set(id, callback)
+      return id
+    }) as typeof requestAnimationFrame,
+    cancelFrame: ((id: number) => {
+      callbacks.delete(id)
+    }) as typeof cancelAnimationFrame,
+    flushFrames: (count = 1) => {
+      for (let index = 0; index < count; index += 1) {
+        const frameCallbacks = Array.from(callbacks.values())
+        callbacks.clear()
+        frameCallbacks.forEach((callback) => callback(index * 16))
+      }
+    }
+  }
+}
 
 const createTaskQueue = () => {
   const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
@@ -176,7 +200,11 @@ const createCard = (
 }
 
 describe('home-stream patching', () => {
+  let frameQueue: ReturnType<typeof createAnimationFrameQueue>
+  const settlePatchedHeight = async () => undefined
+
   beforeEach(() => {
+    frameQueue = createAnimationFrameQueue()
     ;(globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement =
       MockElement as unknown as typeof HTMLElement
     ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = {
@@ -184,6 +212,8 @@ describe('home-stream patching', () => {
         createHTML: (input: string) => ({ __html: input, policy: name })
       })
     }
+    globalThis.requestAnimationFrame = frameQueue.requestFrame
+    globalThis.cancelAnimationFrame = frameQueue.cancelFrame
   })
 
   afterEach(() => {
@@ -193,6 +223,16 @@ describe('home-stream patching', () => {
       ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
     } else {
       delete (globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes
+    }
+    if (originalRequestAnimationFrame) {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame
+    } else {
+      delete (globalThis as typeof globalThis).requestAnimationFrame
+    }
+    if (originalCancelAnimationFrame) {
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame
+    } else {
+      delete (globalThis as typeof globalThis).cancelAnimationFrame
     }
   })
 
@@ -207,14 +247,14 @@ describe('home-stream patching', () => {
       lang: 'en',
       payload: createPayload('fragment://page/home/planner@v1', 'Patched planner', 5),
       applyEffects: false,
+      settlePatchedHeight,
       card: card as unknown as HTMLElement
     })
 
     expect(result).toBe('patched')
     expect(body.innerHTML).toContain('Patched planner')
     expect(card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
-    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
-    expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).not.toBeNull()
   })
 
   it('treats same-version ready cards as stale', () => {
@@ -235,6 +275,30 @@ describe('home-stream patching', () => {
     expect(body.innerHTML).toBe('')
   })
 
+  it('settles ready preview cards without waiting for the patch runtime loader', () => {
+    const log: string[] = []
+    const { card, body } = createCard('fragment://page/home/react@v1', log, {
+      version: 1,
+      patchState: 'ready',
+      stage: 'anchor'
+    })
+    let settleCalls = 0
+
+    const result = patchStaticHomeFragmentCard({
+      lang: 'en',
+      payload: createPayload('fragment://page/home/react@v1', 'React refresh', 2),
+      applyEffects: false,
+      settlePatchedHeight: async () => {
+        settleCalls += 1
+      },
+      card: card as unknown as HTMLElement
+    })
+
+    expect(result).toBe('patched')
+    expect(body.innerHTML).toContain('React refresh')
+    expect(settleCalls).toBe(0)
+  })
+
   it('coalesces payloads and patches one eligible card per scheduled task in DOM order', () => {
     const log: string[] = []
     const taskQueue = createTaskQueue()
@@ -245,7 +309,8 @@ describe('home-stream patching', () => {
       lang: 'en',
       applyEffects: false,
       root: root as unknown as ParentNode,
-      scheduleTask: taskQueue.scheduleTask
+      scheduleTask: taskQueue.scheduleTask,
+      settlePatchedHeight
     })
 
     queue.setVisible('fragment://page/home/react@v1', true)
@@ -267,6 +332,28 @@ describe('home-stream patching', () => {
     expect(react.body.innerHTML).toContain('React first')
   })
 
+  it('keeps ready preview cards marked ready while queued for refresh', () => {
+    const log: string[] = []
+    const taskQueue = createTaskQueue()
+    const planner = createCard('fragment://page/home/planner@v1', log, {
+      patchState: 'ready',
+      stage: 'anchor',
+      version: 1
+    })
+    const root = new MockRoot([planner.card])
+    const queue = createStaticHomePatchQueue({
+      lang: 'en',
+      applyEffects: false,
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      settlePatchedHeight
+    })
+
+    queue.enqueue(createPayload('fragment://page/home/planner@v1', 'Planner refresh', 2))
+
+    expect(planner.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+  })
+
   it('waits to patch demo cards until they become visible', () => {
     const log: string[] = []
     const ledger = createCard('fragment://page/home/ledger@v1', log)
@@ -274,7 +361,8 @@ describe('home-stream patching', () => {
     const queue = createStaticHomePatchQueue({
       lang: 'en',
       applyEffects: false,
-      root: root as unknown as ParentNode
+      root: root as unknown as ParentNode,
+      settlePatchedHeight
     })
 
     queue.enqueue(createPayload('fragment://page/home/ledger@v1', 'Ledger payload', 2))
@@ -297,7 +385,8 @@ describe('home-stream patching', () => {
     const queue = createStaticHomePatchQueue({
       lang: 'en',
       applyEffects: false,
-      root: root as unknown as ParentNode
+      root: root as unknown as ParentNode,
+      settlePatchedHeight
     })
 
     queue.enqueue(createPayload('fragment://page/home/dock@v2', 'Dock payload', 2))

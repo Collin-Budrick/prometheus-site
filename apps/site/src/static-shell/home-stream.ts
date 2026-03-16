@@ -36,6 +36,12 @@ type PatchStaticHomeFragmentCardOptions = {
   card?: HTMLElement | null
   onPatchedBody?: (body: HTMLElement) => void
   routeContext?: FragmentHeightRouteContext | null
+  settlePatchedHeight?: ((options: {
+    card: HTMLElement
+    fragmentId: string
+    routeContext?: FragmentHeightRouteContext | null
+    lockToken: string
+  }) => void | Promise<void>) | null
 }
 
 type StreamHomeFragmentsOptions = {
@@ -54,6 +60,7 @@ type CreateStaticHomePatchQueueOptions = {
   root?: ParentNode
   scheduleTask?: typeof scheduleStaticShellTask
   routeContext?: FragmentHeightRouteContext | null
+  settlePatchedHeight?: PatchStaticHomeFragmentCardOptions['settlePatchedHeight']
 }
 
 type ObserveStaticHomePatchVisibilityOptions = {
@@ -72,6 +79,8 @@ export type StaticHomePatchQueue = {
 }
 
 const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
+const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
+const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 
 const createHomeCopyBundle = (lang: Lang) => ({
   ui: {
@@ -107,6 +116,135 @@ const setHomePatchState = (card: HTMLElement, state: 'pending' | 'ready') => {
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, state)
 }
 
+const readFragmentHeightHint = (card: HTMLElement) => {
+  const hintedHeight = Number.parseFloat(card.getAttribute('data-fragment-height-hint') ?? '')
+  if (Number.isFinite(hintedHeight) && hintedHeight > 0) {
+    return Math.ceil(hintedHeight)
+  }
+
+  const styleHeight = Number.parseFloat(card.style.getPropertyValue('--fragment-min-height'))
+  return Number.isFinite(styleHeight) && styleHeight > 0 ? Math.ceil(styleHeight) : 0
+}
+
+const scheduleFragmentFrame = (callback: FrameRequestCallback) => {
+  const scheduleFrame =
+    typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (next: FrameRequestCallback) => setTimeout(() => next(0), 16)
+
+  scheduleFrame(callback)
+}
+
+const waitForFragmentImages = (card: HTMLElement) =>
+  new Promise<void>((resolve) => {
+    const pendingImages = Array.from(card.querySelectorAll<HTMLImageElement>('img')).filter(
+      (image) => !(image.complete && image.naturalWidth >= 0)
+    )
+    if (!pendingImages.length) {
+      resolve()
+      return
+    }
+
+    let remaining = pendingImages.length
+    const handleDone = () => {
+      remaining -= 1
+      if (remaining <= 0) {
+        resolve()
+      }
+    }
+
+    pendingImages.forEach((image) => {
+      image.addEventListener('load', handleDone, { once: true })
+      image.addEventListener('error', handleDone, { once: true })
+    })
+  })
+
+const waitForStablePreviewCardHeight = async (card: HTMLElement, reservedHeight: number) => {
+  let lastHeight = -1
+  let stableFrames = 2
+
+  for (;;) {
+    const nextHeight = await new Promise<number>((resolve) => {
+      scheduleFragmentFrame(() => {
+        resolve(
+          Math.max(
+            reservedHeight,
+            Math.ceil(card.scrollHeight || 0),
+            Math.ceil(card.getBoundingClientRect?.().height || 0)
+          )
+        )
+      })
+    })
+
+    if (lastHeight >= 0 && Math.abs(nextHeight - lastHeight) <= 1) {
+      stableFrames -= 1
+      if (stableFrames <= 0) {
+        return nextHeight
+      }
+    } else {
+      stableFrames = 2
+    }
+
+    lastHeight = nextHeight
+  }
+}
+
+const settleReadyHomePreviewCardHeight = ({
+  card,
+  fragmentId,
+  lockToken
+}: {
+  card: HTMLElement
+  fragmentId: string
+  lockToken: string
+}) => {
+  const reservedHeight = readFragmentHeightHint(card)
+
+  void waitForFragmentImages(card)
+    .then(async () => {
+      const nextHeight = await waitForStablePreviewCardHeight(card, reservedHeight)
+      return nextHeight
+    })
+    .then((nextHeight) => {
+    if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) return
+
+    try {
+      if (nextHeight > 0) {
+        card.style.setProperty('--fragment-min-height', `${nextHeight}px`)
+        card.setAttribute('data-fragment-height-hint', `${nextHeight}`)
+
+        if (nextHeight > reservedHeight) {
+          card.dispatchEvent(
+            new CustomEvent('prom:fragment-height-miss', {
+              bubbles: true,
+              detail: {
+                fragmentId,
+                reservedHeight,
+                height: nextHeight,
+                widthBucket: null
+              }
+            })
+          )
+        }
+
+        card.dispatchEvent(
+          new CustomEvent('prom:fragment-stable-height', {
+            bubbles: true,
+            detail: { fragmentId, height: nextHeight }
+          })
+        )
+      }
+    } finally {
+      card.style.height = ''
+      card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
+      card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
+    }
+    })
+    .catch((error) => {
+      console.error('Static home preview fragment height settle failed:', error)
+  })
+}
+
 export const collectStaticHomeKnownVersions = (root: ParentNode = document) => {
   const versions: Record<string, number> = {}
   collectStaticHomeCards(root).forEach((element) => {
@@ -134,7 +272,8 @@ export const patchStaticHomeFragmentCard = ({
   applyEffects = true,
   card,
   onPatchedBody,
-  routeContext
+  routeContext,
+  settlePatchedHeight = null
 }: PatchStaticHomeFragmentCardOptions): PatchStaticHomeFragmentCardResult => {
   const targetCard = card ?? findStaticHomeFragmentCard(payload.id)
   if (!targetCard) return 'missing'
@@ -182,18 +321,36 @@ export const patchStaticHomeFragmentCard = ({
     queueReadyStaggerOnVisible(targetCard, { group: 'static-home-patch', replay: true })
   }
 
-  void loadFragmentHeightPatchRuntime()
-    .then(({ settlePatchedFragmentCardHeight }) =>
-      settlePatchedFragmentCardHeight({
-        card: targetCard,
-        fragmentId: payload.id,
-        routeContext,
-        lockToken
-      })
-    )
-    .catch((error) => {
-      console.error('Static home fragment height settle failed:', error)
+  if (hasReadyMarkup) {
+    settleReadyHomePreviewCardHeight({
+      card: targetCard,
+      fragmentId: payload.id,
+      lockToken
     })
+  } else {
+    const settlePatchedHeightTask = settlePatchedHeight
+      ? Promise.resolve(
+          settlePatchedHeight({
+            card: targetCard,
+            fragmentId: payload.id,
+            routeContext,
+            lockToken
+          })
+        )
+      : loadFragmentHeightPatchRuntime().then(({ settlePatchedFragmentCardHeight }) =>
+          settlePatchedFragmentCardHeight({
+            card: targetCard,
+            fragmentId: payload.id,
+            routeContext,
+            lockToken
+          })
+        )
+
+    void settlePatchedHeightTask
+      .catch((error) => {
+        console.error('Static home fragment height settle failed:', error)
+      })
+  }
 
   return 'patched'
 }
@@ -204,7 +361,8 @@ export const createStaticHomePatchQueue = ({
   onPatchedBody,
   root = document,
   scheduleTask = scheduleStaticShellTask,
-  routeContext = null
+  routeContext = null,
+  settlePatchedHeight = null
 }: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
@@ -242,6 +400,7 @@ export const createStaticHomePatchQueue = ({
         applyEffects,
         card,
         routeContext,
+        settlePatchedHeight,
         onPatchedBody: (body) => {
           onPatchedBody?.(body, fragmentId)
         }
@@ -291,7 +450,7 @@ export const createStaticHomePatchQueue = ({
       if (destroyed) return
       pendingPayloads.set(payload.id, payload)
       const card = findStaticHomeFragmentCard(payload.id, root)
-      if (card) {
+      if (card && !isHomePatchReady(card)) {
         setHomePatchState(card, 'pending')
       }
       scheduleFlush()

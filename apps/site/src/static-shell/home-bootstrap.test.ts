@@ -902,7 +902,7 @@ describe("requestHomeDemoObserve", () => {
 });
 
 describe("scheduleHomePostLcpTasks", () => {
-  it("arms deferred revalidation only after the LCP gate resolves", async () => {
+  it("starts preview refreshes and arms auth revalidation only after the LCP gate resolves", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -932,7 +932,7 @@ describe("scheduleHomePostLcpTasks", () => {
     manualGate.resolve();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual([]);
     expect(win.idleCallbacks.size).toBe(1);
     expect(win.timeouts.size).toBe(0);
@@ -943,7 +943,7 @@ describe("scheduleHomePostLcpTasks", () => {
     expect(win.listenerCount("pageshow")).toBe(0);
   });
 
-  it("runs deferred revalidation on first user intent after the LCP gate resolves", async () => {
+  it("runs auth revalidation on first user intent after preview refreshes start", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -966,6 +966,9 @@ describe("scheduleHomePostLcpTasks", () => {
 
     manualGate.resolve();
     await flushMicrotasks();
+
+    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(authRefreshCalls).toEqual([]);
 
     win.emit("pointerdown");
     await flushMicrotasks();
@@ -1006,12 +1009,12 @@ describe("scheduleHomePostLcpTasks", () => {
     win.runIdle();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
 
-  it("runs preview refresh on first user intent after auth revalidation already ran", async () => {
+  it("does not rerun preview refresh on user intent after auth revalidation already ran", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -1035,7 +1038,7 @@ describe("scheduleHomePostLcpTasks", () => {
     await flushMicrotasks();
     win.runIdle();
     await flushMicrotasks();
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("pointerdown");
@@ -1072,13 +1075,13 @@ describe("scheduleHomePostLcpTasks", () => {
     win.runIdle();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual([]);
 
     doc.setVisibility("visible");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1110,14 +1113,14 @@ describe("scheduleHomePostLcpTasks", () => {
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(retryCalls).toEqual(["retry"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(retryCalls).toEqual(["retry", "retry"]);
     expect(authRefreshCalls).toEqual(["refresh", "refresh"]);
     cleanup();
@@ -1152,7 +1155,7 @@ describe("scheduleHomePostLcpTasks", () => {
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual([]);
+    expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual([]);
     expect(manualGate.cleanupCount()).toBe(1);
   });
