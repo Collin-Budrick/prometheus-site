@@ -369,10 +369,12 @@ type ScheduleHomeDeferredRevalidationOptions = {
 
 type ScheduleHomeDeferredActionOptions = {
   controller: HomeControllerState;
-  idleTimeoutMs: number;
+  idleTimeoutMs?: number | null;
+  delayTimeoutMs?: number | null;
   run: () => void;
   win?: HomeDeferredRevalidationWindow | null;
   doc?: HomeDeferredRevalidationDocument | null;
+  triggerOnVisibilityChange?: boolean;
 };
 
 const isStaticHomeCardStage = (
@@ -807,10 +809,12 @@ export const bindHomeFragmentHydration = ({
 
 const scheduleHomeDeferredAction = ({
   controller,
-  idleTimeoutMs,
+  idleTimeoutMs = null,
+  delayTimeoutMs = null,
   run,
   win = typeof window !== "undefined" ? window : null,
   doc = typeof document !== "undefined" ? document : null,
+  triggerOnVisibilityChange = true,
 }: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
   if (!win || !doc) {
     return {
@@ -839,7 +843,9 @@ const scheduleHomeDeferredAction = ({
         eventOptions,
       );
     });
-    liveDoc.removeEventListener("visibilitychange", handleVisibilityChange);
+    if (triggerOnVisibilityChange) {
+      liveDoc.removeEventListener("visibilitychange", handleVisibilityChange);
+    }
 
     if (idleId !== null && typeof liveWin.cancelIdleCallback === "function") {
       liveWin.cancelIdleCallback(idleId);
@@ -875,22 +881,31 @@ const scheduleHomeDeferredAction = ({
   HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
     liveWin.addEventListener(eventName, runDeferredRevalidation, eventOptions);
   });
-  liveDoc.addEventListener("visibilitychange", handleVisibilityChange);
+  if (triggerOnVisibilityChange) {
+    liveDoc.addEventListener("visibilitychange", handleVisibilityChange);
+  }
 
-  const triggerIdleRevalidation = () => {
+  const triggerScheduledRevalidation = () => {
     idleId = null;
     timeoutId = null;
     runDeferredRevalidation();
   };
 
-  if (typeof liveWin.requestIdleCallback === "function") {
-    idleId = liveWin.requestIdleCallback(triggerIdleRevalidation, {
-      timeout: idleTimeoutMs,
-    });
-  } else {
+  if (typeof idleTimeoutMs === "number") {
+    if (typeof liveWin.requestIdleCallback === "function") {
+      idleId = liveWin.requestIdleCallback(triggerScheduledRevalidation, {
+        timeout: idleTimeoutMs,
+      });
+    } else {
+      timeoutId = liveWin.setTimeout(
+        triggerScheduledRevalidation,
+        idleTimeoutMs,
+      ) as unknown as number;
+    }
+  } else if (typeof delayTimeoutMs === "number") {
     timeoutId = liveWin.setTimeout(
-      triggerIdleRevalidation,
-      idleTimeoutMs,
+      triggerScheduledRevalidation,
+      delayTimeoutMs,
     ) as unknown as number;
   }
 
@@ -903,7 +918,7 @@ const scheduleHomeDeferredAction = ({
   };
 };
 
-const scheduleHomeDeferredRevalidation = ({
+const scheduleHomeDeferredAuthRefresh = ({
   controller,
   homeFragmentHydration,
   refreshAuth = refreshHomeDockAuthIfNeeded,
@@ -916,10 +931,25 @@ const scheduleHomeDeferredRevalidation = ({
     win,
     doc,
     run: () => {
-      homeFragmentHydration.schedulePreviewRefreshes();
       void refreshAuth(controller).catch((error) => {
         console.error("Static home auth dock refresh failed:", error);
       });
+    },
+  });
+
+const scheduleHomePreviewRefresh = ({
+  controller,
+  homeFragmentHydration,
+  win = typeof window !== "undefined" ? window : null,
+  doc = typeof document !== "undefined" ? document : null,
+}: ScheduleHomeDeferredRevalidationOptions): HomeDeferredRevalidationHandle =>
+  scheduleHomeDeferredAction({
+    controller,
+    triggerOnVisibilityChange: false,
+    win,
+    doc,
+    run: () => {
+      homeFragmentHydration.schedulePreviewRefreshes();
     },
   });
 
@@ -944,14 +974,15 @@ export const scheduleHomePostLcpTasks = ({
   doc = typeof document !== "undefined" ? document : null,
 }: ScheduleHomePostLcpTasksOptions) => {
   let cancelled = false;
-  let deferredRevalidation: HomeDeferredRevalidationHandle | null = null;
+  let deferredAuthRefresh: HomeDeferredRevalidationHandle | null = null;
+  let deferredPreviewRefresh: HomeDeferredRevalidationHandle | null = null;
   let postLcpStarted = false;
 
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return;
     updateFragmentStatus(controller.lang, "idle");
     homeFragmentHydration.retryPending();
-    if (deferredRevalidation?.trigger()) return;
+    if (deferredAuthRefresh?.trigger()) return;
     void refreshAuth(controller).catch((error) => {
       console.error("Static home auth dock refresh failed:", error);
     });
@@ -962,10 +993,16 @@ export const scheduleHomePostLcpTasks = ({
   const startPostLcpTasks = () => {
     if (cancelled || controller.destroyed || postLcpStarted) return;
     postLcpStarted = true;
-    deferredRevalidation = scheduleHomeDeferredRevalidation({
+    deferredAuthRefresh = scheduleHomeDeferredAuthRefresh({
       controller,
       homeFragmentHydration,
       refreshAuth,
+      win,
+      doc,
+    });
+    deferredPreviewRefresh = scheduleHomePreviewRefresh({
+      controller,
+      homeFragmentHydration,
       win,
       doc,
     });
@@ -979,8 +1016,10 @@ export const scheduleHomePostLcpTasks = ({
     cancelled = true;
     lcpGate.cleanup();
     win?.removeEventListener("pageshow", handlePageShow);
-    deferredRevalidation?.cleanup();
-    deferredRevalidation = null;
+    deferredAuthRefresh?.cleanup();
+    deferredAuthRefresh = null;
+    deferredPreviewRefresh?.cleanup();
+    deferredPreviewRefresh = null;
   };
 };
 

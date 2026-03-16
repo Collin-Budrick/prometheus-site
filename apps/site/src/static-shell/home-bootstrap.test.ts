@@ -981,7 +981,7 @@ describe("scheduleHomePostLcpTasks", () => {
     cleanup();
   });
 
-  it("runs deferred revalidation from the idle fallback when there is no user intent", async () => {
+  it("runs auth revalidation from the idle fallback without refreshing previews", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -1006,12 +1006,47 @@ describe("scheduleHomePostLcpTasks", () => {
     win.runIdle();
     await flushMicrotasks();
 
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+    cleanup();
+  });
+
+  it("runs preview refresh on first user intent after auth revalidation already ran", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const previewRefreshCalls: string[] = [];
+    const authRefreshCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => previewRefreshCalls.push("refresh"),
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      refreshAuth: async () => {
+        authRefreshCalls.push("refresh");
+      },
+    });
+
+    manualGate.resolve();
+    await flushMicrotasks();
+    win.runIdle();
+    await flushMicrotasks();
+    expect(previewRefreshCalls).toEqual([]);
+    expect(authRefreshCalls).toEqual(["refresh"]);
+
+    win.emit("pointerdown");
+    await flushMicrotasks();
+
     expect(previewRefreshCalls).toEqual(["refresh"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
 
-  it("runs deferred revalidation when the page becomes visible again before it starts", async () => {
+  it("runs auth revalidation when the page becomes visible again before it starts", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -1043,7 +1078,7 @@ describe("scheduleHomePostLcpTasks", () => {
     doc.setVisibility("visible");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1075,14 +1110,14 @@ describe("scheduleHomePostLcpTasks", () => {
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(retryCalls).toEqual(["retry"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(retryCalls).toEqual(["retry", "retry"]);
     expect(authRefreshCalls).toEqual(["refresh", "refresh"]);
     cleanup();
