@@ -393,7 +393,7 @@ export const installHomeStaticEntry = ({
       const layoutSnapshot = createLayoutSnapshot({ win: liveWin, doc: liveDoc })
       const visibleRoot = roots.find((root) => layoutSnapshot.isVisible(root))
       if (visibleRoot) {
-        startCollabEntry(visibleRoot)
+        startCollabEntry()
       }
       return
     }
@@ -409,7 +409,7 @@ export const installHomeStaticEntry = ({
             if (!entry.isIntersecting) {
               return
             }
-            startCollabEntry(entry.target)
+            startCollabEntry()
           })
         },
         {

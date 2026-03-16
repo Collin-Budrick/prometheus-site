@@ -95,10 +95,15 @@ class MockCollabRoot extends MockElement {
 
   constructor() {
     super()
+    this.setAttribute('data-collab-status-idle', 'Focus to start live sync.')
     this.setAttribute('data-collab-status-connecting', 'Connecting live sync...')
     this.setAttribute('data-collab-status-live', 'Live for everyone on this page')
     this.setAttribute('data-collab-status-reconnecting', 'Reconnecting live sync...')
     this.setAttribute('data-collab-status-error', 'Realtime unavailable')
+  }
+
+  contains(target: unknown) {
+    return target === this || target === this.textarea || target === this.status
   }
 
   querySelector<T>(selector: string) {
@@ -190,6 +195,7 @@ const mutableGlobal = globalThis as unknown as Record<string, unknown>
 const originalMutationObserver = mutableGlobal.MutationObserver
 const originalWebSocket = mutableGlobal.WebSocket
 const originalWindow = mutableGlobal.window
+const originalNode = mutableGlobal.Node
 
 describe('home collab bfcache lifecycle', () => {
   let timers: MockTimers
@@ -200,6 +206,7 @@ describe('home collab bfcache lifecycle', () => {
     globalThis.setTimeout = timers.setTimeout as unknown as typeof setTimeout
     globalThis.clearTimeout = timers.clearTimeout as typeof clearTimeout
     mutableGlobal.MutationObserver = undefined
+    mutableGlobal.Node = MockElement
     mutableGlobal.WebSocket = MockWebSocket
     mutableGlobal.window = undefined
   })
@@ -208,54 +215,59 @@ describe('home collab bfcache lifecycle', () => {
     globalThis.setTimeout = originalSetTimeout
     globalThis.clearTimeout = originalClearTimeout
     mutableGlobal.MutationObserver = originalMutationObserver
+    mutableGlobal.Node = originalNode
     mutableGlobal.WebSocket = originalWebSocket
     mutableGlobal.window = originalWindow
   })
 
-  it('suspends the listener socket on pagehide and reconnects on pageshow without backoff', async () => {
+  it('keeps the dock socket-free until user activation, including bfcache restores', async () => {
     const win = new MockWindow()
     const root = new MockCollabRoot()
     const doc = new MockDocument([root])
+    let editorInstallCount = 0
 
     const cleanup = installHomeCollabEntry({
       win: win as never,
       doc: doc as never,
       loadEditorRuntime: async () => {
-        throw new Error('listener test should not promote to editor')
+        return {
+          installHomeCollabEditor: () => {
+            editorInstallCount += 1
+            return () => undefined
+          }
+        }
       }
     })
 
-    expect(MockWebSocket.instances).toHaveLength(1)
-    const initialSocket = MockWebSocket.instances[0]
-    initialSocket.dispatchMessage(
-      JSON.stringify({
-        type: 'home-collab:text-init',
-        text: 'hello there?'
-      })
-    )
-
-    expect(root.status.textContent).toBe('Live for everyone on this page')
-    expect(root.textarea.value).toBe('hello there?')
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(root.status.textContent).toBe('Focus to start live sync.')
+    expect(root.textarea.readOnly).toBe(true)
+    expect(root.textarea.getAttribute('aria-busy')).toBe('false')
 
     win.emit('pagehide')
     await flushMicrotasks()
 
-    expect(initialSocket.closeCalls).toEqual([{ code: 1000, reason: 'pagehide' }])
-    expect(root.status.textContent).toBe('Live for everyone on this page')
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(root.status.textContent).toBe('Focus to start live sync.')
     expect(timers.callbacks.size).toBe(0)
 
     win.emit('pageshow', { persisted: true })
     await flushMicrotasks()
 
-    expect(MockWebSocket.instances).toHaveLength(2)
-    expect(MockWebSocket.instances[1]?.url).toContain('/home/collab/listener/dock/ws')
+    expect(MockWebSocket.instances).toHaveLength(0)
     expect(timers.callbacks.size).toBe(0)
+
+    root.emit('focusin', { target: root.textarea })
+    await flushMicrotasks()
+
+    expect(editorInstallCount).toBe(1)
+    expect(MockWebSocket.instances).toHaveLength(0)
 
     cleanup()
-    win.emit('pageshow', { persisted: true })
+    root.emit('focusin', { target: root.textarea })
     await flushMicrotasks()
 
-    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(editorInstallCount).toBe(1)
   })
 
   it('suspends the editor socket on pagehide and reconnects on pageshow without tearing down the binding', async () => {

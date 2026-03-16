@@ -568,6 +568,7 @@ describe('installHomeStaticEntry', () => {
     const taskQueue = createScheduledTaskQueue()
     let collabLoadCount = 0
     let collabInstallCount = 0
+    const collabInitialTargets: Array<EventTarget | null | undefined> = []
 
     doc.collabRoots = [collabRoot]
 
@@ -585,8 +586,9 @@ describe('installHomeStaticEntry', () => {
       loadCollabRuntime: async () => {
         collabLoadCount += 1
         return {
-          installHomeCollabEntry: () => {
+          installHomeCollabEntry: (options) => {
             collabInstallCount += 1
+            collabInitialTargets.push(options?.initialTarget)
             return () => undefined
           }
         }
@@ -613,6 +615,7 @@ describe('installHomeStaticEntry', () => {
 
     expect(collabLoadCount).toBe(1)
     expect(collabInstallCount).toBe(1)
+    expect(collabInitialTargets).toEqual([null])
 
     cleanup()
   })

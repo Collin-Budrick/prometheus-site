@@ -292,10 +292,10 @@ const createBinding = ({
   textarea.disabled = false
   setHomeCollabTextareaState({
     textarea,
-    busy: true,
+    busy: false,
     editable: false
   })
-  setHomeCollabStatus(root, status, 'connecting')
+  setHomeCollabStatus(root, status, 'idle')
 
   root.addEventListener('pointerdown', handlePointerDown, true)
   root.addEventListener('focusin', handleFocusIn, true)
@@ -303,6 +303,9 @@ const createBinding = ({
 
   const handlePageHide = () => {
     if (state.destroyed || state.promotingEditor || state.editorCleanup) {
+      return
+    }
+    if (!state.socket && state.reconnectTimer === null) {
       return
     }
     state.suspended = true
@@ -330,8 +333,6 @@ const createBinding = ({
 
   if (matchesRootTarget(root, initialTarget)) {
     promoteToEditor()
-  } else {
-    connectListener()
   }
 
   return {
