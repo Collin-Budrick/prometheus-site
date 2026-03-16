@@ -231,4 +231,77 @@ describe('patchStaticFragmentCard', () => {
     expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
     expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
   })
+
+  it('falls back to raw static store text when fragment copy is not seeded', async () => {
+    const body = new MockBodyElement()
+    const card = new MockCardElement(body)
+    const doc = new MockDocument(card)
+
+    globalThis.document = doc as unknown as Document
+    globalThis.window = {
+      innerWidth: 1280,
+      localStorage: createStorage()
+    } as unknown as Window & typeof globalThis
+    globalThis.HTMLElement = MockCardElement as unknown as typeof HTMLElement
+    globalThis.CustomEvent = class MockCustomEvent<T = unknown> extends Event {
+      detail: T
+
+      constructor(type: string, init?: CustomEventInit<T>) {
+        super(type)
+        this.detail = init?.detail as T
+      }
+    } as unknown as typeof CustomEvent
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }) as typeof requestAnimationFrame
+
+    const routeData: StaticFragmentRouteData = {
+      lang: 'en',
+      path: '/store',
+      snapshotKey: '/store',
+      authPolicy: 'public',
+      bootstrapMode: 'fragment-static',
+      fragmentOrder: [TEST_FRAGMENT_ID],
+      planSignature: 'store-plan',
+      versionSignature: 'store-version',
+      fragmentVersions: {
+        [TEST_FRAGMENT_ID]: 2
+      },
+      storeSeed: {
+        stream: {
+          items: [{ id: 2, name: 'Item 2', price: 6, quantity: 2 }],
+          sort: 'id',
+          dir: 'asc'
+        },
+        cart: { items: [], queuedCount: 0 }
+      },
+      contactInvitesSeed: null
+    }
+
+    patchStaticFragmentCard(
+      {
+        id: TEST_FRAGMENT_ID,
+        tree: h('store-stream', { class: 'store-stream', 'data-limit': '12' }, []),
+        head: [],
+        css: '',
+        cacheUpdatedAt: 2,
+        meta: {
+          cacheKey: TEST_FRAGMENT_ID,
+          ttl: 30,
+          staleTtl: 60,
+          runtime: 'edge',
+          tags: []
+        }
+      },
+      routeData
+    )
+
+    await flushAsyncWork()
+
+    expect(body.innerHTML).toContain('Search the store...')
+    expect(body.innerHTML).toContain('Item 2')
+    expect(body.innerHTML).toContain('Add to cart')
+    expect(card.getAttribute('data-fragment-version')).toBe('2')
+  })
 })

@@ -1,4 +1,4 @@
-import { h, renderToHtml, t } from '@core/fragment/tree'
+import { h, renderToHtml } from '@core/fragment/tree'
 import type { FragmentPayload, RenderNode } from '../fragment/types'
 import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
 import type { StoreSeed } from '../shared/store-seed'
@@ -6,7 +6,7 @@ import type { StoreSeed } from '../shared/store-seed'
 type StaticFragmentRenderContext = {
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
-  copy?: Record<string, string> | null
+  copy?: Record<string, unknown> | null
 }
 
 type StaticStoreItem = {
@@ -107,7 +107,10 @@ const interpolate = (value: string, params: Record<string, string | number>) =>
 
 const formatLabeledValue = (label: string, value: string | number) => `${label} ${value}`
 
-const translateStaticText = (context: StaticFragmentRenderContext, value: string) => context.copy?.[value] ?? t(value)
+const translateStaticText = (context: StaticFragmentRenderContext, value: string) => {
+  const translated = context.copy?.[value]
+  return typeof translated === 'string' ? translated : value
+}
 
 const resolveStoreItemName = (item: StaticStoreItem | StaticCartItem, context: StaticFragmentRenderContext) => {
   if (item.name && item.name !== `Item ${item.id}`) return item.name
@@ -181,9 +184,11 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
         h('span', undefined, [translateStaticText(context, query ? 'SpaceTimeDB search' : 'SpaceTimeDB snapshot')]),
         h('span', undefined, [translateStaticText(context, query ? `${total} ${resultsLabel}` : `${visibleItems.length} ${itemsLabel}`)])
       ]),
-    h('div', { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' }, [
+    h(
+      'div',
+      { class: 'store-stream-panel', role: 'list', 'aria-live': 'polite' },
       visibleItems.length === 0
-        ? h('div', { class: 'store-stream-empty', role: 'listitem' }, [translateStaticText(context, emptyLabel)])
+        ? [h('div', { class: 'store-stream-empty', role: 'listitem' }, [translateStaticText(context, emptyLabel)])]
         : visibleItems.map((item, index) =>
             h('div', {
               class: 'store-stream-row',
@@ -220,7 +225,7 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
               ])
             ])
           )
-    ])
+    )
   ])
 }
 
@@ -317,28 +322,32 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
       h('div', { class: 'store-cart-drop-hint', 'aria-hidden': 'true' }, [translateStaticText(context, dropLabel)]),
       items.length === 0
         ? h('div', { class: 'store-cart-empty' }, [translateStaticText(context, empty)])
-        : h('div', { class: 'store-cart-list', role: 'list' }, items.map((item, index) =>
-            h('div', {
-              class: 'store-cart-item',
-              role: 'listitem',
-              'data-cart-id': item.id,
-              style: `--stagger-index:${index}`
-            }, [
-              h('button', {
-                class: 'store-cart-remove',
-                type: 'button',
-                disabled: true,
-                'aria-label': removeLabel,
-                title: removeLabel
-              }, [translateStaticText(context, 'X')]),
-              h('div', { class: 'store-cart-item-title' }, [translateStaticText(context, resolveStoreItemName(item, context))]),
-              h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [translateStaticText(context, formatLabeledValue(idLabel, item.id))])]),
-              h('div', { class: 'store-cart-item-footer' }, [
-                h('span', { class: 'store-cart-qty' }, [translateStaticText(context, formatLabeledValue(qtyLabel, item.qty))]),
-                h('span', { class: 'store-cart-price' }, [translateStaticText(context, formatPrice(item.price * item.qty))])
+        : h(
+            'div',
+            { class: 'store-cart-list', role: 'list' },
+            items.map((item, index) =>
+              h('div', {
+                class: 'store-cart-item',
+                role: 'listitem',
+                'data-cart-id': item.id,
+                style: `--stagger-index:${index}`
+              }, [
+                h('button', {
+                  class: 'store-cart-remove',
+                  type: 'button',
+                  disabled: true,
+                  'aria-label': removeLabel,
+                  title: removeLabel
+                }, [translateStaticText(context, 'X')]),
+                h('div', { class: 'store-cart-item-title' }, [translateStaticText(context, resolveStoreItemName(item, context))]),
+                h('div', { class: 'store-cart-item-meta' }, [h('span', undefined, [translateStaticText(context, formatLabeledValue(idLabel, item.id))])]),
+                h('div', { class: 'store-cart-item-footer' }, [
+                  h('span', { class: 'store-cart-qty' }, [translateStaticText(context, formatLabeledValue(qtyLabel, item.qty))]),
+                  h('span', { class: 'store-cart-price' }, [translateStaticText(context, formatPrice(item.price * item.qty))])
+                ])
               ])
-            ])
-          ))
+            )
+          )
     ])
   ])
 }
@@ -358,9 +367,11 @@ const renderInviteList = (
         ...(accent && invites.length > 0 ? { 'data-alert': 'true' } : {})
       }, [translateStaticText(context, String(invites.length))])
     ]),
-    h('div', { class: 'chat-invites-list' }, [
+    h(
+      'div',
+      { class: 'chat-invites-list' },
       invites.length === 0
-        ? h('div', { class: 'chat-invites-empty' }, [translateStaticText(context, emptyLabel)])
+        ? [h('div', { class: 'chat-invites-empty' }, [translateStaticText(context, emptyLabel)])]
         : invites.map((invite, index) =>
             h('div', {
               class: 'chat-invites-item',
@@ -375,7 +386,7 @@ const renderInviteList = (
               ])
             ])
           )
-    ])
+    )
   ])
 
 const renderContactInvitesNode = (attrs: Record<string, string> | undefined, context: StaticFragmentRenderContext): RenderNode => {

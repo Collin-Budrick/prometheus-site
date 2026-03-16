@@ -8,6 +8,7 @@ import {
   getCspNonce,
   installTrustedTypesFunctionBridge,
   primeTrustedTypesPolicies,
+  asTrustedScript,
   setTrustedInnerHtml,
 } from "../security/client";
 import type { StaticFragmentRouteData } from "./fragment-static-data";
@@ -55,6 +56,7 @@ import {
   setOverlaySurfaceState,
 } from "../shared/overlay-a11y";
 import { appConfig } from "../public-app-config";
+import type { StoreSeed } from "../shared/store-seed";
 
 type Theme = "light" | "dark";
 
@@ -271,11 +273,52 @@ const readRouteData = (shellSeed: StaticShellSeed) =>
     lang: shellSeed.lang,
   });
 
+const cloneStoreSeed = (seed: StoreSeed | null | undefined): StoreSeed | null =>
+  seed ? (JSON.parse(JSON.stringify(seed)) as StoreSeed) : null;
+
+const hasStoreSeedData = (seed: StoreSeed | null | undefined) => {
+  const streamItems = seed?.stream?.items;
+  if (Array.isArray(streamItems) && streamItems.length > 0) return true;
+  const cartItems = seed?.cart?.items;
+  if (Array.isArray(cartItems) && cartItems.length > 0) return true;
+  return typeof seed?.cart?.queuedCount === "number" && seed.cart.queuedCount > 0;
+};
+
+export const mergeStaticStoreSeedForSnapshot = (
+  current: StaticFragmentRouteData | null,
+  next: StaticFragmentRouteData | null,
+) => {
+  if (!current || !next) return next;
+  if (
+    normalizeStaticShellRoutePath(current.path) !== "/store" ||
+    normalizeStaticShellRoutePath(next.path) !== "/store"
+  ) {
+    return next;
+  }
+  if (hasStoreSeedData(next.storeSeed) || !hasStoreSeedData(current.storeSeed)) {
+    return next;
+  }
+  return {
+    ...next,
+    storeSeed: cloneStoreSeed(current.storeSeed),
+  };
+};
+
+const writeStaticFragmentRouteData = (routeData: StaticFragmentRouteData | null) => {
+  if (!routeData) return null;
+  const element = document.getElementById(STATIC_FRAGMENT_DATA_SCRIPT_ID);
+  if (!(element instanceof HTMLScriptElement)) return null;
+  (element as unknown as { text: string | ReturnType<typeof asTrustedScript> }).text =
+    asTrustedScript(serializeJson(routeData));
+  return routeData;
+};
+
 const swapStaticFragmentLanguage = async (nextLang: Lang) => {
   if (languageSwapInFlight) return;
   const shellSeed = readShellSeed();
   if (!shellSeed || shellSeed.lang === nextLang) return;
   languageSwapInFlight = true;
+  const currentRouteData = activeController?.routeData ?? readRouteData(shellSeed);
 
   try {
     const snapshot = await loadStaticShellSnapshot(
@@ -295,6 +338,12 @@ const swapStaticFragmentLanguage = async (nextLang: Lang) => {
         isAuthenticated: shellSeed.isAuthenticated ?? false,
       },
     });
+    writeStaticFragmentRouteData(
+      mergeStaticStoreSeedForSnapshot(
+        currentRouteData,
+        readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID),
+      ),
+    );
     writeStaticShellSeed({
       lang: nextLang,
       currentPath: shellSeed.currentPath || window.location.pathname,
@@ -740,6 +789,7 @@ export const bootstrapStaticFragmentShell = async () => {
   primeTrustedTypesPolicies();
   const preferredLang = resolvePreferredStaticShellLang(shellSeed.lang);
   if (preferredLang !== shellSeed.lang) {
+    const currentRouteData = readRouteData(shellSeed);
     try {
       const snapshot = await loadStaticShellSnapshot(
         shellSeed.snapshotKey,
@@ -756,6 +806,12 @@ export const bootstrapStaticFragmentShell = async () => {
           isAuthenticated: shellSeed.isAuthenticated ?? false,
         },
       });
+      writeStaticFragmentRouteData(
+        mergeStaticStoreSeedForSnapshot(
+          currentRouteData,
+          readJsonScript<StaticFragmentRouteData>(STATIC_FRAGMENT_DATA_SCRIPT_ID),
+        ),
+      );
       writeStaticShellSeed({
         lang: preferredLang,
         currentPath: shellSeed.currentPath || window.location.pathname,
