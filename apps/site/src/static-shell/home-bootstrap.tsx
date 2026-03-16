@@ -23,14 +23,13 @@ import {
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
 } from "./constants";
-import { createHomeFirstLcpGate, type HomeFirstLcpGate } from "./home-lcp-gate";
 import { scheduleStaticShellTask } from "./scheduler";
 import { primeTrustedTypesPolicies } from "../security/client";
 import type { StaticHomeCardStage } from "./constants";
 import { resolveStaticShellLangParam } from "./lang-param";
-import { loadHomeDockAuthRuntime } from "./home-dock-auth-runtime-loader";
+import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
-import { loadHomeUiControlsRuntime } from "./home-ui-controls-runtime-loader";
+import { markStaticShellUserTiming } from "./static-shell-performance";
 
 type HomeControllerState = {
   isAuthenticated: boolean;
@@ -68,7 +67,6 @@ const STATIC_LANG_STORAGE_KEYS = [
 ] as const;
 
 let activeController: HomeControllerState | null = null;
-let languageSwapInFlight = false;
 
 const setDocumentLang = (value: Lang) => {
   document.documentElement.lang = value;
@@ -162,19 +160,6 @@ const updateFragmentStatus = (
         : copy.fragmentStatusIdle;
   element.dataset.state = state;
   element.setAttribute("aria-label", label);
-};
-
-const syncHomeDockIfNeeded = async (
-  controller: Pick<HomeControllerState, "isAuthenticated" | "lang" | "path">,
-) => {
-  const { syncHomeDockIfNeeded: syncDock } = await loadHomeDockAuthRuntime();
-  await syncDock(controller);
-};
-
-const refreshHomeDockAuthIfNeeded = async (controller: HomeControllerState) => {
-  const { refreshHomeDockAuthIfNeeded: refreshDockAuth } =
-    await loadHomeDockAuthRuntime();
-  await refreshDockAuth(controller);
 };
 
 const resolveStaticHomePaintRoot = (
@@ -328,54 +313,14 @@ const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = "0px";
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0;
 const HOME_READY_STAGGER_ROOT_MARGIN = "0px";
 const HOME_READY_STAGGER_THRESHOLD = 0.01;
-const HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000;
-const HOME_DEFERRED_REVALIDATION_INTENT_EVENTS = [
+const HOME_POST_LCP_RUNTIME_WARM_DELAY_MS = 15000;
+const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = [
+  "pointerenter",
   "pointerdown",
-  "keydown",
   "touchstart",
+  "keydown",
+  "focusin",
 ] as const;
-
-type HomeDeferredRevalidationWindow = Pick<
-  Window,
-  "addEventListener" | "removeEventListener" | "setTimeout" | "clearTimeout"
-> & {
-  requestIdleCallback?: (
-    callback: IdleRequestCallback,
-    options?: { timeout?: number },
-  ) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
-
-type HomeDeferredRevalidationDocument = Pick<
-  Document,
-  "visibilityState" | "addEventListener" | "removeEventListener"
->;
-
-type HomeDeferredRevalidationHandle = {
-  cleanup: () => void;
-  trigger: () => boolean;
-};
-
-type ScheduleHomeDeferredRevalidationOptions = {
-  controller: HomeControllerState;
-  homeFragmentHydration: Pick<
-    HomeFragmentHydrationManager,
-    "schedulePreviewRefreshes"
-  >;
-  refreshAuth?: (controller: HomeControllerState) => Promise<void>;
-  win?: HomeDeferredRevalidationWindow | null;
-  doc?: HomeDeferredRevalidationDocument | null;
-};
-
-type ScheduleHomeDeferredActionOptions = {
-  controller: HomeControllerState;
-  idleTimeoutMs?: number | null;
-  delayTimeoutMs?: number | null;
-  run: () => void;
-  win?: HomeDeferredRevalidationWindow | null;
-  doc?: HomeDeferredRevalidationDocument | null;
-  triggerOnVisibilityChange?: boolean;
-};
 
 const isStaticHomeCardStage = (
   value: string | null,
@@ -530,6 +475,7 @@ export const bindHomeFragmentHydration = ({
   const queuedAnchorIds = new Set<string>();
   const queuedDeferredIds = new Set<string>();
   let previewRefreshesEnabled = false;
+  let didMarkFirstAnchorBatch = false;
 
   const isRefreshableHomeFragmentCard = (card: HTMLElement) =>
     card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === "ready" &&
@@ -625,6 +571,7 @@ export const bindHomeFragmentHydration = ({
     const anchorIds = collectQueuedIds("anchor");
     const ids = anchorIds.length > 0 ? anchorIds : collectQueuedIds("deferred");
     if (!ids.length) return;
+    const isAnchorBatch = anchorIds.length > 0;
 
     ids.forEach((id) => {
       if (anchorIds.length > 0) {
@@ -657,6 +604,11 @@ export const bindHomeFragmentHydration = ({
         isHomeFragmentBootstrapSubset(ids)
           ? await fetchHomeFragmentBootstrapSelection(ids, batchOptions)
           : await fetchBatch(ids, batchOptions);
+
+      if (isAnchorBatch && !didMarkFirstAnchorBatch) {
+        didMarkFirstAnchorBatch = true;
+        markStaticShellUserTiming("prom:home:first-anchor-batch-fetched");
+      }
 
       if (
         controller.destroyed ||
@@ -696,6 +648,7 @@ export const bindHomeFragmentHydration = ({
 
   const scheduleNextHydration = () => {
     const staticHomeRoot = resolveStaticHomePaintRoot(root);
+    const hasAnchorHydration = collectQueuedIds("anchor").length > 0;
     if (
       controller.destroyed ||
       hydrationInFlight ||
@@ -718,11 +671,17 @@ export const bindHomeFragmentHydration = ({
           scheduleNextHydration();
         });
       },
-      {
-        priority: "background",
-        timeoutMs: 250,
-        waitForPaint: true,
-      },
+      hasAnchorHydration
+        ? {
+            priority: "user-visible",
+            timeoutMs: 0,
+            preferIdle: false,
+          }
+        : {
+            priority: "background",
+            timeoutMs: 250,
+            waitForPaint: true,
+          },
     );
   };
 
@@ -807,198 +766,6 @@ export const bindHomeFragmentHydration = ({
   return manager;
 };
 
-const scheduleHomeDeferredAction = ({
-  controller,
-  idleTimeoutMs = null,
-  delayTimeoutMs = null,
-  run,
-  win = typeof window !== "undefined" ? window : null,
-  doc = typeof document !== "undefined" ? document : null,
-  triggerOnVisibilityChange = true,
-}: ScheduleHomeDeferredActionOptions): HomeDeferredRevalidationHandle => {
-  if (!win || !doc) {
-    return {
-      cleanup: () => undefined,
-      trigger: () => false,
-    };
-  }
-
-  const liveWin = win;
-  const liveDoc = doc;
-
-  let cancelled = false;
-  let started = false;
-  let idleId: number | null = null;
-  let timeoutId: number | null = null;
-  const eventOptions: AddEventListenerOptions = {
-    capture: true,
-    passive: true,
-  };
-
-  const cleanupTriggers = () => {
-    HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
-      liveWin.removeEventListener(
-        eventName,
-        runDeferredRevalidation,
-        eventOptions,
-      );
-    });
-    if (triggerOnVisibilityChange) {
-      liveDoc.removeEventListener("visibilitychange", handleVisibilityChange);
-    }
-
-    if (idleId !== null && typeof liveWin.cancelIdleCallback === "function") {
-      liveWin.cancelIdleCallback(idleId);
-      idleId = null;
-    }
-    if (timeoutId !== null) {
-      liveWin.clearTimeout(timeoutId);
-      timeoutId = null;
-    }
-  };
-
-  function runDeferredRevalidation() {
-    if (
-      cancelled ||
-      started ||
-      controller.destroyed ||
-      liveDoc.visibilityState === "hidden"
-    ) {
-      return false;
-    }
-
-    started = true;
-    cleanupTriggers();
-    run();
-    return true;
-  }
-
-  function handleVisibilityChange() {
-    if (liveDoc.visibilityState !== "visible") return;
-    runDeferredRevalidation();
-  }
-
-  HOME_DEFERRED_REVALIDATION_INTENT_EVENTS.forEach((eventName) => {
-    liveWin.addEventListener(eventName, runDeferredRevalidation, eventOptions);
-  });
-  if (triggerOnVisibilityChange) {
-    liveDoc.addEventListener("visibilitychange", handleVisibilityChange);
-  }
-
-  const triggerScheduledRevalidation = () => {
-    idleId = null;
-    timeoutId = null;
-    runDeferredRevalidation();
-  };
-
-  if (typeof idleTimeoutMs === "number") {
-    if (typeof liveWin.requestIdleCallback === "function") {
-      idleId = liveWin.requestIdleCallback(triggerScheduledRevalidation, {
-        timeout: idleTimeoutMs,
-      });
-    } else {
-      timeoutId = liveWin.setTimeout(
-        triggerScheduledRevalidation,
-        idleTimeoutMs,
-      ) as unknown as number;
-    }
-  } else if (typeof delayTimeoutMs === "number") {
-    timeoutId = liveWin.setTimeout(
-      triggerScheduledRevalidation,
-      delayTimeoutMs,
-    ) as unknown as number;
-  }
-
-  return {
-    cleanup: () => {
-      cancelled = true;
-      cleanupTriggers();
-    },
-    trigger: () => runDeferredRevalidation(),
-  };
-};
-
-const scheduleHomeDeferredAuthRefresh = ({
-  controller,
-  homeFragmentHydration,
-  refreshAuth = refreshHomeDockAuthIfNeeded,
-  win = typeof window !== "undefined" ? window : null,
-  doc = typeof document !== "undefined" ? document : null,
-}: ScheduleHomeDeferredRevalidationOptions): HomeDeferredRevalidationHandle =>
-  scheduleHomeDeferredAction({
-    controller,
-    idleTimeoutMs: HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS,
-    win,
-    doc,
-    run: () => {
-      void refreshAuth(controller).catch((error) => {
-        console.error("Static home auth dock refresh failed:", error);
-      });
-    },
-  });
-
-type ScheduleHomePostLcpTasksOptions = {
-  controller: HomeControllerState;
-  lcpGate?: HomeFirstLcpGate;
-  homeFragmentHydration: Pick<
-    HomeFragmentHydrationManager,
-    "schedulePreviewRefreshes" | "retryPending"
-  >;
-  refreshAuth?: (controller: HomeControllerState) => Promise<void>;
-  win?: HomeDeferredRevalidationWindow | null;
-  doc?: HomeDeferredRevalidationDocument | null;
-};
-
-export const scheduleHomePostLcpTasks = ({
-  controller,
-  lcpGate = createHomeFirstLcpGate(),
-  homeFragmentHydration,
-  refreshAuth = refreshHomeDockAuthIfNeeded,
-  win = typeof window !== "undefined" ? window : null,
-  doc = typeof document !== "undefined" ? document : null,
-}: ScheduleHomePostLcpTasksOptions) => {
-  let cancelled = false;
-  let deferredAuthRefresh: HomeDeferredRevalidationHandle | null = null;
-  let postLcpStarted = false;
-
-  const handlePageShow = (event: PageTransitionEvent) => {
-    if (!event.persisted || controller.destroyed) return;
-    updateFragmentStatus(controller.lang, "idle");
-    homeFragmentHydration.retryPending();
-    if (deferredAuthRefresh?.trigger()) return;
-    void refreshAuth(controller).catch((error) => {
-      console.error("Static home auth dock refresh failed:", error);
-    });
-  };
-
-  win?.addEventListener("pageshow", handlePageShow);
-
-  const startPostLcpTasks = () => {
-    if (cancelled || controller.destroyed || postLcpStarted) return;
-    postLcpStarted = true;
-    homeFragmentHydration.schedulePreviewRefreshes();
-    deferredAuthRefresh = scheduleHomeDeferredAuthRefresh({
-      controller,
-      homeFragmentHydration,
-      refreshAuth,
-      win,
-      doc,
-    });
-  };
-
-  void lcpGate.wait.then(() => {
-    startPostLcpTasks();
-  });
-
-  return () => {
-    cancelled = true;
-    lcpGate.cleanup();
-    win?.removeEventListener("pageshow", handlePageShow);
-    deferredAuthRefresh?.cleanup();
-    deferredAuthRefresh = null;
-  };
-};
-
 const applyShellLanguageSeed = (
   lang: Lang,
   shellSeed: LanguageSeedPayload,
@@ -1051,115 +818,101 @@ const destroyController = async (controller: HomeControllerState | null) => {
   controller.patchQueue = null;
 };
 
-const swapStaticHomeLanguage = async (nextLang: Lang) => {
-  if (languageSwapInFlight) return;
-  languageSwapInFlight = true;
-
-  try {
-    const { swapStaticHomeLanguage: swapLanguage } =
-      await loadHomeLanguageRuntime();
-    await swapLanguage({
-      nextLang,
-      destroyActiveController: async () => {
-        await destroyController(activeController);
-        activeController = null;
-      },
-      bootstrapStaticHome,
-    });
-  } catch (error) {
-    console.error("Failed to switch static home language:", error);
-  } finally {
-    languageSwapInFlight = false;
-  }
-};
-
-const installDeferredHomeUiControls = (controller: HomeControllerState) => {
+const installDeferredHomePostLcpRuntime = ({
+  controller,
+  homeFragmentHydration,
+}: {
+  controller: HomeControllerState;
+  homeFragmentHydration: Pick<
+    HomeFragmentHydrationManager,
+    "schedulePreviewRefreshes" | "retryPending"
+  >;
+}) => {
   const settingsRoot = document.querySelector<HTMLElement>(".topbar-settings");
-  if (!settingsRoot) {
-    return;
-  }
-
-  let started = false;
+  let runtimeCleanup: (() => void) | null = null;
+  let runtimePromise: Promise<void> | null = null;
   const eventOptions: AddEventListenerOptions = { capture: true };
 
   const cleanupTriggers = () => {
+    if (!settingsRoot) {
+      return;
+    }
     settingsRoot.removeEventListener(
       "pointerdown",
-      handleDeferredUiInteraction,
+      handleDeferredPostLcpIntent,
       eventOptions,
     );
     settingsRoot.removeEventListener(
       "touchstart",
-      handleDeferredUiInteraction,
+      handleDeferredPostLcpIntent,
       eventOptions,
     );
     settingsRoot.removeEventListener(
       "keydown",
-      handleDeferredUiInteraction,
+      handleDeferredPostLcpIntent,
       eventOptions,
     );
     settingsRoot.removeEventListener(
       "focusin",
-      handleDeferredUiInteraction,
+      handleDeferredPostLcpIntent,
       eventOptions,
     );
   };
 
-  const loadUiControls = () => {
-    if (started || controller.destroyed) {
+  const startPostLcpRuntime = () => {
+    if (controller.destroyed || runtimePromise) {
       return;
     }
 
-    started = true;
-    void loadHomeUiControlsRuntime()
-      .then(({ bindHomeUiControls }) => {
+    runtimePromise = loadHomeBootstrapPostLcpRuntime()
+      .then(({ installHomeBootstrapPostLcpRuntime }) => {
         cleanupTriggers();
         if (controller.destroyed) {
           return;
         }
-        bindHomeUiControls({
+        runtimeCleanup = installHomeBootstrapPostLcpRuntime({
           controller,
-          onLanguageChange: swapStaticHomeLanguage,
+          homeFragmentHydration,
+          bootstrapStaticHome,
+          destroyActiveController: async () => {
+            await destroyController(activeController);
+            activeController = null;
+          },
         });
       })
       .catch((error) => {
-        started = false;
-        console.error("Static home UI controls failed:", error);
+        runtimePromise = null;
+        console.error("Static home post-LCP runtime failed:", error);
       });
   };
 
-  function handleDeferredUiInteraction() {
-    loadUiControls();
+  function handleDeferredPostLcpIntent() {
+    startPostLcpRuntime();
   }
 
-  settingsRoot.addEventListener(
-    "pointerdown",
-    handleDeferredUiInteraction,
-    eventOptions,
-  );
-  settingsRoot.addEventListener(
-    "touchstart",
-    handleDeferredUiInteraction,
-    eventOptions,
-  );
-  settingsRoot.addEventListener(
-    "keydown",
-    handleDeferredUiInteraction,
-    eventOptions,
-  );
-  settingsRoot.addEventListener(
-    "focusin",
-    handleDeferredUiInteraction,
-    eventOptions,
-  );
-  controller.cleanupFns.push(cleanupTriggers);
-  controller.cleanupFns.push(
-    scheduleStaticShellTask(loadUiControls, {
+  if (settingsRoot) {
+    HOME_POST_LCP_RUNTIME_INTENT_EVENTS.forEach((eventName) => {
+      settingsRoot.addEventListener(
+        eventName,
+        handleDeferredPostLcpIntent,
+        eventOptions,
+      );
+    });
+  }
+
+  const cancelWarmRuntime = scheduleStaticShellTask(startPostLcpRuntime, {
       priority: "background",
-      timeoutMs: 900,
+      delayMs: HOME_POST_LCP_RUNTIME_WARM_DELAY_MS,
+      timeoutMs: 5000,
       waitForPaint: true,
-    }),
-  );
+    });
+
+  return () => {
+    cleanupTriggers();
+    cancelWarmRuntime();
+    runtimeCleanup?.();
+    runtimeCleanup = null;
+  };
 };
 
 export const bootstrapStaticHome = async () => {
@@ -1251,27 +1004,11 @@ export const bootstrapStaticHome = async () => {
     ),
   );
   controller.cleanupFns.push(
-    scheduleStaticShellTask(
-      () => {
-        if (controller.destroyed) return;
-        void syncHomeDockIfNeeded(controller).catch((error) => {
-          console.error("Static home dock sync failed:", error);
-        });
-      },
-      {
-        priority: "background",
-        timeoutMs: 900,
-        waitForPaint: true,
-      },
-    ),
-  );
-  controller.cleanupFns.push(
-    scheduleHomePostLcpTasks({
+    installDeferredHomePostLcpRuntime({
       controller,
       homeFragmentHydration,
     }),
   );
-  installDeferredHomeUiControls(controller);
   updateFragmentStatus(controller.lang, "idle");
 
   const handlePageHide = () => {

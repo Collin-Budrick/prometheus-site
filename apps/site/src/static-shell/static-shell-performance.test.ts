@@ -14,10 +14,12 @@ describe("static shell performance invariants", () => {
       runtimeLoaderSource,
       runtimeTypesSource,
       bootstrapRuntimeLoaderSource,
+      bootstrapPostLcpRuntimeLoaderSource,
       homeUiControlsRuntimeLoaderSource,
       homeLanguageRuntimeLoaderSource,
       homeDockAuthRuntimeLoaderSource,
       fragmentHeightPatchRuntimeLoaderSource,
+      homeCopyBundleSource,
       homeRenderSource,
       homeDefinitionSource,
       homeServerDefinitionSource,
@@ -28,6 +30,7 @@ describe("static shell performance invariants", () => {
       plannerDemoSource,
       fragmentHeightScriptSource,
       homeDemoEntrySource,
+      bootstrapPostLcpRuntimeSource,
       homeDockAuthRuntimeSource,
       homeLanguageRuntimeSource,
       homeUiControlsRuntimeSource,
@@ -41,10 +44,12 @@ describe("static shell performance invariants", () => {
       readSource("./home-demo-runtime-loader.ts"),
       readSource("./home-demo-runtime-types.ts"),
       readSource("./home-bootstrap-runtime-loader.ts"),
+      readSource("./home-bootstrap-post-lcp-runtime-loader.ts"),
       readSource("./home-ui-controls-runtime-loader.ts"),
       readSource("./home-language-runtime-loader.ts"),
       readSource("./home-dock-auth-runtime-loader.ts"),
       readSource("./fragment-height-patch-runtime-loader.ts"),
+      readSource("./home-copy-bundle.ts"),
       readSource("./home-render.ts"),
       readSource("../fragment/definitions/home.ts"),
       readSource("../fragment/definitions/home.server.ts"),
@@ -55,6 +60,7 @@ describe("static shell performance invariants", () => {
       readSource("../components/PlannerDemo.tsx"),
       readSource("./fragment-height-script.ts"),
       readSource("./home-demo-entry.ts"),
+      readSource("./home-bootstrap-post-lcp-runtime.ts"),
       readSource("./home-dock-auth-runtime.ts"),
       readSource("./home-language-runtime.ts"),
       readSource("./home-ui-controls-runtime.ts"),
@@ -70,24 +76,30 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain(
       "bindHomeFragmentHydration({ controller })",
     );
-    expect(bootstrapSource).toContain("createHomeFirstLcpGate()");
     expect(bootstrapSource).toContain("resolveStaticShellLangParam");
     expect(bootstrapSource).toContain("loadHomeLanguageRuntime()");
-    expect(bootstrapSource).toContain("loadHomeDockAuthRuntime()");
-    expect(bootstrapSource).toContain("loadHomeUiControlsRuntime()");
-    expect(bootstrapSource).toContain("installDeferredHomeUiControls(controller)");
-    expect(bootstrapSource).toContain("refreshHomeDockAuthIfNeeded");
+    expect(bootstrapSource).toContain("loadHomeBootstrapPostLcpRuntime()");
+    expect(bootstrapSource).toContain("installDeferredHomePostLcpRuntime({");
     expect(bootstrapSource).toContain(
+      "const HOME_POST_LCP_RUNTIME_WARM_DELAY_MS = 15000;",
+    );
+    expect(bootstrapSource).toContain('"pointerenter"');
+    expect(bootstrapSource).not.toContain("createHomeFirstLcpGate()");
+    expect(bootstrapSource).not.toContain("loadHomeDockAuthRuntime()");
+    expect(bootstrapSource).not.toContain("loadHomeUiControlsRuntime()");
+    expect(bootstrapSource).not.toContain("installDeferredHomeUiControls(controller)");
+    expect(bootstrapSource).not.toContain("refreshHomeDockAuthIfNeeded");
+    expect(bootstrapSource).not.toContain(
       "HOME_DEFERRED_REVALIDATION_INTENT_EVENTS",
     );
-    expect(bootstrapSource).toContain(
+    expect(bootstrapSource).not.toContain(
       "HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000",
     );
     expect(bootstrapSource).toContain("HOME_DEFERRED_HYDRATION_THRESHOLD = 0");
     expect(bootstrapSource).not.toContain(
       "HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15",
     );
-    expect(bootstrapSource).toContain(
+    expect(bootstrapSource).not.toContain(
       'addEventListener("pageshow", handlePageShow)',
     );
     expect(bootstrapSource).not.toContain("HOME_PREVIEW_REFRESH_DELAY_MS");
@@ -109,7 +121,7 @@ describe("static shell performance invariants", () => {
     );
     expect(bootstrapSource).toContain("requestHomeDemoObserve({ root: body })");
     expect(bootstrapSource).toContain("requestHomeDemoObserve()");
-    expect(bootstrapSource).toContain("scheduleHomePostLcpTasks({");
+    expect(bootstrapSource).not.toContain("scheduleHomePostLcpTasks({");
     expect(bootstrapSource).not.toContain("./home-demo-controller");
     expect(bootstrapSource).not.toContain("./home-demo-controller-state");
     expect(bootstrapSource).not.toContain(
@@ -133,6 +145,9 @@ describe("static shell performance invariants", () => {
     expect(bootstrapRuntimeLoaderSource).toContain(
       "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     );
+    expect(bootstrapPostLcpRuntimeLoaderSource).toContain(
+      "build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js",
+    );
     expect(homeUiControlsRuntimeLoaderSource).toContain(
       "build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js",
     );
@@ -149,6 +164,9 @@ describe("static shell performance invariants", () => {
       "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     );
     expect(buildVersionSource).toContain(
+      "build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js",
+    );
+    expect(buildVersionSource).toContain(
       "build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js",
     );
     expect(buildVersionSource).toContain(
@@ -163,6 +181,9 @@ describe("static shell performance invariants", () => {
     expect(buildVersionSource).not.toContain("home-bootstrap-runtime.js");
     expect(runtimeLoaderSource).toContain("import(/* @vite-ignore */ url)");
     expect(bootstrapRuntimeLoaderSource).toContain(
+      "import(/* @vite-ignore */ url)",
+    );
+    expect(bootstrapPostLcpRuntimeLoaderSource).toContain(
       "import(/* @vite-ignore */ url)",
     );
     expect(homeFragmentClientSource).toContain(
@@ -193,9 +214,20 @@ describe("static shell performance invariants", () => {
     );
     expect(streamSource).toContain("STATIC_HOME_PATCH_STATE_ATTR");
     expect(streamSource).toContain("STATIC_HOME_STAGE_ATTR");
+    expect(streamSource).toContain("createLiveHomeStaticCopyBundle");
     expect(streamSource).toContain("loadFragmentHeightPatchRuntime");
     expect(streamSource).toContain("./fragment-height-lock");
+    expect(streamSource).not.toContain("../lang/client");
     expect(streamSource).not.toContain("isEagerHomeDemoFragment");
+    expect(homeCopyBundleSource).toContain(
+      "createSeededHomeStaticCopyBundle",
+    );
+    expect(homeCopyBundleSource).toContain(
+      "createLiveHomeStaticCopyBundle",
+    );
+    expect(homeCopyBundleSource).toContain(
+      "createSeededHomeStaticFragmentHeaders",
+    );
     expect(homeRenderSource).toContain(
       "export type HomeStaticRenderMode = 'preview' | 'rich' | 'shell' | 'stub'",
     );
@@ -210,6 +242,8 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR");
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR");
     expect(homeRouteSource).toContain("homeDemoAssets");
+    expect(homeRouteSource).toContain("createSeededHomeStaticCopyBundle");
+    expect(homeRouteSource).toContain("createSeededHomeStaticFragmentHeaders");
     expect(homeRouteSource).toContain("buildFragmentHeightPlanSignature");
     expect(homeRouteSource).toContain("resolveReservedFragmentHeight({");
     expect(homeRouteSource).toContain(
@@ -283,6 +317,33 @@ describe("static shell performance invariants", () => {
     expect(plannerDemoSource).not.toContain("useStyles$(homeDemoActiveStyles)");
     expect(homeDockAuthRuntimeSource).toContain("loadClientAuthSession()");
     expect(homeDockAuthRuntimeSource).toContain("writeStaticShellSeed({ isAuthenticated })");
+    expect(bootstrapPostLcpRuntimeSource).toContain("createHomeFirstLcpGate()");
+    expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeDockAuthRuntime()");
+    expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeUiControlsRuntime()");
+    expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeLanguageRuntime()");
+    expect(bootstrapPostLcpRuntimeSource).toContain(
+      "HOME_DEFERRED_REVALIDATION_INTENT_EVENTS",
+    );
+    expect(bootstrapPostLcpRuntimeSource).toContain(
+      "HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000",
+    );
+    expect(bootstrapPostLcpRuntimeSource).toContain(
+      "addEventListener('pageshow', handlePageShow)",
+    );
+    expect(bootstrapPostLcpRuntimeSource).toContain("scheduleHomePostLcpTasks({");
+    expect(bootstrapPostLcpRuntimeSource).toContain("syncHomeDockIfNeeded");
+    expect(bootstrapPostLcpRuntimeSource).not.toContain(
+      "HOME_POST_LCP_DOCK_SYNC_TIMEOUT_MS",
+    );
+    expect(bootstrapPostLcpRuntimeSource).not.toContain(
+      "HOME_POST_LCP_UI_WARM_TIMEOUT_MS",
+    );
+    expect(bootstrapPostLcpRuntimeSource).not.toContain(
+      "Static home dock sync failed:",
+    );
+    expect(bootstrapPostLcpRuntimeSource).toContain(
+      "markStaticShellUserTiming('prom:home:post-lcp-runtime-start')",
+    );
     expect(homeLanguageRuntimeSource).toContain("loadStaticShellSnapshot");
     expect(homeLanguageRuntimeSource).toContain("loadStaticShellLanguageSeed");
     expect(homeUiControlsRuntimeSource).toContain("../shared/overlay-a11y");
@@ -306,6 +367,7 @@ describe("static shell performance invariants", () => {
       homeDemoEntrySource,
       runtimeLoaderSource,
       bootstrapRuntimeLoaderSource,
+      bootstrapPostLcpRuntimeLoaderSource,
       homeUiControlsRuntimeLoaderSource,
       homeLanguageRuntimeLoaderSource,
       homeDockAuthRuntimeLoaderSource,
@@ -334,6 +396,7 @@ describe("static shell performance invariants", () => {
       readSource("./home-demo-entry.ts"),
       readSource("./home-demo-runtime-loader.ts"),
       readSource("./home-bootstrap-runtime-loader.ts"),
+      readSource("./home-bootstrap-post-lcp-runtime-loader.ts"),
       readSource("./home-ui-controls-runtime-loader.ts"),
       readSource("./home-language-runtime-loader.ts"),
       readSource("./home-dock-auth-runtime-loader.ts"),
@@ -357,6 +420,7 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("home-demo-entry.ts");
     expect(buildScriptSource).toContain("home-collab-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-core-runtime.ts");
+    expect(buildScriptSource).toContain("home-bootstrap-post-lcp-runtime.ts");
     expect(buildScriptSource).toContain("home-ui-controls-runtime.ts");
     expect(buildScriptSource).toContain("home-language-runtime.ts");
     expect(buildScriptSource).toContain("home-dock-auth-runtime.ts");
@@ -405,6 +469,9 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntryLoaderSource).toContain("home-demo-entry.js");
     expect(homeCollabEntryLoaderSource).toContain("home-collab-entry.js");
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-core-runtime.js");
+    expect(bootstrapPostLcpRuntimeLoaderSource).toContain(
+      "home-bootstrap-post-lcp-runtime.js",
+    );
     expect(homeUiControlsRuntimeLoaderSource).toContain("home-ui-controls-runtime.js");
     expect(homeLanguageRuntimeLoaderSource).toContain("home-language-runtime.js");
     expect(homeDockAuthRuntimeLoaderSource).toContain("home-dock-auth-runtime.js");
@@ -416,7 +483,7 @@ describe("static shell performance invariants", () => {
     expect(storeRuntimeLoaderSource).toContain("store-static-runtime.js");
     expect(storeRuntimeSource).not.toContain("prewarmSpacetimeConnection()");
     expect(storeControllerSource).toContain(
-      "ensureLiveInventory(state, scheduleRender)",
+      "const scheduleRender = createScheduler(state, routeData)",
     );
     expect(storeControllerSource).not.toContain(
       "const unsubscribe = subscribeStoreInventory(",
@@ -532,7 +599,11 @@ describe("static shell performance invariants", () => {
       '"home-static": [STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"]]',
     );
     expect(entrySsrSource).not.toContain("home-bootstrap-runtime.js");
+    expect(entrySsrSource).not.toContain("home-bootstrap-post-lcp-runtime.js");
     expect(entrySsrSource).not.toContain("home-demo-entry.js");
+    expect(entrySsrSource).not.toContain("home-ui-controls-runtime.js");
+    expect(entrySsrSource).not.toContain("home-dock-auth-runtime.js");
+    expect(entrySsrSource).not.toContain("fragment-height-patch-runtime.js");
     expect(entrySsrSource).toContain("fragment-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("store-static-runtime.js");

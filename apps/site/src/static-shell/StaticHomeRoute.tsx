@@ -7,11 +7,6 @@ import { useCspNonce } from '../security/qwik'
 import homeDemoStylesheetHref from './home-static-deferred.css?url'
 import { createHomeDemoAssetMap } from './home-demo-assets'
 import {
-  emptyPlannerDemoCopy,
-  emptyPreactIslandCopy,
-  emptyReactBinaryDemoCopy,
-  emptyUiCopy,
-  emptyWasmRendererDemoCopy,
   type LanguageSeedPayload
 } from '../lang/selection'
 import { renderHomeStaticFragmentHtml } from './home-render'
@@ -41,6 +36,10 @@ import {
   type FragmentHeightLayout
 } from '@prometheus/ui/fragment-height'
 import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
+import {
+  createSeededHomeStaticCopyBundle,
+  createSeededHomeStaticFragmentHeaders
+} from './home-copy-bundle'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -89,32 +88,6 @@ type StaticHomeRouteState = {
   cards: StaticHomeRenderedCard[]
 }
 
-const createStaticHomeCopyBundle = (languageSeed: LanguageSeedPayload) => ({
-  ui: {
-    ...emptyUiCopy,
-    ...(languageSeed.ui ?? {})
-  },
-  planner: {
-    ...emptyPlannerDemoCopy,
-    ...(languageSeed.demos?.planner ?? {})
-  },
-  wasmRenderer: {
-    ...emptyWasmRendererDemoCopy,
-    ...(languageSeed.demos?.wasmRenderer ?? {})
-  },
-  reactBinary: {
-    ...emptyReactBinaryDemoCopy,
-    ...(languageSeed.demos?.reactBinary ?? {})
-  },
-  preactIsland: {
-    ...emptyPreactIslandCopy,
-    ...(languageSeed.demos?.preactIsland ?? {})
-  },
-  fragments: {
-    ...(languageSeed.fragments ?? {})
-  }
-})
-
 export const buildStaticHomeRouteState = ({
   plan,
   fragments,
@@ -130,12 +103,12 @@ export const buildStaticHomeRouteState = ({
   }
 
   const fragmentMap = fragments ?? {}
-  const copyBundle = createStaticHomeCopyBundle(languageSeed)
+  const copyBundle = createSeededHomeStaticCopyBundle(languageSeed)
   const entries = plan.fragments
   const fragmentOrder = entries.map((entry) => entry.id)
   const planSignature = buildFragmentHeightPlanSignature(fragmentOrder)
   const leftCount = Math.ceil(entries.length / 2)
-  const fragmentHeaders = languageSeed.fragmentHeaders ?? {}
+  const fragmentHeaders = createSeededHomeStaticFragmentHeaders(languageSeed)
 
   const inlineStyles = entries
     .map((entry) => fragmentMap[entry.id])

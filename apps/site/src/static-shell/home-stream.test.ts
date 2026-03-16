@@ -329,6 +329,38 @@ describe('home-stream patching', () => {
     expect(settleCalls).toBe(0)
   })
 
+  it('uses the no-image fast path for pending cards that already fit their reserved height', async () => {
+    const log: string[] = []
+    const { card, body } = createCard('fragment://page/home/planner@v1', log, {
+      version: 1,
+      patchState: 'pending',
+      stage: 'anchor'
+    })
+    let settleCalls = 0
+
+    card.style.setProperty('--fragment-min-height', '520px')
+
+    const result = patchStaticHomeFragmentCard({
+      lang: 'en',
+      payload: createPayload('fragment://page/home/planner@v1', 'Planner fast path', 2),
+      applyEffects: false,
+      settlePatchedHeight: async () => {
+        settleCalls += 1
+      },
+      card: card as unknown as HTMLElement
+    })
+
+    expect(result).toBe('patched')
+    expect(body.innerHTML).toContain('Planner fast path')
+    expect(settleCalls).toBe(0)
+
+    await flushAsyncWork()
+    frameQueue.flushFrames(1)
+
+    expect(card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+    expect(card.dataset.fragmentReady).toBe('true')
+  })
+
   it('keeps visible ready preview cards visible while refreshing their markup', async () => {
     const log: string[] = []
     const { card, body } = createCard('fragment://page/home/react@v1', log, {
@@ -367,7 +399,6 @@ describe('home-stream patching', () => {
 
   it('coalesces payloads and patches one eligible card per scheduled task in DOM order', () => {
     const log: string[] = []
-    const taskQueue = createTaskQueue()
     const planner = createCard('fragment://page/home/planner@v1', log, { stage: 'anchor' })
     const react = createCard('fragment://page/home/react@v1', log, { stage: 'deferred' })
     const root = new MockRoot([planner.card, react.card])
@@ -375,7 +406,6 @@ describe('home-stream patching', () => {
       lang: 'en',
       applyEffects: false,
       root: root as unknown as ParentNode,
-      scheduleTask: taskQueue.scheduleTask,
       settlePatchedHeight
     })
 
@@ -384,15 +414,14 @@ describe('home-stream patching', () => {
     queue.enqueue(createPayload('fragment://page/home/planner@v1', 'Planner first', 2))
     queue.enqueue(createPayload('fragment://page/home/planner@v1', 'Planner latest', 3))
 
-    expect(taskQueue.pendingCount()).toBe(1)
-    taskQueue.flushNext()
+    expect(log).toEqual([])
+    frameQueue.flushFrames(1)
 
     expect(log).toEqual(['fragment://page/home/planner@v1'])
     expect(planner.body.innerHTML).toContain('Planner latest')
     expect(react.body.innerHTML).toBe('')
-    expect(taskQueue.pendingCount()).toBe(1)
 
-    taskQueue.flushNext()
+    frameQueue.flushFrames(1)
 
     expect(log).toEqual(['fragment://page/home/planner@v1', 'fragment://page/home/react@v1'])
     expect(react.body.innerHTML).toContain('React first')

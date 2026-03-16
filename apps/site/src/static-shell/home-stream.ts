@@ -8,15 +8,7 @@ import {
   scheduleReleaseQueuedReadyStaggerWithin
 } from '@prometheus/ui/ready-stagger'
 import type { Lang } from '../lang/types'
-import { getFragmentTextCopy } from '../lang/client'
 import { setTrustedInnerHtml } from '../security/client'
-import {
-  getStaticHomePlannerDemoCopy,
-  getStaticHomePreactIslandDemoCopy,
-  getStaticHomeReactBinaryDemoCopy,
-  getStaticHomeUiCopy,
-  getStaticHomeWasmRendererDemoCopy
-} from './home-copy-store'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -25,6 +17,7 @@ import {
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
+import { createLiveHomeStaticCopyBundle } from './home-copy-bundle'
 import { renderHomeStaticFragmentHtml } from './home-render'
 import { scheduleStaticShellTask } from './scheduler'
 import {
@@ -32,6 +25,7 @@ import {
 } from './fragment-height'
 import { lockFragmentCardHeight } from './fragment-height-lock'
 import { loadFragmentHeightPatchRuntime } from './fragment-height-patch-runtime-loader'
+import { markStaticShellUserTiming } from './static-shell-performance'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -89,18 +83,6 @@ const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
 const FRAGMENT_REVEAL_UNLOCK_PADDING_MS = 40
 const STATIC_HOME_QUEUED_READY_SELECTOR = '.fragment-card[data-ready-stagger-state="queued"]'
-
-const createHomeCopyBundle = (lang: Lang) => ({
-  ui: {
-    demoActivate: getStaticHomeUiCopy(lang).demoActivate,
-    homeIntroMarkdown: getStaticHomeUiCopy(lang).homeIntroMarkdown
-  },
-  planner: getStaticHomePlannerDemoCopy(lang),
-  wasmRenderer: getStaticHomeWasmRendererDemoCopy(lang),
-  reactBinary: getStaticHomeReactBinaryDemoCopy(lang),
-  preactIsland: getStaticHomePreactIslandDemoCopy(lang),
-  fragments: getFragmentTextCopy(lang)
-})
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -181,6 +163,18 @@ const waitForFragmentImages = (card: HTMLElement) =>
     })
   })
 
+const hasPendingFragmentImages = (card: HTMLElement) =>
+  Array.from(card.querySelectorAll<HTMLImageElement>('img')).some(
+    (image) => !(image.complete && image.naturalWidth >= 0)
+  )
+
+const readPatchedHomeCardHeightFast = (card: HTMLElement, reservedHeight: number) =>
+  Math.max(
+    reservedHeight,
+    Math.ceil(card.scrollHeight || 0),
+    Math.ceil(card.getBoundingClientRect?.().height || 0)
+  )
+
 const waitForStablePreviewCardHeight = async (card: HTMLElement, reservedHeight: number) => {
   let lastHeight = -1
   let stableFrames = 2
@@ -260,6 +254,44 @@ const settleReadyHomePreviewCardHeight = async ({
     card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
     card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
   }
+
+  return nextHeight
+}
+
+const settlePatchedHomeCardHeightFast = ({
+  card,
+  fragmentId,
+  lockToken
+}: {
+  card: HTMLElement
+  fragmentId: string
+  lockToken: string
+}) => {
+  if (hasPendingFragmentImages(card)) {
+    return null
+  }
+
+  const reservedHeight = readFragmentHeightHint(card)
+  const nextHeight = readPatchedHomeCardHeightFast(card, reservedHeight)
+  if (nextHeight > reservedHeight + 1) {
+    return null
+  }
+
+  if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) {
+    return null
+  }
+
+  if (reservedHeight > 0) {
+    card.style.setProperty('--fragment-min-height', `${reservedHeight}px`)
+    card.setAttribute('data-fragment-height-hint', `${reservedHeight}`)
+  }
+
+  card.dispatchEvent(
+    new CustomEvent('prom:fragment-stable-height', {
+      bubbles: true,
+      detail: { fragmentId, height: nextHeight }
+    })
+  )
 
   return nextHeight
 }
@@ -461,7 +493,7 @@ export const patchStaticHomeFragmentCard = ({
 
   setTrustedInnerHtml(
     body,
-    `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createHomeCopyBundle(lang))}</div>`,
+    `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createLiveHomeStaticCopyBundle(lang))}</div>`,
     'server'
   )
   onPatchedBody?.(body)
@@ -481,12 +513,22 @@ export const patchStaticHomeFragmentCard = ({
     })
   }
 
+  const fastSettledHeight = hasReadyMarkup
+    ? null
+    : settlePatchedHomeCardHeightFast({
+        card: targetCard,
+        fragmentId: payload.id,
+        lockToken
+      })
+
   const settleTask = hasReadyMarkup
     ? settleReadyHomePreviewCardHeight({
       card: targetCard,
       fragmentId: payload.id,
       lockToken
     })
+    : fastSettledHeight !== null
+      ? Promise.resolve(fastSettledHeight)
     : settlePatchedHeight
       ? Promise.resolve(
           settlePatchedHeight({
@@ -543,6 +585,7 @@ export const createStaticHomePatchQueue = ({
   let cancelScheduledFlush: (() => void) | null = null
   let flushInFlight = false
   let destroyed = false
+  let didMarkFirstAnchorPatch = false
 
   const isEligibleCard = (card: HTMLElement, fragmentId: string) => {
     if (card.dataset.critical === 'true') return false
@@ -582,6 +625,14 @@ export const createStaticHomePatchQueue = ({
       })
 
       if (result === 'patched' || result === 'stale' || result === 'missing') {
+        if (
+          result === 'patched' &&
+          !didMarkFirstAnchorPatch &&
+          card.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor'
+        ) {
+          didMarkFirstAnchorPatch = true
+          markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
+        }
         pendingPayloads.delete(fragmentId)
         return true
       }
@@ -600,24 +651,34 @@ export const createStaticHomePatchQueue = ({
 
   const scheduleFlush = () => {
     if (destroyed || flushInFlight || cancelScheduledFlush || !hasEligiblePayload()) return
-    cancelScheduledFlush = scheduleTask(
-      () => {
-        cancelScheduledFlush = null
-        if (destroyed) return
-        flushInFlight = true
-        try {
-          flushNext()
-        } finally {
-          flushInFlight = false
-          scheduleFlush()
-        }
-      },
-      {
-        priority: 'background',
-        timeoutMs: 250,
-        waitForPaint: true
+
+    const runFlush = () => {
+      cancelScheduledFlush = null
+      if (destroyed) return
+      flushInFlight = true
+      try {
+        flushNext()
+      } finally {
+        flushInFlight = false
+        scheduleFlush()
       }
-    )
+    }
+
+    if (typeof requestAnimationFrame === 'function') {
+      const frameHandle = requestAnimationFrame(() => {
+        runFlush()
+      })
+      cancelScheduledFlush = () => {
+        cancelAnimationFrame(frameHandle)
+      }
+      return
+    }
+
+    cancelScheduledFlush = scheduleTask(runFlush, {
+      priority: 'user-visible',
+      timeoutMs: 16,
+      preferIdle: false
+    })
   }
 
   return {

@@ -8,7 +8,6 @@ import {
 import {
   bindHomeFragmentHydration,
   requestHomeDemoObserve,
-  scheduleHomePostLcpTasks,
   scheduleStaticHomePaintReady,
 } from "./home-bootstrap";
 import {
@@ -16,6 +15,7 @@ import {
   type HomeDemoController,
 } from "./home-demo-controller";
 import { HOME_DEMO_OBSERVE_EVENT } from "./home-demo-observe-event";
+import { scheduleHomePostLcpTasks } from "./home-bootstrap-post-lcp-runtime";
 import type { HomeFirstLcpGate } from "./home-lcp-gate";
 import { normalizeHomeDemoAssetMap } from "./home-demo-runtime-types";
 

@@ -29,11 +29,9 @@ type IdleHandles = {
   idle: number | null
 }
 
-const scheduleIdleTask = (
+const queueScheduledTask = (
   callback: () => void,
-  timeout = 120,
-  priority: TaskPriority = 'background',
-  preferIdle = true
+  priority: TaskPriority = 'background'
 ) => {
   const globals = globalThis as SchedulerGlobals
   const scheduler = globals.scheduler
@@ -41,7 +39,53 @@ const scheduleIdleTask = (
   const postTask = scheduler?.postTask?.bind(scheduler)
   const yieldTask = scheduler?.yield?.bind(scheduler)
   const controller = new TaskControllerImpl()
+  let cancelled = false
+  let fired = false
+  let queued = false
+
+  const run = () => {
+    if (cancelled || fired) return
+    fired = true
+    callback()
+  }
+
+  const queue = () => {
+    if (cancelled || queued || fired) return
+    queued = true
+    if (postTask) {
+      postTask(run, { priority, signal: controller.signal }).catch(() => {
+        run()
+      })
+      return
+    }
+    if (yieldTask) {
+      yieldTask({ priority })
+        .then(run)
+        .catch(() => {
+          run()
+        })
+      return
+    }
+    run()
+  }
+
+  return {
+    queue,
+    cancel: () => {
+      cancelled = true
+      controller.abort()
+    }
+  }
+}
+
+const scheduleIdleTask = (
+  callback: () => void,
+  timeout = 120,
+  priority: TaskPriority = 'background',
+  preferIdle = true
+) => {
   const handles: IdleHandles = { timeout: null, idle: null }
+  const queuedTask = queueScheduledTask(callback, priority)
   const idleApi =
     typeof window !== 'undefined'
       ? (window as {
@@ -52,50 +96,37 @@ const scheduleIdleTask = (
           cancelIdleCallback?: (handle: number) => void
         })
       : null
-  let cancelled = false
-  let fired = false
-
-  const run = () => {
-    if (cancelled || fired) return
-    fired = true
-    if (handles.timeout !== null) {
-      clearTimeout(handles.timeout)
-    }
-    if (handles.idle !== null && idleApi?.cancelIdleCallback) {
-      idleApi.cancelIdleCallback(handles.idle)
-    }
-    handles.timeout = null
-    handles.idle = null
-    callback()
-  }
-
-  if (postTask) {
-    postTask(run, { priority, signal: controller.signal }).catch(() => {})
-  } else if (yieldTask) {
-    yieldTask({ priority })
-      .then(run)
-      .catch(() => {})
-  }
 
   if (typeof window === 'undefined') {
-    run()
+    queuedTask.queue()
     return () => {
-      cancelled = true
-      controller.abort()
+      queuedTask.cancel()
     }
   }
 
   if (!preferIdle) {
-    handles.timeout = window.setTimeout(run, Math.max(timeout, 0))
+    if (timeout > 0) {
+      handles.timeout = window.setTimeout(() => {
+        handles.timeout = null
+        queuedTask.queue()
+      }, Math.max(timeout, 0))
+    } else {
+      queuedTask.queue()
+    }
   } else if (idleApi?.requestIdleCallback) {
-    handles.idle = idleApi.requestIdleCallback(run, { timeout })
+    handles.idle = idleApi.requestIdleCallback(() => {
+      handles.idle = null
+      queuedTask.queue()
+    }, { timeout })
   } else {
-    handles.timeout = window.setTimeout(run, timeout)
+    handles.timeout = window.setTimeout(() => {
+      handles.timeout = null
+      queuedTask.queue()
+    }, timeout)
   }
 
   return () => {
-    cancelled = true
-    controller.abort()
+    queuedTask.cancel()
     if (handles.timeout !== null) {
       clearTimeout(handles.timeout)
     }

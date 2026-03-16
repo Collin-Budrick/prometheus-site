@@ -17,7 +17,12 @@ import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { scheduleStaticShellTask } from './scheduler'
 import { createLayoutSnapshot } from './layout-snapshot'
-import { markStaticShellPerformance, measureStaticShellPerformance } from './static-shell-performance'
+import {
+  markStaticShellPerformance,
+  markStaticShellUserTiming,
+  measureStaticShellPerformance,
+  measureStaticShellUserTiming
+} from './static-shell-performance'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
@@ -145,6 +150,7 @@ export const installHomeStaticEntry = ({
   const liveWin = win
   const liveDoc = doc
 
+  markStaticShellUserTiming('prom:home:static-entry-install')
   liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
   let startedBootstrap = false
@@ -231,7 +237,23 @@ export const installHomeStaticEntry = ({
   }
 
   const prewarmBootstrapRuntime = () => {
-    bootstrapRuntimePromise ??= loadBootstrapRuntime()
+    if (!bootstrapRuntimePromise) {
+      markStaticShellUserTiming('prom:home:bootstrap-runtime-requested')
+      bootstrapRuntimePromise = loadBootstrapRuntime()
+        .then((runtime) => {
+          markStaticShellUserTiming('prom:home:bootstrap-runtime-ready')
+          measureStaticShellUserTiming(
+            'prom:home:bootstrap-runtime',
+            'prom:home:bootstrap-runtime-requested',
+            'prom:home:bootstrap-runtime-ready'
+          )
+          return runtime
+        })
+        .catch((error) => {
+          bootstrapRuntimePromise = null
+          throw error
+        })
+    }
     return bootstrapRuntimePromise
   }
 

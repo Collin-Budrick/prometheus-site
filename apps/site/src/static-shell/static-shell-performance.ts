@@ -23,12 +23,17 @@ const allowDetailedStaticShellPerformance = () => {
   )
 }
 
+const canUseUserTiming = () =>
+  typeof performance !== 'undefined' &&
+  typeof performance.mark === 'function' &&
+  typeof performance.measure === 'function'
+
 export const markStaticShellPerformance = (name: string) => {
   if (!allowDetailedStaticShellPerformance()) {
     return
   }
 
-  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') {
+  if (!canUseUserTiming()) {
     return
   }
 
@@ -44,7 +49,31 @@ export const measureStaticShellPerformance = (
     return
   }
 
-  if (typeof performance === 'undefined' || typeof performance.measure !== 'function') {
+  if (!canUseUserTiming()) {
+    return
+  }
+
+  try {
+    performance.measure(name, startMark, endMark)
+  } catch {
+    // Ignore missing mark failures on partial startup paths.
+  }
+}
+
+export const markStaticShellUserTiming = (name: string) => {
+  if (!canUseUserTiming()) {
+    return
+  }
+
+  performance.mark(name)
+}
+
+export const measureStaticShellUserTiming = (
+  name: string,
+  startMark: string,
+  endMark: string
+) => {
+  if (!canUseUserTiming()) {
     return
   }
 

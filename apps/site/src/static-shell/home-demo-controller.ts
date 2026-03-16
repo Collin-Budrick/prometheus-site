@@ -47,6 +47,7 @@ export type ActivateHomeDemosOptions = {
   activate?: ActivateHomeDemoFn
   root?: ParentNode
   limit?: number
+  scheduleTask?: typeof scheduleStaticShellTask
 }
 
 const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
@@ -172,7 +173,8 @@ export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
 const activateHomeDemoRoot = async (
   controller: HomeDemoController,
   demoRoot: HTMLElement,
-  activate: ActivateHomeDemoFn
+  activate: ActivateHomeDemoFn,
+  scheduleTask: typeof scheduleStaticShellTask
 ) => {
   if (shouldSkipHomeDemoRoot(controller, demoRoot)) return false
 
@@ -197,18 +199,31 @@ const activateHomeDemoRoot = async (
     controller.demoRenders.set(demoRoot, result)
     const fragmentCard = demoRoot.closest<HTMLElement>('.fragment-card[data-fragment-id]')
     if (fragmentCard) {
-      void persistInitialFragmentCardHeights({
-        root: fragmentCard,
-        routeContext: {
-          path: controller.path,
-          lang: controller.lang,
-          fragmentOrder: controller.fragmentOrder,
-          planSignature: controller.planSignature,
-          versionSignature: controller.versionSignature
+      scheduleTask(
+        () => {
+          if (controller.destroyed) {
+            return
+          }
+
+          void persistInitialFragmentCardHeights({
+            root: fragmentCard,
+            routeContext: {
+              path: controller.path,
+              lang: controller.lang,
+              fragmentOrder: controller.fragmentOrder,
+              planSignature: controller.planSignature,
+              versionSignature: controller.versionSignature
+            }
+          }).catch((error) => {
+            console.error('Static home demo height persistence failed:', error)
+          })
+        },
+        {
+          priority: 'background',
+          timeoutMs: 120,
+          waitForPaint: true
         }
-      }).catch((error) => {
-        console.error('Static home demo height persistence failed:', error)
-      })
+      )
     }
     markHomeDemoPerformance(`prom:home-demo:activate-end:${kind}`, { detailed: true })
     return true
@@ -231,6 +246,7 @@ export const activateHomeDemos = async (
   const root = options.root ?? (typeof document !== 'undefined' ? document : null)
   if (!root) return 0
 
+  const scheduleTask = options.scheduleTask ?? scheduleStaticShellTask
   const activate = options.activate ?? ((activationOptions) => activateHomeDemoFromRuntime(controller, activationOptions))
   const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
   let activatedCount = 0
@@ -241,7 +257,7 @@ export const activateHomeDemos = async (
       return activatedCount
     }
 
-    if (await activateHomeDemoRoot(controller, demoRoot, activate)) {
+    if (await activateHomeDemoRoot(controller, demoRoot, activate, scheduleTask)) {
       activatedCount += 1
     }
   }
@@ -512,7 +528,12 @@ export const bindHomeDemoActivation = ({
         continue
       }
 
-      const activated = await activateHomeDemoRoot(controller, demoRoot, activate)
+      const activated = await activateHomeDemoRoot(
+        controller,
+        demoRoot,
+        activate,
+        scheduleTask
+      )
       if (activated) {
         activationObserver?.unobserve(demoRoot)
         warmObserver?.unobserve(demoRoot)

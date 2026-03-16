@@ -23,6 +23,8 @@ import { scheduleStaticShellTask } from "./scheduler";
 import {
   measureStaticShellPerformance,
   markStaticShellPerformance,
+  markStaticShellUserTiming,
+  measureStaticShellUserTiming,
 } from "./static-shell-performance";
 
 type HomeDemoEntryWindow = Window & {
@@ -127,9 +129,16 @@ export const installHomeDemoEntry = ({
     scheduleTask(
       () => {
         markStaticShellPerformance("prom:home:demo-observe-start");
+        markStaticShellUserTiming("prom:home:demo-observe-start");
         binding.manager.observeWithin(observeRoot);
         markStaticShellPerformance("prom:home:demo-observe-ready");
+        markStaticShellUserTiming("prom:home:demo-observe-ready");
         measureStaticShellPerformance(
+          "prom:home:demo-observe",
+          "prom:home:demo-observe-start",
+          "prom:home:demo-observe-ready",
+        );
+        measureStaticShellUserTiming(
           "prom:home:demo-observe",
           "prom:home:demo-observe-start",
           "prom:home:demo-observe-ready",

@@ -1,4 +1,5 @@
 import type {
+  FragmentHeaderCopy,
   Lang,
   PlannerDemoCopy,
   PreactIslandCopy,
@@ -40,6 +41,8 @@ type HomeStaticCopyState = {
     reactBinary: ReactBinaryDemoCopy
     preactIsland: PreactIslandCopy
   }>
+  fragments: Record<string, string>
+  fragmentHeaders: Record<string, FragmentHeaderCopy>
 }
 
 const emptyUiCopy: HomeStaticUiCopy = {
@@ -158,6 +161,8 @@ const emptyPreactIslandCopy: PreactIslandCopy = {
 const homeCopyCache = new Map<string, HomeStaticCopyState>()
 
 const cloneUi = (value?: Partial<HomeStaticUiCopy>) => ({ ...(value ?? {}) })
+const cloneFragments = (value?: Record<string, string>) => ({ ...(value ?? {}) })
+const cloneFragmentHeaders = (value?: Record<string, FragmentHeaderCopy>) => ({ ...(value ?? {}) })
 const omitUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
   Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>
 
@@ -267,6 +272,16 @@ export const seedStaticHomeCopy = (
       ...(routeSeed.demos?.preactIsland
         ? { preactIsland: clonePreactIslandDemo(routeSeed.demos.preactIsland) }
         : {})
+    },
+    fragments: {
+      ...cloneFragments(existing?.fragments),
+      ...cloneFragments(shellSeed.fragments),
+      ...cloneFragments(routeSeed.fragments)
+    },
+    fragmentHeaders: {
+      ...cloneFragmentHeaders(existing?.fragmentHeaders),
+      ...cloneFragmentHeaders(shellSeed.fragmentHeaders),
+      ...cloneFragmentHeaders(routeSeed.fragmentHeaders)
     }
   })
 }
@@ -292,6 +307,13 @@ export const getStaticHomeReactBinaryDemoCopy = (lang: Lang | string): ReactBina
 
 export const getStaticHomePreactIslandDemoCopy = (lang: Lang | string): PreactIslandCopy =>
   clonePreactIslandDemo(getHomeStaticState(lang)?.demos.preactIsland)
+
+export const getStaticHomeFragmentTextCopy = (lang: Lang | string): Record<string, string> =>
+  cloneFragments(getHomeStaticState(lang)?.fragments)
+
+export const getStaticHomeFragmentHeaders = (
+  lang: Lang | string
+): Record<string, FragmentHeaderCopy> => cloneFragmentHeaders(getHomeStaticState(lang)?.fragmentHeaders)
 
 export const resetStaticHomeCopyForTests = () => {
   homeCopyCache.clear()

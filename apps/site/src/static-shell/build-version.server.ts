@@ -10,6 +10,7 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js',
+  'build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-language-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-dock-auth-runtime.js',

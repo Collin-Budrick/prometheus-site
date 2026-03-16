@@ -57,6 +57,9 @@ class FakeWindow extends EventTarget {
 
 const originalWindow = globalThis.window
 const originalDocument = globalThis.document
+const originalScheduler = (
+  globalThis as typeof globalThis & { scheduler?: unknown }
+).scheduler
 
 describe('scheduleStaticShellTask', () => {
   let fakeWindow: FakeWindow
@@ -72,6 +75,13 @@ describe('scheduleStaticShellTask', () => {
   afterEach(() => {
     globalThis.window = originalWindow
     globalThis.document = originalDocument
+    if (originalScheduler !== undefined) {
+      ;(globalThis as typeof globalThis & { scheduler?: unknown }).scheduler =
+        originalScheduler
+    } else {
+      delete (globalThis as typeof globalThis & { scheduler?: unknown })
+        .scheduler
+    }
   })
 
   it('waits for paint and idle before running', () => {
@@ -106,5 +116,41 @@ describe('scheduleStaticShellTask', () => {
     fakeWindow.flushIdleCallbacks()
 
     expect(calls).toEqual([])
+  })
+
+  it('does not queue scheduler.postTask work until idle gating has passed', () => {
+    const calls: string[] = []
+    const postTaskCallbacks: Array<() => void> = []
+    const postTaskCalls: string[] = []
+
+    ;(globalThis as typeof globalThis & {
+      scheduler?: {
+        postTask?: (
+          callback: () => void,
+          options?: { priority?: string; signal?: AbortSignal }
+        ) => Promise<void>
+      }
+    }).scheduler = {
+      postTask: async (callback) => {
+        postTaskCalls.push('queued')
+        postTaskCallbacks.push(callback)
+      }
+    }
+
+    scheduleStaticShellTask(() => {
+      calls.push('ran')
+    })
+
+    expect(postTaskCalls).toEqual([])
+    expect(calls).toEqual([])
+
+    fakeWindow.flushIdleCallbacks()
+
+    expect(postTaskCalls).toEqual(['queued'])
+    expect(calls).toEqual([])
+
+    postTaskCallbacks.shift()?.()
+
+    expect(calls).toEqual(['ran'])
   })
 })
