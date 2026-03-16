@@ -22,6 +22,7 @@ import { loadLanguageResources, prefetchLanguageResources } from '../lang/client
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
 import { useCspNonce } from '../security/qwik'
 import { buildSiteCsp, getOrCreateRequestCspNonce } from '../security/server'
+import { buildPartytownHeadScript } from '../shared/partytown'
 import {
   bindOverlayDismiss,
   focusOverlayEntry,
@@ -695,6 +696,11 @@ export const RouterHead = component$(() => {
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
+  const partytownScript = buildPartytownHeadScript({
+    config: appConfig.partytown,
+    lib: withBase('~partytown/'),
+    nonce: nonce || undefined
+  })
 
   return (
     <>
@@ -702,6 +708,7 @@ export const RouterHead = component$(() => {
       {head.meta.map((meta) => (
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
+      {partytownScript ? <script nonce={nonce || undefined} dangerouslySetInnerHTML={partytownScript} /> : null}
       {deferredStylesheetHref ? (
         <>
           <link rel="preload" as="style" href={deferredStylesheetHref} />

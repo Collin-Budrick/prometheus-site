@@ -44,6 +44,7 @@
     "yjs": "13.6.29"
   },
   "devDependencies": {
+    "@qwik.dev/partytown": "^0.11.2",
     "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.9",
     "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.9",
     "@serwist/vite": "9.5.7",

@@ -17,6 +17,11 @@ export type HighlightConfig = {
   serviceName: string
 }
 
+export type PartytownAppConfig = {
+  enabled: boolean
+  forward: string[]
+}
+
 export type P2pIceServer = {
   urls: string | string[]
   username?: string
@@ -35,6 +40,7 @@ export type PublicAppConfig = {
   enablePrefetch: boolean
   analytics: AnalyticsConfig
   highlight: HighlightConfig
+  partytown: PartytownAppConfig
   p2pRelayBases: string[]
   p2pNostrRelays: string[]
   p2pWakuRelays: string[]
@@ -86,6 +92,10 @@ const defaultPublicAppConfig: PublicAppConfig = {
   analytics: {
     enabled: false,
     beaconUrl: ''
+  },
+  partytown: {
+    enabled: false,
+    forward: []
   },
   highlight: {
     enabled: false,
@@ -252,6 +262,10 @@ export const resolvePublicAppConfig = (
       enabled:
         normalizeBoolean(rawConfig?.analytics?.enabled) && normalizeString(rawConfig?.analytics?.beaconUrl) !== '',
       beaconUrl: normalizeString(rawConfig?.analytics?.beaconUrl)
+    },
+    partytown: {
+      enabled: normalizeBoolean(rawConfig?.partytown?.enabled),
+      forward: normalizeStringList(rawConfig?.partytown?.forward)
     },
     highlight: {
       enabled:

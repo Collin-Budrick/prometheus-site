@@ -1,5 +1,5 @@
-import { component$, useStyles$ } from '@builder.io/qwik'
-import authStyles from '@features/auth/auth.css?inline'
+import { component$ } from '@builder.io/qwik'
+import authModuleStyles from '@features/auth/auth.module.css'
 import type { Lang } from '../lang'
 import type { UiCopy } from '../lang/types'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from './constants'
@@ -20,36 +20,51 @@ type StaticLoginRouteProps = {
   lang: Lang
 }
 
-export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang }) => {
-  useStyles$(authStyles)
+const authClass = {
+  shell: authModuleStyles['auth-shell'],
+  grid: authModuleStyles['auth-grid'],
+  card: authModuleStyles['auth-card'],
+  header: authModuleStyles['auth-header'],
+  title: authModuleStyles['auth-title'],
+  panels: authModuleStyles['auth-panels'],
+  panel: authModuleStyles['auth-panel'],
+  actions: authModuleStyles['auth-actions'],
+  primary: authModuleStyles['auth-primary'],
+  social: authModuleStyles['auth-social'],
+  socialLabel: authModuleStyles['auth-social-label'],
+  socialActions: authModuleStyles['auth-social-actions'],
+  socialButton: authModuleStyles['auth-social-button'],
+  status: authModuleStyles['auth-status']
+} as const
 
+export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang }) => {
   return (
     <StaticPageRoot
       routeDataScriptId={STATIC_ISLAND_DATA_SCRIPT_ID}
       routeData={createStaticIslandRouteData('/login', lang, 'login')}
     >
-      <section class="fragment-shell auth-shell">
-        <div class="fragment-grid auth-grid" data-fragment-grid="main">
+      <section class={['fragment-shell', authClass.shell].join(' ')}>
+        <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
           <article class="fragment-card" style={{ gridColumn: 'span 12' }}>
-            <div class="auth-card" data-static-login-root data-mode="login" data-state="idle">
-                <div class="auth-header">
+            <div class={authClass.card} data-static-login-root data-mode="login" data-state="idle">
+                <div class={authClass.header}>
                 <div class="meta-line">{copy.loginMetaLine}</div>
-                <div class="auth-title">
+                <div class={authClass.title}>
                   <h1>{copy.loginTitle}</h1>
                   <p>{copy.loginDescription}</p>
                 </div>
               </div>
 
-              <div class="auth-panels">
+              <div class={authClass.panels}>
                 <div
-                  class="auth-panel"
+                  class={authClass.panel}
                   data-panel="login"
                   role="group"
                   aria-label={copy.authMethodsLabel}
                 >
-                  <div class="auth-actions">
+                  <div class={authClass.actions}>
                     <button
-                      class="auth-primary"
+                      class={authClass.primary}
                       type="button"
                       data-static-login-method="magic-link"
                       data-static-login-disable
@@ -58,12 +73,12 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                     </button>
                   </div>
 
-                  <div class="auth-social">
-                    <p class="auth-social-label">{copy.authSocialSectionLabel}</p>
-                    <div class="auth-social-actions">
+                  <div class={authClass.social}>
+                    <p class={authClass.socialLabel}>{copy.authSocialSectionLabel}</p>
+                    <div class={authClass.socialActions}>
                       <button
                         type="button"
-                        class="auth-social-button"
+                        class={authClass.socialButton}
                         data-static-login-method="google"
                         data-static-login-disable
                       >
@@ -71,7 +86,7 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                       </button>
                       <button
                         type="button"
-                        class="auth-social-button"
+                        class={authClass.socialButton}
                         data-static-login-method="github"
                         data-static-login-disable
                       >
@@ -80,14 +95,14 @@ export const StaticLoginRoute = component$<StaticLoginRouteProps>(({ copy, lang 
                     </div>
                   </div>
 
-                  <div class="auth-status" role="status" aria-live="polite" data-tone="neutral">
+                  <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
                     {copy.authHostedStatus}
                   </div>
                 </div>
               </div>
 
               <div
-                class="auth-status"
+                class={authClass.status}
                 role="status"
                 aria-live="polite"
                 hidden

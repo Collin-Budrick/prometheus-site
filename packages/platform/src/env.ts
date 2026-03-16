@@ -21,6 +21,11 @@ export type HighlightConfig = {
   serviceName: string
 }
 
+export type PartytownConfig = {
+  enabled: boolean
+  forward: string[]
+}
+
 export type P2pIceServer = {
   urls: string | string[]
   username?: string
@@ -39,6 +44,7 @@ export type AppConfig = {
   enablePrefetch: boolean
   analytics: AnalyticsConfig
   highlight: HighlightConfig
+  partytown: PartytownConfig
   p2pRelayBases: string[]
   p2pNostrRelays: string[]
   p2pWakuRelays: string[]
@@ -80,6 +86,10 @@ const runtimeEnvSchema = {
   FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   VITE_FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   VITE_ENABLE_PREFETCH: 'string?',
+  ENABLE_PARTYTOWN: 'string?',
+  VITE_ENABLE_PARTYTOWN: 'string?',
+  PARTYTOWN_FORWARD: 'string?',
+  VITE_PARTYTOWN_FORWARD: 'string?',
   VITE_ENABLE_ANALYTICS: 'string?',
   ANALYTICS_BEACON_URL: 'string?',
   VITE_ANALYTICS_BEACON_URL: 'string?',
@@ -129,6 +139,10 @@ const publicEnvSchema = {
   VITE_FRAGMENT_VISIBILITY_MARGIN: 'string?',
   VITE_FRAGMENT_VISIBILITY_THRESHOLD: 'string?',
   VITE_ENABLE_PREFETCH: 'string?',
+  ENABLE_PARTYTOWN: 'string?',
+  VITE_ENABLE_PARTYTOWN: 'string?',
+  PARTYTOWN_FORWARD: 'string?',
+  VITE_PARTYTOWN_FORWARD: 'string?',
   VITE_ENABLE_ANALYTICS: 'string?',
   VITE_ANALYTICS_BEACON_URL: 'string?',
   VITE_ENABLE_HIGHLIGHT: 'string?',
@@ -373,6 +387,20 @@ const resolveFragmentVisibilityThreshold = (env: AppEnv) => {
 export const isPrefetchEnabled = (env: AppEnv = resolveRuntimeEnv()) =>
   isTruthyFlag(env.VITE_ENABLE_PREFETCH)
 
+const resolvePartytownFlag = (env: AppEnv) =>
+  firstDefined(env.ENABLE_PARTYTOWN, env.VITE_ENABLE_PARTYTOWN)
+
+const resolvePartytownForward = (env: AppEnv) => {
+  const raw = toStringValue(firstDefined(env.PARTYTOWN_FORWARD, env.VITE_PARTYTOWN_FORWARD))?.trim() ?? ''
+  if (raw === '') return []
+  return Array.from(new Set(splitList(raw)))
+}
+
+export const resolvePartytownConfig = (env: AppEnv = resolveRuntimeEnv()): PartytownConfig => ({
+  enabled: isTruthyFlag(resolvePartytownFlag(env)),
+  forward: resolvePartytownForward(env)
+})
+
 const resolveAnalyticsBeaconUrl = (env: AppEnv) =>
   toStringValue(firstDefined(env.ANALYTICS_BEACON_URL, env.VITE_ANALYTICS_BEACON_URL))?.trim() ?? ''
 
@@ -578,6 +606,7 @@ export const resolveAppConfig = (env?: AppEnv): AppConfig => {
     enablePrefetch: isPrefetchEnabled(resolvedEnv),
     analytics: resolveAnalyticsConfig(resolvedEnv),
     highlight: resolveHighlightConfig(resolvedEnv),
+    partytown: resolvePartytownConfig(resolvedEnv),
     p2pRelayBases: resolveP2pRelayBases(resolvedEnv),
     p2pNostrRelays: resolveP2pNostrRelays(resolvedEnv),
     p2pWakuRelays: resolveP2pWakuRelays(resolvedEnv),

@@ -1,6 +1,7 @@
-import { $, component$, useComputed$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
+import authModuleStyles from '@features/auth/auth.module.css'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
@@ -20,7 +21,7 @@ import {
   type ProfileColor,
   type ProfilePayload
 } from '../../shared/profile-storage'
-import profileStyles from './profile.css?inline'
+import profileModuleStyles from './profile.module.css'
 import { emptyUiCopy, profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
@@ -98,6 +99,45 @@ const buildApiUrl = (path: string, origin: string, apiBase?: string) => {
   return `${base}${path}`
 }
 
+const authClass = {
+  field: authModuleStyles['auth-field'],
+  input: authModuleStyles['auth-input'],
+  status: authModuleStyles['auth-status']
+} as const
+
+const profileClass = {
+  details: profileModuleStyles['profile-details'],
+  row: profileModuleStyles['profile-row'],
+  card: profileModuleStyles['profile-card'],
+  cardHeader: profileModuleStyles['profile-card-header'],
+  cardTitle: profileModuleStyles['profile-card-title'],
+  cardHint: profileModuleStyles['profile-card-hint'],
+  cardSwatch: profileModuleStyles['profile-card-swatch'],
+  cardBody: profileModuleStyles['profile-card-body'],
+  preview: profileModuleStyles['profile-preview'],
+  previewName: profileModuleStyles['profile-preview-name'],
+  previewEmail: profileModuleStyles['profile-preview-email'],
+  previewBio: profileModuleStyles['profile-preview-bio'],
+  avatarBlock: profileModuleStyles['profile-avatar-block'],
+  avatar: profileModuleStyles['profile-avatar'],
+  avatarInfo: profileModuleStyles['profile-avatar-info'],
+  avatarTitle: profileModuleStyles['profile-avatar-title'],
+  avatarSubtitle: profileModuleStyles['profile-avatar-subtitle'],
+  avatarActions: profileModuleStyles['profile-avatar-actions'],
+  avatarUpload: profileModuleStyles['profile-avatar-upload'],
+  avatarRemove: profileModuleStyles['profile-avatar-remove'],
+  field: profileModuleStyles['profile-field'],
+  textarea: profileModuleStyles['profile-textarea'],
+  fieldMeta: profileModuleStyles['profile-field-meta'],
+  colorPicker: profileModuleStyles['profile-color-picker'],
+  colorHeader: profileModuleStyles['profile-color-header'],
+  colorTitle: profileModuleStyles['profile-color-title'],
+  colorWell: profileModuleStyles['profile-color-well'],
+  colorRow: profileModuleStyles['profile-color-row'],
+  colorLabel: profileModuleStyles['profile-color-label'],
+  colorSlider: profileModuleStyles['profile-color-slider']
+} as const
+
 export const useProfileData = routeLoader$<ProfileData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
@@ -145,7 +185,6 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
-  useStyles$(profileStyles)
   const data = useProfileData()
   useLanguageSeed(data.value.lang, data.value.languageSeed)
   const copy = useLangCopy(useSharedLangSignal(data.value.lang))
@@ -352,11 +391,11 @@ export default component$(() => {
         closeLabel={copy.value.fragmentClose}
       >
         <div data-static-profile-root>
-          <div class="profile-details">
-            <label class="auth-field">
+          <div class={profileClass.details}>
+            <label class={authClass.field}>
               <span>{copy.value.authNameLabel}</span>
               <input
-                class="auth-input"
+                class={authClass.input}
                 type="text"
                 maxLength={64}
                 placeholder={copy.value.profileNamePlaceholder}
@@ -367,19 +406,19 @@ export default component$(() => {
               />
             </label>
             {nameValue ? (
-              <div class="profile-row">
+              <div class={profileClass.row}>
                 <span>{copy.value.authNameLabel}</span>
                 <strong data-static-profile-name-value>{nameValue}</strong>
               </div>
             ) : null}
             {emailValue ? (
-              <div class="profile-row">
+              <div class={profileClass.row}>
                 <span>{copy.value.authEmailLabel}</span>
                 <strong data-static-profile-email-value>{emailValue}</strong>
               </div>
             ) : null}
             {user.id ? (
-              <div class="profile-row">
+              <div class={profileClass.row}>
                  <span>{copy.value.profileIdLabel}</span>
                 <strong data-static-profile-id-value>{user.id}</strong>
               </div>
@@ -387,7 +426,7 @@ export default component$(() => {
           </div>
           {statusMessage.value ? (
             <div
-              class="auth-status"
+              class={authClass.status}
               role="status"
               aria-live="polite"
               data-tone={statusTone.value}
@@ -397,50 +436,50 @@ export default component$(() => {
             </div>
           ) : null}
           <div
-            class="profile-card"
+            class={profileClass.card}
             style={{
               '--profile-accent': `${localColor.value.r} ${localColor.value.g} ${localColor.value.b}`
             }}
           >
-            <div class="profile-card-header">
+            <div class={profileClass.cardHeader}>
               <div>
-                 <p class="profile-card-title">{copy.value.profileCardTitle}</p>
-                 <p class="profile-card-hint">{copy.value.profileCardHint}</p>
+                 <p class={profileClass.cardTitle}>{copy.value.profileCardTitle}</p>
+                 <p class={profileClass.cardHint}>{copy.value.profileCardHint}</p>
               </div>
-              <div class="profile-card-swatch" data-static-profile-color-hex>
+              <div class={profileClass.cardSwatch} data-static-profile-color-hex>
                 <span>RGB</span>
                 <strong>{colorHex.value}</strong>
               </div>
             </div>
-            <div class="profile-card-body">
-              <div class="profile-preview">
-                 <p class="profile-preview-name" data-static-profile-preview-name>{nameValue ?? profileFallbackName}</p>
+            <div class={profileClass.cardBody}>
+              <div class={profileClass.preview}>
+                 <p class={profileClass.previewName} data-static-profile-preview-name>{nameValue ?? profileFallbackName}</p>
                 {emailValue ? (
-                  <p class="profile-preview-email" data-static-profile-preview-email>
+                  <p class={profileClass.previewEmail} data-static-profile-preview-email>
                     {emailValue}
                   </p>
                 ) : null}
                 <p
-                  class="profile-preview-bio"
+                  class={profileClass.previewBio}
                   data-empty={localBio.value ? 'false' : 'true'}
                   data-static-profile-preview-bio
                 >
                    {localBio.value || copy.value.profileBioEmpty}
                 </p>
               </div>
-              <div class="profile-avatar-block">
-                <div class="profile-avatar" data-empty={localAvatar.value ? 'false' : 'true'} data-static-profile-avatar>
+              <div class={profileClass.avatarBlock}>
+                <div class={profileClass.avatar} data-empty={localAvatar.value ? 'false' : 'true'} data-static-profile-avatar>
                   {localAvatar.value ? (
                      <img src={localAvatar.value} alt={copy.value.profileAvatarAlt} loading="lazy" />
                   ) : (
                     <span>{avatarInitials.value}</span>
                   )}
                 </div>
-                <div class="profile-avatar-info">
-                   <p class="profile-avatar-title">{copy.value.profilePhotoTitle}</p>
-                   <p class="profile-avatar-subtitle">{copy.value.profilePhotoHint}</p>
-                  <div class="profile-avatar-actions">
-                    <label class="profile-avatar-upload">
+                <div class={profileClass.avatarInfo}>
+                   <p class={profileClass.avatarTitle}>{copy.value.profilePhotoTitle}</p>
+                   <p class={profileClass.avatarSubtitle}>{copy.value.profilePhotoHint}</p>
+                  <div class={profileClass.avatarActions}>
+                    <label class={profileClass.avatarUpload}>
                       <input
                         type="file"
                         accept="image/*"
@@ -452,7 +491,7 @@ export default component$(() => {
                     {localAvatar.value ? (
                       <button
                         type="button"
-                        class="profile-avatar-remove"
+                        class={profileClass.avatarRemove}
                         data-static-profile-avatar-remove
                         onClick$={handleAvatarRemove}
                       >
@@ -462,10 +501,10 @@ export default component$(() => {
                   </div>
                 </div>
               </div>
-              <label class="profile-field">
+              <label class={profileClass.field}>
                 <span>{copy.value.profileBioLabel}</span>
                 <textarea
-                  class="profile-textarea"
+                  class={profileClass.textarea}
                   maxLength={160}
                   rows={3}
                    placeholder={copy.value.profileBioPlaceholder}
@@ -473,16 +512,16 @@ export default component$(() => {
                   data-static-profile-bio
                   onInput$={handleBioInput}
                 />
-                <span class="profile-field-meta">{bioCount.value}/160</span>
+                <span class={profileClass.fieldMeta}>{bioCount.value}/160</span>
               </label>
-              <div class="profile-color-picker">
-                <div class="profile-color-header">
+              <div class={profileClass.colorPicker}>
+                <div class={profileClass.colorHeader}>
                   <div>
-                     <p class="profile-color-title">{copy.value.profileColorTitle}</p>
-                     <p class="profile-card-hint">{copy.value.profileColorHint}</p>
+                     <p class={profileClass.colorTitle}>{copy.value.profileColorTitle}</p>
+                     <p class={profileClass.cardHint}>{copy.value.profileColorHint}</p>
                   </div>
                   <label
-                    class="profile-color-well"
+                    class={profileClass.colorWell}
                     style={{ background: `rgb(${localColor.value.r} ${localColor.value.g} ${localColor.value.b})` }}
                   >
                     <input
@@ -494,8 +533,8 @@ export default component$(() => {
                     />
                   </label>
                 </div>
-                <div class="profile-color-row">
-                  <div class="profile-color-label">
+                <div class={profileClass.colorRow}>
+                  <div class={profileClass.colorLabel}>
                      <span>{copy.value.profileColorRed}</span>
                     <strong>{localColor.value.r}</strong>
                   </div>
@@ -504,7 +543,7 @@ export default component$(() => {
                     min={0}
                     max={255}
                     value={localColor.value.r}
-                    class="profile-color-slider"
+                    class={profileClass.colorSlider}
                     style={{
                       '--color-start': `0 ${localColor.value.g} ${localColor.value.b}`,
                       '--color-end': `255 ${localColor.value.g} ${localColor.value.b}`
@@ -513,8 +552,8 @@ export default component$(() => {
                     onInput$={handleRedInput}
                   />
                 </div>
-                <div class="profile-color-row">
-                  <div class="profile-color-label">
+                <div class={profileClass.colorRow}>
+                  <div class={profileClass.colorLabel}>
                      <span>{copy.value.profileColorGreen}</span>
                     <strong>{localColor.value.g}</strong>
                   </div>
@@ -523,7 +562,7 @@ export default component$(() => {
                     min={0}
                     max={255}
                     value={localColor.value.g}
-                    class="profile-color-slider"
+                    class={profileClass.colorSlider}
                     style={{
                       '--color-start': `${localColor.value.r} 0 ${localColor.value.b}`,
                       '--color-end': `${localColor.value.r} 255 ${localColor.value.b}`
@@ -532,8 +571,8 @@ export default component$(() => {
                     onInput$={handleGreenInput}
                   />
                 </div>
-                <div class="profile-color-row">
-                  <div class="profile-color-label">
+                <div class={profileClass.colorRow}>
+                  <div class={profileClass.colorLabel}>
                      <span>{copy.value.profileColorBlue}</span>
                     <strong>{localColor.value.b}</strong>
                   </div>
@@ -542,7 +581,7 @@ export default component$(() => {
                     min={0}
                     max={255}
                     value={localColor.value.b}
-                    class="profile-color-slider"
+                    class={profileClass.colorSlider}
                     style={{
                       '--color-start': `${localColor.value.r} ${localColor.value.g} 0`,
                       '--color-end': `${localColor.value.r} ${localColor.value.g} 255`
@@ -556,7 +595,7 @@ export default component$(() => {
           </div>
           {localStatus.value ? (
             <div
-              class="auth-status"
+              class={authClass.status}
               role="status"
               aria-live="polite"
               data-tone={localStatusTone.value}

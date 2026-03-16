@@ -54,6 +54,7 @@
         "yjs": "13.6.29",
       },
       "devDependencies": {
+        "@qwik.dev/partytown": "^0.11.2",
         "@rolldown/binding-win32-arm64-msvc": "1.0.0-rc.9",
         "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.9",
         "@serwist/vite": "9.5.7",
@@ -565,6 +566,8 @@
     "@prometheus/spacetimedb-client": ["@prometheus/spacetimedb-client@workspace:packages/spacetimedb-client"],
 
     "@prometheus/ui": ["@prometheus/ui@workspace:packages/ui"],
+
+    "@qwik.dev/partytown": ["@qwik.dev/partytown@0.11.2", "", { "dependencies": { "dotenv": "^16.4.7" }, "bin": { "partytown": "bin/partytown.cjs" } }, "sha512-795y49CqBiKiwKAD+QBZlzlqEK275hVcazZ7wBPSfgC23L+vWuA7PJmMpgxojOucZHzYi5rAAQ+IP1I3BKVZxw=="],
 
     "@qwikest/icons": ["@qwikest/icons@0.0.13", "", { "peerDependencies": { "@builder.io/qwik": ">=1.0.0" } }, "sha512-e0wY8vmx0nDSUiuCATlk+ojTvdBV4txIGHHWjZW5SRkv4XB8H9+3WSDcLPz0ItUdRyzcrohE9k2jtQI/98aRPA=="],
 

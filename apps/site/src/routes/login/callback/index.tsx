@@ -1,7 +1,7 @@
-import { component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
-import authStyles from '@features/auth/auth.css?inline'
+import authModuleStyles from '@features/auth/auth.module.css'
 import { appConfig } from '../../../public-app-config'
 import { siteBrand } from '../../../config'
 import { createCacheHandler } from '../../cache-headers'
@@ -21,8 +21,18 @@ export const head: DocumentHead = {
   ]
 }
 
+const authClass = {
+  shell: authModuleStyles['auth-shell'],
+  grid: authModuleStyles['auth-grid'],
+  card: authModuleStyles['auth-card'],
+  header: authModuleStyles['auth-header'],
+  title: authModuleStyles['auth-title'],
+  actions: authModuleStyles['auth-actions'],
+  primary: authModuleStyles['auth-primary'],
+  status: authModuleStyles['auth-status']
+} as const
+
 export default component$(() => {
-  useStyles$(authStyles)
   const message = useSignal('Finishing the hosted sign-in flow...')
   const error = useSignal<string | null>(null)
   const expandedId = useSignal<string | null>(null)
@@ -41,8 +51,8 @@ export default component$(() => {
   })
 
   return (
-    <section class="fragment-shell auth-shell">
-      <div class="fragment-grid auth-grid" data-fragment-grid="main">
+    <section class={['fragment-shell', authClass.shell].join(' ')}>
+      <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
         <FragmentCard
           id="auth:callback"
           column="span 12"
@@ -51,10 +61,10 @@ export default component$(() => {
           layoutTick={layoutTick}
           closeLabel="Close"
         >
-          <div class="auth-card" data-mode="login" data-state={error.value ? 'error' : 'submitting'}>
-            <div class="auth-header">
+          <div class={authClass.card} data-mode="login" data-state={error.value ? 'error' : 'submitting'}>
+            <div class={authClass.header}>
               <div class="meta-line">SpacetimeAuth callback</div>
-              <div class="auth-title">
+              <div class={authClass.title}>
                 <h1>{error.value ? 'Sign-in failed' : 'Completing sign-in'}</h1>
                 <p>{message.value}</p>
               </div>
@@ -62,17 +72,17 @@ export default component$(() => {
 
             {error.value ? (
               <>
-                <div class="auth-status" role="alert" aria-live="assertive" data-tone="error">
+                <div class={authClass.status} role="alert" aria-live="assertive" data-tone="error">
                   {error.value}
                 </div>
-                <div class="auth-actions">
-                  <Link class="auth-primary" href="/login">
+                <div class={authClass.actions}>
+                  <Link class={authClass.primary} href="/login" prefetch="js">
                     Return to login
                   </Link>
                 </div>
               </>
             ) : (
-              <div class="auth-status" role="status" aria-live="polite" data-tone="neutral">
+              <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
                 Verifying the returned ID token, syncing the site session, and restoring your bootstrap state.
               </div>
             )}

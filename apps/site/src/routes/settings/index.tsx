@@ -1,6 +1,7 @@
-import { $, component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
+import authModuleStyles from '@features/auth/auth.module.css'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
@@ -16,7 +17,7 @@ import {
   saveChatSettings,
   type ChatSettings
 } from '../../shared/chat-settings'
-import settingsStyles from './settings.css?inline'
+import settingsModuleStyles from './settings.module.css'
 import {
   getPrivacyScreenAlwaysOn,
   setPrivacyScreenAlwaysOn,
@@ -70,6 +71,32 @@ const resolveFriendCodeUser = (user?: ProtectedRouteData['user']): FriendCodeUse
     return fallback
   }
 }
+
+const authClass = {
+  status: authModuleStyles['auth-status']
+} as const
+
+const settingsClass = {
+  panel: settingsModuleStyles['settings-panel'],
+  panelHeader: settingsModuleStyles['settings-panel-header'],
+  panelTitle: settingsModuleStyles['settings-panel-title'],
+  panelDescription: settingsModuleStyles['settings-panel-description'],
+  toggleRow: settingsModuleStyles['settings-toggle-row'],
+  toggleLabel: settingsModuleStyles['settings-toggle-label'],
+  toggleTitle: settingsModuleStyles['settings-toggle-title'],
+  toggleHint: settingsModuleStyles['settings-toggle-hint'],
+  actionRow: settingsModuleStyles['settings-action-row'],
+  actionLabel: settingsModuleStyles['settings-action-label'],
+  actionButton: settingsModuleStyles['settings-action-button'],
+  inviteRow: settingsModuleStyles['settings-invite-row'],
+  inviteLabel: settingsModuleStyles['settings-invite-label'],
+  inviteActions: settingsModuleStyles['settings-invite-actions'],
+  inviteCode: settingsModuleStyles['settings-invite-code'],
+  toggle: settingsModuleStyles['chat-settings-toggle'],
+  toggleTrack: settingsModuleStyles['chat-settings-toggle-track'],
+  toggleKnob: settingsModuleStyles['chat-settings-toggle-knob'],
+  range: settingsModuleStyles['settings-range']
+} as const
 
 export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
   const { createServerLanguageSeed } = await import('../../lang/server')
@@ -127,7 +154,6 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
 }
 
 export default component$(() => {
-  useStyles$(settingsStyles)
   const data = useSettingsData()
   useLanguageSeed(data.value.lang, data.value.languageSeed)
   const copy = useLangCopy(useSharedLangSignal(data.value.lang))
@@ -312,63 +338,63 @@ export default component$(() => {
         closeLabel={copy.value.fragmentClose}
       >
         <div data-static-settings-root>
-      <section class="settings-panel">
-        <div class="settings-panel-header">
-          <span class="settings-panel-title">{copy.value.settingsChatTitle}</span>
-          <p class="settings-panel-description">{copy.value.settingsChatDescription}</p>
+      <section class={settingsClass.panel}>
+        <div class={settingsClass.panelHeader}>
+          <span class={settingsClass.panelTitle}>{copy.value.settingsChatTitle}</span>
+          <p class={settingsClass.panelDescription}>{copy.value.settingsChatDescription}</p>
         </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-label">
-            <span class="settings-toggle-title">{copy.value.settingsChatReadReceipts}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsChatReadReceiptsHint}</span>
+        <div class={settingsClass.toggleRow}>
+          <div class={settingsClass.toggleLabel}>
+            <span class={settingsClass.toggleTitle}>{copy.value.settingsChatReadReceipts}</span>
+            <span class={settingsClass.toggleHint}>{copy.value.settingsChatReadReceiptsHint}</span>
           </div>
           <button
             type="button"
-            class="chat-settings-toggle"
+            class={settingsClass.toggle}
             data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
             data-static-settings-toggle="read-receipts"
             role="switch"
             aria-checked={chatSettings.value.readReceipts}
             onClick$={toggleReadReceipts}
           >
-            <span class="chat-settings-toggle-track">
-              <span class="chat-settings-toggle-knob" />
+            <span class={settingsClass.toggleTrack}>
+              <span class={settingsClass.toggleKnob} />
             </span>
           </button>
         </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-label">
-            <span class="settings-toggle-title">{copy.value.settingsChatTypingIndicators}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsChatTypingIndicatorsHint}</span>
+        <div class={settingsClass.toggleRow}>
+          <div class={settingsClass.toggleLabel}>
+            <span class={settingsClass.toggleTitle}>{copy.value.settingsChatTypingIndicators}</span>
+            <span class={settingsClass.toggleHint}>{copy.value.settingsChatTypingIndicatorsHint}</span>
           </div>
           <button
             type="button"
-            class="chat-settings-toggle"
+            class={settingsClass.toggle}
             data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
             data-static-settings-toggle="typing-indicators"
             role="switch"
             aria-checked={chatSettings.value.typingIndicators}
             onClick$={toggleTypingIndicators}
           >
-            <span class="chat-settings-toggle-track">
-              <span class="chat-settings-toggle-knob" />
+            <span class={settingsClass.toggleTrack}>
+              <span class={settingsClass.toggleKnob} />
             </span>
           </button>
         </div>
       </section>
-      <section class="settings-panel">
-        <div class="settings-panel-header">
-          <span class="settings-panel-title">{copy.value.settingsInviteTitle}</span>
-          <p class="settings-panel-description">{copy.value.settingsInviteDescription}</p>
+      <section class={settingsClass.panel}>
+        <div class={settingsClass.panelHeader}>
+          <span class={settingsClass.panelTitle}>{copy.value.settingsInviteTitle}</span>
+          <p class={settingsClass.panelDescription}>{copy.value.settingsInviteDescription}</p>
         </div>
-        <div class="settings-invite-row">
-          <div class="settings-invite-label">
-            <span class="settings-toggle-title">{copy.value.settingsInviteCodeLabel}</span>
+        <div class={settingsClass.inviteRow}>
+          <div class={settingsClass.inviteLabel}>
+            <span class={settingsClass.toggleTitle}>{copy.value.settingsInviteCodeLabel}</span>
           </div>
-          <div class="settings-invite-actions">
+          <div class={settingsClass.inviteActions}>
             <button
               type="button"
-              class="settings-action-button"
+              class={settingsClass.actionButton}
               disabled={!friendCode.value}
               data-static-settings-action="copy-friend-code"
               onClick$={handleCopyFriendCode}
@@ -377,7 +403,7 @@ export default component$(() => {
             </button>
             <button
               type="button"
-              class="settings-action-button"
+              class={settingsClass.actionButton}
               data-static-settings-action="rotate-friend-code"
               onClick$={handleRotateFriendCode}
             >
@@ -386,7 +412,7 @@ export default component$(() => {
           </div>
         </div>
         <textarea
-          class="settings-invite-code"
+          class={settingsClass.inviteCode}
           readOnly
           value={friendCode.value}
           data-static-settings-friend-code
@@ -394,7 +420,7 @@ export default component$(() => {
         />
         {friendCodeStatus.value ? (
           <div
-            class="auth-status"
+            class={authClass.status}
             role="status"
             aria-live="polite"
             data-tone={friendCodeStatus.value.tone}
@@ -405,52 +431,52 @@ export default component$(() => {
         ) : null}
       </section>
       {!nativeRuntime.value ? (
-        <section class="settings-panel">
-          <div class="settings-panel-header">
-            <span class="settings-panel-title">{copy.value.settingsOfflineTitle}</span>
-            <p class="settings-panel-description">{copy.value.settingsOfflineDescription}</p>
+        <section class={settingsClass.panel}>
+          <div class={settingsClass.panelHeader}>
+            <span class={settingsClass.panelTitle}>{copy.value.settingsOfflineTitle}</span>
+            <p class={settingsClass.panelDescription}>{copy.value.settingsOfflineDescription}</p>
           </div>
-          <div class="settings-toggle-row">
-            <div class="settings-toggle-label">
-              <span class="settings-toggle-title">{copy.value.settingsOfflineToggleLabel}</span>
-              <span class="settings-toggle-hint">{copy.value.settingsOfflineToggleHint}</span>
+          <div class={settingsClass.toggleRow}>
+            <div class={settingsClass.toggleLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsOfflineToggleLabel}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsOfflineToggleHint}</span>
             </div>
             <button
               type="button"
-              class="chat-settings-toggle"
+              class={settingsClass.toggle}
               data-active={!swOptOut.value ? 'true' : 'false'}
               data-static-settings-toggle="offline-cache"
               role="switch"
               aria-checked={!swOptOut.value}
               onClick$={toggleOfflineCache}
             >
-              <span class="chat-settings-toggle-track">
-                <span class="chat-settings-toggle-knob" />
+              <span class={settingsClass.toggleTrack}>
+                <span class={settingsClass.toggleKnob} />
               </span>
             </button>
           </div>
-          <div class="settings-action-row">
-            <div class="settings-action-label">
-              <span class="settings-toggle-title">{copy.value.settingsOfflineRefreshLabel}</span>
-              <span class="settings-toggle-hint">{copy.value.settingsOfflineRefreshHint}</span>
+          <div class={settingsClass.actionRow}>
+            <div class={settingsClass.actionLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsOfflineRefreshLabel}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsOfflineRefreshHint}</span>
             </div>
             <button
               type="button"
-              class="settings-action-button"
+              class={settingsClass.actionButton}
               data-static-settings-action="offline-refresh"
               onClick$={handleOfflineRefresh}
             >
               {copy.value.settingsOfflineRefreshAction}
             </button>
           </div>
-          <div class="settings-action-row">
-            <div class="settings-action-label">
-              <span class="settings-toggle-title">{copy.value.settingsOfflineCleanupLabel}</span>
-              <span class="settings-toggle-hint">{copy.value.settingsOfflineCleanupHint}</span>
+          <div class={settingsClass.actionRow}>
+            <div class={settingsClass.actionLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsOfflineCleanupLabel}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsOfflineCleanupHint}</span>
             </div>
             <button
               type="button"
-              class="settings-action-button"
+              class={settingsClass.actionButton}
               data-static-settings-action="offline-cleanup"
               onClick$={handleOfflineCleanup}
             >
@@ -459,7 +485,7 @@ export default component$(() => {
           </div>
           {swStatus.value ? (
             <div
-              class="auth-status"
+              class={authClass.status}
               role="status"
               aria-live="polite"
               data-tone={swStatus.value.tone}
@@ -471,21 +497,21 @@ export default component$(() => {
         </section>
       ) : null}
 
-      <section class="settings-panel">
-        <div class="settings-panel-header">
-          <span class="settings-panel-title">{copy.value.settingsNativeAccessibilityTitle}</span>
-          <p class="settings-panel-description">{copy.value.settingsNativeAccessibilityDescription}</p>
+      <section class={settingsClass.panel}>
+        <div class={settingsClass.panelHeader}>
+          <span class={settingsClass.panelTitle}>{copy.value.settingsNativeAccessibilityTitle}</span>
+          <p class={settingsClass.panelDescription}>{copy.value.settingsNativeAccessibilityDescription}</p>
         </div>
-        <div class="settings-action-row">
-          <div class="settings-action-label">
-            <label class="settings-toggle-title" for="settings-text-zoom">
+        <div class={settingsClass.actionRow}>
+          <div class={settingsClass.actionLabel}>
+            <label class={settingsClass.toggleTitle} for="settings-text-zoom">
               {copy.value.settingsNativeTextZoomAction} ({textZoom.value}%)
             </label>
-            <span class="settings-toggle-hint">{copy.value.settingsNativeTextZoomHint}</span>
+            <span class={settingsClass.toggleHint}>{copy.value.settingsNativeTextZoomHint}</span>
           </div>
           <input
             id="settings-text-zoom"
-            class="settings-range"
+            class={settingsClass.range}
             type="range"
             min="85"
             max="140"
@@ -499,28 +525,28 @@ export default component$(() => {
             onInput$={handleTextZoomInput}
           />
         </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-label">
-            <span class="settings-toggle-title">{copy.value.settingsNativePrivacyShieldAction}</span>
-            <span class="settings-toggle-hint">{copy.value.settingsNativePrivacyShieldHint}</span>
+        <div class={settingsClass.toggleRow}>
+          <div class={settingsClass.toggleLabel}>
+            <span class={settingsClass.toggleTitle}>{copy.value.settingsNativePrivacyShieldAction}</span>
+            <span class={settingsClass.toggleHint}>{copy.value.settingsNativePrivacyShieldHint}</span>
           </div>
           <button
             type="button"
-            class="chat-settings-toggle"
+            class={settingsClass.toggle}
             data-active={privacyAlwaysOn.value ? 'true' : 'false'}
             data-static-settings-toggle="privacy-always-on"
             role="switch"
             aria-checked={privacyAlwaysOn.value}
             onClick$={togglePrivacyAlwaysOn}
           >
-            <span class="chat-settings-toggle-track">
-              <span class="chat-settings-toggle-knob" />
+            <span class={settingsClass.toggleTrack}>
+              <span class={settingsClass.toggleKnob} />
             </span>
           </button>
         </div>
       </section>
       {logoutMessage.value ? (
-        <div class="auth-status" role="status" aria-live="polite" data-tone="error" data-static-settings-logout-status>
+        <div class={authClass.status} role="status" aria-live="polite" data-tone="error" data-static-settings-logout-status>
           {logoutMessage.value}
         </div>
       ) : null}

@@ -1,7 +1,7 @@
-import { $, component$, useSignal, useStyles$, useVisibleTask$ } from '@builder.io/qwik'
+import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { FragmentCard } from '@prometheus/ui'
 import type { AuthFormState } from './auth-form-state'
-import authStyles from './auth.css?inline'
+import authModuleStyles from './auth.module.css'
 import { loadClientAuthSession } from '@site/shared/auth-session-client'
 import {
   ensureSpacetimeAuthSession,
@@ -74,6 +74,23 @@ const defaultAuthCopy: AuthCopy = {
   closeLabel: 'Close'
 }
 
+const authClass = {
+  shell: authModuleStyles['auth-shell'],
+  grid: authModuleStyles['auth-grid'],
+  card: authModuleStyles['auth-card'],
+  header: authModuleStyles['auth-header'],
+  title: authModuleStyles['auth-title'],
+  panels: authModuleStyles['auth-panels'],
+  panel: authModuleStyles['auth-panel'],
+  actions: authModuleStyles['auth-actions'],
+  primary: authModuleStyles['auth-primary'],
+  social: authModuleStyles['auth-social'],
+  socialLabel: authModuleStyles['auth-social-label'],
+  socialActions: authModuleStyles['auth-social-actions'],
+  socialButton: authModuleStyles['auth-social-button'],
+  status: authModuleStyles['auth-status']
+} as const
+
 const resolveNextPath = (href: string) => {
   try {
     const url = new URL(href)
@@ -92,7 +109,6 @@ export const LoginRoute = component$<{
   apiBase?: string
   initialFormState?: AuthFormState
 }>(({ copy, apiBase }) => {
-  useStyles$(authStyles)
   const resolvedCopy = { ...defaultAuthCopy, ...copy }
   const statusMessage = useSignal<string | null>(null)
   const statusTone = useSignal<StatusTone>('neutral')
@@ -155,8 +171,8 @@ export const LoginRoute = component$<{
   const busy = pendingMethod.value !== null || !ready.value || !configured.value
 
   return (
-    <section class="fragment-shell auth-shell">
-      <div class="fragment-grid auth-grid" data-fragment-grid="main">
+    <section class={['fragment-shell', authClass.shell].join(' ')}>
+      <div class={['fragment-grid', authClass.grid].join(' ')} data-fragment-grid="main">
         <FragmentCard
           id={cardId}
           column="span 12"
@@ -165,29 +181,29 @@ export const LoginRoute = component$<{
           layoutTick={layoutTick}
           closeLabel={resolvedCopy.closeLabel}
         >
-          <div class="auth-card" data-mode="login" data-state={busy ? 'submitting' : 'idle'}>
-            <div class="auth-header">
+          <div class={authClass.card} data-mode="login" data-state={busy ? 'submitting' : 'idle'}>
+            <div class={authClass.header}>
               <div class="meta-line">{resolvedCopy.metaLine}</div>
-              <div class="auth-title">
+              <div class={authClass.title}>
                 <h1>{resolvedCopy.title}</h1>
                 <p>{resolvedCopy.description}</p>
               </div>
             </div>
 
-            <div class="auth-panels">
-              <div class="auth-panel" data-panel="login" role="group" aria-label={resolvedCopy.methodsLabel}>
-                <div class="auth-actions">
-                  <button class="auth-primary" type="button" disabled={busy} onClick$={() => handleLogin('magic-link')}>
+            <div class={authClass.panels}>
+              <div class={authClass.panel} data-panel="login" role="group" aria-label={resolvedCopy.methodsLabel}>
+                <div class={authClass.actions}>
+                  <button class={authClass.primary} type="button" disabled={busy} onClick$={() => handleLogin('magic-link')}>
                     {resolvedCopy.actionLabel}
                   </button>
                 </div>
 
-                <div class="auth-social">
-                  <p class="auth-social-label">{resolvedCopy.socialSectionLabel}</p>
-                  <div class="auth-social-actions">
+                <div class={authClass.social}>
+                  <p class={authClass.socialLabel}>{resolvedCopy.socialSectionLabel}</p>
+                  <div class={authClass.socialActions}>
                     <button
                       type="button"
-                      class="auth-social-button"
+                      class={authClass.socialButton}
                       disabled={busy}
                       onClick$={() => handleLogin('google')}
                     >
@@ -195,7 +211,7 @@ export const LoginRoute = component$<{
                     </button>
                     <button
                       type="button"
-                      class="auth-social-button"
+                      class={authClass.socialButton}
                       disabled={busy}
                       onClick$={() => handleLogin('github')}
                     >
@@ -204,14 +220,14 @@ export const LoginRoute = component$<{
                   </div>
                 </div>
 
-                <div class="auth-status" role="status" aria-live="polite" data-tone="neutral">
+                <div class={authClass.status} role="status" aria-live="polite" data-tone="neutral">
                   {resolvedCopy.hostedStatus}
                 </div>
               </div>
             </div>
 
             {statusMessage.value ? (
-              <div class="auth-status" role="status" aria-live="polite" data-tone={statusTone.value}>
+              <div class={authClass.status} role="status" aria-live="polite" data-tone={statusTone.value}>
                 {statusMessage.value}
               </div>
             ) : null}

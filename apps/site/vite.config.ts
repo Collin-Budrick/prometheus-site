@@ -3,6 +3,7 @@ import type { RollupLog, RollupLogWithString } from 'rolldown'
 import { qwikCity } from '@builder.io/qwik-city/vite'
 import { staticAdapter } from '@builder.io/qwik-city/adapters/static/vite'
 import { qwikVite } from '@builder.io/qwik/optimizer'
+import { partytownVite } from '@qwik.dev/partytown/utils'
 import tailwindcss from '@tailwindcss/vite'
 import { serwist } from '@serwist/vite'
 import { compression, defineAlgorithm } from 'vite-plugin-compression2'
@@ -757,14 +758,20 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         earlyHintsPlugin(),
         fragmentHmrPlugin(),
         staticCacheHeadersPlugin(),
+    partytownVite({
+      dest: path.resolve(process.cwd(), 'dist', '~partytown')
+    }),
         tailwindcss(),
         ...(bundleVisualizer ? [bundleVisualizer] : []),
-        qwikCity(),
+        qwikCity({
+          imageOptimization: {
+            enabled: 'only-production'
+          }
+        }),
         qwikVite({
           entryStrategy: { type: 'smart' },
           optimizerOptions: {
-            binding,
-            inlineStylesUpToBytes: 60000
+            binding
           }
         }),
         ...(staticBuildEnabled
