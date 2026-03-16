@@ -1,5 +1,9 @@
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
-import { STATIC_FRAGMENT_PAINT_ATTR, STATIC_HOME_PAINT_ATTR } from './constants'
+import {
+  STATIC_FRAGMENT_PAINT_ATTR,
+  STATIC_HOME_LCP_STABLE_ATTR,
+  STATIC_HOME_PAINT_ATTR
+} from './constants'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 
 type SnapshotReadyStaggerDocument = Pick<Document, 'querySelector'>
@@ -17,7 +21,7 @@ type ReplayStaticSnapshotReadyStaggerOptions = {
 
 const STATIC_HOME_ROOT_SELECTOR = '[data-static-home-root]'
 const STATIC_HOME_READY_STAGGER_SELECTOR =
-  '[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]'
+  `[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([${STATIC_HOME_LCP_STABLE_ATTR}="true"])`
 const STATIC_FRAGMENT_ROOT_SELECTOR = '[data-static-fragment-root]'
 const STATIC_FRAGMENT_READY_STAGGER_SELECTOR =
   '[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]'

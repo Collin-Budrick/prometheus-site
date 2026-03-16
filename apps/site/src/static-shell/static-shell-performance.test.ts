@@ -238,7 +238,12 @@ describe("static shell performance invariants", () => {
       "const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'",
     );
     expect(homeRouteSource).toContain("STATIC_HOME_LCP_STABLE_ATTR");
-    expect(homeRouteSource).toContain("lcpStable: Boolean(entry.critical)");
+    expect(homeRouteSource).toContain("const lcpStable = Boolean(entry.critical)");
+    expect(homeRouteSource).toContain(
+      "revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding'",
+    );
+    expect(homeRouteSource).toContain('data-fragment-id="shell-intro"');
+    expect(homeRouteSource).toContain('data-reveal-phase="visible"');
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR");
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR");
     expect(homeRouteSource).toContain("homeDemoAssets");

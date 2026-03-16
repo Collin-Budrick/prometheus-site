@@ -5,6 +5,7 @@ import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
+  STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
@@ -49,7 +50,7 @@ type InstallHomeStaticEntryOptions = {
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
-const HOME_READY_STAGGER_SELECTOR = '[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]'
+const HOME_READY_STAGGER_SELECTOR = `[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([${STATIC_HOME_LCP_STABLE_ATTR}="true"])`
 const HOME_COLLAB_VISIBILITY_ROOT_MARGIN = '0px'
 
 const isAutoBootstrapHomeCardStage = (value: string | null) => value === 'anchor' || value === 'deferred'

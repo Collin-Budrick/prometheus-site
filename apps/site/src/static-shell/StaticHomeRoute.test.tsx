@@ -111,6 +111,7 @@ describe('StaticHomeRoute', () => {
     expect(manifestoCard?.html).toContain('home-manifest-pills')
     expect(manifestoCard?.html).toContain('home-manifest-copy')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
+    expect(manifestoCard?.revealPhase).toBe('visible')
     expect(manifestoCard?.lcpStable).toBe(true)
     expect(plannerCard?.html).toContain('home-fragment-copy')
     expect(plannerCard?.html).toContain('home-demo-compact')

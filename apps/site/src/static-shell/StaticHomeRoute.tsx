@@ -74,7 +74,7 @@ type StaticHomeRenderedCard = {
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
   patchState: 'ready' | 'pending'
-  revealPhase: 'queued' | 'holding'
+  revealPhase: 'queued' | 'holding' | 'visible'
   lcpStable: boolean
 }
 
@@ -142,9 +142,10 @@ export const buildStaticHomeRouteState = ({
           : fragmentKind === 'dock'
             ? 'shell'
             : stage === 'anchor'
-              ? 'shell'
-              : 'stub'
+            ? 'shell'
+            : 'stub'
     const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'
+    const lcpStable = Boolean(entry.critical)
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,
@@ -177,8 +178,8 @@ export const buildStaticHomeRouteState = ({
       reservedHeight,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
       patchState,
-      revealPhase: patchState === 'ready' ? 'queued' : 'holding',
-      lcpStable: Boolean(entry.critical)
+      revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding',
+      lcpStable
     }
   })
 
@@ -238,13 +239,13 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-variant="text"
             data-draggable="false"
             data-critical="true"
+            {...{ [STATIC_HOME_LCP_STABLE_ATTR]: 'true' }}
             data-fragment-id="shell-intro"
             data-fragment-loaded="true"
             data-fragment-ready="true"
             data-fragment-stage="ready"
-            data-reveal-phase="queued"
+            data-reveal-phase="visible"
             data-reveal-locked="false"
-            {...{ [READY_STAGGER_STATE_ATTR]: 'queued' }}
           >
             <div class="fragment-card-body">
               <div

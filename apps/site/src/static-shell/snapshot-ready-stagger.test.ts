@@ -75,7 +75,8 @@ describe('replayStaticSnapshotReadyStagger', () => {
     expect(doc.homeRoot?.getAttribute('data-home-paint')).toBe('ready')
     expect(releases).toEqual([
       {
-        queuedSelector: '[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]',
+        queuedSelector:
+          '[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([data-static-home-lcp-stable="true"])',
         group: 'static-home-ready'
       }
     ])
