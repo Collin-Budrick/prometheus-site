@@ -690,7 +690,7 @@ body {
 
 .home-manifest-copy {
   margin: 0;
-  max-width: 36ch;
+  max-width: min(100%, 64ch);
   color: rgb(var(--muted));
   font-size: 0.875rem;
   line-height: 1.6;
@@ -698,7 +698,7 @@ body {
 
 .home-fragment-copy {
   margin: 0;
-  max-width: 38ch;
+  max-width: min(100%, 64ch);
   color: rgb(var(--muted));
   font-size: 0.875rem;
   line-height: 1.6;
@@ -874,7 +874,7 @@ body {
 
 .home-fragment-shell-copy {
   margin: 0;
-  max-width: 38ch;
+  max-width: min(100%, 64ch);
   color: rgb(var(--muted));
   font-size: 0.875rem;
   line-height: 1.6;
@@ -1229,6 +1229,11 @@ body {
   }
 
   .home-manifest-copy {
+    max-width: 100%;
+  }
+
+  .home-fragment-copy,
+  .home-fragment-shell-copy {
     max-width: 100%;
   }
 

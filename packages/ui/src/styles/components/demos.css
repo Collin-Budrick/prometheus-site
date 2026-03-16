@@ -771,6 +771,7 @@
     @apply rounded-2xl border border-slate-200/70 bg-white/80 p-3;
     display: grid;
     gap: 8px;
+    justify-items: center;
     min-height: 150px;
     transition:
       border-color 180ms ease,
@@ -782,6 +783,7 @@
 
   .react-binary-panel-title {
     @apply font-mono text-[10px] text-slate-500 uppercase tracking-[0.35em];
+    text-align: center;
     color: rgb(var(--muted-soft));
   }
 
@@ -841,6 +843,8 @@
   .react-binary-node-tree {
     display: grid;
     gap: 6px;
+    justify-items: center;
+    width: 100%;
   }
 
   .react-binary-node {
@@ -864,13 +868,15 @@
   }
 
   .react-binary-node.is-child {
-    margin-left: 14px;
+    margin-left: 0;
   }
 
   .react-binary-bits {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
     gap: 6px;
+    justify-items: center;
+    width: 100%;
     font-family: var(--font-mono);
     font-size: 11px;
     text-transform: uppercase;
@@ -884,6 +890,8 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
+    max-width: 100%;
+    width: fit-content;
     background-color: rgb(var(--surface-soft));
     border: 1px solid rgb(var(--stroke) / 0.7);
   }
@@ -899,6 +907,8 @@
 
   .react-binary-dom {
     @apply flex flex-wrap gap-2;
+    justify-content: center;
+    width: 100%;
     font-family: var(--font-mono);
     font-size: 11px;
     text-transform: uppercase;
@@ -912,12 +922,14 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
+    max-width: 100%;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
   }
 
   .react-binary-caption {
     @apply text-slate-500 text-xs;
+    text-align: center;
     color: rgb(var(--muted-soft));
   }
 
