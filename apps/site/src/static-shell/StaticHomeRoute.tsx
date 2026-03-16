@@ -75,6 +75,7 @@ type StaticHomeRenderedCard = {
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
   patchState: 'ready' | 'pending'
+  revealPhase: 'queued' | 'holding'
   lcpStable: boolean
 }
 
@@ -170,7 +171,7 @@ export const buildStaticHomeRouteState = ({
             : stage === 'anchor'
               ? 'shell'
               : 'stub'
-    const patchState = stage === 'critical' || fragmentKind === 'dock' || renderMode === 'preview' ? 'ready' : 'pending'
+    const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,
@@ -203,6 +204,7 @@ export const buildStaticHomeRouteState = ({
       reservedHeight,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
       patchState,
+      revealPhase: patchState === 'ready' ? 'queued' : 'holding',
       lcpStable: Boolean(entry.critical)
     }
   })
@@ -251,7 +253,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       ))}
       <noscript>
         <style nonce={nonce || undefined}>
-          {"[data-static-home-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;}"}
+          {
+            "[data-static-home-root] .fragment-card[data-ready-stagger-state='queued'],[data-static-home-root] .fragment-card[data-reveal-phase='holding']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
+          }
         </style>
       </noscript>
       <div class="fragment-grid" data-fragment-grid="intro">
@@ -265,6 +269,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
             data-fragment-loaded="true"
             data-fragment-ready="true"
             data-fragment-stage="ready"
+            data-reveal-phase="queued"
             data-reveal-locked="false"
             {...{ [READY_STAGGER_STATE_ATTR]: 'queued' }}
           >
@@ -296,8 +301,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   data-critical={card.critical ? 'true' : undefined}
                   data-fragment-id={card.id}
                   data-fragment-loaded="true"
-                  data-fragment-ready="true"
-                  data-fragment-stage="ready"
+                  data-fragment-ready={card.patchState === 'ready' ? 'true' : undefined}
+                  data-fragment-stage={card.patchState === 'ready' ? 'ready' : 'waiting-payload'}
+                  data-reveal-phase={card.revealPhase}
                   data-reveal-locked="false"
                   data-draggable="false"
                   data-size={card.size}
@@ -310,7 +316,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
-                    [READY_STAGGER_STATE_ATTR]: 'queued',
+                    [READY_STAGGER_STATE_ATTR]: card.revealPhase === 'queued' ? 'queued' : undefined,
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >

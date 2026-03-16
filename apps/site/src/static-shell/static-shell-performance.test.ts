@@ -203,7 +203,7 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).toContain("isStaticHomePreviewKind(fragmentKind)");
     expect(homeRouteSource).toContain("? 'preview'");
     expect(homeRouteSource).toContain(
-      "const patchState = stage === 'critical' || fragmentKind === 'dock' || renderMode === 'preview' ? 'ready' : 'pending'",
+      "const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'",
     );
     expect(homeRouteSource).toContain("STATIC_HOME_LCP_STABLE_ATTR");
     expect(homeRouteSource).toContain("lcpStable: Boolean(entry.critical)");

@@ -7,6 +7,7 @@ import {
   queueReadyStagger,
   queueReadyStaggerOnVisible,
   releaseQueuedReadyStaggerWithin,
+  scheduleReleaseQueuedReadyStaggerWithin,
   resetReadyStaggerBatchesForTests,
   resolveReadyStaggerDelay
 } from './ready-stagger'
@@ -28,6 +29,10 @@ class MockElement {
   style = new MockStyle()
   visible = true
   throwOnMeasure = false
+  top = 0
+  left = 0
+  width = 320
+  height = 240
   private attrs = new Map<string, string>()
 
   setAttribute(name: string, value: string) {
@@ -42,9 +47,11 @@ class MockElement {
     if (this.throwOnMeasure) {
       throw new Error('ready stagger should not synchronously measure when IntersectionObserver exists')
     }
+    const right = this.left + this.width
+    const bottom = this.top + this.height
     return this.visible
-      ? { top: 0, left: 0, right: 320, bottom: 240 }
-      : { top: 2000, left: 0, right: 320, bottom: 2240 }
+      ? { top: this.top, left: this.left, right, bottom }
+      : { top: 2000, left: this.left, right, bottom: 2000 + this.height }
   }
 }
 
@@ -68,19 +75,44 @@ class MockIntersectionObserver {
     this.observed.add(target)
   }
 
+  unobserve(target: object) {
+    this.observed.delete(target)
+  }
+
   disconnect() {
     this.observed.clear()
   }
 
-  emit(target: object, isIntersecting = true) {
+  emit(
+    entries:
+      | object
+      | Array<{
+          target: object
+          isIntersecting?: boolean
+          intersectionRatio?: number
+          boundingClientRect?: { top: number; left: number }
+        }>,
+    isIntersecting = true
+  ) {
+    const normalizedEntries = Array.isArray(entries)
+      ? entries
+      : [
+          {
+            target: entries,
+            isIntersecting
+          }
+        ]
     this.callback(
-      [
-        {
-          target,
-          isIntersecting,
-          intersectionRatio: isIntersecting ? 1 : 0
-        } as IntersectionObserverEntry
-      ],
+      normalizedEntries.map(
+        ({ target, isIntersecting: nextIntersecting = true, intersectionRatio, boundingClientRect }) =>
+          ({
+            target,
+            isIntersecting: nextIntersecting,
+            intersectionRatio:
+              typeof intersectionRatio === 'number' ? intersectionRatio : nextIntersecting ? 1 : 0,
+            boundingClientRect
+          }) as IntersectionObserverEntry
+      ),
       this as never
     )
   }
@@ -133,18 +165,18 @@ afterEach(() => {
 })
 
 describe('ready stagger helpers', () => {
-  it('caps stagger delays at 135ms', () => {
+  it('caps stagger delays at 72ms', () => {
     expect(resolveReadyStaggerDelay(0)).toBe(0)
-    expect(resolveReadyStaggerDelay(1)).toBe(45)
-    expect(resolveReadyStaggerDelay(2)).toBe(90)
-    expect(resolveReadyStaggerDelay(3)).toBe(135)
-    expect(resolveReadyStaggerDelay(8)).toBe(135)
+    expect(resolveReadyStaggerDelay(1)).toBe(24)
+    expect(resolveReadyStaggerDelay(2)).toBe(48)
+    expect(resolveReadyStaggerDelay(3)).toBe(72)
+    expect(resolveReadyStaggerDelay(8)).toBe(72)
   })
 
   it('claims sequential delays per batch', () => {
     expect(claimReadyStaggerDelay({ group: 'cards' })).toBe(0)
-    expect(claimReadyStaggerDelay({ group: 'cards' })).toBe(45)
-    expect(claimReadyStaggerDelay({ group: 'cards' })).toBe(90)
+    expect(claimReadyStaggerDelay({ group: 'cards' })).toBe(24)
+    expect(claimReadyStaggerDelay({ group: 'cards' })).toBe(48)
   })
 
   it('queues and releases a card with the shared contract', () => {
@@ -216,15 +248,26 @@ describe('ready stagger helpers', () => {
     expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
   })
 
-  it('releases queued cards within a root in DOM order and defers offscreen cards', () => {
-    const first = new MockElement()
-    const second = new MockElement()
-    const third = new MockElement()
-    third.visible = false
-    first.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
-    second.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
-    third.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
-    const root = new MockRoot([first, second, third])
+  it('releases queued cards within a root in top-first viewport order and defers offscreen cards', () => {
+    const lowerLeft = new MockElement()
+    lowerLeft.top = 520
+    lowerLeft.left = 0
+    const topLeft = new MockElement()
+    topLeft.top = 80
+    topLeft.left = 0
+    const topRight = new MockElement()
+    topRight.top = 80
+    topRight.left = 680
+    const offscreen = new MockElement()
+    offscreen.top = 1400
+    offscreen.left = 0
+    offscreen.visible = false
+
+    lowerLeft.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    topLeft.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    topRight.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    offscreen.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    const root = new MockRoot([lowerLeft, topLeft, topRight, offscreen])
 
     releaseQueuedReadyStaggerWithin({
       root: root as unknown as ParentNode,
@@ -238,23 +281,108 @@ describe('ready stagger helpers', () => {
       win: null
     })
 
-    expect(first.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
-    expect(second.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
-    expect(third.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
-    expect(MockIntersectionObserver.instances).toHaveLength(3)
+    expect(lowerLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
+    expect(topLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
+    expect(topRight.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
+    expect(offscreen.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
+    expect(MockIntersectionObserver.instances).toHaveLength(1)
 
-    MockIntersectionObserver.instances[0]?.emit(first as unknown as object)
-    MockIntersectionObserver.instances[1]?.emit(second as unknown as object)
+    MockIntersectionObserver.instances[0]?.emit([
+      {
+        target: lowerLeft as unknown as object,
+        boundingClientRect: { top: 520, left: 0 }
+      },
+      {
+        target: topRight as unknown as object,
+        boundingClientRect: { top: 80, left: 680 }
+      },
+      {
+        target: topLeft as unknown as object,
+        boundingClientRect: { top: 80, left: 0 }
+      }
+    ])
 
-    expect(first.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
-    expect(second.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
-    expect(first.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
-    expect(second.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('45ms')
+    expect(topLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(topRight.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(lowerLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(topLeft.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
+    expect(topRight.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('24ms')
+    expect(lowerLeft.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('48ms')
 
-    third.visible = true
-    MockIntersectionObserver.instances[2]?.emit(third as unknown as object)
+    offscreen.visible = true
+    MockIntersectionObserver.instances[0]?.emit([
+      {
+        target: offscreen as unknown as object,
+        boundingClientRect: { top: 1400, left: 0 }
+      }
+    ])
 
-    expect(third.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
-    expect(third.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('90ms')
+    expect(offscreen.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(offscreen.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('72ms')
+  })
+
+  it('coalesces scheduled root releases into one top-first flush on the next frame', () => {
+    const lowerLeft = new MockElement()
+    lowerLeft.top = 520
+    lowerLeft.left = 0
+    const topLeft = new MockElement()
+    topLeft.top = 80
+    topLeft.left = 0
+    lowerLeft.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    topLeft.setAttribute(READY_STAGGER_STATE_ATTR, 'queued')
+    const root = new MockRoot([lowerLeft, topLeft])
+
+    const frameCallbacks: FrameRequestCallback[] = []
+    const scheduleFrame = ((callback: FrameRequestCallback) => {
+      frameCallbacks.push(callback)
+      return frameCallbacks.length
+    }) as typeof requestAnimationFrame
+
+    scheduleReleaseQueuedReadyStaggerWithin({
+      root: root as unknown as ParentNode,
+      queuedSelector: '.fragment-card[data-ready-stagger-state="queued"]',
+      group: 'cards',
+      ObserverImpl: MockIntersectionObserver as never,
+      requestFrame: scheduleFrame,
+      cancelFrame: (() => undefined) as typeof cancelAnimationFrame,
+      win: null
+    })
+    scheduleReleaseQueuedReadyStaggerWithin({
+      root: root as unknown as ParentNode,
+      queuedSelector: '.fragment-card[data-ready-stagger-state="queued"]',
+      group: 'cards',
+      ObserverImpl: MockIntersectionObserver as never,
+      requestFrame: scheduleFrame,
+      cancelFrame: (() => undefined) as typeof cancelAnimationFrame,
+      win: null
+    })
+
+    expect(frameCallbacks).toHaveLength(1)
+    expect(MockIntersectionObserver.instances).toHaveLength(0)
+
+    frameCallbacks[0]?.(0)
+
+    expect(MockIntersectionObserver.instances).toHaveLength(1)
+
+    MockIntersectionObserver.instances[0]?.emit([
+      {
+        target: lowerLeft as unknown as object,
+        boundingClientRect: { top: 520, left: 0 }
+      },
+      {
+        target: topLeft as unknown as object,
+        boundingClientRect: { top: 80, left: 0 }
+      }
+    ])
+    let frameIndex = 1
+    while (frameCallbacks[frameIndex]) {
+      frameCallbacks[frameIndex]?.(frameIndex * 16)
+      frameIndex += 1
+    }
+
+    expect(topLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(lowerLeft.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(topLeft.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
+    expect(lowerLeft.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('24ms')
   })
 })

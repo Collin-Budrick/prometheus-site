@@ -29,21 +29,45 @@ class MockBodyElement {
 }
 
 class MockCardElement {
-  dataset: Record<string, string> = {
-    fragmentId: TEST_FRAGMENT_ID
-  }
+  dataset: Record<string, string>
   isConnected = true
   style = new MockStyle()
   scrollHeight = 489
-  private attrs = new Map<string, string>([
-    ['data-fragment-id', TEST_FRAGMENT_ID],
-    ['data-static-fragment-card', 'true'],
-    ['data-static-fragment-body', TEST_FRAGMENT_ID],
-    ['data-fragment-height-hint', '489'],
-    ['data-fragment-version', '1']
-  ])
+  private attrs: Map<string, string>
 
-  constructor(private readonly body: MockBodyElement) {}
+  constructor(
+    private readonly body: MockBodyElement,
+    options: {
+      version?: number
+      readyStaggerState?: 'queued' | 'done'
+      revealPhase?: 'holding' | 'queued' | 'visible'
+      fragmentReady?: boolean
+      fragmentStage?: string
+    } = {}
+  ) {
+    this.dataset = {
+      fragmentId: TEST_FRAGMENT_ID
+    }
+    this.attrs = new Map<string, string>([
+      ['data-fragment-id', TEST_FRAGMENT_ID],
+      ['data-static-fragment-card', 'true'],
+      ['data-static-fragment-body', TEST_FRAGMENT_ID],
+      ['data-fragment-height-hint', '489'],
+      ['data-fragment-version', `${options.version ?? 1}`]
+    ])
+    if (options.readyStaggerState) {
+      this.attrs.set(READY_STAGGER_STATE_ATTR, options.readyStaggerState)
+    }
+    if (options.revealPhase) {
+      this.dataset.revealPhase = options.revealPhase
+    }
+    if (options.fragmentReady) {
+      this.dataset.fragmentReady = 'true'
+    }
+    if (options.fragmentStage) {
+      this.dataset.fragmentStage = options.fragmentStage
+    }
+  }
 
   querySelector(selector: string) {
     if (selector.includes('[data-static-fragment-body]')) {
@@ -124,6 +148,9 @@ const flushAsyncWork = async () => {
   await Promise.resolve()
   await Promise.resolve()
   await Promise.resolve()
+  await new Promise((resolve) => {
+    globalThis.setTimeout(resolve, 0)
+  })
 }
 
 let originalDocument: typeof globalThis.document
@@ -151,7 +178,7 @@ describe('patchStaticFragmentCard', () => {
     globalThis.requestAnimationFrame = originalRequestAnimationFrame
   })
 
-  it('uses translated fragment copy when patching static store fragments', async () => {
+  it('uses translated fragment copy and whole-card reveal gating when patching static store fragments', async () => {
     const body = new MockBodyElement()
     const card = new MockCardElement(body)
     const doc = new MockDocument(card)
@@ -159,6 +186,7 @@ describe('patchStaticFragmentCard', () => {
     globalThis.document = doc as unknown as Document
     globalThis.window = {
       innerWidth: 1280,
+      innerHeight: 800,
       localStorage: createStorage()
     } as unknown as Window & typeof globalThis
     globalThis.HTMLElement = MockCardElement as unknown as typeof HTMLElement
@@ -222,6 +250,9 @@ describe('patchStaticFragmentCard', () => {
       routeData
     )
 
+    expect(card.dataset.revealPhase).toBe('holding')
+    expect(card.dataset.fragmentReady).toBeUndefined()
+
     await flushAsyncWork()
 
     expect(body.innerHTML).toContain('デジタル商品')
@@ -230,6 +261,8 @@ describe('patchStaticFragmentCard', () => {
     expect(card.getAttribute('data-fragment-version')).toBe('2')
     expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
     expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.dataset.fragmentReady).toBe('true')
   })
 
   it('falls back to raw static store text when fragment copy is not seeded', async () => {
@@ -240,6 +273,7 @@ describe('patchStaticFragmentCard', () => {
     globalThis.document = doc as unknown as Document
     globalThis.window = {
       innerWidth: 1280,
+      innerHeight: 800,
       localStorage: createStorage()
     } as unknown as Window & typeof globalThis
     globalThis.HTMLElement = MockCardElement as unknown as typeof HTMLElement
@@ -303,5 +337,85 @@ describe('patchStaticFragmentCard', () => {
     expect(body.innerHTML).toContain('Item 2')
     expect(body.innerHTML).toContain('Add to cart')
     expect(card.getAttribute('data-fragment-version')).toBe('2')
+  })
+
+  it('keeps already-visible static fragment cards visible during refresh patches', async () => {
+    const body = new MockBodyElement()
+    const card = new MockCardElement(body, {
+      version: 1,
+      readyStaggerState: 'done',
+      revealPhase: 'visible',
+      fragmentReady: true,
+      fragmentStage: 'ready'
+    })
+    const doc = new MockDocument(card)
+
+    globalThis.document = doc as unknown as Document
+    globalThis.window = {
+      innerWidth: 1280,
+      innerHeight: 800,
+      localStorage: createStorage()
+    } as unknown as Window & typeof globalThis
+    globalThis.HTMLElement = MockCardElement as unknown as typeof HTMLElement
+    globalThis.CustomEvent = class MockCustomEvent<T = unknown> extends Event {
+      detail: T
+
+      constructor(type: string, init?: CustomEventInit<T>) {
+        super(type)
+        this.detail = init?.detail as T
+      }
+    } as unknown as typeof CustomEvent
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }) as typeof requestAnimationFrame
+
+    const routeData: StaticFragmentRouteData = {
+      lang: 'en',
+      path: '/store',
+      snapshotKey: '/store',
+      authPolicy: 'public',
+      bootstrapMode: 'fragment-static',
+      fragmentOrder: [TEST_FRAGMENT_ID],
+      planSignature: 'store-plan',
+      versionSignature: 'store-version',
+      fragmentVersions: {
+        [TEST_FRAGMENT_ID]: 2
+      },
+      storeSeed: {
+        stream: { items: [], sort: 'id', dir: 'asc' },
+        cart: { items: [], queuedCount: 0 }
+      },
+      contactInvitesSeed: null
+    }
+
+    patchStaticFragmentCard(
+      {
+        id: TEST_FRAGMENT_ID,
+        tree: h('store-create', { class: 'store-create' }, []),
+        head: [],
+        css: '',
+        cacheUpdatedAt: 2,
+        meta: {
+          cacheKey: TEST_FRAGMENT_ID,
+          ttl: 30,
+          staleTtl: 60,
+          runtime: 'edge',
+          tags: []
+        }
+      },
+      routeData
+    )
+
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.dataset.fragmentReady).toBe('true')
+
+    await flushAsyncWork()
+
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.dataset.fragmentReady).toBe('true')
+    expect(card.dataset.revealLocked).toBe('false')
   })
 })

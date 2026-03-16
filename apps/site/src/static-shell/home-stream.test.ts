@@ -166,6 +166,12 @@ const createTaskQueue = () => {
   }
 }
 
+const flushAsyncWork = async () => {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 const createPayload = (id: string, label: string, cacheUpdatedAt = 1) =>
   ({
     id,
@@ -186,6 +192,10 @@ const createCard = (
     version?: number
     patchState?: 'pending' | 'ready'
     stage?: 'critical' | 'anchor' | 'deferred'
+    readyStaggerState?: 'queued' | 'done'
+    revealPhase?: 'holding' | 'queued' | 'visible'
+    fragmentReady?: boolean
+    fragmentStage?: string
   } = {}
 ) => {
   const body = new MockBodyElement(fragmentId, log)
@@ -195,6 +205,18 @@ const createCard = (
   card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${options.version ?? 1}`)
   card.setAttribute(STATIC_HOME_STAGE_ATTR, options.stage ?? (options.critical ? 'critical' : 'deferred'))
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, options.patchState ?? 'pending')
+  if (options.readyStaggerState) {
+    card.setAttribute(READY_STAGGER_STATE_ATTR, options.readyStaggerState)
+  }
+  if (options.revealPhase) {
+    card.dataset.revealPhase = options.revealPhase
+  }
+  if (options.fragmentReady) {
+    card.dataset.fragmentReady = 'true'
+  }
+  if (options.fragmentStage) {
+    card.dataset.fragmentStage = options.fragmentStage
+  }
   card.attachBody(body)
   return { card, body }
 }
@@ -236,7 +258,7 @@ describe('home-stream patching', () => {
     }
   })
 
-  it('patches pending shells even when the payload version matches SSR', () => {
+  it('keeps pending shells hidden until settle completes, then reveals them as whole cards', async () => {
     const log: string[] = []
     const { card, body } = createCard('fragment://page/home/planner@v1', log, {
       version: 5,
@@ -254,7 +276,15 @@ describe('home-stream patching', () => {
     expect(result).toBe('patched')
     expect(body.innerHTML).toContain('Patched planner')
     expect(card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
-    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).not.toBeNull()
+    expect(card.dataset.revealPhase).toBe('holding')
+    expect(card.dataset.fragmentReady).toBeUndefined()
+
+    await flushAsyncWork()
+    frameQueue.flushFrames()
+
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.dataset.fragmentReady).toBe('true')
   })
 
   it('treats same-version ready cards as stale', () => {
@@ -297,6 +327,42 @@ describe('home-stream patching', () => {
     expect(result).toBe('patched')
     expect(body.innerHTML).toContain('React refresh')
     expect(settleCalls).toBe(0)
+  })
+
+  it('keeps visible ready preview cards visible while refreshing their markup', async () => {
+    const log: string[] = []
+    const { card, body } = createCard('fragment://page/home/react@v1', log, {
+      version: 1,
+      patchState: 'ready',
+      stage: 'anchor',
+      readyStaggerState: 'done',
+      revealPhase: 'visible',
+      fragmentReady: true,
+      fragmentStage: 'ready'
+    })
+
+    const result = patchStaticHomeFragmentCard({
+      lang: 'en',
+      payload: createPayload('fragment://page/home/react@v1', 'React refresh', 2),
+      applyEffects: false,
+      card: card as unknown as HTMLElement
+    })
+
+    expect(result).toBe('patched')
+    expect(body.innerHTML).toContain('React refresh')
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.dataset.fragmentReady).toBe('true')
+
+    for (let index = 0; index < 5; index += 1) {
+      frameQueue.flushFrames(1)
+      await flushAsyncWork()
+    }
+
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.dataset.fragmentReady).toBe('true')
+    expect(card.dataset.revealLocked).toBe('false')
   })
 
   it('coalesces payloads and patches one eligible card per scheduled task in DOM order', () => {

@@ -2,9 +2,13 @@ import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragm
 import type { FragmentPayload } from '@core/fragment/types'
 import {
   applyImmediateReadyStagger,
-  queueReadyStaggerOnVisible
+  READY_STAGGER_DURATION_MS,
+  READY_STAGGER_STATE_ATTR,
+  queueReadyStaggerOnVisible,
+  scheduleReleaseQueuedReadyStaggerWithin
 } from '@prometheus/ui/ready-stagger'
 import type { Lang } from '../lang/types'
+import { getFragmentTextCopy } from '../lang/client'
 import { setTrustedInnerHtml } from '../security/client'
 import {
   getStaticHomePlannerDemoCopy,
@@ -34,6 +38,7 @@ type PatchStaticHomeFragmentCardOptions = {
   payload: FragmentPayload
   applyEffects?: boolean
   card?: HTMLElement | null
+  root?: ParentNode | null
   onPatchedBody?: (body: HTMLElement) => void
   routeContext?: FragmentHeightRouteContext | null
   settlePatchedHeight?: ((options: {
@@ -81,6 +86,9 @@ export type StaticHomePatchQueue = {
 const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
+const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
+const FRAGMENT_REVEAL_UNLOCK_PADDING_MS = 40
+const STATIC_HOME_QUEUED_READY_SELECTOR = '.fragment-card[data-ready-stagger-state="queued"]'
 
 const createHomeCopyBundle = (lang: Lang) => ({
   ui: {
@@ -90,7 +98,8 @@ const createHomeCopyBundle = (lang: Lang) => ({
   planner: getStaticHomePlannerDemoCopy(lang),
   wasmRenderer: getStaticHomeWasmRendererDemoCopy(lang),
   reactBinary: getStaticHomeReactBinaryDemoCopy(lang),
-  preactIsland: getStaticHomePreactIslandDemoCopy(lang)
+  preactIsland: getStaticHomePreactIslandDemoCopy(lang),
+  fragments: getFragmentTextCopy(lang)
 })
 
 const escapeFragmentId = (value: string) => {
@@ -111,6 +120,19 @@ const isStaticHomeElement = (card: Element | null): card is HTMLElement =>
 
 const isHomePatchReady = (card: Element | null) =>
   isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready'
+
+const shouldPreserveHomeCardRevealState = (card: HTMLElement) => {
+  const readyStaggerState = card.getAttribute(READY_STAGGER_STATE_ATTR)
+  const revealPhase = card.dataset.revealPhase
+  return (
+    isHomePatchReady(card) ||
+    card.dataset.fragmentReady === 'true' ||
+    readyStaggerState === 'queued' ||
+    readyStaggerState === 'done' ||
+    revealPhase === 'queued' ||
+    revealPhase === 'visible'
+  )
+}
 
 const setHomePatchState = (card: HTMLElement, state: 'pending' | 'ready') => {
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, state)
@@ -189,7 +211,7 @@ const waitForStablePreviewCardHeight = async (card: HTMLElement, reservedHeight:
   }
 }
 
-const settleReadyHomePreviewCardHeight = ({
+const settleReadyHomePreviewCardHeight = async ({
   card,
   fragmentId,
   lockToken
@@ -199,49 +221,172 @@ const settleReadyHomePreviewCardHeight = ({
   lockToken: string
 }) => {
   const reservedHeight = readFragmentHeightHint(card)
+  const nextHeight = await waitForFragmentImages(card).then(async () =>
+    await waitForStablePreviewCardHeight(card, reservedHeight)
+  )
 
-  void waitForFragmentImages(card)
-    .then(async () => {
-      const nextHeight = await waitForStablePreviewCardHeight(card, reservedHeight)
-      return nextHeight
-    })
-    .then((nextHeight) => {
-    if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) return
+  if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) {
+    return null
+  }
 
-    try {
-      if (nextHeight > 0) {
-        card.style.setProperty('--fragment-min-height', `${nextHeight}px`)
-        card.setAttribute('data-fragment-height-hint', `${nextHeight}`)
+  try {
+    if (nextHeight > 0) {
+      card.style.setProperty('--fragment-min-height', `${nextHeight}px`)
+      card.setAttribute('data-fragment-height-hint', `${nextHeight}`)
 
-        if (nextHeight > reservedHeight) {
-          card.dispatchEvent(
-            new CustomEvent('prom:fragment-height-miss', {
-              bubbles: true,
-              detail: {
-                fragmentId,
-                reservedHeight,
-                height: nextHeight,
-                widthBucket: null
-              }
-            })
-          )
-        }
-
+      if (nextHeight > reservedHeight) {
         card.dispatchEvent(
-          new CustomEvent('prom:fragment-stable-height', {
+          new CustomEvent('prom:fragment-height-miss', {
             bubbles: true,
-            detail: { fragmentId, height: nextHeight }
+            detail: {
+              fragmentId,
+              reservedHeight,
+              height: nextHeight,
+              widthBucket: null
+            }
           })
         )
       }
-    } finally {
-      card.style.height = ''
-      card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
-      card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
+
+      card.dispatchEvent(
+        new CustomEvent('prom:fragment-stable-height', {
+          bubbles: true,
+          detail: { fragmentId, height: nextHeight }
+        })
+      )
     }
-    })
-    .catch((error) => {
-      console.error('Static home preview fragment height settle failed:', error)
+  } finally {
+    card.style.height = ''
+    card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
+    card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
+  }
+
+  return nextHeight
+}
+
+const resolvePatchedRevealLockDelay = (delayMs: number, immediate = false) => {
+  if (immediate) {
+    return 0
+  }
+
+  return Math.max(delayMs, 0) + READY_STAGGER_DURATION_MS + FRAGMENT_REVEAL_UNLOCK_PADDING_MS
+}
+
+const preserveSettledHomeCardHeight = (card: HTMLElement) => {
+  const settledHeight = readFragmentHeightHint(card)
+  if (settledHeight > 0) {
+    card.style.height = `${settledHeight}px`
+  }
+}
+
+const clearPatchedHomeHeightLock = (card: HTMLElement, lockToken: string) => {
+  if (card.getAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  card.style.height = ''
+  card.removeAttribute(FRAGMENT_HEIGHT_LOCK_ATTR)
+  card.removeAttribute(FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR)
+}
+
+const releasePatchedHomeCardHeight = (card: HTMLElement, lockToken: string) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  card.style.height = ''
+  card.dataset.revealLocked = 'false'
+  card.removeAttribute(FRAGMENT_REVEAL_TOKEN_ATTR)
+}
+
+const finalizePatchedHomeCardWithoutReveal = ({
+  card,
+  lockToken
+}: {
+  card: HTMLElement
+  lockToken: string
+}) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  const readyState = card.getAttribute(READY_STAGGER_STATE_ATTR)
+  if (readyState === 'done') {
+    card.dataset.revealPhase = 'visible'
+  } else if (readyState === 'queued') {
+    card.dataset.revealPhase = 'queued'
+  } else {
+    card.dataset.revealPhase = 'visible'
+  }
+  card.dataset.fragmentStage = 'ready'
+  card.dataset.fragmentReady = 'true'
+  releasePatchedHomeCardHeight(card, lockToken)
+}
+
+const queuePatchedHomeCardReveal = ({
+  card,
+  root,
+  lockToken,
+  group,
+  immediate
+}: {
+  card: HTMLElement
+  root?: ParentNode | null
+  lockToken: string
+  group: string
+  immediate: boolean
+}) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  card.dataset.fragmentStage = 'ready'
+  card.dataset.fragmentReady = 'true'
+  preserveSettledHomeCardHeight(card)
+
+  const scheduleUnlock = (delayMs: number) => {
+    const unlockDelayMs = resolvePatchedRevealLockDelay(delayMs, immediate)
+    if (unlockDelayMs <= 0) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          releasePatchedHomeCardHeight(card, lockToken)
+        })
+      } else {
+        releasePatchedHomeCardHeight(card, lockToken)
+      }
+      return
+    }
+
+    globalThis.setTimeout(() => {
+      releasePatchedHomeCardHeight(card, lockToken)
+    }, unlockDelayMs)
+  }
+
+  const handleStateChange = (state: 'queued' | 'done', delayMs: number) => {
+    if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+      return
+    }
+
+    card.dataset.revealPhase = state === 'done' ? 'visible' : 'queued'
+    if (state === 'done') {
+      scheduleUnlock(delayMs)
+    }
+  }
+
+  if (immediate) {
+    applyImmediateReadyStagger(card, handleStateChange)
+    return
+  }
+
+  queueReadyStaggerOnVisible(card, {
+    group,
+    replay: true,
+    onStateChange: handleStateChange
+  })
+  scheduleReleaseQueuedReadyStaggerWithin({
+    root: root ?? (typeof document !== 'undefined' ? document : undefined),
+    queuedSelector: STATIC_HOME_QUEUED_READY_SELECTOR,
+    group
   })
 }
 
@@ -271,6 +416,7 @@ export const patchStaticHomeFragmentCard = ({
   payload,
   applyEffects = true,
   card,
+  root = null,
   onPatchedBody,
   routeContext,
   settlePatchedHeight = null
@@ -281,6 +427,7 @@ export const patchStaticHomeFragmentCard = ({
 
   const currentVersion = parseFragmentVersion(targetCard)
   const hasReadyMarkup = isHomePatchReady(targetCard)
+  const preserveRevealState = shouldPreserveHomeCardRevealState(targetCard)
   if (
     typeof payload.cacheUpdatedAt === 'number' &&
     Number.isFinite(payload.cacheUpdatedAt) &&
@@ -299,6 +446,19 @@ export const patchStaticHomeFragmentCard = ({
   const body = targetCard.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return 'missing'
 
+  targetCard.setAttribute(FRAGMENT_REVEAL_TOKEN_ATTR, lockToken)
+  targetCard.dataset.revealLocked = 'true'
+  targetCard.dataset.fragmentLoaded = 'true'
+  if (preserveRevealState) {
+    targetCard.dataset.fragmentStage = 'ready'
+    targetCard.dataset.fragmentReady = 'true'
+  } else {
+    targetCard.removeAttribute(READY_STAGGER_STATE_ATTR)
+    targetCard.dataset.revealPhase = 'holding'
+    targetCard.dataset.fragmentStage = 'waiting-assets'
+    delete targetCard.dataset.fragmentReady
+  }
+
   setTrustedInnerHtml(
     body,
     `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createHomeCopyBundle(lang))}</div>`,
@@ -311,24 +471,23 @@ export const patchStaticHomeFragmentCard = ({
   }
 
   setHomePatchState(targetCard, 'ready')
-  targetCard.dataset.fragmentLoaded = 'true'
-  targetCard.dataset.fragmentReady = 'true'
-  targetCard.dataset.fragmentStage = 'ready'
-  targetCard.dataset.revealLocked = 'false'
-  if (targetCard.dataset.critical === 'true') {
-    applyImmediateReadyStagger(targetCard)
-  } else {
-    queueReadyStaggerOnVisible(targetCard, { group: 'static-home-patch', replay: true })
+  const revealPatchedCard = () => {
+    queuePatchedHomeCardReveal({
+      card: targetCard,
+      root,
+      lockToken,
+      group: 'static-home-patch',
+      immediate: targetCard.dataset.critical === 'true'
+    })
   }
 
-  if (hasReadyMarkup) {
-    settleReadyHomePreviewCardHeight({
+  const settleTask = hasReadyMarkup
+    ? settleReadyHomePreviewCardHeight({
       card: targetCard,
       fragmentId: payload.id,
       lockToken
     })
-  } else {
-    const settlePatchedHeightTask = settlePatchedHeight
+    : settlePatchedHeight
       ? Promise.resolve(
           settlePatchedHeight({
             card: targetCard,
@@ -346,11 +505,26 @@ export const patchStaticHomeFragmentCard = ({
           })
         )
 
-    void settlePatchedHeightTask
-      .catch((error) => {
-        console.error('Static home fragment height settle failed:', error)
-      })
-  }
+  void settleTask
+    .catch((error) => {
+      console.error(
+        hasReadyMarkup
+          ? 'Static home preview fragment height settle failed:'
+          : 'Static home fragment height settle failed:',
+        error
+      )
+    })
+    .finally(() => {
+      clearPatchedHomeHeightLock(targetCard, lockToken)
+      if (preserveRevealState) {
+        finalizePatchedHomeCardWithoutReveal({
+          card: targetCard,
+          lockToken
+        })
+        return
+      }
+      revealPatchedCard()
+    })
 
   return 'patched'
 }
@@ -399,6 +573,7 @@ export const createStaticHomePatchQueue = ({
         payload,
         applyEffects,
         card,
+        root,
         routeContext,
         settlePatchedHeight,
         onPatchedBody: (body) => {

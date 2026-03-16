@@ -688,7 +688,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
         ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"`
         : "";
       const sizeAttr = entry.size ? ` data-size="${entry.size}"` : "";
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 
@@ -700,7 +700,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
     versionSignature: model.routeData.versionSignature,
   });
 
-  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-fragment-paint="initial" data-static-path="${model.path}" data-static-lang="${model.lang}"><noscript><style${nonceAttr}>[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]{opacity:1!important;visibility:visible!important;pointer-events:auto!important;}</style></noscript><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`;
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-fragment-paint="initial" data-static-path="${model.path}" data-static-lang="${model.lang}"><noscript><style${nonceAttr}>[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}</style></noscript><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`;
 };
 
 const hydrateProtectedStaticFragments = async (

@@ -10,7 +10,18 @@ import {
   type FragmentHeightLayout,
   type FragmentHeightPersistenceContext
 } from './fragment-height'
-import { claimReadyStaggerDelay, shouldSkipReadyStagger } from '../ready-stagger'
+import {
+  applyImmediateReadyStagger,
+  clearReadyStaggerObserverForElement,
+  queueReadyStaggerOnVisible,
+  scheduleReleaseQueuedReadyStaggerWithin,
+  shouldSkipReadyStagger
+} from '../ready-stagger'
+import {
+  resolveFragmentCardRevealDecision,
+  resolveFragmentCardUnlockDelay,
+  type FragmentCardRevealPhase
+} from './fragment-card-reveal'
 
 const INTERACTIVE_SELECTOR =
   'a, button, input, textarea, select, option, [role="button"], [contenteditable="true"], [data-fragment-link], [data-drag-handle]'
@@ -28,6 +39,12 @@ let sharedFragmentCssObserver: MutationObserver | null = null
 const INITIAL_TASKS_EVENT = 'prom:fragment-initial-tasks'
 const STABLE_HEIGHT_EVENT = 'prom:fragment-stable-height'
 const INITIAL_REVEAL_TIMEOUT_MS = 1800
+const FRAGMENT_CARD_QUEUED_READY_SELECTOR = '.fragment-card[data-ready-stagger-state="queued"]'
+
+const resolveFragmentCardReadyStaggerRoot = (card: HTMLElement) =>
+  card.closest<HTMLElement>('[data-static-home-root], [data-static-fragment-root], [data-fragment-grid]') ??
+  card.ownerDocument ??
+  (typeof document !== 'undefined' ? document : null)
 
 const getSharedVisibilityObserver = () => {
   if (sharedVisibilityObserver || typeof IntersectionObserver === 'undefined') {
@@ -333,6 +350,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
     const readyStaggerState = useSignal<'queued' | 'done' | undefined>(undefined)
     const readyStaggerDelay = useSignal('0ms')
     const readyStaggerApplied = useSignal(false)
+    const revealPhase = useSignal<FragmentCardRevealPhase>(fragmentId ? 'holding' : 'visible')
+    const revealUnlockDelayMs = useSignal<number | null>(null)
 
     const handleToggle = $((event: MouseEvent) => {
       const dragInfo = dragState?.value
@@ -751,34 +770,42 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         const ready = ctx.track(() => fragmentReady.value)
         const inView = ctx.track(() => isInView.value)
         const settled = ctx.track(() => hasSettledOnce.value)
-        if (!activeId || !ready || !inView || !settled || readyStaggerApplied.value) return
+        const card = cardRef.value
+        if (!activeId || !ready || !inView || !settled || readyStaggerApplied.value || !card) return
 
         readyStaggerApplied.value = true
-        if (disableMotion || critical || shouldSkipReadyStagger()) {
-          readyStaggerDelay.value = '0ms'
-          readyStaggerState.value = undefined
+        const immediateReveal = disableMotion || critical || shouldSkipReadyStagger()
+
+        if (immediateReveal) {
+          applyImmediateReadyStagger(card, (state, delayMs) => {
+            readyStaggerState.value = state
+            readyStaggerDelay.value = `${delayMs}ms`
+            revealPhase.value = state === 'done' ? 'visible' : 'queued'
+          })
+          revealUnlockDelayMs.value = 0
           return
         }
 
-        const delayMs = claimReadyStaggerDelay({ group: 'fragment-ready' })
-        readyStaggerDelay.value = `${delayMs}ms`
-        readyStaggerState.value = 'queued'
-
-        let releaseFrame = 0
-        const release = () => {
-          readyStaggerState.value = 'done'
-        }
-
-        if (typeof requestAnimationFrame === 'function') {
-          releaseFrame = requestAnimationFrame(release)
-        } else {
-          release()
-        }
+        queueReadyStaggerOnVisible(card, {
+          group: 'fragment-ready',
+          replay: true,
+          onStateChange: (state, delayMs) => {
+            readyStaggerState.value = state
+            readyStaggerDelay.value = `${delayMs}ms`
+            revealPhase.value = state === 'done' ? 'visible' : 'queued'
+            if (state === 'done') {
+              revealUnlockDelayMs.value = resolveFragmentCardUnlockDelay({ delayMs })
+            }
+          }
+        })
+        scheduleReleaseQueuedReadyStaggerWithin({
+          root: resolveFragmentCardReadyStaggerRoot(card) ?? undefined,
+          queuedSelector: FRAGMENT_CARD_QUEUED_READY_SELECTOR,
+          group: 'fragment-ready'
+        })
 
         ctx.cleanup(() => {
-          if (releaseFrame) {
-            cancelAnimationFrame(releaseFrame)
-          }
+          clearReadyStaggerObserverForElement(card)
         })
       },
       { strategy: 'document-idle' }
@@ -798,9 +825,22 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
         const card = cardRef.value
         if (!card) return
 
+        const revealDecision = resolveFragmentCardRevealDecision({
+          baseStage,
+          loaded,
+          inView,
+          cssSettled,
+          taskCount,
+          taskKeys,
+          forced,
+          settled,
+          revealPhase: revealPhase.value
+        })
+
+        currentStage.value = revealDecision.stage
+        fragmentReady.value = revealDecision.fragmentReady
+
         if (settled) {
-          currentStage.value = 'ready'
-          fragmentReady.value = true
           revealScheduled.value = false
           return
         }
@@ -810,39 +850,18 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           lockedHeight.value = reservedHeight
           resolvedHeightHint.value = reservedHeight
         }
+        revealPhase.value = revealDecision.revealPhase
 
-        if (baseStage === 'waiting-payload' || !loaded) {
-          currentStage.value = 'waiting-payload'
-          fragmentReady.value = false
+        if (!revealDecision.shouldWaitForAssets) {
+          readyStaggerState.value = undefined
+          readyStaggerDelay.value = '0ms'
+          revealUnlockDelayMs.value = null
+          readyStaggerApplied.value = false
           revealScheduled.value = false
           return
         }
-
-        if (!inView) {
-          fragmentReady.value = false
-          revealScheduled.value = false
-          return
-        }
-
-        if (!cssSettled && !forced) {
-          currentStage.value = 'waiting-css'
-          fragmentReady.value = false
-          revealScheduled.value = false
-          return
-        }
-
-        if (!forced && taskCount > 0) {
-          currentStage.value = taskKeys.includes('island:') ? 'waiting-islands' : 'waiting-client-tasks'
-          fragmentReady.value = false
-          revealScheduled.value = false
-          return
-        }
-
-        currentStage.value = forced ? 'ready' : 'waiting-assets'
-        fragmentReady.value = false
 
         let cancelled = false
-        let fadeTimer = 0
         let revealFrame = 0
         let revealFrameTwo = 0
         const images = Array.from(card.querySelectorAll<HTMLImageElement>('img'))
@@ -871,6 +890,11 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               hasSettledOnce.value = true
               forceReveal.value = false
               revealScheduled.value = false
+              revealPhase.value = 'holding'
+              const settledHeight = finalMeasuredHeight.value
+              if (settledHeight === null) {
+                return
+              }
               const cardWidth = resolveCardWidth(card)
               const widthBucket = props.fragmentHeightLayout
                 ? resolveFragmentHeightWidthBucket({
@@ -879,22 +903,22 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
                     cardWidth
                   })
                 : null
-              if (props.fragmentId && finalMeasuredHeight.value) {
+              if (props.fragmentId) {
                 persistFragmentHeight({
                   fragmentId: props.fragmentId,
-                  height: finalMeasuredHeight.value,
+                  height: settledHeight,
                   context: props.fragmentHeightPersistence,
                   widthBucket
                 })
               }
-              if (props.fragmentId && finalMeasuredHeight.value > previousReservedHeight) {
+              if (props.fragmentId && settledHeight > previousReservedHeight) {
                 card.dispatchEvent(
                   new CustomEvent('prom:fragment-height-miss', {
                     bubbles: true,
                     detail: {
                       fragmentId: props.fragmentId,
                       reservedHeight: previousReservedHeight,
-                      height: finalMeasuredHeight.value,
+                      height: settledHeight,
                       widthBucket
                     }
                   })
@@ -903,13 +927,9 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               card.dispatchEvent(
                 new CustomEvent(STABLE_HEIGHT_EVENT, {
                   bubbles: true,
-                  detail: { fragmentId: props.fragmentId, height: finalMeasuredHeight.value }
+                  detail: { fragmentId: props.fragmentId, height: settledHeight }
                 })
               )
-              fadeTimer = window.setTimeout(() => {
-                revealLocked.value = false
-                lockedHeight.value = null
-              }, 240)
             })
           })
         }
@@ -970,8 +990,49 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           if (revealFrameTwo) {
             cancelAnimationFrame(revealFrameTwo)
           }
-          if (fadeTimer) {
-            window.clearTimeout(fadeTimer)
+        })
+      },
+      { strategy: 'document-idle' }
+    )
+
+    useVisibleTask$(
+      (ctx) => {
+        const activeId = ctx.track(() => props.fragmentId)
+        const phase = ctx.track(() => revealPhase.value)
+        const unlockDelayMs = ctx.track(() => revealUnlockDelayMs.value)
+        const locked = ctx.track(() => revealLocked.value)
+
+        if (!activeId || phase !== 'visible' || unlockDelayMs === null || !locked) {
+          return
+        }
+
+        let unlockFrame = 0
+        let unlockTimer = 0
+        const unlock = () => {
+          revealLocked.value = false
+          lockedHeight.value = null
+          revealUnlockDelayMs.value = null
+        }
+
+        if (unlockDelayMs <= 0) {
+          if (typeof requestAnimationFrame === 'function') {
+            unlockFrame = requestAnimationFrame(() => {
+              unlockFrame = 0
+              unlock()
+            })
+          } else {
+            unlock()
+          }
+        } else {
+          unlockTimer = window.setTimeout(unlock, unlockDelayMs)
+        }
+
+        ctx.cleanup(() => {
+          if (unlockFrame) {
+            cancelAnimationFrame(unlockFrame)
+          }
+          if (unlockTimer) {
+            window.clearTimeout(unlockTimer)
           }
         })
       },
@@ -1014,8 +1075,8 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           ref={cardRef}
           class={{ 'fragment-card': true, 'is-expanded': isExpanded, 'is-inline': isInline }}
           style={cardStyle}
-          data-motion={disableMotion ? undefined : ''}
-          data-motion-skip-visible={disableMotion ? undefined : ''}
+          data-motion={disableMotion || fragmentId ? undefined : ''}
+          data-motion-skip-visible={disableMotion || fragmentId ? undefined : ''}
           data-variant={resolvedVariant === 'card' ? undefined : resolvedVariant}
           data-draggable={isDraggable ? undefined : 'false'}
           data-wave-in={waveIn ? '' : undefined}
@@ -1027,6 +1088,7 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
           data-fragment-ready={fragmentReady.value ? 'true' : undefined}
           data-fragment-stage={currentStage.value}
           data-ready-stagger-state={readyStaggerState.value}
+          data-reveal-phase={fragmentId ? revealPhase.value : undefined}
           data-reveal-locked={revealLocked.value ? 'true' : 'false'}
           onClick$={canToggleExpand ? handleToggle : undefined}
         >
@@ -1043,11 +1105,6 @@ export const FragmentCard = component$<FragmentCardProps>((props) => {
               />
             ) : null}
           </div>
-          {fragmentId ? (
-            <div class="fragment-card-loader" aria-hidden="true">
-              <div class="loader" />
-            </div>
-          ) : null}
         </article>
       </>
     )

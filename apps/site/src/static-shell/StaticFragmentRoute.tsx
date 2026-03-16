@@ -43,7 +43,9 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       ))}
       <noscript>
         <style nonce={nonce || undefined}>
-          {"[data-static-fragment-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;}"}
+          {
+            "[data-static-fragment-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
+          }
         </style>
       </noscript>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
@@ -63,6 +65,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               data-fragment-loaded="true"
               data-fragment-ready="true"
               data-fragment-stage="ready"
+              data-reveal-phase="queued"
               data-reveal-locked="false"
               data-draggable="false"
               data-fragment-height-hint={`${entry.reservedHeight}`}

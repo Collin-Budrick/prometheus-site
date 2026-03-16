@@ -1,7 +1,10 @@
 import type { FragmentPayload } from '@core/fragment/types'
 import {
   applyImmediateReadyStagger,
-  queueReadyStaggerOnVisible
+  READY_STAGGER_DURATION_MS,
+  READY_STAGGER_STATE_ATTR,
+  queueReadyStaggerOnVisible,
+  scheduleReleaseQueuedReadyStaggerWithin
 } from '@prometheus/ui/ready-stagger'
 import { getFragmentTextCopy } from '../lang/client'
 import { setTrustedInnerHtml } from '../security/client'
@@ -18,6 +21,10 @@ import {
   loadFragmentHeightPatchRuntime,
   type FragmentHeightPatchRuntimeModule
 } from './fragment-height-patch-runtime-loader'
+
+const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
+const FRAGMENT_REVEAL_UNLOCK_PADDING_MS = 40
+const STATIC_FRAGMENT_QUEUED_READY_SELECTOR = '.fragment-card[data-ready-stagger-state="queued"]'
 
 type StreamStaticFragmentsOptions = {
   path: string
@@ -49,11 +56,162 @@ const parseFragmentVersion = (element: Element | null) => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: StaticFragmentRouteData) => {
+const shouldPreserveStaticFragmentRevealState = (card: HTMLElement) => {
+  const readyStaggerState = card.getAttribute(READY_STAGGER_STATE_ATTR)
+  const revealPhase = card.dataset.revealPhase
+  return (
+    card.dataset.fragmentReady === 'true' ||
+    readyStaggerState === 'queued' ||
+    readyStaggerState === 'done' ||
+    revealPhase === 'queued' ||
+    revealPhase === 'visible'
+  )
+}
+
+const resolvePatchedRevealLockDelay = (delayMs: number, immediate = false) => {
+  if (immediate) {
+    return 0
+  }
+
+  return Math.max(delayMs, 0) + READY_STAGGER_DURATION_MS + FRAGMENT_REVEAL_UNLOCK_PADDING_MS
+}
+
+const readPatchedCardHeightHint = (card: HTMLElement) => {
+  const hintedHeight = Number.parseFloat(card.getAttribute('data-fragment-height-hint') ?? '')
+  if (Number.isFinite(hintedHeight) && hintedHeight > 0) {
+    return Math.ceil(hintedHeight)
+  }
+
+  const reservedHeight = Number.parseFloat(card.style.getPropertyValue('--fragment-min-height'))
+  return Number.isFinite(reservedHeight) && reservedHeight > 0 ? Math.ceil(reservedHeight) : 0
+}
+
+const preserveSettledFragmentCardHeight = (card: HTMLElement) => {
+  const settledHeight = readPatchedCardHeightHint(card)
+  if (settledHeight > 0) {
+    card.style.height = `${settledHeight}px`
+  }
+}
+
+const clearPatchedFragmentHeightLock = (card: HTMLElement, lockToken: string) => {
+  if (card.getAttribute('data-fragment-height-lock-token') !== lockToken) {
+    return
+  }
+
+  card.style.height = ''
+  card.removeAttribute('data-fragment-height-locked')
+  card.removeAttribute('data-fragment-height-lock-token')
+}
+
+const releasePatchedFragmentCardHeight = (card: HTMLElement, lockToken: string) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  card.style.height = ''
+  card.dataset.revealLocked = 'false'
+  card.removeAttribute(FRAGMENT_REVEAL_TOKEN_ATTR)
+}
+
+const finalizePatchedFragmentCardWithoutReveal = ({
+  card,
+  lockToken
+}: {
+  card: HTMLElement
+  lockToken: string
+}) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  const readyState = card.getAttribute(READY_STAGGER_STATE_ATTR)
+  if (readyState === 'done') {
+    card.dataset.revealPhase = 'visible'
+  } else if (readyState === 'queued') {
+    card.dataset.revealPhase = 'queued'
+  } else {
+    card.dataset.revealPhase = 'visible'
+  }
+  card.dataset.fragmentStage = 'ready'
+  card.dataset.fragmentReady = 'true'
+  releasePatchedFragmentCardHeight(card, lockToken)
+}
+
+const queuePatchedFragmentCardReveal = ({
+  card,
+  root,
+  lockToken,
+  immediate
+}: {
+  card: HTMLElement
+  root?: ParentNode | null
+  lockToken: string
+  immediate: boolean
+}) => {
+  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+    return
+  }
+
+  card.dataset.fragmentStage = 'ready'
+  card.dataset.fragmentReady = 'true'
+  preserveSettledFragmentCardHeight(card)
+
+  const scheduleUnlock = (delayMs: number) => {
+    const unlockDelayMs = resolvePatchedRevealLockDelay(delayMs, immediate)
+    if (unlockDelayMs <= 0) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          releasePatchedFragmentCardHeight(card, lockToken)
+        })
+      } else {
+        releasePatchedFragmentCardHeight(card, lockToken)
+      }
+      return
+    }
+
+    globalThis.setTimeout(() => {
+      releasePatchedFragmentCardHeight(card, lockToken)
+    }, unlockDelayMs)
+  }
+
+  const handleStateChange = (state: 'queued' | 'done', delayMs: number) => {
+    if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
+      return
+    }
+
+    card.dataset.revealPhase = state === 'done' ? 'visible' : 'queued'
+    if (state === 'done') {
+      scheduleUnlock(delayMs)
+    }
+  }
+
+  if (immediate) {
+    applyImmediateReadyStagger(card, handleStateChange)
+    return
+  }
+
+  queueReadyStaggerOnVisible(card, {
+    group: 'static-fragment-patch',
+    replay: true,
+    onStateChange: handleStateChange
+  })
+  scheduleReleaseQueuedReadyStaggerWithin({
+    root: root ?? (typeof document !== 'undefined' ? document : undefined),
+    queuedSelector: STATIC_FRAGMENT_QUEUED_READY_SELECTOR,
+    group: 'static-fragment-patch'
+  })
+}
+
+export const patchStaticFragmentCard = (
+  payload: FragmentPayload,
+  routeData: StaticFragmentRouteData,
+  root: ParentNode | null = typeof document !== 'undefined' ? document : null
+) => {
   const card = document.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}][data-fragment-id="${payload.id}"]`)
   if (!card) return
 
   const currentVersion = parseFragmentVersion(card)
+  const preserveRevealState = shouldPreserveStaticFragmentRevealState(card)
   if (
     typeof payload.cacheUpdatedAt === 'number' &&
     Number.isFinite(payload.cacheUpdatedAt) &&
@@ -68,6 +226,19 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
   const body = card.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
   if (!body) return
 
+  card.setAttribute(FRAGMENT_REVEAL_TOKEN_ATTR, lockToken)
+  card.dataset.revealLocked = 'true'
+  card.dataset.fragmentLoaded = 'true'
+  if (preserveRevealState) {
+    card.dataset.fragmentStage = 'ready'
+    card.dataset.fragmentReady = 'true'
+  } else {
+    card.removeAttribute(READY_STAGGER_STATE_ATTR)
+    card.dataset.revealPhase = 'holding'
+    card.dataset.fragmentStage = 'waiting-assets'
+    delete card.dataset.fragmentReady
+  }
+
   setTrustedInnerHtml(
     body,
     `<div class="fragment-html">${renderStaticFragmentPayloadHtml(payload, {
@@ -80,16 +251,6 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
 
   if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
     card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${payload.cacheUpdatedAt}`)
-  }
-
-  card.dataset.fragmentLoaded = 'true'
-  card.dataset.fragmentReady = 'true'
-  card.dataset.fragmentStage = 'ready'
-  card.dataset.revealLocked = 'false'
-  if (card.dataset.critical === 'true') {
-    applyImmediateReadyStagger(card)
-  } else {
-    queueReadyStaggerOnVisible(card, { group: 'static-fragment-patch', replay: true })
   }
 
   void loadFragmentHeightPatchRuntime()
@@ -111,6 +272,22 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
     .catch((error) => {
       console.error('Static fragment height settle failed:', error)
     })
+    .finally(() => {
+      clearPatchedFragmentHeightLock(card, lockToken)
+      if (preserveRevealState) {
+        finalizePatchedFragmentCardWithoutReveal({
+          card,
+          lockToken
+        })
+        return
+      }
+      queuePatchedFragmentCardReveal({
+        card,
+        root,
+        lockToken,
+        immediate: card.dataset.critical === 'true'
+      })
+    })
 }
 
 export const streamStaticFragments = async ({
@@ -123,7 +300,7 @@ export const streamStaticFragments = async ({
   onError
 }: StreamStaticFragmentsOptions) =>
   await streamHomeFragmentFrames(path, (payload) => {
-    patchStaticFragmentCard(payload, routeData)
+    patchStaticFragmentCard(payload, routeData, typeof document !== 'undefined' ? document : null)
     onFragment(payload)
   }, onError, {
     ids,
