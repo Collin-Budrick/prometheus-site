@@ -6,7 +6,6 @@ import {
   createStoreItemDirect,
   deleteStoreItemDirect,
   executeStoreCommandDirect,
-  subscribeStoreInventory,
   type StoreInventoryItem,
   type StoreInventorySnapshot
 } from '../../shared/spacetime-store'
@@ -39,8 +38,6 @@ type StoreStaticState = {
   destroyed: boolean
   form: StoreCreateState
   inventory: StoreInventorySnapshot
-  inventoryCleanup: (() => void) | null
-  liveInventoryStarted: boolean
   observer: MutationObserver | null
   pendingAddIds: Set<number>
   pendingDeleteIds: Set<number>
@@ -87,6 +84,14 @@ const parseIntegerInput = (value: string) => {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : Number.NaN
 }
+
+const shouldUseLocalCartFallback = (status: number | undefined) =>
+  !Number.isFinite(status) || status === 0 || status === 401 || status === 403 || status >= 500
+
+const resolveConsumedQuantity = (quantity: number) => (quantity < 0 ? quantity : Math.max(0, quantity - 1))
+
+const resolveRestoredQuantity = (quantity: number, amount: number) =>
+  quantity < 0 ? quantity : quantity + amount
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -464,34 +469,6 @@ const renderStoreCart = (state: StoreStaticState) => {
   )
 }
 
-const ensureLiveInventory = (state: StoreStaticState, scheduleRender: () => void) => {
-  if (state.destroyed || state.liveInventoryStarted) return
-  state.liveInventoryStarted = true
-  state.inventory = {
-    ...state.inventory,
-    error: null,
-    status: state.inventory.status === 'live' ? 'live' : 'connecting'
-  }
-  scheduleRender()
-
-  try {
-    state.inventoryCleanup = subscribeStoreInventory((snapshot) => {
-      if (state.destroyed) return
-      state.inventory = snapshot
-      scheduleRender()
-    })
-  } catch (error) {
-    state.liveInventoryStarted = false
-    state.inventoryCleanup = null
-    state.inventory = {
-      ...state.inventory,
-      error: error instanceof Error ? error.message : String(error),
-      status: 'error'
-    }
-    scheduleRender()
-  }
-}
-
 const attachObserver = (state: StoreStaticState, routeData: StaticFragmentRouteData, scheduleRender: () => void) => {
   state.observer?.disconnect()
   const root = document.querySelector<HTMLElement>('[data-static-fragment-root]')
@@ -562,17 +539,22 @@ const handleAddToCart = async (state: StoreStaticState, id: number, scheduleRend
   const item = state.inventory.items.find((entry) => entry.id === id)
   if (!item || item.quantity === 0) return
 
-  ensureLiveInventory(state, scheduleRender)
   state.pendingAddIds.add(id)
   scheduleRender()
 
   try {
-    const result = await executeStoreCommandDirect({ type: 'consume', id })
+    const result = await executeStoreCommandDirect({ type: 'consume', id }, { preferHttp: true })
     if (result?.ok) {
       addCartItem(state, item)
       if (result.item) {
         updateInventoryQuantity(state, result.item.id, result.item.quantity)
       }
+      await persistCart(state)
+    } else if (result?.status === 409) {
+      updateInventoryQuantity(state, id, 0)
+    } else if (shouldUseLocalCartFallback(result?.status)) {
+      addCartItem(state, item)
+      updateInventoryQuantity(state, id, resolveConsumedQuantity(item.quantity))
       await persistCart(state)
     }
   } finally {
@@ -586,16 +568,22 @@ const handleRemoveFromCart = async (state: StoreStaticState, id: number, schedul
   const item = state.cart.find((entry) => entry.id === id)
   if (!item) return
 
-  ensureLiveInventory(state, scheduleRender)
   state.pendingRemoveIds.add(id)
   scheduleRender()
 
   try {
-    const result = await executeStoreCommandDirect({ type: 'restore', id, amount: item.qty })
+    const result = await executeStoreCommandDirect({ type: 'restore', id, amount: item.qty }, { preferHttp: true })
     if (result?.ok) {
       state.cart = state.cart.filter((entry) => entry.id !== id)
       if (result.item) {
         updateInventoryQuantity(state, result.item.id, result.item.quantity)
+      }
+      await persistCart(state)
+    } else if (shouldUseLocalCartFallback(result?.status)) {
+      state.cart = state.cart.filter((entry) => entry.id !== id)
+      const inventoryItem = state.inventory.items.find((entry) => entry.id === id)
+      if (inventoryItem) {
+        updateInventoryQuantity(state, id, resolveRestoredQuantity(inventoryItem.quantity, item.qty))
       }
       await persistCart(state)
     }
@@ -608,12 +596,11 @@ const handleRemoveFromCart = async (state: StoreStaticState, id: number, schedul
 const handleDeleteItem = async (state: StoreStaticState, id: number, scheduleRender: () => void) => {
   if (state.pendingDeleteIds.has(id)) return
 
-  ensureLiveInventory(state, scheduleRender)
   state.pendingDeleteIds.add(id)
   scheduleRender()
 
   try {
-    await deleteStoreItemDirect(id)
+    await deleteStoreItemDirect(id, { preferHttp: true })
     removeInventoryItem(state, id)
     if (state.cart.some((entry) => entry.id === id)) {
       state.cart = state.cart.filter((entry) => entry.id !== id)
@@ -628,7 +615,6 @@ const handleDeleteItem = async (state: StoreStaticState, id: number, scheduleRen
 const handleCreateSubmit = async (state: StoreStaticState, scheduleRender: () => void) => {
   if (!canSubmitCreateForm(state)) return
 
-  ensureLiveInventory(state, scheduleRender)
   setCreateFormMessage(state, 'saving', null)
   scheduleRender()
 
@@ -637,7 +623,7 @@ const handleCreateSubmit = async (state: StoreStaticState, scheduleRender: () =>
       name: state.form.name.trim(),
       price: parseNumberInput(state.form.price),
       quantity: state.form.digital ? -1 : parseIntegerInput(state.form.quantity)
-    })
+    }, { preferHttp: true })
 
     if (created) {
       upsertInventoryItem(state, created)
@@ -687,8 +673,6 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
       ...emptyInventorySnapshot,
       items: readInitialInventory(routeData)
     },
-    inventoryCleanup: null,
-    liveInventoryStarted: false,
     observer: null,
     pendingAddIds: new Set<number>(),
     pendingDeleteIds: new Set<number>(),
@@ -789,8 +773,6 @@ export const activateStoreStaticController = async ({ routeData }: StoreStaticCo
   return () => {
     state.destroyed = true
     state.observer?.disconnect()
-    state.inventoryCleanup?.()
-    state.inventoryCleanup = null
     document.removeEventListener('click', handleClick)
     document.removeEventListener('input', handleInput)
     document.removeEventListener('change', handleChange)

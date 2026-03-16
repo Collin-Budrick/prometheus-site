@@ -203,6 +203,40 @@ export type AuthFeature = {
 
 export type ValidateSessionHandler = AuthFeature['validateSession']
 
+export type SiteSessionClaims = SessionClaims
+
+export const verifySiteSessionToken = async (
+  authConfig: AuthConfig,
+  token: string
+): Promise<SiteSessionClaims | null> => {
+  try {
+    const cookieSecretKey = new TextEncoder().encode(authConfig.cookieSecret)
+    const { payload } = await jwtVerify(token, cookieSecretKey, {
+      issuer: sessionIssuer,
+      audience: authConfig.spacetimeAuth.clientId
+    })
+    const subject = normalizeOptionalString(payload.sub)
+    if (!subject) return null
+    return {
+      ...(payload as SessionClaims),
+      sub: subject,
+      roles: normalizeRoles((payload as Record<string, unknown>).roles)
+    } satisfies SessionClaims
+  } catch {
+    return null
+  }
+}
+
+export const readSiteSessionClaims = async (
+  authConfig: AuthConfig,
+  context?: AuthRequestContext
+): Promise<SiteSessionClaims | null> => {
+  const headers = resolveHeaders(context)
+  const token = resolveCookieValue(headers, sessionCookieName)
+  if (!token) return null
+  return await verifySiteSessionToken(authConfig, token)
+}
+
 export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
   const cookieSecretKey = new TextEncoder().encode(options.authConfig.cookieSecret)
   const bootstrapTokenTtlSeconds = 60 * 60 * 24 * 30
@@ -257,30 +291,8 @@ export const createAuthFeature = (options: AuthFeatureOptions): AuthFeature => {
     }
   }
 
-  const verifySiteSession = async (token: string) => {
-    const { payload } = await jwtVerify(token, cookieSecretKey, {
-      issuer: sessionIssuer,
-      audience: spacetimeAuth.clientId
-    })
-    const subject = normalizeOptionalString(payload.sub)
-    if (!subject) return null
-    return {
-      ...(payload as SessionClaims),
-      sub: subject,
-      roles: normalizeRoles((payload as Record<string, unknown>).roles)
-    } satisfies SessionClaims
-  }
-
-  const readSessionClaims = async (context?: AuthRequestContext) => {
-    const headers = resolveHeaders(context)
-    const token = resolveCookieValue(headers, sessionCookieName)
-    if (!token) return null
-    try {
-      return await verifySiteSession(token)
-    } catch {
-      return null
-    }
-  }
+  const readSessionClaims = async (context?: AuthRequestContext) =>
+    await readSiteSessionClaims(options.authConfig, context)
 
   const loadBootstrapSigningKey = (() => {
     let cached: Promise<CryptoKey | null> | null = null

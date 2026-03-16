@@ -202,7 +202,7 @@ export const StoreCreateForm = component$<StoreCreateFormProps>(
           name: trimmedName,
           price: parsedPrice,
           quantity: parsedQuantity
-        })
+        }, { preferHttp: true })
         const createdId = created?.id
         state.value = 'success'
         statusMessage.value = createdId

@@ -43,6 +43,9 @@ const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
   return () => window.clearTimeout(handle)
 }
 
+const shouldUseLocalCartFallback = (status: number | undefined) =>
+  !Number.isFinite(status) || status === 0 || status === 401 || status === 403 || status >= 500
+
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? fallback : trimmed
@@ -160,7 +163,7 @@ export const StoreCart = component$<StoreCartProps>(
       const item = normalizeStoreCartItem(parsed) ?? consumeStoreCartDragItem()
       if (item) {
         const result = await consumeStoreItem(item.id, window.location.origin)
-        if (!result.ok) return
+        if (!result.ok && !shouldUseLocalCartFallback(result.status)) return
         void addItem(item)
       }
     })

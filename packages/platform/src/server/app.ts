@@ -14,6 +14,7 @@ import { createPlatformServer, type PlatformServerContext } from './bun'
 import { createFragmentUpdateBroadcaster } from './fragment-updates'
 import { createFragmentRoutes, createFragmentStore, warmFragmentRouteArtifacts } from './fragments'
 import { createHomeCollabRoutes } from './home-collab'
+import { createStoreMutationRoutes } from './store-mutations'
 
 type FeatureFlags = {
   auth: boolean
@@ -194,9 +195,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       environment: platformConfig.environment
     })
 
-    const app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
+    let app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
 
-    createHomeCollabRoutes(app, { cache })
+    app = createHomeCollabRoutes(app, { cache })
+    app = createStoreMutationRoutes(app)
 
     if (platformConfig.environment !== 'production') {
       applyDevCors(app)

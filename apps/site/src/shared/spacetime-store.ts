@@ -1,6 +1,8 @@
 import type { SubscriptionHandle } from '@prometheus/spacetimedb-client'
+import { appConfig } from '../public-app-config'
 import type { StoreCommandPayload, StoreConsumeResult } from './store-cart'
 import type { StoreSortDir, StoreSortKey } from './store-sort'
+import { getSpacetimeDbAuthToken } from './spacetime-auth'
 import {
   ensureSpacetimeConnection,
   getSpacetimeConnectionSnapshot,
@@ -34,6 +36,10 @@ let inventoryState: StoreInventorySnapshot = {
   status: getSpacetimeConnectionSnapshot().status
 }
 
+type DirectStoreMutationOptions = {
+  preferHttp?: boolean
+}
+
 let tableCallbacks:
   | {
       onDelete: () => void
@@ -51,6 +57,111 @@ const cloneInventoryState = (): StoreInventorySnapshot => ({
 const notifyInventoryListeners = () => {
   const next = cloneInventoryState()
   inventoryListeners.forEach((listener) => listener(next))
+}
+
+const buildApiCandidates = (path: string) => {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const base = appConfig.apiBase
+  const candidates: string[] = []
+  const pushCandidate = (value: string) => {
+    if (value && !candidates.includes(value)) {
+      candidates.push(value)
+    }
+  }
+
+  if (!base) {
+    pushCandidate(`${origin}${path}`)
+    return candidates
+  }
+
+  if (base.startsWith('/')) {
+    pushCandidate(`${origin}${base}${path}`)
+    pushCandidate(`${origin}${path}`)
+    return candidates
+  }
+
+  pushCandidate(`${base}${path}`)
+  if (origin) {
+    pushCandidate(`${origin}${path}`)
+  }
+  return candidates
+}
+
+const fetchStoreApi = async (path: string, init: RequestInit) => {
+  const candidates = buildApiCandidates(path)
+  let lastResponse: Response | null = null
+  let lastError: unknown = null
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, init)
+      if (response.status === 404 && candidate !== candidates[candidates.length - 1]) {
+        lastResponse = response
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+      if (candidate === candidates[candidates.length - 1]) {
+        throw error
+      }
+    }
+  }
+
+  if (lastResponse) return lastResponse
+  throw lastError instanceof Error ? lastError : new Error('Store API request failed.')
+}
+
+const readJsonResponse = async (response: Response) => {
+  try {
+    return (await response.json()) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+const readResponseError = async (response: Response, fallback: string) => {
+  const payload = await readJsonResponse(response)
+  const message = payload?.error
+  return typeof message === 'string' && message.trim() !== '' ? message : fallback
+}
+
+const buildStoreMutationHeaders = async (contentType?: string) => {
+  const headers = new Headers()
+  if (contentType) {
+    headers.set('content-type', contentType)
+  }
+  const token = await getSpacetimeDbAuthToken()
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`)
+  }
+  return headers
+}
+
+const setInventoryItems = (items: StoreInventoryItem[]) => {
+  inventoryState = {
+    ...inventoryState,
+    error: null,
+    items,
+    status: 'live'
+  }
+  notifyInventoryListeners()
+}
+
+const upsertInventoryItemState = (nextItem: StoreInventoryItem) => {
+  const existingIndex = inventoryState.items.findIndex((item) => item.id === nextItem.id)
+  const nextItems = [...inventoryState.items]
+  if (existingIndex >= 0) {
+    nextItems[existingIndex] = nextItem
+  } else {
+    nextItems.push(nextItem)
+    nextItems.sort((left, right) => compareStoreItems(left, right, 'id', 'asc'))
+  }
+  setInventoryItems(nextItems)
+}
+
+const removeInventoryItemState = (id: number) => {
+  setInventoryItems(inventoryState.items.filter((item) => item.id !== id))
 }
 
 const compareStoreItems = (
@@ -250,7 +361,115 @@ const optimisticRestoreResult = (item: StoreInventoryItem | undefined, amount: n
   }
 }
 
+const executeStoreCommandOverHttp = async (
+  payload: StoreCommandPayload
+): Promise<StoreConsumeResult | null> => {
+  if (typeof window === 'undefined') return null
+  const id = Number(payload.id)
+  if (!Number.isFinite(id) || id <= 0) {
+    return { ok: false, status: 400 }
+  }
+
+  if (payload.type === 'consume') {
+    const response = await fetchStoreApi(`/store/items/${id}/consume`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: await buildStoreMutationHeaders()
+    })
+    if (!response.ok) {
+      return { ok: false, status: response.status }
+    }
+    const payloadJson = await readJsonResponse(response)
+    const item = normalizeStoreItem(payloadJson?.item)
+    if (item) {
+      upsertInventoryItemState(item)
+    }
+    return {
+      ok: true,
+      status: response.status,
+      item: item ? { id: item.id, quantity: item.quantity } : undefined
+    }
+  }
+
+  const amount = Number(payload.amount)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: 400 }
+  }
+  const response = await fetchStoreApi(`/store/items/${id}/restore`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders('application/json'),
+    body: JSON.stringify({ amount })
+  })
+  if (!response.ok) {
+    return { ok: false, status: response.status }
+  }
+  const payloadJson = await readJsonResponse(response)
+  const item = normalizeStoreItem(payloadJson?.item)
+  if (item) {
+    upsertInventoryItemState(item)
+  }
+  return {
+    ok: true,
+    status: response.status,
+    item: item ? { id: item.id, quantity: item.quantity } : undefined
+  }
+}
+
+const createStoreItemOverHttp = async (input: {
+  name: string
+  price: number
+  quantity: number
+}) => {
+  if (typeof window === 'undefined') {
+    throw new Error('Store item creation is only available in the browser.')
+  }
+  const response = await fetchStoreApi('/store/items', {
+    method: 'POST',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders('application/json'),
+    body: JSON.stringify(input)
+  })
+  if (!response.ok) {
+    throw new Error(await readResponseError(response, 'Unable to create item'))
+  }
+  const payload = await readJsonResponse(response)
+  const item = normalizeStoreItem(payload?.item)
+  if (!item) {
+    throw new Error('Store API returned an invalid item payload.')
+  }
+  upsertInventoryItemState(item)
+  return item
+}
+
+const deleteStoreItemOverHttp = async (id: number) => {
+  if (typeof window === 'undefined') {
+    throw new Error('Store item deletion is only available in the browser.')
+  }
+  const response = await fetchStoreApi(`/store/items/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders()
+  })
+  if (!response.ok) {
+    throw new Error(await readResponseError(response, 'Unable to delete item'))
+  }
+  removeInventoryItemState(id)
+}
+
 export const getStoreInventorySnapshot = () => cloneInventoryState()
+
+export const resetStoreInventoryStateForTests = () => {
+  detachFromActiveConnection()
+  connectionCleanup?.()
+  connectionCleanup = null
+  inventoryState = {
+    error: null,
+    items: [],
+    status: getSpacetimeConnectionSnapshot().status
+  }
+  inventoryListeners.clear()
+}
 
 export const subscribeStoreInventory = (listener: InventoryListener) => {
   inventoryListeners.add(listener)
@@ -288,43 +507,63 @@ export const searchStoreInventory = (
   }
 }
 
-export const deleteStoreItemDirect = async (id: number) => {
+export const deleteStoreItemDirect = async (id: number, options: DirectStoreMutationOptions = {}) => {
+  if (options.preferHttp) {
+    await deleteStoreItemOverHttp(id)
+    return
+  }
   ensureStoreService()
   const connection = await ensureSpacetimeConnection()
   if (!connection) {
-    throw new Error('SpaceTimeDB connection unavailable.')
+    await deleteStoreItemOverHttp(id)
+    return
   }
-  await connection.reducers.deleteStoreItem({ id: BigInt(id) })
-  await waitForInventoryState((items) => (!items.some((item) => item.id === id) ? true : null))
+  try {
+    await connection.reducers.deleteStoreItem({ id: BigInt(id) })
+    await waitForInventoryState((items) => (!items.some((item) => item.id === id) ? true : null))
+  } catch {
+    await deleteStoreItemOverHttp(id)
+  }
 }
 
 export const createStoreItemDirect = async (input: {
   name: string
   price: number
   quantity: number
-}) => {
+}, options: DirectStoreMutationOptions = {}) => {
+  if (options.preferHttp) {
+    return await createStoreItemOverHttp(input)
+  }
   ensureStoreService()
   const connection = await ensureSpacetimeConnection()
   if (!connection) {
-    throw new Error('SpaceTimeDB connection unavailable.')
+    return await createStoreItemOverHttp(input)
   }
   const existingIds = new Set(inventoryState.items.map((item) => item.id))
-  await connection.reducers.createStoreItem(input)
-  const created =
-    (await waitForInventoryState((items) => {
-      return items.find((item) => !existingIds.has(item.id) && item.name === input.name) ?? null
-    })) ??
-    inventoryState.items.find((item) => !existingIds.has(item.id) && item.name === input.name) ??
-    null
-  return created
+  try {
+    await connection.reducers.createStoreItem(input)
+    const created =
+      (await waitForInventoryState((items) => {
+        return items.find((item) => !existingIds.has(item.id) && item.name === input.name) ?? null
+      })) ??
+      inventoryState.items.find((item) => !existingIds.has(item.id) && item.name === input.name) ??
+      null
+    return created
+  } catch {
+    return await createStoreItemOverHttp(input)
+  }
 }
 
 export const executeStoreCommandDirect = async (
-  payload: StoreCommandPayload
+  payload: StoreCommandPayload,
+  options: DirectStoreMutationOptions = {}
 ): Promise<StoreConsumeResult | null> => {
+  if (options.preferHttp) {
+    return await executeStoreCommandOverHttp(payload)
+  }
   ensureStoreService()
   const connection = await ensureSpacetimeConnection()
-  if (!connection) return null
+  if (!connection) return await executeStoreCommandOverHttp(payload)
 
   const previous = inventoryState.items.find((item) => item.id === payload.id)
 
@@ -355,6 +594,9 @@ export const executeStoreCommandDirect = async (
       item: nextItem
     }
   } catch (error) {
+    if (typeof window !== 'undefined') {
+      return await executeStoreCommandOverHttp(payload)
+    }
     return {
       ok: false,
       status: parseReducerErrorStatus(error)

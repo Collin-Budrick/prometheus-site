@@ -1,4 +1,5 @@
 import { appConfig } from '../public-app-config'
+import { getSpacetimeDbAuthToken } from './spacetime-auth'
 import {
   createStoreLocalRepo,
   parseStoreCartQueue,
@@ -143,11 +144,68 @@ const normalizeStoreConsumeItem = (value: unknown): StoreConsumeItem | null => {
   return { id, quantity }
 }
 
-const buildApiUrl = (path: string, origin: string) => {
+const buildApiCandidates = (path: string, origin: string) => {
   const base = appConfig.apiBase
-  if (!base) return `${origin}${path}`
-  if (base.startsWith('/')) return `${origin}${base}${path}`
-  return `${base}${path}`
+  const candidates: string[] = []
+  const pushCandidate = (value: string) => {
+    if (value && !candidates.includes(value)) {
+      candidates.push(value)
+    }
+  }
+
+  if (!base) {
+    pushCandidate(`${origin}${path}`)
+    return candidates
+  }
+
+  if (base.startsWith('/')) {
+    pushCandidate(`${origin}${base}${path}`)
+    pushCandidate(`${origin}${path}`)
+    return candidates
+  }
+
+  pushCandidate(`${base}${path}`)
+  if (origin) {
+    pushCandidate(`${origin}${path}`)
+  }
+  return candidates
+}
+
+const fetchStoreApi = async (path: string, origin: string, init: RequestInit) => {
+  const candidates = buildApiCandidates(path, origin)
+  let lastResponse: Response | null = null
+  let lastError: unknown = null
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, init)
+      if (response.status === 404 && candidate !== candidates[candidates.length - 1]) {
+        lastResponse = response
+        continue
+      }
+      return response
+    } catch (error) {
+      lastError = error
+      if (candidate === candidates[candidates.length - 1]) {
+        throw error
+      }
+    }
+  }
+
+  if (lastResponse) return lastResponse
+  throw lastError instanceof Error ? lastError : new Error('Store API request failed.')
+}
+
+const buildStoreMutationHeaders = async (contentType?: string) => {
+  const headers = new Headers()
+  if (contentType) {
+    headers.set('content-type', contentType)
+  }
+  const token = await getSpacetimeDbAuthToken()
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`)
+  }
+  return headers
 }
 
 const emitInventoryUpdate = (item?: StoreConsumeItem) => {
@@ -349,10 +407,11 @@ const performConsumeStoreItem = async (
   }
 
   try {
-    const response = await fetch(buildApiUrl(`/store/items/${id}/consume`, origin), {
-      method: 'POST',
-      credentials: 'include'
-    })
+  const response = await fetchStoreApi(`/store/items/${id}/consume`, origin, {
+    method: 'POST',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders()
+  })
 
     if (!response.ok) {
       return { ok: false, status: response.status }
@@ -406,12 +465,12 @@ const performRestoreStoreItem = async (
   }
 
   try {
-    const response = await fetch(buildApiUrl(`/store/items/${id}/restore`, origin), {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ amount })
-    })
+  const response = await fetchStoreApi(`/store/items/${id}/restore`, origin, {
+    method: 'POST',
+    credentials: 'include',
+    headers: await buildStoreMutationHeaders('application/json'),
+    body: JSON.stringify({ amount })
+  })
 
     if (!response.ok) {
       return { ok: false, status: response.status }

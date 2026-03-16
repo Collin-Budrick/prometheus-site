@@ -54,7 +54,7 @@ const pushUniqueUri = (target: string[], value: string | null | undefined) => {
   }
 }
 
-const resolveStoreSpacetimeUris = (request: Request) => {
+export const resolveStoreSpacetimeUris = (request: Request) => {
   const uris: string[] = []
   const envSpacetimeUri = typeof process !== 'undefined' ? process.env.SPACETIMEDB_URI?.trim() : ''
   const apiBase = typeof process !== 'undefined' ? process.env.API_BASE?.trim() : ''
@@ -83,8 +83,12 @@ const resolveStoreSpacetimeUris = (request: Request) => {
   return uris
 }
 
-export const resetServerStoreInventoryCacheForTests = () => {
+export const invalidateServerStoreInventoryCache = () => {
   cachedStoreInventory = null
+}
+
+export const resetServerStoreInventoryCacheForTests = () => {
+  invalidateServerStoreInventoryCache()
 }
 
 const loadStoreInventoryFromUri = async (uri: string, moduleName: string, limit: number) => {

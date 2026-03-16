@@ -58,6 +58,11 @@ type StoreItem = {
 const isStaticShellStoreSurface = (root: HTMLElement | undefined) =>
   Boolean(root?.closest('[data-static-fragment-root]'))
 
+const shouldUseLocalCartFallback = (status: number | undefined) =>
+  !Number.isFinite(status) || status === 0 || status === 401 || status === 403 || status >= 500
+
+const resolveConsumedQuantity = (quantity: number) => (quantity < 0 ? quantity : Math.max(0, quantity - 1))
+
 const compareStoreItems = (left: StoreItem, right: StoreItem, key: StoreSortKey, dir: StoreSortDir) => {
   let result = 0
 
@@ -347,6 +352,13 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     if (!result.ok) {
       if (result.status === 409) {
         await updateItemQuantity(item.id, 0)
+      } else if (shouldUseLocalCartFallback(result.status)) {
+        await updateItemQuantity(item.id, resolveConsumedQuantity(item.quantity))
+        window.dispatchEvent(
+          new CustomEvent(storeCartAddEvent, {
+            detail: { id: item.id, name: item.name, price: item.price }
+          })
+        )
       }
       return
     }
@@ -419,7 +431,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
     deletingIds.value = [...deletingIds.value, id]
     const run = async () => {
       try {
-        await deleteStoreItemDirect(id)
+        await deleteStoreItemDirect(id, { preferHttp: true })
         await scheduleRemoval(id)
       } catch (error) {
         console.warn('Failed to delete store item', error)
@@ -447,7 +459,7 @@ export const StoreStream = component$<StoreStreamProps>(({ limit, placeholder, c
           void settleInitialTask()
         }
       })
-      setStoreCommandSender(executeStoreCommandDirect)
+      setStoreCommandSender((payload) => executeStoreCommandDirect(payload, { preferHttp: true }))
       ctx.cleanup(() => {
         cleanup()
         setStoreCommandSender(null)
