@@ -13,10 +13,11 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR
 } from './constants'
 import { renderStaticFragmentPayloadHtml } from './static-fragment-render'
+import { lockFragmentCardHeight } from './fragment-height-lock'
 import {
-  lockFragmentCardHeight,
-  settlePatchedFragmentCardHeight
-} from './fragment-height'
+  loadFragmentHeightPatchRuntime,
+  type FragmentHeightPatchRuntimeModule
+} from './fragment-height-patch-runtime-loader'
 
 type StreamStaticFragmentsOptions = {
   path: string
@@ -91,20 +92,25 @@ export const patchStaticFragmentCard = (payload: FragmentPayload, routeData: Sta
     queueReadyStaggerOnVisible(card, { group: 'static-fragment-patch', replay: true })
   }
 
-  void settlePatchedFragmentCardHeight({
-    card,
-    fragmentId: payload.id,
-    routeContext: {
-      path: routeData.path,
-      lang: routeData.lang,
-      fragmentOrder: routeData.fragmentOrder,
-      planSignature: routeData.planSignature,
-      versionSignature: routeData.versionSignature
-    },
-    lockToken
-  }).catch((error) => {
-    console.error('Static fragment height settle failed:', error)
-  })
+  void loadFragmentHeightPatchRuntime()
+    .then(
+      ({ settlePatchedFragmentCardHeight }: FragmentHeightPatchRuntimeModule) =>
+        settlePatchedFragmentCardHeight({
+          card,
+          fragmentId: payload.id,
+          routeContext: {
+            path: routeData.path,
+            lang: routeData.lang,
+            fragmentOrder: routeData.fragmentOrder,
+            planSignature: routeData.planSignature,
+            versionSignature: routeData.versionSignature
+          },
+          lockToken
+        })
+    )
+    .catch((error) => {
+      console.error('Static fragment height settle failed:', error)
+    })
 }
 
 export const streamStaticFragments = async ({

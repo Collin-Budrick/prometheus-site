@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import {
   STATIC_DOCK_ROOT_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID

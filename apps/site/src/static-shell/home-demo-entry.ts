@@ -17,6 +17,7 @@ import {
   type HomeDemoObserveEventDetail,
 } from "./home-demo-observe-event";
 import { markHomeDemoPerformance } from "./home-demo-performance";
+import { ensureHomeDemoStylesheet } from "./home-demo-runtime-loader";
 import { normalizeHomeDemoAssetMap } from "./home-demo-runtime-types";
 import { scheduleStaticShellTask } from "./scheduler";
 import {
@@ -115,6 +116,9 @@ export const installHomeDemoEntry = ({
   primeTrustedTypesPolicies();
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true;
   markHomeDemoPerformance("prom:home:demo-entry-install");
+  void ensureHomeDemoStylesheet({
+    href: data.homeDemoStylesheetHref ?? undefined,
+  });
   const observeRoot = doc as unknown as ParentNode;
 
   const scheduleInitialObserve = (

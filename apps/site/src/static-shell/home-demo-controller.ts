@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import { persistInitialFragmentCardHeights } from './fragment-height'
 import type { HomeDemoActivationResult, HomeDemoKind } from './home-demo-activate'
 import {

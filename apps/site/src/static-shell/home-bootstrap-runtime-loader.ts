@@ -1,6 +1,7 @@
 import { resolveStaticAssetUrl } from './static-asset-url'
 
-const HOME_BOOTSTRAP_RUNTIME_ASSET_PATH = 'build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js'
+const HOME_BOOTSTRAP_RUNTIME_ASSET_PATH =
+  'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js'
 
 export type HomeBootstrapRuntimeModule = {
   bootstrapStaticHome: () => Promise<void>

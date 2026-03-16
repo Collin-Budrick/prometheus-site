@@ -1,4 +1,11 @@
-import type { Lang, PlannerDemoCopy, PreactIslandCopy, ReactBinaryDemoCopy, UiCopy, WasmRendererDemoCopy } from '../lang'
+import type {
+  Lang,
+  PlannerDemoCopy,
+  PreactIslandCopy,
+  ReactBinaryDemoCopy,
+  UiCopy,
+  WasmRendererDemoCopy
+} from '../lang/types'
 import { defaultLanguage } from '../lang/manifest'
 import type { LanguageSeedPayload } from '../lang/selection'
 import { normalizeStaticShellLang } from './lang-param'

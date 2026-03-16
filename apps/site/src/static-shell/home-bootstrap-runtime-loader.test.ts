@@ -25,7 +25,7 @@ describe('home-bootstrap-runtime-loader', () => {
     })
 
     expect(runtimeUrl).toBe(
-      'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js'
+      'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js'
     )
   })
 
@@ -38,7 +38,7 @@ describe('home-bootstrap-runtime-loader', () => {
       calls.push(url)
       return runtimeModule
     }
-    const assetUrl = 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js'
+    const assetUrl = 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js'
 
     const firstLoad = loadHomeBootstrapRuntime({ assetUrl, importer })
     const secondLoad = loadHomeBootstrapRuntime({ assetUrl, importer })

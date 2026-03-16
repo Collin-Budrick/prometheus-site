@@ -31,6 +31,9 @@ const parseStaticAssetVersionFromUrl = (value: string) => {
 const readStaticShellSeed = (
   doc: Pick<Document, 'getElementById'> | null = typeof document !== 'undefined' ? document : null
 ) => {
+  if (!doc || typeof doc.getElementById !== 'function') {
+    return null
+  }
   const element = doc?.getElementById(STATIC_SHELL_SEED_SCRIPT_ID)
   if (!element || typeof element !== 'object' || !('textContent' in element) || !element.textContent) return null
   try {

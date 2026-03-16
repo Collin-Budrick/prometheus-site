@@ -1,9 +1,8 @@
-import type { Lang } from "../lang";
+import type { Lang } from "../lang/types";
 import type { LanguageSeedPayload } from "../lang/selection";
 import { getStaticHomeUiCopy, seedStaticHomeCopy } from "./home-copy-store";
 import { readStaticHomeBootstrapData } from "./home-bootstrap-data";
 import { dispatchHomeDemoObserveEvent } from "./home-demo-observe-event";
-import { ensureHomeDemoStylesheet } from "./home-demo-runtime-loader";
 import {
   fetchHomeFragmentBatch,
   fetchHomeFragmentBootstrapSelection,
@@ -18,38 +17,20 @@ import {
   queueReadyStagger,
   READY_STAGGER_STATE_ATTR,
 } from "@prometheus/ui/ready-stagger";
-import { persistInitialFragmentCardHeights } from "./fragment-height";
 import {
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
   STATIC_HOME_STAGE_ATTR,
 } from "./constants";
-import { loadClientAuthSession } from "./auth-client";
 import { createHomeFirstLcpGate, type HomeFirstLcpGate } from "./home-lcp-gate";
 import { scheduleStaticShellTask } from "./scheduler";
 import { primeTrustedTypesPolicies } from "../security/client";
-import {
-  bindOverlayDismiss,
-  focusOverlayEntry,
-  restoreOverlayFocusBeforeHide,
-  setOverlaySurfaceState,
-} from "../shared/overlay-a11y";
-import {
-  staticDockRootNeedsSync,
-  syncStaticDockRootState,
-  writeStaticShellSeed,
-} from "./seed-client";
-import { loadStaticShellLanguageSeed } from "./language-seed-client";
-import {
-  applyStaticShellSnapshot,
-  loadStaticShellSnapshot,
-  resolvePreferredStaticShellLang,
-  updateStaticShellUrlLang,
-} from "./snapshot-client";
 import type { StaticHomeCardStage } from "./constants";
-
-type Theme = "light" | "dark";
+import { resolveStaticShellLangParam } from "./lang-param";
+import { loadHomeDockAuthRuntime } from "./home-dock-auth-runtime-loader";
+import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
+import { loadHomeUiControlsRuntime } from "./home-ui-controls-runtime-loader";
 
 type HomeControllerState = {
   isAuthenticated: boolean;
@@ -66,7 +47,6 @@ type HomeControllerState = {
   destroyed: boolean;
 };
 
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const LEGACY_HOME_CLEANUP_SESSION_KEY = "prom-static-home-cleanup:v1";
 const HOME_STABLE_HEIGHT_PREFIX = `fragment:stable-height:v1:${encodeURIComponent("/")}:`;
 const LEGACY_HOME_STORAGE_KEYS = [
@@ -79,86 +59,19 @@ const HOME_CRITICAL_COOKIE_KEYS = [
   "prom-frag-critical-m",
   "prom-frag-critical-d",
 ] as const;
-const STATIC_THEME_STORAGE_KEY = "prometheus-theme";
-const STATIC_THEME_COOKIE_KEY = "prometheus-theme";
-const STATIC_THEME_PREFERENCE_KEY = "prometheus:pref:theme";
 const STATIC_LANG_STORAGE_KEY = "prometheus-lang";
 const STATIC_LANG_COOKIE_KEY = "prometheus-lang";
 const STATIC_LANG_PREFERENCE_KEY = "prometheus:pref:locale";
-const LIGHT_THEME_COLOR = "#f97316";
-const DARK_THEME_COLOR = "#0f172a";
-
-const createThemeIcon = (theme: Theme) => {
-  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
-  svg.setAttribute("class", "theme-toggle-icon");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("width", "1em");
-  svg.setAttribute("height", "1em");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-
-  const path = document.createElementNS(SVG_NAMESPACE, "path");
-  path.setAttribute(
-    "d",
-    theme === "dark"
-      ? "M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8Z"
-      : "M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z",
-  );
-  svg.append(path);
-  return svg;
-};
+const STATIC_LANG_STORAGE_KEYS = [
+  STATIC_LANG_STORAGE_KEY,
+  STATIC_LANG_PREFERENCE_KEY,
+] as const;
 
 let activeController: HomeControllerState | null = null;
 let languageSwapInFlight = false;
 
-const writeLocalStorageValue = (key: string, value: string) => {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage failures in private mode.
-  }
-};
-
-const setThemeCookie = (value: Theme) => {
-  document.cookie = `${STATIC_THEME_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
-};
-
-const setLangCookie = (value: Lang) => {
-  document.cookie = `${STATIC_LANG_COOKIE_KEY}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
-};
-
-const setDocumentTheme = (value: Theme) => {
-  document.documentElement.dataset.theme = value;
-  document.documentElement.style.colorScheme = value;
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    meta.setAttribute(
-      "content",
-      value === "dark" ? DARK_THEME_COLOR : LIGHT_THEME_COLOR,
-    );
-  }
-};
-
-const persistStaticTheme = (value: Theme) => {
-  setDocumentTheme(value);
-  writeLocalStorageValue(STATIC_THEME_STORAGE_KEY, value);
-  writeLocalStorageValue(STATIC_THEME_PREFERENCE_KEY, value);
-  setThemeCookie(value);
-};
-
 const setDocumentLang = (value: Lang) => {
   document.documentElement.lang = value;
-};
-
-const persistStaticLang = (value: Lang) => {
-  setDocumentLang(value);
-  writeLocalStorageValue(STATIC_LANG_STORAGE_KEY, value);
-  writeLocalStorageValue(STATIC_LANG_PREFERENCE_KEY, value);
-  setLangCookie(value);
 };
 
 const readCookieValue = (key: string) => {
@@ -254,39 +167,14 @@ const updateFragmentStatus = (
 const syncHomeDockIfNeeded = async (
   controller: Pick<HomeControllerState, "isAuthenticated" | "lang" | "path">,
 ) => {
-  const dockState = {
-    currentPath: controller.path,
-    isAuthenticated: controller.isAuthenticated,
-    lang: controller.lang,
-  };
-
-  if (!staticDockRootNeedsSync(dockState)) {
-    syncStaticDockRootState(dockState);
-    return;
-  }
-
-  const dockRoot = syncStaticDockRootState(dockState);
-  if (!dockRoot) return;
-
-  const { syncStaticDockMarkup } = await import("./home-dock-dom");
-  syncStaticDockMarkup({
-    root: dockRoot,
-    lang: controller.lang,
-    currentPath: controller.path,
-    isAuthenticated: controller.isAuthenticated,
-    force: true,
-    lockMetrics: true,
-  });
+  const { syncHomeDockIfNeeded: syncDock } = await loadHomeDockAuthRuntime();
+  await syncDock(controller);
 };
 
 const refreshHomeDockAuthIfNeeded = async (controller: HomeControllerState) => {
-  const session = await loadClientAuthSession();
-  if (controller.destroyed) return;
-  const isAuthenticated = session.status === "authenticated";
-  if (controller.isAuthenticated === isAuthenticated) return;
-  controller.isAuthenticated = isAuthenticated;
-  writeStaticShellSeed({ isAuthenticated });
-  await syncHomeDockIfNeeded(controller);
+  const { refreshHomeDockAuthIfNeeded: refreshDockAuth } =
+    await loadHomeDockAuthRuntime();
+  await refreshDockAuth(controller);
 };
 
 const resolveStaticHomePaintRoot = (
@@ -419,7 +307,7 @@ type BindHomeFragmentHydrationOptions = {
   controller: HomeFragmentHydrationController;
   root?: ParentNode;
   fetchBatch?: typeof fetchHomeFragmentBatch;
-  ensureDemoStylesheet?: typeof ensureHomeDemoStylesheet;
+  ensureDemoStylesheet?: (options?: { href?: string }) => Promise<unknown>;
   scheduleTask?: typeof scheduleStaticShellTask;
   ObserverImpl?: typeof IntersectionObserver;
 };
@@ -627,7 +515,7 @@ export const bindHomeFragmentHydration = ({
   controller,
   root = document,
   fetchBatch = fetchHomeFragmentBatch,
-  ensureDemoStylesheet = ensureHomeDemoStylesheet,
+  ensureDemoStylesheet = async () => undefined,
   scheduleTask = scheduleStaticShellTask,
   ObserverImpl = (
     globalThis as typeof globalThis & {
@@ -1105,162 +993,32 @@ const applyShellLanguageSeed = (
   setDocumentLang(lang);
 };
 
-const refreshThemeButton = (lang: Lang) => {
-  const button = document.querySelector<HTMLButtonElement>(
-    "[data-static-theme-toggle]",
-  );
-  if (!button) return;
-  const theme =
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-  const copy = getStaticHomeUiCopy(lang);
-  button.dataset.theme = theme;
-  button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
-  button.setAttribute(
-    "aria-label",
-    theme === "dark" ? copy.themeAriaToLight : copy.themeAriaToDark,
-  );
-  button.replaceChildren(createThemeIcon(theme));
-};
-
-const bindShellControls = (controller: HomeControllerState) => {
-  const settingsRoot = document.querySelector<HTMLElement>(".topbar-settings");
-  const settingsToggle = document.querySelector<HTMLButtonElement>(
-    "[data-static-settings-toggle]",
-  );
-  const settingsPanel =
-    document.querySelector<HTMLElement>(".settings-dropdown");
-  const languageMenuToggle = document.querySelector<HTMLButtonElement>(
-    "[data-static-language-menu-toggle]",
-  );
-  const languageDrawer = document.querySelector<HTMLElement>(
-    ".settings-lang-drawer",
-  );
-  const themeToggle = document.querySelector<HTMLButtonElement>(
-    "[data-static-theme-toggle]",
-  );
-
-  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle)
-    return;
-
-  const closeLanguageMenu = (restoreFocus = false) => {
-    const wasOpen = languageDrawer?.dataset.open === "true";
-    if (restoreFocus && wasOpen && languageMenuToggle) {
-      restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle);
-    }
-    setOverlaySurfaceState(languageDrawer, false);
-    if (languageMenuToggle) {
-      languageMenuToggle.setAttribute("aria-expanded", "false");
-    }
-  };
-
-  const closeMenus = (restoreFocus = false) => {
-    const wasOpen = settingsRoot.dataset.open === "true";
-    settingsRoot.dataset.open = "false";
-    settingsToggle.setAttribute("aria-expanded", "false");
-    closeLanguageMenu(false);
-    if (restoreFocus && wasOpen) {
-      restoreOverlayFocusBeforeHide(settingsPanel, settingsToggle);
-    }
-    setOverlaySurfaceState(settingsPanel, false);
-  };
-
-  const toggleSettings = () => {
-    const next = settingsRoot.dataset.open !== "true";
-    settingsRoot.dataset.open = next ? "true" : "false";
-    settingsToggle.setAttribute("aria-expanded", next ? "true" : "false");
-    if (!next) {
-      closeMenus(false);
-      return;
-    }
-    setOverlaySurfaceState(settingsPanel, true);
-    focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle);
-  };
-
-  const toggleLanguageMenu = () => {
-    if (!languageDrawer || !languageMenuToggle) return;
-    const next = languageDrawer.dataset.open !== "true";
-    setOverlaySurfaceState(languageDrawer, next);
-    languageMenuToggle.setAttribute("aria-expanded", next ? "true" : "false");
-    if (next) {
-      focusOverlayEntry(languageDrawer, [
-        'input[name="static-topbar-language"]:checked',
-        'input[name="static-topbar-language"]',
-      ]);
-      return;
-    }
-    restoreOverlayFocusBeforeHide(languageDrawer, languageMenuToggle);
-    setOverlaySurfaceState(languageDrawer, false);
-  };
-
-  const handleTheme = () => {
-    const nextTheme: Theme =
-      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    persistStaticTheme(nextTheme);
-    refreshThemeButton(controller.lang);
-  };
-  const handleThemeClick = () => {
-    handleTheme();
-  };
-
-  settingsToggle.addEventListener("click", toggleSettings);
-  themeToggle.addEventListener("click", handleThemeClick);
-  controller.cleanupFns.push(() =>
-    settingsToggle.removeEventListener("click", toggleSettings),
-  );
-  controller.cleanupFns.push(() =>
-    themeToggle.removeEventListener("click", handleThemeClick),
-  );
-  controller.cleanupFns.push(
-    bindOverlayDismiss({
-      root: settingsRoot,
-      onDismiss: () => {
-        if (
-          settingsRoot.dataset.open !== "true" &&
-          languageDrawer?.dataset.open !== "true"
-        ) {
-          return;
-        }
-        closeMenus(true);
-      },
-    }),
-  );
-
-  if (languageMenuToggle && languageDrawer) {
-    languageMenuToggle.addEventListener("click", toggleLanguageMenu);
-    controller.cleanupFns.push(() =>
-      languageMenuToggle.removeEventListener("click", toggleLanguageMenu),
-    );
+const resolvePreferredStaticHomeLang = (fallback: Lang) => {
+  if (typeof window === "undefined") {
+    return fallback;
   }
 
-  document
-    .querySelectorAll<HTMLInputElement>("[data-static-language-option]")
-    .forEach((input) => {
-      const handleChange = () => {
-        const nextLang = input.dataset.lang as Lang | undefined;
-        input.blur();
-        const finalizeLanguageChange = () => {
-          closeMenus(true);
-          if (!nextLang || nextLang === controller.lang) {
-            return;
-          }
-          void swapStaticHomeLanguage(nextLang);
-        };
-        if (typeof queueMicrotask === "function") {
-          queueMicrotask(finalizeLanguageChange);
-          return;
-        }
-        finalizeLanguageChange();
-      };
+  const url = new URL(window.location.href);
+  const paramLang = resolveStaticShellLangParam(url.searchParams.get("lang"));
+  if (paramLang) {
+    return paramLang;
+  }
 
-      input.addEventListener("change", handleChange);
-      controller.cleanupFns.push(() =>
-        input.removeEventListener("change", handleChange),
+  for (const key of STATIC_LANG_STORAGE_KEYS) {
+    try {
+      const stored = resolveStaticShellLangParam(
+        window.localStorage.getItem(key),
       );
-    });
+      if (stored) {
+        return stored;
+      }
+    } catch {
+      // Ignore storage access failures.
+    }
+  }
 
-  setOverlaySurfaceState(settingsPanel, false);
-  closeLanguageMenu(false);
-  refreshThemeButton(controller.lang);
+  return resolveStaticShellLangParam(readCookieValue(STATIC_LANG_COOKIE_KEY)) ??
+    fallback;
 };
 
 const stopHomeHydrationFetches = (controller: HomeControllerState) => {
@@ -1280,41 +1038,19 @@ const destroyController = async (controller: HomeControllerState | null) => {
 
 const swapStaticHomeLanguage = async (nextLang: Lang) => {
   if (languageSwapInFlight) return;
-  const current = readStaticHomeBootstrapData();
-  if (!current || current.lang === nextLang) return;
   languageSwapInFlight = true;
 
   try {
-    const snapshot = await loadStaticShellSnapshot(
-      current.snapshotKey,
+    const { swapStaticHomeLanguage: swapLanguage } =
+      await loadHomeLanguageRuntime();
+    await swapLanguage({
       nextLang,
-    );
-    const languageSeed = await loadStaticShellLanguageSeed(
-      current.currentPath,
-      nextLang,
-    );
-
-    await destroyController(activeController);
-    activeController = null;
-
-    applyStaticShellSnapshot(snapshot, {
-      dockState: {
-        lang: nextLang,
-        currentPath: current.currentPath,
-        isAuthenticated: current.isAuthenticated,
+      destroyActiveController: async () => {
+        await destroyController(activeController);
+        activeController = null;
       },
+      bootstrapStaticHome,
     });
-    writeStaticShellSeed({
-      lang: nextLang,
-      currentPath: current.currentPath,
-      snapshotKey: current.snapshotKey,
-      languageSeed,
-      isAuthenticated: current.isAuthenticated,
-    });
-    persistStaticLang(nextLang);
-    updateStaticShellUrlLang(nextLang);
-
-    await bootstrapStaticHome();
   } catch (error) {
     console.error("Failed to switch static home language:", error);
   } finally {
@@ -1322,39 +1058,116 @@ const swapStaticHomeLanguage = async (nextLang: Lang) => {
   }
 };
 
+const installDeferredHomeUiControls = (controller: HomeControllerState) => {
+  const settingsRoot = document.querySelector<HTMLElement>(".topbar-settings");
+  if (!settingsRoot) {
+    return;
+  }
+
+  let started = false;
+  const eventOptions: AddEventListenerOptions = { capture: true };
+
+  const cleanupTriggers = () => {
+    settingsRoot.removeEventListener(
+      "pointerdown",
+      handleDeferredUiInteraction,
+      eventOptions,
+    );
+    settingsRoot.removeEventListener(
+      "touchstart",
+      handleDeferredUiInteraction,
+      eventOptions,
+    );
+    settingsRoot.removeEventListener(
+      "keydown",
+      handleDeferredUiInteraction,
+      eventOptions,
+    );
+    settingsRoot.removeEventListener(
+      "focusin",
+      handleDeferredUiInteraction,
+      eventOptions,
+    );
+  };
+
+  const loadUiControls = () => {
+    if (started || controller.destroyed) {
+      return;
+    }
+
+    started = true;
+    void loadHomeUiControlsRuntime()
+      .then(({ bindHomeUiControls }) => {
+        cleanupTriggers();
+        if (controller.destroyed) {
+          return;
+        }
+        bindHomeUiControls({
+          controller,
+          onLanguageChange: swapStaticHomeLanguage,
+        });
+      })
+      .catch((error) => {
+        started = false;
+        console.error("Static home UI controls failed:", error);
+      });
+  };
+
+  function handleDeferredUiInteraction() {
+    loadUiControls();
+  }
+
+  settingsRoot.addEventListener(
+    "pointerdown",
+    handleDeferredUiInteraction,
+    eventOptions,
+  );
+  settingsRoot.addEventListener(
+    "touchstart",
+    handleDeferredUiInteraction,
+    eventOptions,
+  );
+  settingsRoot.addEventListener(
+    "keydown",
+    handleDeferredUiInteraction,
+    eventOptions,
+  );
+  settingsRoot.addEventListener(
+    "focusin",
+    handleDeferredUiInteraction,
+    eventOptions,
+  );
+  controller.cleanupFns.push(cleanupTriggers);
+  controller.cleanupFns.push(
+    scheduleStaticShellTask(loadUiControls, {
+      priority: "background",
+      timeoutMs: 900,
+      waitForPaint: true,
+    }),
+  );
+};
+
 export const bootstrapStaticHome = async () => {
   const data = readStaticHomeBootstrapData();
   if (!data) return;
   primeTrustedTypesPolicies();
-  const preferredLang = resolvePreferredStaticShellLang(data.lang);
+  const preferredLang = resolvePreferredStaticHomeLang(data.lang);
   if (preferredLang !== data.lang) {
     try {
-      const snapshot = await loadStaticShellSnapshot(
-        data.snapshotKey,
+      const { restorePreferredStaticHomeLanguage } =
+        await loadHomeLanguageRuntime();
+      const restored = await restorePreferredStaticHomeLanguage({
+        current: data,
         preferredLang,
-      );
-      const languageSeed = await loadStaticShellLanguageSeed(
-        data.currentPath,
-        preferredLang,
-      );
-      applyStaticShellSnapshot(snapshot, {
-        dockState: {
-          lang: preferredLang,
-          currentPath: data.currentPath,
-          isAuthenticated: data.isAuthenticated,
+        destroyActiveController: async () => {
+          await destroyController(activeController);
+          activeController = null;
         },
+        bootstrapStaticHome,
       });
-      writeStaticShellSeed({
-        lang: preferredLang,
-        currentPath: data.currentPath,
-        snapshotKey: data.snapshotKey,
-        languageSeed,
-        isAuthenticated: data.isAuthenticated,
-      });
-      persistStaticLang(preferredLang);
-      updateStaticShellUrlLang(preferredLang);
-      await bootstrapStaticHome();
-      return;
+      if (restored) {
+        return;
+      }
     } catch (error) {
       console.error(
         "Failed to restore preferred home language snapshot:",
@@ -1414,9 +1227,6 @@ export const bootstrapStaticHome = async () => {
         if (controller.destroyed) return;
         homeFragmentHydration.observeWithin(document);
         requestHomeDemoObserve();
-        void syncHomeDockIfNeeded(controller).catch((error) => {
-          console.error("Static home dock sync failed:", error);
-        });
       },
       {
         priority: "background",
@@ -1429,24 +1239,13 @@ export const bootstrapStaticHome = async () => {
     scheduleStaticShellTask(
       () => {
         if (controller.destroyed) return;
-        void persistInitialFragmentCardHeights({
-          routeContext: {
-            path: controller.path,
-            lang: controller.lang,
-            fragmentOrder: data.fragmentOrder,
-            planSignature: data.planSignature ?? "",
-            versionSignature: data.versionSignature ?? "",
-          },
-        }).catch((error) => {
-          console.error(
-            "Static home fragment height persistence failed:",
-            error,
-          );
+        void syncHomeDockIfNeeded(controller).catch((error) => {
+          console.error("Static home dock sync failed:", error);
         });
       },
       {
         priority: "background",
-        timeoutMs: 1200,
+        timeoutMs: 900,
         waitForPaint: true,
       },
     ),
@@ -1457,7 +1256,7 @@ export const bootstrapStaticHome = async () => {
       homeFragmentHydration,
     }),
   );
-  bindShellControls(controller);
+  installDeferredHomeUiControls(controller);
   updateFragmentStatus(controller.lang, "idle");
 
   const handlePageHide = () => {

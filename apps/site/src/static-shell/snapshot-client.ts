@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import { setTrustedTemplateHtml } from '../security/client'
 import { resolveStaticShellLangParam } from './lang-param'
 import type { StaticShellSnapshot, StaticShellSnapshotManifest } from './seed'

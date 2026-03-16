@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import { loadLanguageResources } from '../lang/client'
 import {
   mergeLanguageSelections,

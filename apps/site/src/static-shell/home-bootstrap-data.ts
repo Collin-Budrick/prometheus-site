@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import type { LanguageSeedPayload } from '../lang/selection'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,

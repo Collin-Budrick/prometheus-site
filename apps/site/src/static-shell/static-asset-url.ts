@@ -19,9 +19,14 @@ const readScriptSrc = (script: ScriptLike) => script.src ?? script.getAttribute?
 
 export const resolveStaticAssetBase = ({ origin, scripts }: ResolveStaticAssetOptions = {}) => {
   const fallbackOrigin =
-    origin ?? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    origin ??
+    (typeof window !== 'undefined' && typeof window.location?.origin === 'string'
+      ? window.location.origin
+      : 'http://localhost')
   const fallbackBase = withTrailingSlash(fallbackOrigin)
-  const availableScripts = scripts ?? (typeof document !== 'undefined' ? document.scripts : [])
+  const availableScripts =
+    scripts ??
+    (typeof document !== 'undefined' && document.scripts ? document.scripts : [])
   const script = Array.from(availableScripts).find((entry) => readScriptSrc(entry).includes(STATIC_SHELL_BUNDLE_MARKER))
   const scriptSrc = script ? readScriptSrc(script) : ''
 

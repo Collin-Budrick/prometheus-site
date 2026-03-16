@@ -1,4 +1,4 @@
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 export { clearClientAuthSessionCache, loadClientAuthSession } from '../shared/auth-session-client'
 
 export const redirectProtectedStaticRouteToLogin = (lang: Lang) => {

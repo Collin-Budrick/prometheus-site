@@ -165,6 +165,7 @@ describe('bindStaticHomeReadyStagger', () => {
 
       frames.flushNext()
       expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe('ready')
+      MockIntersectionObserver.instance?.notify(anchor as unknown as Element, true)
       expect(queueCalls).toEqual(['fragment://page/home/planner@v1'])
 
       MockIntersectionObserver.instance?.notify(deferred as unknown as Element, true)

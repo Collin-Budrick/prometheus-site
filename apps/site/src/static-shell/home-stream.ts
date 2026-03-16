@@ -4,7 +4,7 @@ import {
   applyImmediateReadyStagger,
   queueReadyStaggerOnVisible
 } from '@prometheus/ui/ready-stagger'
-import type { Lang } from '../lang'
+import type { Lang } from '../lang/types'
 import { setTrustedInnerHtml } from '../security/client'
 import {
   getStaticHomePlannerDemoCopy,
@@ -24,10 +24,10 @@ import {
 import { renderHomeStaticFragmentHtml } from './home-render'
 import { scheduleStaticShellTask } from './scheduler'
 import {
-  lockFragmentCardHeight,
-  settlePatchedFragmentCardHeight,
   type FragmentHeightRouteContext
 } from './fragment-height'
+import { lockFragmentCardHeight } from './fragment-height-lock'
+import { loadFragmentHeightPatchRuntime } from './fragment-height-patch-runtime-loader'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -182,14 +182,18 @@ export const patchStaticHomeFragmentCard = ({
     queueReadyStaggerOnVisible(targetCard, { group: 'static-home-patch', replay: true })
   }
 
-  void settlePatchedFragmentCardHeight({
-    card: targetCard,
-    fragmentId: payload.id,
-    routeContext,
-    lockToken
-  }).catch((error) => {
-    console.error('Static home fragment height settle failed:', error)
-  })
+  void loadFragmentHeightPatchRuntime()
+    .then(({ settlePatchedFragmentCardHeight }) =>
+      settlePatchedFragmentCardHeight({
+        card: targetCard,
+        fragmentId: payload.id,
+        routeContext,
+        lockToken
+      })
+    )
+    .catch((error) => {
+      console.error('Static home fragment height settle failed:', error)
+    })
 
   return 'patched'
 }
