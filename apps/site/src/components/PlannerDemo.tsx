@@ -159,6 +159,12 @@ export const PlannerDemo = component$(() => {
           const cacheHit = cacheState.value[fragment.id]
           const renderState = showRender ? (cacheHit ? 'skip' : 'render') : 'idle'
           const revalidateState = showRevalidate ? (cacheHit ? 'queued' : 'fresh') : 'idle'
+          const dependencyValue = fragment.deps.length ? fragment.deps.join(' + ') : copy.root
+          const dependencyState = stageIndex.value >= 0 ? 'ready' : 'idle'
+          const dependencyPill = dependencyState === 'ready' ? copy.resolved : copy.pending
+          const cachePill = showCache ? copy.checked : copy.waitingCache
+          const runtimeState = showRuntime ? 'ready' : 'idle'
+          const runtimeValue = showRuntime ? fragment.runtime : copy.selecting
           return (
             <div
               key={fragment.id}
@@ -169,15 +175,20 @@ export const PlannerDemo = component$(() => {
               data-title={fragment.label}
               data-meta={fragment.id}
             >
-              <div class="planner-demo-row" data-label={copy.labels.dependencies}>
-                <span class="planner-demo-value">
-                  {fragment.deps.length ? fragment.deps.join(' + ') : copy.root}
-                </span>
-                <span class="planner-demo-pill" data-state={stageIndex.value >= 0 ? 'ready' : 'idle'}>
-                  {stageIndex.value >= 0 ? copy.resolved : copy.pending}
-                </span>
+              <div
+                class="planner-demo-row planner-demo-row--dependencies"
+                data-label={copy.labels.dependencies}
+                data-state={dependencyState}
+                data-pill={dependencyPill}
+              >
+                {dependencyValue}
               </div>
-              <div class="planner-demo-row" data-label={copy.labels.cache}>
+              <div
+                class="planner-demo-row planner-demo-row--cache"
+                data-label={copy.labels.cache}
+                data-state={showCache ? 'ready' : 'idle'}
+                data-pill={cachePill}
+              >
                 <button
                   class="planner-demo-toggle"
                   type="button"
@@ -186,30 +197,28 @@ export const PlannerDemo = component$(() => {
                 >
                   {cacheHit ? copy.hit : copy.miss}
                 </button>
-                <span class="planner-demo-pill" data-state={showCache ? 'ready' : 'idle'}>
-                  {showCache ? copy.checked : copy.waitingCache}
-                </span>
               </div>
-              <div class="planner-demo-row" data-label={copy.labels.runtime}>
-                <span class="planner-demo-pill" data-state={showRuntime ? 'ready' : 'idle'}>
-                  {showRuntime ? fragment.runtime : copy.selecting}
-                </span>
+              <div
+                class="planner-demo-row planner-demo-row--runtime"
+                data-label={copy.labels.runtime}
+                data-state={runtimeState}
+                data-pill={runtimeValue}
+              >
+                {runtimeValue}
               </div>
-              <div class="planner-demo-outcomes">
-                <div class="planner-demo-outcome" data-state={renderState}>
-                  {renderState === 'render'
-                    ? copy.renderNow
-                    : renderState === 'skip'
-                      ? copy.skipRender
-                      : copy.awaitRender}
-                </div>
-                <div class="planner-demo-outcome is-muted" data-state={revalidateState}>
-                  {revalidateState === 'queued'
-                    ? copy.revalidateQueued
-                    : revalidateState === 'fresh'
-                      ? copy.freshRender
-                      : copy.awaitRevalidate}
-                </div>
+              <div class="planner-demo-outcome" data-state={renderState}>
+                {renderState === 'render'
+                  ? copy.renderNow
+                  : renderState === 'skip'
+                    ? copy.skipRender
+                    : copy.awaitRender}
+              </div>
+              <div class="planner-demo-outcome is-muted" data-state={revalidateState}>
+                {revalidateState === 'queued'
+                  ? copy.revalidateQueued
+                  : revalidateState === 'fresh'
+                    ? copy.freshRender
+                    : copy.awaitRevalidate}
               </div>
             </div>
           )

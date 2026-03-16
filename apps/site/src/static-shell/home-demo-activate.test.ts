@@ -36,6 +36,41 @@ class MockElement {
 
   constructor(readonly tagName: string = 'div') {}
 
+  get classList() {
+    const read = () => this.className.split(/\s+/).filter(Boolean)
+    const write = (tokens: string[]) => {
+      this.className = tokens.join(' ')
+    }
+    return {
+      add: (...tokens: string[]) => {
+        const next = new Set(read())
+        tokens.forEach((token) => next.add(token))
+        write([...next])
+      },
+      remove: (...tokens: string[]) => {
+        const removals = new Set(tokens)
+        write(read().filter((token) => !removals.has(token)))
+      },
+      contains: (token: string) => read().includes(token),
+      toggle: (token: string, force?: boolean) => {
+        const hasToken = read().includes(token)
+        const shouldHaveToken = force ?? !hasToken
+        if (shouldHaveToken) {
+          if (!hasToken) {
+            const next = read()
+            next.push(token)
+            write(next)
+          }
+          return true
+        }
+        if (hasToken) {
+          write(read().filter((value) => value !== token))
+        }
+        return false
+      }
+    }
+  }
+
   get textContent() {
     if (this.childNodes.length > 0) {
       return this.childNodes.map((node) => node.textContent).join('')
@@ -52,6 +87,9 @@ class MockElement {
     this.lastInnerHtmlValue = _value
     this.ownTextContent = null
     this.childNodes = []
+    if (this.className === 'planner-demo') {
+      buildPlannerDemoTree(this)
+    }
     if (this.className === 'react-binary-demo') {
       buildReactBinaryDemoTree(this)
     }
@@ -232,6 +270,41 @@ const createElement = (root: MockElement, tagName: string, className?: string) =
   return element
 }
 
+const plannerStepCount = 5
+const plannerCardCount = 3
+
+const buildPlannerDemoTree = (root: MockElement) => {
+  const header = createElement(root, 'div', 'planner-demo-header')
+  const title = createElement(root, 'div', 'planner-demo-title')
+  const controls = createElement(root, 'div', 'planner-demo-controls')
+  controls.append(
+    createElement(root, 'button', 'planner-demo-action'),
+    createElement(root, 'button', 'planner-demo-secondary')
+  )
+  header.append(title, controls)
+
+  const status = createElement(root, 'div', 'planner-demo-status')
+  const steps = createElement(root, 'div', 'planner-demo-steps')
+  for (let index = 0; index < plannerStepCount; index += 1) {
+    steps.append(createElement(root, 'div', 'planner-demo-step'))
+  }
+
+  const grid = createElement(root, 'div', 'planner-demo-grid')
+  for (let index = 0; index < plannerCardCount; index += 1) {
+    const card = createElement(root, 'div', 'planner-demo-card')
+    const dependencyRow = createElement(root, 'div', 'planner-demo-row planner-demo-row--dependencies')
+    const cacheRow = createElement(root, 'div', 'planner-demo-row planner-demo-row--cache')
+    cacheRow.append(createElement(root, 'button', 'planner-demo-toggle'))
+    const runtimeRow = createElement(root, 'div', 'planner-demo-row planner-demo-row--runtime')
+    const renderOutcome = createElement(root, 'div', 'planner-demo-outcome')
+    const revalidateOutcome = createElement(root, 'div', 'planner-demo-outcome is-muted')
+    card.append(dependencyRow, cacheRow, runtimeRow, renderOutcome, revalidateOutcome)
+    grid.append(card)
+  }
+
+  root.replaceChildren(header, status, steps, grid)
+}
+
 const buildReactBinaryDemoTree = (root: MockElement) => {
   const header = createElement(root, 'div', 'react-binary-header')
   const controls = createElement(root, 'div', 'react-binary-controls')
@@ -322,6 +395,59 @@ const routeSeed = {
       demoActivating: 'Launching demo...'
     },
     demos: {
+      planner: {
+        title: 'Planner demo',
+        run: 'Run',
+        running: 'Running...',
+        shuffle: 'Shuffle',
+        waiting: 'Waiting for plan',
+        steps: [
+          { id: 'deps', label: 'Resolve deps', hint: 'Resolve the dependency graph.' },
+          { id: 'cache', label: 'Check cache', hint: 'Check the cache.' },
+          { id: 'runtime', label: 'Select runtime', hint: 'Pick a runtime.' },
+          { id: 'render', label: 'Render misses', hint: 'Render the missing fragments.' },
+          { id: 'revalidate', label: 'Async revalidate', hint: 'Queue revalidation.' }
+        ],
+        fragments: [
+          {
+            id: 'fragment://planner/root',
+            label: 'Root card',
+            deps: [],
+            runtime: 'WASM'
+          },
+          {
+            id: 'fragment://planner/store',
+            label: 'Store card',
+            deps: ['manifest'],
+            runtime: 'Edge'
+          },
+          {
+            id: 'fragment://planner/profile',
+            label: 'Profile card',
+            deps: ['auth', 'profile'],
+            runtime: 'Bun'
+          }
+        ],
+        labels: {
+          dependencies: 'Dependencies',
+          cache: 'Cache',
+          runtime: 'Runtime'
+        },
+        root: 'root',
+        resolved: 'Resolved',
+        pending: 'Pending',
+        hit: 'Hit',
+        miss: 'Miss',
+        checked: 'Checked',
+        waitingCache: 'Waiting cache',
+        selecting: 'Selecting runtime',
+        renderNow: 'Render now',
+        skipRender: 'Skip render',
+        awaitRender: 'Await render',
+        revalidateQueued: 'Revalidate queued',
+        freshRender: 'Fresh render',
+        awaitRevalidate: 'Await revalidate'
+      },
       reactBinary: {
         title: 'Binary authoring',
         actions: {
@@ -464,6 +590,34 @@ describe('home-demo-activate', () => {
       'Binary stream',
       'Qwik DOM'
     ])
+
+    result.cleanup()
+  })
+
+  it('renders flatter planner cards without nested value, pill, or outcome wrapper nodes', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'planner',
+      props: {}
+    })
+
+    expect(root.getAttribute('data-home-demo-active')).toBe('true')
+    expect(root.querySelectorAll('.planner-demo-card')).toHaveLength(plannerCardCount)
+    expect(root.querySelector('.planner-demo-value')).toBeNull()
+    expect(root.querySelector('.planner-demo-pill')).toBeNull()
+    expect(root.querySelector('.planner-demo-outcomes')).toBeNull()
+    expect(root.querySelector('.planner-demo-row--dependencies')?.textContent).toBe('root')
+    expect(root.querySelector('.planner-demo-row--dependencies')?.dataset.pill).toBe('Pending')
+    expect(root.querySelector('.planner-demo-row--dependencies')?.getAttribute('aria-label')).toBeNull()
+    expect(root.querySelector('.planner-demo-row--runtime')?.textContent).toBe('Selecting runtime')
+    expect(root.querySelector('.planner-demo-row--runtime')?.dataset.pill).toBe('Selecting runtime')
+    expect(root.querySelector('.planner-demo-row--runtime')?.getAttribute('aria-label')).toBeNull()
 
     result.cleanup()
   })

@@ -212,21 +212,13 @@ const renderPlannerDemoMarkup = (copy: PlannerDemoCopy) => `
       .map(
         () => `
           <div class="planner-demo-card" data-cache="hit" data-render="idle" data-revalidate="idle">
-            <div class="planner-demo-row">
-              <span class="planner-demo-value"></span>
-              <span class="planner-demo-pill" data-state="idle"></span>
-            </div>
-            <div class="planner-demo-row">
+            <div class="planner-demo-row planner-demo-row--dependencies" data-state="idle" data-pill=""></div>
+            <div class="planner-demo-row planner-demo-row--cache" data-state="idle" data-pill="">
               <button class="planner-demo-toggle" type="button" data-state="hit"></button>
-              <span class="planner-demo-pill" data-state="idle"></span>
             </div>
-            <div class="planner-demo-row">
-              <span class="planner-demo-pill" data-state="idle"></span>
-            </div>
-            <div class="planner-demo-outcomes">
-              <div class="planner-demo-outcome" data-state="idle"></div>
-              <div class="planner-demo-outcome is-muted" data-state="idle"></div>
-            </div>
+            <div class="planner-demo-row planner-demo-row--runtime" data-state="idle" data-pill=""></div>
+            <div class="planner-demo-outcome" data-state="idle"></div>
+            <div class="planner-demo-outcome is-muted" data-state="idle"></div>
           </div>
         `
       )
@@ -398,9 +390,17 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     const cacheHit = cacheState[fragment.id] ?? false
     const renderState = showRender() ? (cacheHit ? 'skip' : 'render') : 'idle'
     const revalidateState = showRevalidate() ? (cacheHit ? 'queued' : 'fresh') : 'idle'
-    const rows = Array.from(card.querySelectorAll<HTMLElement>('.planner-demo-row'))
+    const dependencyRow = card.querySelector<HTMLElement>('.planner-demo-row--dependencies')
+    const cacheRow = card.querySelector<HTMLElement>('.planner-demo-row--cache')
+    const runtimeRow = card.querySelector<HTMLElement>('.planner-demo-row--runtime')
     const outcomes = Array.from(card.querySelectorAll<HTMLElement>('.planner-demo-outcome'))
     const cacheButton = card.querySelector<HTMLButtonElement>('.planner-demo-toggle')
+    const dependencyValue = fragment.deps.length ? fragment.deps.join(' + ') : copy.root
+    const dependencyState = stageIndex >= 0 ? 'ready' : 'idle'
+    const dependencyPill = dependencyState === 'ready' ? copy.resolved : copy.pending
+    const cachePill = showCache() ? copy.checked : copy.waitingCache
+    const runtimeState = showRuntime() ? 'ready' : 'idle'
+    const runtimeValue = showRuntime() ? fragment.runtime : copy.selecting
 
     card.dataset.cache = cacheHit ? 'hit' : 'miss'
     card.dataset.render = renderState
@@ -408,19 +408,17 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
     card.dataset.title = fragment.label
     card.dataset.meta = fragment.id
 
-    rows[0]?.setAttribute('data-label', copy.labels.dependencies)
-    rows[1]?.setAttribute('data-label', copy.labels.cache)
-    rows[2]?.setAttribute('data-label', copy.labels.runtime)
-
-    const dependencyValue = rows[0]?.querySelector<HTMLElement>('.planner-demo-value')
-    if (dependencyValue) {
-      dependencyValue.textContent = fragment.deps.length ? fragment.deps.join(' + ') : copy.root
+    if (dependencyRow) {
+      dependencyRow.setAttribute('data-label', copy.labels.dependencies)
+      dependencyRow.setAttribute('data-state', dependencyState)
+      dependencyRow.setAttribute('data-pill', dependencyPill)
+      dependencyRow.textContent = dependencyValue
     }
 
-    const dependencyPill = rows[0]?.querySelector<HTMLElement>('.planner-demo-pill')
-    if (dependencyPill) {
-      dependencyPill.dataset.state = stageIndex >= 0 ? 'ready' : 'idle'
-      dependencyPill.textContent = stageIndex >= 0 ? copy.resolved : copy.pending
+    if (cacheRow) {
+      cacheRow.setAttribute('data-label', copy.labels.cache)
+      cacheRow.setAttribute('data-state', showCache() ? 'ready' : 'idle')
+      cacheRow.setAttribute('data-pill', cachePill)
     }
 
     if (cacheButton) {
@@ -430,16 +428,11 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
       cacheButton.textContent = cacheHit ? copy.hit : copy.miss
     }
 
-    const cachePill = rows[1]?.querySelector<HTMLElement>('.planner-demo-pill')
-    if (cachePill) {
-      cachePill.dataset.state = showCache() ? 'ready' : 'idle'
-      cachePill.textContent = showCache() ? copy.checked : copy.waitingCache
-    }
-
-    const runtimePill = rows[2]?.querySelector<HTMLElement>('.planner-demo-pill')
-    if (runtimePill) {
-      runtimePill.dataset.state = showRuntime() ? 'ready' : 'idle'
-      runtimePill.textContent = showRuntime() ? fragment.runtime : copy.selecting
+    if (runtimeRow) {
+      runtimeRow.setAttribute('data-label', copy.labels.runtime)
+      runtimeRow.setAttribute('data-state', runtimeState)
+      runtimeRow.setAttribute('data-pill', runtimeValue)
+      runtimeRow.textContent = runtimeValue
     }
 
     if (outcomes[0]) {

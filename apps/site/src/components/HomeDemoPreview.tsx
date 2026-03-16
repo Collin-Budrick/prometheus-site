@@ -54,34 +54,37 @@ const renderPlannerPreview = (copy: PlannerDemoCopy, ui: Pick<UiCopy, 'demoActiv
           data-title={fragment.label}
           data-meta={fragment.id}
         >
-          <div class="planner-demo-row" data-label={copy.labels.dependencies}>
-            <span class="planner-demo-value">
-              {fragment.deps.length ? fragment.deps.join(' + ') : copy.root}
-            </span>
-            <span class="planner-demo-pill" data-state="idle">
-              {copy.pending}
-            </span>
+          <div
+            class="planner-demo-row planner-demo-row--dependencies"
+            data-label={copy.labels.dependencies}
+            data-state="idle"
+            data-pill={copy.pending}
+          >
+            {fragment.deps.length ? fragment.deps.join(' + ') : copy.root}
           </div>
-          <div class="planner-demo-row" data-label={copy.labels.cache}>
+          <div
+            class="planner-demo-row planner-demo-row--cache"
+            data-label={copy.labels.cache}
+            data-state="idle"
+            data-pill={copy.waitingCache}
+          >
             <button class="planner-demo-toggle" type="button" data-state="hit" disabled>
               {copy.hit}
             </button>
-            <span class="planner-demo-pill" data-state="idle">
-              {copy.waitingCache}
-            </span>
           </div>
-          <div class="planner-demo-row" data-label={copy.labels.runtime}>
-            <span class="planner-demo-pill" data-state="idle">
-              {copy.selecting}
-            </span>
+          <div
+            class="planner-demo-row planner-demo-row--runtime"
+            data-label={copy.labels.runtime}
+            data-state="idle"
+            data-pill={copy.selecting}
+          >
+            {copy.selecting}
           </div>
-          <div class="planner-demo-outcomes">
-            <div class="planner-demo-outcome" data-state="idle">
-              {copy.awaitRender}
-            </div>
-            <div class="planner-demo-outcome is-muted" data-state="idle">
-              {copy.awaitRevalidate}
-            </div>
+          <div class="planner-demo-outcome" data-state="idle">
+            {copy.awaitRender}
+          </div>
+          <div class="planner-demo-outcome is-muted" data-state="idle">
+            {copy.awaitRevalidate}
           </div>
         </div>
       ))}

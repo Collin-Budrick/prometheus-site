@@ -44,7 +44,7 @@
   .planner-demo-step,
   .planner-demo-card::after,
   .planner-demo-row::before,
-  .planner-demo-pill,
+  .planner-demo-row::after,
   .planner-demo-outcome,
   .planner-demo-outcome[data-state="skip"],
   .planner-demo-outcome.is-muted {
@@ -199,9 +199,11 @@
 
   .planner-demo-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
+    @apply text-slate-600 text-xs;
+    color: rgb(var(--muted));
   }
 
   .planner-demo-row::before {
@@ -210,14 +212,8 @@
     grid-column: 1;
   }
 
-  .planner-demo-value {
-    @apply text-slate-600 text-xs;
-    justify-self: start;
-    grid-column: 2;
-    color: rgb(var(--muted));
-  }
-
-  .planner-demo-pill {
+  .planner-demo-row[data-pill]::after {
+    content: attr(data-pill);
     @apply bg-white px-2 py-1 border border-slate-200 rounded-full;
     @apply font-mono text-[9px] text-slate-500 uppercase tracking-[0.35em];
     display: inline-flex;
@@ -230,7 +226,7 @@
     border-color: rgb(var(--stroke));
   }
 
-  .planner-demo-pill[data-state="ready"] {
+  .planner-demo-row[data-state="ready"]::after {
     @apply border-teal-200/80 bg-teal-50 text-teal-700;
     background-color: rgb(var(--signal) / 0.12);
     border-color: rgb(var(--signal) / 0.28);
@@ -269,9 +265,11 @@
     transform: translateY(-1px);
   }
 
-  .planner-demo-outcomes {
-    display: grid;
-    gap: 6px;
+  .planner-demo-row--runtime {
+    grid-template-columns: auto 0 auto;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
   }
 
   .planner-demo-outcome {
@@ -283,6 +281,10 @@
     gap: 6px;
     background-color: rgb(var(--surface));
     border-color: rgb(var(--stroke));
+  }
+
+  .planner-demo-outcome + .planner-demo-outcome {
+    margin-top: -4px;
   }
 
   .planner-demo-outcome[data-state="render"] {
