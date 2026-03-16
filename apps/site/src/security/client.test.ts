@@ -3,6 +3,7 @@ import {
   applyCspNonce,
   asTrustedHtml,
   asTrustedScript,
+  asTrustedScriptUrl,
   getCspNonce,
   installTrustedTypesFunctionBridge,
   primeTrustedTypesPolicies,
@@ -34,6 +35,11 @@ const createTrustedTypesMock = () => ({
         policy: name
       }) as never as TrustedHtmlMock,
     createScript: (input: string) =>
+      ({
+        __html: input,
+        policy: name
+      }) as never as TrustedHtmlMock,
+    createScriptURL: (input: string) =>
       ({
         __html: input,
         policy: name
@@ -135,5 +141,14 @@ describe('security/client', () => {
     expect(capturedArgs).toHaveLength(1)
     expect((capturedArgs[0]?.[0] as TrustedHtmlMock).policy).toBe('prometheus-runtime-script')
     expect(generated()).toBe(7)
+  })
+
+  it('creates trusted script URLs for worker-style runtime entrypoints', () => {
+    ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = createTrustedTypesMock()
+
+    const trustedUrl = asTrustedScriptUrl('https://prometheus.prod/build/static-shell/shared-worker.js') as TrustedHtmlMock
+
+    expect(trustedUrl.policy).toBe('prometheus-runtime-script')
+    expect(trustedUrl.__html).toBe('https://prometheus.prod/build/static-shell/shared-worker.js')
   })
 })

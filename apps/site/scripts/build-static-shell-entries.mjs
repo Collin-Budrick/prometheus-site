@@ -28,6 +28,8 @@ const entrypoints = [
   'apps/site/src/static-shell/fragment-static-entry.ts',
   'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
   'apps/site/src/static-shell/store-static-runtime.ts',
+  'apps/site/src/fragment/runtime/shared-worker.ts',
+  'apps/site/src/fragment/runtime/decode-pool.worker.ts',
   'apps/site/src/static-shell/island-static-entry.ts',
   'apps/site/src/static-shell/island-bootstrap-runtime.ts'
 ]

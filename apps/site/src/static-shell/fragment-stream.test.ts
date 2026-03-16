@@ -222,6 +222,7 @@ describe('patchStaticFragmentCard', () => {
       fragmentOrder: [TEST_FRAGMENT_ID],
       planSignature: 'store-plan',
       versionSignature: 'store-version',
+      runtimePlanEntries: [],
       fragmentVersions: {
         [TEST_FRAGMENT_ID]: 2
       },
@@ -299,6 +300,7 @@ describe('patchStaticFragmentCard', () => {
       fragmentOrder: [TEST_FRAGMENT_ID],
       planSignature: 'store-plan',
       versionSignature: 'store-version',
+      runtimePlanEntries: [],
       fragmentVersions: {
         [TEST_FRAGMENT_ID]: 2
       },
@@ -379,6 +381,7 @@ describe('patchStaticFragmentCard', () => {
       fragmentOrder: [TEST_FRAGMENT_ID],
       planSignature: 'store-plan',
       versionSignature: 'store-version',
+      runtimePlanEntries: [],
       fragmentVersions: {
         [TEST_FRAGMENT_ID]: 2
       },

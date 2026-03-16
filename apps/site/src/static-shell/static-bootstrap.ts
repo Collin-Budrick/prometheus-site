@@ -3,7 +3,13 @@ import {
   getUiCopy,
   seedLanguageResources,
 } from "../lang/client";
+import { buildFragmentHeightVersionSignature } from "@prometheus/ui/fragment-height";
 import type { Lang } from "../lang";
+import { FragmentSharedRuntimeBridge } from "../fragment/runtime/client-bridge";
+import type {
+  FragmentRuntimeCardSizing,
+  FragmentRuntimeSizingMap,
+} from "../fragment/runtime/protocol";
 import {
   getCspNonce,
   installTrustedTypesFunctionBridge,
@@ -13,6 +19,7 @@ import {
 } from "../security/client";
 import type { StaticFragmentRouteData } from "./fragment-static-data";
 import { buildFragmentHeightPersistenceScript } from "./fragment-height-script";
+import { patchStaticFragmentCard } from "./fragment-stream";
 import type { StaticShellSeed } from "./seed";
 import type { StaticFragmentRouteModel } from "./static-fragment-model";
 import { persistInitialFragmentCardHeights } from "./fragment-height";
@@ -55,6 +62,7 @@ import {
   restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState,
 } from "../shared/overlay-a11y";
+import { getPublicFragmentApiBase } from "../shared/public-fragment-config";
 import { appConfig } from "../public-app-config";
 import type { StoreSeed } from "../shared/store-seed";
 
@@ -73,6 +81,7 @@ type StaticFragmentController = {
   destroyed: boolean;
   routeData: StaticFragmentRouteData;
   visibleFragmentIds: Set<string>;
+  sharedRuntime: FragmentSharedRuntimeBridge | null;
 };
 
 const STATIC_THEME_STORAGE_KEY = "prometheus-theme";
@@ -85,6 +94,7 @@ const DARK_THEME_COLOR = "#0f172a";
 const LIGHT_THEME_COLOR = "#f97316";
 const STATIC_FRAGMENT_STREAM_ROOT_MARGIN = appConfig.fragmentVisibilityMargin;
 const STATIC_FRAGMENT_STREAM_THRESHOLD = appConfig.fragmentVisibilityThreshold;
+const STATIC_FRAGMENT_RUNTIME_ATTR = "data-static-fragment-runtime";
 
 let activeController: StaticFragmentController | null = null;
 let fragmentStreamRuntimePromise: Promise<
@@ -264,6 +274,87 @@ const collectVisibleStreamIds = (
     controller.visibleFragmentIds.has(id),
   );
 
+const setStaticFragmentRuntimeMode = (
+  mode: "shared-worker" | "direct" | "idle",
+) => {
+  document
+    .querySelector<HTMLElement>("[data-static-fragment-root]")
+    ?.setAttribute(STATIC_FRAGMENT_RUNTIME_ATTR, mode);
+};
+
+const escapeFragmentId = (value: string) => {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return value.replace(/["\\]/g, "\\$&");
+};
+
+const getStaticFragmentCard = (fragmentId: string) =>
+  document.querySelector<HTMLElement>(
+    `[${STATIC_FRAGMENT_CARD_ATTR}][data-fragment-id="${escapeFragmentId(fragmentId)}"]`,
+  );
+
+const readStaticFragmentHeightHint = (card: HTMLElement) => {
+  const hintedHeight = Number.parseFloat(
+    card.getAttribute("data-fragment-height-hint") ??
+      card.style.getPropertyValue("--fragment-min-height"),
+  );
+  return Number.isFinite(hintedHeight) && hintedHeight > 0
+    ? Math.ceil(hintedHeight)
+    : null;
+};
+
+const readStaticFragmentCardWidth = (card: HTMLElement) => {
+  const width = Math.ceil(card.getBoundingClientRect().width);
+  return width > 0 ? width : null;
+};
+
+const collectStaticFragmentKnownVersions = () =>
+  Array.from(
+    document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`),
+  ).reduce<Record<string, number>>((acc, card) => {
+    const fragmentId = card.dataset.fragmentId;
+    const rawVersion = card.getAttribute(STATIC_FRAGMENT_VERSION_ATTR);
+    const parsedVersion = rawVersion ? Number(rawVersion) : Number.NaN;
+    if (fragmentId && Number.isFinite(parsedVersion)) {
+      acc[fragmentId] = parsedVersion;
+    }
+    return acc;
+  }, {});
+
+const collectStaticFragmentSizingSeeds = (
+  fragmentOrder: string[],
+): FragmentRuntimeSizingMap =>
+  fragmentOrder.reduce<FragmentRuntimeSizingMap>((acc, fragmentId) => {
+    const card = getStaticFragmentCard(fragmentId);
+    if (!card) return acc;
+    const stableHeight = readStaticFragmentHeightHint(card);
+    const cardWidth = readStaticFragmentCardWidth(card);
+    if (stableHeight === null && cardWidth === null) {
+      return acc;
+    }
+    acc[fragmentId] = {
+      stableHeight,
+      cardWidth,
+    };
+    return acc;
+  }, {});
+
+const applySharedRuntimeSizing = (sizing: FragmentRuntimeCardSizing) => {
+  const card = getStaticFragmentCard(sizing.fragmentId);
+  if (!card) return;
+  if (sizing.reservedHeight > 0) {
+    card.style.setProperty(
+      "--fragment-min-height",
+      `${sizing.reservedHeight}px`,
+    );
+    card.setAttribute(
+      "data-fragment-height-hint",
+      `${sizing.reservedHeight}`,
+    );
+  }
+};
+
 const readShellSeed = () => readStaticShellSeed();
 
 const readRouteData = (shellSeed: StaticShellSeed) =>
@@ -311,6 +402,139 @@ const writeStaticFragmentRouteData = (routeData: StaticFragmentRouteData | null)
   (element as unknown as { text: string | ReturnType<typeof asTrustedScript> }).text =
     asTrustedScript(serializeJson(routeData));
   return routeData;
+};
+
+const syncRouteDataVersion = (
+  routeData: StaticFragmentRouteData,
+  fragmentId: string,
+  cacheUpdatedAt?: number,
+) => {
+  if (!Number.isFinite(cacheUpdatedAt)) return;
+  routeData.fragmentVersions = {
+    ...routeData.fragmentVersions,
+    [fragmentId]: cacheUpdatedAt as number,
+  };
+  routeData.versionSignature = buildFragmentHeightVersionSignature(
+    routeData.fragmentVersions,
+    routeData.fragmentOrder,
+  );
+  writeStaticFragmentRouteData(routeData);
+};
+
+const connectSharedFragmentRuntime = (
+  controller: StaticFragmentController,
+) => {
+  controller.sharedRuntime?.dispose();
+  controller.sharedRuntime = null;
+
+  const runtimePlanEntries = controller.routeData.runtimePlanEntries ?? [];
+  if (!runtimePlanEntries.length) {
+    setStaticFragmentRuntimeMode("direct");
+    return false;
+  }
+
+  const bridge = new FragmentSharedRuntimeBridge();
+  const connected = bridge.connect({
+    clientId:
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+        ? `static-fragment-runtime:${crypto.randomUUID()}`
+        : `static-fragment-runtime:${Date.now().toString(36)}`,
+    apiBase: getPublicFragmentApiBase(),
+    path: controller.routeData.path,
+    lang: controller.lang,
+    planEntries: runtimePlanEntries,
+    initialFragments: [],
+    initialSizing: collectStaticFragmentSizingSeeds(
+      controller.routeData.fragmentOrder,
+    ),
+    knownVersions: collectStaticFragmentKnownVersions(),
+    visibleIds: collectVisibleStreamIds(controller),
+    viewportWidth: window.innerWidth,
+    enableStreaming: true,
+    onCommit: (payload) => {
+      patchStaticFragmentCard(payload, controller.routeData, document);
+      syncRouteDataVersion(
+        controller.routeData,
+        payload.id,
+        payload.cacheUpdatedAt,
+      );
+    },
+    onSizing: applySharedRuntimeSizing,
+    onStatus: (nextStatus) => {
+      updateFragmentStatus(
+        controller.lang,
+        nextStatus === "idle" ? "idle" : "streaming",
+      );
+    },
+    onError: (message) => {
+      console.error("Static fragment shared runtime failed:", message);
+      updateFragmentStatus(controller.lang, "error");
+    },
+  });
+
+  if (!connected) {
+    setStaticFragmentRuntimeMode("direct");
+    return false;
+  }
+
+  controller.sharedRuntime = bridge;
+  setStaticFragmentRuntimeMode("shared-worker");
+
+  const handleStableHeight = (event: Event) => {
+    const detail = (
+      event as CustomEvent<{ fragmentId?: string; height?: number }>
+    ).detail;
+    const fragmentId = detail?.fragmentId?.trim();
+    if (!fragmentId || typeof detail.height !== "number") return;
+    const card = getStaticFragmentCard(fragmentId);
+    if (!card) return;
+    bridge.measureCard(
+      fragmentId,
+      Math.ceil(detail.height),
+      readStaticFragmentCardWidth(card),
+      card.dataset.fragmentReady === "true",
+    );
+  };
+
+  document.addEventListener(
+    "prom:fragment-stable-height",
+    handleStableHeight as EventListener,
+  );
+  controller.cleanupFns.push(() =>
+    document.removeEventListener(
+      "prom:fragment-stable-height",
+      handleStableHeight as EventListener,
+    ),
+  );
+
+  if (typeof ResizeObserver === "function") {
+    const resizeObserver = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const card = entry.target as HTMLElement;
+        const fragmentId = card.dataset.fragmentId;
+        if (!fragmentId) return;
+        const width = readStaticFragmentCardWidth(card);
+        if (width !== null) {
+          bridge.reportCardWidth(fragmentId, width);
+        }
+        if (card.dataset.fragmentReady === "true") {
+          bridge.measureCard(
+            fragmentId,
+            Math.ceil(entry.contentRect.height),
+            width,
+            true,
+          );
+        }
+      });
+    });
+    document
+      .querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`)
+      .forEach((card) => resizeObserver.observe(card));
+    controller.cleanupFns.push(() => resizeObserver.disconnect());
+  }
+
+  return true;
 };
 
 const swapStaticFragmentLanguage = async (nextLang: Lang) => {
@@ -498,6 +722,7 @@ const bindShellControls = (controller: StaticFragmentController) => {
 };
 
 const stopConnections = (controller: StaticFragmentController) => {
+  controller.sharedRuntime?.pause();
   controller.streamStartCancel?.();
   controller.streamStartCancel = null;
   if (controller.streamAbort) {
@@ -529,13 +754,22 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
 
   const visibleIds = collectVisibleStreamIds(controller);
   if (visibleIds.length === 0) {
+    controller.sharedRuntime?.setVisibleIds([]);
+    controller.sharedRuntime?.pause();
     controller.streamAbort = null;
     updateFragmentStatus(controller.lang, "idle");
     return;
   }
 
+  if (controller.sharedRuntime) {
+    controller.sharedRuntime.setVisibleIds(visibleIds);
+    controller.sharedRuntime.resume();
+    return;
+  }
+
   const streamAbort = new AbortController();
   controller.streamAbort = streamAbort;
+  setStaticFragmentRuntimeMode("direct");
   updateFragmentStatus(controller.lang, "streaming");
 
   try {
@@ -642,6 +876,17 @@ const observeVisibleStaticFragments = (
         }
       });
       if (!changed) return;
+      if (controller.sharedRuntime) {
+        const visibleIds = collectVisibleStreamIds(controller);
+        controller.sharedRuntime.setVisibleIds(visibleIds);
+        if (visibleIds.length) {
+          controller.sharedRuntime.resume();
+        } else {
+          controller.sharedRuntime.pause();
+          updateFragmentStatus(controller.lang, "idle");
+        }
+        return;
+      }
       scheduleDeferredStreamStart(
         controller,
         controller.visibleFragmentIds.size > 0 ? 0 : 120,
@@ -668,6 +913,8 @@ const destroyController = async (
   if (!controller) return;
   controller.destroyed = true;
   stopConnections(controller);
+  controller.sharedRuntime?.dispose();
+  controller.sharedRuntime = null;
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup());
 };
 
@@ -688,7 +935,9 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
         ? ` ${STATIC_FRAGMENT_VERSION_ATTR}="${entry.version}"`
         : "";
       const sizeAttr = entry.size ? ` data-size="${entry.size}"` : "";
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}" data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      const criticalAttr = entry.critical ? ` data-critical="true"` : "";
+      const layoutAttr = ` data-fragment-height-layout="${escapeHtmlAttr(JSON.stringify(entry.layout))}"`;
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 
@@ -752,6 +1001,7 @@ const scheduleProtectedAuthUpgrade = (controller: StaticFragmentController) => {
       }
       if (!hasStaticFragmentRoot()) {
         await hydrateProtectedStaticFragments(controller);
+        connectSharedFragmentRuntime(controller);
       }
       scheduleDeferredStreamStart(controller, 0);
     } catch (error) {
@@ -849,6 +1099,7 @@ export const bootstrapStaticFragmentShell = async () => {
     destroyed: false,
     routeData,
     visibleFragmentIds: new Set<string>(),
+    sharedRuntime: null,
   };
   activeController = controller;
 
@@ -896,6 +1147,7 @@ export const bootstrapStaticFragmentShell = async () => {
   );
   bindShellControls(controller);
   await bindRouteControllers(controller);
+  connectSharedFragmentRuntime(controller);
   controller.cleanupFns.push(observeVisibleStaticFragments(controller));
   updateFragmentStatus(controller.lang, "idle");
 

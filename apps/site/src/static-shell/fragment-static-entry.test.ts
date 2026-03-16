@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { installFragmentStaticEntry } from './fragment-static-entry'
+import { STATIC_STORE_BOOTSTRAPPED_EVENT } from './store-static-events'
 
 type Listener = (event?: Event) => void
 type ListenerMap = Map<string, Set<Listener>>
@@ -268,6 +269,7 @@ describe('installFragmentStaticEntry', () => {
       loadStoreRuntime: async () => ({
         bootstrapStaticStoreShell: async () => {
           storeBootstrapCount += 1
+          win.emit(STATIC_STORE_BOOTSTRAPPED_EVENT)
         }
       })
     })
@@ -280,26 +282,31 @@ describe('installFragmentStaticEntry', () => {
     })
     await flushMicrotasks()
 
-    expect(fragmentBootstrapCount).toBe(0)
+    expect(fragmentBootstrapCount).toBe(1)
     expect(storeBootstrapCount).toBe(1)
 
     cleanup()
   })
 
-  it('keeps shell bootstrap listeners armed after store fast bootstrap runs', async () => {
+  it('disarms shell bootstrap listeners after store fast bootstrap hands off to fragment bootstrap', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
     const doc = new MockDocument('/store')
+    let fragmentBootstrapCount = 0
 
     const cleanup = installFragmentStaticEntry({
       win: win as never,
       doc: doc as never,
       loadRuntime: async () => ({
-        bootstrapStaticFragmentShell: async () => undefined
+        bootstrapStaticFragmentShell: async () => {
+          fragmentBootstrapCount += 1
+        }
       }),
       loadStoreRuntime: async () => ({
-        bootstrapStaticStoreShell: async () => undefined
+        bootstrapStaticStoreShell: async () => {
+          win.emit(STATIC_STORE_BOOTSTRAPPED_EVENT)
+        }
       })
     })
 
@@ -311,9 +318,10 @@ describe('installFragmentStaticEntry', () => {
     })
     await flushMicrotasks()
 
-    expect(doc.listeners.has('click')).toBe(true)
-    expect(win.listeners.has('pointerdown')).toBe(true)
-    expect(win.listeners.has('focusin')).toBe(true)
+    expect(fragmentBootstrapCount).toBe(1)
+    expect(doc.listeners.has('click')).toBe(false)
+    expect(win.listeners.has('pointerdown')).toBe(false)
+    expect(win.listeners.has('focusin')).toBe(false)
 
     cleanup()
   })

@@ -1,5 +1,6 @@
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
+import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
 import type { StoreSeed } from '../shared/store-seed'
@@ -54,6 +55,7 @@ type CreateStaticFragmentRouteDataOptions = {
   fragmentOrder?: string[]
   planSignature?: string
   versionSignature?: string
+  runtimePlanEntries?: FragmentRuntimePlanEntry[]
   fragmentVersions?: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
@@ -63,6 +65,7 @@ export const createStaticFragmentRouteData = ({
   path,
   lang,
   fragmentOrder = [],
+  runtimePlanEntries = [],
   fragmentVersions = {},
   planSignature = buildFragmentHeightPlanSignature(fragmentOrder),
   versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder),
@@ -79,6 +82,7 @@ export const createStaticFragmentRouteData = ({
     fragmentOrder,
     planSignature,
     versionSignature,
+    runtimePlanEntries,
     fragmentVersions,
     storeSeed: storeSeed ?? null,
     contactInvitesSeed: contactInvitesSeed ?? null
@@ -106,6 +110,13 @@ export const buildStaticFragmentRouteModel = ({
     return acc
   }, {})
   const versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder)
+  const runtimePlanEntries = plan.fragments.map<FragmentRuntimePlanEntry>((entry) => ({
+    id: entry.id,
+    critical: entry.critical,
+    layout: entry.layout,
+    dependsOn: entry.dependsOn ?? [],
+    cacheUpdatedAt: entry.cache?.updatedAt
+  }))
   const cookieHeights =
     cookieHeader && viewportHint
       ? readFragmentHeightCookieHeights(cookieHeader, {
@@ -132,15 +143,17 @@ export const buildStaticFragmentRouteModel = ({
         versionSignature
       })
     }) ?? DEFAULT_RESERVED_CARD_HEIGHT
-    const html =
-      initialHtml?.[entry.id] ??
-      (fragment
-        ? renderStaticFragmentPayloadHtml(fragment, {
+    const htmlOverride = initialHtml?.[entry.id]
+    const html = fragment
+      ? renderStaticFragmentPayloadHtml(
+          htmlOverride ? { ...fragment, html: htmlOverride } : fragment,
+          {
             copy: fragmentCopy,
             storeSeed,
             contactInvitesSeed
-          })
-        : '')
+          }
+        )
+      : htmlOverride ?? ''
     const version =
       typeof fragment?.cacheUpdatedAt === 'number' && Number.isFinite(fragment.cacheUpdatedAt)
         ? fragment.cacheUpdatedAt
@@ -176,6 +189,7 @@ export const buildStaticFragmentRouteModel = ({
       fragmentOrder,
       planSignature,
       versionSignature,
+      runtimePlanEntries,
       fragmentVersions,
       storeSeed,
       contactInvitesSeed

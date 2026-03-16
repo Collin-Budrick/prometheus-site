@@ -9,6 +9,7 @@ import {
   registerStoreStaticControllerCleanup
 } from './store-static-controller-state'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
+import { STATIC_STORE_BOOTSTRAPPED_EVENT } from './store-static-events'
 
 const STORE_STATIC_ROUTE_PATH = '/store'
 const STATIC_FRAGMENT_READY_STAGGER_SELECTOR =
@@ -47,6 +48,7 @@ export const bootstrapStaticStoreShell = async () => {
 
   const cleanup = await activateStoreStaticController({ routeData })
   registerStoreStaticControllerCleanup(cleanup)
+  window.dispatchEvent?.(new Event(STATIC_STORE_BOOTSTRAPPED_EVENT))
   const root = document.querySelector<HTMLElement>('[data-static-fragment-root]')
   root?.setAttribute(STATIC_FRAGMENT_PAINT_ATTR, 'ready')
   releaseQueuedReadyStaggerWithin({

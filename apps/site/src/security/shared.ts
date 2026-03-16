@@ -7,3 +7,4 @@ export const TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME = 'prometheus-runtime-scri
 
 export type TrustedHtml = string | TrustedHTML
 export type TrustedScriptValue = string | TrustedScript
+export type TrustedScriptUrlValue = string | TrustedScriptURL

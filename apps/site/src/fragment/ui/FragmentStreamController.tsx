@@ -1,37 +1,45 @@
-import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
-import type { Signal } from '@builder.io/qwik'
-import {
-  applyFragmentEffects,
-  fetchFragment,
-  fetchFragmentBatch,
-  streamFragments,
-  teardownFragmentEffects
-} from '../client'
+import { component$, useSignal, useVisibleTask$, type Signal } from '@builder.io/qwik'
 import type {
   FragmentPayload,
   FragmentPayloadMap,
   FragmentPayloadValue,
   FragmentPlanValue
 } from '../types'
+import {
+  buildFragmentHeightPlanSignature,
+  buildFragmentHeightVersionSignature,
+  getFragmentHeightViewport,
+  readFragmentHeightCookieHeights,
+  readFragmentStableHeight
+} from '@prometheus/ui/fragment-height'
+import { applyFragmentEffects, teardownFragmentEffects } from '../client'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
 import { appConfig } from '../../public-app-config'
+import { getPublicFragmentApiBase } from '../../shared/public-fragment-config'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentShellMode } from './fragment-shell-types'
+import { FragmentSharedRuntimeBridge } from '../runtime/client-bridge'
+import type {
+  FragmentRuntimeCardSizing,
+  FragmentRuntimePlanEntry,
+  FragmentRuntimePriority,
+  FragmentRuntimeSizingMap,
+  FragmentRuntimeStatus
+} from '../runtime/protocol'
 
 const FRAGMENT_SELECTOR = '[data-fragment-id]'
 const FRAGMENT_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
 const FRAGMENT_THRESHOLD = appConfig.fragmentVisibilityThreshold
 const FRAGMENT_STREAMING_ENABLED = appConfig.enableFragmentStreaming
-
-type FragmentKnownVersions = Record<string, number>
+const STABLE_HEIGHT_EVENT = 'prom:fragment-stable-height'
 
 type FragmentStartupDebugEntry = {
   at: number
-  kind: 'fetch' | 'stream-start'
+  kind: 'fetch'
   shellMode: FragmentShellMode
   startupReady: boolean
   ids: string[]
@@ -50,6 +58,7 @@ type FragmentStreamControllerProps = {
   initialFragments: FragmentPayloadValue
   path: string
   fragments: Signal<FragmentPayloadMap>
+  workerSizing: Signal<Record<string, FragmentRuntimeCardSizing>>
   layoutTick?: Signal<number>
   status: Signal<'idle' | 'streaming' | 'error'>
   paused?: Signal<boolean> | boolean
@@ -76,6 +85,74 @@ const recordFragmentStartupDebug = (
   window.__PROM_FRAGMENT_STARTUP_DEBUG__ = log
 }
 
+const buildRuntimeClientId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `fragment-runtime:${crypto.randomUUID()}`
+  }
+  return `fragment-runtime:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`
+}
+
+const normalizeRuntimePlanEntries = (plan: ReturnType<typeof resolvePlan>): FragmentRuntimePlanEntry[] =>
+  plan.fragments.map((entry) => ({
+    id: entry.id,
+    critical: entry.critical,
+    layout: entry.layout,
+    dependsOn: entry.dependsOn ?? [],
+    cacheUpdatedAt: entry.cache?.updatedAt
+  }))
+
+const resolveInitialSizingSeeds = (
+  path: string,
+  lang: string,
+  plan: ReturnType<typeof resolvePlan>
+): FragmentRuntimeSizingMap => {
+  if (typeof document === 'undefined') return {}
+
+  const planSignature = buildFragmentHeightPlanSignature(plan.fragments.map((entry) => entry.id))
+  const versionSignature = buildFragmentHeightVersionSignature(
+    plan.fragments.reduce<Record<string, number>>((acc, entry) => {
+      const value = entry.cache?.updatedAt
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        acc[entry.id] = value
+      }
+      return acc
+    }, {}),
+    plan.fragments.map((entry) => entry.id)
+  )
+  const viewport = getFragmentHeightViewport()
+  const cookieHeights = readFragmentHeightCookieHeights(document.cookie, {
+    path,
+    lang,
+    viewport,
+    planSignature,
+    versionSignature
+  })
+
+  return plan.fragments.reduce<FragmentRuntimeSizingMap>((acc, entry, index) => {
+    const stableHeight = readFragmentStableHeight({
+      fragmentId: entry.id,
+      path,
+      lang,
+      planSignature,
+      versionSignature
+    })
+    const cookieHeight = cookieHeights?.[index] ?? null
+    if (stableHeight === null && cookieHeight === null) {
+      return acc
+    }
+    acc[entry.id] = {
+      stableHeight,
+      cookieHeight
+    }
+    return acc
+  }, {})
+}
+
+const resolveCardWidth = (element: HTMLElement) => {
+  const rect = Math.ceil(element.getBoundingClientRect().width)
+  return rect > 0 ? rect : null
+}
+
 export const FragmentStreamController = component$(
   ({
     shellMode,
@@ -83,17 +160,18 @@ export const FragmentStreamController = component$(
     initialFragments,
     path,
     fragments,
+    workerSizing,
     layoutTick,
     status,
     paused,
     preserveFragmentEffects,
     initialLang,
     dynamicCriticalIds
-    }: FragmentStreamControllerProps) => {
-      const langSignal = useSharedLangSignal()
-      const lastLang = useSignal<string | null>(initialLang ?? null)
-      const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
-      const lifecyclePaused = useSignal(false)
+  }: FragmentStreamControllerProps) => {
+    const langSignal = useSharedLangSignal()
+    const lastLang = useSignal<string | null>(initialLang ?? null)
+    const dynamicCriticalUpdater = useSignal<((ids: string[]) => void) | null>(null)
+    const lifecyclePaused = useSignal(false)
 
     useVisibleTask$(
       (ctx) => {
@@ -121,21 +199,17 @@ export const FragmentStreamController = component$(
         const isPaused = ctx.track(() =>
           (typeof paused === 'boolean' ? paused : paused ? paused.value : false) || lifecyclePaused.value
         )
-        const fetchControllers = new Set<AbortController>()
-        const inFlight = new Set<string>()
         const pending = new Map<string, FragmentPayload>()
         const queued = new Set<string>()
         const observed = new WeakSet<Element>()
+        const requestedIds = new Set<string>()
         const elementsById = new Map<string, HTMLElement>()
         const visibleIds = new Set<string>()
         let observer: IntersectionObserver | null = null
-        let observeTargets = () => {}
+        let resizeObserver: ResizeObserver | null = null
         let flushHandle: number | null = null
         let hmrTimer: number | null = null
         let hmrClearCachesPending = false
-        let streamRefreshTimer: number | null = null
-        let streamController: AbortController | null = null
-        let activeStreamKey = ''
         const activeLang = ctx.track(() => langSignal.value)
         const langChanged = lastLang.value !== null && lastLang.value !== activeLang
         lastLang.value = activeLang
@@ -144,17 +218,6 @@ export const FragmentStreamController = component$(
         const shouldAnimateLangSwap = langChanged
         let langTransitionInFlight = false
         const canObserve = 'IntersectionObserver' in window
-
-        const registerFetchController = () => {
-          const ctrl = new AbortController()
-          fetchControllers.add(ctrl)
-          return ctrl
-        }
-
-        const finalizeFetchController = (ctrl: AbortController) => {
-          fetchControllers.delete(ctrl)
-        }
-
         const planValue = resolvePlan(plan)
         if (langChanged) {
           planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
@@ -170,14 +233,6 @@ export const FragmentStreamController = component$(
           }
           return { ...payload, cacheUpdatedAt }
         }
-        const buildKnownVersions = (): FragmentKnownVersions =>
-          Object.values(fragments.value).reduce<FragmentKnownVersions>((acc, payload) => {
-            const normalized = normalizePayload(payload)
-            if (typeof normalized.cacheUpdatedAt === 'number') {
-              acc[normalized.id] = normalized.cacheUpdatedAt
-            }
-            return acc
-          }, {})
 
         if (!fragments.value || !Object.keys(fragments.value).length) {
           const resolvedInitial = resolveFragments(initialFragments) ?? {}
@@ -217,6 +272,8 @@ export const FragmentStreamController = component$(
         const enqueuePayload = (payload: FragmentPayload) => {
           pending.set(payload.id, payload)
           queued.add(payload.id)
+          requestedIds.delete(payload.id)
+          requestedIds.delete(`refresh:${payload.id}`)
           scheduleFlush()
         }
 
@@ -298,126 +355,103 @@ export const FragmentStreamController = component$(
           })
         }
 
-        const setStreaming = () => {
+        const updateStatusFromRuntime = (nextStatus: FragmentRuntimeStatus) => {
           if (!active) return
-          status.value = 'streaming'
+          status.value = nextStatus === 'idle' ? 'idle' : 'streaming'
         }
 
-        const markIdle = () => {
+        const updateWorkerSizing = (sizing: FragmentRuntimeCardSizing) => {
           if (!active) return
-          if (!inFlight.size && status.value !== 'error') {
-            status.value = 'idle'
+          workerSizing.value = {
+            ...workerSizing.value,
+            [sizing.fragmentId]: sizing
           }
         }
 
-        const markAllForRefresh = () => {
-          planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
+        const bridge = new FragmentSharedRuntimeBridge()
+        const connected = bridge.connect({
+          clientId: buildRuntimeClientId(),
+          apiBase: getPublicFragmentApiBase(),
+          path,
+          lang: activeLang,
+          planEntries: normalizeRuntimePlanEntries(planValue),
+          initialFragments: langChanged ? [] : Object.values(resolveFragments(initialFragments) ?? {}),
+          initialSizing: resolveInitialSizingSeeds(path, activeLang, planValue),
+          visibleIds: canObserve ? [] : allIds,
+          viewportWidth: window.innerWidth,
+          enableStreaming: FRAGMENT_STREAMING_ENABLED,
+          onCommit: queuePayload,
+          onSizing: updateWorkerSizing,
+          onStatus: updateStatusFromRuntime,
+          onError: (message, fragmentIds) => {
+            fragmentIds?.forEach((fragmentId) => {
+              requestedIds.delete(fragmentId)
+              requestedIds.delete(`refresh:${fragmentId}`)
+            })
+            console.error('Fragment runtime failed', message)
+            status.value = 'error'
+          }
+        })
+
+        const reportCardWidth = (element: HTMLElement) => {
+          if (!connected) return
+          const fragmentId = element.dataset.fragmentId
+          if (!fragmentId) return
+          const width = resolveCardWidth(element)
+          if (width === null) return
+          bridge.reportCardWidth(fragmentId, width)
         }
 
-        const getStreamTargetIds = () =>
-          canObserve
-            ? planValue.fragments
-                .map((entry) => entry.id)
-                .filter((id) => visibleIds.has(id))
-            : allIds
-
-        const stopLiveStream = () => {
-          if (streamRefreshTimer !== null) {
-            window.clearTimeout(streamRefreshTimer)
-            streamRefreshTimer = null
-          }
-          if (streamController) {
-            streamController.abort()
-            streamController = null
-          }
-          activeStreamKey = ''
+        const reportCardMeasurement = (fragmentId: string, element: HTMLElement, height: number) => {
+          if (!connected || !Number.isFinite(height) || height <= 0) return
+          const width = resolveCardWidth(element)
+          bridge.measureCard(fragmentId, Math.round(height), width, element.dataset.fragmentReady === 'true')
         }
 
-        const startLiveStream = (ids: string[]) => {
-          if (!FRAGMENT_STREAMING_ENABLED || !active) return
-          const orderedIds = planValue.fragments
-            .map((entry) => entry.id)
-            .filter((id) => ids.includes(id))
-          const streamIds = orderedIds.length ? orderedIds : ids
-          const streamKey = streamIds.join('\u0000')
-          if (streamKey === activeStreamKey) {
-            return
+        const requestFragments = (ids: string[], priority: FragmentRuntimePriority) => {
+          if (!active || !connected || !ids.length) return
+          const required = new Set<string>()
+          const stack = [...ids]
+
+          while (stack.length) {
+            const id = stack.pop()
+            if (!id || required.has(id)) continue
+            if (!entryById.has(id)) continue
+            required.add(id)
+            const deps = entryById.get(id)?.dependsOn ?? []
+            deps.forEach((dep) => {
+              if (!required.has(dep)) stack.push(dep)
+            })
           }
 
-          if (streamController) {
-            streamController.abort()
-            streamController = null
-          }
+          if (!required.size) return
+          const ordered = planValue.fragments.map((entry) => entry.id).filter((id) => required.has(id))
+          const refreshList = ordered.filter((id) => refreshIds.has(id))
+          const fetchable = ordered.filter((id) => {
+            const requestKey = refreshIds.has(id) ? `refresh:${id}` : id
+            if (requestedIds.has(requestKey)) return false
+            if (!refreshIds.has(id) && fragments.value[id]) return false
+            if (!refreshIds.has(id) && pending.has(id)) return false
+            return true
+          })
+          if (!fetchable.length) return
 
-          activeStreamKey = streamKey
-          if (!streamIds.length) {
-            markIdle()
-            return
-          }
-
-          recordFragmentStartupDebug({
-            kind: 'stream-start',
-            shellMode,
-            startupReady: true,
-            ids: streamIds,
-            nonCriticalIds: streamIds.filter((id) => !isCriticalId(id))
+          fetchable.forEach((id) => {
+            requestedIds.add(refreshIds.has(id) ? `refresh:${id}` : id)
           })
 
-          const nextStreamController = new AbortController()
-          streamController = nextStreamController
-          setStreaming()
+          recordFragmentStartupDebug({
+            kind: 'fetch',
+            shellMode,
+            startupReady: true,
+            ids: fetchable,
+            nonCriticalIds: fetchable.filter((id) => !isCriticalId(id))
+          })
 
-          streamFragments(
-            path,
-            (payload) => queuePayload(payload),
-            undefined,
-            {
-              signal: nextStreamController.signal,
-              lang: activeLang,
-              knownVersions: buildKnownVersions(),
-              ids: streamIds
-            }
-          )
-            .then(() => {
-              if (!active) return
-              if (streamController !== nextStreamController || nextStreamController.signal.aborted) {
-                return
-              }
-              const missing = streamIds.filter((id) => !fragments.value[id] && !pending.has(id))
-              if (missing.length) {
-                requestFragments(missing)
-              }
-              streamController = null
-              activeStreamKey = ''
-              markIdle()
-            })
-            .catch((error) => {
-              if (!active) return
-              if (streamController !== nextStreamController) {
-                return
-              }
-              streamController = null
-              activeStreamKey = ''
-              if ((error as Error)?.name === 'AbortError' || nextStreamController.signal.aborted) {
-                markIdle()
-                return
-              }
-              console.error('Fragment stream failed', error)
-              status.value = 'error'
-              requestFragments(streamIds)
-            })
-        }
-
-        const scheduleStreamRefresh = (delayMs = 0) => {
-          if (!FRAGMENT_STREAMING_ENABLED || !active) return
-          if (streamRefreshTimer !== null) {
-            window.clearTimeout(streamRefreshTimer)
-          }
-          streamRefreshTimer = window.setTimeout(() => {
-            streamRefreshTimer = null
-            if (!active) return
-            startLiveStream(getStreamTargetIds())
-          }, delayMs)
+          bridge.requestFragments(fetchable, {
+            priority,
+            refreshIds: refreshList
+          })
         }
 
         const scheduleHmrRefresh = (payload?: FragmentHmrEventPayload) => {
@@ -434,18 +468,12 @@ export const FragmentStreamController = component$(
               clearFragmentPlanCache()
               clearFragmentShellCache(path)
             }
-            markAllForRefresh()
+            planValue.fragments.forEach((entry) => refreshIds.add(entry.id))
             pending.clear()
             queued.clear()
             refreshQueue.clear()
-            if (!observer) {
-              requestFragments(planValue.fragments.map((entry) => entry.id))
-              scheduleStreamRefresh()
-              return
-            }
-            observeTargets()
-            requestFragments(planValue.fragments.map((entry) => entry.id))
-            scheduleStreamRefresh()
+            requestedIds.clear()
+            bridge.refresh(planValue.fragments.map((entry) => entry.id))
           }, 75)
         }
 
@@ -453,124 +481,45 @@ export const FragmentStreamController = component$(
           import.meta.hot.on('fragments:refresh', scheduleHmrRefresh)
         }
 
-        const fetchMissing = (ids: string[]) => {
-          const fetchable = ids.filter((id) => {
-            const needsRefresh = refreshIds.has(id)
-            if (!needsRefresh && fragments.value[id]) return false
-            if (inFlight.has(id)) return false
-            if (!needsRefresh && pending.has(id)) return false
-            return true
-          })
-          if (!fetchable.length) return
-
-          recordFragmentStartupDebug({
-            kind: 'fetch',
-            shellMode,
-            startupReady: true,
-            ids: fetchable,
-            nonCriticalIds: fetchable.filter((id) => !isCriticalId(id))
-          })
-
-          fetchable.forEach((id) => {
-            inFlight.add(id)
-          })
-
-          const batchable = fetchable.map((id) => ({ id, refresh: refreshIds.has(id) }))
-          const useBatch = batchable.length > 1
-          setStreaming()
-
-          const handlePayload = (payload: FragmentPayload) => {
-            if (!active) return
-            queuePayload(payload)
-          }
-
-          const handleError = (error: unknown) => {
-            if (!active) return
-            if ((error as Error)?.name === 'AbortError') return
-            console.error('Fragment fetch failed', error)
-            status.value = 'error'
-          }
-
-          const handleFinally = (idsToClear: string[]) => {
-            idsToClear.forEach((id) => inFlight.delete(id))
-            markIdle()
-          }
-
-          if (useBatch) {
-            const batchController = registerFetchController()
-            fetchFragmentBatch(batchable, {
-              lang: activeLang,
-              knownVersions: buildKnownVersions(),
-              signal: batchController.signal
-            })
-              .then((payloads) => {
-                Object.values(payloads).forEach(handlePayload)
-              })
-              .catch(handleError)
-              .finally(() => {
-                finalizeFetchController(batchController)
-                handleFinally(batchable.map((entry) => entry.id))
-              })
-            return
-          }
-
-          const entry = batchable[0]
-          const fragmentController = registerFetchController()
-          fetchFragment(entry.id, { lang: activeLang, refresh: entry.refresh, signal: fragmentController.signal })
-            .then(handlePayload)
-            .catch(handleError)
-            .finally(() => {
-              finalizeFetchController(fragmentController)
-              handleFinally([entry.id])
-            })
+        const handleStableHeight = (event: Event) => {
+          const detail = (event as CustomEvent<{ fragmentId?: string; height?: number }>).detail
+          const fragmentId = detail?.fragmentId?.trim()
+          if (!fragmentId || typeof detail.height !== 'number') return
+          const element =
+            elementsById.get(fragmentId) ??
+            document.querySelector<HTMLElement>(`[data-fragment-id="${CSS.escape(fragmentId)}"]`)
+          if (!element) return
+          reportCardMeasurement(fragmentId, element, detail.height)
         }
 
-        const requestFragments = (ids: string[]) => {
-          if (!active || !ids.length) return
-          const required = new Set<string>()
-          const stack = [...ids]
+        document.addEventListener(STABLE_HEIGHT_EVENT, handleStableHeight as EventListener)
 
-          while (stack.length) {
-            const id = stack.pop()
-            if (!id || required.has(id)) continue
-            if (!entryById.has(id)) continue
-            required.add(id)
-            const deps = entryById.get(id)?.dependsOn ?? []
-            deps.forEach((dep) => {
-              if (!required.has(dep)) stack.push(dep)
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver((entries) => {
+            entries.forEach((entry) => {
+              const element = entry.target as HTMLElement
+              const fragmentId = element.dataset.fragmentId
+              if (!fragmentId) return
+              reportCardWidth(element)
+              if (element.dataset.fragmentReady === 'true') {
+                reportCardMeasurement(fragmentId, element, Math.ceil(entry.contentRect.height))
+              }
             })
-          }
-
-          if (!required.size) return
-          fetchMissing(Array.from(required))
+          })
         }
 
-        const cleanupController = () => {
-          active = false
-          dynamicCriticalUpdater.value = null
-          stopLiveStream()
-          fetchControllers.forEach((ctrl) => ctrl.abort())
-          fetchControllers.clear()
-          observer?.disconnect()
-          inFlight.clear()
-          pending.clear()
-          visibleIds.clear()
-          queued.clear()
-          if (flushHandle !== null) {
-            window.cancelAnimationFrame(flushHandle)
-            flushHandle = null
-          }
-          elementsById.clear()
-          if (hmrTimer) {
-            window.clearTimeout(hmrTimer)
-            hmrTimer = null
-          }
-          if (import.meta.hot) {
-            import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
-          }
-          if (!preserveFragmentEffects) {
-            teardownFragmentEffects(Object.keys(fragments.value))
-          }
+        const observeTargets = () => {
+          const elements = Array.from(document.querySelectorAll<HTMLElement>(FRAGMENT_SELECTOR))
+          elements.forEach((element) => {
+            if (observed.has(element)) return
+            const id = element.dataset.fragmentId
+            if (!id) return
+            observer?.observe(element)
+            resizeObserver?.observe(element)
+            observed.add(element)
+            elementsById.set(id, element)
+            reportCardWidth(element)
+          })
         }
 
         const promoteDynamicCritical = (ids: string[]) => {
@@ -584,6 +533,7 @@ export const FragmentStreamController = component$(
               applyFragmentEffects(payload)
             }
           })
+          requestFragments(newlyCritical, 'critical')
         }
 
         if (dynamicCriticalSeed.length) {
@@ -595,12 +545,13 @@ export const FragmentStreamController = component$(
           observer = new IntersectionObserver(
             (entries) => {
               const ready: string[] = []
-              let removedVisibleId = false
+              let visibilityChanged = false
               entries.forEach((entry) => {
                 const target = entry.target as HTMLElement
                 const id = target.dataset.fragmentId
                 if (!id) return
                 if (entry.isIntersecting) {
+                  visibilityChanged = !visibleIds.has(id) || visibilityChanged
                   visibleIds.add(id)
                   const existing = fragments.value[id]
                   if (existing && !isCriticalId(id)) {
@@ -608,47 +559,57 @@ export const FragmentStreamController = component$(
                   }
                   ready.push(id)
                 } else {
-                  removedVisibleId = visibleIds.delete(id) || removedVisibleId
+                  visibilityChanged = visibleIds.delete(id) || visibilityChanged
                 }
               })
               if (ready.length) {
-                requestFragments(ready)
-                scheduleStreamRefresh()
-                return
+                requestFragments(ready, 'visible')
               }
-              if (removedVisibleId) {
-                scheduleStreamRefresh(120)
+              if (visibilityChanged) {
+                bridge.setVisibleIds(Array.from(visibleIds))
               }
             },
             { rootMargin: FRAGMENT_ROOT_MARGIN, threshold: FRAGMENT_THRESHOLD }
           )
 
-          observeTargets = () => {
-            const elements = Array.from(document.querySelectorAll<HTMLElement>(FRAGMENT_SELECTOR))
-            elements.forEach((element) => {
-              if (observed.has(element)) return
-              const id = element.dataset.fragmentId
-              if (!id) return
-              observer?.observe(element)
-              observed.add(element)
-              elementsById.set(id, element)
-            })
-          }
-
           observeTargets()
         }
 
         if (hasMissingCriticalFragments) {
-          requestFragments(Array.from(staticCriticalIds))
+          requestFragments(Array.from(staticCriticalIds), 'critical')
         }
 
         if (!canObserve) {
-          requestFragments(allIds)
-          scheduleStreamRefresh()
+          requestFragments(allIds, 'visible')
+          bridge.setVisibleIds(allIds)
         }
 
         ctx.cleanup(() => {
-          cleanupController()
+          active = false
+          dynamicCriticalUpdater.value = null
+          bridge.dispose()
+          observer?.disconnect()
+          resizeObserver?.disconnect()
+          pending.clear()
+          visibleIds.clear()
+          queued.clear()
+          requestedIds.clear()
+          elementsById.clear()
+          document.removeEventListener(STABLE_HEIGHT_EVENT, handleStableHeight as EventListener)
+          if (flushHandle !== null) {
+            window.cancelAnimationFrame(flushHandle)
+            flushHandle = null
+          }
+          if (hmrTimer) {
+            window.clearTimeout(hmrTimer)
+            hmrTimer = null
+          }
+          if (import.meta.hot) {
+            import.meta.hot.off('fragments:refresh', scheduleHmrRefresh)
+          }
+          if (!preserveFragmentEffects) {
+            teardownFragmentEffects(Object.keys(fragments.value))
+          }
         })
       },
       { strategy: 'document-ready' }

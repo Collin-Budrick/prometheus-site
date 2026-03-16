@@ -190,6 +190,53 @@ describe('static-fragment-model', () => {
     expect(model.entries[0]?.html).not.toContain('<store-create')
   })
 
+  it('does not let plan initialHtml bypass static replacement markup', () => {
+    const plan = {
+      path: '/store',
+      createdAt: 1,
+      fragments: [
+        {
+          id: 'fragment://page/store/cart@v1',
+          critical: true,
+          layout: { column: 'span 12' }
+        }
+      ]
+    } as const
+
+    const model = buildStaticFragmentRouteModel({
+      plan: plan as never,
+      fragments: {
+        'fragment://page/store/cart@v1': {
+          id: 'fragment://page/store/cart@v1',
+          html: '<store-cart class="store-cart"></store-cart>',
+          tree: h('store-cart', { class: 'store-cart' }, []),
+          head: [],
+          css: '',
+          meta: {
+            cacheKey: 'cart:2',
+            ttl: 30,
+            staleTtl: 60,
+            tags: [],
+            runtime: 'edge'
+          },
+          cacheUpdatedAt: 3
+        }
+      },
+      initialHtml: {
+        'fragment://page/store/cart@v1': '<store-cart class="store-cart"></store-cart>'
+      },
+      lang: 'en',
+      storeSeed: {
+        stream: { items: [], sort: 'id', dir: 'asc' },
+        cart: { items: [], queuedCount: 0 }
+      }
+    })
+
+    expect(model.entries[0]?.html).toContain('store-cart-total')
+    expect(model.entries[0]?.html).toContain('Cart is empty.')
+    expect(model.entries[0]?.html).not.toContain('<store-cart')
+  })
+
   it('renders store stream replacements without seeded fragment copy', () => {
     const plan = {
       path: '/store',

@@ -4,6 +4,7 @@ import {
   TRUSTED_TYPES_SERVER_POLICY_NAME,
   TRUSTED_TYPES_TEMPLATE_POLICY_NAME,
   type TrustedHtml,
+  type TrustedScriptUrlValue,
   type TrustedScriptValue
 } from './shared'
 
@@ -12,6 +13,7 @@ type TrustedHtmlKind = 'server' | 'template'
 type TrustedTypePolicyLike = {
   createHTML?: (input: string) => TrustedHtml
   createScript?: (input: string) => TrustedScriptValue
+  createScriptURL?: (input: string) => TrustedScriptUrlValue
 }
 
 type TrustedTypePolicyFactoryLike = {
@@ -20,6 +22,7 @@ type TrustedTypePolicyFactoryLike = {
     rules: {
       createHTML?: (input: string) => string
       createScript?: (input: string) => string
+      createScriptURL?: (input: string) => string
     }
   ) => TrustedTypePolicyLike
 }
@@ -76,7 +79,7 @@ const assignInnerHtml = (target: InnerHtmlTarget, value: TrustedHtml) => {
 const getTrustedTypesRuntimeScriptPolicy = () => {
   const target = getTrustedTypesGlobal()
   const cached = target.__PROM_TT_POLICIES__?.[TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME]
-  if (cached?.createScript) {
+  if (cached?.createScript || cached?.createScriptURL) {
     return cached
   }
 
@@ -87,7 +90,8 @@ const getTrustedTypesRuntimeScriptPolicy = () => {
 
   try {
     const policy = factory.createPolicy(TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME, {
-      createScript: (input: string) => input
+      createScript: (input: string) => input,
+      createScriptURL: (input: string) => input
     })
     target.__PROM_TT_POLICIES__ = {
       ...(target.__PROM_TT_POLICIES__ ?? {}),
@@ -132,6 +136,14 @@ export const asTrustedScript = (script: string): TrustedScriptValue => {
     return script
   }
   return policy.createScript(script)
+}
+
+export const asTrustedScriptUrl = (url: string): TrustedScriptUrlValue => {
+  const policy = getTrustedTypesRuntimeScriptPolicy()
+  if (!policy?.createScriptURL) {
+    return url
+  }
+  return policy.createScriptURL(url)
 }
 
 export const primeTrustedTypesPolicies = (

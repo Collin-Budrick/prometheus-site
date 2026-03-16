@@ -6,6 +6,7 @@ import { installTrustedTypesFunctionBridge } from '../security/client'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { STATIC_FRAGMENT_PAINT_ATTR } from './constants'
+import { STATIC_STORE_BOOTSTRAPPED_EVENT } from './store-static-events'
 
 export const FRAGMENT_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'focusin'] as const
 export const STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'
@@ -155,6 +156,11 @@ export const installFragmentStaticEntry = ({
     })
   }
 
+  const handleStoreBootstrapped = () => {
+    if (!useStoreFastBootstrap) return
+    requestFragmentBootstrap()
+  }
+
   const cleanupBootstrapObservation = () => {
     if (loadHandler) {
       win.removeEventListener('load', loadHandler)
@@ -169,6 +175,7 @@ export const installFragmentStaticEntry = ({
   const cleanupTriggers = () => {
     removeIntentTriggers()
     doc.removeEventListener('click', handleBootstrapSensitiveClick, clickEventOptions)
+    win.removeEventListener(STATIC_STORE_BOOTSTRAPPED_EVENT, handleStoreBootstrapped)
     cleanupBootstrapObservation()
   }
 
@@ -351,6 +358,7 @@ export const installFragmentStaticEntry = ({
   const setupBootstrapTriggers = () => {
     if (armed || fragmentBootstrapped || fragmentBootstrapPromise || win.__PROM_STATIC_FRAGMENT_BOOTSTRAP__) return
     armed = true
+    win.addEventListener(STATIC_STORE_BOOTSTRAPPED_EVENT, handleStoreBootstrapped)
     FRAGMENT_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       win.addEventListener(eventName, handleBootstrapIntent, passiveEventOptions)
     })

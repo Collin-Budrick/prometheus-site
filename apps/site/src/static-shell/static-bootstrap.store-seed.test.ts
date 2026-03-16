@@ -13,6 +13,7 @@ const createRouteData = (
   fragmentOrder: ['fragment://page/store/stream@v5'],
   planSignature: 'store-plan',
   versionSignature: 'store-version',
+  runtimePlanEntries: [],
   fragmentVersions: {},
   storeSeed: {
     stream: {

@@ -19,8 +19,6 @@ import { isStaticHomeShellMode } from './fragment-shell-mode'
 import type { FragmentDragState, FragmentShellMode, SlottedEntry } from './fragment-shell-types'
 import { FragmentRenderer } from './FragmentRenderer'
 import { type FragmentInitialStage, readFragmentStableHeight } from './initial-settle'
-import { applyHeaderOverride } from './header-overrides'
-import { requiresTreeRenderer } from './tree-render'
 import {
   GRIDSTACK_CELL_HEIGHT,
   GRIDSTACK_MARGIN,
@@ -28,6 +26,7 @@ import {
   parseSlotRows
 } from './fragment-shell-utils'
 import { getFragmentCssHref } from '../fragment-css'
+import type { FragmentRuntimeCardSizing } from '../runtime/protocol'
 
 type FragmentShellCopy = {
   fragmentClose: string
@@ -56,6 +55,7 @@ type FragmentShellViewProps = {
   skipCssGuard: boolean
   dragState: Signal<FragmentDragState>
   dynamicCriticalIds: Signal<string[]>
+  workerSizing: Signal<Record<string, FragmentRuntimeCardSizing>>
 }
 
 export const FragmentShellView = component$((props: FragmentShellViewProps) => {
@@ -69,16 +69,15 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
     slottedEntries,
     fragments,
     initialHtml,
-    fragmentHeaders,
     langSignal,
-    initialLang,
     expandedId,
     layoutTick,
     copy,
     hasCache,
     skipCssGuard,
     dragState,
-    dynamicCriticalIds
+    dynamicCriticalIds,
+    workerSizing
   } = props
   const isStaticHome = isStaticHomeShellMode(shellMode)
   const nonce = useCspNonce()
@@ -215,20 +214,9 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
       <div ref={gridRef} class="fragment-grid grid-stack" data-fragment-grid="main">
         {slottedEntries.value.map(({ entry, slot, isSolo }, index) => {
           const fragment = entry ? fragments.value[entry.id] : null
-          const headerCopy = entry ? fragmentHeaders.value[entry.id] : null
-          const shouldOverrideHeaders =
-            Boolean(fragment && headerCopy) && langSignal.value !== initialLang
-          const renderNode = shouldOverrideHeaders
-            ? applyHeaderOverride(fragment!.tree, headerCopy!)
-            : fragment?.tree
-          const renderTreeOnly = requiresTreeRenderer(renderNode)
-          const allowHtml = entry?.renderHtml !== false
           const html = fragment?.html?.trim()
           const fallbackHtml = entry ? initialHtml?.[entry.id]?.trim() : null
-          const useHtml = Boolean(allowHtml && html && !shouldOverrideHeaders && !renderTreeOnly)
-          const useFallbackHtml = Boolean(
-            allowHtml && fallbackHtml && !html && !shouldOverrideHeaders && !renderTreeOnly
-          )
+          const renderedHtml = html || fallbackHtml || null
           const slotRows = parseSlotRows(slot.row)
           const inInitialViewport = slotRows.some((row) => row <= 1)
           const isCritical =
@@ -237,11 +225,12 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
           const fragmentCssHref = entry ? getFragmentCssHref(entry.id) : null
           const fragmentHasCss = skipCssGuard ? false : Boolean(fragment?.css || fragmentCssHref)
           const gridMetrics = getGridstackSlotMetrics(slot, index)
+          const workerCardSizing = entry ? workerSizing.value[entry.id] : null
           const minHeight =
             typeof entry?.layout.minHeight === 'number' && Number.isFinite(entry.layout.minHeight)
               ? Math.max(0, entry.layout.minHeight)
               : null
-          const hasLoadedContent = Boolean(fragment || useFallbackHtml)
+          const hasLoadedContent = Boolean(fragment || renderedHtml)
           const planIndex = entry ? (planIndexById.get(entry.id) ?? -1) : -1
           const stableHeight =
             entry && typeof window !== 'undefined'
@@ -253,19 +242,22 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                   versionSignature
                 })
               : null
-          const reservedHeight = entry
-            ? resolveReservedFragmentHeight({
-                layout: entry.layout,
-                cookieHeight: planIndex >= 0 ? cookieHeights?.[planIndex] ?? null : null,
-                stableHeight
-              })
-            : minHeight ?? DEFAULT_RESERVED_CARD_HEIGHT
+          const reservedHeight =
+            workerCardSizing?.reservedHeight ??
+            (entry
+              ? resolveReservedFragmentHeight({
+                  layout: entry.layout,
+                  cookieHeight: planIndex >= 0 ? cookieHeights?.[planIndex] ?? null : null,
+                  stableHeight
+                })
+              : minHeight ?? DEFAULT_RESERVED_CARD_HEIGHT)
           const applyMinHeight = Boolean(reservedHeight && reservedHeight > 0)
           const fragmentStage: FragmentInitialStage = hasLoadedContent ? 'waiting-css' : 'waiting-payload'
           const minHeightRows =
-            applyMinHeight && reservedHeight !== null
+            workerCardSizing?.gridRows ??
+            (applyMinHeight && reservedHeight !== null
               ? Math.max(1, Math.ceil((reservedHeight + GRIDSTACK_MARGIN * 2) / GRIDSTACK_CELL_HEIGHT))
-              : gridMetrics.h
+              : gridMetrics.h)
           const gridItemStyle = reservedHeight
             ? applyMinHeight
               ? { '--fragment-min-height': `${reservedHeight}px` }
@@ -329,15 +321,13 @@ export const FragmentShellView = component$((props: FragmentShellViewProps) => {
                       draggable={!isStaticHome}
                       dragState={dragState}
                     >
-                      {useHtml ? (
-                        <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(html ?? '', 'server') as string} />
-                      ) : useFallbackHtml ? (
+                      {renderedHtml ? (
                         <div
                           class="fragment-html"
-                          dangerouslySetInnerHTML={asTrustedHtml(fallbackHtml ?? '', 'server') as string}
+                          dangerouslySetInnerHTML={asTrustedHtml(renderedHtml, 'server') as string}
                         />
                       ) : fragment ? (
-                        <FragmentRenderer node={renderNode ?? fragment.tree} />
+                        <FragmentRenderer node={fragment.tree} />
                       ) : (
                         <div class="fragment-placeholder is-loading" role="status" aria-live="polite">
                           <div class="loader" aria-hidden="true" />

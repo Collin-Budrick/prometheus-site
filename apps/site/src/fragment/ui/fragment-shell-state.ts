@@ -22,6 +22,7 @@ import {
   INITIAL_LAYOUT_SETTLE_FALLBACK_MS
 } from './layout-settle'
 import type { FragmentDragState, FragmentShellProps, SlottedEntry } from './fragment-shell-types'
+import type { FragmentRuntimeCardSizing } from '../runtime/protocol'
 import {
   applyFieldSnapshots,
   buildBentoSlots,
@@ -52,9 +53,7 @@ const buildPlanEarlyHints = (planValue: FragmentPlan) => {
 }
 
 const resolveLcpFragmentIds = (planValue: FragmentPlan) =>
-  planValue.fragments
-    .filter((entry) => entry.critical && entry.renderHtml !== false)
-    .map((entry) => entry.id)
+  planValue.fragments.filter((entry) => entry.critical).map((entry) => entry.id)
 
 const pickFragments = (fragments: FragmentPayloadMap, ids: string[]) =>
   ids.reduce<FragmentPayloadMap>((acc, id) => {
@@ -122,6 +121,7 @@ export const useFragmentShellState = ({
     cachedFragments ? { ...lcpFragments, ...cachedFragments } : lcpFragments
   )
   const status = useSharedFragmentStatusSignal()
+  const workerSizing = useSignal<Record<string, FragmentRuntimeCardSizing>>({})
   const seedExpandedId = isStaticHome ? null : seedState?.expandedId ?? cachedEntry?.expandedId ?? null
   const cachedExpanded =
     seedExpandedId && planValue.fragments.some((entry) => entry.id === seedExpandedId) ? seedExpandedId : null
@@ -580,6 +580,7 @@ export const useFragmentShellState = ({
     planValue,
     fragments,
     status,
+    workerSizing,
     expandedId,
     layoutTick,
     gridRef,
