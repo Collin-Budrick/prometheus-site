@@ -1042,7 +1042,7 @@ describe("requestHomeDemoObserve", () => {
 });
 
 describe("scheduleHomePostLcpTasks", () => {
-  it("starts preview refreshes and arms auth revalidation only after the LCP gate resolves", async () => {
+  it("arms auth revalidation only after the LCP gate resolves", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
     const doc = new MockDeferredDocument();
@@ -1072,10 +1072,9 @@ describe("scheduleHomePostLcpTasks", () => {
     manualGate.resolve();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual([]);
     expect(win.idleCallbacks.size).toBe(1);
-    expect(win.timeouts.size).toBe(0);
     expect(win.listenerCount("pageshow")).toBe(1);
 
     cleanup();
@@ -1137,19 +1136,19 @@ describe("scheduleHomePostLcpTasks", () => {
     manualGate.resolve();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual([]);
 
     win.emit("pointerdown");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("keydown");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1179,7 +1178,7 @@ describe("scheduleHomePostLcpTasks", () => {
     win.runIdle();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1208,13 +1207,13 @@ describe("scheduleHomePostLcpTasks", () => {
     await flushMicrotasks();
     win.runIdle();
     await flushMicrotasks();
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("pointerdown");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1245,13 +1244,13 @@ describe("scheduleHomePostLcpTasks", () => {
     win.runIdle();
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual([]);
 
     doc.setVisibility("visible");
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual(["refresh"]);
     cleanup();
   });
@@ -1283,14 +1282,14 @@ describe("scheduleHomePostLcpTasks", () => {
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(retryCalls).toEqual(["retry"]);
     expect(authRefreshCalls).toEqual(["refresh"]);
 
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(retryCalls).toEqual(["retry", "retry"]);
     expect(authRefreshCalls).toEqual(["refresh", "refresh"]);
     cleanup();
@@ -1325,7 +1324,7 @@ describe("scheduleHomePostLcpTasks", () => {
     win.emit("pageshow", { persisted: true } as PageTransitionEvent);
     await flushMicrotasks();
 
-    expect(previewRefreshCalls).toEqual(["refresh"]);
+    expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual([]);
     expect(manualGate.cleanupCount()).toBe(1);
   });
@@ -1512,7 +1511,7 @@ describe("bindHomeFragmentHydration", () => {
     hydration.destroy();
   });
 
-  it("does not fetch deferred cards until they become visible", async () => {
+  it("fetches deferred cards eagerly while preserving visibility state for patch ordering", async () => {
     const taskQueue = createTaskQueue();
     const deferred = new MockFragmentCard(
       "fragment://page/home/ledger@v1",
@@ -1549,7 +1548,12 @@ describe("bindHomeFragmentHydration", () => {
     hydration.observeWithin(root as unknown as ParentNode);
 
     expect(fetchCalls).toEqual([]);
-    expect(taskQueue.pendingCount()).toBe(0);
+    expect(taskQueue.pendingCount()).toBe(1);
+
+    await taskQueue.flushNext();
+    await flushMicrotasks();
+
+    expect(fetchCalls).toEqual([["fragment://page/home/ledger@v1"]]);
 
     const observer = MockIntersectionObserver.instances[0];
     observer?.emit([
@@ -1577,11 +1581,6 @@ describe("bindHomeFragmentHydration", () => {
       { id: "fragment://page/home/ledger@v1", visible: false },
       { id: "fragment://page/home/ledger@v1", visible: true },
     ]);
-    expect(taskQueue.pendingCount()).toBe(1);
-
-    await taskQueue.flushNext();
-    await flushMicrotasks();
-
     expect(fetchCalls).toEqual([["fragment://page/home/ledger@v1"]]);
     hydration.destroy();
   });

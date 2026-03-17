@@ -690,7 +690,8 @@ export const RouterHead = component$(() => {
   const nonce = useCspNonce()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
-  const shouldDeferManifest = isStaticShellPath(location.url.pathname)
+  const shouldDeferManifest =
+    isStaticShellPath(location.url.pathname) && !isHomeStaticRoute
   const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)

@@ -108,6 +108,7 @@ describe('fragment runtime client bridge', () => {
         visibleIds: ['store-stream'],
         viewportWidth: 1280,
         enableStreaming: true,
+        startupMode: 'eager-visible-first',
         bootstrapHref: 'https://prometheus.prod/api/fragments/bootstrap?path=/store&lang=en',
         onCommit,
         onSizing,
@@ -120,7 +121,8 @@ describe('fragment runtime client bridge', () => {
     expect(firstWorker.posted[0]).toMatchObject({
       type: 'init',
       clientId: 'client-1',
-      visibleIds: ['store-stream']
+      visibleIds: ['store-stream'],
+      startupMode: 'eager-visible-first'
     })
 
     bridge.setVisibleIds(['store-stream', 'store-cart'])

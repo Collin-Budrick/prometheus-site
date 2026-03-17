@@ -1,6 +1,5 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
-import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
@@ -14,9 +13,13 @@ import { scheduleStaticShellTask } from './scheduler'
 import {
   markStaticShellPerformance,
   markStaticShellUserTiming,
-  measureStaticShellPerformance,
   measureStaticShellUserTiming
 } from './static-shell-performance'
+import {
+  disposeHomeSharedRuntime,
+  ensureHomeSharedRuntime,
+  ensureHomeSharedRuntimeAssetPreloads
+} from './home-shared-runtime'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
@@ -30,10 +33,12 @@ type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
   doc?: Document | null
   loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
-  primeBootstrap?: typeof primeHomeFragmentBootstrapBytes
   createLcpGate?: typeof createHomeFirstLcpGate
   schedulePaintReady?: typeof scheduleStaticRoutePaintReady
   scheduleTask?: typeof scheduleStaticShellTask
+  startSharedRuntime?: typeof ensureHomeSharedRuntime
+  preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
+  disposeSharedRuntime?: typeof disposeHomeSharedRuntime
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
@@ -90,10 +95,12 @@ export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   loadBootstrapRuntime = loadHomeBootstrapRuntime,
-  primeBootstrap = primeHomeFragmentBootstrapBytes,
   createLcpGate = createHomeFirstLcpGate,
   schedulePaintReady = scheduleStaticRoutePaintReady,
-  scheduleTask = scheduleStaticShellTask
+  scheduleTask = scheduleStaticShellTask,
+  startSharedRuntime = ensureHomeSharedRuntime,
+  preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
+  disposeSharedRuntime = disposeHomeSharedRuntime
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -111,7 +118,6 @@ export const installHomeStaticEntry = ({
   let loadHandler: (() => void) | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
-  let bootstrapPrimePromise: Promise<Uint8Array> | null = null
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
   let widgetRuntimePromise: ReturnType<typeof loadFragmentWidgetRuntime> | null = null
   let widgetRuntime:
@@ -121,6 +127,7 @@ export const installHomeStaticEntry = ({
   let deferredBootstrapCleanup: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let paintReadyCleanup: (() => void) | null = null
+  let sharedRuntimeStarted = false
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
@@ -160,6 +167,7 @@ export const installHomeStaticEntry = ({
     deferredBootstrapCleanup = null
     widgetRuntime?.destroy()
     widgetRuntime = null
+    disposeSharedRuntime(liveWin)
   }
 
   const prewarmBootstrapRuntime = () => {
@@ -188,36 +196,33 @@ export const installHomeStaticEntry = ({
     return widgetRuntimePromise
   }
 
-  const primeBootstrapRequest = () => {
-    const data = readStaticHomeBootstrapData({ doc: liveDoc })
-    const bootstrapHref = data?.fragmentBootstrapHref
-    if (!bootstrapHref || bootstrapPrimePromise) {
-      return bootstrapPrimePromise
+  const startHomeWorkerRuntime = () => {
+    if (sharedRuntimeStarted) {
+      return
     }
 
-    markStaticShellPerformance('prom:home:bootstrap-prime-start')
-    bootstrapPrimePromise = primeBootstrap({ href: bootstrapHref }).catch((error) => {
-      markStaticShellPerformance('prom:home:bootstrap-prime-ready')
-      measureStaticShellPerformance(
-        'prom:home:bootstrap-prime',
-        'prom:home:bootstrap-prime-start',
-        'prom:home:bootstrap-prime-ready'
-      )
-      bootstrapPrimePromise = null
-      console.error('Static home bootstrap prime failed:', error)
-      throw error
-    })
+    const data = readStaticHomeBootstrapData({ doc: liveDoc })
+    if (!data || !data.runtimePlanEntries.length) {
+      return
+    }
 
-    void bootstrapPrimePromise.then(() => {
-      markStaticShellPerformance('prom:home:bootstrap-prime-ready')
-      measureStaticShellPerformance(
-        'prom:home:bootstrap-prime',
-        'prom:home:bootstrap-prime-start',
-        'prom:home:bootstrap-prime-ready'
+    preloadSharedRuntimeAssets({ doc: liveDoc })
+    sharedRuntimeStarted = Boolean(
+      startSharedRuntime(
+        {
+          path: data.currentPath,
+          lang: data.lang,
+          planEntries: data.runtimePlanEntries,
+          fetchGroups: data.runtimeFetchGroups,
+          initialFragments: data.runtimeInitialFragments,
+          knownVersions: data.fragmentVersions,
+          bootstrapHref: data.fragmentBootstrapHref,
+          startupMode: 'eager-visible-first',
+          enableStreaming: false
+        },
+        liveWin
       )
-    })
-
-    return bootstrapPrimePromise
+    )
   }
 
   const startWidgetRuntime = (target: EventTarget | null = null) => {
@@ -306,7 +311,6 @@ export const installHomeStaticEntry = ({
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
     })
-    void primeBootstrapRequest()?.catch(() => undefined)
     if (lcpGateReleased) {
       startBootstrap()
     }
@@ -384,6 +388,7 @@ export const installHomeStaticEntry = ({
     }
     bootstrapTriggersInstalled = true
     clearStartupHandlers()
+    startHomeWorkerRuntime()
     liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
     liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)

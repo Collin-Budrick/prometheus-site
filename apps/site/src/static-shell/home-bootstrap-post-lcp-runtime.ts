@@ -266,7 +266,6 @@ export const scheduleHomePostLcpTasks = ({
 
     postLcpStarted = true
     markStaticShellUserTiming('prom:home:post-lcp-runtime-start')
-    homeFragmentHydration.schedulePreviewRefreshes()
     void Promise.resolve(startHomeDemoEntry()).catch((error) => {
       console.error('Static home demo entry failed:', error)
     })

@@ -159,6 +159,16 @@ class MockDocument {
           lang: 'en',
           fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/planner@v1',
           fragmentOrder: ['fragment://page/home/planner@v1'],
+          runtimePlanEntries: [
+            {
+              id: 'fragment://page/home/planner@v1',
+              critical: true,
+              layout: {},
+              dependsOn: []
+            }
+          ],
+          runtimeFetchGroups: [[0]],
+          runtimeInitialFragments: [],
           fragmentVersions: {},
           languageSeed: {},
           homeDemoAssets: {}
@@ -271,7 +281,7 @@ describe('installHomeStaticEntry', () => {
     const doc = new MockDocument()
     doc.readyState = 'loading'
     const manualGate = createManualGate()
-    let bootstrapPrimeCount = 0
+    let sharedRuntimeStartCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -280,15 +290,15 @@ describe('installHomeStaticEntry', () => {
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => undefined
       }),
-      primeBootstrap: async () => {
-        bootstrapPrimeCount += 1
-        return new Uint8Array([1])
+      startSharedRuntime: () => {
+        sharedRuntimeStartCount += 1
+        return {} as never
       }
     })
 
     await flushMicrotasks()
 
-    expect(bootstrapPrimeCount).toBe(0)
+    expect(sharedRuntimeStartCount).toBe(1)
     expect(win.listeners.has('load')).toBe(false)
     expect(doc.listeners.has('DOMContentLoaded')).toBe(false)
     expect(win.listeners.has('pointerdown')).toBe(true)
@@ -302,6 +312,7 @@ describe('installHomeStaticEntry', () => {
     const manualGate = createManualGate()
     const taskQueue = createScheduledTaskQueue()
     let bootstrapLoadCount = 0
+    let sharedRuntimeStartCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -313,11 +324,15 @@ describe('installHomeStaticEntry', () => {
           bootstrapStaticHome: async () => undefined
         }
       },
-      primeBootstrap: async () => new Uint8Array([1]),
+      startSharedRuntime: () => {
+        sharedRuntimeStartCount += 1
+        return {} as never
+      },
       scheduleTask: taskQueue.scheduleTask as never
     })
 
     expect(bootstrapLoadCount).toBe(0)
+    expect(sharedRuntimeStartCount).toBe(1)
 
     manualGate.resolve()
     await flushMicrotasks()
@@ -335,14 +350,14 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('primes bootstrap bytes on early intent but waits for the LCP gate before patching', async () => {
+  it('starts the shared worker runtime before intent but waits for the LCP gate before patching', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
     const taskQueue = createScheduledTaskQueue()
     let bootstrapLoadCount = 0
     let bootstrapCount = 0
-    let bootstrapPrimeCount = 0
+    let sharedRuntimeStartCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
@@ -356,12 +371,15 @@ describe('installHomeStaticEntry', () => {
           }
         }
       },
-      primeBootstrap: async () => {
-        bootstrapPrimeCount += 1
-        return new Uint8Array([1, 2, 3])
+      startSharedRuntime: () => {
+        sharedRuntimeStartCount += 1
+        return {} as never
       },
       scheduleTask: taskQueue.scheduleTask as never
     })
+
+    await flushMicrotasks()
+    expect(sharedRuntimeStartCount).toBe(1)
 
     const fragmentCardTarget = {
       closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
@@ -370,14 +388,14 @@ describe('installHomeStaticEntry', () => {
     win.emit('pointerdown', { target: fragmentCardTarget })
     await flushMicrotasks()
 
-    expect(bootstrapPrimeCount).toBe(1)
+    expect(sharedRuntimeStartCount).toBe(1)
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapPrimeCount).toBe(1)
+    expect(sharedRuntimeStartCount).toBe(1)
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
     expect(manualGate.cleanupCount()).toBe(1)
@@ -400,7 +418,6 @@ describe('installHomeStaticEntry', () => {
           events.push('bootstrap')
         }
       }),
-      primeBootstrap: async () => new Uint8Array([1]),
       schedulePaintReady: (({ root, readyAttr, onReady }) => {
         events.push('schedule-paint')
         ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
@@ -441,7 +458,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      primeBootstrap: async () => new Uint8Array([1]),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
         return {

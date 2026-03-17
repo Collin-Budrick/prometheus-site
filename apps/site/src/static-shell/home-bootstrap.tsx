@@ -7,7 +7,6 @@ import {
   resolveStaticHomeRouteSeed,
 } from "./home-bootstrap-data";
 import { dispatchHomeDemoObserveEvent } from "./home-demo-observe-event";
-import { FragmentRuntimeBridge } from "../fragment/runtime/client-bridge";
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimePlanEntry,
@@ -18,7 +17,6 @@ import {
   fetchHomeFragmentBootstrapSelection,
 } from "./home-fragment-client";
 import {
-  consumePrimedHomeFragmentBootstrapBytes,
   isHomeFragmentBootstrapSubset,
 } from "./home-fragment-bootstrap";
 import {
@@ -45,8 +43,8 @@ import { primeTrustedTypesPolicies } from "../security/client";
 import type { StaticHomeCardStage } from "./constants";
 import { resolveStaticShellLangParam } from "./lang-param";
 import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
+import { loadHomeDemoEntryRuntime } from "./home-demo-entry-loader";
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
-import { getPublicFragmentApiBase } from "../shared/public-fragment-config";
 import { markStaticShellUserTiming } from "./static-shell-performance";
 import { ensureStaticHomeDeferredStylesheet } from "./home-deferred-stylesheet";
 import {
@@ -55,6 +53,7 @@ import {
   resolveFragmentHeightWidthBucket,
 } from "@prometheus/ui/fragment-height";
 import { scheduleStaticRoutePaintReady } from "./static-route-paint";
+import { ensureHomeSharedRuntime } from "./home-shared-runtime";
 
 type HomeControllerState = {
   isAuthenticated: boolean;
@@ -111,18 +110,6 @@ type HomeSharedRuntimeConnection = {
 };
 
 let activeController: HomeControllerState | null = null;
-
-const buildHomeRuntimeClientId = () => {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return `home-fragment-runtime:${crypto.randomUUID()}`;
-  }
-  return `home-fragment-runtime:${Date.now().toString(36)}:${Math.random()
-    .toString(36)
-    .slice(2)}`;
-};
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
@@ -254,7 +241,10 @@ const connectSharedHomeRuntime = ({
   fragmentBootstrapHref,
   onCommit,
 }: {
-  controller: Pick<HomeControllerState, "lang" | "path" | "cleanupFns">;
+  controller: Pick<
+    HomeControllerState,
+    "lang" | "path" | "cleanupFns" | "homeDemoStylesheetHref"
+  >;
   root?: ParentNode;
   runtimePlanEntries: FragmentRuntimePlanEntry[];
   runtimeFetchGroups: string[][];
@@ -267,11 +257,12 @@ const connectSharedHomeRuntime = ({
     return null;
   }
 
-  const bridge = new FragmentRuntimeBridge();
   let didMarkFirstAnchorBatch = false;
   let pendingAnchorIds = new Set<string>();
-  let bootstrapPrimePromise: Promise<void> | null = null;
   const commitGateById = new Map<string, Promise<unknown>>();
+  const defaultCommitReady = ensureStaticHomeDeferredStylesheet({
+    href: controller.homeDemoStylesheetHref ?? undefined,
+  }).catch(() => undefined);
   const planEntriesById = new Map(
     runtimePlanEntries.map((entry) => [entry.id, entry]),
   );
@@ -291,20 +282,29 @@ const connectSharedHomeRuntime = ({
     reportedWidthBuckets.set(fragmentId, seed.widthBucket ?? null);
   });
 
-  const connected = bridge.connect({
-    clientId: buildHomeRuntimeClientId(),
-    apiBase: getPublicFragmentApiBase(),
-    path: controller.path,
-    lang: controller.lang,
-    planEntries: runtimePlanEntries,
-    fetchGroups: runtimeFetchGroups,
-    initialFragments: runtimeInitialFragments,
-    initialSizing,
-    knownVersions: collectStaticHomeKnownVersions(root),
-    visibleIds: [],
-    viewportWidth,
-    enableStreaming: false,
-    bootstrapHref: fragmentBootstrapHref ?? undefined,
+  const sharedRuntime = ensureHomeSharedRuntime(
+    {
+      path: controller.path,
+      lang: controller.lang,
+      planEntries: runtimePlanEntries,
+      fetchGroups: runtimeFetchGroups,
+      initialFragments: runtimeInitialFragments,
+      initialSizing,
+      knownVersions: collectStaticHomeKnownVersions(root),
+      visibleIds: [],
+      viewportWidth,
+      enableStreaming: false,
+      startupMode: "eager-visible-first",
+      bootstrapHref: fragmentBootstrapHref,
+    },
+    window,
+  );
+
+  if (!sharedRuntime) {
+    return null;
+  }
+
+  sharedRuntime.attachHandlers({
     onCommit: (payload) => {
       const publishCommit = () => {
         if (!didMarkFirstAnchorBatch && pendingAnchorIds.has(payload.id)) {
@@ -314,7 +314,7 @@ const connectSharedHomeRuntime = ({
         }
         onCommit(payload);
       };
-      const commitGate = commitGateById.get(payload.id);
+      const commitGate = commitGateById.get(payload.id) ?? defaultCommitReady;
       if (!commitGate) {
         publishCommit();
         return;
@@ -341,40 +341,6 @@ const connectSharedHomeRuntime = ({
     },
   });
 
-  if (!connected) {
-    return null;
-  }
-
-  const primeBootstrapSelection = () => {
-    if (!fragmentBootstrapHref) {
-      return Promise.resolve();
-    }
-    if (!bootstrapPrimePromise) {
-      const primedBytes = consumePrimedHomeFragmentBootstrapBytes({
-        href: fragmentBootstrapHref,
-      });
-      if (!primedBytes) {
-        bootstrapPrimePromise = Promise.resolve();
-      } else {
-        bootstrapPrimePromise = primedBytes
-          .then((bytes) =>
-            bridge.primeBootstrap(bytes, fragmentBootstrapHref ?? undefined),
-          )
-          .catch((error) => {
-            console.error("Static home bootstrap priming failed:", error);
-            throw error;
-          });
-      }
-    }
-    return bootstrapPrimePromise;
-  };
-
-  if (fragmentBootstrapHref) {
-    void primeBootstrapSelection().catch(() => {
-      // Keep initial runtime connect non-blocking even if bootstrap priming fails.
-    });
-  }
-
   const handleStableHeight = (event: Event) => {
     const detail = (
       event as CustomEvent<{ fragmentId?: string; height?: number }>
@@ -384,7 +350,7 @@ const connectSharedHomeRuntime = ({
     const card = getStaticHomeFragmentCard(fragmentId, root);
     if (!card) return;
     const width = reportedWidths.get(fragmentId) ?? null;
-    bridge.measureCard(
+    sharedRuntime.measureCard(
       fragmentId,
       Math.ceil(detail.height),
       width,
@@ -447,9 +413,9 @@ const connectSharedHomeRuntime = ({
             return;
           }
 
-          bridge.reportCardWidth(fragmentId, width);
+          sharedRuntime.reportCardWidth(fragmentId, width);
           if (card.dataset.fragmentReady === "true") {
-            bridge.measureCard(
+            sharedRuntime.measureCard(
               fragmentId,
               Math.ceil(entry.contentRect.height),
               width,
@@ -482,12 +448,15 @@ const connectSharedHomeRuntime = ({
     );
   }
 
-  controller.cleanupFns.push(() => bridge.dispose());
+  controller.cleanupFns.push(() => {
+    sharedRuntime.detachHandlers();
+    sharedRuntime.dispose();
+  });
 
   return {
     async requestFragments(ids, { isAnchorBatch, commitReady }) {
       if (!ids.length) return;
-      bridge.resumeAfterPageShow();
+      sharedRuntime.resumeAfterPageShow();
       ids.forEach((fragmentId) => {
         if (commitReady) {
           commitGateById.set(fragmentId, commitReady);
@@ -498,20 +467,15 @@ const connectSharedHomeRuntime = ({
       if (isAnchorBatch && !didMarkFirstAnchorBatch) {
         pendingAnchorIds = new Set(ids);
       }
-      if (fragmentBootstrapHref && isHomeFragmentBootstrapSubset(ids)) {
-        await primeBootstrapSelection().catch(() => {
-          // Keep the shared runtime request path alive even if the primed bootstrap fetch failed.
-        });
-      }
-      bridge.requestFragments(ids, {
+      sharedRuntime.requestFragments(ids, {
         priority: isAnchorBatch ? "critical" : "visible",
       });
     },
     suspendForPageHide() {
-      bridge.suspendForPageHide();
+      sharedRuntime.suspendForPageHide();
     },
     resumeAfterPageShow() {
-      return bridge.resumeAfterPageShow();
+      return sharedRuntime.resumeAfterPageShow();
     },
   };
 };
@@ -729,13 +693,10 @@ const HOME_DEFERRED_HYDRATION_ROOT_MARGIN = "0px";
 const HOME_DEFERRED_HYDRATION_THRESHOLD = 0;
 const HOME_READY_STAGGER_ROOT_MARGIN = "0px";
 const HOME_READY_STAGGER_THRESHOLD = 0.01;
-const HOME_POST_LCP_RUNTIME_WARM_DELAY_MS = 15000;
 const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = [
-  "pointerenter",
   "pointerdown",
   "touchstart",
   "keydown",
-  "focusin",
 ] as const;
 
 const isStaticHomeCardStage = (
@@ -931,12 +892,10 @@ export const bindHomeFragmentHydration = ({
               controller.patchQueue?.setVisible(id, visible);
               if (!visible) {
                 visibleDeferredIds.delete(id);
-                queuedDeferredIds.delete(id);
                 return;
               }
 
               visibleDeferredIds.add(id);
-              queuedDeferredIds.add(id);
               scheduleNextHydration();
             });
           },
@@ -974,7 +933,7 @@ export const bindHomeFragmentHydration = ({
         ) {
           return false;
         }
-        return stage === "anchor" || visibleDeferredIds.has(id);
+        return true;
       })
       .map(({ id }) => id);
   };
@@ -1113,8 +1072,9 @@ export const bindHomeFragmentHydration = ({
           }
         : {
             priority: "background",
-            timeoutMs: 250,
+            timeoutMs: 0,
             waitForPaint: true,
+            preferIdle: false,
           },
     );
   };
@@ -1141,14 +1101,14 @@ export const bindHomeFragmentHydration = ({
           return [{ card, id, stage }];
         })
         .forEach(({ card, id }) => {
+          if (
+            card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === "pending" ||
+            (previewRefreshesEnabled && isRefreshableHomeFragmentCard(card))
+          ) {
+            queuedDeferredIds.add(id);
+          }
           if (!observer) {
             visibleDeferredIds.add(id);
-            if (
-              card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === "pending" ||
-              (previewRefreshesEnabled && isRefreshableHomeFragmentCard(card))
-            ) {
-              queuedDeferredIds.add(id);
-            }
             controller.patchQueue?.setVisible(id, true);
             scheduleNextHydration();
             return;
@@ -1158,6 +1118,7 @@ export const bindHomeFragmentHydration = ({
           observedDeferredCards.add(card);
           observer.observe(card);
         });
+      scheduleNextHydration();
     },
     scheduleAnchorHydration() {
       if (controller.destroyed) return;
@@ -1286,11 +1247,6 @@ const installDeferredHomePostLcpRuntime = ({
       handleDeferredPostLcpIntent,
       eventOptions,
     );
-    settingsRoot.removeEventListener(
-      "focusin",
-      handleDeferredPostLcpIntent,
-      eventOptions,
-    );
   };
 
   const startPostLcpRuntime = () => {
@@ -1334,16 +1290,47 @@ const installDeferredHomePostLcpRuntime = ({
     });
   }
 
-  const cancelWarmRuntime = scheduleStaticShellTask(startPostLcpRuntime, {
-      priority: "background",
-      delayMs: HOME_POST_LCP_RUNTIME_WARM_DELAY_MS,
-      timeoutMs: 5000,
-      waitForPaint: true,
-    });
-
   return () => {
     cleanupTriggers();
-    cancelWarmRuntime();
+    runtimeCleanup?.();
+    runtimeCleanup = null;
+  };
+};
+
+const installDeferredHomeDemoEntry = (
+  controller: Pick<HomeControllerState, "destroyed">,
+) => {
+  let runtimeCleanup: (() => void) | null = null;
+  let runtimePromise: Promise<void> | null = null;
+
+  const startDemoEntry = () => {
+    if (controller.destroyed || runtimePromise || runtimeCleanup) {
+      return;
+    }
+
+    runtimePromise = loadHomeDemoEntryRuntime()
+      .then(({ installHomeDemoEntry }) => {
+        runtimePromise = null;
+        if (controller.destroyed || runtimeCleanup) {
+          return;
+        }
+        runtimeCleanup = installHomeDemoEntry();
+      })
+      .catch((error) => {
+        runtimePromise = null;
+        console.error("Static home demo entry failed:", error);
+      });
+  };
+
+  const cancelDeferredStart = scheduleStaticShellTask(startDemoEntry, {
+    priority: "background",
+    timeoutMs: 0,
+    waitForPaint: true,
+    preferIdle: false,
+  });
+
+  return () => {
+    cancelDeferredStart();
     runtimeCleanup?.();
     runtimeCleanup = null;
   };
@@ -1401,6 +1388,7 @@ export const bootstrapStaticHome = async () => {
 
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
+    visibleFirst: true,
     routeContext: {
       path: controller.path,
       lang: controller.lang,
@@ -1455,11 +1443,15 @@ export const bootstrapStaticHome = async () => {
         requestHomeDemoObserve();
       },
       {
-        priority: "background",
-        timeoutMs: 600,
+        priority: "user-visible",
+        timeoutMs: 0,
         waitForPaint: true,
+        preferIdle: false,
       },
     ),
+  );
+  controller.cleanupFns.push(
+    installDeferredHomeDemoEntry(controller),
   );
   controller.cleanupFns.push(
     installDeferredHomePostLcpRuntime({

@@ -156,6 +156,11 @@ const resolveCardWidth = (element: HTMLElement) => {
   return rect > 0 ? rect : null
 }
 
+const isElementInInitialViewport = (element: HTMLElement) => {
+  const rect = element.getBoundingClientRect()
+  return rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth
+}
+
 export const FragmentStreamController = component$(
   ({
     shellMode,
@@ -211,6 +216,8 @@ export const FragmentStreamController = component$(
         let observer: IntersectionObserver | null = null
         let resizeObserver: ResizeObserver | null = null
         let flushHandle: number | null = null
+        let hiddenFlushFrame: number | null = null
+        let hiddenFlushTimer: number | null = null
         let microtaskFlushScheduled = false
         let hmrTimer: number | null = null
         let hmrClearCachesPending = false
@@ -262,6 +269,7 @@ export const FragmentStreamController = component$(
         const dynamicCriticalSet = new Set<string>()
         const isCriticalId = (id: string) => staticCriticalIds.has(id) || dynamicCriticalSet.has(id)
         const hasMissingCriticalFragments = criticalIds.some((id) => !fragments.value[id])
+        let hiddenFlushReleased = !canObserve
 
         if (!canObserve) {
           Object.values(fragments.value).forEach((payload) => applyFragmentEffects(payload))
@@ -291,6 +299,19 @@ export const FragmentStreamController = component$(
           enqueuePayload(normalized)
         }
 
+        const scheduleHiddenFlush = () => {
+          if (!active || hiddenFlushReleased || !canObserve) return
+          if (hiddenFlushFrame !== null || hiddenFlushTimer !== null) return
+          hiddenFlushFrame = window.requestAnimationFrame(() => {
+            hiddenFlushFrame = null
+            hiddenFlushTimer = window.setTimeout(() => {
+              hiddenFlushTimer = null
+              hiddenFlushReleased = true
+              scheduleFlush()
+            }, 0)
+          })
+        }
+
         const flushQueued = () => {
           microtaskFlushScheduled = false
           flushHandle = null
@@ -300,9 +321,17 @@ export const FragmentStreamController = component$(
 
           let hasLangRefresh = false
           let hasVisibleRefresh = false
+          const appliedIds: string[] = []
           queued.forEach((id) => {
             const payload = pending.get(id)
-            if (!payload) return
+            if (!payload) {
+              appliedIds.push(id)
+              return
+            }
+            if (!hiddenFlushReleased && canObserve && !visibleIds.has(id) && !isCriticalId(id)) {
+              return
+            }
+            appliedIds.push(id)
             pending.delete(id)
             if (refreshQueue.delete(id)) {
               hasLangRefresh = true
@@ -323,7 +352,12 @@ export const FragmentStreamController = component$(
             }
           })
 
-          queued.clear()
+          appliedIds.forEach((id) => {
+            queued.delete(id)
+          })
+          if (queued.size && !hiddenFlushReleased && canObserve) {
+            scheduleHiddenFlush()
+          }
 
           if (next) {
             const nextValue = next
@@ -399,6 +433,7 @@ export const FragmentStreamController = component$(
           visibleIds: canObserve ? [] : allIds,
           viewportWidth: window.innerWidth,
           enableStreaming: FRAGMENT_STREAMING_ENABLED,
+          startupMode: 'eager-visible-first',
           onCommit: queuePayload,
           onSizing: updateWorkerSizing,
           onStatus: updateStatusFromRuntime,
@@ -543,6 +578,9 @@ export const FragmentStreamController = component$(
             observed.add(element)
             elementsById.set(id, element)
             reportCardWidth(element)
+            if (canObserve && isElementInInitialViewport(element)) {
+              visibleIds.add(id)
+            }
           })
         }
 
@@ -577,6 +615,9 @@ export const FragmentStreamController = component$(
                 if (entry.isIntersecting) {
                   visibilityChanged = !visibleIds.has(id) || visibilityChanged
                   visibleIds.add(id)
+                  if (pending.has(id)) {
+                    scheduleFlush(true)
+                  }
                   const existing = fragments.value[id]
                   if (existing && !isCriticalId(id)) {
                     applyFragmentEffects(existing)
@@ -597,6 +638,9 @@ export const FragmentStreamController = component$(
           )
 
           observeTargets()
+          if (visibleIds.size) {
+            bridge.setVisibleIds(Array.from(visibleIds))
+          }
         }
 
         if (hasMissingCriticalFragments) {
@@ -624,6 +668,14 @@ export const FragmentStreamController = component$(
           if (flushHandle !== null) {
             window.cancelAnimationFrame(flushHandle)
             flushHandle = null
+          }
+          if (hiddenFlushFrame !== null) {
+            window.cancelAnimationFrame(hiddenFlushFrame)
+            hiddenFlushFrame = null
+          }
+          if (hiddenFlushTimer !== null) {
+            window.clearTimeout(hiddenFlushTimer)
+            hiddenFlushTimer = null
           }
           microtaskFlushScheduled = false
           if (hmrTimer) {

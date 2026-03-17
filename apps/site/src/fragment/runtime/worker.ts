@@ -64,6 +64,7 @@ type ClientState = {
   lang: string
   viewportWidth: number
   enableStreaming: boolean
+  startupMode: NonNullable<FragmentRuntimeInitMessage['startupMode']>
   bootstrapHref: string | null
   paused: boolean
   planOrder: string[]
@@ -509,15 +510,33 @@ const expandDependencies = (client: ClientState, ids: string[]) => {
   return client.planOrder.filter((fragmentId) => required.has(fragmentId))
 }
 
-const findMatchingFetchGroup = (client: ClientState, ids: string[]) => {
+const partitionMatchingFetchGroups = (client: ClientState, ids: string[]) => {
   if (!ids.length || !client.fetchGroups.length) {
-    return null
+    return {
+      groups: [] as Array<{ fragmentIds: string[]; requestedIds: string[] }>,
+      leftovers: ids
+    }
   }
-  return (
-    client.fetchGroups.find((group) => ids.every((fragmentId) => group.includes(fragmentId)))?.filter((fragmentId) =>
-      client.entriesById.has(fragmentId)
-    ) ?? null
-  )
+
+  const remaining = new Set(ids)
+  const groups: Array<{ fragmentIds: string[]; requestedIds: string[] }> = []
+
+  client.fetchGroups.forEach((group) => {
+    const fragmentIds = group.filter((fragmentId) => client.entriesById.has(fragmentId))
+    if (!fragmentIds.length) return
+    const requestedIds = fragmentIds.filter((fragmentId) => remaining.has(fragmentId))
+    if (!requestedIds.length) return
+    groups.push({
+      fragmentIds,
+      requestedIds
+    })
+    requestedIds.forEach((fragmentId) => remaining.delete(fragmentId))
+  })
+
+  return {
+    groups,
+    leftovers: ids.filter((fragmentId) => remaining.has(fragmentId))
+  }
 }
 
 const priorityToValue = (priority: FragmentRuntimePriority, critical: boolean) => {
@@ -1000,13 +1019,12 @@ const requestClientFragments = (
     return
   }
 
-  const matchingFetchGroup = findMatchingFetchGroup(client, uncachedIds)
-  if (matchingFetchGroup) {
-    scheduleBootstrapGroupFetch(client, matchingFetchGroup, uncachedIds, priority)
-    return
-  }
+  const { groups: matchingFetchGroups, leftovers } = partitionMatchingFetchGroups(client, uncachedIds)
+  matchingFetchGroups.forEach(({ fragmentIds, requestedIds }) => {
+    scheduleBootstrapGroupFetch(client, fragmentIds, requestedIds, priority)
+  })
 
-  uncachedIds.forEach((fragmentId) => {
+  leftovers.forEach((fragmentId) => {
     scheduleFragmentFetch(client, fragmentId, priority, false)
   })
 }
@@ -1155,6 +1173,22 @@ const restartClientStream = (client: ClientState) => {
     })
 }
 
+const startClientEagerFetch = (client: ClientState) => {
+  if (client.startupMode !== 'eager-visible-first') {
+    return
+  }
+
+  const criticalIds = client.planOrder.filter((fragmentId) => client.entriesById.get(fragmentId)?.critical)
+  const deferredIds = client.planOrder.filter((fragmentId) => !client.entriesById.get(fragmentId)?.critical)
+
+  if (criticalIds.length) {
+    requestClientFragments(client, criticalIds, 'critical')
+  }
+  if (deferredIds.length) {
+    requestClientFragments(client, deferredIds, 'visible')
+  }
+}
+
 const createClientState = (message: FragmentRuntimeInitMessage): ClientState => {
   const entriesById = new Map(message.planEntries.map((entry) => [entry.id, entry]))
   const client: ClientState = {
@@ -1164,6 +1198,7 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
     lang: message.lang,
     viewportWidth: message.viewportWidth,
     enableStreaming: message.enableStreaming,
+    startupMode: message.startupMode ?? 'visible-only',
     bootstrapHref: message.bootstrapHref ?? null,
     paused: false,
     planOrder: message.planEntries.map((entry) => entry.id),
@@ -1211,6 +1246,7 @@ const handleInit = (message: FragmentRuntimeInitMessage) => {
   const client = createClientState(message)
   clients.set(client.id, client)
   publishSizingSnapshot(client)
+  startClientEagerFetch(client)
   refreshClientStatus(client)
   restartClientStream(client)
 }
@@ -1240,6 +1276,7 @@ const handleUpdateLang = (client: ClientState, message: Extract<FragmentRuntimeP
     }
   })
   publishSizingSnapshot(client)
+  startClientEagerFetch(client)
   restartClientStream(client)
 }
 

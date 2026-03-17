@@ -92,6 +92,15 @@ type StaticFragmentController = {
   routeData: StaticFragmentRouteData;
   visibleFragmentIds: Set<string>;
   sharedRuntime: FragmentRuntimeBridge | null;
+  commitQueue: StaticFragmentCommitQueue | null;
+  didStartDirectStreamStartup: boolean;
+};
+
+type StaticFragmentCommitQueue = {
+  enqueue: (payload: FragmentPayload) => void;
+  setVisible: (fragmentId: string, visible: boolean) => void;
+  flushNow: () => void;
+  destroy: () => void;
 };
 
 const STATIC_THEME_STORAGE_KEY = "prometheus-theme";
@@ -291,6 +300,127 @@ const setStaticFragmentRuntimeMode = (
     ?.setAttribute(STATIC_FRAGMENT_RUNTIME_ATTR, mode);
 };
 
+const createStaticFragmentCommitQueue = (
+  controller: Pick<StaticFragmentController, "lang" | "routeData" | "visibleFragmentIds">,
+): StaticFragmentCommitQueue => {
+  const pendingPayloads = new Map<string, FragmentPayload>();
+  let cancelScheduledFlush: (() => void) | null = null;
+  let cancelHiddenFlush: (() => void) | null = null;
+  let hiddenFlushReleased = false;
+  let destroyed = false;
+
+  const isEligible = (fragmentId: string) => {
+    const card = getStaticFragmentCard(fragmentId);
+    if (!card) return true;
+    if (card.dataset.critical === "true") return true;
+    return hiddenFlushReleased || controller.visibleFragmentIds.has(fragmentId);
+  };
+
+  const hasEligiblePayload = () =>
+    controller.routeData.fragmentOrder.some(
+      (fragmentId) =>
+        pendingPayloads.has(fragmentId) && isEligible(fragmentId),
+    );
+
+  const hasHiddenPayload = () =>
+    controller.routeData.fragmentOrder.some(
+      (fragmentId) =>
+        pendingPayloads.has(fragmentId) && !isEligible(fragmentId),
+    );
+
+  const flushNext = () => {
+    let processed = false;
+    controller.routeData.fragmentOrder.forEach((fragmentId) => {
+      const payload = pendingPayloads.get(fragmentId);
+      if (!payload || !isEligible(fragmentId)) return;
+      pendingPayloads.delete(fragmentId);
+      patchStaticFragmentCard(payload, controller.routeData, document);
+      syncRouteDataVersion(controller.routeData, payload.id, payload.cacheUpdatedAt);
+      processed = true;
+    });
+    return processed;
+  };
+
+  const flushNow = () => {
+    if (destroyed) return;
+    cancelScheduledFlush?.();
+    cancelScheduledFlush = null;
+    while (flushNext()) {
+      // Drain immediately-eligible worker commits in a single turn.
+    }
+    scheduleFlush();
+  };
+
+  const scheduleHiddenFlush = () => {
+    if (destroyed || hiddenFlushReleased || cancelHiddenFlush || !hasHiddenPayload()) {
+      return;
+    }
+    cancelHiddenFlush = scheduleStaticShellTask(
+      () => {
+        cancelHiddenFlush = null;
+        if (destroyed) return;
+        hiddenFlushReleased = true;
+        flushNow();
+      },
+      {
+        waitForPaint: true,
+        priority: "background",
+        preferIdle: false,
+        timeoutMs: 0,
+      },
+    );
+  };
+
+  const scheduleFlush = () => {
+    if (destroyed || cancelScheduledFlush || !hasEligiblePayload()) return;
+    cancelScheduledFlush = scheduleStaticShellTask(
+      () => {
+        cancelScheduledFlush = null;
+        if (destroyed) return;
+        while (flushNext()) {
+          // Drain all visible/critical commits in one scheduled turn.
+        }
+        if (hasHiddenPayload()) {
+          scheduleHiddenFlush();
+        }
+      },
+      {
+        priority: "user-visible",
+        preferIdle: false,
+        timeoutMs: 0,
+      },
+    );
+  };
+
+  return {
+    enqueue(payload) {
+      if (destroyed) return;
+      pendingPayloads.set(payload.id, payload);
+      flushNow();
+      scheduleHiddenFlush();
+    },
+    setVisible(fragmentId, visible) {
+      if (destroyed) return;
+      if (visible) {
+        controller.visibleFragmentIds.add(fragmentId);
+      } else {
+        controller.visibleFragmentIds.delete(fragmentId);
+      }
+      flushNow();
+      scheduleHiddenFlush();
+    },
+    flushNow,
+    destroy() {
+      destroyed = true;
+      pendingPayloads.clear();
+      cancelScheduledFlush?.();
+      cancelScheduledFlush = null;
+      cancelHiddenFlush?.();
+      cancelHiddenFlush = null;
+    },
+  };
+};
+
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(value);
@@ -477,13 +607,9 @@ const connectSharedFragmentRuntime = (
     visibleIds: collectVisibleStreamIds(controller),
     viewportWidth: window.innerWidth,
     enableStreaming: true,
+    startupMode: "eager-visible-first",
     onCommit: (payload) => {
-      patchStaticFragmentCard(payload, controller.routeData, document);
-      syncRouteDataVersion(
-        controller.routeData,
-        payload.id,
-        payload.cacheUpdatedAt,
-      );
+      controller.commitQueue?.enqueue(payload);
     },
     onSizing: applySharedRuntimeSizing,
     onStatus: (nextStatus) => {
@@ -778,23 +904,29 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
   }
 
   const visibleIds = collectVisibleStreamIds(controller);
-  if (visibleIds.length === 0) {
-    controller.sharedRuntime?.setVisibleIds([]);
-    controller.sharedRuntime?.pause();
+  if (controller.sharedRuntime) {
+    controller.sharedRuntime.resumeAfterPageShow();
+    controller.sharedRuntime.setVisibleIds(visibleIds);
+    if (visibleIds.length) {
+      controller.sharedRuntime.resume();
+    } else {
+      updateFragmentStatus(controller.lang, "idle");
+    }
+    return;
+  }
+
+  const streamIds = controller.didStartDirectStreamStartup
+    ? visibleIds
+    : controller.routeData.fragmentOrder;
+  if (streamIds.length === 0) {
     controller.streamAbort = null;
     updateFragmentStatus(controller.lang, "idle");
     return;
   }
 
-  if (controller.sharedRuntime) {
-    controller.sharedRuntime.resumeAfterPageShow();
-    controller.sharedRuntime.setVisibleIds(visibleIds);
-    controller.sharedRuntime.resume();
-    return;
-  }
-
   const streamAbort = new AbortController();
   controller.streamAbort = streamAbort;
+  controller.didStartDirectStreamStartup = true;
   setStaticFragmentRuntimeMode("direct");
   updateFragmentStatus(controller.lang, "streaming");
 
@@ -803,7 +935,7 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
     await runtime.streamStaticFragments({
       path: controller.routeData.path,
       lang: controller.lang,
-      ids: visibleIds,
+      ids: streamIds,
       signal: streamAbort.signal,
       routeData: controller.routeData,
       onFragment: () => {
@@ -902,14 +1034,17 @@ const observeVisibleStaticFragments = (
         }
       });
       if (!changed) return;
+      const visibleIds = collectVisibleStreamIds(controller);
+      visibleIds.forEach((id) => controller.commitQueue?.setVisible(id, true));
+      controller.routeData.fragmentOrder
+        .filter((id) => !visibleIds.includes(id))
+        .forEach((id) => controller.commitQueue?.setVisible(id, false));
       if (controller.sharedRuntime) {
         controller.sharedRuntime.resumeAfterPageShow();
-        const visibleIds = collectVisibleStreamIds(controller);
         controller.sharedRuntime.setVisibleIds(visibleIds);
         if (visibleIds.length) {
           controller.sharedRuntime.resume();
         } else {
-          controller.sharedRuntime.pause();
           updateFragmentStatus(controller.lang, "idle");
         }
         return;
@@ -1134,8 +1269,12 @@ export const bootstrapStaticFragmentShell = async () => {
     routeData,
     visibleFragmentIds: new Set<string>(),
     sharedRuntime: null,
+    commitQueue: null,
+    didStartDirectStreamStartup: false,
   };
   activeController = controller;
+  controller.commitQueue = createStaticFragmentCommitQueue(controller);
+  controller.cleanupFns.push(() => controller.commitQueue?.destroy());
 
   await syncStaticFragmentDockIfNeeded(controller);
   controller.cleanupFns.push(

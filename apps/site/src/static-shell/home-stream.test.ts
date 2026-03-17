@@ -528,4 +528,30 @@ describe('home-stream patching', () => {
     expect(dock.body.innerHTML).toContain('Dock payload')
     expect(dock.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
   })
+
+  it('releases hidden deferred payloads on the first post-paint background flush in visible-first mode', async () => {
+    const log: string[] = []
+    const taskQueue = createTaskQueue()
+    const ledger = createCard('fragment://page/home/ledger@v1', log)
+    const root = new MockRoot([ledger.card])
+    const queue = createStaticHomePatchQueue({
+      lang: 'en',
+      applyEffects: false,
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      settlePatchedHeight,
+      visibleFirst: true
+    })
+
+    queue.enqueue(createPayload('fragment://page/home/ledger@v1', 'Ledger eager payload', 2))
+    queue.flushNow()
+
+    expect(ledger.body.innerHTML).toBe('')
+    expect(taskQueue.pendingCount()).toBe(1)
+
+    await taskQueue.flushNext()
+
+    expect(ledger.body.innerHTML).toContain('Ledger eager payload')
+    expect(ledger.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+  })
 })

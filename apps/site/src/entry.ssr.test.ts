@@ -7,11 +7,22 @@ describe("entry.ssr static bootstrap injection", () => {
   it("defines route-aware static shell runtime preloads", async () => {
     const source = await readSource();
 
-    expect(source).toContain('"home-static": []');
-    expect(source).toContain("HOME_STATIC_ENTRY_DEFER_DELAY_MS = 8000");
-    expect(source).toContain("buildDeferredHomeStaticEntryTag");
-    expect(source).toContain("const loadFromIntent = (event) => {");
-    expect(source).toContain('event.isTrusted === false');
+    expect(source).toContain('"home-static": [');
+    expect(source).toContain(
+      '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
+    );
+    expect(source).toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/worker.js"',
+    );
+    expect(source).toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js"',
+    );
+    expect(source).toContain("buildImmediateHomeStaticEntryTag");
+    expect(source).toContain(
+      'void import(bootstrapHref).catch((error) => console.error("Static home entry immediate failed:", error));',
+    );
+    expect(source).not.toContain("HOME_STATIC_ENTRY_DEFER_DELAY_MS");
+    expect(source).not.toContain("const loadFromIntent = (event) => {");
     expect(source).not.toContain('document.addEventListener("focusin", load');
     expect(source).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js"',

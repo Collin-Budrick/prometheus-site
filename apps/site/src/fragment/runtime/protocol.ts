@@ -4,6 +4,8 @@ export type FragmentRuntimePriority = 'critical' | 'visible' | 'refresh'
 
 export type FragmentRuntimeStatus = 'idle' | 'fetching' | 'streaming'
 
+export type FragmentRuntimeStartupMode = 'visible-only' | 'eager-visible-first'
+
 export type FragmentRuntimePlanEntry = Pick<FragmentPlanEntry, 'id' | 'critical' | 'layout' | 'dependsOn'> & {
   cacheUpdatedAt?: number
 }
@@ -40,6 +42,7 @@ export type FragmentRuntimeInitMessage = {
   visibleIds: string[]
   viewportWidth: number
   enableStreaming: boolean
+  startupMode?: FragmentRuntimeStartupMode
   bootstrapHref?: string
 }
 

@@ -54,6 +54,7 @@ type CreateStaticHomePatchQueueOptions = {
   scheduleTask?: typeof scheduleStaticShellTask
   routeContext?: FragmentHeightRouteContext | null
   settlePatchedHeight?: PatchStaticHomeFragmentCardOptions['settlePatchedHeight']
+  visibleFirst?: boolean
 }
 
 type ObserveStaticHomePatchVisibilityOptions = {
@@ -491,21 +492,25 @@ export const createStaticHomePatchQueue = ({
   root = document,
   scheduleTask = scheduleStaticShellTask,
   routeContext = null,
-  settlePatchedHeight = null
+  settlePatchedHeight = null,
+  visibleFirst = false
 }: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
   let cancelScheduledFlush: (() => void) | null = null
+  let cancelHiddenFlush: (() => void) | null = null
   let flushInFlight = false
   let destroyed = false
   let didMarkFirstAnchorPatch = false
+  let hiddenFlushReleased = false
 
   const isEligibleCard = (card: HTMLElement, fragmentId: string) => {
     if (card.dataset.critical === 'true') return false
     if (card.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return false
     const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
     if (stage === 'anchor') return true
-    return visibleIds.has(fragmentId)
+    if (visibleIds.has(fragmentId)) return true
+    return visibleFirst && hiddenFlushReleased
   }
 
   const hasEligiblePayload = () =>
@@ -565,6 +570,40 @@ export const createStaticHomePatchQueue = ({
     scheduleFlush()
   }
 
+  const hasHiddenPayload = () =>
+    collectStaticHomeCards(root).some((card) => {
+      const fragmentId = card.dataset.fragmentId
+      if (!fragmentId || !pendingPayloads.has(fragmentId)) return false
+      return !isEligibleCard(card, fragmentId)
+    })
+
+  const scheduleHiddenFlush = () => {
+    if (
+      destroyed ||
+      !visibleFirst ||
+      hiddenFlushReleased ||
+      cancelHiddenFlush ||
+      !hasHiddenPayload()
+    ) {
+      return
+    }
+
+    cancelHiddenFlush = scheduleTask(
+      () => {
+        cancelHiddenFlush = null
+        if (destroyed) return
+        hiddenFlushReleased = true
+        flushNow()
+      },
+      {
+        waitForPaint: true,
+        priority: 'background',
+        preferIdle: false,
+        timeoutMs: 0
+      }
+    )
+  }
+
   const scheduleFlush = () => {
     if (destroyed || flushInFlight || cancelScheduledFlush || !hasEligiblePayload()) return
 
@@ -612,6 +651,7 @@ export const createStaticHomePatchQueue = ({
         return
       }
       scheduleFlush()
+      scheduleHiddenFlush()
     },
     setVisible(fragmentId, visible) {
       if (destroyed) return
@@ -629,6 +669,8 @@ export const createStaticHomePatchQueue = ({
       visibleIds.clear()
       cancelScheduledFlush?.()
       cancelScheduledFlush = null
+      cancelHiddenFlush?.()
+      cancelHiddenFlush = null
     }
   }
 }

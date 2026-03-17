@@ -6,13 +6,21 @@ import type {
   FragmentRuntimePlanEntry,
   FragmentRuntimePriority,
   FragmentRuntimeSizingMap,
+  FragmentRuntimeStartupMode,
   FragmentRuntimeStatus,
   FragmentRuntimeWorkerMessage
 } from './protocol'
 import { asTrustedScriptUrl } from '../../security/client'
 import { resolveStaticAssetUrl } from '../../static-shell/static-asset-url'
 
-type FragmentRuntimeBridgeConfig = {
+export type FragmentRuntimeBridgeHandlers = {
+  onCommit?: ((payload: FragmentPayload) => void) | null
+  onSizing?: ((sizing: FragmentRuntimeCardSizing) => void) | null
+  onStatus?: ((status: FragmentRuntimeStatus) => void) | null
+  onError?: ((message: string, fragmentIds?: string[]) => void) | null
+}
+
+type FragmentRuntimeBridgeConfig = FragmentRuntimeBridgeHandlers & {
   clientId: string
   apiBase: string
   path: string
@@ -25,11 +33,8 @@ type FragmentRuntimeBridgeConfig = {
   visibleIds: string[]
   viewportWidth: number
   enableStreaming: boolean
+  startupMode?: FragmentRuntimeStartupMode
   bootstrapHref?: string
-  onCommit: (payload: FragmentPayload) => void
-  onSizing: (sizing: FragmentRuntimeCardSizing) => void
-  onStatus: (status: FragmentRuntimeStatus) => void
-  onError: (message: string, fragmentIds?: string[]) => void
 }
 
 type FragmentRuntimeRequestOptions = {
@@ -37,13 +42,51 @@ type FragmentRuntimeRequestOptions = {
   refreshIds?: string[]
 }
 
+type FragmentRuntimePreloadDocument = Pick<Document, 'querySelector' | 'createElement'> & {
+  head?: {
+    appendChild?: (node: Node) => unknown
+  } | null
+}
+
 const canUseWorkerRuntime = () => typeof window !== 'undefined' && typeof Worker === 'function'
 
-const FRAGMENT_RUNTIME_WORKER_ASSET_PATH = 'build/static-shell/apps/site/src/fragment/runtime/worker.js'
+export const FRAGMENT_RUNTIME_WORKER_ASSET_PATH = 'build/static-shell/apps/site/src/fragment/runtime/worker.js'
+export const FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH =
+  'build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js'
 
 export const resolveFragmentRuntimeWorkerUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
 ) => resolveStaticAssetUrl(FRAGMENT_RUNTIME_WORKER_ASSET_PATH, options)
+
+export const resolveFragmentRuntimeDecodeWorkerUrl = (
+  options?: Parameters<typeof resolveStaticAssetUrl>[1]
+) => resolveStaticAssetUrl(FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH, options)
+
+export const ensureFragmentRuntimeAssetPreloads = ({
+  doc = typeof document !== 'undefined' ? document : null
+}: {
+  doc?: FragmentRuntimePreloadDocument | null
+} = {}) => {
+  if (!doc?.head?.appendChild || typeof doc.createElement !== 'function') {
+    return
+  }
+
+  ;([
+    ['worker', resolveFragmentRuntimeWorkerUrl()],
+    ['decode', resolveFragmentRuntimeDecodeWorkerUrl()]
+  ] as const).forEach(([marker, href]) => {
+    const selector = `link[data-fragment-runtime-preload="${marker}"]`
+    if (doc.querySelector(selector)) {
+      return
+    }
+    const link = doc.createElement('link') as HTMLLinkElement
+    link.rel = 'modulepreload'
+    link.href = href
+    link.crossOrigin = 'anonymous'
+    link.setAttribute('data-fragment-runtime-preload', marker)
+    doc.head?.appendChild(link)
+  })
+}
 
 export class FragmentRuntimeBridge {
   private worker: Worker | null = null
@@ -119,11 +162,15 @@ export class FragmentRuntimeBridge {
       visibleIds: [...config.visibleIds]
     }
     this.clientId = config.clientId
-    this.onCommit = config.onCommit
-    this.onSizing = config.onSizing
-    this.onStatus = config.onStatus
-    this.onError = config.onError
+    this.setHandlers(config)
     return this.resumeAfterPageShow()
+  }
+
+  setHandlers(handlers: FragmentRuntimeBridgeHandlers) {
+    this.onCommit = handlers.onCommit ?? null
+    this.onSizing = handlers.onSizing ?? null
+    this.onStatus = handlers.onStatus ?? null
+    this.onError = handlers.onError ?? null
   }
 
   suspendForPageHide() {
@@ -146,6 +193,7 @@ export class FragmentRuntimeBridge {
     }
 
     try {
+      ensureFragmentRuntimeAssetPreloads()
       const workerUrl = asTrustedScriptUrl(resolveFragmentRuntimeWorkerUrl())
       this.worker = new Worker(workerUrl as unknown as string, {
         type: 'module',
@@ -172,6 +220,7 @@ export class FragmentRuntimeBridge {
       visibleIds: this.config.visibleIds,
       viewportWidth: this.config.viewportWidth,
       enableStreaming: this.config.enableStreaming,
+      startupMode: this.config.startupMode,
       bootstrapHref: this.config.bootstrapHref
     })
 

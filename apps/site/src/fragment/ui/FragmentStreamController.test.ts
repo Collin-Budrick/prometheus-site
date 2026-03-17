@@ -3,11 +3,12 @@ import { describe, expect, it } from 'bun:test'
 const readSource = async () =>
   await Bun.file(new URL('./FragmentStreamController.tsx', import.meta.url)).text()
 
-describe('FragmentStreamController viewport streaming invariants', () => {
-  it('uses visible-id scoped streaming without the old client-intent gate', async () => {
+describe('FragmentStreamController eager worker startup invariants', () => {
+  it('keeps visibility-scoped streaming while enabling eager worker startup', async () => {
     const source = await readSource()
 
     expect(source).toContain('new FragmentRuntimeBridge()')
+    expect(source).toContain("startupMode: 'eager-visible-first'")
     expect(source).toContain('bridge.setVisibleIds(Array.from(visibleIds))')
     expect(source).toContain("requestFragments(ready, 'visible')")
     expect(source).toContain("requestFragments(Array.from(staticCriticalIds), 'critical')")

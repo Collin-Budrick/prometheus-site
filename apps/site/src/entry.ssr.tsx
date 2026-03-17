@@ -36,7 +36,12 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 } as const;
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
-  "home-static": [],
+  "home-static": [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
+    "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
+    "build/static-shell/apps/site/src/fragment/runtime/worker.js",
+    "build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js",
+  ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
     "build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js",
@@ -119,7 +124,6 @@ const minifyInlineCss = (value: string) =>
     .replace(/;}/g, "}")
     .trim();
 const STATIC_SHELL_BUILD_VERSION = getStaticShellBuildVersion();
-const HOME_STATIC_ENTRY_DEFER_DELAY_MS = 8000;
 const HOME_CRITICAL_STYLES = minifyInlineCss(homeCriticalStyles);
 const staticFragmentPrewarmPromise = import.meta.env.PROD
   ? prewarmStaticFragmentResources().catch((error) => {
@@ -127,46 +131,13 @@ const staticFragmentPrewarmPromise = import.meta.env.PROD
     })
   : null;
 
-const buildDeferredHomeStaticEntryTag = (
+const buildImmediateHomeStaticEntryTag = (
   bundleHref: string,
   nonceAttr: string,
 ) =>
   `<script type="module"${nonceAttr}>(() => {
-const href = ${JSON.stringify(bundleHref)};
-let started = false;
-let timer = 0;
-const loadFromIntent = (event) => {
-  if (event && event.isTrusted === false) return;
-  load();
-};
-const load = () => {
-  if (started) return;
-  started = true;
-  cleanup();
-  if (timer) {
-    window.clearTimeout(timer);
-    timer = 0;
-  }
-  import(href).catch((error) => console.error("Static home entry failed:", error));
-};
-const queue = () => {
-  if (started || timer) return;
-  timer = window.setTimeout(load, ${HOME_STATIC_ENTRY_DEFER_DELAY_MS});
-};
-const cleanup = () => {
-  window.removeEventListener("pointerdown", loadFromIntent, true);
-  window.removeEventListener("touchstart", loadFromIntent, true);
-  window.removeEventListener("keydown", loadFromIntent, true);
-  window.removeEventListener("load", queue, true);
-};
-window.addEventListener("pointerdown", loadFromIntent, { capture: true, passive: true });
-window.addEventListener("touchstart", loadFromIntent, { capture: true, passive: true });
-window.addEventListener("keydown", loadFromIntent, true);
-if (document.readyState === "complete") {
-  queue();
-} else {
-  window.addEventListener("load", queue, { capture: true, once: true });
-}
+const bootstrapHref = ${JSON.stringify(bundleHref)};
+void import(bootstrapHref).catch((error) => console.error("Static home entry immediate failed:", error));
 })();</script>`;
 
 const stripStaticQwikScripts = (html: string) =>
@@ -290,7 +261,7 @@ export const injectStaticBootstrap = (
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const scriptTag =
     resolveStaticBootstrapMode(pathname) === "home-static"
-      ? buildDeferredHomeStaticEntryTag(bundleHref, nonceAttr)
+      ? buildImmediateHomeStaticEntryTag(bundleHref, nonceAttr)
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
   return html
     .replace("</head>", `${preloadTags}</head>`)
