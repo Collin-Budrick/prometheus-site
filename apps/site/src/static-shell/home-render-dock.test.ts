@@ -52,9 +52,10 @@ describe('renderHomeStaticFragmentHtml dock shell', () => {
 
     expect(html).toContain('ライブ共同編集テキスト')
     expect(html).toContain('このページにいる全員に共有されるテキストです。')
+    expect(html).toContain('home-fragment-shell-copy')
     expect(html).toContain('data-fragment-widget="home-collab"')
     expect(html).toContain('data-fragment-widget-shell')
-    expect(html).toContain('data-fragment-widget-props')
+    expect(html).not.toContain('data-fragment-widget-props')
     expect(html).toContain('フォーカスしてライブ同期を開始します。')
     expect(html).toContain('何か入力してください。ここにいる全員にリアルタイムで表示されます。')
     expect(html).toContain('共有コラボレーションテキストボックス')
@@ -63,5 +64,27 @@ describe('renderHomeStaticFragmentHtml dock shell', () => {
     expect(html).toContain('Loro · Garnet · リアルタイム')
     expect(html).not.toContain('Focus to start live sync.')
     expect(html).not.toContain('Write something. Everyone here sees it live.')
+  })
+
+  it('renders a lightweight preview dock without textarea markup', () => {
+    const html = renderHomeStaticFragmentHtml(h('section', null, []), copy, {
+      mode: 'preview',
+      fragmentId: dockFragmentId,
+      fragmentHeaders: {
+        [dockFragmentId]: {
+          heading: 'h2',
+          metaLine: 'ãƒ©ã‚¤ãƒ–å…±åŒç·¨é›†ãƒ†ã‚­ã‚¹ãƒˆ',
+          title: 'ã“ã®ãƒšãƒ¼ã‚¸ã«ã„ã‚‹å…¨å“¡ã«å…±æœ‰ã•ã‚Œã‚‹ãƒ†ã‚­ã‚¹ãƒˆã§ã™ã€‚',
+          description: 'ã“ã®ãƒšãƒ¼ã‚¸ã®å…¨å“¡ãŒåŒã˜ãƒ†ã‚­ã‚¹ãƒˆãƒœãƒƒã‚¯ã‚¹ã‚’ç·¨é›†ã§ãã€Loro ã¯æ›´æ–°ã‚’ Garnet çµŒç”±ã§ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ åŒæœŸã—ã¾ã™ã€‚'
+        }
+      }
+    })
+
+    expect(html).toContain('home-fragment-shell--dock')
+    expect(html).toContain('home-fragment-shell-copy')
+    expect(html).toContain('home-demo-compact-action')
+    expect(html).not.toContain('data-fragment-widget="home-collab"')
+    expect(html).not.toContain('data-home-collab-input="true"')
+    expect(html).not.toContain('<textarea')
   })
 })

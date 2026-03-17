@@ -6,6 +6,12 @@ import {
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
 import { getStaticHomeUiCopy } from './home-copy-store'
+import {
+  createStaticShellThemeIcon,
+  ensureStaticShellSettingsOverlay,
+  readStaticShellTheme
+} from './settings-overlay-dom'
+import { ensureStaticHomeDeferredStylesheet } from './home-deferred-stylesheet'
 
 type Theme = 'light' | 'dark'
 
@@ -17,39 +23,15 @@ type HomeUiControlsController = {
 type BindHomeUiControlsOptions = {
   controller: HomeUiControlsController
   onLanguageChange: (nextLang: Lang) => Promise<void> | void
+  ensureDeferredStylesheet?: typeof ensureStaticHomeDeferredStylesheet
 }
 
-const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
 const STATIC_THEME_COOKIE_KEY = 'prometheus-theme'
 const STATIC_THEME_PREFERENCE_KEY = 'prometheus:pref:theme'
 const LIGHT_THEME_COLOR = '#f97316'
 const DARK_THEME_COLOR = '#0f172a'
 const UI_CONTROLS_BOUND_ATTR = 'data-static-home-ui-controls-bound'
-
-const createThemeIcon = (theme: Theme) => {
-  const svg = document.createElementNS(SVG_NAMESPACE, 'svg')
-  svg.setAttribute('class', 'theme-toggle-icon')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('width', '1em')
-  svg.setAttribute('height', '1em')
-  svg.setAttribute('fill', 'none')
-  svg.setAttribute('stroke', 'currentColor')
-  svg.setAttribute('stroke-width', '2')
-  svg.setAttribute('stroke-linecap', 'round')
-  svg.setAttribute('stroke-linejoin', 'round')
-  svg.setAttribute('aria-hidden', 'true')
-
-  const path = document.createElementNS(SVG_NAMESPACE, 'path')
-  path.setAttribute(
-    'd',
-    theme === 'dark'
-      ? 'M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8Z'
-      : 'M21 12.8a9 9 0 1 1-9.8-9 7 7 0 0 0 9.8 9z'
-  )
-  svg.append(path)
-  return svg
-}
 
 const writeLocalStorageValue = (key: string, value: string) => {
   try {
@@ -83,26 +65,46 @@ const refreshThemeButton = (lang: Lang) => {
   const button = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
   if (!button) return
 
-  const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+  const theme = readStaticShellTheme()
   const copy = getStaticHomeUiCopy(lang)
   button.dataset.theme = theme
   button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
-  button.replaceChildren(createThemeIcon(theme))
+  button.replaceChildren(createStaticShellThemeIcon(theme))
 }
 
-export const bindHomeUiControls = ({ controller, onLanguageChange }: BindHomeUiControlsOptions) => {
+export const bindHomeUiControls = ({
+  controller,
+  onLanguageChange,
+  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet
+}: BindHomeUiControlsOptions) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
   const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
-  const settingsPanel = document.querySelector<HTMLElement>('.settings-dropdown')
-  const languageMenuToggle = document.querySelector<HTMLButtonElement>('[data-static-language-menu-toggle]')
-  const languageDrawer = document.querySelector<HTMLElement>('.settings-lang-drawer')
-  const themeToggle = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
+  const overlay =
+    settingsRoot
+      ? ensureStaticShellSettingsOverlay({
+          settingsRoot,
+          lang: controller.lang,
+          copy: getStaticHomeUiCopy(controller.lang)
+        })
+      : null
 
-  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle) {
+  if (!settingsRoot || !settingsToggle || !overlay) {
     return false
   }
+
+  const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } = overlay
+  let deferredStylesheetPromise: Promise<unknown> | null = null
+  const preloadDeferredStylesheet = () => {
+    deferredStylesheetPromise ??= Promise.resolve(
+      ensureDeferredStylesheet({ doc: document })
+    ).catch((error) => {
+      console.error('Static home deferred stylesheet failed:', error)
+    })
+    return deferredStylesheetPromise
+  }
   if (settingsRoot.getAttribute(UI_CONTROLS_BOUND_ATTR) === 'true') {
+    void preloadDeferredStylesheet()
     refreshThemeButton(controller.lang)
     return true
   }
@@ -131,22 +133,26 @@ export const bindHomeUiControls = ({ controller, onLanguageChange }: BindHomeUiC
     setOverlaySurfaceState(settingsPanel, false)
   }
 
-  const toggleSettings = () => {
+  const toggleSettings = async () => {
     const next = settingsRoot.dataset.open !== 'true'
-    settingsRoot.dataset.open = next ? 'true' : 'false'
-    settingsToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
     if (!next) {
       closeMenus(false)
       return
     }
+    await preloadDeferredStylesheet()
+    settingsRoot.dataset.open = 'true'
+    settingsToggle.setAttribute('aria-expanded', 'true')
     setOverlaySurfaceState(settingsPanel, true)
     focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle)
   }
 
-  const toggleLanguageMenu = () => {
+  const toggleLanguageMenu = async () => {
     if (!languageDrawer || !languageMenuToggle) return
 
     const next = languageDrawer.dataset.open !== 'true'
+    if (next) {
+      await preloadDeferredStylesheet()
+    }
     setOverlaySurfaceState(languageDrawer, next)
     languageMenuToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
     if (next) {
@@ -215,6 +221,7 @@ export const bindHomeUiControls = ({ controller, onLanguageChange }: BindHomeUiC
     }
   })
 
+  void preloadDeferredStylesheet()
   setOverlaySurfaceState(settingsPanel, false)
   closeLanguageMenu(false)
   refreshThemeButton(controller.lang)

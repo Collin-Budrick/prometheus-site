@@ -266,7 +266,7 @@ afterEach(() => {
 })
 
 describe('installHomeStaticEntry', () => {
-  it('installs immediately and primes bootstrap without waiting for load when the home root already exists', async () => {
+  it('installs immediately without waiting for load when the home root already exists', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     doc.readyState = 'loading'
@@ -288,7 +288,7 @@ describe('installHomeStaticEntry', () => {
 
     await flushMicrotasks()
 
-    expect(bootstrapPrimeCount).toBe(1)
+    expect(bootstrapPrimeCount).toBe(0)
     expect(win.listeners.has('load')).toBe(false)
     expect(doc.listeners.has('DOMContentLoaded')).toBe(false)
     expect(win.listeners.has('pointerdown')).toBe(true)
@@ -296,7 +296,7 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('prewarms the bootstrap runtime as soon as the LCP gate resolves', async () => {
+  it('defers the bootstrap runtime until the scheduled background task runs after the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -322,10 +322,15 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(1)
-    expect(taskQueue.size()).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
+    expect(taskQueue.size()).toBe(2)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.timeouts.size).toBe(0)
+
+    taskQueue.runAll()
+    await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
 
     cleanup()
   })
@@ -376,12 +381,10 @@ describe('installHomeStaticEntry', () => {
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
     expect(manualGate.cleanupCount()).toBe(1)
-
-    taskQueue.runAll()
     cleanup()
   })
 
-  it('marks home paint ready after the LCP gate and starts bootstrap without waiting for visibility observers', async () => {
+  it('marks home paint ready after the LCP gate and schedules bootstrap in the background', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -412,12 +415,15 @@ describe('installHomeStaticEntry', () => {
 
     expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
     expect(events).toEqual(['schedule-paint'])
+    expect(taskQueue.size()).toBe(2)
 
     taskQueue.runAll()
+    await flushMicrotasks()
+    expect(events).toEqual(['schedule-paint', 'bootstrap'])
     cleanup()
   })
 
-  it('starts bootstrap immediately after home paint becomes ready once the LCP gate resolves', async () => {
+  it('starts bootstrap only after the deferred task runs once home paint becomes ready', async () => {
     ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver
 
@@ -450,13 +456,15 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(0)
     expect(MockIntersectionObserver.instances.length).toBe(0)
 
+    taskQueue.runAll()
     await flushMicrotasks()
+
+    expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
 
-    taskQueue.runAll()
     cleanup()
   })
 

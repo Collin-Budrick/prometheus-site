@@ -21,6 +21,11 @@ type LoadHybridFragmentResourceOptions = {
   includeAllFragments?: boolean
 }
 
+type StaticFragmentPrewarmTarget = {
+  path: string
+  lang: string
+}
+
 const readPlanInitialHtml = (plan: FragmentPlanValue | undefined) =>
   (plan as FragmentPlanValue & { initialHtml?: Record<string, string> } | undefined)?.initialHtml
 
@@ -49,6 +54,10 @@ export const resolveViewportHint = (request: Request | undefined) => {
 }
 
 let staticFragmentServicePromise: Promise<ReturnType<typeof createFragmentService>> | null = null
+const DEFAULT_STATIC_FRAGMENT_PREWARM_TARGETS: readonly StaticFragmentPrewarmTarget[] = [
+  { path: '/', lang: defaultLang }
+] as const
+let staticFragmentResourcePrewarmPromise: Promise<void> | null = null
 
 const loadStaticFragmentService = async () => {
   if (!staticFragmentServicePromise) {
@@ -207,6 +216,29 @@ export const loadStaticFragmentResource = async (
     path: plan.path,
     initialHtml: Object.keys(initialHtml).length ? initialHtml : undefined
   }
+}
+
+export const prewarmStaticFragmentResources = (
+  targets: readonly StaticFragmentPrewarmTarget[] = DEFAULT_STATIC_FRAGMENT_PREWARM_TARGETS
+) => {
+  const run = async () => {
+    await Promise.all(
+      targets.map(async ({ path, lang }) => {
+        await loadStaticFragmentResource(path, lang)
+      })
+    )
+  }
+
+  if (targets !== DEFAULT_STATIC_FRAGMENT_PREWARM_TARGETS) {
+    return run()
+  }
+
+  staticFragmentResourcePrewarmPromise ??= run().catch((error) => {
+    staticFragmentResourcePrewarmPromise = null
+    throw error
+  })
+
+  return staticFragmentResourcePrewarmPromise
 }
 
 export const resolveRequestLang = (request: Request): Lang => {

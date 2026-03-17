@@ -9,6 +9,7 @@ import {
   getStaticHomeUiCopy,
   resetStaticHomeCopyForTests
 } from './home-copy-store'
+import { resetStaticShellSeedCacheForTests } from './seed-client'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
@@ -521,6 +522,7 @@ const installDomGlobals = (doc: MockDocument) => {
 afterEach(() => {
   resetStaticHomeCopyForTests()
   resetHomeDemoActivationForTests()
+  resetStaticShellSeedCacheForTests()
 
   if (originalGlobals.document) {
     ;(globalThis as typeof globalThis & { document?: Document }).document = originalGlobals.document
@@ -549,11 +551,11 @@ afterEach(() => {
 })
 
 describe('home-demo-activate', () => {
-  it('seeds runtime copy from shared bootstrap scripts', () => {
+  it('seeds runtime copy from shared bootstrap scripts', async () => {
     const doc = new MockDocument()
     installBootstrapScripts(doc)
 
-    const data = ensureStaticHomeDemoSeed(doc as never)
+    const data = await ensureStaticHomeDemoSeed(doc as never)
 
     expect(data?.lang).toBe('en')
     expect(getStaticHomeUiCopy('en-US').demoActivate).toBe('Launch demo')
@@ -643,6 +645,9 @@ describe('home-demo-activate', () => {
   })
 
   it('does not throw when react-binary copy is unavailable', async () => {
+    resetStaticHomeCopyForTests()
+    resetHomeDemoActivationForTests()
+    resetStaticShellSeedCacheForTests()
     const doc = new MockDocument()
     installDomGlobals(doc)
     const root = doc.createElement('div')

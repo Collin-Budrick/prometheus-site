@@ -647,6 +647,7 @@ export const useInitialFadeState = routeLoader$((_event) => {
 
 export const onRequest: RequestHandler = async (event) => {
   const { headers, method, request } = event
+  const requestUrl = new URL(request.url)
   const isCacheableMethod = method === 'GET' || method === 'HEAD'
   const isHtmlRequest = isCacheableMethod && request.headers.get('accept')?.toLowerCase().includes('text/html')
 
@@ -657,7 +658,6 @@ export const onRequest: RequestHandler = async (event) => {
   }
 
   if (isHtmlRequest) {
-    const requestUrl = new URL(request.url)
     const nonce = getOrCreateRequestCspNonce(event)
     const planHints = getPlanEarlyHints(requestUrl.pathname, request)
     headers.set(
@@ -673,6 +673,13 @@ export const onRequest: RequestHandler = async (event) => {
     planHints.map(buildEarlyHintHeader).filter((value): value is string => Boolean(value)).forEach((link) => {
       headers.append('Link', link)
     })
+  }
+
+  await event.next()
+
+  if (isHtmlRequest && isStaticShellPath(requestUrl.pathname)) {
+    headers.delete('X-Early-Hints')
+    headers.delete('Link')
   }
 }
 

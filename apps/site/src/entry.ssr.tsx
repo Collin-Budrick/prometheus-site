@@ -23,6 +23,8 @@ import { CSP_NONCE_ATTR } from "./security/shared";
 import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
+import homeCriticalStyles from "@prometheus/ui/global-critical-home.css?inline";
+import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   "home-static":
@@ -34,10 +36,7 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 } as const;
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
-  "home-static": [
-    STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
-    "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
-  ],
+  "home-static": [],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
     "build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js",
@@ -85,6 +84,11 @@ const resolveStaticBootstrapBundlePath = (pathname: string) => {
   return STATIC_BOOTSTRAP_BUNDLE_PATHS[routeConfig.bootstrapMode];
 };
 
+const resolveStaticBootstrapMode = (pathname: string) => {
+  const routeConfig = getStaticShellRouteConfig(normalizeStaticShellRoutePath(pathname));
+  return routeConfig?.bootstrapMode ?? null;
+};
+
 const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
   const normalizedPath = normalizeStaticShellRoutePath(pathname);
   const routeConfig = getStaticShellRouteConfig(normalizedPath);
@@ -107,7 +111,63 @@ const hasStaticBootstrapBundle = (pathname: string) => {
 
 const escapeHtmlAttr = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+const minifyInlineCss = (value: string) =>
+  value
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([{}:;,>])\s*/g, "$1")
+    .replace(/;}/g, "}")
+    .trim();
 const STATIC_SHELL_BUILD_VERSION = getStaticShellBuildVersion();
+const HOME_STATIC_ENTRY_DEFER_DELAY_MS = 8000;
+const HOME_CRITICAL_STYLES = minifyInlineCss(homeCriticalStyles);
+const staticFragmentPrewarmPromise = import.meta.env.PROD
+  ? prewarmStaticFragmentResources().catch((error) => {
+      console.warn("Static fragment prewarm failed.", error);
+    })
+  : null;
+
+const buildDeferredHomeStaticEntryTag = (
+  bundleHref: string,
+  nonceAttr: string,
+) =>
+  `<script type="module"${nonceAttr}>(() => {
+const href = ${JSON.stringify(bundleHref)};
+let started = false;
+let timer = 0;
+const loadFromIntent = (event) => {
+  if (event && event.isTrusted === false) return;
+  load();
+};
+const load = () => {
+  if (started) return;
+  started = true;
+  cleanup();
+  if (timer) {
+    window.clearTimeout(timer);
+    timer = 0;
+  }
+  import(href).catch((error) => console.error("Static home entry failed:", error));
+};
+const queue = () => {
+  if (started || timer) return;
+  timer = window.setTimeout(load, ${HOME_STATIC_ENTRY_DEFER_DELAY_MS});
+};
+const cleanup = () => {
+  window.removeEventListener("pointerdown", loadFromIntent, true);
+  window.removeEventListener("touchstart", loadFromIntent, true);
+  window.removeEventListener("keydown", loadFromIntent, true);
+  window.removeEventListener("load", queue, true);
+};
+window.addEventListener("pointerdown", loadFromIntent, { capture: true, passive: true });
+window.addEventListener("touchstart", loadFromIntent, { capture: true, passive: true });
+window.addEventListener("keydown", loadFromIntent, true);
+if (document.readyState === "complete") {
+  queue();
+} else {
+  window.addEventListener("load", queue, { capture: true, once: true });
+}
+})();</script>`;
 
 const stripStaticQwikScripts = (html: string) =>
   html
@@ -153,24 +213,61 @@ const stripStaticQwikScripts = (html: string) =>
     .replace(/\s+(?:q|on-document):[\w:-]+=(["'])[\s\S]*?\1/gi, "")
     .replace(/\s+(?:q|on-document):[\w:-]+/gi, "");
 
-const stripBlockingDeferredStylesheet = (html: string) =>
-  html
+const stripHomeBlockingDeferredStylesheet = (html: string, pathname: string) => {
+  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
+    return html;
+  }
+
+  return html
     .replace(
-      /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*global-deferred\.css[^"']*["'][^>]*>\s*/gi,
+      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*global-deferred\.css[^"']*["'])[^>]*>\s*/gi,
       "",
     )
     .replace(
-      /<style\b[^>]*data-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'][^>]*>[\s\S]*?<\/style>\s*/gi,
+      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*global-deferred\.css[^"']*["'])[^>]*>\s*/gi,
       "",
     )
     .replace(
-      /<link\b[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']*home-demo-active\.css[^"']*["'][^>]*>\s*/gi,
+      /<style\b(?=[^>]*\bdata-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'])[^>]*>[\s\S]*?<\/style>\s*/gi,
       "",
     )
     .replace(
-      /<link\b[^>]*rel=["']preload["'][^>]*as=["']style["'][^>]*href=["'][^"']*home-demo-active\.css[^"']*["'][^>]*>\s*/gi,
+      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*home-demo-active\.css[^"']*["'])[^>]*>\s*/gi,
+      "",
+    )
+    .replace(
+      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*home-demo-active\.css[^"']*["'])[^>]*>\s*/gi,
       "",
     );
+};
+
+const stripNonCriticalStaticRouteStyles = (html: string, pathname: string) => {
+  const mode = resolveStaticBootstrapMode(pathname);
+  if (mode !== "home-static" && mode !== "fragment-static") {
+    return html;
+  }
+
+  return html.replace(
+    /<style\b[^>]*data-src=["'][^"']*\/assets\/[^"']*-style\.css[^"']*["'][^>]*>[\s\S]*?<\/style>\s*/gi,
+    "",
+  );
+};
+
+const replaceHomeCriticalStyles = (html: string, pathname: string) => {
+  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
+    return html;
+  }
+
+  let hiddenStyleIndex = 0;
+  return html
+    .replace(/<style\b[^>]*hidden[^>]*>[\s\S]*?<\/style>/gi, (match) => {
+      hiddenStyleIndex += 1;
+      if (hiddenStyleIndex === 1) {
+        return `<style hidden>${HOME_CRITICAL_STYLES}</style>`;
+      }
+      return hiddenStyleIndex === 2 ? "" : match;
+    });
+};
 
 export const injectStaticBootstrap = (
   html: string,
@@ -191,7 +288,10 @@ export const injectStaticBootstrap = (
     )
     .join("");
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
-  const scriptTag = `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
+  const scriptTag =
+    resolveStaticBootstrapMode(pathname) === "home-static"
+      ? buildDeferredHomeStaticEntryTag(bundleHref, nonceAttr)
+      : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
   return html
     .replace("</head>", `${preloadTags}</head>`)
     .replace("</body>", `${scriptTag}</body>`);
@@ -261,29 +361,45 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
   } satisfies RenderOptions & Partial<RenderToStreamOptions>;
 
   if (isStaticShellPath(pathname)) {
-    return renderToString(<Root />, {
-      ...renderOptions,
-    }).then((result) => {
-      if (!hasStaticOnlyMarker(result.html)) {
-        return result;
-      }
-      if (!hasStaticBootstrapBundle(pathname)) {
-        console.warn(
-          "Missing static shell bootstrap bundle; falling back to default Qwik startup.",
-        );
-        return result;
-      }
+    const renderStaticShell = () =>
+      renderToString(<Root />, {
+        ...renderOptions,
+      }).then((result) => {
+        if (!hasStaticOnlyMarker(result.html)) {
+          return result;
+        }
+        if (!hasStaticBootstrapBundle(pathname)) {
+          console.warn(
+            "Missing static shell bootstrap bundle; falling back to default Qwik startup.",
+          );
+          return result;
+        }
 
-      return {
-        ...result,
-        html: injectStaticBootstrap(
-          stripBlockingDeferredStylesheet(stripStaticQwikScripts(result.html)),
-          resolvePublicBase(renderOptions),
-          pathname,
-          nonce,
-        ),
-      };
-    });
+        return {
+          ...result,
+          html: injectStaticBootstrap(
+            replaceHomeCriticalStyles(
+              stripNonCriticalStaticRouteStyles(
+                stripHomeBlockingDeferredStylesheet(
+                  stripStaticQwikScripts(result.html),
+                  pathname,
+                ),
+                pathname,
+              ),
+              pathname,
+            ),
+            resolvePublicBase(renderOptions),
+            pathname,
+            nonce,
+          ),
+        };
+      });
+
+    if (resolveStaticBootstrapMode(pathname) === "home-static" && staticFragmentPrewarmPromise) {
+      return staticFragmentPrewarmPromise.then(() => renderStaticShell());
+    }
+
+    return renderStaticShell();
   }
 
   return renderToStream(<Root />, {

@@ -9,6 +9,7 @@ import {
 } from './home-copy-store'
 import {
   readStaticHomeBootstrapData,
+  resolveStaticHomeRouteSeed,
   type StaticHomeBootstrapDocument
 } from './home-bootstrap-data'
 import { normalizeStaticShellLang } from './lang-param'
@@ -52,13 +53,17 @@ const getCurrentLang = (): Lang => {
   return normalizeStaticShellLang(document.documentElement.lang)
 }
 
-export const ensureStaticHomeDemoSeed = (
+export const ensureStaticHomeDemoSeed = async (
   doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
 ) => {
   const data = readStaticHomeBootstrapData({ doc })
   if (!data) return null
-  seedStaticHomeCopy(data.lang, data.shellSeed, data.routeSeed)
-  return data
+  const routeSeed = await resolveStaticHomeRouteSeed(data)
+  seedStaticHomeCopy(data.lang, data.shellSeed, routeSeed)
+  return {
+    ...data,
+    routeSeed
+  }
 }
 
 const getRootElement = (root: Element) => {
@@ -1006,21 +1011,21 @@ const activatePreactIslandDemo = (
 export const activatePlannerHomeDemo = async ({
   root
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
-  ensureStaticHomeDemoSeed()
+  await ensureStaticHomeDemoSeed()
   return activatePlannerDemo(getRootElement(root))
 }
 
 export const activateWasmRendererHomeDemo = async ({
   root
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
-  ensureStaticHomeDemoSeed()
+  await ensureStaticHomeDemoSeed()
   return activateWasmRendererDemo(getRootElement(root))
 }
 
 export const activateReactBinaryHomeDemo = async ({
   root
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
-  ensureStaticHomeDemoSeed()
+  await ensureStaticHomeDemoSeed()
   return activateReactBinaryDemo(getRootElement(root))
 }
 
@@ -1028,7 +1033,7 @@ export const activatePreactIslandHomeDemo = async ({
   root,
   props
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
-  ensureStaticHomeDemoSeed()
+  await ensureStaticHomeDemoSeed()
   return activatePreactIslandDemo(getRootElement(root), props)
 }
 

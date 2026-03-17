@@ -2,7 +2,10 @@ import type { Lang } from "../lang/types";
 import type { LanguageSeedPayload } from "../lang/selection";
 import type { FragmentPayload } from "../fragment/types";
 import { getStaticHomeUiCopy, seedStaticHomeCopy } from "./home-copy-store";
-import { readStaticHomeBootstrapData } from "./home-bootstrap-data";
+import {
+  readStaticHomeBootstrapData,
+  resolveStaticHomeRouteSeed,
+} from "./home-bootstrap-data";
 import { dispatchHomeDemoObserveEvent } from "./home-demo-observe-event";
 import { FragmentRuntimeBridge } from "../fragment/runtime/client-bridge";
 import type {
@@ -45,6 +48,7 @@ import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runti
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
 import { getPublicFragmentApiBase } from "../shared/public-fragment-config";
 import { markStaticShellUserTiming } from "./static-shell-performance";
+import { ensureStaticHomeDeferredStylesheet } from "./home-deferred-stylesheet";
 import {
   getFragmentHeightViewport,
   parseFragmentHeightLayout,
@@ -875,7 +879,7 @@ export const bindHomeFragmentHydration = ({
   root = document,
   fetchBatch = fetchHomeFragmentBatch,
   requestFragments,
-  ensureDemoStylesheet = async () => undefined,
+  ensureDemoStylesheet = ensureStaticHomeDeferredStylesheet,
   scheduleTask = scheduleStaticShellTask,
   ObserverImpl = (
     globalThis as typeof globalThis & {
@@ -1006,7 +1010,7 @@ export const bindHomeFragmentHydration = ({
       const demoStylesheetReady = ensureDemoStylesheet({
         href: controller.homeDemoStylesheetHref ?? undefined,
       });
-      const commitReady = isAnchorBatch ? undefined : demoStylesheetReady;
+      const commitReady = demoStylesheetReady;
       if (requestFragments) {
         await requestFragments(ids, {
           isAnchorBatch,
@@ -1047,15 +1051,13 @@ export const bindHomeFragmentHydration = ({
       )
         return;
 
-      if (!isAnchorBatch) {
-        await demoStylesheetReady;
-        if (
-          controller.destroyed ||
-          controller.fetchAbort !== fetchAbort ||
-          fetchAbort.signal.aborted
-        )
-          return;
-      }
+      await demoStylesheetReady;
+      if (
+        controller.destroyed ||
+        controller.fetchAbort !== fetchAbort ||
+        fetchAbort.signal.aborted
+      )
+        return;
 
       ids.forEach((id) => {
         const payload = payloads[id];
@@ -1377,7 +1379,8 @@ export const bootstrapStaticHome = async () => {
   }
 
   cleanupLegacyHomePersistence();
-  applyShellLanguageSeed(data.lang, data.shellSeed, data.routeSeed);
+  const routeSeed = await resolveStaticHomeRouteSeed(data);
+  applyShellLanguageSeed(data.lang, data.shellSeed, routeSeed);
   await destroyController(activeController);
 
   const controller: HomeControllerState = {

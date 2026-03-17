@@ -543,6 +543,15 @@ body {
   transition: none;
 }
 
+.layout-shell[data-static-route='home']
+  .fragment-grid-static-home-column
+  > .fragment-card[data-static-home-preview-visible='true'][data-static-home-patch-state='pending'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .fragment-card[data-ready-stagger-state='queued'] {
   opacity: 0;
   visibility: hidden;
@@ -1050,7 +1059,7 @@ body {
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card:not([data-static-home-lcp-stable='true']) {
+  > .fragment-card {
   background-color: rgb(var(--surface) / 0.98);
   box-shadow: none;
 }
@@ -1058,30 +1067,73 @@ body {
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card:not([data-static-home-lcp-stable='true'])::before,
+  > .fragment-card::before,
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card:not([data-static-home-lcp-stable='true'])::after {
+  > .fragment-card::after {
   display: none;
 }
 
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card:not([data-static-home-lcp-stable='true'])
+  > .fragment-card
   .home-demo-compact {
-  background-color: rgb(var(--surface-soft) / 0.88);
+  background-color: rgb(var(--surface-soft) / 0.72);
+  border-color: rgb(var(--stroke) / 0.56);
   box-shadow: none;
 }
 
 .layout-shell[data-static-route='home']
   [data-static-home-root][data-home-paint='initial']
   .fragment-grid-static-home-column
-  > .fragment-card:not([data-static-home-lcp-stable='true'])
+  > .fragment-card
   .home-fragment-shell {
   background: transparent;
   box-shadow: none;
+}
+
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-collab-textarea {
+  box-shadow: none;
+}
+
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-fragment-shell--dock
+  .home-collab-root,
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-manifest-pills,
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-demo-compact-meta,
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-fragment-shell-meta,
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .home-collab-toolbar,
+.layout-shell[data-static-route='home']
+  [data-static-home-root][data-home-paint='initial']
+  .fragment-grid-static-home-column
+  > .fragment-card
+  .badge {
+  display: none;
 }
 
 .layout-shell[data-static-route='home']

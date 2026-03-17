@@ -1306,7 +1306,7 @@ describe("bindHomeFragmentHydration", () => {
     hydration.destroy();
   });
 
-  it("starts the home demo stylesheet load before patching fetched home fragments", async () => {
+  it("waits for the home demo stylesheet before patching fetched home fragments", async () => {
     const taskQueue = createTaskQueue();
     const anchor = new MockFragmentCard(
       "fragment://page/home/planner@v1",
@@ -1357,7 +1357,7 @@ describe("bindHomeFragmentHydration", () => {
     await flushMicrotasks();
 
     expect(callOrder).toEqual(["stylesheet:start", "fetch:start"]);
-    expect(enqueued).toEqual(["fragment://page/home/planner@v1"]);
+    expect(enqueued).toEqual([]);
 
     resolveStylesheet();
     await flushMicrotasks();

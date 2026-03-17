@@ -1,7 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
-import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import { serializeFragmentHeightLayout } from '@prometheus/ui/fragment-height'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
@@ -46,7 +45,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
       <noscript>
         <style nonce={nonce || undefined}>
           {
-            "[data-static-fragment-root] .fragment-card[data-ready-stagger-state='queued']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
+            "[data-static-fragment-root] .fragment-card[data-reveal-phase='visible']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
           }
         </style>
       </noscript>
@@ -67,7 +66,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               data-fragment-loaded="true"
               data-fragment-ready="true"
               data-fragment-stage="ready"
-              data-reveal-phase="queued"
+              data-reveal-phase="visible"
               data-reveal-locked="false"
               data-draggable="false"
               data-fragment-height-hint={`${entry.reservedHeight}`}
@@ -83,7 +82,7 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
                   entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
                     ? entry.mobileWidthBucket
                     : undefined,
-                [READY_STAGGER_STATE_ATTR]: 'queued'
+                [READY_STAGGER_STATE_ATTR]: 'done'
               }}
             >
               <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: entry.id }}>
@@ -98,16 +97,6 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
         type="application/json"
         nonce={nonce || undefined}
         dangerouslySetInnerHTML={serializeJson(model.routeData)}
-      />
-      <script
-        nonce={nonce || undefined}
-        dangerouslySetInnerHTML={buildFragmentHeightPersistenceScript({
-          path: model.path,
-          lang: model.lang,
-          fragmentOrder: model.routeData.fragmentOrder,
-          planSignature: model.routeData.planSignature,
-          versionSignature: model.routeData.versionSignature
-        })}
       />
     </section>
   )

@@ -4,7 +4,6 @@ import { InSettings } from '@qwikest/icons/iconoir'
 import { emptyUiCopy, type LanguageSeedPayload } from '../lang/selection'
 import type { Lang } from '../lang'
 import { useCspNonce } from '../security/qwik'
-import { supportedLanguages } from '../lang/manifest'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
@@ -18,8 +17,7 @@ import {
   STATIC_SHELL_SEED_SCRIPT_ID,
   getStaticShellRouteConfig
 } from './constants'
-import { getLangLabel, renderStaticBrand, StaticDockMarkup } from './dock'
-import { MoonIcon, SunIcon, TranslateIcon } from './icons'
+import { renderStaticBrand, StaticDockMarkup } from './dock'
 import type { StaticShellSeed } from './seed'
 
 type StaticShellLayoutProps = {
@@ -44,7 +42,6 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
   currentPath,
   isAuthenticated,
   lang,
-  theme,
   languageSeed,
   buildVersion = null,
   routeKind = FRAGMENT_STATIC_ROUTE_KIND
@@ -107,81 +104,6 @@ export const StaticShellLayout = component$<StaticShellLayoutProps>(({
               >
                 <InSettings class="settings-trigger-icon" aria-hidden="true" />
               </button>
-              <div
-                class="settings-dropdown"
-                id="topbar-settings-menu"
-                role="dialog"
-                aria-modal="false"
-                aria-labelledby="topbar-settings-heading"
-                data-open="false"
-                hidden
-                aria-hidden="true"
-                inert
-              >
-                <h2 class="sr-only" id="topbar-settings-heading">
-                  {copy.navSettings}
-                </h2>
-                <div class="settings-controls">
-                  {supportedLanguages.length > 1 ? (
-                    <button
-                      type="button"
-                      class="lang-toggle settings-lang-trigger"
-                      data-lang={lang}
-                      aria-expanded="false"
-                      aria-label={copy.languageToggleLabel}
-                      aria-controls="topbar-settings-language-panel"
-                      data-static-language-menu-toggle
-                    >
-                      <TranslateIcon />
-                    </button>
-                  ) : null}
-                  <button
-                    class="theme-toggle"
-                    type="button"
-                    data-theme={theme}
-                    aria-pressed={theme === 'dark' ? 'true' : 'false'}
-                    aria-label={theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark}
-                    data-static-theme-toggle
-                  >
-                    {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-                  </button>
-                </div>
-                {supportedLanguages.length > 1 ? (
-                  <div
-                    class="settings-lang-drawer"
-                    id="topbar-settings-language-panel"
-                    data-open="false"
-                    hidden
-                    aria-hidden="true"
-                    aria-labelledby="topbar-settings-heading"
-                    inert
-                  >
-                    <fieldset class="settings-lang-list">
-                      <legend class="sr-only">{copy.languageToggleLabel}</legend>
-                      {supportedLanguages.map((langOption) => {
-                        const isActive = lang === langOption
-                        return (
-                          <label
-                            key={langOption}
-                            class="settings-lang-option"
-                            data-active={isActive ? 'true' : 'false'}
-                          >
-                            <input
-                              class="settings-lang-input"
-                              type="radio"
-                              name="static-topbar-language"
-                              checked={isActive}
-                              data-static-language-option
-                              data-lang={langOption}
-                            />
-                            <span class="settings-lang-code">{getLangLabel(langOption)}</span>
-                          </label>
-                        )
-                      })}
-                    </fieldset>
-                  </div>
-                ) : null}
-              </div>
             </div>
           </div>
         </div>

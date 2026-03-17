@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { fragmentPlanCache } from '../fragment/plan-cache'
-import { loadStaticFragmentResource } from './fragment-resource'
+import { loadStaticFragmentResource, prewarmStaticFragmentResources } from './fragment-resource'
 
 const joinInitialHtml = (value: Awaited<ReturnType<typeof loadStaticFragmentResource>>) =>
   Object.values(value.initialHtml ?? {}).join('\n')
@@ -10,6 +10,15 @@ beforeEach(() => {
 })
 
 describe('loadStaticFragmentResource', () => {
+  it('prewarms the default home static snapshot into the fragment plan cache', async () => {
+    await prewarmStaticFragmentResources()
+
+    const cached = fragmentPlanCache.get('/', 'en')
+
+    expect(cached?.plan.path).toBe('/')
+    expect(Object.keys(cached?.initialFragments ?? {}).length).toBeGreaterThan(0)
+  })
+
   it('renders localized home fragments for japanese static snapshots', async () => {
     const resource = await loadStaticFragmentResource('/', 'ja')
     const html = joinInitialHtml(resource)

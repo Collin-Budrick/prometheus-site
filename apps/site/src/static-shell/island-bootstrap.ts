@@ -21,6 +21,11 @@ import {
   resolvePreferredStaticShellLang,
   updateStaticShellUrlLang
 } from './snapshot-client'
+import {
+  createStaticShellThemeIcon,
+  ensureStaticShellSettingsOverlay,
+  readStaticShellTheme
+} from './settings-overlay-dom'
 
 type Theme = 'light' | 'dark'
 
@@ -144,11 +149,12 @@ const refreshStaticIslandDockAuthIfNeeded = async (controller: StaticIslandContr
 const refreshThemeButton = (lang: Lang) => {
   const button = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
   if (!button) return
-  const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+  const theme = readStaticShellTheme()
   const copy = getUiCopy(lang)
   button.dataset.theme = theme
   button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false')
   button.setAttribute('aria-label', theme === 'dark' ? copy.themeAriaToLight : copy.themeAriaToDark)
+  button.replaceChildren(createStaticShellThemeIcon(theme))
 }
 
 const readShellSeed = () => readStaticShellSeed()
@@ -206,35 +212,57 @@ const swapStaticIslandLanguage = async (nextLang: Lang) => {
 const bindShellControls = (controller: StaticIslandController) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
   const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
-  const languageMenuToggle = document.querySelector<HTMLButtonElement>('[data-static-language-menu-toggle]')
-  const languageDrawer = document.querySelector<HTMLElement>('.settings-lang-drawer')
-  const themeToggle = document.querySelector<HTMLButtonElement>('[data-static-theme-toggle]')
+  const overlay =
+    settingsRoot
+      ? ensureStaticShellSettingsOverlay({
+          settingsRoot,
+          lang: controller.lang,
+          copy: getUiCopy(controller.lang)
+        })
+      : null
 
-  if (!settingsRoot || !settingsToggle || !themeToggle) return
+  if (!settingsRoot || !settingsToggle || !overlay) return
+
+  const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } = overlay
+
+  const setSurfaceOpen = (element: HTMLElement | null, open: boolean) => {
+    if (!element) return
+    element.dataset.open = open ? 'true' : 'false'
+    element.hidden = !open
+    element.setAttribute('aria-hidden', open ? 'false' : 'true')
+    if (open) {
+      element.removeAttribute('inert')
+      return
+    }
+    element.setAttribute('inert', '')
+  }
 
   const closeMenus = () => {
     settingsRoot.dataset.open = 'false'
     settingsToggle.setAttribute('aria-expanded', 'false')
-    if (languageDrawer) {
-      languageDrawer.dataset.open = 'false'
-    }
+    setSurfaceOpen(languageDrawer, false)
     if (languageMenuToggle) {
-      languageMenuToggle.setAttribute('aria-pressed', 'false')
+      languageMenuToggle.setAttribute('aria-expanded', 'false')
     }
+    setSurfaceOpen(settingsPanel, false)
   }
 
   const toggleSettings = () => {
     const next = settingsRoot.dataset.open !== 'true'
     settingsRoot.dataset.open = next ? 'true' : 'false'
     settingsToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
-    if (!next) closeMenus()
+    if (!next) {
+      closeMenus()
+      return
+    }
+    setSurfaceOpen(settingsPanel, true)
   }
 
   const toggleLanguageMenu = () => {
     if (!languageDrawer || !languageMenuToggle) return
     const next = languageDrawer.dataset.open !== 'true'
-    languageDrawer.dataset.open = next ? 'true' : 'false'
-    languageMenuToggle.setAttribute('aria-pressed', next ? 'true' : 'false')
+    setSurfaceOpen(languageDrawer, next)
+    languageMenuToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
   }
 
   const handleDocumentPointer = (event: PointerEvent) => {
@@ -269,18 +297,20 @@ const bindShellControls = (controller: StaticIslandController) => {
     controller.cleanupFns.push(() => languageMenuToggle.removeEventListener('click', toggleLanguageMenu))
   }
 
-  document.querySelectorAll<HTMLButtonElement>('[data-static-language-option]').forEach((button) => {
-    const handleClick = () => {
-      const nextLang = button.dataset.lang as Lang | undefined
+  document.querySelectorAll<HTMLInputElement>('[data-static-language-option]').forEach((input) => {
+    const handleChange = () => {
+      const nextLang = input.dataset.lang as Lang | undefined
       closeMenus()
       if (!nextLang || nextLang === controller.lang) return
       void swapStaticIslandLanguage(nextLang)
     }
 
-    button.addEventListener('click', handleClick)
-    controller.cleanupFns.push(() => button.removeEventListener('click', handleClick))
+    input.addEventListener('change', handleChange)
+    controller.cleanupFns.push(() => input.removeEventListener('change', handleChange))
   })
 
+  setSurfaceOpen(settingsPanel, false)
+  setSurfaceOpen(languageDrawer, false)
   refreshThemeButton(controller.lang)
 }
 

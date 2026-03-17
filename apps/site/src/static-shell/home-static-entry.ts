@@ -118,6 +118,7 @@ export const installHomeStaticEntry = ({
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
   let deferredWidgetRuntimeCleanup: (() => void) | null = null
+  let deferredBootstrapCleanup: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let paintReadyCleanup: (() => void) | null = null
 
@@ -155,6 +156,8 @@ export const installHomeStaticEntry = ({
     paintReadyCleanup = null
     deferredWidgetRuntimeCleanup?.()
     deferredWidgetRuntimeCleanup = null
+    deferredBootstrapCleanup?.()
+    deferredBootstrapCleanup = null
     widgetRuntime?.destroy()
     widgetRuntime = null
   }
@@ -255,10 +258,37 @@ export const installHomeStaticEntry = ({
     )
   }
 
+  const scheduleDeferredBootstrap = () => {
+    if (
+      startedBootstrap ||
+      liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ ||
+      bootstrapRequested ||
+      deferredBootstrapCleanup
+    ) {
+      return
+    }
+
+    deferredBootstrapCleanup = scheduleTask(
+      () => {
+        deferredBootstrapCleanup = null
+        requestBootstrap()
+      },
+      {
+        priority: 'background',
+        timeoutMs: 1200,
+        preferIdle: true,
+        waitForLoad: true,
+        waitForPaint: true
+      }
+    )
+  }
+
   const startBootstrap = () => {
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
     liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
+    deferredBootstrapCleanup?.()
+    deferredBootstrapCleanup = null
 
     void prewarmBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
@@ -270,6 +300,8 @@ export const installHomeStaticEntry = ({
 
   function requestBootstrap() {
     bootstrapRequested = true
+    deferredBootstrapCleanup?.()
+    deferredBootstrapCleanup = null
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
@@ -311,11 +343,6 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup?.()
     lcpGateCleanup = null
     markStaticShellPerformance('prom:home:lcp-release-start')
-    void primeBootstrapRequest()?.catch(() => undefined)
-    void prewarmBootstrapRuntime().catch((error) => {
-      bootstrapRuntimePromise = null
-      console.error('Static home bootstrap prewarm failed:', error)
-    })
     paintReadyCleanup ??= schedulePaintReady({
       root: readStaticHomeRoot(),
       readyAttr: STATIC_HOME_PAINT_ATTR,
@@ -335,7 +362,12 @@ export const installHomeStaticEntry = ({
           scheduleDeferredWidgetRuntime()
           return
         }
-        requestBootstrap()
+        if (bootstrapRequested) {
+          startBootstrap()
+          scheduleDeferredWidgetRuntime()
+          return
+        }
+        scheduleDeferredBootstrap()
         scheduleDeferredWidgetRuntime()
       }
     })
@@ -356,7 +388,6 @@ export const installHomeStaticEntry = ({
     liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
-    void primeBootstrapRequest()?.catch(() => undefined)
 
     const lcpGate = createLcpGate({ win: liveWin, doc: liveDoc })
     lcpGateCleanup = lcpGate.cleanup

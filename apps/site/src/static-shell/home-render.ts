@@ -498,6 +498,24 @@ const getShellHeader = (
   description: fragmentHeaders?.[fragmentId]?.description || fallbackDescription
 })
 
+const getDockShellSummary = (copy: HomeStaticCopyBundle) =>
+  joinFragmentSentences(copy, [
+    'Anyone on the page can edit the same text box.',
+    'Loro syncs updates through Garnet in real time.'
+  ])
+
+const getDockShellHeader = (
+  fragmentId: string,
+  copy: HomeStaticCopyBundle,
+  fragmentHeaders?: Record<string, FragmentHeaderCopy>
+) =>
+  getShellHeader(
+    fragmentId,
+    fragmentHeaders,
+    resolveFragmentText(copy, 'Shared text for everyone on the page.'),
+    getDockShellSummary(copy)
+  )
+
 const buildDemoShellNode = (
   fragmentId: string,
   kind: DemoKind,
@@ -536,28 +554,16 @@ const buildDockShellNode = (
   const statusReconnecting = 'Reconnecting live sync...'
   const statusError = 'Realtime unavailable'
   const noteRealtime = 'Realtime'
-  const props = {
-    root: 'dock',
-    placeholder: resolveFragmentText(copy, collabPlaceholder),
-    ariaLabel: resolveFragmentText(copy, collabAriaLabel),
-    statuses: {
-      idle: resolveFragmentText(copy, statusIdle),
-      connecting: resolveFragmentText(copy, statusConnecting),
-      live: resolveFragmentText(copy, statusLive),
-      reconnecting: resolveFragmentText(copy, statusReconnecting),
-      error: resolveFragmentText(copy, statusError)
-    }
-  }
   return createFragmentWidgetMarkerNode({
     kind: 'home-collab',
     id: buildFragmentWidgetId(fragmentId, 'home-collab', 'dock'),
     priority: 'critical',
-    props,
     shell: h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
       ...(normalizeHeaderMeta(header.metaLine)
         ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
         : []),
       h(header.heading ?? 'h2', null, [t(header.title)]),
+      ...(summary ? [h('p', { class: 'home-fragment-shell-copy' }, [t(summary)])] : []),
       h(
         'div',
         {
@@ -602,6 +608,29 @@ const buildDockShellNode = (
       ])
     ])
   })
+}
+
+const buildDockPreviewNode = (
+  fragmentId: string,
+  copy: HomeStaticCopyBundle,
+  fragmentHeaders?: Record<string, FragmentHeaderCopy>
+) => {
+  const statusIdle = 'Focus to start live sync.'
+  const header = getDockShellHeader(fragmentId, copy, fragmentHeaders)
+  const summary = header.description || getDockShellSummary(copy)
+  return h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
+    ...(normalizeHeaderMeta(header.metaLine)
+      ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
+      : []),
+    h(header.heading ?? 'h2', null, [t(header.title)]),
+    ...(summary ? [h('p', { class: 'home-fragment-shell-copy' }, [t(summary)])] : []),
+    h('div', { class: 'home-fragment-shell-footer' }, [
+      h('div', { class: 'home-fragment-shell-meta' }, [
+        t(joinMeta(['Loro', 'Garnet', resolveFragmentText(copy, 'Realtime')]))
+      ]),
+      h('span', { class: 'home-demo-compact-action' }, [t(resolveFragmentText(copy, statusIdle))])
+    ])
+  ])
 }
 
 const buildHomeStaticStubNode = (kind: string, header: FragmentHeaderCopy, description: string) =>
@@ -669,19 +698,8 @@ const buildHomeStaticShellNode = (
       return buildDockShellNode(
         fragmentId,
         copy,
-        getShellHeader(
-          fragmentId,
-          fragmentHeaders,
-          resolveFragmentText(copy, 'Shared text for everyone on the page.'),
-          joinFragmentSentences(copy, [
-            'Anyone on the page can edit the same text box.',
-            'Loro syncs updates through Garnet in real time.'
-          ])
-        ),
-        joinFragmentSentences(copy, [
-          'Anyone on the page can edit the same text box.',
-          'Loro syncs updates through Garnet in real time.'
-        ])
+        getDockShellHeader(fragmentId, copy, fragmentHeaders),
+        getDockShellSummary(copy)
       )
     default:
       return null
@@ -823,16 +841,18 @@ export const renderHomeStaticFragmentHtml = (
   copy: HomeStaticCopyBundle,
   options: HomeStaticRenderOptions = {}
 ) => {
-  if (options.fragmentId) {
-    if (options.mode === 'preview') {
-      switch (getHomeStaticFragmentKind(options.fragmentId)) {
-        case 'planner':
-        case 'ledger':
-        case 'island':
-        case 'react':
-          return renderToHtml(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
+    if (options.fragmentId) {
+      if (options.mode === 'preview') {
+        switch (getHomeStaticFragmentKind(options.fragmentId)) {
+          case 'planner':
+          case 'ledger':
+          case 'island':
+          case 'react':
+            return renderToHtml(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
+          case 'dock':
+            return renderToHtml(buildDockPreviewNode(options.fragmentId, copy, options.fragmentHeaders))
+        }
       }
-    }
 
     if (options.mode === 'active-shell') {
       switch (getHomeStaticFragmentKind(options.fragmentId)) {

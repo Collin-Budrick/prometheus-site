@@ -147,7 +147,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).toContain('data-fragment-widget-priority="visible"')
     expect(html).toContain('data-fragment-widget-hydrated="false"')
     expect(html).toContain('data-fragment-widget-shell')
-    expect(html).toContain('data-fragment-widget-props')
+    expect(html).not.toContain('data-fragment-widget-props')
     expect(html).toContain('data-home-preview="compact"')
     expect(html).toContain('data-demo-kind="planner"')
     expect(html).toContain('data-demo-kind="wasm-renderer"')
@@ -409,27 +409,76 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(manifestoCard?.html).not.toContain('home-fragment-shell')
     expect(dockCard?.html).toContain('home-fragment-shell--dock')
-    expect(dockCard?.html).not.toContain('home-fragment-shell-copy')
-    expect(dockCard?.patchState).toBe('ready')
+    expect(dockCard?.html).toContain('home-fragment-shell-copy')
+    expect(dockCard?.html).toContain('Anyone on the page can edit the same text box.')
+    expect(dockCard?.patchState).toBe('pending')
     expect(dockCard?.revealPhase).toBe('visible')
+    expect(dockCard?.previewVisible).toBe(true)
+    expect(dockCard?.html).not.toContain('data-home-collab-input="true"')
     expect(plannerCard?.html).toContain('home-fragment-copy')
     expect(plannerCard?.html).toContain('home-demo-compact')
     expect(plannerCard?.html).toContain('data-fragment-widget="planner-demo"')
     expect(plannerCard?.html).not.toContain('planner-demo-grid')
     expect(plannerCard?.html).not.toContain('matrix')
     expect(plannerCard?.patchState).toBe('pending')
+    expect(plannerCard?.revealPhase).toBe('visible')
+    expect(plannerCard?.previewVisible).toBe(true)
     expect(ledgerCard?.html).toContain('home-demo-compact')
     expect(ledgerCard?.html).toContain('data-fragment-widget="wasm-renderer-demo"')
     expect(ledgerCard?.html).not.toContain('wasm-demo-grid')
     expect(ledgerCard?.patchState).toBe('pending')
+    expect(ledgerCard?.revealPhase).toBe('visible')
+    expect(ledgerCard?.previewVisible).toBe(true)
     expect(islandCard?.html).toContain('home-demo-compact')
     expect(islandCard?.html).toContain('data-fragment-widget="preact-island"')
     expect(islandCard?.patchState).toBe('pending')
+    expect(islandCard?.revealPhase).toBe('visible')
+    expect(islandCard?.previewVisible).toBe(true)
     expect(islandCard?.reservedHeight).toBe(544)
     expect(reactCard?.html).toContain('home-demo-compact')
     expect(reactCard?.html).toContain('data-fragment-widget="react-binary-demo"')
     expect(reactCard?.patchState).toBe('pending')
+    expect(reactCard?.revealPhase).toBe('visible')
+    expect(reactCard?.previewVisible).toBe(true)
     expect(reactCard?.reservedHeight).toBe(648)
     expect(dockCard?.reservedHeight).toBe(420)
+  })
+
+  it('keeps stub-only deferred fragments hidden in the initial route state', () => {
+    const state = buildStaticHomeRouteState({
+      plan: {
+        path: '/',
+        fragments: [
+          {
+            id: 'fragment://page/home/stub@v1',
+            critical: false,
+            layout: { column: 'span 6', size: 'small', minHeight: 320 }
+          }
+        ]
+      } as never,
+      fragments: {
+        'fragment://page/home/stub@v1': {
+          id: 'fragment://page/home/stub@v1',
+          meta: { cacheKey: 'fragment://page/home/stub@v1:1' },
+          head: [],
+          css: '',
+          cacheUpdatedAt: 1,
+          tree: h('section', null, [
+            h('div', { class: 'meta-line' }, [t('stub fragment')]),
+            h('h2', null, [t('Stub fragment')]),
+            h('p', null, [t('Hidden until patched')])
+          ])
+        }
+      } as never,
+      languageSeed: {
+        fragmentHeaders
+      },
+      lang: 'en'
+    })
+
+    const stubCard = state?.cards.find((card) => card.id === 'fragment://page/home/stub@v1')
+    expect(stubCard?.patchState).toBe('pending')
+    expect(stubCard?.revealPhase).toBe('holding')
+    expect(stubCard?.previewVisible).toBe(false)
   })
 })

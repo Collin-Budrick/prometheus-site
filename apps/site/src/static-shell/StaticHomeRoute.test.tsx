@@ -136,7 +136,8 @@ describe('StaticHomeRoute', () => {
     expect(plannerCard?.html).not.toContain('matrix')
     expect(plannerCard?.html).toContain('data-home-demo-root="planner"')
     expect(plannerCard?.patchState).toBe('pending')
-    expect(plannerCard?.revealPhase).toBe('holding')
+    expect(plannerCard?.revealPhase).toBe('visible')
+    expect(plannerCard?.previewVisible).toBe(true)
     expect(plannerCard?.lcpStable).toBe(false)
   })
 
@@ -207,25 +208,66 @@ describe('StaticHomeRoute', () => {
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.reservedHeight).toBe(489)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.patchState).toBe('pending')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.revealPhase).toBe('holding')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('ready')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.revealPhase).toBe('visible')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')?.previewVisible).toBe(true)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('pending')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.revealPhase).toBe('visible')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.previewVisible).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).not.toContain('home-fragment-shell-copy')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell-copy')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).not.toContain('data-home-collab-input="true"')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.lcpStable).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.reservedHeight).toBe(420)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.patchState).toBe('pending')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.revealPhase).toBe('holding')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.revealPhase).toBe('visible')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.previewVisible).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.html).toContain('home-demo-compact')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.reservedHeight).toBe(596)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.lcpStable).toBe(false)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.patchState).toBe('pending')
-    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.revealPhase).toBe('holding')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.revealPhase).toBe('visible')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.previewVisible).toBe(true)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.html).toContain('home-demo-compact')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(1023)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.lcpStable).toBe(false)
+  })
+
+  it('keeps stub-only deferred cards hidden until a payload patch replaces them', () => {
+    const stubPlan = {
+      path: '/',
+      fragments: [
+        {
+          id: 'fragment://page/home/unknown@v1',
+          critical: false,
+          layout: { column: 'span 6', size: 'small', minHeight: 320 }
+        }
+      ]
+    } as const
+
+    const stubFragments = {
+      'fragment://page/home/unknown@v1': {
+        tree: h('section', null, [
+          h('div', { class: 'meta-line' }, [t('unknown fragment')]),
+          h('h2', null, [t('Unknown fragment')]),
+          h('p', null, [t('Stub-only fragment')])
+        ]),
+        cacheUpdatedAt: 7
+      }
+    } as const
+
+    const state = buildStaticHomeRouteState({
+      plan: stubPlan as never,
+      fragments: stubFragments as never,
+      languageSeed,
+      lang: 'en'
+    })
+
+    const card = state?.cards.find((entry) => entry.id === 'fragment://page/home/unknown@v1')
+    expect(card?.patchState).toBe('pending')
+    expect(card?.revealPhase).toBe('holding')
+    expect(card?.previewVisible).toBe(false)
   })
 
   it('derives SSR width bucket hints for profiled home cards', () => {

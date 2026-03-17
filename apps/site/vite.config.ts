@@ -18,6 +18,12 @@ import { fileURLToPath } from 'node:url'
 import { resolveAppConfig } from '../../packages/platform/src/env.ts'
 import { generateFragmentCss } from '../../scripts/fragment-css.ts'
 import { createSiteResolveAliases, siteConfigRoot as configRoot, siteWorkspaceRoot as workspaceRoot } from './scripts/vite.shared.ts'
+import {
+  FRAGMENT_STATIC_ROUTE_KIND,
+  HOME_STATIC_ROUTE_KIND,
+  getStaticShellRouteConfig,
+  normalizeStaticShellRoutePath
+} from './src/static-shell/constants'
 
 const require = createRequire(import.meta.url)
 
@@ -319,36 +325,42 @@ const shouldSendEarlyHints = (req: IncomingMessage, pathName: string) => {
   return !lastSegment.includes('.')
 }
 
-const earlyHintsPlugin = (): Plugin => {
-  const sentSymbol = Symbol('early-hints-sent')
-  const getContentType = (headers: unknown) => {
-    if (!headers) return undefined
-    if (Array.isArray(headers)) {
-      for (let index = 0; index < headers.length - 1; index += 2) {
-        const name = headers[index]
-        if (typeof name === 'string' && name.toLowerCase() === 'content-type') {
-          return headers[index + 1]
-        }
+const getContentType = (headers: unknown) => {
+  if (!headers) return undefined
+  if (typeof headers === 'object' && typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get('content-type') ?? undefined
+  }
+  if (Array.isArray(headers)) {
+    for (let index = 0; index < headers.length - 1; index += 2) {
+      const name = headers[index]
+      if (typeof name === 'string' && name.toLowerCase() === 'content-type') {
+        return headers[index + 1]
       }
-      return undefined
-    }
-    if (typeof headers === 'object') {
-      const entries = Object.entries(headers as Record<string, unknown>)
-      const match = entries.find(([name]) => name.toLowerCase() === 'content-type')
-      return match?.[1]
     }
     return undefined
   }
-  const isHtmlContentType = (value: unknown) => {
-    if (typeof value === 'string') return value.toLowerCase().includes('text/html')
-    if (Array.isArray(value)) return value.some((entry) => typeof entry === 'string' && entry.toLowerCase().includes('text/html'))
-    return false
+  if (typeof headers === 'object') {
+    const entries = Object.entries(headers as Record<string, unknown>)
+    const match = entries.find(([name]) => name.toLowerCase() === 'content-type')
+    return match?.[1]
   }
-  const isHtmlResponse = (res: ServerResponse, args: Parameters<ServerResponse['writeHead']>) => {
-    const headers = args.length > 1 ? (typeof args[1] === 'string' ? args[2] : args[1]) : undefined
-    const contentType = getContentType(headers) ?? res.getHeader('Content-Type')
-    return isHtmlContentType(contentType)
-  }
+  return undefined
+}
+
+const isHtmlContentType = (value: unknown) => {
+  if (typeof value === 'string') return value.toLowerCase().includes('text/html')
+  if (Array.isArray(value)) return value.some((entry) => typeof entry === 'string' && entry.toLowerCase().includes('text/html'))
+  return false
+}
+
+const isHtmlResponse = (res: ServerResponse, args: Parameters<ServerResponse['writeHead']>) => {
+  const headers = args.length > 1 ? (typeof args[1] === 'string' ? args[2] : args[1]) : undefined
+  const contentType = getContentType(headers) ?? res.getHeader('Content-Type')
+  return isHtmlContentType(contentType)
+}
+
+const earlyHintsPlugin = (): Plugin => {
+  const sentSymbol = Symbol('early-hints-sent')
 
   const attach = (
     middlewares: { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void },
@@ -549,6 +561,111 @@ const staticCacheHeadersPlugin = (): Plugin => {
     name: 'static-cache-headers',
     configurePreviewServer(server) {
       server.middlewares.use(applyCacheHeaders)
+    }
+  }
+}
+
+const STATIC_SHELL_SHARED_STYLE_BUNDLE_RE =
+  /<style\b[^>]*data-src=["'][^"']*\/assets\/[^"']*-style\.css[^"']*["'][^>]*>[\s\S]*?<\/style>\s*/gi
+
+const shouldStripStaticShellSharedStyleBundle = (pathname: string) => {
+  const routeConfig = getStaticShellRouteConfig(normalizeStaticShellRoutePath(pathname))
+  return (
+    routeConfig?.routeKind === HOME_STATIC_ROUTE_KIND ||
+    routeConfig?.routeKind === FRAGMENT_STATIC_ROUTE_KIND
+  )
+}
+
+const stripStaticShellSharedStyleBundle = (html: string, pathname: string) => {
+  if (!shouldStripStaticShellSharedStyleBundle(pathname)) {
+    return html
+  }
+  return html.replace(STATIC_SHELL_SHARED_STYLE_BUNDLE_RE, '')
+}
+
+const staticShellHtmlTrimPlugin = (): Plugin => {
+  const applyTrimMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const method = req.method?.toUpperCase()
+    if (method !== 'GET' && method !== 'HEAD') {
+      next()
+      return
+    }
+
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+    const pathname = stripPublicBase(url.pathname)
+    if (!shouldStripStaticShellSharedStyleBundle(pathname)) {
+      next()
+      return
+    }
+
+    const originalWriteHead = res.writeHead.bind(res)
+    const originalWrite = res.write.bind(res)
+    const originalEnd = res.end.bind(res)
+    const chunks: Buffer[] = []
+    let captureBody = false
+
+    const appendChunk = (chunk: unknown, encoding?: string | null) => {
+      if (chunk === undefined || chunk === null) return
+      if (Buffer.isBuffer(chunk)) {
+        chunks.push(chunk)
+        return
+      }
+      if (chunk instanceof Uint8Array) {
+        chunks.push(Buffer.from(chunk))
+        return
+      }
+      chunks.push(Buffer.from(String(chunk), (encoding as BufferEncoding | undefined) ?? 'utf8'))
+    }
+
+    res.writeHead = ((...args: Parameters<typeof originalWriteHead>) => {
+      if (!captureBody && isHtmlResponse(res, args)) {
+        captureBody = true
+        res.removeHeader('Content-Length')
+      }
+      return originalWriteHead(...args)
+    }) as typeof res.writeHead
+
+    res.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+      if (!captureBody) {
+        return originalWrite(chunk as never, encoding as never, callback as never)
+      }
+
+      appendChunk(chunk, typeof encoding === 'string' ? encoding : null)
+      if (typeof encoding === 'function') {
+        encoding()
+      } else if (typeof callback === 'function') {
+        callback()
+      }
+      return true
+    }) as typeof res.write
+
+    res.end = ((chunk?: unknown, encoding?: unknown, callback?: unknown) => {
+      const shouldCapture =
+        captureBody || isHtmlContentType(res.getHeader('Content-Type'))
+      if (!shouldCapture) {
+        return originalEnd(chunk as never, encoding as never, callback as never)
+      }
+
+      appendChunk(chunk, typeof encoding === 'string' ? encoding : null)
+      const nextBody = stripStaticShellSharedStyleBundle(Buffer.concat(chunks).toString('utf8'), pathname)
+      res.removeHeader('Content-Length')
+
+      if (typeof chunk === 'function') {
+        callback = chunk
+      } else if (typeof encoding === 'function') {
+        callback = encoding
+      }
+
+      return originalEnd(nextBody, 'utf8', callback as never)
+    }) as typeof res.end
+
+    next()
+  }
+
+  return {
+    name: 'static-shell-html-trim',
+    configureServer(server) {
+      server.middlewares.use(applyTrimMiddleware)
     }
   }
 }
@@ -758,6 +875,7 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         earlyHintsPlugin(),
         fragmentHmrPlugin(),
         staticCacheHeadersPlugin(),
+        staticShellHtmlTrimPlugin(),
     partytownVite({
       dest: path.resolve(process.cwd(), 'dist', '~partytown')
     }),

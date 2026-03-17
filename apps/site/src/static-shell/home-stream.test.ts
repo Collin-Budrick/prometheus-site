@@ -4,6 +4,7 @@ import type { FragmentPayload } from '@core/fragment/types'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_PREVIEW_VISIBLE_ATTR,
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
@@ -187,6 +188,7 @@ const createCard = (
     critical?: boolean
     version?: number
     patchState?: 'pending' | 'ready'
+    previewVisible?: boolean
     stage?: 'critical' | 'anchor' | 'deferred'
     revealPhase?: 'holding' | 'visible'
     fragmentReady?: boolean
@@ -200,6 +202,9 @@ const createCard = (
   card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${options.version ?? 1}`)
   card.setAttribute(STATIC_HOME_STAGE_ATTR, options.stage ?? (options.critical ? 'critical' : 'deferred'))
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, options.patchState ?? 'pending')
+  if (options.previewVisible) {
+    card.setAttribute(STATIC_HOME_PREVIEW_VISIBLE_ATTR, 'true')
+  }
   if (options.revealPhase) {
     card.dataset.revealPhase = options.revealPhase
   }
@@ -383,6 +388,38 @@ describe('home-stream patching', () => {
 
     expect(card.dataset.revealPhase).toBe('visible')
     expect(card.getAttribute('data-ready-stagger-state')).toBeNull()
+    expect(card.dataset.fragmentReady).toBe('true')
+    expect(card.dataset.revealLocked).toBe('false')
+  })
+
+  it('keeps SSR-visible pending preview cards visible while patching their markup', async () => {
+    const log: string[] = []
+    const { card, body } = createCard('fragment://page/home/react@v1', log, {
+      version: 1,
+      patchState: 'pending',
+      previewVisible: true,
+      stage: 'deferred',
+      revealPhase: 'visible'
+    })
+
+    const result = patchStaticHomeFragmentCard({
+      lang: 'en',
+      payload: createPayload('fragment://page/home/react@v1', 'React preview refresh', 2),
+      applyEffects: false,
+      card: card as unknown as HTMLElement
+    })
+
+    expect(result).toBe('patched')
+    expect(body.innerHTML).toContain('React preview refresh')
+    expect(card.dataset.revealPhase).toBe('visible')
+    expect(card.dataset.fragmentReady).toBe('true')
+
+    for (let index = 0; index < 5; index += 1) {
+      frameQueue.flushFrames(1)
+      await flushAsyncWork()
+    }
+
+    expect(card.dataset.revealPhase).toBe('visible')
     expect(card.dataset.fragmentReady).toBe('true')
     expect(card.dataset.revealLocked).toBe('false')
   })

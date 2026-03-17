@@ -10,6 +10,18 @@ import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from './seed'
 import { readStaticShellSeed } from './seed-client'
+import { loadStaticRouteLanguageSeed } from './language-seed-client'
+
+type SerializedHomeRuntimeProfileBucket = [maxWidth: number, height: number]
+type SerializedHomeRuntimeLayout = [
+  size: string,
+  minHeight: number,
+  desktop: SerializedHomeRuntimeProfileBucket[],
+  mobile: SerializedHomeRuntimeProfileBucket[]
+]
+type SerializedHomeRuntimePlanEntryTuple =
+  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout, dependsOn: string[]]
+  | [id: string, critical: 0 | 1, layout: SerializedHomeRuntimeLayout, dependsOn: string[], cacheUpdatedAt: number]
 
 export type HomeStaticRouteData = {
   lang: Lang
@@ -21,11 +33,11 @@ export type HomeStaticRouteData = {
   fragmentOrder?: string[]
   planSignature?: string
   versionSignature?: string
-  runtimePlanEntries?: FragmentRuntimePlanEntry[]
-  runtimeFetchGroups?: string[][]
+  runtimePlanEntries?: Array<FragmentRuntimePlanEntry | SerializedHomeRuntimePlanEntryTuple>
+  runtimeFetchGroups?: Array<string[] | number[]>
   runtimeInitialFragments?: FragmentPayload[]
-  languageSeed: LanguageSeedPayload
-  fragmentVersions: Record<string, number>
+  languageSeed?: LanguageSeedPayload
+  fragmentVersions: Record<string, number> | Array<number | null>
 }
 
 export type HomeStaticBootstrapData = {
@@ -47,9 +59,208 @@ export type HomeStaticBootstrapData = {
   fragmentVersions: Record<string, number>
 }
 
+const readFiniteNumber = (value: unknown) => {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number.parseFloat(value)
+        : Number.NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const serializeHomeRuntimeProfileBuckets = (
+  value: Array<{ maxWidth?: unknown; height?: unknown }> | undefined
+) =>
+  Array.isArray(value)
+    ? value.flatMap((bucket) => {
+        const maxWidth = readFiniteNumber(bucket?.maxWidth)
+        const height = readFiniteNumber(bucket?.height)
+        return maxWidth !== null && height !== null
+          ? [[Math.round(maxWidth), Math.round(height)] as SerializedHomeRuntimeProfileBucket]
+          : []
+      })
+    : []
+
+const deserializeHomeRuntimeProfileBuckets = (value: unknown) =>
+  Array.isArray(value)
+    ? value.flatMap((bucket) => {
+        if (!Array.isArray(bucket)) return []
+        const maxWidth = readFiniteNumber(bucket[0])
+        const height = readFiniteNumber(bucket[1])
+        return maxWidth !== null && height !== null
+          ? [{ maxWidth: Math.round(maxWidth), height: Math.round(height) }]
+          : []
+      })
+    : []
+
+const buildHomeRuntimeHeightHint = (
+  desktop: Array<{ maxWidth: number; height: number }>,
+  mobile: Array<{ maxWidth: number; height: number }>
+) => {
+  const desktopHeight = desktop.at(-1)?.height
+  const mobileHeight = mobile.at(-1)?.height
+  if (desktopHeight === undefined && mobileHeight === undefined) {
+    return undefined
+  }
+  return {
+    ...(desktopHeight !== undefined ? { desktop: desktopHeight } : {}),
+    ...(mobileHeight !== undefined ? { mobile: mobileHeight } : {})
+  }
+}
+
+const isSerializedHomeRuntimePlanEntryTuple = (
+  value: unknown
+): value is SerializedHomeRuntimePlanEntryTuple =>
+  Array.isArray(value) &&
+  typeof value[0] === 'string' &&
+  (value[1] === 0 || value[1] === 1) &&
+  Array.isArray(value[2]) &&
+  Array.isArray(value[3])
+
+const deserializeHomeRuntimePlanEntry = (
+  value: FragmentRuntimePlanEntry | SerializedHomeRuntimePlanEntryTuple
+): FragmentRuntimePlanEntry => {
+  if (!isSerializedHomeRuntimePlanEntryTuple(value)) {
+    return value
+  }
+
+  const [id, criticalFlag, layoutValue, dependsOnValue, cacheUpdatedAtValue] = value
+  const size =
+    typeof layoutValue[0] === 'string' && layoutValue[0] !== ''
+      ? (layoutValue[0] as FragmentRuntimePlanEntry['layout']['size'])
+      : undefined
+  const minHeight = readFiniteNumber(layoutValue[1])
+  const desktop = deserializeHomeRuntimeProfileBuckets(layoutValue[2])
+  const mobile = deserializeHomeRuntimeProfileBuckets(layoutValue[3])
+  const heightHint = buildHomeRuntimeHeightHint(desktop, mobile)
+  const cacheUpdatedAt = readFiniteNumber(cacheUpdatedAtValue)
+
+  return {
+    id,
+    critical: criticalFlag === 1,
+    layout: {
+      ...(size ? { size } : {}),
+      ...(minHeight !== null && minHeight > 0 ? { minHeight: Math.round(minHeight) } : {}),
+      ...(heightHint ? { heightHint } : {}),
+      ...(desktop.length || mobile.length
+        ? {
+            heightProfile: {
+              ...(desktop.length ? { desktop } : {}),
+              ...(mobile.length ? { mobile } : {})
+            }
+          }
+        : {})
+    },
+    dependsOn: dependsOnValue.filter((entry): entry is string => typeof entry === 'string' && entry !== ''),
+    ...(cacheUpdatedAt !== null ? { cacheUpdatedAt: Math.round(cacheUpdatedAt) } : {})
+  }
+}
+
+const deserializeHomeRuntimeFetchGroups = (
+  value: Array<string[] | number[]> | undefined,
+  fragmentOrder: string[]
+) =>
+  Array.isArray(value)
+    ? value.map((group) =>
+        Array.isArray(group)
+          ? group.flatMap((entry) => {
+              if (typeof entry === 'string' && entry !== '') {
+                return [entry]
+              }
+              if (typeof entry === 'number' && Number.isInteger(entry)) {
+                const fragmentId = fragmentOrder[entry]
+                return fragmentId ? [fragmentId] : []
+              }
+              return []
+            })
+          : []
+      )
+    : []
+
+const deserializeHomeFragmentVersions = (
+  value: HomeStaticRouteData['fragmentVersions'] | undefined,
+  fragmentOrder: string[]
+) => {
+  if (Array.isArray(value)) {
+    return value.reduce<Record<string, number>>((acc, version, index) => {
+      const fragmentId = fragmentOrder[index]
+      const parsedVersion = readFiniteNumber(version)
+      if (fragmentId && parsedVersion !== null) {
+        acc[fragmentId] = Math.round(parsedVersion)
+      }
+      return acc
+    }, {})
+  }
+
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  return Object.entries(value).reduce<Record<string, number>>((acc, [fragmentId, version]) => {
+    const parsedVersion = readFiniteNumber(version)
+    if (parsedVersion !== null) {
+      acc[fragmentId] = Math.round(parsedVersion)
+    }
+    return acc
+  }, {})
+}
+
+export const serializeHomeRuntimePlanEntries = (entries: FragmentRuntimePlanEntry[]) =>
+  entries.map<SerializedHomeRuntimePlanEntryTuple>((entry) => {
+    const nextEntry: SerializedHomeRuntimePlanEntryTuple = [
+      entry.id,
+      entry.critical ? 1 : 0,
+      [
+        entry.layout.size ?? '',
+        typeof entry.layout.minHeight === 'number' ? Math.round(entry.layout.minHeight) : 0,
+        serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.desktop),
+        serializeHomeRuntimeProfileBuckets(entry.layout.heightProfile?.mobile)
+      ],
+      Array.isArray(entry.dependsOn) ? entry.dependsOn.filter((value) => value !== '') : []
+    ]
+
+    if (typeof entry.cacheUpdatedAt === 'number' && Number.isFinite(entry.cacheUpdatedAt)) {
+      nextEntry.push(Math.round(entry.cacheUpdatedAt))
+    }
+
+    return nextEntry
+  })
+
+export const serializeHomeRuntimeFetchGroups = (
+  groups: string[][],
+  fragmentOrder: string[]
+) => {
+  const indexById = new Map(fragmentOrder.map((fragmentId, index) => [fragmentId, index]))
+  return groups.map((group) =>
+    group.flatMap((fragmentId) => {
+      const index = indexById.get(fragmentId)
+      return typeof index === 'number' ? [index] : []
+    })
+  )
+}
+
+export const serializeHomeFragmentVersions = (
+  fragmentVersions: Record<string, number>,
+  fragmentOrder: string[]
+) =>
+  fragmentOrder.map((fragmentId) => {
+    const version = fragmentVersions[fragmentId]
+    return typeof version === 'number' && Number.isFinite(version) ? Math.round(version) : null
+  })
+
 type JsonScriptElement = {
   textContent: string | null
 }
+
+const hasSeedValues = (seed: LanguageSeedPayload | null | undefined) =>
+  Boolean(
+    seed?.lab ||
+      (seed?.ui && Object.keys(seed.ui).length > 0) ||
+      (seed?.demos && Object.keys(seed.demos).length > 0) ||
+      (seed?.fragments && Object.keys(seed.fragments).length > 0) ||
+      (seed?.fragmentHeaders && Object.keys(seed.fragmentHeaders).length > 0)
+  )
 
 export type StaticHomeBootstrapDocument = Pick<Document, 'getElementById'>
 
@@ -82,6 +293,8 @@ export const readStaticHomeBootstrapData = ({
   const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID, doc)
   if (!shell && !route) return null
 
+  const fragmentOrder = route?.fragmentOrder ?? []
+
   return {
     currentPath: shell?.currentPath || route?.path || '/',
     isAuthenticated: shell?.isAuthenticated ?? false,
@@ -95,12 +308,24 @@ export const readStaticHomeBootstrapData = ({
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??
       buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
-    fragmentOrder: route?.fragmentOrder ?? [],
+    fragmentOrder,
     planSignature: route?.planSignature ?? null,
     versionSignature: route?.versionSignature ?? null,
-    runtimePlanEntries: route?.runtimePlanEntries ?? [],
-    runtimeFetchGroups: route?.runtimeFetchGroups ?? [],
+    runtimePlanEntries: (route?.runtimePlanEntries ?? []).map((entry) =>
+      deserializeHomeRuntimePlanEntry(entry)
+    ),
+    runtimeFetchGroups: deserializeHomeRuntimeFetchGroups(route?.runtimeFetchGroups, fragmentOrder),
     runtimeInitialFragments: route?.runtimeInitialFragments ?? [],
-    fragmentVersions: route?.fragmentVersions ?? {}
+    fragmentVersions: deserializeHomeFragmentVersions(route?.fragmentVersions, fragmentOrder)
   }
+}
+
+export const resolveStaticHomeRouteSeed = async (
+  data: Pick<HomeStaticBootstrapData, 'currentPath' | 'lang' | 'routeSeed'>,
+  loadRouteSeed: typeof loadStaticRouteLanguageSeed = loadStaticRouteLanguageSeed
+) => {
+  if (hasSeedValues(data.routeSeed)) {
+    return data.routeSeed
+  }
+  return await loadRouteSeed(data.currentPath, data.lang)
 }

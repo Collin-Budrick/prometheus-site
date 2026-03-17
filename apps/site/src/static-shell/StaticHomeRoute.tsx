@@ -5,14 +5,12 @@ import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
-import homeDemoStylesheetHref from './home-static-deferred.css?url'
-import { createHomeDemoAssetMap } from './home-demo-assets'
+import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
 import {
   type LanguageSeedPayload
 } from '../lang/selection'
 import { renderHomeStaticFragmentHtml } from './home-render'
 import { renderHomeIntroMarkdownToHtml } from './markdown'
-import { buildFragmentHeightPersistenceScript } from './fragment-height-script'
 import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
@@ -23,6 +21,7 @@ import {
   STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_PREVIEW_VISIBLE_ATTR,
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_DATA_SCRIPT_ID,
   getStaticShellRouteConfig,
@@ -36,13 +35,17 @@ import {
   readFragmentStableHeight,
   resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight,
-  serializeFragmentHeightLayout,
   type FragmentHeightLayout
 } from '@prometheus/ui/fragment-height'
 import {
   createSeededHomeStaticCopyBundle,
   createSeededHomeStaticFragmentHeaders
 } from './home-copy-bundle'
+import {
+  serializeHomeFragmentVersions,
+  serializeHomeRuntimeFetchGroups,
+  serializeHomeRuntimePlanEntries
+} from './home-bootstrap-data'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -74,7 +77,11 @@ const HOME_RENDER_ORDER = [
 ] as const
 
 const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
-  fragmentKind === 'planner' || fragmentKind === 'ledger' || fragmentKind === 'island' || fragmentKind === 'react'
+  fragmentKind === 'planner' ||
+  fragmentKind === 'ledger' ||
+  fragmentKind === 'island' ||
+  fragmentKind === 'react' ||
+  fragmentKind === 'dock'
 
 const usesActiveHomeDemoShell = (
   stage: StaticHomeCardStage,
@@ -97,6 +104,7 @@ type StaticHomeRenderedCard = {
   mobileWidthBucket: string | null
   patchState: 'ready' | 'pending'
   revealPhase: 'holding' | 'visible'
+  previewVisible: boolean
   lcpStable: boolean
   placement: 'hero' | 'main'
 }
@@ -184,9 +192,10 @@ export const buildStaticHomeRouteState = ({
           : fragmentKind === 'dock'
             ? 'shell'
             : stage === 'anchor'
-            ? 'shell'
-            : 'stub'
-    const patchState = stage === 'critical' || fragmentKind === 'dock' || activeShell ? 'ready' : 'pending'
+              ? 'shell'
+              : 'stub'
+    const previewVisible = renderMode === 'preview'
+    const patchState = stage === 'critical' || activeShell ? 'ready' : 'pending'
     const lcpStable = Boolean(entry.critical || fragmentKind === 'dock' || activeShell)
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
@@ -232,7 +241,8 @@ export const buildStaticHomeRouteState = ({
       desktopWidthBucket,
       mobileWidthBucket,
       patchState,
-      revealPhase: patchState === 'ready' ? 'visible' : 'holding',
+      revealPhase: patchState === 'ready' || previewVisible ? 'visible' : 'holding',
+      previewVisible,
       lcpStable,
       placement
     }
@@ -247,12 +257,7 @@ export const buildStaticHomeRouteState = ({
     versionSignature,
     runtimePlanEntries,
     runtimeFetchGroups,
-    runtimeInitialFragments: cards
-      .filter((card) => card.patchState === 'ready')
-      .flatMap((card) => {
-        const payload = fragmentMap[card.id]
-        return payload ? [payload] : []
-      }),
+    runtimeInitialFragments: [],
     cards
   }
 }
@@ -266,7 +271,15 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
   const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({ lang })
-  const homeDemoAssets = createHomeDemoAssetMap()
+  const serializedRuntimePlanEntries = serializeHomeRuntimePlanEntries(routeState.runtimePlanEntries)
+  const serializedRuntimeFetchGroups = serializeHomeRuntimeFetchGroups(
+    routeState.runtimeFetchGroups,
+    routeState.fragmentOrder
+  )
+  const serializedFragmentVersions = serializeHomeFragmentVersions(
+    routeState.fragmentVersions,
+    routeState.fragmentOrder
+  )
   const splitCards = (cards: StaticHomeRenderedCard[]) =>
     cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
       (acc, card, index) => {
@@ -355,7 +368,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   data-reveal-locked="false"
                   data-draggable="false"
                   data-size={card.size}
-                  data-fragment-height-layout={serializeFragmentHeightLayout(card.layout) ?? undefined}
                   style={style}
                   {...{
                     [STATIC_FRAGMENT_CARD_ATTR]: 'true',
@@ -370,6 +382,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+                    [STATIC_HOME_PREVIEW_VISIBLE_ATTR]: card.previewVisible ? 'true' : undefined,
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >
@@ -407,7 +420,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   data-reveal-locked="false"
                   data-draggable="false"
                   data-size={card.size}
-                  data-fragment-height-layout={serializeFragmentHeightLayout(card.layout) ?? undefined}
                   style={style}
                   {...{
                     [STATIC_FRAGMENT_CARD_ATTR]: 'true',
@@ -422,6 +434,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+                    [STATIC_HOME_PREVIEW_VISIBLE_ATTR]: card.previewVisible ? 'true' : undefined,
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >
@@ -442,29 +455,14 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           lang,
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
-          authPolicy: routeConfig?.authPolicy ?? 'public',
-          bootstrapMode: routeConfig?.bootstrapMode ?? 'home-static',
-          homeDemoStylesheetHref,
-          homeDemoAssets,
+          homeDemoStylesheetHref: globalDeferredStylesheetHref,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,
           versionSignature: routeState.versionSignature,
-          runtimePlanEntries: routeState.runtimePlanEntries,
-          runtimeFetchGroups: routeState.runtimeFetchGroups,
-          runtimeInitialFragments: routeState.runtimeInitialFragments,
-          languageSeed,
-          fragmentVersions: routeState.fragmentVersions
-        })}
-      />
-      <script
-        nonce={nonce || undefined}
-        dangerouslySetInnerHTML={buildFragmentHeightPersistenceScript({
-          path: plan.path,
-          lang,
-          fragmentOrder: routeState.fragmentOrder,
-          planSignature: routeState.planSignature,
-          versionSignature: routeState.versionSignature
+          runtimePlanEntries: serializedRuntimePlanEntries,
+          runtimeFetchGroups: serializedRuntimeFetchGroups,
+          fragmentVersions: serializedFragmentVersions
         })}
       />
     </section>

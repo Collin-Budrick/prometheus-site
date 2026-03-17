@@ -167,6 +167,11 @@ export const buildFragmentHeightPersistenceScript = ({
     normalizeHeight(getComputedStyle(card).getPropertyValue('--fragment-min-height')) ??
     0;
 
+  const readCardSize = (card) => {
+    const raw = String(card.getAttribute('data-size') || '').trim();
+    return raw === 'small' || raw === 'big' || raw === 'tall' ? raw : null;
+  };
+
   const readLayout = (card) => {
     const raw = card.getAttribute('data-fragment-height-layout');
     if (!raw) return null;
@@ -176,6 +181,30 @@ export const buildFragmentHeightPersistenceScript = ({
     } catch {
       return null;
     }
+  };
+
+  const buildFallbackLayout = (card) => {
+    const minHeight = readCardHint(card);
+    const size = readCardSize(card);
+    if (minHeight <= 0 && !size) return null;
+    return {
+      ...(size ? { size } : {}),
+      ...(minHeight > 0 ? { minHeight } : {})
+    };
+  };
+
+  const readWidthBucketHint = (card, viewport) => {
+    const primaryAttr =
+      viewport === 'desktop'
+        ? 'data-fragment-width-bucket'
+        : 'data-fragment-width-bucket-mobile';
+    const fallbackAttr =
+      viewport === 'desktop'
+        ? 'data-fragment-width-bucket-mobile'
+        : 'data-fragment-width-bucket';
+    const primaryValue = normalizeBucket(card.getAttribute(primaryAttr));
+    if (primaryValue) return primaryValue;
+    return normalizeBucket(card.getAttribute(fallbackAttr));
   };
 
   const resolveProfileBucket = (layout, viewport, cardWidth) => {
@@ -327,10 +356,11 @@ export const buildFragmentHeightPersistenceScript = ({
     if (!fragmentId) return null;
     const planIndex = route.fragmentOrder.indexOf(fragmentId);
     if (planIndex < 0) return null;
-    const layout = readLayout(card);
+    const layout = readLayout(card) ?? buildFallbackLayout(card);
     const cardWidth = normalizeWidth(card.getBoundingClientRect?.().width || 0);
     const viewport = getViewport(cardWidth);
-    const widthBucket = resolveWidthBucket(layout, viewport, cardWidth);
+    const widthBucket =
+      readWidthBucketHint(card, viewport) ?? resolveWidthBucket(layout, viewport, cardWidth);
     const cookieHeights = readCookieHeights(viewport, widthBucket);
     const cookieHeight = cookieHeights?.[planIndex] ?? null;
     const stableHeight = readStableHeight(fragmentId, viewport, widthBucket);

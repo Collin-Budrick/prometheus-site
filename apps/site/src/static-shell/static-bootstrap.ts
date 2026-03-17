@@ -70,6 +70,11 @@ import {
 import { getPublicFragmentApiBase } from "../shared/public-fragment-config";
 import { appConfig } from "../public-app-config";
 import type { StoreSeed } from "../shared/store-seed";
+import {
+  createStaticShellThemeIcon,
+  ensureStaticShellSettingsOverlay,
+  readStaticShellTheme,
+} from "./settings-overlay-dom";
 
 type Theme = "light" | "dark";
 
@@ -248,8 +253,7 @@ const refreshThemeButton = (lang: Lang) => {
     "[data-static-theme-toggle]",
   );
   if (!button) return;
-  const theme =
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const theme = readStaticShellTheme();
   const copy = getUiCopy(lang);
   button.dataset.theme = theme;
   button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
@@ -257,6 +261,7 @@ const refreshThemeButton = (lang: Lang) => {
     "aria-label",
     theme === "dark" ? copy.themeAriaToLight : copy.themeAriaToDark,
   );
+  button.replaceChildren(createStaticShellThemeIcon(theme));
 };
 
 const hasStaticFragmentRoot = () =>
@@ -610,20 +615,20 @@ const bindShellControls = (controller: StaticFragmentController) => {
   const settingsToggle = document.querySelector<HTMLButtonElement>(
     "[data-static-settings-toggle]",
   );
-  const settingsPanel =
-    document.querySelector<HTMLElement>(".settings-dropdown");
-  const languageMenuToggle = document.querySelector<HTMLButtonElement>(
-    "[data-static-language-menu-toggle]",
-  );
-  const languageDrawer = document.querySelector<HTMLElement>(
-    ".settings-lang-drawer",
-  );
-  const themeToggle = document.querySelector<HTMLButtonElement>(
-    "[data-static-theme-toggle]",
-  );
+  const overlay =
+    settingsRoot
+      ? ensureStaticShellSettingsOverlay({
+          settingsRoot,
+          lang: controller.lang,
+          copy: getUiCopy(controller.lang),
+        })
+      : null;
 
-  if (!settingsRoot || !settingsToggle || !settingsPanel || !themeToggle)
+  if (!settingsRoot || !settingsToggle || !overlay)
     return;
+
+  const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } =
+    overlay;
 
   const closeLanguageMenu = (restoreFocus = false) => {
     const wasOpen = languageDrawer?.dataset.open === "true";
@@ -966,7 +971,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
         entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
           ? ` ${STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR}="${escapeHtmlAttr(entry.mobileWidthBucket)}"`
           : "";
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="visible" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="done"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 
@@ -978,7 +983,7 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
     versionSignature: model.routeData.versionSignature,
   });
 
-  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-fragment-paint="initial" data-static-path="${model.path}" data-static-lang="${model.lang}"><noscript><style${nonceAttr}>[data-static-fragment-root] .fragment-card[data-ready-stagger-state="queued"]{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}</style></noscript><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`;
+  return `${inlineStyles}<section class="fragment-shell fragment-shell-static" data-static-fragment-root data-static-fragment-paint="initial" data-static-path="${model.path}" data-static-lang="${model.lang}"><noscript><style${nonceAttr}>[data-static-fragment-root] .fragment-card[data-reveal-phase="visible"]{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}</style></noscript><div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">${entries}</div><script id="${STATIC_FRAGMENT_DATA_SCRIPT_ID}" type="application/json"${nonceAttr}>${serializeJson(model.routeData)}</script><script${nonceAttr}>${heightScript}</script></section>`;
 };
 
 const hydrateProtectedStaticFragments = async (

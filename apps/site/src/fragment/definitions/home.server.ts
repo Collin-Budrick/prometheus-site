@@ -91,11 +91,6 @@ const dockFragment: FragmentDefinition = {
           kind: 'home-collab',
           id: buildFragmentWidgetId('fragment://page/home/dock@v2', 'home-collab', 'dock'),
           priority: 'critical',
-          props: {
-            root: 'dock',
-            placeholder: t('Write something. Everyone here sees it live.'),
-            ariaLabel: t('Shared collaborative text box')
-          },
           shell: reactToRenderNode(
             createElement(
               'div',

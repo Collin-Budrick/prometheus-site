@@ -3,7 +3,12 @@ import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
-import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import {
+  readStaticHomeBootstrapData,
+  serializeHomeFragmentVersions,
+  serializeHomeRuntimeFetchGroups,
+  serializeHomeRuntimePlanEntries
+} from './home-bootstrap-data'
 
 describe('home-bootstrap-data', () => {
   it('reads the shared static home bootstrap payload from DOM script tags', () => {
@@ -71,20 +76,31 @@ describe('home-bootstrap-data', () => {
                 }
               }
             },
-            fragmentVersions: {
-              'fragment://page/home/react@v1': 1
-            },
-            runtimePlanEntries: [
+            fragmentOrder: ['fragment://page/home/react@v1'],
+            fragmentVersions: serializeHomeFragmentVersions(
+              {
+                'fragment://page/home/react@v1': 1
+              },
+              ['fragment://page/home/react@v1']
+            ),
+            runtimePlanEntries: serializeHomeRuntimePlanEntries([
               {
                 id: 'fragment://page/home/react@v1',
                 critical: false,
                 layout: {
-                  column: 'span 12',
-                  minHeight: 489
+                  minHeight: 489,
+                  heightProfile: {
+                    desktop: [{ maxWidth: 880, height: 648 }],
+                    mobile: [{ maxWidth: 768, height: 489 }]
+                  }
                 },
                 dependsOn: []
               }
-            ]
+            ]),
+            runtimeFetchGroups: serializeHomeRuntimeFetchGroups(
+              [['fragment://page/home/react@v1']],
+              ['fragment://page/home/react@v1']
+            )
           })
         }
       ]
@@ -106,12 +122,20 @@ describe('home-bootstrap-data', () => {
         id: 'fragment://page/home/react@v1',
         critical: false,
         layout: {
-          column: 'span 12',
-          minHeight: 489
+          minHeight: 489,
+          heightHint: {
+            desktop: 648,
+            mobile: 489
+          },
+          heightProfile: {
+            desktop: [{ maxWidth: 880, height: 648 }],
+            mobile: [{ maxWidth: 768, height: 489 }]
+          }
         },
         dependsOn: []
       }
     ])
+    expect(data?.runtimeFetchGroups).toEqual([['fragment://page/home/react@v1']])
     expect(data?.fragmentVersions).toEqual({
       'fragment://page/home/react@v1': 1
     })

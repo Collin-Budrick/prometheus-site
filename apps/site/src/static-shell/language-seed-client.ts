@@ -11,3 +11,6 @@ export const loadStaticShellLanguageSeed = async (path: string, lang: Lang) =>
     lang,
     mergeLanguageSelections(shellLanguageSelection, resolveRouteLanguageSelection(path))
   )
+
+export const loadStaticRouteLanguageSeed = async (path: string, lang: Lang) =>
+  await loadLanguageResources(lang, resolveRouteLanguageSelection(path))

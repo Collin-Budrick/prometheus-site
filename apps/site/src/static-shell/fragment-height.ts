@@ -55,6 +55,39 @@ const readCardHeightHint = (card: HTMLElement) =>
 const readCardHeightLayout = (card: HTMLElement) =>
   parseFragmentHeightLayout(card.getAttribute('data-fragment-height-layout'))
 
+const readCardHeightSize = (card: HTMLElement): FragmentHeightLayout['size'] => {
+  const size = card.getAttribute('data-size')
+  return size === 'small' || size === 'big' || size === 'tall' ? size : undefined
+}
+
+const buildFallbackCardHeightLayout = (card: HTMLElement): FragmentHeightLayout | null => {
+  const minHeight = readCardHeightHint(card)
+  const size = readCardHeightSize(card)
+  if (minHeight <= 0 && !size) {
+    return null
+  }
+  return {
+    ...(size ? { size } : {}),
+    ...(minHeight > 0 ? { minHeight } : {})
+  }
+}
+
+const readCardWidthBucketHint = (
+  card: HTMLElement,
+  viewport = getFragmentHeightViewport()
+) => {
+  const primaryAttr =
+    viewport === 'desktop' ? 'data-fragment-width-bucket' : 'data-fragment-width-bucket-mobile'
+  const fallbackAttr =
+    viewport === 'desktop' ? 'data-fragment-width-bucket-mobile' : 'data-fragment-width-bucket'
+  const primaryValue = card.getAttribute(primaryAttr)?.trim()
+  if (primaryValue) {
+    return primaryValue
+  }
+  const fallbackValue = card.getAttribute(fallbackAttr)?.trim()
+  return fallbackValue || null
+}
+
 const readCardWidth = (card: HTMLElement) => {
   const width = Math.ceil(card.getBoundingClientRect().width)
   return width > 0 ? width : null
@@ -78,18 +111,29 @@ const readFragmentCardMetrics = (card: HTMLElement): FragmentCardMetrics => {
 }
 
 const resolveCardHeightBucket = (card: HTMLElement, cardWidth: number | null = null) => {
-  const layout = readCardHeightLayout(card)
-  if (!layout) {
-    return { layout: null, viewport: getFragmentHeightViewport(), cardWidth: null, widthBucket: null }
-  }
   const resolvedCardWidth = cardWidth ?? readCardWidth(card)
   const viewport = getFragmentHeightViewport(resolvedCardWidth ?? undefined)
+  const layout = readCardHeightLayout(card) ?? buildFallbackCardHeightLayout(card)
+  const hintedWidthBucket = readCardWidthBucketHint(card, viewport)
+  if (!layout) {
+    return {
+      layout: null,
+      viewport,
+      cardWidth: resolvedCardWidth,
+      widthBucket: hintedWidthBucket
+    }
+  }
   const widthBucket = resolveFragmentHeightWidthBucket({
     layout,
     viewport,
     cardWidth: resolvedCardWidth
   })
-  return { layout, viewport, cardWidth: resolvedCardWidth, widthBucket }
+  return {
+    layout,
+    viewport,
+    cardWidth: resolvedCardWidth,
+    widthBucket: hintedWidthBucket ?? widthBucket
+  }
 }
 
 const readLearnedCardHeight = (

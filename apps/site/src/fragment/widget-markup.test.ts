@@ -15,4 +15,15 @@ describe('fragment widget markup', () => {
     expect(html).toContain('data-fragment-widget-props="true"')
     expect(html).toContain('{"props":{"limit":12}}')
   })
+
+  it('omits the marker props script when the widget has no payload props', () => {
+    const marker = createFragmentWidgetMarkerNode({
+      kind: 'react-binary-demo',
+      id: 'fragment://page/home/react@v1::react-binary-demo::shell',
+      shell: { type: 'element', tag: 'div', children: [] }
+    })
+
+    const html = renderToHtml(marker)
+    expect(html).not.toContain('data-fragment-widget-props="true"')
+  })
 })

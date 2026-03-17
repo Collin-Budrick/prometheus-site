@@ -17,6 +17,9 @@ const normalizeProps = (props?: Record<string, unknown>) => props ?? {}
 const toScriptJson = (props?: Record<string, unknown>) =>
   JSON.stringify(normalizeProps(props))
 
+const hasRenderableProps = (props?: Record<string, unknown>) =>
+  Object.keys(normalizeProps(props)).length > 0
+
 export const buildFragmentWidgetId = (fragmentId: string, kind: string, localKey?: string) =>
   [fragmentId, kind, localKey].filter(Boolean).join('::')
 
@@ -45,13 +48,17 @@ export const createFragmentWidgetMarkerNode = ({
         },
         [shell]
       ),
-      h(
-        'script',
-        {
-          type: 'application/json',
-          'data-fragment-widget-props': 'true'
-        },
-        [toScriptJson(props)]
-      )
+      ...(hasRenderableProps(props)
+        ? [
+            h(
+              'script',
+              {
+                type: 'application/json',
+                'data-fragment-widget-props': 'true'
+              },
+              [toScriptJson(props)]
+            )
+          ]
+        : [])
     ]
   )

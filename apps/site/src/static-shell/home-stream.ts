@@ -7,6 +7,7 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_LOCKED_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_PREVIEW_VISIBLE_ATTR,
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
@@ -94,10 +95,14 @@ const isStaticHomeElement = (card: Element | null): card is HTMLElement =>
 const isHomePatchReady = (card: Element | null) =>
   isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready'
 
+const isStaticHomePreviewVisible = (card: Element | null) =>
+  isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PREVIEW_VISIBLE_ATTR) === 'true'
+
 const shouldPreserveHomeCardRevealState = (card: HTMLElement) => {
   const revealPhase = card.dataset.revealPhase
   return (
     isHomePatchReady(card) ||
+    isStaticHomePreviewVisible(card) ||
     card.dataset.fragmentReady === 'true' ||
     revealPhase === 'visible'
   )
@@ -402,6 +407,7 @@ export const patchStaticHomeFragmentCard = ({
   targetCard.dataset.revealLocked = 'true'
   targetCard.dataset.fragmentLoaded = 'true'
   if (preserveRevealState) {
+    targetCard.dataset.revealPhase = 'visible'
     targetCard.dataset.fragmentStage = 'ready'
     targetCard.dataset.fragmentReady = 'true'
   } else {
