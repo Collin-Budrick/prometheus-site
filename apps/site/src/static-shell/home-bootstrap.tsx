@@ -30,6 +30,8 @@ import {
 import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
@@ -43,6 +45,12 @@ import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runti
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
 import { getPublicFragmentApiBase } from "../shared/public-fragment-config";
 import { markStaticShellUserTiming } from "./static-shell-performance";
+import {
+  getFragmentHeightViewport,
+  parseFragmentHeightLayout,
+  resolveFragmentHeightWidthBucket,
+} from "@prometheus/ui/fragment-height";
+import { scheduleStaticRoutePaintReady } from "./static-route-paint";
 
 type HomeControllerState = {
   isAuthenticated: boolean;
@@ -78,6 +86,12 @@ const STATIC_LANG_STORAGE_KEYS = [
   STATIC_LANG_STORAGE_KEY,
   STATIC_LANG_PREFERENCE_KEY,
 ] as const;
+const HOME_LAYOUT_MAX_WIDTH = 1152;
+const HOME_LAYOUT_BASE_PADDING = 48;
+const HOME_LAYOUT_SM_PADDING = 80;
+const HOME_LAYOUT_SM_BREAKPOINT = 640;
+const HOME_LAYOUT_TWO_COLUMN_BREAKPOINT = 1025;
+const HOME_LAYOUT_GAP = 24;
 type HomeSharedRuntimeRequestOptions = {
   isAnchorBatch: boolean;
   commitReady: Promise<unknown>;
@@ -133,26 +147,80 @@ const readStaticHomeHeightHint = (card: HTMLElement) => {
     : null;
 };
 
-const readStaticHomeCardWidth = (card: HTMLElement) => {
-  const width = Math.ceil(card.getBoundingClientRect().width);
-  return width > 0 ? width : null;
+const resolveStaticHomeViewportWidth = (viewportWidth?: number | null) => {
+  const normalizedWidth =
+    typeof viewportWidth === "number" && Number.isFinite(viewportWidth)
+      ? Math.max(0, Math.round(viewportWidth))
+      : typeof window !== "undefined" &&
+          typeof window.innerWidth === "number" &&
+          window.innerWidth > 0
+        ? Math.round(window.innerWidth)
+        : HOME_LAYOUT_MAX_WIDTH;
+  return normalizedWidth;
 };
 
-const collectStaticHomeSizingSeeds = (
+export const resolveStaticHomeEstimatedCardWidth = (viewportWidth?: number | null) => {
+  const normalizedWidth = resolveStaticHomeViewportWidth(viewportWidth);
+  const shellWidth = Math.min(normalizedWidth, HOME_LAYOUT_MAX_WIDTH);
+  const horizontalPadding =
+    normalizedWidth >= HOME_LAYOUT_SM_BREAKPOINT
+      ? HOME_LAYOUT_SM_PADDING
+      : HOME_LAYOUT_BASE_PADDING;
+  const innerWidth = Math.max(0, shellWidth - horizontalPadding);
+  if (normalizedWidth < HOME_LAYOUT_TWO_COLUMN_BREAKPOINT) {
+    return innerWidth > 0 ? innerWidth : null;
+  }
+  const columnWidth = Math.floor((innerWidth - HOME_LAYOUT_GAP) / 2);
+  return columnWidth > 0 ? columnWidth : null;
+};
+
+export const readStaticHomeWidthBucketHint = (
+  card: HTMLElement,
+  viewportWidth?: number | null,
+) => {
+  const normalizedWidth = resolveStaticHomeViewportWidth(viewportWidth);
+  const mobileHint = card.getAttribute(STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR);
+  const desktopHint = card.getAttribute(STATIC_FRAGMENT_WIDTH_BUCKET_ATTR);
+  const hintedBucket =
+    normalizedWidth < HOME_LAYOUT_TWO_COLUMN_BREAKPOINT
+      ? mobileHint ?? desktopHint
+      : desktopHint ?? mobileHint;
+  if (hintedBucket) {
+    return hintedBucket;
+  }
+
+  const layout = parseFragmentHeightLayout(
+    card.getAttribute("data-fragment-height-layout"),
+  );
+  if (!layout) {
+    return null;
+  }
+
+  return (
+    resolveFragmentHeightWidthBucket({
+      layout,
+      viewport: getFragmentHeightViewport(normalizedWidth),
+      cardWidth: resolveStaticHomeEstimatedCardWidth(normalizedWidth),
+    }) ?? null
+  );
+};
+
+export const collectStaticHomeSizingSeeds = (
   fragmentOrder: string[],
+  viewportWidth?: number | null,
   root: ParentNode = document,
 ): FragmentRuntimeSizingMap =>
   fragmentOrder.reduce<FragmentRuntimeSizingMap>((acc, fragmentId) => {
     const card = getStaticHomeFragmentCard(fragmentId, root);
     if (!card) return acc;
     const stableHeight = readStaticHomeHeightHint(card);
-    const cardWidth = readStaticHomeCardWidth(card);
-    if (stableHeight === null && cardWidth === null) {
+    const widthBucket = readStaticHomeWidthBucketHint(card, viewportWidth);
+    if (stableHeight === null && widthBucket === null) {
       return acc;
     }
     acc[fragmentId] = {
       stableHeight,
-      cardWidth,
+      widthBucket,
     };
     return acc;
   }, {});
@@ -196,6 +264,24 @@ const connectSharedHomeRuntime = ({
   let pendingAnchorIds = new Set<string>();
   let bootstrapPrimePromise: Promise<void> | null = null;
   const commitGateById = new Map<string, Promise<unknown>>();
+  const planEntriesById = new Map(
+    runtimePlanEntries.map((entry) => [entry.id, entry]),
+  );
+  const reportedWidths = new Map<string, number | null>();
+  const reportedWidthBuckets = new Map<string, string | null>();
+  const ignoredInitialResizeById = new Set<string>();
+  const viewportWidth =
+    typeof window.innerWidth === "number" && window.innerWidth > 0
+      ? window.innerWidth
+      : 1280;
+  const initialSizing = collectStaticHomeSizingSeeds(
+    fragmentOrder,
+    viewportWidth,
+    root,
+  );
+  Object.entries(initialSizing).forEach(([fragmentId, seed]) => {
+    reportedWidthBuckets.set(fragmentId, seed.widthBucket ?? null);
+  });
 
   const connected = bridge.connect({
     clientId: buildHomeRuntimeClientId(),
@@ -204,13 +290,10 @@ const connectSharedHomeRuntime = ({
     lang: controller.lang,
     planEntries: runtimePlanEntries,
     initialFragments: [],
-    initialSizing: collectStaticHomeSizingSeeds(fragmentOrder, root),
+    initialSizing,
     knownVersions: collectStaticHomeKnownVersions(root),
     visibleIds: [],
-    viewportWidth:
-      typeof window.innerWidth === "number" && window.innerWidth > 0
-        ? window.innerWidth
-        : 1280,
+    viewportWidth,
     enableStreaming: false,
     bootstrapHref: fragmentBootstrapHref ?? undefined,
     onCommit: (payload) => {
@@ -285,10 +368,11 @@ const connectSharedHomeRuntime = ({
     if (!fragmentId || typeof detail.height !== "number") return;
     const card = getStaticHomeFragmentCard(fragmentId, root);
     if (!card) return;
+    const width = reportedWidths.get(fragmentId) ?? null;
     bridge.measureCard(
       fragmentId,
       Math.ceil(detail.height),
-      readStaticHomeCardWidth(card),
+      width,
       card.dataset.fragmentReady === "true",
     );
   };
@@ -305,32 +389,82 @@ const connectSharedHomeRuntime = ({
   );
 
   if (typeof ResizeObserver === "function") {
-    const resizeObserver = new ResizeObserver((entries) => {
-      entries.forEach((entry) => {
-        const card = entry.target as HTMLElement;
-        const fragmentId = card.dataset.fragmentId;
-        if (!fragmentId) return;
-        const width = readStaticHomeCardWidth(card);
-        if (width !== null) {
+    const installResizeObserver = () => {
+      const resizeObserver = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+          const card = entry.target as HTMLElement;
+          const fragmentId = card.dataset.fragmentId;
+          if (!fragmentId) return;
+
+          const width =
+            typeof entry.contentRect?.width === "number" &&
+            Number.isFinite(entry.contentRect.width) &&
+            entry.contentRect.width > 0
+              ? Math.ceil(entry.contentRect.width)
+              : null;
+          const previousWidth = reportedWidths.get(fragmentId) ?? null;
+          if (width !== null) {
+            reportedWidths.set(fragmentId, width);
+          }
+
+          const layout = planEntriesById.get(fragmentId)?.layout;
+          const nextWidthBucket =
+            width !== null && layout
+              ? resolveFragmentHeightWidthBucket({
+                  layout,
+                  viewport: getFragmentHeightViewport(width),
+                  cardWidth: width,
+                }) ?? null
+              : reportedWidthBuckets.get(fragmentId) ?? null;
+          const previousWidthBucket =
+            reportedWidthBuckets.get(fragmentId) ?? null;
+          reportedWidthBuckets.set(fragmentId, nextWidthBucket);
+
+          if (!ignoredInitialResizeById.has(fragmentId)) {
+            ignoredInitialResizeById.add(fragmentId);
+            return;
+          }
+
+          if (width === null || nextWidthBucket === previousWidthBucket) {
+            return;
+          }
+          if (previousWidth === width) {
+            return;
+          }
+
           bridge.reportCardWidth(fragmentId, width);
-        }
-        if (card.dataset.fragmentReady === "true") {
-          bridge.measureCard(
-            fragmentId,
-            Math.ceil(entry.contentRect.height),
-            width,
-            true,
-          );
+          if (card.dataset.fragmentReady === "true") {
+            bridge.measureCard(
+              fragmentId,
+              Math.ceil(entry.contentRect.height),
+              width,
+              true,
+            );
+          }
+        });
+      });
+
+      fragmentOrder.forEach((fragmentId) => {
+        const card = getStaticHomeFragmentCard(fragmentId, root);
+        if (card) {
+          resizeObserver.observe(card);
         }
       });
-    });
-    fragmentOrder.forEach((fragmentId) => {
-      const card = getStaticHomeFragmentCard(fragmentId, root);
-      if (card) {
-        resizeObserver.observe(card);
-      }
-    });
-    controller.cleanupFns.push(() => resizeObserver.disconnect());
+
+      return () => resizeObserver.disconnect();
+    };
+
+    let resizeObserverCleanup: (() => void) | null = null;
+    controller.cleanupFns.push(() => resizeObserverCleanup?.());
+    controller.cleanupFns.push(
+      scheduleStaticShellTask(() => {
+        resizeObserverCleanup = installResizeObserver();
+      }, {
+        priority: "background",
+        timeoutMs: 1200,
+        waitForPaint: true,
+      }),
+    );
   }
 
   controller.cleanupFns.push(() => bridge.dispose());
@@ -505,51 +639,15 @@ export const scheduleStaticHomePaintReady = ({
   onReady,
 }: ScheduleStaticHomePaintReadyOptions = {}) => {
   const staticHomeRoot = resolveStaticHomePaintRoot(root);
-  if (!staticHomeRoot) return () => undefined;
-  if (staticHomeRoot.getAttribute(STATIC_HOME_PAINT_ATTR) === "ready") {
-    onReady?.();
-    return () => undefined;
-  }
-
-  if (typeof requestFrame !== "function") {
-    staticHomeRoot.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
-    onReady?.();
-    return () => undefined;
-  }
-
-  let firstFrame = 0;
-  let secondFrame = 0;
-  let fallbackTimer: ReturnType<typeof setTimeout> | 0 = 0;
-  let cancelled = false;
-
-  const markReady = () => {
-    if (cancelled) return;
-    const liveRoot =
-      resolveStaticHomePaintRoot(staticHomeRoot) ??
-      resolveStaticHomePaintRoot();
-    if (!liveRoot) return;
-    liveRoot.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
-    onReady?.();
-  };
-
-  firstFrame = requestFrame(() => {
-    if (cancelled) return;
-    secondFrame = requestFrame(markReady);
+  return scheduleStaticRoutePaintReady({
+    root: staticHomeRoot,
+    readyAttr: STATIC_HOME_PAINT_ATTR,
+    requestFrame,
+    cancelFrame,
+    setTimer,
+    clearTimer,
+    onReady,
   });
-  if (typeof setTimer === "function") {
-    fallbackTimer = setTimer(markReady, 180);
-  }
-
-  return () => {
-    cancelled = true;
-    if (typeof cancelFrame === "function") {
-      if (firstFrame) cancelFrame(firstFrame);
-      if (secondFrame) cancelFrame(secondFrame);
-    }
-    if (fallbackTimer && typeof clearTimer === "function") {
-      clearTimer(fallbackTimer);
-    }
-  };
 };
 
 type ScheduleStaticHomePaintReadyOptions = {

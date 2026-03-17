@@ -328,6 +328,18 @@ const refreshClientStatus = (client: ClientState) => {
   setClientStatus(client, hasActiveFetch ? 'fetching' : 'idle')
 }
 
+const resolveCardWidthFromBucket = (widthBucket: string | null | undefined) => {
+  if (!widthBucket) {
+    return null
+  }
+  const separatorIndex = widthBucket.indexOf(':')
+  if (separatorIndex < 0) {
+    return null
+  }
+  const parsed = Number.parseInt(widthBucket.slice(separatorIndex + 1), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 const buildClientSizing = (client: ClientState, fragmentId: string) => {
   const entry = client.entriesById.get(fragmentId)
   if (!entry) return null
@@ -335,16 +347,20 @@ const buildClientSizing = (client: ClientState, fragmentId: string) => {
   const seed = client.sizingSeeds[fragmentId]
   const cardWidth = client.widthById.get(fragmentId) ?? seed?.cardWidth ?? null
   const viewport = getFragmentHeightViewport(cardWidth ?? client.viewportWidth)
-  const widthBucket = resolveFragmentHeightWidthBucket({
-    layout: entry.layout,
-    viewport,
-    cardWidth
-  }) ?? null
+  const seedWidthBucket = seed?.widthBucket ?? null
+  const widthBucket =
+    resolveFragmentHeightWidthBucket({
+      layout: entry.layout,
+      viewport,
+      cardWidth
+    }) ??
+    seedWidthBucket
+  const sizingCardWidth = cardWidth ?? resolveCardWidthFromBucket(widthBucket)
   const learnedHeight = learnedHeights.get(buildLearnedHeightKey(client.path, client.lang, fragmentId, widthBucket))?.height ?? null
   const reservedHeight = resolveReservedFragmentHeight({
     layout: entry.layout,
     viewport,
-    cardWidth,
+    cardWidth: sizingCardWidth,
     cookieHeight: seed?.cookieHeight ?? null,
     stableHeight: learnedHeight ?? seed?.stableHeight ?? null
   })
@@ -942,7 +958,8 @@ const handleMeasureCard = (client: ClientState, message: Extract<FragmentRuntime
         cardWidth:
           typeof message.width === 'number' && Number.isFinite(message.width) && message.width > 0
             ? Math.round(message.width)
-            : seed.cardWidth
+            : seed.cardWidth,
+        widthBucket: sizing.widthBucket
       }
     }
   }

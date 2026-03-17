@@ -43,8 +43,7 @@ export const scheduleStaticRoutePaintReady = ({
     return () => undefined
   }
 
-  let firstFrame = 0
-  let secondFrame = 0
+  let frameHandle = 0
   let fallbackTimer: ReturnType<typeof setTimeout> | 0 = 0
   let cancelled = false
 
@@ -56,10 +55,7 @@ export const scheduleStaticRoutePaintReady = ({
     onReady?.()
   }
 
-  firstFrame = requestFrame(() => {
-    if (cancelled) return
-    secondFrame = requestFrame(markReady)
-  })
+  frameHandle = requestFrame(markReady)
 
   if (typeof setTimer === 'function') {
     fallbackTimer = setTimer(markReady, 180)
@@ -68,8 +64,7 @@ export const scheduleStaticRoutePaintReady = ({
   return () => {
     cancelled = true
     if (typeof cancelFrame === 'function') {
-      if (firstFrame) cancelFrame(firstFrame)
-      if (secondFrame) cancelFrame(secondFrame)
+      if (frameHandle) cancelFrame(frameHandle)
     }
     if (fallbackTimer && typeof clearTimer === 'function') {
       clearTimer(fallbackTimer)

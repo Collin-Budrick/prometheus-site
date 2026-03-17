@@ -147,6 +147,8 @@ export const installHomeStaticEntry = ({
   liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
   let startedBootstrap = false
+  let bootstrapTriggersInstalled = false
+  let domReadyHandler: (() => void) | null = null
   let loadHandler: (() => void) | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
@@ -168,17 +170,27 @@ export const installHomeStaticEntry = ({
     liveDoc.querySelector<HTMLElement>(
       `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
     ) ?? readStaticHomeRoot()
+  const hasBootstrapSetupPrereqs = () =>
+    Boolean(readStaticHomeRoot()) && Boolean(readStaticHomeBootstrapData({ doc: liveDoc }))
+
+  const clearStartupHandlers = () => {
+    if (domReadyHandler) {
+      liveDoc.removeEventListener?.('DOMContentLoaded', domReadyHandler)
+      domReadyHandler = null
+    }
+
+    if (loadHandler) {
+      liveWin.removeEventListener('load', loadHandler)
+      loadHandler = null
+    }
+  }
 
   const cleanupTriggers = () => {
     liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
     liveWin.removeEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
-
-    if (loadHandler) {
-      liveWin.removeEventListener('load', loadHandler)
-      loadHandler = null
-    }
+    clearStartupHandlers()
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
@@ -437,11 +449,21 @@ export const installHomeStaticEntry = ({
   }
 
   const setupBootstrapTriggers = () => {
-    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
+    if (
+      bootstrapTriggersInstalled ||
+      startedBootstrap ||
+      liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ ||
+      !hasBootstrapSetupPrereqs()
+    ) {
+      return false
+    }
+    bootstrapTriggersInstalled = true
+    clearStartupHandlers()
     liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
     liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
+    void primeBootstrapRequest()?.catch(() => undefined)
 
     const lcpGate = createLcpGate({ win: liveWin, doc: liveDoc })
     lcpGateCleanup = lcpGate.cleanup
@@ -449,11 +471,18 @@ export const installHomeStaticEntry = ({
       if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
       releaseLcpGate()
     })
+    return true
   }
 
-  if (liveDoc.readyState === 'complete') {
-    setupBootstrapTriggers()
-  } else {
+  if (!setupBootstrapTriggers()) {
+    if (liveDoc.readyState === 'loading') {
+      domReadyHandler = () => {
+        domReadyHandler = null
+        setupBootstrapTriggers()
+      }
+      liveDoc.addEventListener?.('DOMContentLoaded', domReadyHandler, { once: true })
+    }
+
     loadHandler = () => {
       loadHandler = null
       setupBootstrapTriggers()

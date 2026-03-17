@@ -12,6 +12,7 @@ export type FragmentRuntimeSizingSeed = {
   cookieHeight?: number | null
   stableHeight?: number | null
   cardWidth?: number | null
+  widthBucket?: string | null
 }
 
 export type FragmentRuntimeSizingMap = Record<string, FragmentRuntimeSizingSeed>

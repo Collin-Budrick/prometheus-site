@@ -225,4 +225,48 @@ describe('StaticHomeRoute', () => {
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.reservedHeight).toBe(1023)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')?.lcpStable).toBe(false)
   })
+
+  it('derives SSR width bucket hints for profiled home cards', () => {
+    const profiledPlan = {
+      path: '/',
+      fragments: [
+        {
+          id: 'fragment://page/home/profiled@v1',
+          critical: false,
+          layout: {
+            column: 'span 6',
+            minHeight: 420,
+            heightProfile: {
+              desktop: [
+                { maxWidth: 560, height: 460 },
+                { maxWidth: 720, height: 520 }
+              ],
+              mobile: [
+                { maxWidth: 360, height: 440 },
+                { maxWidth: 640, height: 500 }
+              ]
+            }
+          }
+        }
+      ]
+    } as const
+
+    const profiledFragments = {
+      'fragment://page/home/profiled@v1': {
+        tree: h('section', null, [h('div', null, [t('Profiled card')])]),
+        cacheUpdatedAt: 9
+      }
+    } as const
+
+    const state = buildStaticHomeRouteState({
+      plan: profiledPlan as never,
+      fragments: profiledFragments as never,
+      languageSeed,
+      lang: 'en'
+    })
+
+    const card = state?.cards.find((entry) => entry.id === 'fragment://page/home/profiled@v1')
+    expect(card?.desktopWidthBucket).toBe('profile:560')
+    expect(card?.mobileWidthBucket).toBe('profile:360')
+  })
 })

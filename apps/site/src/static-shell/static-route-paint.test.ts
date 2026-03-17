@@ -14,7 +14,7 @@ class MockRoot {
 }
 
 describe('scheduleStaticRoutePaintReady', () => {
-  it('flips the ready attribute after two animation frames', () => {
+  it('flips the ready attribute on the first animation frame', () => {
     const root = new MockRoot()
     const frames: FrameRequestCallback[] = []
     let readyCount = 0
@@ -34,9 +34,6 @@ describe('scheduleStaticRoutePaintReady', () => {
       }
     })
 
-    expect(root.getAttribute('data-home-paint')).toBe('initial')
-
-    frames.shift()?.(0)
     expect(root.getAttribute('data-home-paint')).toBe('initial')
 
     frames.shift()?.(0)

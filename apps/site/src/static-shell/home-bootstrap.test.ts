@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
+  STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
@@ -7,6 +10,7 @@ import {
 } from "./constants";
 import {
   bindHomeFragmentHydration,
+  collectStaticHomeSizingSeeds,
   requestHomeDemoObserve,
   scheduleStaticHomePaintReady,
 } from "./home-bootstrap";
@@ -138,6 +142,56 @@ class MockFragmentCard {
 
   setAttribute(name: string, value: string) {
     this.attrs.set(name, value);
+  }
+}
+
+class MockSizingRoot {
+  constructor(private readonly cards: Record<string, MockSizingCard>) {}
+
+  querySelector<T>(selector: string) {
+    const match = selector.match(/data-fragment-id="([^"]+)"/);
+    if (!match) {
+      return null;
+    }
+    return (this.cards[match[1]] ?? null) as T | null;
+  }
+}
+
+class MockSizingCard {
+  rectReadCount = 0;
+  private readonly attrs = new Map<string, string>([
+    [STATIC_FRAGMENT_CARD_ATTR, "true"],
+  ]);
+
+  constructor(fragmentId: string) {
+    this.attrs.set("data-fragment-id", fragmentId);
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value);
+  }
+
+  style = {
+    getPropertyValue: () => "",
+  };
+
+  getBoundingClientRect() {
+    this.rectReadCount += 1;
+    return {
+      width: 640,
+      height: 360,
+      top: 0,
+      right: 640,
+      bottom: 360,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect;
   }
 }
 
@@ -859,7 +913,7 @@ describe("bindHomeDemoActivation", () => {
 });
 
 describe("scheduleStaticHomePaintReady", () => {
-  it("flips the home paint attribute to ready only after two animation frames", () => {
+  it("flips the home paint attribute to ready on the first animation frame", () => {
     const frameQueue = createAnimationFrameQueue();
     const root = new MockStaticHomeRoot();
 
@@ -873,13 +927,41 @@ describe("scheduleStaticHomePaintReady", () => {
     expect(frameQueue.pendingCount()).toBe(1);
 
     frameQueue.flushNext();
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("initial");
-    expect(frameQueue.pendingCount()).toBe(1);
-
-    frameQueue.flushNext();
     expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("ready");
 
     cleanup();
+  });
+});
+
+describe("collectStaticHomeSizingSeeds", () => {
+  it("reads SSR sizing hints without forcing a layout read", () => {
+    const fragmentId = "fragment://page/home/planner@v1";
+    const card = new MockSizingCard(fragmentId);
+    card.setAttribute("data-fragment-height-hint", "240");
+    card.setAttribute(STATIC_FRAGMENT_WIDTH_BUCKET_ATTR, "profile:560");
+    card.setAttribute(STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR, "profile:420");
+    const root = new MockSizingRoot({ [fragmentId]: card });
+
+    const desktopSeeds = collectStaticHomeSizingSeeds(
+      [fragmentId],
+      1440,
+      root as unknown as ParentNode,
+    );
+    const mobileSeeds = collectStaticHomeSizingSeeds(
+      [fragmentId],
+      430,
+      root as unknown as ParentNode,
+    );
+
+    expect(desktopSeeds[fragmentId]).toEqual({
+      stableHeight: 240,
+      widthBucket: "profile:560",
+    });
+    expect(mobileSeeds[fragmentId]).toEqual({
+      stableHeight: 240,
+      widthBucket: "profile:420",
+    });
+    expect(card.rectReadCount).toBe(0);
   });
 });
 
@@ -1208,10 +1290,6 @@ describe("bindHomeFragmentHydration", () => {
     });
 
     expect(fetchCalls).toEqual([]);
-    expect(taskQueue.pendingCount()).toBe(0);
-
-    frameQueue.flushNext();
-    expect(root.getAttribute(STATIC_HOME_PAINT_ATTR)).toBe("initial");
     expect(taskQueue.pendingCount()).toBe(0);
 
     frameQueue.flushNext();

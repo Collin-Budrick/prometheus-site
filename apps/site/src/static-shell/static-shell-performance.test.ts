@@ -70,6 +70,7 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain("./home-stream");
     expect(bootstrapSource).toContain("./home-demo-observe-event");
     expect(bootstrapSource).toContain("scheduleStaticHomePaintReady({");
+    expect(bootstrapSource).toContain("scheduleStaticRoutePaintReady");
     expect(bootstrapSource).toContain("scheduleTask = scheduleStaticShellTask");
     expect(bootstrapSource).toContain("isAuthenticated");
     expect(bootstrapSource).toContain("createStaticHomePatchQueue({");
@@ -113,6 +114,12 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).not.toContain("./auth-client");
     expect(bootstrapSource).not.toContain("../shared/overlay-a11y");
     expect(bootstrapSource).not.toContain("persistInitialFragmentCardHeights");
+    expect(bootstrapSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_ATTR");
+    expect(bootstrapSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR");
+    expect(bootstrapSource).toContain("parseFragmentHeightLayout");
+    expect(bootstrapSource).toContain("resolveFragmentHeightWidthBucket");
+    expect(bootstrapSource).toContain("entry.contentRect.width");
+    expect(bootstrapSource).not.toContain("getBoundingClientRect().width");
     expect(bootstrapSource).toContain(
       "const demoStylesheetReady = ensureDemoStylesheet({",
     );
@@ -247,6 +254,9 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).toContain('data-reveal-phase="visible"');
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR");
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR");
+    expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_ATTR");
+    expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR");
+    expect(homeRouteSource).toContain("resolveFragmentHeightWidthBucket({");
     expect(homeRouteSource).toContain("homeDemoAssets");
     expect(homeRouteSource).toContain("createSeededHomeStaticCopyBundle");
     expect(homeRouteSource).toContain("createSeededHomeStaticFragmentHeaders");
@@ -570,6 +580,8 @@ describe("static shell performance invariants", () => {
       "HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN",
     );
     expect(homeStaticEntrySource).toContain("readStaticHomeBootstrapData");
+    expect(homeStaticEntrySource).toContain("hasBootstrapSetupPrereqs");
+    expect(homeStaticEntrySource).toContain("clearStartupHandlers");
     expect(homeStaticEntrySource).toContain("collectAutoBootstrapHomeCards");
     expect(homeStaticEntrySource).toContain("isRefreshableHomeFragmentKind");
     expect(homeStaticEntrySource).toContain("primeBootstrapRequest");
@@ -577,7 +589,13 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).not.toContain("startCollabEntry");
     expect(homeStaticEntrySource).not.toContain("startDemoEntry");
     expect(homeStaticEntrySource).toContain(
+      "liveDoc.addEventListener?.('DOMContentLoaded', domReadyHandler, { once: true })",
+    );
+    expect(homeStaticEntrySource).toContain(
       "liveWin.addEventListener('load', loadHandler, { once: true })",
+    );
+    expect(homeStaticEntrySource).not.toContain(
+      "if (liveDoc.readyState === 'complete')",
     );
     expect(homeStaticEntrySource).not.toContain("requestIdleCallback");
     expect(homeStaticEntrySource).not.toContain("'scroll'");

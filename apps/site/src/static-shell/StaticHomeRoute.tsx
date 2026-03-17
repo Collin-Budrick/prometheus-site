@@ -17,6 +17,8 @@ import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
@@ -32,6 +34,7 @@ import {
   buildFragmentHeightPlanSignature,
   buildFragmentHeightVersionSignature,
   readFragmentStableHeight,
+  resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight,
   serializeFragmentHeightLayout,
   type FragmentHeightLayout
@@ -74,6 +77,8 @@ type StaticHomeRenderedCard = {
   reservedHeight: number
   fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
   version: string | undefined
+  desktopWidthBucket: string | null
+  mobileWidthBucket: string | null
   patchState: 'ready' | 'pending'
   revealPhase: 'queued' | 'holding' | 'visible'
   lcpStable: boolean
@@ -173,6 +178,16 @@ export const buildStaticHomeRouteState = ({
         versionSignature
       })
     }) ?? DEFAULT_RESERVED_CARD_HEIGHT
+    const desktopWidthBucket =
+      resolveFragmentHeightWidthBucket({
+        layout: entry.layout,
+        viewport: 'desktop'
+      }) ?? null
+    const mobileWidthBucket =
+      resolveFragmentHeightWidthBucket({
+        layout: entry.layout,
+        viewport: 'mobile'
+      }) ?? null
 
     return {
       id: entry.id,
@@ -186,6 +201,8 @@ export const buildStaticHomeRouteState = ({
       fragmentKind,
       reservedHeight,
       version: fragment?.cacheUpdatedAt ? `${fragment.cacheUpdatedAt}` : undefined,
+      desktopWidthBucket,
+      mobileWidthBucket,
       patchState,
       revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding',
       lcpStable
@@ -296,6 +313,12 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                   {...{
                     [STATIC_FRAGMENT_CARD_ATTR]: 'true',
                     [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
+                    [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
+                      card.desktopWidthBucket ?? card.mobileWidthBucket ?? undefined,
+                    [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
+                      card.mobileWidthBucket && card.mobileWidthBucket !== card.desktopWidthBucket
+                        ? card.mobileWidthBucket
+                        : undefined,
                     [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,

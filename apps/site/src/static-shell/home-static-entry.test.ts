@@ -266,6 +266,36 @@ afterEach(() => {
 })
 
 describe('installHomeStaticEntry', () => {
+  it('installs immediately and primes bootstrap without waiting for load when the home root already exists', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    doc.readyState = 'loading'
+    const manualGate = createManualGate()
+    let bootstrapPrimeCount = 0
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      loadBootstrapRuntime: async () => ({
+        bootstrapStaticHome: async () => undefined
+      }),
+      primeBootstrap: async () => {
+        bootstrapPrimeCount += 1
+        return new Uint8Array([1])
+      }
+    })
+
+    await flushMicrotasks()
+
+    expect(bootstrapPrimeCount).toBe(1)
+    expect(win.listeners.has('load')).toBe(false)
+    expect(doc.listeners.has('DOMContentLoaded')).toBe(false)
+    expect(win.listeners.has('pointerdown')).toBe(true)
+
+    cleanup()
+  })
+
   it('starts the universal widget runtime after the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
