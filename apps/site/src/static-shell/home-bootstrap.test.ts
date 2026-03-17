@@ -16,6 +16,7 @@ import {
 } from "./home-bootstrap";
 import {
   bindHomeDemoActivation,
+  resetHomeDemoActivations,
   type HomeDemoController,
 } from "./home-demo-controller";
 import { HOME_DEMO_OBSERVE_EVENT } from "./home-demo-observe-event";
@@ -51,6 +52,10 @@ class MockDemoElement {
 
   setAttribute(name: string, value: string) {
     this.attrs.set(name, value);
+  }
+
+  removeAttribute(name: string) {
+    this.attrs.delete(name);
   }
 
   closest() {
@@ -254,6 +259,7 @@ const createController = (): HomeDemoController => ({
   assets: normalizeHomeDemoAssetMap(),
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
+  activationEpoch: 0,
   destroyed: false,
 });
 
@@ -602,6 +608,58 @@ describe("bindHomeDemoActivation", () => {
 
     expect(activationCount).toBe(1);
     expect(taskQueue.pendingCount()).toBe(0);
+  });
+
+  it("reactivates an already-mounted demo root after the language changes", async () => {
+    const taskQueue = createTaskQueue();
+    const activations: Array<{ kind: string; lang: string }> = [];
+    const cleanups: string[] = [];
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const manager = bindHomeDemoActivation({
+      controller,
+      scheduleTask: taskQueue.scheduleTask,
+      ObserverImpl:
+        MockIntersectionObserver as unknown as typeof IntersectionObserver,
+      activate: async ({ kind, root }) => {
+        const activeLang = controller.lang;
+        (root as unknown as MockDemoElement).setAttribute(
+          "data-home-demo-active",
+          "true",
+        );
+        activations.push({ kind, lang: activeLang });
+        return {
+          cleanup: () => cleanups.push(`cleanup:${kind}:${activeLang}`),
+        };
+      },
+    });
+
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
+    const observer = MockIntersectionObserver.instances[0];
+    observer?.emit([
+      { target: planner as unknown as Element, isIntersecting: true },
+    ]);
+    await taskQueue.flushNext();
+
+    expect(activations).toEqual([{ kind: "planner", lang: "en" }]);
+    expect(planner.getAttribute("data-home-demo-active")).toBe("true");
+
+    controller.lang = "ja";
+    resetHomeDemoActivations(controller);
+
+    expect(cleanups).toEqual(["cleanup:planner:en"]);
+    expect(planner.getAttribute("data-home-demo-active")).toBeNull();
+
+    manager.observeWithin(new MockRoot([planner]) as unknown as ParentNode);
+    observer?.emit([
+      { target: planner as unknown as Element, isIntersecting: true },
+    ]);
+    await taskQueue.flushNext();
+
+    expect(activations).toEqual([
+      { kind: "planner", lang: "en" },
+      { kind: "planner", lang: "ja" },
+    ]);
   });
 
   it("activates demos as soon as they intersect at the zero threshold", async () => {
@@ -1023,6 +1081,36 @@ describe("scheduleHomePostLcpTasks", () => {
     cleanup();
     expect(manualGate.cleanupCount()).toBe(1);
     expect(win.listenerCount("pageshow")).toBe(0);
+  });
+
+  it("starts the deferred home demo entry only after the LCP gate resolves", async () => {
+    const manualGate = createManualLcpGate();
+    const win = new MockDeferredWindow();
+    const doc = new MockDeferredDocument();
+    const demoEntryCalls: string[] = [];
+    const cleanup = scheduleHomePostLcpTasks({
+      controller: createHomeBootstrapController(),
+      lcpGate: manualGate.gate,
+      homeFragmentHydration: {
+        schedulePreviewRefreshes: () => undefined,
+        retryPending: () => undefined,
+      },
+      win: win as never,
+      doc: doc as never,
+      startHomeDemoEntry: async () => {
+        demoEntryCalls.push("start");
+      },
+      refreshAuth: async () => undefined,
+    });
+
+    await flushMicrotasks();
+    expect(demoEntryCalls).toEqual([]);
+
+    manualGate.resolve();
+    await flushMicrotasks();
+
+    expect(demoEntryCalls).toEqual(["start"]);
+    cleanup();
   });
 
   it("runs auth revalidation on first user intent after preview refreshes start", async () => {

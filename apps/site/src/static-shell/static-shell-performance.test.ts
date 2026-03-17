@@ -367,6 +367,7 @@ describe("static shell performance invariants", () => {
     expect(homeDockAuthRuntimeSource).toContain("loadClientAuthSession()");
     expect(homeDockAuthRuntimeSource).toContain("writeStaticShellSeed({ isAuthenticated })");
     expect(bootstrapPostLcpRuntimeSource).toContain("createHomeFirstLcpGate()");
+    expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeDemoEntryRuntime()");
     expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeDockAuthRuntime()");
     expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeUiControlsRuntime()");
     expect(bootstrapPostLcpRuntimeSource).toContain("loadHomeLanguageRuntime()");

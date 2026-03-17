@@ -8,7 +8,11 @@ import type {
   UiCopy,
   WasmRendererDemoCopy
 } from '../lang'
-import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../fragment/widget-markup'
+import {
+  buildFragmentWidgetId,
+  createFragmentWidgetMarkerNode,
+  type FragmentWidgetPriority
+} from '../fragment/widget-markup'
 
 export type HomeStaticCopyBundle = {
   ui: Pick<UiCopy, 'demoActivate' | 'homeIntroMarkdown'>
@@ -31,6 +35,11 @@ export type HomeStaticRenderOptions = {
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 type DemoWidgetKind = 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island'
 type DemoRenderVariant = 'preview' | 'active'
+type DemoWidgetNodeOptions = {
+  fragmentId?: string
+  widgetId?: string
+  priority?: FragmentWidgetPriority
+}
 
 const HOME_FRAGMENT_KIND_BY_ID: Record<string, HomeStaticFragmentKind> = {
   'fragment://page/home/manifest@v1': 'manifest',
@@ -56,6 +65,33 @@ const normalizeHeaderMeta = (value?: string | string[]) => {
 const resolveFragmentText = (copy: HomeStaticCopyBundle, value: string) =>
   copy.fragments[value] ?? value
 
+const TRANSLATABLE_FRAGMENT_ATTRS = new Set([
+  'alt',
+  'aria-label',
+  'data-label',
+  'data-pill',
+  'placeholder',
+  'title'
+])
+
+const localizeFragmentAttrs = (
+  copy: HomeStaticCopyBundle,
+  attrs?: Record<string, string>
+) => {
+  if (!attrs) {
+    return attrs
+  }
+
+  return Object.fromEntries(
+    Object.entries(attrs).map(([key, value]) => [
+      key,
+      TRANSLATABLE_FRAGMENT_ATTRS.has(key) || key.startsWith('data-collab-status-')
+        ? resolveFragmentText(copy, value)
+        : value
+    ])
+  )
+}
+
 const joinFragmentSentences = (copy: HomeStaticCopyBundle, values: string[]) =>
   values
     .map((value) => resolveFragmentText(copy, value).trim())
@@ -75,6 +111,12 @@ const demoShellAttrs = (kind: DemoKind) => ({
 })
 
 const HOME_PREVIEW_DEMO_TAGS = new Set(['planner-demo', 'wasm-renderer-demo', 'react-binary-demo', 'preact-island'])
+const HOME_PREVIEW_DEMO_WIDGETS = new Set<DemoWidgetKind>([
+  'planner-demo',
+  'wasm-renderer-demo',
+  'react-binary-demo',
+  'preact-island'
+])
 const initialReactBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -114,44 +156,49 @@ const toDemoWidgetKind = (kind: DemoKind): DemoWidgetKind => {
 }
 
 const buildDemoWidgetNode = (
-  fragmentId: string | undefined,
   kind: DemoKind,
   shell: RenderNode,
+  options: DemoWidgetNodeOptions = {},
   props?: Record<string, unknown>
 ) =>
   createFragmentWidgetMarkerNode({
     kind: toDemoWidgetKind(kind),
-    id: buildFragmentWidgetId(fragmentId ?? 'fragment://page/home/unknown@v1', toDemoWidgetKind(kind), 'shell'),
-    priority: 'visible',
+    id:
+      options.widgetId ??
+      buildFragmentWidgetId(
+        options.fragmentId ?? 'fragment://page/home/unknown@v1',
+        toDemoWidgetKind(kind),
+        'shell'
+      ),
+    priority: options.priority ?? 'visible',
     props,
     shell
   })
 
-const buildPlannerPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =>
+const buildPlannerPreviewNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) =>
   buildDemoWidgetNode(
-    fragmentId,
     'planner',
     buildCompactDemoShellNode('planner', copy.planner.title, copy.planner.steps[0]?.hint || copy.planner.waiting, [
       copy.planner.labels.dependencies,
       copy.planner.labels.cache,
       copy.planner.labels.runtime
-    ])
+    ]),
+    options
   )
 
-const buildWasmPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =>
+const buildWasmPreviewNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) =>
   buildDemoWidgetNode(
-    fragmentId,
     'wasm-renderer',
     buildCompactDemoShellNode('wasm-renderer', copy.wasmRenderer.title, copy.wasmRenderer.subtitle, [
       copy.wasmRenderer.footer.edgeSafe,
       copy.wasmRenderer.footer.deterministic,
       copy.wasmRenderer.footer.htmlUntouched
-    ])
+    ]),
+    options
   )
 
-const buildPlannerActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =>
+const buildPlannerActiveNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) =>
   buildDemoWidgetNode(
-    fragmentId,
     'planner',
     h(
       'div',
@@ -246,16 +293,16 @@ const buildPlannerActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string)
           )
         )
       ]
-    )
+    ),
+    options
   )
 
-const buildWasmActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string) => {
+const buildWasmActiveNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) => {
   const inputA = 128
   const inputB = 256
   const metrics = computeWasmMetrics(inputA, inputB)
   const progress = clamp(metrics.hotPath, 0, 100)
   return buildDemoWidgetNode(
-    fragmentId,
     'wasm-renderer',
     h(
       'div',
@@ -335,50 +382,60 @@ const buildWasmActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =>
           h('span', { class: 'wasm-demo-chip' }, [t(copy.wasmRenderer.footer.htmlUntouched)])
         ])
       ]
-    )
+    ),
+    options
   )
 }
 
-const buildReactBinaryPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string) => {
+const buildReactBinaryPreviewNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNodeOptions = {}) => {
   const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
   return buildDemoWidgetNode(
-    fragmentId,
     'react-binary',
     buildCompactDemoShellNode('react-binary', copy.reactBinary.title, stage.hint, [
       stage.label,
       copy.reactBinary.footer.hydrationSkipped,
       copy.reactBinary.footer.binaryStream
-    ])
+    ]),
+    options
   )
 }
 
-const buildPreactIslandPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string, label?: string) =>
-  buildDemoWidgetNode(
-    fragmentId,
+const buildPreactIslandPreviewNode = (
+  copy: HomeStaticCopyBundle,
+  options: DemoWidgetNodeOptions = {},
+  label?: string
+) => {
+  const resolvedLabel = label || copy.preactIsland.label
+  const persistedLabel = resolvedLabel && (Boolean(label) || Boolean(options.widgetId))
+    ? { label: resolvedLabel }
+    : undefined
+
+  return buildDemoWidgetNode(
     'preact-island',
     buildCompactDemoShellNode(
       'preact-island',
-      label || copy.preactIsland.label,
+      resolvedLabel,
       copy.preactIsland.activeSub,
       [copy.preactIsland.countdown, '1:00', copy.preactIsland.ready],
-      label ? { label } : undefined
+      persistedLabel
     ),
-    label ? { label } : undefined
+    options,
+    persistedLabel
   )
+}
 
 const buildActiveDemoNode = (
   copy: HomeStaticCopyBundle,
   tag: string,
-  fragmentId?: string,
+  options: DemoWidgetNodeOptions = {},
   attrs?: Record<string, string>
 ): RenderNode | null => {
-  if (tag === 'planner-demo') return buildPlannerActiveNode(copy, fragmentId)
-  if (tag === 'wasm-renderer-demo') return buildWasmActiveNode(copy, fragmentId)
-  if (tag === 'preact-island') return buildPreactIslandPreviewNode(copy, fragmentId, attrs?.label)
+  if (tag === 'planner-demo') return buildPlannerActiveNode(copy, options)
+  if (tag === 'wasm-renderer-demo') return buildWasmActiveNode(copy, options)
+  if (tag === 'preact-island') return buildPreactIslandPreviewNode(copy, options, attrs?.label)
   if (tag === 'react-binary-demo') {
     const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
     return buildDemoWidgetNode(
-      fragmentId,
       'react-binary',
       h(
         'div',
@@ -431,11 +488,11 @@ const buildActiveDemoNode = (
               [
                 h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.reactTitle)]),
                 h('div', { class: 'react-binary-node-tree' }, [
-                  h('div', { class: 'react-binary-node' }, [t('Fragment')]),
-                  h('div', { class: 'react-binary-node is-child' }, [t('Card')]),
-                  h('div', { class: 'react-binary-node is-child' }, [t('Title')]),
-                  h('div', { class: 'react-binary-node is-child' }, [t('Copy')]),
-                  h('div', { class: 'react-binary-node is-child' }, [t('Badge')])
+                  h('div', { class: 'react-binary-node' }, [t(resolveFragmentText(copy, 'Fragment'))]),
+                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Card'))]),
+                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Title'))]),
+                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Copy'))]),
+                  h('div', { class: 'react-binary-node is-child' }, [t(resolveFragmentText(copy, 'Badge'))])
                 ]),
                 h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.reactCaption)])
               ]
@@ -480,11 +537,45 @@ const buildActiveDemoNode = (
             h('span', { class: 'react-binary-chip' }, [t(copy.reactBinary.footer.binaryStream)])
           ])
         ]
-      )
+      ),
+      options
     )
   }
   return null
 }
+
+const toFragmentWidgetPriority = (value?: string): FragmentWidgetPriority | undefined => {
+  if (value === 'critical' || value === 'visible' || value === 'deferred') {
+    return value
+  }
+  return undefined
+}
+
+const getDemoWidgetKind = (node: RenderNode): DemoWidgetKind | null => {
+  if (node.type !== 'element') {
+    return null
+  }
+
+  const widgetKind = node.attrs?.['data-fragment-widget']
+  if (typeof widgetKind !== 'string' || !HOME_PREVIEW_DEMO_WIDGETS.has(widgetKind as DemoWidgetKind)) {
+    return null
+  }
+
+  return widgetKind as DemoWidgetKind
+}
+
+const getDemoWidgetNodeOptions = (
+  node: RenderNode,
+  fragmentId?: string
+): DemoWidgetNodeOptions => ({
+  fragmentId,
+  widgetId: node.type === 'element' ? node.attrs?.['data-fragment-widget-id'] : undefined,
+  priority: node.type === 'element' ? toFragmentWidgetPriority(node.attrs?.['data-fragment-widget-priority']) : undefined
+})
+
+const isHomePreviewDemoBoundaryNode = (node: RenderNode) =>
+  node.type === 'element' &&
+  (HOME_PREVIEW_DEMO_TAGS.has(node.tag ?? '') || getDemoWidgetKind(node) !== null)
 
 const getShellHeader = (
   fragmentId: string,
@@ -525,7 +616,6 @@ const buildDemoShellNode = (
 ) => {
   const shellSummary = summary || header.description || ''
   return buildDemoWidgetNode(
-    fragmentId,
     kind,
     h('div', demoShellAttrs(kind), [
       ...(normalizeHeaderMeta(header.metaLine)
@@ -536,7 +626,8 @@ const buildDemoShellNode = (
       h('div', { class: 'home-fragment-shell-footer' }, [
         h('div', { class: 'home-fragment-shell-meta' }, [t(joinMeta(summaryMeta))])
       ])
-    ])
+    ]),
+    { fragmentId }
   )
 }
 
@@ -774,7 +865,7 @@ const buildHomeStaticPreviewNode = (
 
   for (const child of children) {
     previewChildren.push(replaceDemoNodes(child, copy, fragmentId, 'preview'))
-    if (child.type === 'element' && typeof child.tag === 'string' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
+    if (isHomePreviewDemoBoundaryNode(child)) {
       break
     }
   }
@@ -799,7 +890,7 @@ const buildHomeStaticActiveShellNode = (
 
   for (const child of children) {
     activeChildren.push(replaceDemoNodes(child, copy, fragmentId, 'active'))
-    if (child.type === 'element' && typeof child.tag === 'string' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
+    if (isHomePreviewDemoBoundaryNode(child)) {
       break
     }
   }
@@ -816,22 +907,36 @@ const replaceDemoNodes = (
   fragmentId?: string,
   variant: DemoRenderVariant = 'preview'
 ): RenderNode => {
-  if (node.type !== 'element') return { ...node }
+  if (node.type !== 'element') {
+    return {
+      ...node,
+      text: typeof node.text === 'string' ? resolveFragmentText(copy, node.text) : node.text
+    }
+  }
+
+  const widgetKind = getDemoWidgetKind(node)
+  const widgetOptions = widgetKind ? getDemoWidgetNodeOptions(node, fragmentId) : { fragmentId }
 
   if (variant === 'active') {
-    const activeNode = buildActiveDemoNode(copy, node.tag ?? '', fragmentId, node.attrs)
+    const activeNode = buildActiveDemoNode(copy, widgetKind ?? node.tag ?? '', widgetOptions, node.attrs)
     if (activeNode) {
       return activeNode
     }
   }
 
-  if (node.tag === 'planner-demo') return buildPlannerPreviewNode(copy, fragmentId)
-  if (node.tag === 'wasm-renderer-demo') return buildWasmPreviewNode(copy, fragmentId)
-  if (node.tag === 'react-binary-demo') return buildReactBinaryPreviewNode(copy, fragmentId)
-  if (node.tag === 'preact-island') return buildPreactIslandPreviewNode(copy, fragmentId, node.attrs?.label)
+  if (widgetKind === 'planner-demo') return buildPlannerPreviewNode(copy, widgetOptions)
+  if (widgetKind === 'wasm-renderer-demo') return buildWasmPreviewNode(copy, widgetOptions)
+  if (widgetKind === 'react-binary-demo') return buildReactBinaryPreviewNode(copy, widgetOptions)
+  if (widgetKind === 'preact-island') return buildPreactIslandPreviewNode(copy, widgetOptions)
+
+  if (node.tag === 'planner-demo') return buildPlannerPreviewNode(copy, widgetOptions)
+  if (node.tag === 'wasm-renderer-demo') return buildWasmPreviewNode(copy, widgetOptions)
+  if (node.tag === 'react-binary-demo') return buildReactBinaryPreviewNode(copy, widgetOptions)
+  if (node.tag === 'preact-island') return buildPreactIslandPreviewNode(copy, widgetOptions, node.attrs?.label)
 
   return {
     ...node,
+    attrs: localizeFragmentAttrs(copy, node.attrs),
     children: node.children?.map((child) => replaceDemoNodes(child, copy, fragmentId, variant))
   }
 }

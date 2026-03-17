@@ -17,7 +17,7 @@ const makeText = (translate: (value: string, params?: Record<string, string | nu
 
 const renderHomeCopyBlock = (text: ReturnType<typeof makeText>, lead: string, detail?: string) =>
   h('p', { class: 'home-fragment-copy' }, [
-    h('span', { class: 'home-fragment-copy-lead-inline' }, [text(`${lead} `)]),
+    h('span', { class: 'home-fragment-copy-lead-inline' }, [text(lead)]),
     ...(detail ? [text(detail)] : [])
   ])
 
@@ -27,7 +27,7 @@ const renderManifestoCopyBlock = (
   detail: string
 ) =>
   h('p', { class: 'home-manifest-copy' }, [
-    h('span', { class: 'home-manifest-copy-lead-inline' }, [text(`${lead} `)]),
+    h('span', { class: 'home-manifest-copy-lead-inline' }, [text(lead)]),
     text(detail)
   ])
 
@@ -102,9 +102,9 @@ const planner: FragmentDefinition = {
         'planner-demo',
         renderHomeDemoCompactShell(
           'planner',
-          text(t('Planner')),
-          text(t('Resolve the dependency graph.')),
-          text(t('Dependencies \u00b7 Cache \u00b7 Runtime'))
+          text('Planner'),
+          text('Resolve the dependency graph.'),
+          text('Dependencies \u00b7 Cache \u00b7 Runtime')
         )
       ),
       renderHomeMetricChips(text, [
@@ -143,16 +143,16 @@ const ledger: FragmentDefinition = {
         'wasm-renderer-demo',
         renderHomeDemoCompactShell(
           'wasm-renderer',
-          text(t('Wasm renderer')),
-          text(t('Binary bytes stay deterministic.')),
-          text(t('Edge-safe \u00b7 Deterministic \u00b7 HTML untouched'))
+          text('Wasm renderer'),
+          text('Binary bytes stay deterministic.'),
+          text('Edge-safe \u00b7 Deterministic \u00b7 HTML untouched')
         )
       ),
       renderHomeMetricChips(text, [
-        `Burst throughput ${burst} op/s`,
-        `Hot-path score ${hotPath} pts`,
-        'Cache TTL 30s',
-        'Stale TTL 120s'
+        t('Burst throughput {{count}} op/s', { count: burst }),
+        t('Hot-path score {{count}} pts', { count: hotPath }),
+        t('Cache TTL {{count}}s', { count: baseMeta.ttl }),
+        t('Stale TTL {{count}}s', { count: baseMeta.staleTtl })
       ])
     ])
   }
@@ -179,9 +179,9 @@ const island: FragmentDefinition = {
         'preact-island',
         renderHomeDemoCompactShell(
           'preact-island',
-          text(t('Isolated island')),
-          text(t('Counting down.')),
-          text(t('Countdown \u00b7 1:00 \u00b7 Ready')),
+          text('Isolated island'),
+          text('Counting down.'),
+          text('Countdown \u00b7 1:00 \u00b7 Ready'),
           { label: t('Isolated island') }
         ),
         { label: t('Isolated island') }
@@ -212,9 +212,9 @@ const reactFragment: FragmentDefinition = {
         'react-binary-demo',
         renderHomeDemoCompactShell(
           'react-binary',
-          text(t('React to binary')),
-          text(t('React nodes collapse into binary frames.')),
-          text(t('React \u00b7 Hydration skipped \u00b7 Binary stream'))
+          text('React to binary'),
+          text('React nodes collapse into binary frames.'),
+          text('React \u00b7 Hydration skipped \u00b7 Binary stream')
         )
       ),
       h('div', { class: 'badge' }, [text('RSC-ready')])

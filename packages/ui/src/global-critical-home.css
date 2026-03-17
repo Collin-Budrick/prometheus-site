@@ -569,6 +569,7 @@ body {
 .home-fragment-copy-lead {
   color: rgb(var(--ink-soft));
   font-weight: 500;
+  margin-inline-end: 0.25em;
 }
 
 .home-demo-compact {

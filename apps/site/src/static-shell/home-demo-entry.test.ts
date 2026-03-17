@@ -65,6 +65,22 @@ type MockWindow = Window & {
   >;
 };
 
+class MockActiveDemoRoot {
+  private readonly attrs = new Map<string, string>();
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value);
+  }
+
+  removeAttribute(name: string) {
+    this.attrs.delete(name);
+  }
+}
+
 const createBootstrapDocument = () =>
   new MockDocument(
     new Map([
@@ -105,6 +121,7 @@ const createController = (): HomeDemoController => ({
   assets: normalizeHomeDemoAssetMap(),
   demoRenders: new Map(),
   pendingDemoRoots: new Set(),
+  activationEpoch: 0,
   destroyed: false,
 });
 
@@ -255,6 +272,68 @@ describe("installHomeDemoEntry", () => {
     expect(binding.controller.assets.planner.moduleHref).toBe(
       "/build/home-demo-planner-runtime.js",
     );
+
+    cleanup();
+  });
+
+  it("resets active demos before re-observing the home page after a language swap", () => {
+    const win = {} as MockWindow;
+    const doc = createBootstrapDocument();
+    const taskQueue = createScheduledTaskQueue();
+    const observedRoots: ParentNode[] = [];
+    const activeRoot = new MockActiveDemoRoot();
+    activeRoot.setAttribute("data-home-demo-active", "true");
+    let cleanupCount = 0;
+    const controller = createController();
+    controller.demoRenders.set(activeRoot as unknown as Element, {
+      cleanup: () => {
+        cleanupCount += 1;
+      },
+    });
+    const binding = setHomeDemoControllerBinding(
+      {
+        controller,
+        manager: {
+          observeWithin: (root) => observedRoots.push(root),
+          destroy: () => undefined,
+        } satisfies HomeDemoActivationManager,
+      },
+      win,
+    );
+
+    const cleanup = installHomeDemoEntry({
+      win,
+      doc: doc as never,
+      scheduleTask: taskQueue.scheduleTask as never,
+    });
+
+    taskQueue.runNext();
+
+    doc.setScriptText(
+      STATIC_HOME_DATA_SCRIPT_ID,
+      JSON.stringify({
+        path: "/",
+        lang: "ja",
+        fragmentOrder: [],
+        fragmentVersions: {},
+        languageSeed: {},
+        homeDemoAssets: {},
+      }),
+    );
+
+    dispatchHomeDemoObserveEvent({
+      doc: doc as never,
+    });
+
+    expect(binding.controller.lang).toBe("ja");
+    expect(binding.controller.activationEpoch).toBe(1);
+    expect(binding.controller.demoRenders.size).toBe(0);
+    expect(activeRoot.getAttribute("data-home-demo-active")).toBeNull();
+    expect(cleanupCount).toBe(1);
+    expect(observedRoots).toEqual([
+      doc as unknown as ParentNode,
+      doc as unknown as ParentNode,
+    ]);
 
     cleanup();
   });

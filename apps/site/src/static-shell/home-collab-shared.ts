@@ -39,6 +39,9 @@ export const resolveHomeCollabStatusCopy = (
     error: 'Realtime unavailable'
   } as const)[state]
 
+export const resolveHomeCollabIdleStatusCopy = (root: HomeCollabRootLike) =>
+  root.getAttribute('data-collab-status-idle') ?? HOME_COLLAB_DEFERRED_STATUS_COPY
+
 export const setHomeCollabStatus = (
   root: HomeCollabRootLike,
   status: HTMLElement | null,
@@ -51,7 +54,9 @@ export const setHomeCollabStatus = (
 
   status.dataset.homeCollabStatus = nextState
   status.textContent =
-    nextState === 'idle' ? HOME_COLLAB_DEFERRED_STATUS_COPY : resolveHomeCollabStatusCopy(root, nextState)
+    nextState === 'idle'
+      ? resolveHomeCollabIdleStatusCopy(root)
+      : resolveHomeCollabStatusCopy(root, nextState)
 }
 
 export const setHomeCollabTextareaState = ({

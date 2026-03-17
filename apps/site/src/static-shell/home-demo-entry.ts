@@ -1,6 +1,7 @@
 import { primeTrustedTypesPolicies } from "../security/client";
 import {
   bindHomeDemoActivation,
+  resetHomeDemoActivations,
   type HomeDemoController,
 } from "./home-demo-controller";
 import {
@@ -44,23 +45,23 @@ type HomeDemoObserveDocument = Pick<
 
 const destroyHomeDemoController = (controller: HomeDemoController) => {
   controller.destroyed = true;
-  for (const result of controller.demoRenders.values()) {
-    result.cleanup();
-  }
-  controller.demoRenders.clear();
-  controller.pendingDemoRoots.clear();
+  resetHomeDemoActivations(controller);
 };
 
 const syncHomeDemoController = (
   controller: HomeDemoController,
   data: HomeStaticBootstrapData,
 ) => {
+  const langChanged = controller.lang !== data.lang;
   controller.path = data.currentPath;
   controller.lang = data.lang;
   controller.fragmentOrder = data.fragmentOrder;
   controller.planSignature = data.planSignature ?? "";
   controller.versionSignature = data.versionSignature ?? "";
   controller.assets = normalizeHomeDemoAssetMap(data.homeDemoAssets);
+  if (langChanged) {
+    resetHomeDemoActivations(controller);
+  }
 };
 
 const bindHomeDemoObserveRequests = ({
@@ -182,6 +183,7 @@ export const installHomeDemoEntry = ({
     assets: normalizeHomeDemoAssetMap(data.homeDemoAssets),
     demoRenders: new Map(),
     pendingDemoRoots: new Set(),
+    activationEpoch: 0,
     destroyed: false,
   };
 

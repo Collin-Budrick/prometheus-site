@@ -494,9 +494,15 @@ const routeSeed = {
   }
 }
 
-const installBootstrapScripts = (doc: MockDocument) => {
-  doc.setScript(STATIC_SHELL_SEED_SCRIPT_ID, shellSeed)
-  doc.setScript(STATIC_HOME_DATA_SCRIPT_ID, routeSeed)
+const installBootstrapScripts = (
+  doc: MockDocument,
+  options: {
+    shellSeed?: Record<string, unknown>
+    routeSeed?: Record<string, unknown>
+  } = {}
+) => {
+  doc.setScript(STATIC_SHELL_SEED_SCRIPT_ID, { ...shellSeed, ...(options.shellSeed ?? {}) })
+  doc.setScript(STATIC_HOME_DATA_SCRIPT_ID, { ...routeSeed, ...(options.routeSeed ?? {}) })
 }
 
 const originalGlobals = {
@@ -591,6 +597,135 @@ describe('home-demo-activate', () => {
       'React fragment',
       'Binary stream',
       'Qwik DOM'
+    ])
+
+    result.cleanup()
+  })
+
+  it('reapplies localized react-binary copy when the same root is activated after a language swap', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const englishResult = await activateHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    expect(root.querySelector('.react-binary-title')?.textContent).toBe('Binary authoring')
+    expect(root.querySelector('.react-binary-steps')?.getAttribute('aria-label')).toBe('Compilation stages')
+    expect(root.querySelector('.react-binary-bits')?.getAttribute('aria-label')).toBe('Binary tree stream')
+
+    englishResult.cleanup()
+
+    doc.documentElement.lang = 'ja-JP'
+    installBootstrapScripts(doc, {
+      shellSeed: {
+        lang: 'ja'
+      },
+      routeSeed: {
+        lang: 'ja',
+        languageSeed: {
+          ...routeSeed.languageSeed,
+          demos: {
+            ...routeSeed.languageSeed.demos,
+            reactBinary: {
+              ...routeSeed.languageSeed.demos.reactBinary,
+              title: 'バイナリコンパイルデモ',
+              actions: {
+                react: 'バイナリにコンパイル',
+                binary: 'ストリームを確認',
+                qwik: 'DOM を再生'
+              },
+              stages: [
+                {
+                  id: 'react',
+                  label: 'React フラグメント',
+                  hint: 'React フラグメントはサーバーのみでレンダリングされます。'
+                },
+                {
+                  id: 'binary',
+                  label: 'バイナリストリーム',
+                  hint: 'バイナリツリーをシリアライズします。'
+                },
+                {
+                  id: 'qwik',
+                  label: 'Qwik DOM',
+                  hint: 'ハイドレーションなしで再生します。'
+                }
+              ],
+              ariaStages: 'コンパイル段階',
+              panels: {
+                reactTitle: 'React フラグメント',
+                binaryTitle: 'バイナリストリーム',
+                qwikTitle: 'Qwik DOM',
+                reactCaption: 'サーバー専用レンダー。',
+                binaryCaption: 'バイナリツリー出力。',
+                qwikCaption: 'DOM 再生。'
+              },
+              footer: {
+                hydrationSkipped: 'ハイドレーションを省略',
+                binaryStream: 'バイナリツリーストリーム'
+              }
+            }
+          }
+        }
+      }
+    })
+
+    const japaneseResult = await activateHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    expect(root.querySelector('.react-binary-title')?.textContent).toBe('バイナリコンパイルデモ')
+    expect(root.querySelector('.react-binary-action')?.textContent).toBe('バイナリにコンパイル')
+    expect(root.querySelector('.react-binary-status')?.textContent).toBe(
+      'React フラグメントはサーバーのみでレンダリングされます。'
+    )
+    expect(root.querySelector('.react-binary-steps')?.getAttribute('aria-label')).toBe('コンパイル段階')
+    expect(root.querySelector('.react-binary-bits')?.getAttribute('aria-label')).toBe('バイナリツリーストリーム')
+
+    japaneseResult.cleanup()
+  })
+
+  it('localizes react-binary node labels from fragment text copy', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc, {
+      routeSeed: {
+        ...routeSeed,
+        languageSeed: {
+          ...routeSeed.languageSeed,
+          fragments: {
+            Fragment: 'Localized Fragment Node',
+            Card: 'Localized Card Node',
+            Title: 'Localized Title Node',
+            Copy: 'Localized Copy Node',
+            Badge: 'Localized Badge Node'
+          }
+        }
+      }
+    })
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.setAttribute('data-home-preview', 'compact')
+
+    const result = await activateHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    expect(root.querySelectorAll('.react-binary-node').map((node) => node.textContent)).toEqual([
+      'Localized Fragment Node',
+      'Localized Card Node',
+      'Localized Title Node',
+      'Localized Copy Node',
+      'Localized Badge Node'
     ])
 
     result.cleanup()

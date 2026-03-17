@@ -24,6 +24,7 @@ export type HomeDemoController = HomeDemoRouteContext & {
   assets: HomeDemoAssetMap
   demoRenders: Map<Element, HomeDemoActivationResult>
   pendingDemoRoots: Set<Element>
+  activationEpoch: number
   destroyed: boolean
 }
 
@@ -85,6 +86,23 @@ const resolveHomeDemoKind = (root: Element) => {
 
 const isConnectedHomeDemoRoot = (root: Element) =>
   (root as Element & { isConnected?: boolean }).isConnected !== false
+
+const clearHomeDemoActiveMarker = (root: Element) => {
+  root.removeAttribute('data-home-demo-active')
+}
+
+export const resetHomeDemoActivations = (controller: HomeDemoController) => {
+  controller.activationEpoch += 1
+  Array.from(controller.demoRenders.entries()).forEach(([root, result]) => {
+    result.cleanup()
+    clearHomeDemoActiveMarker(root)
+  })
+  controller.demoRenders.clear()
+  controller.pendingDemoRoots.forEach((root) => {
+    clearHomeDemoActiveMarker(root)
+  })
+  controller.pendingDemoRoots.clear()
+}
 
 const shouldSkipHomeDemoRoot = (controller: HomeDemoController, root: Element) =>
   controller.destroyed ||
@@ -182,6 +200,7 @@ const activateHomeDemoRoot = async (
   const kind = resolveHomeDemoKind(demoRoot)
   if (!kind) return false
 
+  const activationEpoch = controller.activationEpoch
   controller.pendingDemoRoots.add(demoRoot)
   markHomeDemoPerformance(`prom:home-demo:activate-start:${kind}`, { detailed: true })
 
@@ -192,7 +211,11 @@ const activateHomeDemoRoot = async (
       props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
     })
 
-    if (controller.destroyed || !isConnectedHomeDemoRoot(demoRoot)) {
+    if (
+      controller.destroyed ||
+      controller.activationEpoch !== activationEpoch ||
+      !isConnectedHomeDemoRoot(demoRoot)
+    ) {
       result.cleanup()
       return false
     }

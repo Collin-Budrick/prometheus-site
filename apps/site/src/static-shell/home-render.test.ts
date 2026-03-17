@@ -245,6 +245,48 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).not.toContain('Burst throughput')
   })
 
+  it('localizes active-shell fragment text nodes and react node labels from fragment copy', () => {
+    const localizedCopy: HomeStaticCopyBundle = {
+      ...copy,
+      fragments: {
+        ...copy.fragments,
+        'live collaborative text': 'localized collab meta',
+        'Shared text for everyone on the page.': 'localized dock title',
+        'Anyone on the page can edit the same text box.': 'localized dock sentence',
+        Fragment: 'localized fragment node',
+        Card: 'localized card node',
+        Title: 'localized title node',
+        Copy: 'localized copy node',
+        Badge: 'localized badge node'
+      }
+    }
+
+    const html = renderHomeStaticFragmentHtml(
+      h('section', null, [
+        h('div', { class: 'meta-line' }, [t('live collaborative text')]),
+        h('h2', null, [t('Shared text for everyone on the page.')]),
+        h('p', null, [t('Anyone on the page can edit the same text box.')]),
+        { type: 'element', tag: 'react-binary-demo', attrs: {}, children: [] }
+      ]),
+      localizedCopy,
+      {
+        mode: 'active-shell',
+        fragmentId: 'fragment://page/home/react@v1'
+      }
+    )
+
+    expect(html).toContain('localized collab meta')
+    expect(html).toContain('localized dock title')
+    expect(html).toContain('localized dock sentence')
+    expect(html).toContain('localized fragment node')
+    expect(html).toContain('localized card node')
+    expect(html).toContain('localized title node')
+    expect(html).toContain('localized copy node')
+    expect(html).toContain('localized badge node')
+    expect(html).not.toContain('>Fragment<')
+    expect(html).not.toContain('>Card<')
+  })
+
   it('renders manifesto pills instead of the legacy inline paragraph', async () => {
     const manifesto = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/manifest@v1')
     const tree = await Promise.resolve(manifesto?.render({ t: (value: string) => value } as never))
@@ -301,6 +343,169 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(dockHtml).toContain('rows="5"')
     expect(dockHtml).toContain('readonly="true"')
     expect(dockHtml).toContain('data-home-collab-status="idle"')
+  })
+
+  it('rebuilds localized compact previews from real widget-backed home fragments', async () => {
+    const localizedCopy: HomeStaticCopyBundle = {
+      ...copy,
+      planner: {
+        ...copy.planner,
+        title: 'planner-preview-title-localized',
+        steps: [{ ...copy.planner.steps[0], hint: 'planner-preview-hint-localized' }],
+        labels: {
+          dependencies: 'planner-deps-localized',
+          cache: 'planner-cache-localized',
+          runtime: 'planner-runtime-localized'
+        }
+      },
+      wasmRenderer: {
+        ...copy.wasmRenderer,
+        title: 'wasm-preview-title-localized',
+        subtitle: 'wasm-preview-hint-localized',
+        footer: {
+          edgeSafe: 'wasm-edge-localized',
+          deterministic: 'wasm-deterministic-localized',
+          htmlUntouched: 'wasm-html-localized'
+        }
+      },
+      reactBinary: {
+        ...copy.reactBinary,
+        title: 'react-preview-title-localized',
+        stages: [{ ...copy.reactBinary.stages[0], label: 'react-stage-localized', hint: 'react-preview-hint-localized' }],
+        footer: {
+          hydrationSkipped: 'react-hydration-localized',
+          binaryStream: 'react-binary-localized'
+        }
+      },
+      preactIsland: {
+        ...copy.preactIsland,
+        label: 'island-label-localized',
+        countdown: 'island-countdown-localized',
+        ready: 'island-ready-localized',
+        activeSub: 'island-preview-hint-localized'
+      }
+    }
+
+    const renderDefinitionPreview = async (fragmentId: string) => {
+      const definition = homeFragmentDefinitions.find((entry) => entry.id === fragmentId)
+      const tree = await Promise.resolve(definition?.render({ t: (value: string) => value } as never))
+      return renderHomeStaticFragmentHtml(tree as RenderNode, localizedCopy, {
+        mode: 'preview',
+        fragmentId
+      })
+    }
+
+    const [plannerHtml, ledgerHtml, islandHtml, reactHtml] = await Promise.all([
+      'fragment://page/home/planner@v1',
+      'fragment://page/home/ledger@v1',
+      'fragment://page/home/island@v1',
+      'fragment://page/home/react@v1'
+    ].map(renderDefinitionPreview))
+
+    expect(plannerHtml).toContain('data-fragment-widget-id="fragment://page/home/planner@v1::planner-demo::shell"')
+    expect(plannerHtml).toContain('planner-preview-title-localized')
+    expect(plannerHtml).toContain('planner-preview-hint-localized')
+    expect(plannerHtml).toContain('planner-deps-localized')
+    expect(plannerHtml).not.toContain('Resolve the dependency graph.')
+    expect(plannerHtml).not.toContain('Dependencies resolved')
+    expect(ledgerHtml).toContain('data-fragment-widget-id="fragment://page/home/ledger@v1::wasm-renderer-demo::shell"')
+    expect(ledgerHtml).toContain('wasm-preview-title-localized')
+    expect(ledgerHtml).toContain('wasm-preview-hint-localized')
+    expect(ledgerHtml).not.toContain('Binary bytes stay deterministic.')
+    expect(ledgerHtml).not.toContain('Burst throughput')
+    expect(islandHtml).toContain('data-fragment-widget-id="fragment://page/home/island@v1::preact-island::shell"')
+    expect(islandHtml).toContain('data-fragment-widget-props')
+    expect(islandHtml).toContain('island-label-localized')
+    expect(islandHtml).toContain('island-preview-hint-localized')
+    expect(islandHtml).not.toContain('Counting down.')
+    expect(reactHtml).toContain('data-fragment-widget-id="fragment://page/home/react@v1::react-binary-demo::shell"')
+    expect(reactHtml).toContain('react-preview-title-localized')
+    expect(reactHtml).toContain('react-preview-hint-localized')
+    expect(reactHtml).not.toContain('React nodes collapse into binary frames.')
+    expect(reactHtml).not.toContain('RSC-ready')
+  })
+
+  it('renders localized home fragment definitions without whitespace or metric key misses', async () => {
+    const translations: Record<string, string> = {
+      'fragment planner': 'localized planner meta',
+      'Planner executes before rendering.': 'localized planner title',
+      'Dependency resolution, cache hit checks, and runtime selection happen up front.': 'localized planner lead',
+      'Rendering only occurs on cache miss; revalidation runs asynchronously.': 'localized planner detail',
+      Planner: 'localized planner preview',
+      'Resolve the dependency graph.': 'localized planner preview summary',
+      'Dependencies · Cache · Runtime': 'localized planner preview meta',
+      'Dependencies resolved': 'localized dependencies resolved',
+      'Parallel cache hits': 'localized parallel cache hits',
+      'Edge or Node runtime': 'localized runtime chip',
+      'Async revalidation': 'localized async revalidation',
+      'wasm renderer': 'localized wasm meta',
+      'Hot-path fragments rendered by WASM.': 'localized wasm title',
+      'Critical transforms run inside WebAssembly for deterministic, edge-safe execution.': 'localized wasm lead',
+      'Numeric outputs feed fragment composition without touching HTML.': 'localized wasm detail',
+      'Wasm renderer': 'localized wasm preview',
+      'Binary bytes stay deterministic.': 'localized wasm preview summary',
+      'Edge-safe · Deterministic · HTML untouched': 'localized wasm preview meta',
+      'Burst throughput {{count}} op/s': 'localized burst {{count}} op/s',
+      'Hot-path score {{count}} pts': 'localized hot path {{count}} pts',
+      'Cache TTL {{count}}s': 'localized cache ttl {{count}}s',
+      'Stale TTL {{count}}s': 'localized stale ttl {{count}}s',
+      'fragment manifesto': 'localized manifesto meta',
+      'The render tree is the artifact.': 'localized manifesto title',
+      'HTML remains the fallback surface.': 'localized manifesto lead',
+      'Deterministic binary fragments handle replay, caching, and instant patching.': 'localized manifesto detail',
+      'live collaborative text': 'localized dock meta',
+      'Shared text for everyone on the page.': 'localized dock title',
+      'Anyone on the page can edit the same text box.': 'localized dock lead',
+      'Loro syncs updates through Garnet in real time.': 'localized dock detail',
+      'Focus to start live sync.': 'localized idle status',
+      'Loro + Garnet': 'localized collab note',
+      'React to binary': 'localized react preview',
+      'React nodes collapse into binary frames.': 'localized react preview summary',
+      'React · Hydration skipped · Binary stream': 'localized react preview meta'
+    }
+
+    const translate = (value: string, params?: Record<string, string | number>) =>
+      (translations[value] ?? value).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => String(params?.[key] ?? ''))
+
+    const planner = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/planner@v1')
+    const ledger = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/ledger@v1')
+    const manifesto = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/manifest@v1')
+    const dock = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/dock@v2')
+    const react = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/react@v1')
+
+    const [plannerHtml, ledgerHtml, manifestoHtml, dockHtml, reactHtml] = await Promise.all(
+      [planner, ledger, manifesto, dock, react].map(async (definition) =>
+        renderToHtml((await Promise.resolve(definition?.render({ t: translate } as never))) as RenderNode)
+      )
+    )
+
+    expect(plannerHtml).toContain('localized planner lead')
+    expect(plannerHtml).toContain('localized planner detail')
+    expect(plannerHtml).toContain('localized planner preview')
+    expect(plannerHtml).toContain('localized planner preview summary')
+    expect(plannerHtml).toContain('localized planner preview meta')
+    expect(plannerHtml).toContain('localized dependencies resolved')
+    expect(plannerHtml).toContain('localized parallel cache hits')
+    expect(plannerHtml).not.toContain('Dependency resolution, cache hit checks')
+    expect(plannerHtml).not.toContain('Resolve the dependency graph.')
+    expect(ledgerHtml).toContain('localized wasm preview')
+    expect(ledgerHtml).toContain('localized wasm preview summary')
+    expect(ledgerHtml).toContain('localized wasm preview meta')
+    expect(ledgerHtml).toContain('localized burst 100 op/s')
+    expect(ledgerHtml).toContain('localized hot path 384 pts')
+    expect(ledgerHtml).toContain('localized cache ttl 30s')
+    expect(ledgerHtml).toContain('localized stale ttl 120s')
+    expect(manifestoHtml).toContain('localized manifesto lead')
+    expect(manifestoHtml).toContain('localized manifesto detail')
+    expect(dockHtml).toContain('localized dock meta')
+    expect(dockHtml).toContain('localized dock lead')
+    expect(dockHtml).toContain('localized dock detail')
+    expect(dockHtml).toContain('localized idle status')
+    expect(dockHtml).toContain('localized collab note')
+    expect(dockHtml).not.toContain('Loro + Garnet')
+    expect(reactHtml).toContain('localized react preview')
+    expect(reactHtml).toContain('localized react preview summary')
+    expect(reactHtml).toContain('localized react preview meta')
   })
 
   it('preserves demo props on compact preact previews', () => {

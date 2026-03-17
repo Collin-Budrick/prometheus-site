@@ -1,6 +1,7 @@
 import type { Lang, PlannerDemoCopy, ReactBinaryDemoCopy, WasmRendererDemoCopy } from '../lang'
 import { setTrustedInnerHtml } from '../security/client'
 import {
+  getStaticHomeFragmentTextCopy,
   getStaticHomePlannerDemoCopy,
   getStaticHomePreactIslandDemoCopy,
   getStaticHomeReactBinaryDemoCopy,
@@ -736,6 +737,7 @@ const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult =
 
 const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomeReactBinaryDemoCopy(getCurrentLang())
+  const fragmentText = getStaticHomeFragmentTextCopy(getCurrentLang())
   if (copy.stages.length === 0) {
     warnMissingReactBinaryCopy()
     return {
@@ -745,13 +747,16 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
   if (!hasPreparedActiveDemoMarkup(root, 'react-binary-demo')) {
     prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
   }
+  const title = root.querySelector<HTMLElement>('.react-binary-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
   const status = root.querySelector<HTMLElement>('.react-binary-status')
+  const steps = root.querySelector<HTMLElement>('.react-binary-steps')
   const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
   const panelTitles = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-panel-title'))
   const captions = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-caption'))
   const footerChips = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-chip'))
   const nodeElements = Array.from(root.querySelectorAll<HTMLElement>('.react-binary-node'))
+  const bitsGroup = root.querySelector<HTMLElement>('.react-binary-bits')
   const bits = root.querySelector<HTMLElement>('.react-binary-bits span')
   const domPreview = root.querySelector<HTMLElement>('.react-binary-dom span')
   let stageIndex = 0
@@ -791,6 +796,10 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     root.dataset.preview = 'false'
     root.dataset.stage = stage.id
 
+    if (title) {
+      title.textContent = copy.title
+    }
+
     if (actionButton) {
       actionButton.disabled = false
       actionButton.dataset.action = 'advance'
@@ -800,6 +809,10 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
 
     if (status) {
       status.textContent = stage.hint
+    }
+
+    if (steps) {
+      steps.setAttribute('aria-label', copy.ariaStages)
     }
 
     stepButtons.forEach((button, index) => {
@@ -821,10 +834,15 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     footerChips[0] && (footerChips[0].textContent = copy.footer.hydrationSkipped)
     footerChips[1] && (footerChips[1].textContent = copy.footer.binaryStream)
     nodeElements.forEach((element, index) => {
-      element.textContent = reactNodeLabels[index] ?? ''
+      const label = reactNodeLabels[index] ?? ''
+      element.textContent = fragmentText[label] ?? label
     })
     if (domPreview) {
       domPreview.textContent = reactDomPreview
+    }
+
+    if (bitsGroup) {
+      bitsGroup.setAttribute('aria-label', copy.footer.binaryStream)
     }
 
     if (bits) {
