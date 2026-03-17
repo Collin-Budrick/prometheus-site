@@ -1294,6 +1294,58 @@ describe("bindHomeFragmentHydration", () => {
     hydration.destroy();
   });
 
+  it("routes anchor hydration through the shared runtime when available", async () => {
+    const taskQueue = createTaskQueue();
+    const anchor = new MockFragmentCard(
+      "fragment://page/home/planner@v1",
+      "anchor",
+    );
+    const root = new MockStaticHomeDocumentRoot([anchor]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const callOrder: string[] = [];
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: "en",
+        homeDemoStylesheetHref: "/assets/home-static-deferred.css",
+        fetchAbort: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined,
+        },
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      ensureDemoStylesheet: async () => {
+        callOrder.push("stylesheet:start");
+      },
+      fetchBatch: async () => {
+        throw new Error("direct fetch path should not run");
+      },
+      requestFragments: async (ids, options) => {
+        callOrder.push(`runtime:${ids.join(",")}:${options.isAnchorBatch}`);
+        await options.commitReady;
+        callOrder.push("runtime:commit-ready");
+      },
+    });
+
+    hydration.scheduleAnchorHydration();
+    expect(taskQueue.pendingCount()).toBe(1);
+
+    await taskQueue.flushNext();
+    await flushMicrotasks();
+
+    expect(callOrder).toEqual([
+      "stylesheet:start",
+      "runtime:fragment://page/home/planner@v1:true",
+      "runtime:commit-ready",
+    ]);
+
+    hydration.destroy();
+  });
+
   it("does not fetch deferred cards until they become visible", async () => {
     const taskQueue = createTaskQueue();
     const deferred = new MockFragmentCard(

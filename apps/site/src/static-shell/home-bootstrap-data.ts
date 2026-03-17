@@ -1,5 +1,6 @@
 import type { Lang } from '../lang/types'
 import type { LanguageSeedPayload } from '../lang/selection'
+import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
@@ -19,6 +20,7 @@ export type HomeStaticRouteData = {
   fragmentOrder?: string[]
   planSignature?: string
   versionSignature?: string
+  runtimePlanEntries?: FragmentRuntimePlanEntry[]
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -36,6 +38,7 @@ export type HomeStaticBootstrapData = {
   fragmentOrder: string[]
   planSignature: string | null
   versionSignature: string | null
+  runtimePlanEntries: FragmentRuntimePlanEntry[]
   fragmentVersions: Record<string, number>
 }
 
@@ -90,6 +93,7 @@ export const readStaticHomeBootstrapData = ({
     fragmentOrder: route?.fragmentOrder ?? [],
     planSignature: route?.planSignature ?? null,
     versionSignature: route?.versionSignature ?? null,
+    runtimePlanEntries: route?.runtimePlanEntries ?? [],
     fragmentVersions: route?.fragmentVersions ?? {}
   }
 }

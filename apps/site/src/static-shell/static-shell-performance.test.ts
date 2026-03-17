@@ -73,8 +73,9 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain("scheduleTask = scheduleStaticShellTask");
     expect(bootstrapSource).toContain("isAuthenticated");
     expect(bootstrapSource).toContain("createStaticHomePatchQueue({");
+    expect(bootstrapSource).toContain("connectSharedHomeRuntime({");
     expect(bootstrapSource).toContain(
-      "bindHomeFragmentHydration({ controller })",
+      "requestFragments: sharedRuntime?.requestFragments",
     );
     expect(bootstrapSource).toContain("resolveStaticShellLangParam");
     expect(bootstrapSource).toContain("loadHomeLanguageRuntime()");
@@ -601,15 +602,18 @@ describe("static shell performance invariants", () => {
     );
     expect(homeDemoEntrySource).not.toContain("from './home-collab-text'");
     expect(entrySsrSource).toContain(
-      '"home-static": [STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"]]',
+      'STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],',
     );
     expect(entrySsrSource).not.toContain("home-bootstrap-runtime.js");
+    expect(entrySsrSource).toContain("home-bootstrap-core-runtime.js");
     expect(entrySsrSource).not.toContain("home-bootstrap-post-lcp-runtime.js");
-    expect(entrySsrSource).not.toContain("home-demo-entry.js");
+    expect(entrySsrSource).toContain("home-demo-entry.js");
+    expect(entrySsrSource).toContain("home-collab-entry.js");
     expect(entrySsrSource).not.toContain("home-ui-controls-runtime.js");
     expect(entrySsrSource).not.toContain("home-dock-auth-runtime.js");
     expect(entrySsrSource).not.toContain("fragment-height-patch-runtime.js");
     expect(entrySsrSource).toContain("fragment-bootstrap-runtime.js");
+    expect(entrySsrSource).toContain("fragment/runtime/shared-worker.js");
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("store-static-runtime.js");
   });

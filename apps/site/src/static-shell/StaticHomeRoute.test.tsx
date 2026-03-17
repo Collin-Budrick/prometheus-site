@@ -111,6 +111,22 @@ describe('StaticHomeRoute', () => {
     expect(manifestoCard?.html).toContain('home-manifest-pills')
     expect(manifestoCard?.html).toContain('home-manifest-copy')
     expect(manifestoCard?.html).not.toContain('<p class="inline-list"')
+    expect(state?.runtimePlanEntries).toEqual([
+      {
+        id: 'fragment://page/home/manifest@v1',
+        critical: true,
+        layout: { column: 'span 12', size: 'small', minHeight: 489 },
+        dependsOn: [],
+        cacheUpdatedAt: undefined
+      },
+      {
+        id: 'fragment://page/home/planner@v1',
+        critical: false,
+        layout: { column: 'span 5', size: 'big', minHeight: 640 },
+        dependsOn: [],
+        cacheUpdatedAt: undefined
+      }
+    ])
     expect(manifestoCard?.revealPhase).toBe('visible')
     expect(manifestoCard?.lcpStable).toBe(true)
     expect(plannerCard?.html).toContain('home-fragment-copy')

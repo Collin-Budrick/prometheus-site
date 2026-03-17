@@ -1,6 +1,7 @@
 import { component$ } from '@builder.io/qwik'
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
+import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
@@ -85,6 +86,7 @@ type StaticHomeRouteState = {
   fragmentOrder: string[]
   planSignature: string
   versionSignature: string
+  runtimePlanEntries: FragmentRuntimePlanEntry[]
   cards: StaticHomeRenderedCard[]
 }
 
@@ -122,6 +124,13 @@ export const buildStaticHomeRouteState = ({
     return acc
   }, {})
   const versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder)
+  const runtimePlanEntries = entries.map<FragmentRuntimePlanEntry>((entry) => ({
+    id: entry.id,
+    critical: entry.critical,
+    layout: entry.layout,
+    dependsOn: entry.dependsOn ?? [],
+    cacheUpdatedAt: entry.cache?.updatedAt
+  }))
 
   const anchorColumns = new Set<'1' | '2'>()
 
@@ -190,6 +199,7 @@ export const buildStaticHomeRouteState = ({
     fragmentOrder,
     planSignature,
     versionSignature,
+    runtimePlanEntries,
     cards
   }
 }
@@ -319,6 +329,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,
           versionSignature: routeState.versionSignature,
+          runtimePlanEntries: routeState.runtimePlanEntries,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}

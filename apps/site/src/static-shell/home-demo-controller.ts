@@ -152,8 +152,9 @@ const activateHomeDemoFromRuntime = async (
   options: ActivateHomeDemoOptions
 ) => {
   const asset = controller.assets[options.kind]
+  const runtimePromise = loadHomeDemoKind(options.kind, { asset })
   await warmHomeDemoKind(options.kind, asset)
-  const runtime = await loadHomeDemoKind(options.kind, { asset })
+  const runtime = await runtimePromise
   return runtime.activateHomeDemo(options)
 }
 
@@ -309,6 +310,16 @@ export const bindHomeDemoActivation = ({
     }
     autoVisibleWarmRoots.add(demoRoot)
     warmKindForRoot(demoRoot)
+    if (typeof document === 'undefined') {
+      return
+    }
+    const kind = resolveHomeDemoKind(demoRoot)
+    if (!kind) return
+    void loadHomeDemoKind(kind, {
+      asset: controller.assets[kind]
+    }).catch((error) => {
+      console.error(`Static home demo preload failed: ${kind}`, error)
+    })
   }
 
   const warmNearViewRoot = (demoRoot: HTMLElement) => {

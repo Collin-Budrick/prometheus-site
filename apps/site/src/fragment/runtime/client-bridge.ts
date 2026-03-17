@@ -24,6 +24,7 @@ type FragmentRuntimeBridgeConfig = {
   visibleIds: string[]
   viewportWidth: number
   enableStreaming: boolean
+  bootstrapHref?: string
   onCommit: (payload: FragmentPayload) => void
   onSizing: (sizing: FragmentRuntimeCardSizing) => void
   onStatus: (status: FragmentRuntimeStatus) => void
@@ -53,6 +54,13 @@ export class FragmentSharedRuntimeBridge {
   private onSizing: ((sizing: FragmentRuntimeCardSizing) => void) | null = null
   private onStatus: ((status: FragmentRuntimeStatus) => void) | null = null
   private onError: ((message: string, fragmentIds?: string[]) => void) | null = null
+  private pendingBootstrapPrimes = new Map<
+    string,
+    {
+      resolve: () => void
+      reject: (error: Error) => void
+    }
+  >()
 
   private readonly handleMessage = (event: MessageEvent<FragmentRuntimeWorkerMessage>) => {
     const message = event.data
@@ -70,8 +78,19 @@ export class FragmentSharedRuntimeBridge {
         this.onStatus?.(message.status)
         return
       case 'error':
+        this.pendingBootstrapPrimes.forEach(({ reject }) => {
+          reject(new Error(message.message))
+        })
+        this.pendingBootstrapPrimes.clear()
         this.onError?.(message.message, message.fragmentIds)
         return
+      case 'bootstrap-primed': {
+        const pending = this.pendingBootstrapPrimes.get(message.requestId)
+        if (!pending) return
+        this.pendingBootstrapPrimes.delete(message.requestId)
+        pending.resolve()
+        return
+      }
     }
   }
 
@@ -114,10 +133,52 @@ export class FragmentSharedRuntimeBridge {
       knownVersions: config.knownVersions,
       visibleIds: config.visibleIds,
       viewportWidth: config.viewportWidth,
-      enableStreaming: config.enableStreaming
+      enableStreaming: config.enableStreaming,
+      bootstrapHref: config.bootstrapHref
     })
 
     return true
+  }
+
+  primeBootstrap(bytes: Uint8Array | ArrayBuffer, href?: string) {
+    if (!this.clientId || !this.port) {
+      return Promise.reject(new Error('Fragment shared runtime is not connected'))
+    }
+
+    const requestId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`
+    const buffer =
+      bytes instanceof Uint8Array
+        ? bytes.slice().buffer
+        : bytes.slice(0)
+
+    return new Promise<void>((resolve, reject) => {
+      this.pendingBootstrapPrimes.set(requestId, {
+        resolve,
+        reject
+      })
+      try {
+        this.post(
+          {
+            type: 'prime-bootstrap',
+            clientId: this.clientId!,
+            requestId,
+            bytes: buffer,
+            href
+          },
+          [buffer]
+        )
+      } catch (error) {
+        this.pendingBootstrapPrimes.delete(requestId)
+        reject(
+          error instanceof Error
+            ? error
+            : new Error('Failed to prime fragment shared runtime bootstrap bytes')
+        )
+      }
+    })
   }
 
   requestFragments(ids: string[], options: FragmentRuntimeRequestOptions) {
@@ -205,6 +266,10 @@ export class FragmentSharedRuntimeBridge {
   }
 
   dispose() {
+    this.pendingBootstrapPrimes.forEach(({ reject }) => {
+      reject(new Error('Fragment shared runtime disposed before bootstrap priming completed'))
+    })
+    this.pendingBootstrapPrimes.clear()
     if (this.port && this.clientId) {
       this.post({
         type: 'dispose',
@@ -222,8 +287,12 @@ export class FragmentSharedRuntimeBridge {
     this.onError = null
   }
 
-  private post(message: FragmentRuntimePageMessage) {
+  private post(message: FragmentRuntimePageMessage, transfer?: Transferable[]) {
     if (!this.port) return
+    if (transfer && transfer.length > 0) {
+      this.port.postMessage(message, transfer)
+      return
+    }
     this.port.postMessage(message)
   }
 }

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { encodeFragmentKnownVersions } from '@core/fragment/known-versions'
-import { isFragmentHeartbeatFrame } from '@core/fragment/frames'
+import { isFragmentHeartbeatFrame, parseFragmentFrames } from '@core/fragment/frames'
 import {
   getFragmentHeightViewport,
   resolveFragmentHeightWidthBucket,
@@ -19,6 +19,7 @@ import type {
   FragmentRuntimeSizingMap,
   FragmentRuntimeStatus,
   FragmentRuntimeStatusMessage,
+  FragmentRuntimeBootstrapPrimedMessage,
   FragmentRuntimeWorkerMessage
 } from './protocol'
 import { decodeRuntimeFragmentPayload } from './decode-payload'
@@ -58,6 +59,7 @@ type ClientState = {
   lang: string
   viewportWidth: number
   enableStreaming: boolean
+  bootstrapHref: string | null
   paused: boolean
   planOrder: string[]
   entriesById: Map<string, FragmentRuntimePlanEntry>
@@ -298,6 +300,14 @@ const buildPayloadVersion = (payload: FragmentPayload) => {
     return `${cacheKey}:${payload.cacheUpdatedAt}`
   }
   return cacheKey
+}
+
+const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
+  const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
+  const payloads = await Promise.all(
+    frames.map(async (frame) => decodePool.decode(frame.id, frame.payloadBytes))
+  )
+  return payloads
 }
 
 const normalizeApiBase = (apiBase: string) => {
@@ -804,6 +814,7 @@ const createClientState = (message: FragmentRuntimeInitMessage, port: MessagePor
     lang: message.lang,
     viewportWidth: message.viewportWidth,
     enableStreaming: message.enableStreaming,
+    bootstrapHref: message.bootstrapHref ?? null,
     paused: false,
     planOrder: message.planEntries.map((entry) => entry.id),
     entriesById,
@@ -907,6 +918,27 @@ const handleReportCardWidth = (
   maybePublishSizing(client, message.fragmentId)
 }
 
+const handlePrimeBootstrap = async (
+  client: ClientState,
+  message: Extract<FragmentRuntimePageMessage, { type: 'prime-bootstrap' }>
+) => {
+  const payloads = await decodeBootstrapPayloads(new Uint8Array(message.bytes))
+  seedPayloadCache(payloads, client.path, client.lang)
+  payloads.forEach((payload) => {
+    if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
+      client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
+    }
+  })
+  const response: FragmentRuntimeBootstrapPrimedMessage = {
+    type: 'bootstrap-primed',
+    clientId: client.id,
+    requestId: message.requestId,
+    href: message.href ?? client.bootstrapHref ?? undefined,
+    fragmentIds: payloads.map((payload) => payload.id)
+  }
+  postToClient(client, response)
+}
+
 const handleMessage = (port: MessagePort, message: FragmentRuntimePageMessage) => {
   switch (message.type) {
     case 'init':
@@ -952,6 +984,14 @@ const handleMessage = (port: MessagePort, message: FragmentRuntimePageMessage) =
       return
     case 'report-card-width':
       handleReportCardWidth(client, message)
+      return
+    case 'prime-bootstrap':
+      void handlePrimeBootstrap(client, message).catch((error) => {
+        notifyError(
+          [client.id],
+          error instanceof Error ? error.message : 'Failed to prime fragment bootstrap payloads'
+        )
+      })
       return
   }
 }

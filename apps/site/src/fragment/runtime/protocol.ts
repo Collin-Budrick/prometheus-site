@@ -38,6 +38,7 @@ export type FragmentRuntimeInitMessage = {
   visibleIds: string[]
   viewportWidth: number
   enableStreaming: boolean
+  bootstrapHref?: string
 }
 
 export type FragmentRuntimeRequestMessage = {
@@ -100,6 +101,14 @@ export type FragmentRuntimeReportCardWidthMessage = {
   width: number
 }
 
+export type FragmentRuntimePrimeBootstrapMessage = {
+  type: 'prime-bootstrap'
+  clientId: string
+  requestId: string
+  bytes: ArrayBuffer
+  href?: string
+}
+
 export type FragmentRuntimePageMessage =
   | FragmentRuntimeInitMessage
   | FragmentRuntimeRequestMessage
@@ -111,6 +120,7 @@ export type FragmentRuntimePageMessage =
   | FragmentRuntimeDisposeMessage
   | FragmentRuntimeMeasureCardMessage
   | FragmentRuntimeReportCardWidthMessage
+  | FragmentRuntimePrimeBootstrapMessage
 
 export type FragmentRuntimeCommitMessage = {
   type: 'fragment-commit'
@@ -140,8 +150,17 @@ export type FragmentRuntimeCardSizingMessage = {
   sizing: FragmentRuntimeCardSizing
 }
 
+export type FragmentRuntimeBootstrapPrimedMessage = {
+  type: 'bootstrap-primed'
+  clientId: string
+  requestId: string
+  href?: string
+  fragmentIds: string[]
+}
+
 export type FragmentRuntimeWorkerMessage =
   | FragmentRuntimeCommitMessage
   | FragmentRuntimeStatusMessage
   | FragmentRuntimeErrorMessage
   | FragmentRuntimeCardSizingMessage
+  | FragmentRuntimeBootstrapPrimedMessage

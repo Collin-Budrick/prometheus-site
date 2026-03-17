@@ -73,7 +73,18 @@ describe('home-bootstrap-data', () => {
             },
             fragmentVersions: {
               'fragment://page/home/react@v1': 1
-            }
+            },
+            runtimePlanEntries: [
+              {
+                id: 'fragment://page/home/react@v1',
+                critical: false,
+                layout: {
+                  column: 'span 12',
+                  minHeight: 489
+                },
+                dependsOn: []
+              }
+            ]
           })
         }
       ]
@@ -90,6 +101,17 @@ describe('home-bootstrap-data', () => {
     expect(data?.shellSeed.ui?.navHome).toBe('Home')
     expect(data?.routeSeed.ui?.demoActivate).toBe('Launch demo')
     expect(data?.homeDemoStylesheetHref).toBe('/assets/home-demo.css')
+    expect(data?.runtimePlanEntries).toEqual([
+      {
+        id: 'fragment://page/home/react@v1',
+        critical: false,
+        layout: {
+          column: 'span 12',
+          minHeight: 489
+        },
+        dependsOn: []
+      }
+    ])
     expect(data?.fragmentVersions).toEqual({
       'fragment://page/home/react@v1': 1
     })
