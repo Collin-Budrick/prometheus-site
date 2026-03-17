@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { installFragmentStaticEntry } from './fragment-static-entry'
-import { STATIC_STORE_BOOTSTRAPPED_EVENT } from './store-static-events'
 
 type Listener = (event?: Event) => void
 type ListenerMap = Map<string, Set<Listener>>
@@ -250,13 +249,12 @@ describe('installFragmentStaticEntry', () => {
     cleanup()
   })
 
-  it('uses the lightweight store runtime when the store root becomes visible', async () => {
+  it('starts the fragment runtime when the root becomes visible', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
     const doc = new MockDocument('/store')
     let fragmentBootstrapCount = 0
-    let storeBootstrapCount = 0
 
     const cleanup = installFragmentStaticEntry({
       win: win as never,
@@ -264,12 +262,6 @@ describe('installFragmentStaticEntry', () => {
       loadRuntime: async () => ({
         bootstrapStaticFragmentShell: async () => {
           fragmentBootstrapCount += 1
-        }
-      }),
-      loadStoreRuntime: async () => ({
-        bootstrapStaticStoreShell: async () => {
-          storeBootstrapCount += 1
-          win.emit(STATIC_STORE_BOOTSTRAPPED_EVENT)
         }
       })
     })
@@ -283,12 +275,11 @@ describe('installFragmentStaticEntry', () => {
     await flushMicrotasks()
 
     expect(fragmentBootstrapCount).toBe(1)
-    expect(storeBootstrapCount).toBe(1)
 
     cleanup()
   })
 
-  it('disarms shell bootstrap listeners after store fast bootstrap hands off to fragment bootstrap', async () => {
+  it('disarms shell bootstrap listeners after bootstrap starts', async () => {
     globalThis.IntersectionObserver = MockIntersectionObserver as never
 
     const win = new MockWindow()
@@ -301,11 +292,6 @@ describe('installFragmentStaticEntry', () => {
       loadRuntime: async () => ({
         bootstrapStaticFragmentShell: async () => {
           fragmentBootstrapCount += 1
-        }
-      }),
-      loadStoreRuntime: async () => ({
-        bootstrapStaticStoreShell: async () => {
-          win.emit(STATIC_STORE_BOOTSTRAPPED_EVENT)
         }
       })
     })

@@ -52,6 +52,9 @@ describe('renderHomeStaticFragmentHtml dock shell', () => {
 
     expect(html).toContain('ライブ共同編集テキスト')
     expect(html).toContain('このページにいる全員に共有されるテキストです。')
+    expect(html).toContain('data-fragment-widget="home-collab"')
+    expect(html).toContain('data-fragment-widget-shell')
+    expect(html).toContain('data-fragment-widget-props')
     expect(html).toContain('フォーカスしてライブ同期を開始します。')
     expect(html).toContain('何か入力してください。ここにいる全員にリアルタイムで表示されます。')
     expect(html).toContain('共有コラボレーションテキストボックス')

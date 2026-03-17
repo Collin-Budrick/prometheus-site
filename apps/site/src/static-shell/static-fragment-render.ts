@@ -2,8 +2,10 @@ import { h, renderToHtml } from '@core/fragment/tree'
 import type { FragmentPayload, RenderNode } from '../fragment/types'
 import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
 import type { StoreSeed } from '../shared/store-seed'
+import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../fragment/widget-markup'
 
 type StaticFragmentRenderContext = {
+  fragmentId?: string
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
   copy?: Record<string, unknown> | null
@@ -129,6 +131,8 @@ const resolveAvatarText = (user: StaticInviteUser) => {
 
 const resolveInviteDisplayName = (user: StaticInviteUser) => user.name?.trim() || user.email || user.id
 const resolveInviteMeta = (user: StaticInviteUser) => (user.name ? user.email : user.id)
+const resolveWidgetId = (context: StaticFragmentRenderContext, kind: string, localKey?: string) =>
+  buildFragmentWidgetId(context.fragmentId ?? 'fragment://page/unknown@v1', kind, localKey)
 
 const renderStoreStreamNode = (attrs: Record<string, string> | undefined, context: StaticFragmentRenderContext): RenderNode => {
   const items = Array.isArray(context.storeSeed?.stream?.items)
@@ -151,7 +155,7 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
   const outOfStockLabel = translateStaticText(context, 'Out of stock')
   const queuedActionsLabel = translateStaticText(context, 'Queued actions')
 
-  return h('div', {
+  const shell = h('div', {
     class: attrs?.class ?? 'store-stream',
     'data-state': 'idle',
     'data-mode': query ? 'search' : 'browse'
@@ -227,6 +231,20 @@ const renderStoreStreamNode = (attrs: Record<string, string> | undefined, contex
           )
     )
   ])
+  return createFragmentWidgetMarkerNode({
+    kind: 'store-stream',
+    id: resolveWidgetId(context, 'store-stream', attrs?.['data-widget-key']),
+    priority: 'visible',
+    props: {
+      props: {
+        class: attrs?.class ?? 'store-stream',
+        limit,
+        placeholder
+      },
+      storeSeed: context.storeSeed ?? null
+    },
+    shell
+  })
 }
 
 const renderStoreCreateNode = (
@@ -242,7 +260,7 @@ const renderStoreCreateNode = (
   const pricePlaceholder = attrs?.['data-price-placeholder'] ?? '19.00'
   const quantityPlaceholder = attrs?.['data-quantity-placeholder'] ?? '1'
 
-  return h('div', { class: attrs?.class ?? 'store-create', 'data-state': 'idle' }, [
+  const shell = h('div', { class: attrs?.class ?? 'store-create', 'data-state': 'idle' }, [
     h('form', { class: 'store-create-form' }, [
       h('div', { class: 'store-create-grid' }, [
         h('label', { class: 'store-create-input' }, [
@@ -288,6 +306,25 @@ const renderStoreCreateNode = (
     ]),
     helper ? h('p', { class: 'store-create-helper' }, [translateStaticText(context, helper)]) : null
   ])
+  return createFragmentWidgetMarkerNode({
+    kind: 'store-create',
+    id: resolveWidgetId(context, 'store-create', attrs?.['data-widget-key']),
+    priority: 'visible',
+    props: {
+      props: {
+        class: attrs?.class ?? 'store-create',
+        nameLabel,
+        priceLabel,
+        quantityLabel,
+        submitLabel,
+        helper: helper ?? null,
+        namePlaceholder,
+        pricePlaceholder,
+        quantityPlaceholder
+      }
+    },
+    shell
+  })
 }
 
 const renderStoreCartNode = (attrs: Record<string, string> | undefined, context: StaticFragmentRenderContext): RenderNode => {
@@ -304,7 +341,7 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
   const qtyLabel = translateStaticText(context, 'Qty')
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
 
-  return h('div', {
+  const shell = h('div', {
     class: attrs?.class ?? 'store-cart',
     'data-state': items.length > 0 ? 'filled' : 'empty'
   }, [
@@ -350,6 +387,24 @@ const renderStoreCartNode = (attrs: Record<string, string> | undefined, context:
           )
     ])
   ])
+  return createFragmentWidgetMarkerNode({
+    kind: 'store-cart',
+    id: resolveWidgetId(context, 'store-cart', attrs?.['data-widget-key']),
+    priority: 'visible',
+    props: {
+      props: {
+        class: attrs?.class ?? 'store-cart',
+        title,
+        helper,
+        empty,
+        totalLabel,
+        dropLabel,
+        removeLabel
+      },
+      storeSeed: context.storeSeed ?? null
+    },
+    shell
+  })
 }
 
 const renderInviteList = (
@@ -401,7 +456,7 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
   const contactsLabel = attrs?.['data-contacts-label'] ?? 'Contacts'
   const emptyLabel = attrs?.['data-empty-label'] ?? 'No invites yet.'
 
-  return h('div', { class: attrs?.class ?? 'chat-invites' }, [
+  const shell = h('div', { class: attrs?.class ?? 'chat-invites' }, [
     h('div', { class: 'chat-invites-header' }, [
       h('div', undefined, [
         h('div', { class: 'chat-invites-title' }, [translateStaticText(context, title)]),
@@ -420,6 +475,24 @@ const renderContactInvitesNode = (attrs: Record<string, string> | undefined, con
       renderInviteList(contactsLabel, contacts, emptyLabel, false, context)
     ])
   ])
+  return createFragmentWidgetMarkerNode({
+    kind: 'contact-invites',
+    id: resolveWidgetId(context, 'contact-invites', attrs?.['data-widget-key']),
+    priority: 'visible',
+    props: {
+      props: {
+        class: attrs?.class ?? 'chat-invites',
+        title,
+        helper,
+        incomingLabel,
+        outgoingLabel,
+        contactsLabel,
+        emptyLabel
+      },
+      contactInvitesSeed: context.contactInvitesSeed ?? null
+    },
+    shell
+  })
 }
 
 const replaceStaticNodes = (node: RenderNode, context: StaticFragmentRenderContext): RenderNode => {
@@ -446,10 +519,10 @@ export const renderStaticFragmentTreeHtml = (node: RenderNode, context: StaticFr
   renderToHtml(replaceStaticNodes(node, context))
 
 export const renderStaticFragmentPayloadHtml = (
-  payload: Pick<FragmentPayload, 'tree' | 'html'>,
+  payload: Pick<FragmentPayload, 'id' | 'tree' | 'html'>,
   context: StaticFragmentRenderContext = {}
 ) => {
   const html = payload.html?.trim()
   if (html && !hasStaticReplacementNode(payload.tree)) return html
-  return renderStaticFragmentTreeHtml(payload.tree, context)
+  return renderStaticFragmentTreeHtml(payload.tree, { ...context, fragmentId: payload.id })
 }

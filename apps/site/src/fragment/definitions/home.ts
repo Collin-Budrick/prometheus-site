@@ -1,7 +1,8 @@
 import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
-import type { FragmentDefinition, FragmentPlanEntry } from '@core/fragment/types'
+import type { FragmentDefinition, FragmentPlanEntry, RenderNode } from '@core/fragment/types'
+import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../widget-markup'
 import { loadWasmAdd } from './wasm'
 
 const baseMeta = {
@@ -30,6 +31,45 @@ const renderManifestoCopyBlock = (
     text(detail)
   ])
 
+type FragmentTextNode = RenderNode
+
+const renderHomeDemoCompactShell = (
+  kind: 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island',
+  title: FragmentTextNode,
+  summary: FragmentTextNode,
+  meta: FragmentTextNode,
+  props?: Record<string, string>
+) =>
+  h(
+    'div',
+    {
+      class: `home-demo-compact home-demo-compact--${kind}`,
+      'data-home-preview': 'compact',
+      'data-home-demo-root': kind,
+      'data-demo-kind': kind,
+      ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
+    },
+    [
+      h('div', { class: 'home-demo-compact-kicker' }, [title]),
+      h('p', { class: 'home-demo-compact-copy' }, [summary]),
+      h('p', { class: 'home-demo-compact-meta' }, [meta])
+    ]
+  )
+
+const renderHomeWidgetMarker = (
+  fragmentId: string,
+  kind: 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island' | 'home-collab',
+  shell: ReturnType<typeof h>,
+  props?: Record<string, unknown>
+) =>
+  createFragmentWidgetMarkerNode({
+    kind,
+    id: buildFragmentWidgetId(fragmentId, kind, 'shell'),
+    priority: 'visible',
+    props,
+    shell
+  })
+
 const planner: FragmentDefinition = {
   id: 'fragment://page/home/planner@v1',
   tags: ['home', 'planner'],
@@ -46,7 +86,16 @@ const planner: FragmentDefinition = {
         'Dependency resolution, cache hit checks, and runtime selection happen up front.',
         'Rendering only occurs on cache miss; revalidation runs asynchronously.'
       ),
-      h('planner-demo', null),
+      renderHomeWidgetMarker(
+        'fragment://page/home/planner@v1',
+        'planner-demo',
+        renderHomeDemoCompactShell(
+          'planner',
+          text(t('Planner')),
+          text(t('Resolve the dependency graph.')),
+          text(t('Dependencies \u00b7 Cache \u00b7 Runtime'))
+        )
+      ),
       h('div', { class: 'matrix' }, [
         h('div', { class: 'cell', 'data-value': 'Resolved' }, [text('Dependencies')]),
         h('div', { class: 'cell', 'data-value': 'Parallel' }, [text('Cache hits')]),
@@ -78,7 +127,16 @@ const ledger: FragmentDefinition = {
         'Critical transforms run inside WebAssembly for deterministic, edge-safe execution.',
         'Numeric outputs feed fragment composition without touching HTML.'
       ),
-      h('wasm-renderer-demo', null),
+      renderHomeWidgetMarker(
+        'fragment://page/home/ledger@v1',
+        'wasm-renderer-demo',
+        renderHomeDemoCompactShell(
+          'wasm-renderer',
+          text(t('Wasm renderer')),
+          text(t('Binary bytes stay deterministic.')),
+          text(t('Edge-safe \u00b7 Deterministic \u00b7 HTML untouched'))
+        )
+      ),
       h('div', { class: 'matrix' }, [
         h('div', { class: 'cell', 'data-value': `${burst} op/s` }, [text('Burst throughput')]),
         h('div', { class: 'cell', 'data-value': `${hotPath} pts` }, [text('Hot-path score')]),
@@ -105,7 +163,18 @@ const island: FragmentDefinition = {
         'Preact loads only inside the island boundary.',
         'No shared state, no routing ownership, no global hydration.'
       ),
-      h('preact-island', { label: t('Isolated island') })
+      renderHomeWidgetMarker(
+        'fragment://page/home/island@v1',
+        'preact-island',
+        renderHomeDemoCompactShell(
+          'preact-island',
+          text(t('Isolated island')),
+          text(t('Counting down.')),
+          text(t('Countdown \u00b7 1:00 \u00b7 Ready')),
+          { label: t('Isolated island') }
+        ),
+        { label: t('Isolated island') }
+      )
     ])
   }
 }
@@ -127,7 +196,16 @@ const reactFragment: FragmentDefinition = {
         'React fragments compile into binary trees without client hydration.',
         'The DOM remains owned by Qwik.'
       ),
-      h('react-binary-demo', null),
+      renderHomeWidgetMarker(
+        'fragment://page/home/react@v1',
+        'react-binary-demo',
+        renderHomeDemoCompactShell(
+          'react-binary',
+          text(t('React to binary')),
+          text(t('React nodes collapse into binary frames.')),
+          text(t('React \u00b7 Hydration skipped \u00b7 Binary stream'))
+        )
+      ),
       h('div', { class: 'badge' }, [text('RSC-ready')])
     ])
   }
@@ -149,44 +227,53 @@ const dockFragment: FragmentDefinition = {
         'Anyone on the page can edit the same text box.',
         'Loro syncs updates through Garnet in real time.'
       ),
-      h(
-        'div',
+      renderHomeWidgetMarker(
+        'fragment://page/home/dock@v2',
+        'home-collab',
+        h(
+          'div',
+          {
+            class: 'home-collab-root mt-6',
+            'data-home-collab-root': 'dock',
+            'data-collab-status-idle': t('Focus to start live sync.'),
+            'data-collab-status-connecting': t('Connecting live sync...'),
+            'data-collab-status-live': t('Live for everyone on this page'),
+            'data-collab-status-reconnecting': t('Reconnecting live sync...'),
+            'data-collab-status-error': t('Realtime unavailable')
+          },
+          [
+            h('textarea', {
+              class: 'home-collab-textarea',
+              id: 'home-collab-dock-input',
+              name: 'home-collab-dock-input',
+              'data-home-collab-input': 'true',
+              rows: '7',
+              spellcheck: 'false',
+              placeholder: t('Write something. Everyone here sees it live.'),
+              'aria-label': t('Shared collaborative text box'),
+              readonly: 'true',
+              'aria-busy': 'false'
+            }),
+            h('div', { class: 'home-collab-toolbar' }, [
+              h(
+                'span',
+                {
+                  class: 'home-collab-status',
+                  'data-home-collab-status': 'idle',
+                  role: 'status',
+                  'aria-live': 'polite'
+                },
+                [text('Focus to start live sync.')]
+              ),
+              h('span', { class: 'home-collab-note' }, [text('Loro + Garnet')])
+            ])
+          ]
+        ),
         {
-          class: 'home-collab-root mt-6',
-          'data-home-collab-root': 'dock',
-          'data-collab-status-idle': t('Focus to start live sync.'),
-          'data-collab-status-connecting': t('Connecting live sync...'),
-          'data-collab-status-live': t('Live for everyone on this page'),
-          'data-collab-status-reconnecting': t('Reconnecting live sync...'),
-          'data-collab-status-error': t('Realtime unavailable')
-        },
-        [
-          h('textarea', {
-            class: 'home-collab-textarea',
-            id: 'home-collab-dock-input',
-            name: 'home-collab-dock-input',
-            'data-home-collab-input': 'true',
-            rows: '7',
-            spellcheck: 'false',
-            placeholder: t('Write something. Everyone here sees it live.'),
-            'aria-label': t('Shared collaborative text box'),
-            readonly: 'true',
-            'aria-busy': 'false'
-          }),
-          h('div', { class: 'home-collab-toolbar' }, [
-            h(
-              'span',
-              {
-                class: 'home-collab-status',
-                'data-home-collab-status': 'idle',
-                role: 'status',
-                'aria-live': 'polite'
-              },
-              [text('Focus to start live sync.')]
-            ),
-            h('span', { class: 'home-collab-note' }, [text('Loro + Garnet')])
-          ])
-        ]
+          root: 'dock',
+          placeholder: t('Write something. Everyone here sees it live.'),
+          ariaLabel: t('Shared collaborative text box')
+        }
       )
     ])
   }

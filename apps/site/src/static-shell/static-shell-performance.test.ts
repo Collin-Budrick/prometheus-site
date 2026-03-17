@@ -502,15 +502,12 @@ describe("static shell performance invariants", () => {
     );
     expect(fragmentEntrySource).toContain("installFragmentStaticEntry");
     expect(fragmentEntrySource).toContain("loadFragmentBootstrapRuntime");
-    expect(fragmentEntrySource).toContain("loadStoreStaticRuntime");
+    expect(fragmentEntrySource).not.toContain("loadStoreRuntime");
     expect(fragmentEntrySource).toContain(
       "FRAGMENT_BOOTSTRAP_VISIBILITY_ROOT_MARGIN",
     );
     expect(fragmentEntrySource).toContain(
       "FRAGMENT_BOOTSTRAP_VISIBILITY_THRESHOLD",
-    );
-    expect(fragmentEntrySource).toContain(
-      "STORE_STATIC_FAST_BOOTSTRAP_ROUTE_PATH = '/store'",
     );
     expect(fragmentEntrySource).toContain("observeBootstrapRoot");
     expect(fragmentEntrySource).toContain("prewarmFragmentRuntime");
@@ -566,25 +563,19 @@ describe("static shell performance invariants", () => {
       "loadBootstrapRuntime = loadHomeBootstrapRuntime",
     );
     expect(homeStaticEntrySource).toContain(
-      "loadCollabRuntime = loadHomeCollabEntryRuntime",
-    );
-    expect(homeStaticEntrySource).toContain(
-      "loadDemoRuntime = loadHomeDemoEntryRuntime",
-    );
-    expect(homeStaticEntrySource).toContain(
       "primeBootstrap = primeHomeFragmentBootstrapBytes",
     );
     expect(homeStaticEntrySource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
     expect(homeStaticEntrySource).toContain(
       "HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN",
     );
-    expect(homeStaticEntrySource).toContain("HOME_COLLAB_ROOT_SELECTOR");
     expect(homeStaticEntrySource).toContain("readStaticHomeBootstrapData");
     expect(homeStaticEntrySource).toContain("collectAutoBootstrapHomeCards");
     expect(homeStaticEntrySource).toContain("isRefreshableHomeFragmentKind");
     expect(homeStaticEntrySource).toContain("primeBootstrapRequest");
-    expect(homeStaticEntrySource).toContain("startCollabEntry");
-    expect(homeStaticEntrySource).toContain("startDemoEntry()");
+    expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
+    expect(homeStaticEntrySource).not.toContain("startCollabEntry");
+    expect(homeStaticEntrySource).not.toContain("startDemoEntry");
     expect(homeStaticEntrySource).toContain(
       "liveWin.addEventListener('load', loadHandler, { once: true })",
     );
@@ -607,15 +598,15 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).not.toContain("home-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("home-bootstrap-core-runtime.js");
     expect(entrySsrSource).not.toContain("home-bootstrap-post-lcp-runtime.js");
-    expect(entrySsrSource).toContain("home-demo-entry.js");
-    expect(entrySsrSource).toContain("home-collab-entry.js");
+    expect(entrySsrSource).not.toContain("home-demo-entry.js");
+    expect(entrySsrSource).not.toContain("home-collab-entry.js");
     expect(entrySsrSource).not.toContain("home-ui-controls-runtime.js");
     expect(entrySsrSource).not.toContain("home-dock-auth-runtime.js");
     expect(entrySsrSource).not.toContain("fragment-height-patch-runtime.js");
     expect(entrySsrSource).toContain("fragment-bootstrap-runtime.js");
     expect(entrySsrSource).not.toContain("fragment/runtime/worker.js");
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
-    expect(entrySsrSource).toContain("store-static-runtime.js");
+    expect(entrySsrSource).not.toContain("store-static-runtime.js");
   });
 
   it("threads authenticated state through the static shell layout and seed", async () => {

@@ -37,8 +37,6 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
-    "build/static-shell/apps/site/src/static-shell/home-demo-entry.js",
-    "build/static-shell/apps/site/src/static-shell/home-collab-entry.js",
   ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
@@ -50,11 +48,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   ],
 } as const;
 
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
-  "/store": [
-    "build/static-shell/apps/site/src/static-shell/store-static-runtime.js",
-  ],
-} as const;
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;
 
 const STATIC_BOOTSTRAP_BUNDLE_URLS = Object.fromEntries(
   Object.entries(STATIC_BOOTSTRAP_BUNDLE_PATHS).map(([mode, bundlePath]) => [

@@ -9,7 +9,6 @@ import {
   STATIC_HOME_STAGE_ATTR,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
-import { HOME_COLLAB_ROOT_SELECTOR } from './home-collab-shared'
 
 type MockListener = (event?: { target?: unknown }) => void
 type ListenerMap = Map<string, Set<MockListener>>
@@ -110,7 +109,6 @@ class MockDocument {
   activeElement: unknown = null
   querySelectorValue: unknown = null
   fragmentCards: unknown[] = []
-  collabRoots: unknown[] = []
   listeners: ListenerMap = new Map()
   homeRoot = {
     attrs: new Map<string, string>([['data-home-paint', 'initial']]),
@@ -182,9 +180,6 @@ class MockDocument {
   }
 
   querySelectorAll(selector?: string) {
-    if (selector === HOME_COLLAB_ROOT_SELECTOR) {
-      return this.collabRoots
-    }
     if (selector?.includes(STATIC_FRAGMENT_CARD_ATTR)) {
       return this.fragmentCards
     }
@@ -207,16 +202,6 @@ class MockFragmentCard {
 
   getAttribute(name: string) {
     return this.attrs.get(name) ?? null
-  }
-}
-
-class MockCollabRoot {
-  constructor(private readonly visible = true) {}
-
-  getBoundingClientRect() {
-    return this.visible
-      ? ({ top: 0, left: 0, right: 320, bottom: 240 } as DOMRect)
-      : ({ top: 1600, left: 0, right: 320, bottom: 1840 } as DOMRect)
   }
 }
 
@@ -281,28 +266,17 @@ afterEach(() => {
 })
 
 describe('installHomeStaticEntry', () => {
-  it('starts the demo entry immediately after the LCP gate resolves', async () => {
+  it('starts the universal widget runtime after the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
     const taskQueue = createScheduledTaskQueue()
-    let demoEntryLoadCount = 0
-    let demoInstallCount = 0
     let bootstrapLoadCount = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => {
-        demoEntryLoadCount += 1
-        return {
-          installHomeDemoEntry: () => {
-            demoInstallCount += 1
-            return () => undefined
-          }
-        }
-      },
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
         return {
@@ -313,20 +287,16 @@ describe('installHomeStaticEntry', () => {
       scheduleTask: taskQueue.scheduleTask as never
     })
 
-    expect(demoEntryLoadCount).toBe(0)
     expect(bootstrapLoadCount).toBe(0)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(taskQueue.size()).toBe(4)
-    expect(demoEntryLoadCount).toBe(0)
+    expect(taskQueue.size()).toBe(3)
     expect(bootstrapLoadCount).toBe(0)
 
     taskQueue.runNext()
     await flushMicrotasks()
-    expect(demoEntryLoadCount).toBe(1)
-    expect(demoInstallCount).toBe(1)
     expect(bootstrapLoadCount).toBe(0)
 
     taskQueue.runNext()
@@ -351,9 +321,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => ({
-        installHomeDemoEntry: () => () => undefined
-      }),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
         return {
@@ -408,9 +375,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => ({
-        installHomeDemoEntry: () => () => undefined
-      }),
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => {
           events.push('bootstrap')
@@ -461,9 +425,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => ({
-        installHomeDemoEntry: () => () => undefined
-      }),
       primeBootstrap: async () => new Uint8Array([1]),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
@@ -518,9 +479,6 @@ describe('installHomeStaticEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => ({
-        installHomeDemoEntry: () => () => undefined
-      }),
       primeBootstrap: async () => new Uint8Array([1]),
       loadBootstrapRuntime: async () => {
         bootstrapLoadCount += 1
@@ -557,66 +515,4 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('loads the collab runtime only when the collab root enters the viewport', async () => {
-    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
-      MockIntersectionObserver as unknown as typeof IntersectionObserver
-
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const collabRoot = new MockCollabRoot()
-    const taskQueue = createScheduledTaskQueue()
-    let collabLoadCount = 0
-    let collabInstallCount = 0
-    const collabInitialTargets: Array<EventTarget | null | undefined> = []
-
-    doc.collabRoots = [collabRoot]
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadDemoRuntime: async () => ({
-        installHomeDemoEntry: () => () => undefined
-      }),
-      loadBootstrapRuntime: async () => ({
-        bootstrapStaticHome: async () => undefined
-      }),
-      primeBootstrap: async () => new Uint8Array([1]),
-      loadCollabRuntime: async () => {
-        collabLoadCount += 1
-        return {
-          installHomeCollabEntry: (options) => {
-            collabInstallCount += 1
-            collabInitialTargets.push(options?.initialTarget)
-            return () => undefined
-          }
-        }
-      },
-      scheduleTask: taskQueue.scheduleTask as never
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    taskQueue.runAll()
-    await flushMicrotasks()
-
-    expect(collabLoadCount).toBe(0)
-    expect(collabInstallCount).toBe(0)
-
-    const collabObserver = MockIntersectionObserver.instances.find((observer) =>
-      observer.observed.has(collabRoot as unknown as Element)
-    )
-    expect(collabObserver).toBeDefined()
-
-    collabObserver?.emit([{ target: collabRoot as unknown as Element, isIntersecting: true }])
-    await flushMicrotasks()
-
-    expect(collabLoadCount).toBe(1)
-    expect(collabInstallCount).toBe(1)
-    expect(collabInitialTargets).toEqual([null])
-
-    cleanup()
-  })
 })

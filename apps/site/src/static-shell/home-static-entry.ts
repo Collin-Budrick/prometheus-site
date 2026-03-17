@@ -1,6 +1,5 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
-import { loadHomeCollabEntryRuntime } from './home-collab-entry-loader'
-import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
+import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
 import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
@@ -10,14 +9,14 @@ import {
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
-  STATIC_HOME_STAGE_ATTR
+  STATIC_HOME_STAGE_ATTR,
+  STATIC_SHELL_MAIN_REGION,
+  STATIC_SHELL_REGION_ATTR
 } from './constants'
-import { HOME_COLLAB_ROOT_SELECTOR } from './home-collab-shared'
 import { appConfig } from '../public-app-config'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { scheduleStaticShellTask } from './scheduler'
-import { createLayoutSnapshot } from './layout-snapshot'
 import {
   markStaticShellPerformance,
   markStaticShellUserTiming,
@@ -31,17 +30,13 @@ export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilit
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
   __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
-  __PROM_STATIC_HOME_COLLAB_ENTRY__?: boolean
   __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
-  __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
 }
 
 type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
   doc?: Document | null
   loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
-  loadCollabRuntime?: typeof loadHomeCollabEntryRuntime
-  loadDemoRuntime?: typeof loadHomeDemoEntryRuntime
   primeBootstrap?: typeof primeHomeFragmentBootstrapBytes
   createLcpGate?: typeof createHomeFirstLcpGate
   releaseReadyStagger?: typeof releaseQueuedReadyStaggerWithin
@@ -51,7 +46,6 @@ type InstallHomeStaticEntryOptions = {
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 const HOME_READY_STAGGER_SELECTOR = `[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([${STATIC_HOME_LCP_STABLE_ATTR}="true"])`
-const HOME_COLLAB_VISIBILITY_ROOT_MARGIN = '0px'
 
 const isAutoBootstrapHomeCardStage = (value: string | null) => value === 'anchor' || value === 'deferred'
 const isRefreshableHomeFragmentKind = (value: string | null) =>
@@ -136,8 +130,6 @@ export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   loadBootstrapRuntime = loadHomeBootstrapRuntime,
-  loadCollabRuntime = loadHomeCollabEntryRuntime,
-  loadDemoRuntime = loadHomeDemoEntryRuntime,
   primeBootstrap = primeHomeFragmentBootstrapBytes,
   createLcpGate = createHomeFirstLcpGate,
   releaseReadyStagger = releaseQueuedReadyStaggerWithin,
@@ -155,25 +147,27 @@ export const installHomeStaticEntry = ({
   liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
   let startedBootstrap = false
-  let startedCollabEntry = false
-  let startedDemoEntry = false
   let loadHandler: (() => void) | null = null
   let bootstrapRequested = false
   let lcpGateReleased = false
   let bootstrapPrimePromise: Promise<Uint8Array> | null = null
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
-  let collabEntryCleanup: (() => void) | null = null
-  let collabVisibilityObserver: IntersectionObserver | null = null
+  let widgetRuntimePromise: ReturnType<typeof loadFragmentWidgetRuntime> | null = null
+  let widgetRuntime:
+    | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
+    | null = null
   let lcpGateCleanup: (() => void) | null = null
-  let demoEntryCleanup: (() => void) | null = null
   let visibilityObserver: IntersectionObserver | null = null
   let paintReadyCleanup: (() => void) | null = null
   const scheduledReleaseTasks = new Set<() => void>()
   const observedCards = new Set<Element>()
-  const observedCollabRoots = new Set<Element>()
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
+  const readWidgetRoot = () =>
+    liveDoc.querySelector<HTMLElement>(
+      `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
+    ) ?? readStaticHomeRoot()
 
   const cleanupTriggers = () => {
     liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
@@ -188,19 +182,14 @@ export const installHomeStaticEntry = ({
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
-    collabEntryCleanup?.()
-    collabEntryCleanup = null
-    demoEntryCleanup?.()
-    demoEntryCleanup = null
-    collabVisibilityObserver?.disconnect()
-    collabVisibilityObserver = null
     visibilityObserver?.disconnect()
     visibilityObserver = null
     paintReadyCleanup?.()
     paintReadyCleanup = null
+    widgetRuntime?.destroy()
+    widgetRuntime = null
     scheduledReleaseTasks.forEach((cleanup) => cleanup())
     scheduledReleaseTasks.clear()
-    observedCollabRoots.clear()
     observedCards.clear()
   }
 
@@ -225,18 +214,6 @@ export const installHomeStaticEntry = ({
     return cleanup
   }
 
-  const startDemoEntry = () => {
-    if (startedDemoEntry || liveWin.__PROM_STATIC_HOME_DEMO_ENTRY__) return
-    startedDemoEntry = true
-    void loadDemoRuntime()
-      .then(({ installHomeDemoEntry }) => {
-        demoEntryCleanup = installHomeDemoEntry()
-      })
-      .catch((error) => {
-        console.error('Static home demo entry failed:', error)
-      })
-  }
-
   const prewarmBootstrapRuntime = () => {
     if (!bootstrapRuntimePromise) {
       markStaticShellUserTiming('prom:home:bootstrap-runtime-requested')
@@ -256,6 +233,11 @@ export const installHomeStaticEntry = ({
         })
     }
     return bootstrapRuntimePromise
+  }
+
+  const prewarmWidgetRuntime = () => {
+    widgetRuntimePromise ??= loadFragmentWidgetRuntime()
+    return widgetRuntimePromise
   }
 
   const primeBootstrapRequest = () => {
@@ -290,20 +272,20 @@ export const installHomeStaticEntry = ({
     return bootstrapPrimePromise
   }
 
-  const startCollabEntry = (initialTarget: EventTarget | null = null) => {
-    if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) return
-    startedCollabEntry = true
-    collabVisibilityObserver?.disconnect()
-    collabVisibilityObserver = null
-    observedCollabRoots.clear()
-
-    void loadCollabRuntime()
-      .then(({ installHomeCollabEntry }) => {
-        collabEntryCleanup = installHomeCollabEntry({ initialTarget })
+  const startWidgetRuntime = (target: EventTarget | null = null) => {
+    return prewarmWidgetRuntime()
+      .then((module) => {
+        widgetRuntime ??= module.createFragmentWidgetRuntime({
+          root: readWidgetRoot(),
+          observeMutations: true
+        })
+        if (target) {
+          widgetRuntime.handleInteraction(target)
+        }
       })
       .catch((error) => {
-        startedCollabEntry = false
-        console.error('Static home collab entry failed:', error)
+        widgetRuntimePromise = null
+        console.error('Static home widget runtime failed:', error)
       })
   }
 
@@ -325,6 +307,7 @@ export const installHomeStaticEntry = ({
 
   function requestBootstrap() {
     bootstrapRequested = true
+    void startWidgetRuntime(liveDoc.activeElement)
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
@@ -339,6 +322,7 @@ export const installHomeStaticEntry = ({
     if (!resolveInteractionCard(event.target)) {
       return
     }
+    void startWidgetRuntime(event.target)
     requestBootstrap()
   }
 
@@ -346,6 +330,7 @@ export const installHomeStaticEntry = ({
     if (!resolveInteractionCard(event.target)) {
       return
     }
+    void startWidgetRuntime(event.target)
     requestBootstrap()
   }
 
@@ -353,6 +338,7 @@ export const installHomeStaticEntry = ({
     if (!resolveInteractionCard(liveDoc.activeElement)) {
       return
     }
+    void startWidgetRuntime(liveDoc.activeElement)
     requestBootstrap()
   }
 
@@ -399,59 +385,6 @@ export const installHomeStaticEntry = ({
     })
   }
 
-  const observeCollabRoots = () => {
-    if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) {
-      return
-    }
-
-    const roots =
-      typeof liveDoc.querySelectorAll === 'function'
-        ? Array.from(liveDoc.querySelectorAll<HTMLElement>(HOME_COLLAB_ROOT_SELECTOR))
-        : []
-    if (!roots.length) {
-      return
-    }
-
-    if (typeof IntersectionObserver !== 'function') {
-      const layoutSnapshot = createLayoutSnapshot({ win: liveWin, doc: liveDoc })
-      const visibleRoot = roots.find((root) => layoutSnapshot.isVisible(root))
-      if (visibleRoot) {
-        startCollabEntry()
-      }
-      return
-    }
-
-    if (!collabVisibilityObserver) {
-      collabVisibilityObserver = new IntersectionObserver(
-        (entries) => {
-          if (startedCollabEntry || liveWin.__PROM_STATIC_HOME_COLLAB_ENTRY__) {
-            return
-          }
-
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) {
-              return
-            }
-            startCollabEntry()
-          })
-        },
-        {
-          root: null,
-          rootMargin: HOME_COLLAB_VISIBILITY_ROOT_MARGIN,
-          threshold: 0
-        }
-      )
-    }
-
-    roots.forEach((root) => {
-      if (observedCollabRoots.has(root)) {
-        return
-      }
-      observedCollabRoots.add(root)
-      collabVisibilityObserver?.observe(root)
-    })
-  }
-
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
@@ -461,7 +394,7 @@ export const installHomeStaticEntry = ({
     markStaticShellPerformance('prom:home:lcp-release-start')
     void primeBootstrapRequest()?.catch(() => undefined)
     scheduleReleaseTask(() => {
-      startDemoEntry()
+      void startWidgetRuntime()
     })
     scheduleReleaseTask(() => {
       void prewarmBootstrapRuntime().catch((error) => {
@@ -469,9 +402,6 @@ export const installHomeStaticEntry = ({
         console.error('Static home bootstrap prewarm failed:', error)
       })
     })
-    scheduleReleaseTask(() => {
-      observeCollabRoots()
-    }, 'background', 16)
     scheduleReleaseTask(() => {
       paintReadyCleanup ??= schedulePaintReady({
         root: readStaticHomeRoot(),

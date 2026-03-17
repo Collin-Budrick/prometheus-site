@@ -30,7 +30,7 @@ type HomeCollabListenerEvent =
       error: string
     }
 
-type HomeCollabBinding = {
+export type HomeCollabBinding = {
   root: HTMLElement
   destroy: () => void
 }
@@ -53,6 +53,13 @@ type HomeCollabBindingState = {
 type InstallHomeCollabEntryOptions = {
   win?: HomeCollabEntryWindow | null
   doc?: Document | null
+  initialTarget?: EventTarget | null
+  loadEditorRuntime?: typeof loadHomeCollabEditorRuntime
+}
+
+export type AttachHomeCollabRootOptions = {
+  root: HTMLElement
+  win?: HomeCollabEntryWindow | null
   initialTarget?: EventTarget | null
   loadEditorRuntime?: typeof loadHomeCollabEditorRuntime
 }
@@ -353,6 +360,26 @@ const createBinding = ({
   }
 }
 
+export const attachHomeCollabRoot = ({
+  root,
+  win = typeof window !== 'undefined'
+    ? (window as HomeCollabEntryWindow)
+    : null,
+  initialTarget = null,
+  loadEditorRuntime = loadHomeCollabEditorRuntime
+}: AttachHomeCollabRootOptions): HomeCollabBinding | null => {
+  if (!win) {
+    return null
+  }
+  primeTrustedTypesPolicies()
+  return createBinding({
+    root,
+    win,
+    initialTarget,
+    loadEditorRuntime
+  })
+}
+
 export const installHomeCollabEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeCollabEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
@@ -383,7 +410,7 @@ export const installHomeCollabEntry = ({
       if (bindings.has(element)) {
         return
       }
-      const binding = createBinding({
+      const binding = attachHomeCollabRoot({
         root: element,
         win,
         initialTarget: nextInitialTarget,

@@ -1,387 +1,78 @@
-import { component$, render, useSignal, useVisibleTask$, type RenderResult, type Signal } from '@builder.io/qwik'
-import { isClientBootIntentReady, runAfterClientIntentIdle } from '../../shared/client-boot'
-import {
-  beginInitialTask,
-  failInitialTask,
-  finishInitialTask,
-  getFragmentInitialTaskKey,
-  resolveFragmentInitialTaskHost
-} from './initial-settle'
+import { component$, useVisibleTask$, type Signal } from '@builder.io/qwik'
+import { loadFragmentWidgetRuntime } from './fragment-widget-runtime-loader'
 
 type FragmentShellIslandsProps = {
   gridRef: Signal<HTMLDivElement | undefined>
 }
 
-type IslandDefinition = {
-  load: () => Promise<any>
-  readProps?: (el: HTMLElement) => Record<string, string>
-}
+const FRAGMENT_WIDGET_INTERACTION_EVENTS = [
+  'pointerdown',
+  'click',
+  'focusin',
+  'keydown',
+  'input',
+  'submit',
+] as const
 
-const readAttr = (el: HTMLElement, name: string) => {
-  const value = el.getAttribute(name)
-  if (value === null) return undefined
-  const trimmed = value.trim()
-  return trimmed === '' ? undefined : trimmed
-}
-
-const buildProps = (el: HTMLElement, mapping: Record<string, string>) => {
-  const props: Record<string, string> = {}
-  Object.entries(mapping).forEach(([prop, attr]) => {
-    const value = readAttr(el, attr)
-    if (value !== undefined) {
-      props[prop] = value
-    }
-  })
-  return props
-}
-
-const islandRegistry: Record<string, IslandDefinition> = {
-  'preact-island': {
-    load: async () => (await import('../../components/PreactIsland')).PreactIsland,
-    readProps: (el) => buildProps(el, { label: 'label' })
-  },
-  'planner-demo': {
-    load: async () => (await import('../../components/PlannerDemo')).PlannerDemo
-  },
-  'react-binary-demo': {
-    load: async () => (await import('../../components/ReactBinaryDemo')).ReactBinaryDemo
-  },
-  'wasm-renderer-demo': {
-    load: async () => (await import('../../components/WasmRendererDemo')).WasmRendererDemo
-  },
-  'store-stream': {
-    load: async () => (await import('../../components/StoreStream')).StoreStream,
-    readProps: (el) =>
-      buildProps(el, {
-        class: 'class',
-        limit: 'data-limit',
-        placeholder: 'data-placeholder'
-      })
-  },
-  'store-create': {
-    load: async () => (await import('../../components/StoreCreateForm')).StoreCreateForm,
-    readProps: (el) =>
-      buildProps(el, {
-        class: 'class',
-        nameLabel: 'data-name-label',
-        priceLabel: 'data-price-label',
-        quantityLabel: 'data-quantity-label',
-        submitLabel: 'data-submit-label',
-        helper: 'data-helper',
-        namePlaceholder: 'data-name-placeholder',
-        pricePlaceholder: 'data-price-placeholder',
-        quantityPlaceholder: 'data-quantity-placeholder'
-      })
-  },
-  'store-cart': {
-    load: async () => (await import('../../components/StoreCart')).StoreCart,
-    readProps: (el) =>
-      buildProps(el, {
-        class: 'class',
-        title: 'data-title',
-        helper: 'data-helper',
-        empty: 'data-empty',
-        totalLabel: 'data-total',
-        dropLabel: 'data-drop',
-        removeLabel: 'data-remove'
-      })
-  },
-  'contact-invites': {
-    load: async () => (await import('../../components/ContactInvites')).ContactInvites,
-    readProps: (el) =>
-      buildProps(el, {
-        class: 'class',
-        title: 'data-title',
-        helper: 'data-helper',
-        searchLabel: 'data-search-label',
-        searchPlaceholder: 'data-search-placeholder',
-        searchActionLabel: 'data-search-action',
-        inviteActionLabel: 'data-invite-action',
-        acceptActionLabel: 'data-accept-action',
-        declineActionLabel: 'data-decline-action',
-        removeActionLabel: 'data-remove-action',
-        incomingLabel: 'data-incoming-label',
-        outgoingLabel: 'data-outgoing-label',
-        contactsLabel: 'data-contacts-label',
-        emptyLabel: 'data-empty-label'
-      })
-  }
-}
-
-const islandSelector = Object.keys(islandRegistry).join(',')
-const fragmentHostSelector = '[data-fragment-id]'
-const hostIntersectionMargin = 200
-
-const resolveIslands = (root: ParentNode) => {
-  const matches: HTMLElement[] = []
-  if (root instanceof HTMLElement && root.matches(islandSelector)) {
-    matches.push(root)
-  }
-  root.querySelectorAll?.(islandSelector).forEach((element) => {
-    matches.push(element as HTMLElement)
-  })
-  return matches
-}
-
-const resolveIslandHost = (element: HTMLElement) =>
-  element.closest<HTMLElement>(fragmentHostSelector) ?? element
-
-export const FragmentShellIslands = component$(({ gridRef }: FragmentShellIslandsProps) => {
-  const deferredMountReady = useSignal(typeof window !== 'undefined' ? isClientBootIntentReady() : false)
-
-  useVisibleTask$(
-    (ctx) => {
-      if (deferredMountReady.value) return
-      const cancel = runAfterClientIntentIdle(() => {
-        deferredMountReady.value = true
-      })
-      ctx.cleanup(() => {
-        cancel()
-      })
-    },
-    { strategy: 'document-ready' }
-  )
-
-  useVisibleTask$(
-    (ctx) => {
-      if (!ctx.track(() => deferredMountReady.value)) return
-      const grid = gridRef.value
-      ctx.track(() => gridRef.value)
-      if (!grid) return
-
-      const mounted = new Map<HTMLElement, RenderResult>()
-      const pending = new Set<HTMLElement>()
-      const islandsByHost = new Map<HTMLElement, Set<HTMLElement>>()
-      const observedHosts = new Set<HTMLElement>()
-      const idleMounts = new Map<HTMLElement, () => void>()
-      const isHostInView = (host: HTMLElement) => {
-        if (typeof window === 'undefined') return false
-        const rect = host.getBoundingClientRect()
-        const margin = hostIntersectionMargin
-        return (
-          rect.bottom >= -margin &&
-          rect.top <= window.innerHeight + margin &&
-          rect.right >= -margin &&
-          rect.left <= window.innerWidth + margin
-        )
-      }
-      const mountHostIslands = (host: HTMLElement) => {
-        const islands = islandsByHost.get(host)
-        if (!islands) return
-        islandsByHost.delete(host)
-        const cancelIdle = idleMounts.get(host)
-        if (cancelIdle) {
-          cancelIdle()
-          idleMounts.delete(host)
-        }
-        if (observedHosts.has(host)) {
-          observer.unobserve(host)
-          observedHosts.delete(host)
-        }
-        islands.forEach((element) => {
-          void mountIsland(element, mounted, pending)
-        })
-      }
-      const isHostCritical = (host: HTMLElement) => host.dataset.critical === 'true'
-      const scheduleIdle = (callback: () => void) => {
-        const idleApi = window as {
-          requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
-          cancelIdleCallback?: (handle: number) => void
-        }
-
-        if (idleApi.requestIdleCallback) {
-          const handle = idleApi.requestIdleCallback(callback, { timeout: 900 })
-          return () => {
-            idleApi.cancelIdleCallback?.(handle)
-          }
-        }
-        const handle = window.setTimeout(callback, 140)
-        return () => window.clearTimeout(handle)
-      }
-      const scheduleHostMount = (host: HTMLElement) => {
-        if (!islandsByHost.has(host)) return
-        if (idleMounts.has(host)) return
-        const cancel = scheduleIdle(() => {
-          idleMounts.delete(host)
-          if (!host.isConnected) return
-          if (!isHostInView(host)) return
-          mountHostIslands(host)
-        })
-        idleMounts.set(host, cancel)
-      }
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            const target = entry.target as HTMLElement
-            if (!entry.isIntersecting) {
-              const cancelIdle = idleMounts.get(target)
-              if (cancelIdle) {
-                cancelIdle()
-                idleMounts.delete(target)
-              }
-              return
-            }
-            scheduleHostMount(target)
-          })
-        },
-        { rootMargin: '200px 0px' }
-      )
-
-      const registerIsland = (element: HTMLElement) => {
-        const host = resolveIslandHost(element)
-        beginInitialTask(host, getFragmentInitialTaskKey('island', element))
-        let set = islandsByHost.get(host)
-        if (!set) {
-          set = new Set()
-          islandsByHost.set(host, set)
-        }
-        set.add(element)
-        if (isHostCritical(host)) {
-          mountHostIslands(host)
+export const FragmentShellIslands = component$(
+  ({ gridRef }: FragmentShellIslandsProps) => {
+    useVisibleTask$(
+      (ctx) => {
+        const grid = gridRef.value
+        ctx.track(() => gridRef.value)
+        if (!grid) {
           return
         }
-        if (isHostInView(host)) {
-          scheduleHostMount(host)
-          return
-        }
-        if (!observedHosts.has(host)) {
-          observer.observe(host)
-          observedHosts.add(host)
-        }
-      }
 
-      const observeIslands = (root: ParentNode) => {
-        resolveIslands(root).forEach((element) => {
-          if (mounted.has(element) || pending.has(element)) return
-          if (element.dataset.fragmentIslandMounted) {
-            element.removeAttribute('data-fragment-island-mounted')
-          }
-          registerIsland(element)
-        })
-      }
+        let cancelled = false
+        let runtime:
+          | import('./fragment-widget-runtime').FragmentWidgetRuntime
+          | null = null
+        let runtimePromise:
+          | ReturnType<typeof loadFragmentWidgetRuntime>
+          | null = null
 
-      const cleanupIslands = (root: ParentNode) => {
-        resolveIslands(root).forEach((element) => {
-          const host = resolveFragmentInitialTaskHost(element)
-          if (host) {
-            failInitialTask(host, getFragmentInitialTaskKey('island', element))
+        const ensureRuntime = async () => {
+          if (runtime) {
+            return runtime
           }
-          const result = mounted.get(element)
-          if (result) {
-            result.cleanup()
-            mounted.delete(element)
+          runtimePromise ??= loadFragmentWidgetRuntime()
+          const module = await runtimePromise
+          if (cancelled) {
+            return null
           }
-          pending.delete(element)
-          element.removeAttribute('data-fragment-island-mounted')
-          const islandHost = resolveIslandHost(element)
-          const set = islandsByHost.get(islandHost)
-          if (set) {
-            set.delete(element)
-            if (!set.size) {
-              islandsByHost.delete(islandHost)
-              if (observedHosts.has(islandHost)) {
-                observer.unobserve(islandHost)
-                observedHosts.delete(islandHost)
-              }
-            }
-          }
-        })
-      }
-
-      observeIslands(grid)
-
-      const mutationObserver = new MutationObserver((records) => {
-        records.forEach((record) => {
-          record.addedNodes.forEach((node) => {
-            if (!(node instanceof HTMLElement)) return
-            observeIslands(node)
+          runtime ??= module.createFragmentWidgetRuntime({
+            root: grid,
+            observeMutations: true,
           })
-          record.removedNodes.forEach((node) => {
-            if (!(node instanceof HTMLElement)) return
-            cleanupIslands(node)
-          })
-        })
-      })
-
-      mutationObserver.observe(grid, { childList: true, subtree: true })
-      const rescan = () => {
-        observeIslands(grid)
-      }
-      const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-          rescan()
+          return runtime
         }
-      }
-      window.addEventListener('pageshow', rescan)
-      document.addEventListener('visibilitychange', handleVisibilityChange)
 
-      ctx.cleanup(() => {
-        window.removeEventListener('pageshow', rescan)
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
-        mutationObserver.disconnect()
-        observer.disconnect()
-        idleMounts.forEach((cancel) => cancel())
-        idleMounts.clear()
-        mounted.forEach((result) => result.cleanup())
-        mounted.clear()
-        pending.clear()
-        islandsByHost.clear()
-        observedHosts.clear()
-      })
-    },
-    { strategy: 'document-ready' }
-  )
+        const handleInteraction = (event: Event) => {
+          void ensureRuntime().then((activeRuntime) => {
+            activeRuntime?.handleInteraction(event.target)
+          })
+        }
 
-  return null
-})
+        FRAGMENT_WIDGET_INTERACTION_EVENTS.forEach((eventName) => {
+          grid.addEventListener(eventName, handleInteraction, true)
+        })
 
-const mountIsland = async (
-  element: HTMLElement,
-  mounted: Map<HTMLElement, RenderResult>,
-  pending: Set<HTMLElement>
-) => {
-  if (mounted.has(element) || pending.has(element)) return
-  const tagName = element.tagName.toLowerCase()
-  const definition = islandRegistry[tagName]
-  if (!definition) return
-  pending.add(element)
-  element.dataset.fragmentIslandMounted = 'pending'
-  const host = resolveFragmentInitialTaskHost(element)
-  const taskKey = getFragmentInitialTaskKey('island', element)
+        void ensureRuntime()
 
-  try {
-    const Component = await definition.load()
-    if (!element.isConnected) {
-      element.removeAttribute('data-fragment-island-mounted')
-      pending.delete(element)
-      if (host) {
-        failInitialTask(host, taskKey)
-      }
-      return
-    }
-    const props = definition.readProps ? definition.readProps(element) : {}
-    const result = await render(element, <Component {...props} />)
-    if (!element.isConnected) {
-      result.cleanup()
-      element.removeAttribute('data-fragment-island-mounted')
-      pending.delete(element)
-      if (host) {
-        failInitialTask(host, taskKey)
-      }
-      return
-    }
-    mounted.set(element, result)
-    element.dataset.fragmentIslandMounted = 'true'
-    pending.delete(element)
-    if (host) {
-      finishInitialTask(host, taskKey)
-    }
-  } catch (error) {
-    element.dataset.fragmentIslandMounted = 'error'
-    pending.delete(element)
-    if (host) {
-      failInitialTask(host, taskKey)
-    }
-    console.error(`[FragmentShellIslands] Failed to mount ${tagName}`, error)
+        ctx.cleanup(() => {
+          cancelled = true
+          FRAGMENT_WIDGET_INTERACTION_EVENTS.forEach((eventName) => {
+            grid.removeEventListener(eventName, handleInteraction, true)
+          })
+          runtime?.destroy()
+          runtime = null
+        })
+      },
+      { strategy: 'document-ready' }
+    )
+
+    return null
   }
-}
+)
+

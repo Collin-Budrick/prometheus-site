@@ -49,6 +49,17 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
+const escapeJsonScript = (value: string) =>
+  value
+    .replace(/&/g, '\\u0026')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+
+const isApplicationJsonScript = (tag: string, attrs?: Record<string, string>) =>
+  tag === 'script' && attrs?.type === 'application/json'
+
 const renderAttributes = (attrs?: Record<string, string>) => {
   if (attrs === undefined) return ''
   return Object.entries(attrs)
@@ -56,10 +67,30 @@ const renderAttributes = (attrs?: Record<string, string>) => {
     .join('')
 }
 
-export const renderToHtml = (node: RenderNode): string => {
-  if (node.type === 'text') return escapeHtml(node.text ?? '')
+export const renderToHtml = (
+  node: RenderNode,
+  parent?: { tag: string; attrs?: Record<string, string> }
+): string => {
+  if (node.type === 'text') {
+    return isApplicationJsonScript(parent?.tag ?? '', parent?.attrs)
+      ? escapeJsonScript(node.text ?? '')
+      : escapeHtml(node.text ?? '')
+  }
   const tag = node.tag ?? 'div'
   const attrs = renderAttributes(node.attrs)
-  const children = (node.children ?? []).map(renderToHtml).join('')
-  return `<${tag}${attrs}>${children}</${tag}>`
+  const children = node.children ?? []
+  if (isApplicationJsonScript(tag, node.attrs)) {
+    const rawText = children
+      .map((child) =>
+        child.type === 'text'
+          ? child.text ?? ''
+          : renderToHtml(child, { tag, attrs: node.attrs })
+      )
+      .join('')
+    return `<${tag}${attrs}>${rawText}</${tag}>`
+  }
+  const renderedChildren = children
+    .map((child) => renderToHtml(child, { tag, attrs: node.attrs }))
+    .join('')
+  return `<${tag}${attrs}>${renderedChildren}</${tag}>`
 }

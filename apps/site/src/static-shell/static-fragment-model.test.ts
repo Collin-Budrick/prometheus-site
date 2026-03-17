@@ -142,8 +142,15 @@ describe('static-fragment-model', () => {
     expect(model.entries[0]?.html).toContain('ライブカタログ')
     expect(model.entries[0]?.html).toContain('SpaceTimeDB スナップショット')
     expect(model.entries[0]?.html).toContain('カタログは空です。')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget="store-stream"')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget-id="fragment://page/store/stream@v5::store-stream"')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget-priority="visible"')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget-hydrated="false"')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget-shell')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget-props')
     expect(model.entries[1]?.html).toContain('デジタル商品')
     expect(model.entries[1]?.html).toContain('アイテム追加')
+    expect(model.entries[1]?.html).toContain('data-fragment-widget="store-create"')
   })
 
   it('renders custom fragment tags from tree payloads even when raw html is present', () => {
@@ -187,6 +194,7 @@ describe('static-fragment-model', () => {
 
     expect(model.entries[0]?.html).toContain('store-create-submit')
     expect(model.entries[0]?.html).toContain('Digital product')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget="store-create"')
     expect(model.entries[0]?.html).not.toContain('<store-create')
   })
 
@@ -234,6 +242,7 @@ describe('static-fragment-model', () => {
 
     expect(model.entries[0]?.html).toContain('store-cart-total')
     expect(model.entries[0]?.html).toContain('Cart is empty.')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget="store-cart"')
     expect(model.entries[0]?.html).not.toContain('<store-cart')
   })
 
@@ -282,5 +291,6 @@ describe('static-fragment-model', () => {
     expect(model.entries[0]?.html).toContain('Search the store...')
     expect(model.entries[0]?.html).toContain('Item 2')
     expect(model.entries[0]?.html).toContain('Add to cart')
+    expect(model.entries[0]?.html).toContain('data-fragment-widget="store-stream"')
   })
 })
