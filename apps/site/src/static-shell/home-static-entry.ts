@@ -4,13 +4,11 @@ import { primeHomeFragmentBootstrapBytes } from './home-fragment-bootstrap'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import {
-  STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_SHELL_MAIN_REGION,
   STATIC_SHELL_REGION_ATTR
 } from './constants'
-import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { scheduleStaticShellTask } from './scheduler'
 import {
@@ -34,13 +32,11 @@ type InstallHomeStaticEntryOptions = {
   loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
   primeBootstrap?: typeof primeHomeFragmentBootstrapBytes
   createLcpGate?: typeof createHomeFirstLcpGate
-  releaseReadyStagger?: typeof releaseQueuedReadyStaggerWithin
   schedulePaintReady?: typeof scheduleStaticRoutePaintReady
   scheduleTask?: typeof scheduleStaticShellTask
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
-const HOME_READY_STAGGER_SELECTOR = `[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([${STATIC_HOME_LCP_STABLE_ATTR}="true"])`
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -96,7 +92,6 @@ export const installHomeStaticEntry = ({
   loadBootstrapRuntime = loadHomeBootstrapRuntime,
   primeBootstrap = primeHomeFragmentBootstrapBytes,
   createLcpGate = createHomeFirstLcpGate,
-  releaseReadyStagger = releaseQueuedReadyStaggerWithin,
   schedulePaintReady = scheduleStaticRoutePaintReady,
   scheduleTask = scheduleStaticShellTask
 }: InstallHomeStaticEntryOptions = {}) => {
@@ -335,12 +330,6 @@ export const installHomeStaticEntry = ({
       setTimer: liveWin.setTimeout.bind(liveWin),
       clearTimer: liveWin.clearTimeout.bind(liveWin),
       onReady: () => {
-        releaseReadyStagger({
-          root: liveDoc,
-          queuedSelector: HOME_READY_STAGGER_SELECTOR,
-          group: 'static-home-ready',
-          immediate: true
-        })
         if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
           requestBootstrap()
           scheduleDeferredWidgetRuntime()

@@ -1022,6 +1022,10 @@ body {
   contain-intrinsic-size: auto var(--fragment-min-height, var(--fragment-card-small-height));
 }
 
+.layout-shell[data-static-route='home'] .fragment-card[data-reveal-phase='visible'] {
+  transition: none;
+}
+
 .layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-slot,
 .layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-card {
   contain: none;

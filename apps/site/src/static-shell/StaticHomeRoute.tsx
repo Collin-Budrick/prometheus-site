@@ -39,7 +39,6 @@ import {
   serializeFragmentHeightLayout,
   type FragmentHeightLayout
 } from '@prometheus/ui/fragment-height'
-import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
 import {
   createSeededHomeStaticCopyBundle,
   createSeededHomeStaticFragmentHeaders
@@ -97,7 +96,7 @@ type StaticHomeRenderedCard = {
   desktopWidthBucket: string | null
   mobileWidthBucket: string | null
   patchState: 'ready' | 'pending'
-  revealPhase: 'queued' | 'holding' | 'visible'
+  revealPhase: 'holding' | 'visible'
   lcpStable: boolean
   placement: 'hero' | 'main'
 }
@@ -233,7 +232,7 @@ export const buildStaticHomeRouteState = ({
       desktopWidthBucket,
       mobileWidthBucket,
       patchState,
-      revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding',
+      revealPhase: patchState === 'ready' ? 'visible' : 'holding',
       lcpStable,
       placement
     }
@@ -303,7 +302,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
       <noscript>
         <style nonce={nonce || undefined}>
           {
-            "[data-static-home-root] .fragment-card[data-ready-stagger-state='queued'],[data-static-home-root] .fragment-card[data-reveal-phase='holding']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
+            "[data-static-home-root] .fragment-card[data-reveal-phase='holding']{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;}"
           }
         </style>
       </noscript>
@@ -371,7 +370,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
-                    [READY_STAGGER_STATE_ATTR]: card.revealPhase === 'queued' ? 'queued' : undefined,
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >
@@ -424,7 +422,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
                     [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
                     [STATIC_HOME_STAGE_ATTR]: card.stage,
                     [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
-                    [READY_STAGGER_STATE_ATTR]: card.revealPhase === 'queued' ? 'queued' : undefined,
                     'data-fragment-height-hint': `${card.reservedHeight}`
                   }}
                 >

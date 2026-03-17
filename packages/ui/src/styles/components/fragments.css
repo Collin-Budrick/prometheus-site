@@ -402,7 +402,7 @@
     display: none;
   }
 
-  .layout-shell[data-static-route='home'] .fragment-card:not([data-ready-stagger-state]) {
+  .layout-shell[data-static-route='home'] .fragment-card[data-reveal-phase='visible'] {
     transition: none;
   }
 

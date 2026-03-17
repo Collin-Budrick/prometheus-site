@@ -381,7 +381,7 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('releases queued SSR cards immediately after the LCP gate and starts bootstrap without waiting for visibility observers', async () => {
+  it('marks home paint ready after the LCP gate and starts bootstrap without waiting for visibility observers', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -404,9 +404,6 @@ describe('installHomeStaticEntry', () => {
         onReady?.()
         return () => undefined
       }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
-      releaseReadyStagger: (() => {
-        events.push('release-stagger')
-      }) as typeof import('@prometheus/ui/ready-stagger').releaseQueuedReadyStaggerWithin,
       scheduleTask: taskQueue.scheduleTask as never
     })
 
@@ -414,7 +411,7 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
-    expect(events).toEqual(['schedule-paint', 'release-stagger'])
+    expect(events).toEqual(['schedule-paint'])
 
     taskQueue.runAll()
     cleanup()

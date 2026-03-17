@@ -252,7 +252,7 @@ describe("static shell performance invariants", () => {
       "const lcpStable = Boolean(entry.critical || fragmentKind === 'dock' || activeShell)",
     );
     expect(homeRouteSource).toContain(
-      "revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding'",
+      "revealPhase: patchState === 'ready' ? 'visible' : 'holding'",
     );
     expect(homeRouteSource).toContain('data-fragment-id="shell-intro"');
     expect(homeRouteSource).toContain('data-reveal-phase="visible"');
@@ -599,7 +599,8 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).toContain("primeBootstrapRequest");
     expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
     expect(homeStaticEntrySource).toContain("scheduleDeferredWidgetRuntime");
-    expect(homeStaticEntrySource).toContain("immediate: true");
+    expect(homeStaticEntrySource).not.toContain("releaseQueuedReadyStaggerWithin");
+    expect(homeStaticEntrySource).not.toContain("data-ready-stagger-state");
     expect(homeStaticEntrySource).toContain("requestBootstrap()");
     expect(homeStaticEntrySource).not.toContain("startCollabEntry");
     expect(homeStaticEntrySource).not.toContain("startDemoEntry");

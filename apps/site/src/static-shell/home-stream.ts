@@ -1,12 +1,5 @@
 import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { FragmentPayload } from '@core/fragment/types'
-import {
-  applyImmediateReadyStagger,
-  READY_STAGGER_DURATION_MS,
-  READY_STAGGER_STATE_ATTR,
-  queueReadyStaggerOnVisible,
-  scheduleReleaseQueuedReadyStaggerWithin
-} from '@prometheus/ui/ready-stagger'
 import type { Lang } from '../lang/types'
 import { setTrustedInnerHtml } from '../security/client'
 import {
@@ -81,8 +74,6 @@ const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
-const FRAGMENT_REVEAL_UNLOCK_PADDING_MS = 40
-const STATIC_HOME_QUEUED_READY_SELECTOR = '.fragment-card[data-ready-stagger-state="queued"]'
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -104,14 +95,10 @@ const isHomePatchReady = (card: Element | null) =>
   isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === 'ready'
 
 const shouldPreserveHomeCardRevealState = (card: HTMLElement) => {
-  const readyStaggerState = card.getAttribute(READY_STAGGER_STATE_ATTR)
   const revealPhase = card.dataset.revealPhase
   return (
     isHomePatchReady(card) ||
     card.dataset.fragmentReady === 'true' ||
-    readyStaggerState === 'queued' ||
-    readyStaggerState === 'done' ||
-    revealPhase === 'queued' ||
     revealPhase === 'visible'
   )
 }
@@ -296,14 +283,6 @@ const settlePatchedHomeCardHeightFast = ({
   return nextHeight
 }
 
-const resolvePatchedRevealLockDelay = (delayMs: number, immediate = false) => {
-  if (immediate) {
-    return 0
-  }
-
-  return Math.max(delayMs, 0) + READY_STAGGER_DURATION_MS + FRAGMENT_REVEAL_UNLOCK_PADDING_MS
-}
-
 const preserveSettledHomeCardHeight = (card: HTMLElement) => {
   const settledHeight = readFragmentHeightHint(card)
   if (settledHeight > 0) {
@@ -333,93 +312,34 @@ const releasePatchedHomeCardHeight = (card: HTMLElement, lockToken: string) => {
 
 const finalizePatchedHomeCardWithoutReveal = ({
   card,
-  lockToken
-}: {
-  card: HTMLElement
-  lockToken: string
-}) => {
-  if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
-    return
-  }
-
-  const readyState = card.getAttribute(READY_STAGGER_STATE_ATTR)
-  if (readyState === 'done') {
-    card.dataset.revealPhase = 'visible'
-  } else if (readyState === 'queued') {
-    card.dataset.revealPhase = 'queued'
-  } else {
-    card.dataset.revealPhase = 'visible'
-  }
-  card.dataset.fragmentStage = 'ready'
-  card.dataset.fragmentReady = 'true'
-  releasePatchedHomeCardHeight(card, lockToken)
-}
-
-const queuePatchedHomeCardReveal = ({
-  card,
-  root,
   lockToken,
-  group,
-  immediate
+  deferUnlock = false
 }: {
   card: HTMLElement
-  root?: ParentNode | null
   lockToken: string
-  group: string
-  immediate: boolean
+  deferUnlock?: boolean
 }) => {
   if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
     return
   }
 
+  card.dataset.revealPhase = 'visible'
   card.dataset.fragmentStage = 'ready'
   card.dataset.fragmentReady = 'true'
-  preserveSettledHomeCardHeight(card)
-
-  const scheduleUnlock = (delayMs: number) => {
-    const unlockDelayMs = resolvePatchedRevealLockDelay(delayMs, immediate)
-    if (unlockDelayMs <= 0) {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => {
-          releasePatchedHomeCardHeight(card, lockToken)
-        })
-      } else {
-        releasePatchedHomeCardHeight(card, lockToken)
-      }
-      return
-    }
-
-    globalThis.setTimeout(() => {
-      releasePatchedHomeCardHeight(card, lockToken)
-    }, unlockDelayMs)
-  }
-
-  const handleStateChange = (state: 'queued' | 'done', delayMs: number) => {
-    if (card.getAttribute(FRAGMENT_REVEAL_TOKEN_ATTR) !== lockToken) {
-      return
-    }
-
-    card.dataset.revealPhase = state === 'done' ? 'visible' : 'queued'
-    if (state === 'done') {
-      scheduleUnlock(delayMs)
-    }
-  }
-
-  if (immediate) {
-    applyImmediateReadyStagger(card, handleStateChange)
+  if (!deferUnlock) {
+    releasePatchedHomeCardHeight(card, lockToken)
     return
   }
 
-  queueReadyStaggerOnVisible(card, {
-    group,
-    replay: true,
-    onStateChange: handleStateChange
-  })
-  scheduleReleaseQueuedReadyStaggerWithin({
-    root: root ?? (typeof document !== 'undefined' ? document : undefined),
-    queuedSelector: STATIC_HOME_QUEUED_READY_SELECTOR,
-    group
-  })
+  preserveSettledHomeCardHeight(card)
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      releasePatchedHomeCardHeight(card, lockToken)
+    })
+    return
+  }
+
+  releasePatchedHomeCardHeight(card, lockToken)
 }
 
 export const collectStaticHomeKnownVersions = (root: ParentNode = document) => {
@@ -453,7 +373,7 @@ export const patchStaticHomeFragmentCard = ({
   routeContext,
   settlePatchedHeight = null
 }: PatchStaticHomeFragmentCardOptions): PatchStaticHomeFragmentCardResult => {
-  const targetCard = card ?? findStaticHomeFragmentCard(payload.id)
+  const targetCard = card ?? findStaticHomeFragmentCard(payload.id, root ?? undefined)
   if (!targetCard) return 'missing'
   if (targetCard.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return 'locked'
 
@@ -485,7 +405,6 @@ export const patchStaticHomeFragmentCard = ({
     targetCard.dataset.fragmentStage = 'ready'
     targetCard.dataset.fragmentReady = 'true'
   } else {
-    targetCard.removeAttribute(READY_STAGGER_STATE_ATTR)
     targetCard.dataset.revealPhase = 'holding'
     targetCard.dataset.fragmentStage = 'waiting-assets'
     delete targetCard.dataset.fragmentReady
@@ -503,15 +422,6 @@ export const patchStaticHomeFragmentCard = ({
   }
 
   setHomePatchState(targetCard, 'ready')
-  const revealPatchedCard = () => {
-    queuePatchedHomeCardReveal({
-      card: targetCard,
-      root,
-      lockToken,
-      group: 'static-home-patch',
-      immediate: true
-    })
-  }
 
   const fastSettledHeight = hasReadyMarkup
     ? null
@@ -558,14 +468,11 @@ export const patchStaticHomeFragmentCard = ({
     })
     .finally(() => {
       clearPatchedHomeHeightLock(targetCard, lockToken)
-      if (preserveRevealState) {
-        finalizePatchedHomeCardWithoutReveal({
-          card: targetCard,
-          lockToken
-        })
-        return
-      }
-      revealPatchedCard()
+      finalizePatchedHomeCardWithoutReveal({
+        card: targetCard,
+        lockToken,
+        deferUnlock: !preserveRevealState
+      })
     })
 
   return 'patched'

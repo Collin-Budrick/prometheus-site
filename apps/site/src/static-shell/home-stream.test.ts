@@ -2,10 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { h, t } from '@core/fragment/tree'
 import type { FragmentPayload } from '@core/fragment/types'
 import {
-  READY_STAGGER_STATE_ATTR,
-  resetReadyStaggerBatchesForTests
-} from '@prometheus/ui/ready-stagger'
-import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_HOME_STAGE_ATTR,
@@ -192,8 +188,7 @@ const createCard = (
     version?: number
     patchState?: 'pending' | 'ready'
     stage?: 'critical' | 'anchor' | 'deferred'
-    readyStaggerState?: 'queued' | 'done'
-    revealPhase?: 'holding' | 'queued' | 'visible'
+    revealPhase?: 'holding' | 'visible'
     fragmentReady?: boolean
     fragmentStage?: string
   } = {}
@@ -205,9 +200,6 @@ const createCard = (
   card.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, `${options.version ?? 1}`)
   card.setAttribute(STATIC_HOME_STAGE_ATTR, options.stage ?? (options.critical ? 'critical' : 'deferred'))
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, options.patchState ?? 'pending')
-  if (options.readyStaggerState) {
-    card.setAttribute(READY_STAGGER_STATE_ATTR, options.readyStaggerState)
-  }
   if (options.revealPhase) {
     card.dataset.revealPhase = options.revealPhase
   }
@@ -239,7 +231,6 @@ describe('home-stream patching', () => {
   })
 
   afterEach(() => {
-    resetReadyStaggerBatchesForTests()
     ;(globalThis as typeof globalThis & { HTMLElement?: unknown }).HTMLElement = originalHTMLElement
     if (originalTrustedTypes !== undefined) {
       ;(globalThis as typeof globalThis & { trustedTypes?: unknown }).trustedTypes = originalTrustedTypes
@@ -282,7 +273,7 @@ describe('home-stream patching', () => {
     await flushAsyncWork()
     frameQueue.flushFrames()
 
-    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.getAttribute('data-ready-stagger-state')).toBeNull()
     expect(card.dataset.revealPhase).toBe('visible')
     expect(card.dataset.fragmentReady).toBe('true')
   })
@@ -367,7 +358,6 @@ describe('home-stream patching', () => {
       version: 1,
       patchState: 'ready',
       stage: 'anchor',
-      readyStaggerState: 'done',
       revealPhase: 'visible',
       fragmentReady: true,
       fragmentStage: 'ready'
@@ -383,7 +373,7 @@ describe('home-stream patching', () => {
     expect(result).toBe('patched')
     expect(body.innerHTML).toContain('React refresh')
     expect(card.dataset.revealPhase).toBe('visible')
-    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.getAttribute('data-ready-stagger-state')).toBeNull()
     expect(card.dataset.fragmentReady).toBe('true')
 
     for (let index = 0; index < 5; index += 1) {
@@ -392,7 +382,7 @@ describe('home-stream patching', () => {
     }
 
     expect(card.dataset.revealPhase).toBe('visible')
-    expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
+    expect(card.getAttribute('data-ready-stagger-state')).toBeNull()
     expect(card.dataset.fragmentReady).toBe('true')
     expect(card.dataset.revealLocked).toBe('false')
   })
