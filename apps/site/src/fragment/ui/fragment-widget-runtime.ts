@@ -1,12 +1,5 @@
-import {
-  attachHomeCollabRoot,
-  type AttachHomeCollabRootOptions,
-} from '../../static-shell/home-collab-entry'
-import {
-  activateHomeDemo,
-  type HomeDemoKind,
-} from '../../static-shell/home-demo-activate'
-import { loadStoreStaticRuntime } from '../../static-shell/store-static-runtime-loader'
+import type { AttachHomeCollabRootOptions } from '../../static-shell/home-collab-entry'
+import type { HomeDemoKind } from '../../static-shell/home-demo-activate'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
 const FRAGMENT_WIDGET_PROPS_SELECTOR = 'script[data-fragment-widget-props]'
@@ -52,6 +45,11 @@ export type FragmentWidgetRuntime = {
 
 let storeStaticBootstrapPromise: Promise<void> | null = null
 let didWarnContactWidgetFallback = false
+
+const loadHomeDemoRuntime = () => import('../../static-shell/home-demo-activate')
+const loadHomeCollabRuntime = () => import('../../static-shell/home-collab-entry')
+const loadStoreStaticRuntimeLoader = () =>
+  import('../../static-shell/store-static-runtime-loader')
 
 const isElementLike = (value: unknown): value is Element =>
   Boolean(
@@ -122,12 +120,15 @@ const attachHomeDemoWidget = async (
   payload: FragmentWidgetPayload,
   { root }: FragmentWidgetAttachOptions
 ) => {
+  const { activateHomeDemo } = await loadHomeDemoRuntime()
   const kind = resolveHomeDemoKind(element.dataset.fragmentWidget ?? '')
   if (!kind) {
     return
   }
+  const mountRoot =
+    element.querySelector<HTMLElement>('[data-fragment-widget-mount]') ?? root
   const result = await activateHomeDemo({
-    root,
+    root: mountRoot,
     kind,
     props: payload.props ?? {},
   })
@@ -138,14 +139,16 @@ const attachHomeCollabWidget = async (
   _element: HTMLElement,
   _payload: FragmentWidgetPayload,
   options: FragmentWidgetAttachOptions
-) =>
-  attachHomeCollabRoot({
+) => {
+  const { attachHomeCollabRoot } = await loadHomeCollabRuntime()
+  return attachHomeCollabRoot({
     root: options.root,
     initialTarget: options.target,
   } satisfies AttachHomeCollabRootOptions)
+}
 
 const bootstrapStoreStaticRuntime = async () => {
-  storeStaticBootstrapPromise ??= loadStoreStaticRuntime()
+  storeStaticBootstrapPromise ??= loadStoreStaticRuntimeLoader()
     .then(({ bootstrapStaticStoreShell }) => bootstrapStaticStoreShell())
     .catch((error) => {
       storeStaticBootstrapPromise = null
@@ -239,6 +242,14 @@ export const createFragmentWidgetRuntime = ({
   let eagerCleanup: (() => void) | null = null
   let observer: IntersectionObserver | null = null
   let mutationObserver: MutationObserver | null = null
+
+  const observeWidget = (element: HTMLElement) => {
+    if (observed.has(element)) {
+      return
+    }
+    observed.add(element)
+    observer?.observe(element)
+  }
 
   const ensureObserver = () => {
     if (observer || typeof IntersectionObserver !== 'function') {
@@ -386,8 +397,21 @@ export const createFragmentWidgetRuntime = ({
       return
     }
     const priority = readWidgetPriority(element)
-    if (priority === 'critical' || priority === 'visible') {
+    if (priority === 'critical') {
       scheduleEager(element)
+      return
+    }
+    if (priority === 'visible') {
+      if (!ensureObserver()) {
+        scheduleAfterPaint(() => {
+          if (destroyed || !element.isConnected) {
+            return
+          }
+          void attachWidget(element, null)
+        })
+        return
+      }
+      observeWidget(element)
       return
     }
     if (!ensureObserver()) {
@@ -399,10 +423,7 @@ export const createFragmentWidgetRuntime = ({
       })
       return
     }
-    if (!observed.has(element)) {
-      observed.add(element)
-      observer?.observe(element)
-    }
+    observeWidget(element)
   }
 
   const observeWithin = (nextRoot: ParentNode) => {

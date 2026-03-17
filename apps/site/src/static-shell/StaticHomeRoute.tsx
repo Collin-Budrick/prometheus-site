@@ -65,6 +65,11 @@ const DEFAULT_RESERVED_CARD_HEIGHT = 180
 const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
   fragmentKind === 'planner' || fragmentKind === 'ledger' || fragmentKind === 'island' || fragmentKind === 'react'
 
+const usesActiveHomeDemoShell = (
+  stage: StaticHomeCardStage,
+  fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
+) => stage === 'anchor' && (fragmentKind === 'planner' || fragmentKind === 'ledger')
+
 type StaticHomeRenderedCard = {
   id: string
   order: number
@@ -148,9 +153,12 @@ export const buildStaticHomeRouteState = ({
       : !anchorColumns.has(column)
         ? (anchorColumns.add(column), 'anchor')
         : 'deferred'
+    const activeShell = usesActiveHomeDemoShell(stage, fragmentKind)
     const renderMode =
       stage === 'critical'
         ? 'rich'
+        : activeShell
+          ? 'active-shell'
         : isStaticHomePreviewKind(fragmentKind)
           ? 'preview'
           : fragmentKind === 'dock'
@@ -158,8 +166,8 @@ export const buildStaticHomeRouteState = ({
             : stage === 'anchor'
             ? 'shell'
             : 'stub'
-    const patchState = stage === 'critical' || fragmentKind === 'dock' ? 'ready' : 'pending'
-    const lcpStable = Boolean(entry.critical)
+    const patchState = stage === 'critical' || fragmentKind === 'dock' || activeShell ? 'ready' : 'pending'
+    const lcpStable = Boolean(entry.critical || activeShell)
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,

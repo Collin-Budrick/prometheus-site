@@ -35,6 +35,7 @@ describe("static shell performance invariants", () => {
       homeLanguageRuntimeSource,
       homeUiControlsRuntimeSource,
       buildVersionSource,
+      fragmentWidgetRuntimeSource,
     ] = await Promise.all([
       readSource("./home-bootstrap.tsx"),
       readSource("./static-bootstrap.ts"),
@@ -65,6 +66,7 @@ describe("static shell performance invariants", () => {
       readSource("./home-language-runtime.ts"),
       readSource("./home-ui-controls-runtime.ts"),
       readSource("./build-version.server.ts"),
+      readSource("../fragment/ui/fragment-widget-runtime.ts"),
     ]);
 
     expect(bootstrapSource).toContain("./home-stream");
@@ -288,6 +290,15 @@ describe("static shell performance invariants", () => {
       ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true']",
     );
     expect(globalCriticalSource).toContain(
+      ".fragment-grid[data-fragment-grid='main'] .fragment-slot {\n  contain: layout;\n}",
+    );
+    expect(globalCriticalSource).toContain(
+      ".fragment-grid[data-fragment-grid='intro'] .fragment-slot,\n.layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-card {\n  contain: none;\n}",
+    );
+    expect(globalCriticalSource).toContain(
+      ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true'] {\n  content-visibility: visible;\n  contain: none;",
+    );
+    expect(globalCriticalSource).toContain(
       "> .fragment-card:not([data-static-home-lcp-stable='true'])",
     );
     expect(globalCriticalSource).toContain(
@@ -401,6 +412,7 @@ describe("static shell performance invariants", () => {
       assetVersionSource,
       shellLayoutSource,
       seedSource,
+      fragmentWidgetRuntimeSource,
     ] = await Promise.all([
       readSource("../entry.ssr.tsx"),
       readSource("../../scripts/build-static-shell-entries.mjs"),
@@ -430,6 +442,7 @@ describe("static shell performance invariants", () => {
       readSource("./asset-version.ts"),
       readSource("./StaticShellLayout.tsx"),
       readSource("./seed.ts"),
+      readSource("../fragment/ui/fragment-widget-runtime.ts"),
     ]);
 
     expect(entrySsrSource).toContain('rel="modulepreload"');
@@ -581,6 +594,7 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).toContain("clearStartupHandlers");
     expect(homeStaticEntrySource).toContain("primeBootstrapRequest");
     expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
+    expect(homeStaticEntrySource).toContain("scheduleDeferredWidgetRuntime");
     expect(homeStaticEntrySource).toContain("immediate: true");
     expect(homeStaticEntrySource).toContain("requestBootstrap()");
     expect(homeStaticEntrySource).not.toContain("startCollabEntry");
@@ -599,6 +613,22 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).toContain("'focusin'");
     expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'");
     expect(homeStaticEntrySource).toContain("scheduleStaticShellTask");
+    expect(homeStaticEntrySource).not.toContain("scheduleReleaseTask(() =>");
+    expect(fragmentWidgetRuntimeSource).toContain(
+      "const loadHomeDemoRuntime = () => import('../../static-shell/home-demo-activate')",
+    );
+    expect(fragmentWidgetRuntimeSource).toContain(
+      "const loadHomeCollabRuntime = () => import('../../static-shell/home-collab-entry')",
+    );
+    expect(fragmentWidgetRuntimeSource).toContain(
+      "const loadStoreStaticRuntimeLoader = () =>",
+    );
+    expect(fragmentWidgetRuntimeSource).not.toContain(
+      "import {\n  attachHomeCollabRoot",
+    );
+    expect(fragmentWidgetRuntimeSource).not.toContain(
+      "import {\n  activateHomeDemo",
+    );
     expect(homeDemoEntrySource).toContain("./home-demo-controller-state");
     expect(homeDemoEntrySource).toContain("./home-demo-observe-event");
     expect(homeDemoEntrySource).toContain("./home-demo-performance");

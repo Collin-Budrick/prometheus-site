@@ -20,7 +20,7 @@ export type HomeStaticCopyBundle = {
 }
 
 export type HomeStaticFragmentKind = 'manifest' | 'planner' | 'ledger' | 'island' | 'react' | 'dock' | 'unknown'
-export type HomeStaticRenderMode = 'preview' | 'rich' | 'shell' | 'stub'
+export type HomeStaticRenderMode = 'preview' | 'rich' | 'shell' | 'stub' | 'active-shell'
 
 export type HomeStaticRenderOptions = {
   mode?: HomeStaticRenderMode
@@ -30,6 +30,7 @@ export type HomeStaticRenderOptions = {
 
 type DemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'
 type DemoWidgetKind = 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island'
+type DemoRenderVariant = 'preview' | 'active'
 
 const HOME_FRAGMENT_KIND_BY_ID: Record<string, HomeStaticFragmentKind> = {
   'fragment://page/home/manifest@v1': 'manifest',
@@ -74,6 +75,17 @@ const demoShellAttrs = (kind: DemoKind) => ({
 })
 
 const HOME_PREVIEW_DEMO_TAGS = new Set(['planner-demo', 'wasm-renderer-demo', 'react-binary-demo', 'preact-island'])
+const initialReactBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+const computeWasmMetrics = (a: number, b: number) => {
+  const mixed = (a * 5 + b * 3) % 1024
+  const throughput = 120 + (mixed % 280)
+  const hotPath = 60 + (mixed % 40)
+  const hash = ((mixed * 2654435761) >>> 0).toString(16).padStart(8, '0')
+  return { mixed, throughput, hotPath, hash }
+}
 
 const buildCompactDemoShellNode = (
   kind: DemoKind,
@@ -137,6 +149,196 @@ const buildWasmPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =
     ])
   )
 
+const buildPlannerActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string) =>
+  buildDemoWidgetNode(
+    fragmentId,
+    'planner',
+    h(
+      'div',
+      {
+        class: 'planner-demo',
+        'data-home-demo-active': 'true',
+        'data-preview': 'false',
+        'data-stage': 'idle'
+      },
+      [
+        h('div', { class: 'planner-demo-header' }, [
+          h('div', { class: 'planner-demo-title' }, [t(copy.planner.title)]),
+          h('div', { class: 'planner-demo-controls' }, [
+            h('button', { class: 'planner-demo-action', type: 'button', 'data-action': 'run' }, [t(copy.planner.run)]),
+            h('button', { class: 'planner-demo-secondary', type: 'button', 'data-action': 'shuffle' }, [
+              t(copy.planner.shuffle)
+            ])
+          ])
+        ]),
+        h('div', { class: 'planner-demo-status', 'aria-live': 'polite' }, [t(copy.planner.waiting)]),
+        h(
+          'div',
+          { class: 'planner-demo-steps', role: 'list' },
+          copy.planner.steps.map((step) =>
+            h('div', { class: 'planner-demo-step', role: 'listitem' }, [t(step.label)])
+          )
+        ),
+        h(
+          'div',
+          { class: 'planner-demo-grid' },
+          copy.planner.fragments.map((fragment) =>
+            h(
+              'div',
+              {
+                class: 'planner-demo-card',
+                'data-cache': 'hit',
+                'data-render': 'idle',
+                'data-revalidate': 'idle',
+                'data-title': fragment.label,
+                'data-meta': fragment.id
+              },
+              [
+                h(
+                  'div',
+                  {
+                    class: 'planner-demo-row planner-demo-row--dependencies',
+                    'data-label': copy.planner.labels.dependencies,
+                    'data-state': 'idle',
+                    'data-pill': copy.planner.pending
+                  },
+                  [t(fragment.deps.length ? fragment.deps.join(' + ') : copy.planner.root)]
+                ),
+                h(
+                  'div',
+                  {
+                    class: 'planner-demo-row planner-demo-row--cache',
+                    'data-label': copy.planner.labels.cache,
+                    'data-state': 'idle',
+                    'data-pill': copy.planner.waitingCache
+                  },
+                  [
+                    h(
+                      'button',
+                      {
+                        class: 'planner-demo-toggle',
+                        type: 'button',
+                        'data-cache-id': fragment.id,
+                        'data-state': 'hit'
+                      },
+                      [t(copy.planner.hit)]
+                    )
+                  ]
+                ),
+                h(
+                  'div',
+                  {
+                    class: 'planner-demo-row planner-demo-row--runtime',
+                    'data-label': copy.planner.labels.runtime,
+                    'data-state': 'idle',
+                    'data-pill': copy.planner.selecting
+                  },
+                  [t(copy.planner.selecting)]
+                ),
+                h('div', { class: 'planner-demo-outcome', 'data-state': 'idle' }, [t(copy.planner.awaitRender)]),
+                h(
+                  'div',
+                  { class: 'planner-demo-outcome is-muted', 'data-state': 'idle' },
+                  [t(copy.planner.awaitRevalidate)]
+                )
+              ]
+            )
+          )
+        )
+      ]
+    )
+  )
+
+const buildWasmActiveNode = (copy: HomeStaticCopyBundle, fragmentId?: string) => {
+  const inputA = 128
+  const inputB = 256
+  const metrics = computeWasmMetrics(inputA, inputB)
+  const progress = clamp(metrics.hotPath, 0, 100)
+  return buildDemoWidgetNode(
+    fragmentId,
+    'wasm-renderer',
+    h(
+      'div',
+      {
+        class: 'wasm-demo',
+        'data-home-demo-active': 'true',
+        'data-preview': 'false'
+      },
+      [
+        h('div', { class: 'wasm-demo-header' }, [
+          h('div', { class: 'wasm-demo-title' }, [t(copy.wasmRenderer.title)]),
+          h('button', { class: 'wasm-demo-action', type: 'button', 'data-action': 'run' }, [t(copy.wasmRenderer.run)])
+        ]),
+        h('div', { class: 'wasm-demo-subtitle' }, [t(copy.wasmRenderer.subtitle)]),
+        h('div', { class: 'wasm-demo-grid' }, [
+          h('div', { class: 'wasm-demo-panel', 'data-panel': 'inputs' }, [
+            h('div', { class: 'wasm-demo-panel-title' }, [t(copy.wasmRenderer.panels.inputs)]),
+            h('div', { class: 'wasm-demo-input' }, [
+              h('span', { class: 'wasm-demo-label' }, [t('A')]),
+              h('button', { class: 'wasm-demo-step', type: 'button', 'data-action': 'a-dec', 'aria-label': copy.wasmRenderer.aria.decreaseA }, [t('-')]),
+              h('span', { class: 'wasm-demo-value' }, [t(`${inputA}`)]),
+              h('button', { class: 'wasm-demo-step', type: 'button', 'data-action': 'a-inc', 'aria-label': copy.wasmRenderer.aria.increaseA }, [t('+')])
+            ]),
+            h('div', { class: 'wasm-demo-input' }, [
+              h('span', { class: 'wasm-demo-label' }, [t('B')]),
+              h('button', { class: 'wasm-demo-step', type: 'button', 'data-action': 'b-dec', 'aria-label': copy.wasmRenderer.aria.decreaseB }, [t('-')]),
+              h('span', { class: 'wasm-demo-value' }, [t(`${inputB}`)]),
+              h('button', { class: 'wasm-demo-step', type: 'button', 'data-action': 'b-inc', 'aria-label': copy.wasmRenderer.aria.increaseB }, [t('+')])
+            ]),
+            h('div', { class: 'wasm-demo-note' }, [t(copy.wasmRenderer.notes.inputs)])
+          ]),
+          h('div', { class: 'wasm-demo-panel', 'data-panel': 'wasm' }, [
+            h('div', { class: 'wasm-demo-panel-title' }, [t(copy.wasmRenderer.panels.wasm)]),
+            h('div', { class: 'wasm-demo-core' }, [
+              h('div', { class: 'wasm-demo-core-value', 'aria-live': 'polite' }, [t(`${metrics.mixed}`)]),
+              h('div', { class: 'wasm-demo-core-hash' }, [t(`hash ${metrics.hash}`)])
+            ]),
+            h('div', { class: 'wasm-demo-bits' }, [t(metrics.mixed.toString(2).padStart(12, '0'))]),
+            h('div', { class: 'wasm-demo-note' }, [t(copy.wasmRenderer.notes.wasm)])
+          ]),
+          h('div', { class: 'wasm-demo-panel', 'data-panel': 'fragment' }, [
+            h('div', { class: 'wasm-demo-panel-title' }, [t(copy.wasmRenderer.panels.fragment)]),
+            h('div', { class: 'wasm-demo-metrics' }, [
+              h(
+                'div',
+                {
+                  class: 'wasm-demo-metric',
+                  role: 'group',
+                  'data-label': copy.wasmRenderer.metrics.burst,
+                  'data-value': `${metrics.throughput} op/s`,
+                  'aria-label': `${copy.wasmRenderer.metrics.burst} ${metrics.throughput} op/s`
+                },
+                []
+              ),
+              h(
+                'div',
+                {
+                  class: 'wasm-demo-metric',
+                  role: 'group',
+                  'data-label': copy.wasmRenderer.metrics.hotPath,
+                  'data-value': `${metrics.hotPath} pts`,
+                  'aria-label': `${copy.wasmRenderer.metrics.hotPath} ${metrics.hotPath} pts`
+                },
+                []
+              )
+            ]),
+            h('div', { class: 'wasm-demo-bar' }, [
+              h('div', { class: 'wasm-demo-bar-fill', style: `width: ${progress}%` }, [])
+            ]),
+            h('div', { class: 'wasm-demo-history' }, [h('span', null, [t(`${metrics.mixed}`)])]),
+            h('div', { class: 'wasm-demo-note' }, [t(copy.wasmRenderer.notes.fragment)])
+          ])
+        ]),
+        h('div', { class: 'wasm-demo-footer' }, [
+          h('span', { class: 'wasm-demo-chip' }, [t(copy.wasmRenderer.footer.edgeSafe)]),
+          h('span', { class: 'wasm-demo-chip' }, [t(copy.wasmRenderer.footer.deterministic)]),
+          h('span', { class: 'wasm-demo-chip' }, [t(copy.wasmRenderer.footer.htmlUntouched)])
+        ])
+      ]
+    )
+  )
+}
+
 const buildReactBinaryPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: string) => {
   const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
   return buildDemoWidgetNode(
@@ -163,6 +365,126 @@ const buildPreactIslandPreviewNode = (copy: HomeStaticCopyBundle, fragmentId?: s
     ),
     label ? { label } : undefined
   )
+
+const buildActiveDemoNode = (
+  copy: HomeStaticCopyBundle,
+  tag: string,
+  fragmentId?: string,
+  attrs?: Record<string, string>
+): RenderNode | null => {
+  if (tag === 'planner-demo') return buildPlannerActiveNode(copy, fragmentId)
+  if (tag === 'wasm-renderer-demo') return buildWasmActiveNode(copy, fragmentId)
+  if (tag === 'preact-island') return buildPreactIslandPreviewNode(copy, fragmentId, attrs?.label)
+  if (tag === 'react-binary-demo') {
+    const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
+    return buildDemoWidgetNode(
+      fragmentId,
+      'react-binary',
+      h(
+        'div',
+        {
+          class: 'react-binary-demo',
+          'data-home-demo-active': 'true',
+          'data-stage': stage.id
+        },
+        [
+          h('div', { class: 'react-binary-header' }, [
+            h('div', { class: 'react-binary-controls' }, [
+              h('div', { class: 'react-binary-title' }, [t(copy.reactBinary.title)]),
+              h('button', { class: 'react-binary-action', type: 'button', 'data-action': 'advance' }, [
+                t(copy.reactBinary.actions[stage.id as keyof typeof copy.reactBinary.actions] ?? '')
+              ])
+            ]),
+            h('div', { class: 'react-binary-status', 'aria-live': 'polite' }, [t(stage.hint)])
+          ]),
+          h(
+            'div',
+            { class: 'react-binary-steps', role: 'tablist', 'aria-label': copy.reactBinary.ariaStages },
+            copy.reactBinary.stages.map((item, index) =>
+              h(
+                'button',
+                {
+                  class: 'react-binary-step',
+                  'data-step': item.id,
+                  type: 'button',
+                  id: `react-binary-tab-${item.id}`,
+                  role: 'tab',
+                  'aria-selected': index === 0 ? 'true' : 'false',
+                  'aria-controls': `react-binary-panel-${item.id}`,
+                  tabindex: index === 0 ? '0' : '-1',
+                  'data-stage-index': `${index}`
+                },
+                [h('span', { class: 'react-binary-step-dot', 'aria-hidden': 'true' }, []), t(item.label)]
+              )
+            )
+          ),
+          h('div', { class: 'react-binary-track' }, [
+            h(
+              'div',
+              {
+                class: 'react-binary-panel',
+                'data-panel': 'react',
+                id: 'react-binary-panel-react',
+                role: 'tabpanel',
+                'aria-labelledby': 'react-binary-tab-react'
+              },
+              [
+                h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.reactTitle)]),
+                h('div', { class: 'react-binary-node-tree' }, [
+                  h('div', { class: 'react-binary-node' }, [t('Fragment')]),
+                  h('div', { class: 'react-binary-node is-child' }, [t('Card')]),
+                  h('div', { class: 'react-binary-node is-child' }, [t('Title')]),
+                  h('div', { class: 'react-binary-node is-child' }, [t('Copy')]),
+                  h('div', { class: 'react-binary-node is-child' }, [t('Badge')])
+                ]),
+                h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.reactCaption)])
+              ]
+            ),
+            h('div', { class: 'react-binary-connector', 'aria-hidden': 'true' }, []),
+            h(
+              'div',
+              {
+                class: 'react-binary-panel',
+                'data-panel': 'binary',
+                id: 'react-binary-panel-binary',
+                role: 'tabpanel',
+                'aria-labelledby': 'react-binary-tab-binary'
+              },
+              [
+                h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.binaryTitle)]),
+                h('div', { class: 'react-binary-bits', role: 'group', 'aria-label': copy.reactBinary.footer.binaryStream }, [
+                  h('span', { 'data-anim': 'true' }, [t(initialReactBinaryChunks.join(' '))])
+                ]),
+                h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.binaryCaption)])
+              ]
+            ),
+            h('div', { class: 'react-binary-connector', 'aria-hidden': 'true' }, []),
+            h(
+              'div',
+              {
+                class: 'react-binary-panel',
+                'data-panel': 'qwik',
+                id: 'react-binary-panel-qwik',
+                role: 'tabpanel',
+                'aria-labelledby': 'react-binary-tab-qwik'
+              },
+              [
+                h('div', { class: 'react-binary-panel-title' }, [t(copy.reactBinary.panels.qwikTitle)]),
+                h('div', { class: 'react-binary-dom' }, [h('span', null, [t('<section> <h2> <p> <div.badge>')])]),
+                h('div', { class: 'react-binary-caption' }, [t(copy.reactBinary.panels.qwikCaption)])
+              ]
+            )
+          ]),
+          h('div', { class: 'react-binary-footer' }, [
+            h('span', { class: 'react-binary-chip' }, [t(copy.reactBinary.footer.hydrationSkipped)]),
+            h('span', { class: 'react-binary-chip' }, [t(copy.reactBinary.footer.binaryStream)])
+          ])
+        ]
+      )
+    )
+  }
+  return null
+}
 
 const getShellHeader = (
   fragmentId: string,
@@ -230,7 +552,7 @@ const buildDockShellNode = (
   return createFragmentWidgetMarkerNode({
     kind: 'home-collab',
     id: buildFragmentWidgetId(fragmentId, 'home-collab', 'dock'),
-    priority: 'visible',
+    priority: 'critical',
     props,
     shell: h('section', { class: 'home-fragment-shell home-fragment-shell--dock' }, [
       ...(normalizeHeaderMeta(header.metaLine)
@@ -435,7 +757,7 @@ const buildHomeStaticPreviewNode = (
   const previewChildren: RenderNode[] = []
 
   for (const child of children) {
-    previewChildren.push(replaceDemoNodes(child, copy, fragmentId))
+    previewChildren.push(replaceDemoNodes(child, copy, fragmentId, 'preview'))
     if (child.type === 'element' && typeof child.tag === 'string' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
       break
     }
@@ -447,8 +769,45 @@ const buildHomeStaticPreviewNode = (
   }
 }
 
-const replaceDemoNodes = (node: RenderNode, copy: HomeStaticCopyBundle, fragmentId?: string): RenderNode => {
+const buildHomeStaticActiveShellNode = (
+  node: RenderNode,
+  copy: HomeStaticCopyBundle,
+  fragmentId?: string
+): RenderNode => {
+  if (node.type !== 'element') {
+    return replaceDemoNodes(node, copy, fragmentId, 'active')
+  }
+
+  const children = node.children ?? []
+  const activeChildren: RenderNode[] = []
+
+  for (const child of children) {
+    activeChildren.push(replaceDemoNodes(child, copy, fragmentId, 'active'))
+    if (child.type === 'element' && typeof child.tag === 'string' && HOME_PREVIEW_DEMO_TAGS.has(child.tag)) {
+      break
+    }
+  }
+
+  return {
+    ...node,
+    children: activeChildren
+  }
+}
+
+const replaceDemoNodes = (
+  node: RenderNode,
+  copy: HomeStaticCopyBundle,
+  fragmentId?: string,
+  variant: DemoRenderVariant = 'preview'
+): RenderNode => {
   if (node.type !== 'element') return { ...node }
+
+  if (variant === 'active') {
+    const activeNode = buildActiveDemoNode(copy, node.tag ?? '', fragmentId, node.attrs)
+    if (activeNode) {
+      return activeNode
+    }
+  }
 
   if (node.tag === 'planner-demo') return buildPlannerPreviewNode(copy, fragmentId)
   if (node.tag === 'wasm-renderer-demo') return buildWasmPreviewNode(copy, fragmentId)
@@ -457,7 +816,7 @@ const replaceDemoNodes = (node: RenderNode, copy: HomeStaticCopyBundle, fragment
 
   return {
     ...node,
-    children: node.children?.map((child) => replaceDemoNodes(child, copy, fragmentId))
+    children: node.children?.map((child) => replaceDemoNodes(child, copy, fragmentId, variant))
   }
 }
 
@@ -474,6 +833,16 @@ export const renderHomeStaticFragmentHtml = (
         case 'island':
         case 'react':
           return renderToHtml(buildHomeStaticPreviewNode(node, copy, options.fragmentId))
+      }
+    }
+
+    if (options.mode === 'active-shell') {
+      switch (getHomeStaticFragmentKind(options.fragmentId)) {
+        case 'planner':
+        case 'ledger':
+        case 'island':
+        case 'react':
+          return renderToHtml(buildHomeStaticActiveShellNode(node, copy, options.fragmentId))
       }
     }
 

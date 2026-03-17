@@ -221,6 +221,30 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(html).not.toContain('Burst throughput')
   })
 
+  it('renders active-shell markup for anchor demo cards without compact preview fallback', () => {
+    const html = renderHomeStaticFragmentHtml(
+      h('section', null, [
+        h('div', { class: 'meta-line' }, [t('wasm renderer')]),
+        h('h2', null, [t('Hot-path fragments rendered by WASM.')]),
+        h('p', { class: 'home-fragment-copy' }, [t('Critical transforms run inside WebAssembly.')]),
+        { type: 'element', tag: 'wasm-renderer-demo', attrs: {}, children: [] },
+        h('div', { class: 'matrix' }, [h('div', { class: 'cell' }, [t('Burst throughput')])])
+      ]),
+      copy,
+      {
+        mode: 'active-shell',
+        fragmentId: 'fragment://page/home/ledger@v1'
+      }
+    )
+
+    expect(html).toContain('data-fragment-widget="wasm-renderer-demo"')
+    expect(html).toContain('wasm-demo-subtitle')
+    expect(html).toContain('Binary bytes stay deterministic.')
+    expect(html).toContain('wasm-demo-grid')
+    expect(html).not.toContain('home-demo-compact')
+    expect(html).not.toContain('Burst throughput')
+  })
+
   it('renders manifesto pills instead of the legacy inline paragraph', async () => {
     const manifesto = homeFragmentDefinitions.find((definition) => definition.id === 'fragment://page/home/manifest@v1')
     const tree = await Promise.resolve(manifesto?.render({ t: (value: string) => value } as never))
@@ -270,6 +294,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(reactHtml).not.toContain('<react-binary-demo')
     expect(dockHtml).toContain('Shared text for everyone on the page.')
     expect(dockHtml).toContain('data-fragment-widget="home-collab"')
+    expect(dockHtml).toContain('data-fragment-widget-priority="critical"')
     expect(dockHtml).toContain('data-home-collab-root="dock"')
     expect(dockHtml).toContain('data-home-collab-input="true"')
     expect(dockHtml).toContain('data-collab-status-idle="Focus to start live sync."')
@@ -321,6 +346,14 @@ describe('renderHomeStaticFragmentHtml', () => {
                   h('planner-demo', null),
                   h('div', { class: 'matrix' }, [h('div', { class: 'cell' }, [t('Dependencies')])])
                 ])
+              : entry.id === 'fragment://page/home/ledger@v1'
+                ? h('section', null, [
+                    h('div', { class: 'meta-line' }, [t('wasm renderer')]),
+                    h('h2', null, [t('Hot-path fragments rendered by WASM.')]),
+                    h('p', { class: 'home-fragment-copy' }, [t('Critical transforms run inside WebAssembly.')]),
+                    h('wasm-renderer-demo', null),
+                    h('div', { class: 'matrix' }, [h('div', { class: 'cell' }, [t('Burst throughput')])])
+                  ])
               : entry.id === 'fragment://page/home/island@v1'
                 ? h('section', null, [
                     h('div', { class: 'meta-line' }, [t('preact island')]),
@@ -367,16 +400,20 @@ describe('renderHomeStaticFragmentHtml', () => {
     ])
     expect(state?.cards[0]?.html).not.toContain('home-fragment-shell')
     expect(state?.cards[1]?.html).toContain('home-fragment-copy')
-    expect(state?.cards[1]?.html).toContain('home-demo-compact')
+    expect(state?.cards[1]?.html).toContain('planner-demo-grid')
     expect(state?.cards[1]?.html).toContain('data-fragment-widget="planner-demo"')
-    expect(state?.cards[1]?.html).not.toContain('home-fragment-shell')
+    expect(state?.cards[1]?.html).not.toContain('home-demo-compact')
     expect(state?.cards[1]?.html).not.toContain('matrix')
-    expect(state?.cards[1]?.patchState).toBe('pending')
+    expect(state?.cards[1]?.patchState).toBe('ready')
     expect(state?.cards[2]?.html).toContain('home-demo-compact')
     expect(state?.cards[2]?.html).toContain('data-fragment-widget="preact-island"')
     expect(state?.cards[2]?.html).not.toContain('home-fragment-stub')
     expect(state?.cards[2]?.patchState).toBe('pending')
     expect(state?.cards[2]?.reservedHeight).toBe(544)
+    expect(state?.cards[3]?.html).toContain('wasm-demo-grid')
+    expect(state?.cards[3]?.html).toContain('data-fragment-widget="wasm-renderer-demo"')
+    expect(state?.cards[3]?.html).not.toContain('home-demo-compact')
+    expect(state?.cards[3]?.patchState).toBe('ready')
     expect(state?.cards[4]?.html).toContain('home-demo-compact')
     expect(state?.cards[4]?.html).toContain('data-fragment-widget="react-binary-demo"')
     expect(state?.cards[4]?.patchState).toBe('pending')

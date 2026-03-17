@@ -60,12 +60,13 @@ const renderHomeWidgetMarker = (
   fragmentId: string,
   kind: 'planner-demo' | 'wasm-renderer-demo' | 'react-binary-demo' | 'preact-island' | 'home-collab',
   shell: ReturnType<typeof h>,
-  props?: Record<string, unknown>
+  props?: Record<string, unknown>,
+  priority: 'critical' | 'visible' | 'deferred' = 'visible'
 ) =>
   createFragmentWidgetMarkerNode({
     kind,
     id: buildFragmentWidgetId(fragmentId, kind, 'shell'),
-    priority: 'visible',
+    priority,
     props,
     shell
   })
@@ -273,7 +274,8 @@ const dockFragment: FragmentDefinition = {
           root: 'dock',
           placeholder: t('Write something. Everyone here sees it live.'),
           ariaLabel: t('Shared collaborative text box')
-        }
+        },
+        'critical'
       )
     ])
   }

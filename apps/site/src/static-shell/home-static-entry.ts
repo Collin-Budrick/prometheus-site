@@ -122,9 +122,9 @@ export const installHomeStaticEntry = ({
   let widgetRuntime:
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
+  let deferredWidgetRuntimeCleanup: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let paintReadyCleanup: (() => void) | null = null
-  const scheduledReleaseTasks = new Set<() => void>()
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
@@ -158,31 +158,10 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup = null
     paintReadyCleanup?.()
     paintReadyCleanup = null
+    deferredWidgetRuntimeCleanup?.()
+    deferredWidgetRuntimeCleanup = null
     widgetRuntime?.destroy()
     widgetRuntime = null
-    scheduledReleaseTasks.forEach((cleanup) => cleanup())
-    scheduledReleaseTasks.clear()
-  }
-
-  const scheduleReleaseTask = (
-    callback: () => void,
-    priority: 'background' | 'user-visible' | 'user-blocking' = 'user-visible',
-    timeoutMs = 0
-  ) => {
-    let cleanup = () => undefined
-    cleanup = scheduleTask(
-      () => {
-        scheduledReleaseTasks.delete(cleanup)
-        callback()
-      },
-      {
-        priority,
-        timeoutMs,
-        preferIdle: false
-      }
-    )
-    scheduledReleaseTasks.add(cleanup)
-    return cleanup
   }
 
   const prewarmBootstrapRuntime = () => {
@@ -244,6 +223,8 @@ export const installHomeStaticEntry = ({
   }
 
   const startWidgetRuntime = (target: EventTarget | null = null) => {
+    deferredWidgetRuntimeCleanup?.()
+    deferredWidgetRuntimeCleanup = null
     return prewarmWidgetRuntime()
       .then((module) => {
         widgetRuntime ??= module.createFragmentWidgetRuntime({
@@ -258,6 +239,25 @@ export const installHomeStaticEntry = ({
         widgetRuntimePromise = null
         console.error('Static home widget runtime failed:', error)
       })
+  }
+
+  const scheduleDeferredWidgetRuntime = () => {
+    if (widgetRuntime || widgetRuntimePromise || deferredWidgetRuntimeCleanup) {
+      return
+    }
+
+    deferredWidgetRuntimeCleanup = scheduleTask(
+      () => {
+        deferredWidgetRuntimeCleanup = null
+        void startWidgetRuntime()
+      },
+      {
+        priority: 'background',
+        timeoutMs: 480,
+        preferIdle: true,
+        waitForPaint: true
+      }
+    )
   }
 
   const startBootstrap = () => {
@@ -275,7 +275,6 @@ export const installHomeStaticEntry = ({
 
   function requestBootstrap() {
     bootstrapRequested = true
-    void startWidgetRuntime(liveDoc.activeElement)
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
@@ -318,9 +317,6 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup = null
     markStaticShellPerformance('prom:home:lcp-release-start')
     void primeBootstrapRequest()?.catch(() => undefined)
-    scheduleReleaseTask(() => {
-      void startWidgetRuntime()
-    })
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
@@ -347,9 +343,11 @@ export const installHomeStaticEntry = ({
         })
         if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
           requestBootstrap()
+          scheduleDeferredWidgetRuntime()
           return
         }
         requestBootstrap()
+        scheduleDeferredWidgetRuntime()
       }
     })
   }

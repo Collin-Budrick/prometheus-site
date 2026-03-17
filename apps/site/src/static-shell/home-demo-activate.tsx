@@ -126,6 +126,9 @@ const prepareActiveDemoRoot = (root: HTMLElement, className: string, html: strin
   setTrustedInnerHtml(root, html, 'server')
 }
 
+const hasPreparedActiveDemoMarkup = (root: HTMLElement, className: string) =>
+  root.classList.contains(className) || Boolean(root.querySelector(`.${className}`))
+
 const isHomeDemoRootInViewport = (root: HTMLElement) => {
   if (typeof root.getBoundingClientRect !== 'function') {
     return true
@@ -351,7 +354,9 @@ const renderPreactIslandDemoMarkup = () => `
 
 const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomePlannerDemoCopy(getCurrentLang())
-  prepareActiveDemoRoot(root, 'planner-demo', renderPlannerDemoMarkup(copy))
+  if (!hasPreparedActiveDemoMarkup(root, 'planner-demo')) {
+    prepareActiveDemoRoot(root, 'planner-demo', renderPlannerDemoMarkup(copy))
+  }
   const title = root.querySelector<HTMLElement>('.planner-demo-title')
   const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
   const shuffleButton = root.querySelector<HTMLButtonElement>('.planner-demo-secondary')
@@ -566,7 +571,9 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 
 const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomeWasmRendererDemoCopy(getCurrentLang())
-  prepareActiveDemoRoot(root, 'wasm-demo', renderWasmRendererDemoMarkup())
+  if (!hasPreparedActiveDemoMarkup(root, 'wasm-demo')) {
+    prepareActiveDemoRoot(root, 'wasm-demo', renderWasmRendererDemoMarkup())
+  }
   const title = root.querySelector<HTMLElement>('.wasm-demo-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
   const subtitle = root.querySelector<HTMLElement>('.wasm-demo-subtitle')
@@ -730,7 +737,9 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
       cleanup: () => undefined
     }
   }
-  prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
+  if (!hasPreparedActiveDemoMarkup(root, 'react-binary-demo')) {
+    prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
+  }
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
   const status = root.querySelector<HTMLElement>('.react-binary-status')
   const stepButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('.react-binary-step'))
@@ -882,7 +891,9 @@ const activatePreactIslandDemo = (
 ): HomeDemoActivationResult => {
   const copy = getStaticHomePreactIslandDemoCopy(getCurrentLang())
   const label = typeof props.label === 'string' && props.label.trim() ? props.label : copy.label
-  prepareActiveDemoRoot(root, 'preact-island-ui', renderPreactIslandDemoMarkup())
+  if (!hasPreparedActiveDemoMarkup(root, 'preact-island-ui')) {
+    prepareActiveDemoRoot(root, 'preact-island-ui', renderPreactIslandDemoMarkup())
+  }
   const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
   const timer = root.querySelector<HTMLElement>('.preact-island-timer')
   const stageTitle = root.querySelector<HTMLElement>('.preact-island-stage-title')
