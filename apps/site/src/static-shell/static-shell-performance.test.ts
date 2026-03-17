@@ -576,16 +576,13 @@ describe("static shell performance invariants", () => {
       "primeBootstrap = primeHomeFragmentBootstrapBytes",
     );
     expect(homeStaticEntrySource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
-    expect(homeStaticEntrySource).toContain(
-      "HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN",
-    );
     expect(homeStaticEntrySource).toContain("readStaticHomeBootstrapData");
     expect(homeStaticEntrySource).toContain("hasBootstrapSetupPrereqs");
     expect(homeStaticEntrySource).toContain("clearStartupHandlers");
-    expect(homeStaticEntrySource).toContain("collectAutoBootstrapHomeCards");
-    expect(homeStaticEntrySource).toContain("isRefreshableHomeFragmentKind");
     expect(homeStaticEntrySource).toContain("primeBootstrapRequest");
     expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
+    expect(homeStaticEntrySource).toContain("immediate: true");
+    expect(homeStaticEntrySource).toContain("requestBootstrap()");
     expect(homeStaticEntrySource).not.toContain("startCollabEntry");
     expect(homeStaticEntrySource).not.toContain("startDemoEntry");
     expect(homeStaticEntrySource).toContain(

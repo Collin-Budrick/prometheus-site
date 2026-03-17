@@ -509,7 +509,7 @@ export const patchStaticHomeFragmentCard = ({
       root,
       lockToken,
       group: 'static-home-patch',
-      immediate: targetCard.dataset.critical === 'true'
+      immediate: true
     })
   }
 
@@ -688,6 +688,10 @@ export const createStaticHomePatchQueue = ({
       const card = findStaticHomeFragmentCard(payload.id, root)
       if (card && !isHomePatchReady(card)) {
         setHomePatchState(card, 'pending')
+      }
+      if (card?.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor') {
+        flushNow()
+        return
       }
       scheduleFlush()
     },

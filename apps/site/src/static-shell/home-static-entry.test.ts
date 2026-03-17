@@ -296,7 +296,7 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('starts the universal widget runtime after the LCP gate resolves', async () => {
+  it('prewarms the bootstrap runtime as soon as the LCP gate resolves', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -322,16 +322,8 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(taskQueue.size()).toBe(3)
-    expect(bootstrapLoadCount).toBe(0)
-
-    taskQueue.runNext()
-    await flushMicrotasks()
-    expect(bootstrapLoadCount).toBe(0)
-
-    taskQueue.runNext()
-    await flushMicrotasks()
     expect(bootstrapLoadCount).toBe(1)
+    expect(taskQueue.size()).toBe(1)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.timeouts.size).toBe(0)
 
@@ -382,19 +374,14 @@ describe('installHomeStaticEntry', () => {
 
     expect(bootstrapPrimeCount).toBe(1)
     expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(0)
+    expect(bootstrapCount).toBe(1)
     expect(manualGate.cleanupCount()).toBe(1)
 
     taskQueue.runAll()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-
     cleanup()
   })
 
-  it('releases queued SSR cards after the LCP gate before starting home bootstrap', async () => {
+  it('releases queued SSR cards immediately after the LCP gate and starts bootstrap without waiting for visibility observers', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -426,18 +413,14 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(events).toEqual([])
-
-    taskQueue.runAll()
-    await flushMicrotasks()
-
     expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
     expect(events).toEqual(['schedule-paint', 'release-stagger'])
 
+    taskQueue.runAll()
     cleanup()
   })
 
-  it('starts bootstrap when a pending deferred home card becomes visible after the LCP gate resolves', async () => {
+  it('starts bootstrap immediately after home paint becomes ready once the LCP gate resolves', async () => {
     ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver
 
@@ -470,78 +453,13 @@ describe('installHomeStaticEntry', () => {
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(0)
-    expect(bootstrapCount).toBe(0)
-
-    taskQueue.runAll()
-    await flushMicrotasks()
-
     expect(bootstrapLoadCount).toBe(1)
+    expect(MockIntersectionObserver.instances.length).toBe(0)
 
-    const cardObserver = MockIntersectionObserver.instances.find((observer) =>
-      observer.observed.has(card as unknown as Element)
-    )
-    expect(cardObserver).toBeDefined()
-
-    cardObserver?.emit([{ target: card as unknown as Element, isIntersecting: true }])
     await flushMicrotasks()
-
     expect(bootstrapCount).toBe(1)
 
-    cleanup()
-  })
-
-  it('starts bootstrap when a ready compact demo card becomes visible after the LCP gate resolves', async () => {
-    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
-      MockIntersectionObserver as unknown as typeof IntersectionObserver
-
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const card = new MockFragmentCard('anchor', 'ready', 'planner')
-    const taskQueue = createScheduledTaskQueue()
-    let bootstrapLoadCount = 0
-    let bootstrapCount = 0
-
-    doc.fragmentCards = [card]
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      primeBootstrap: async () => new Uint8Array([1]),
-      loadBootstrapRuntime: async () => {
-        bootstrapLoadCount += 1
-        return {
-          bootstrapStaticHome: async () => {
-            bootstrapCount += 1
-          }
-        }
-      },
-      scheduleTask: taskQueue.scheduleTask as never
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(0)
-    expect(bootstrapCount).toBe(0)
-
     taskQueue.runAll()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(1)
-
-    const cardObserver = MockIntersectionObserver.instances.find((observer) =>
-      observer.observed.has(card as unknown as Element)
-    )
-    expect(cardObserver).toBeDefined()
-
-    cardObserver?.emit([{ target: card as unknown as Element, isIntersecting: true }])
-    await flushMicrotasks()
-
-    expect(bootstrapCount).toBe(1)
-
     cleanup()
   })
 

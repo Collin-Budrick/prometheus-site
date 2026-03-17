@@ -7,13 +7,9 @@ import {
   STATIC_HOME_LCP_STABLE_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
-  STATIC_HOME_FRAGMENT_KIND_ATTR,
-  STATIC_HOME_PATCH_STATE_ATTR,
-  STATIC_HOME_STAGE_ATTR,
   STATIC_SHELL_MAIN_REGION,
   STATIC_SHELL_REGION_ATTR
 } from './constants'
-import { appConfig } from '../public-app-config'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { scheduleStaticShellTask } from './scheduler'
@@ -25,7 +21,6 @@ import {
 } from './static-shell-performance'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
-export const HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN = appConfig.fragmentVisibilityMargin
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
@@ -46,37 +41,6 @@ type InstallHomeStaticEntryOptions = {
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 const HOME_READY_STAGGER_SELECTOR = `[data-static-home-root] .fragment-card[data-ready-stagger-state="queued"]:not([${STATIC_HOME_LCP_STABLE_ATTR}="true"])`
-
-const isAutoBootstrapHomeCardStage = (value: string | null) => value === 'anchor' || value === 'deferred'
-const isRefreshableHomeFragmentKind = (value: string | null) =>
-  value === 'planner' || value === 'ledger' || value === 'island' || value === 'react'
-
-const isAutoBootstrapHomeCard = (card: Element) => {
-  const stage =
-    typeof (card as Element).getAttribute === 'function'
-      ? card.getAttribute(STATIC_HOME_STAGE_ATTR)
-      : null
-  if (!isAutoBootstrapHomeCardStage(stage)) {
-    return false
-  }
-
-  const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
-  if (patchState === 'pending') {
-    return true
-  }
-
-  return (
-    patchState === 'ready' &&
-    isRefreshableHomeFragmentKind(card.getAttribute(STATIC_HOME_FRAGMENT_KIND_ATTR))
-  )
-}
-
-const collectAutoBootstrapHomeCards = (root: Pick<Document, 'querySelectorAll'>) =>
-  typeof root.querySelectorAll === 'function'
-    ? Array.from(root.querySelectorAll<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR)).filter((card) =>
-        isAutoBootstrapHomeCard(card)
-      )
-    : []
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -159,10 +123,8 @@ export const installHomeStaticEntry = ({
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
   let lcpGateCleanup: (() => void) | null = null
-  let visibilityObserver: IntersectionObserver | null = null
   let paintReadyCleanup: (() => void) | null = null
   const scheduledReleaseTasks = new Set<() => void>()
-  const observedCards = new Set<Element>()
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
@@ -194,15 +156,12 @@ export const installHomeStaticEntry = ({
 
     lcpGateCleanup?.()
     lcpGateCleanup = null
-    visibilityObserver?.disconnect()
-    visibilityObserver = null
     paintReadyCleanup?.()
     paintReadyCleanup = null
     widgetRuntime?.destroy()
     widgetRuntime = null
     scheduledReleaseTasks.forEach((cleanup) => cleanup())
     scheduledReleaseTasks.clear()
-    observedCards.clear()
   }
 
   const scheduleReleaseTask = (
@@ -305,9 +264,6 @@ export const installHomeStaticEntry = ({
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
     liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
-    visibilityObserver?.disconnect()
-    visibilityObserver = null
-    observedCards.clear()
 
     void prewarmBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
@@ -354,49 +310,6 @@ export const installHomeStaticEntry = ({
     requestBootstrap()
   }
 
-  const observeAutoBootstrapCards = () => {
-    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) {
-      return
-    }
-
-    if (typeof IntersectionObserver !== 'function') {
-      if (collectAutoBootstrapHomeCards(liveDoc).length > 0) {
-        requestBootstrap()
-      }
-      return
-    }
-
-    if (!visibilityObserver) {
-      visibilityObserver = new IntersectionObserver(
-        (entries) => {
-          if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) {
-            return
-          }
-
-          entries.forEach((entry) => {
-            if (!entry.isIntersecting) {
-              return
-            }
-            requestBootstrap()
-          })
-        },
-        {
-          root: null,
-          rootMargin: HOME_BOOTSTRAP_VISIBILITY_ROOT_MARGIN,
-          threshold: 0
-        }
-      )
-    }
-
-    collectAutoBootstrapHomeCards(liveDoc).forEach((card) => {
-      if (observedCards.has(card)) {
-        return
-      }
-      observedCards.add(card)
-      visibilityObserver?.observe(card)
-    })
-  }
-
   const releaseLcpGate = () => {
     if (lcpGateReleased) return
     lcpGateReleased = true
@@ -408,44 +321,37 @@ export const installHomeStaticEntry = ({
     scheduleReleaseTask(() => {
       void startWidgetRuntime()
     })
-    scheduleReleaseTask(() => {
-      void prewarmBootstrapRuntime().catch((error) => {
-        bootstrapRuntimePromise = null
-        console.error('Static home bootstrap prewarm failed:', error)
-      })
+    void prewarmBootstrapRuntime().catch((error) => {
+      bootstrapRuntimePromise = null
+      console.error('Static home bootstrap prewarm failed:', error)
     })
-    scheduleReleaseTask(() => {
-      paintReadyCleanup ??= schedulePaintReady({
-        root: readStaticHomeRoot(),
-        readyAttr: STATIC_HOME_PAINT_ATTR,
-        requestFrame:
-          typeof liveWin.requestAnimationFrame === 'function'
-            ? liveWin.requestAnimationFrame.bind(liveWin)
-            : undefined,
-        cancelFrame:
-          typeof liveWin.cancelAnimationFrame === 'function'
-            ? liveWin.cancelAnimationFrame.bind(liveWin)
-            : undefined,
-        setTimer: liveWin.setTimeout.bind(liveWin),
-        clearTimer: liveWin.clearTimeout.bind(liveWin),
-        onReady: () => {
-          releaseReadyStagger({
-            root: liveDoc,
-            queuedSelector: HOME_READY_STAGGER_SELECTOR,
-            group: 'static-home-ready'
-          })
-          if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
-            requestBootstrap()
-            return
-          }
-          if (bootstrapRequested) {
-            startBootstrap()
-            return
-          }
-          observeAutoBootstrapCards()
+    paintReadyCleanup ??= schedulePaintReady({
+      root: readStaticHomeRoot(),
+      readyAttr: STATIC_HOME_PAINT_ATTR,
+      requestFrame:
+        typeof liveWin.requestAnimationFrame === 'function'
+          ? liveWin.requestAnimationFrame.bind(liveWin)
+          : undefined,
+      cancelFrame:
+        typeof liveWin.cancelAnimationFrame === 'function'
+          ? liveWin.cancelAnimationFrame.bind(liveWin)
+          : undefined,
+      setTimer: liveWin.setTimeout.bind(liveWin),
+      clearTimer: liveWin.clearTimeout.bind(liveWin),
+      onReady: () => {
+        releaseReadyStagger({
+          root: liveDoc,
+          queuedSelector: HOME_READY_STAGGER_SELECTOR,
+          group: 'static-home-ready',
+          immediate: true
+        })
+        if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
+          requestBootstrap()
+          return
         }
-      })
-    }, 'user-visible', 16)
+        requestBootstrap()
+      }
+    })
   }
 
   const setupBootstrapTriggers = () => {

@@ -1408,13 +1408,22 @@ export const bootstrapStaticHome = async () => {
     requestFragments: sharedRuntime?.requestFragments,
   });
   controller.cleanupFns.push(() => homeFragmentHydration.destroy());
+  let didScheduleInitialAnchorHydration = false;
+  const scheduleInitialAnchorHydration = () => {
+    if (
+      didScheduleInitialAnchorHydration ||
+      controller.destroyed ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+    didScheduleInitialAnchorHydration = true;
+    homeFragmentHydration.scheduleAnchorHydration();
+  };
+  scheduleInitialAnchorHydration();
   controller.cleanupFns.push(
     scheduleStaticHomePaintReady({
-      onReady: () => {
-        if (controller.destroyed || document.visibilityState === "hidden")
-          return;
-        homeFragmentHydration.scheduleAnchorHydration();
-      },
+      onReady: scheduleInitialAnchorHydration,
     }),
   );
   controller.cleanupFns.push(
