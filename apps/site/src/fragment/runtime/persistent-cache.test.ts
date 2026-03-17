@@ -70,11 +70,11 @@ describe('fragment runtime persistent cache', () => {
     await cache.writeLearnedHeight(buildLearnedHeightKey('/store', 'en', 'store-stream', 'lg'), 288)
 
     const payloadKey = buildPayloadCacheKey('/store', 'en', 'store-stream')
-    expect(cache.payloads.get(payloadKey)).toEqual({
+    expect(cache.payloads.get(payloadKey)).toMatchObject({
       payload,
       version: buildPayloadVersion(payload)
     })
-    expect(cache.learnedHeights.get(buildLearnedHeightKey('/store', 'en', 'store-stream', 'lg'))).toEqual({
+    expect(cache.learnedHeights.get(buildLearnedHeightKey('/store', 'en', 'store-stream', 'lg'))).toMatchObject({
       height: 288
     })
 
@@ -102,7 +102,7 @@ describe('fragment runtime persistent cache', () => {
     await firstCache.seedPayload('/store', 'en', payload)
 
     expect(await waiter).toBe(true)
-    expect(secondCache.payloads.get(payloadKey)).toEqual({
+    expect(secondCache.payloads.get(payloadKey)).toMatchObject({
       payload,
       version: buildPayloadVersion(payload)
     })

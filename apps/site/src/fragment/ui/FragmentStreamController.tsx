@@ -101,6 +101,9 @@ const normalizeRuntimePlanEntries = (plan: ReturnType<typeof resolvePlan>): Frag
     cacheUpdatedAt: entry.cache?.updatedAt
   }))
 
+const normalizeRuntimeFetchGroups = (plan: ReturnType<typeof resolvePlan>) =>
+  plan.fetchGroups?.map((group) => [...group]) ?? []
+
 const resolveInitialSizingSeeds = (
   path: string,
   lang: string,
@@ -208,6 +211,7 @@ export const FragmentStreamController = component$(
         let observer: IntersectionObserver | null = null
         let resizeObserver: ResizeObserver | null = null
         let flushHandle: number | null = null
+        let microtaskFlushScheduled = false
         let hmrTimer: number | null = null
         let hmrClearCachesPending = false
         const activeLang = ctx.track(() => langSignal.value)
@@ -274,7 +278,7 @@ export const FragmentStreamController = component$(
           queued.add(payload.id)
           requestedIds.delete(payload.id)
           requestedIds.delete(`refresh:${payload.id}`)
-          scheduleFlush()
+          scheduleFlush(isCriticalId(payload.id))
         }
 
         const queuePayload = (payload: FragmentPayload) => {
@@ -288,6 +292,7 @@ export const FragmentStreamController = component$(
         }
 
         const flushQueued = () => {
+          microtaskFlushScheduled = false
           flushHandle = null
           if (!active || !queued.size) return
           const current = fragments.value
@@ -348,8 +353,21 @@ export const FragmentStreamController = component$(
           }
         }
 
-        const scheduleFlush = () => {
-          if (flushHandle !== null) return
+        const scheduleFlush = (immediate = false) => {
+          if (immediate) {
+            if (flushHandle !== null) {
+              window.cancelAnimationFrame(flushHandle)
+              flushHandle = null
+            }
+            if (microtaskFlushScheduled) return
+            microtaskFlushScheduled = true
+            Promise.resolve().then(() => {
+              flushQueued()
+            })
+            return
+          }
+
+          if (flushHandle !== null || microtaskFlushScheduled) return
           flushHandle = window.requestAnimationFrame(() => {
             flushQueued()
           })
@@ -375,6 +393,7 @@ export const FragmentStreamController = component$(
           path,
           lang: activeLang,
           planEntries: normalizeRuntimePlanEntries(planValue),
+          fetchGroups: normalizeRuntimeFetchGroups(planValue),
           initialFragments: langChanged ? [] : Object.values(resolveFragments(initialFragments) ?? {}),
           initialSizing: resolveInitialSizingSeeds(path, activeLang, planValue),
           visibleIds: canObserve ? [] : allIds,
@@ -606,6 +625,7 @@ export const FragmentStreamController = component$(
             window.cancelAnimationFrame(flushHandle)
             flushHandle = null
           }
+          microtaskFlushScheduled = false
           if (hmrTimer) {
             window.clearTimeout(hmrTimer)
             hmrTimer = null

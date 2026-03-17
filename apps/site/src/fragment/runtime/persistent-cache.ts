@@ -3,10 +3,12 @@ import type { FragmentPayload } from '../types'
 export type CachedFragmentPayload = {
   payload: FragmentPayload
   version: string
+  savedAt?: number
 }
 
 export type HeightLearnedValue = {
   height: number
+  savedAt?: number
 }
 
 type PayloadRecord = {
@@ -135,9 +137,13 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
   const learnedHeights = new Map<string, HeightLearnedValue>()
   const claims = new Map<string, string>()
   const pendingWaiters = new Map<string, Array<() => void>>()
+  const dirtyPayloadKeys = new Set<string>()
+  const dirtyLearnedHeightKeys = new Set<string>()
   const channel = createChannel(options.broadcastFactory)
   let dbPromise: Promise<IDBDatabase | null> | null = null
   let hydratePromise: Promise<void> | null = null
+  let prunePromise: Promise<void> | null = null
+  let hydrateComplete = false
 
   const getDb = async () => {
     if (!canUseIndexedDb(indexedDb)) {
@@ -163,6 +169,49 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     await awaitTransaction(transaction)
   }
 
+  const shouldReplaceHydratedPayload = (
+    current: CachedFragmentPayload | undefined,
+    record: PayloadRecord
+  ) => {
+    if (!current) {
+      return !dirtyPayloadKeys.has(record.key)
+    }
+    const currentUpdatedAt =
+      typeof current.payload.cacheUpdatedAt === 'number' && Number.isFinite(current.payload.cacheUpdatedAt)
+        ? current.payload.cacheUpdatedAt
+        : null
+    const recordUpdatedAt =
+      typeof record.payload.cacheUpdatedAt === 'number' && Number.isFinite(record.payload.cacheUpdatedAt)
+        ? record.payload.cacheUpdatedAt
+        : null
+    if (recordUpdatedAt !== null && currentUpdatedAt !== null && recordUpdatedAt !== currentUpdatedAt) {
+      return recordUpdatedAt > currentUpdatedAt
+    }
+    if (recordUpdatedAt !== null && currentUpdatedAt === null) return true
+    if (recordUpdatedAt === null && currentUpdatedAt !== null) return false
+    const currentSavedAt = current.savedAt ?? 0
+    if (record.savedAt !== currentSavedAt) {
+      return record.savedAt > currentSavedAt
+    }
+    return false
+  }
+
+  const prune = async () => {
+    if (prunePromise) {
+      return await prunePromise
+    }
+    prunePromise = (async () => {
+      const database = await getDb()
+      if (!database) {
+        return
+      }
+      await prunePayloadStore(database)
+    })().finally(() => {
+      prunePromise = null
+    })
+    return await prunePromise
+  }
+
   const hydrate = async () => {
     if (hydratePromise) {
       return await hydratePromise
@@ -170,17 +219,24 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     hydratePromise = (async () => {
       const database = await getDb()
       if (!database) {
+        hydrateComplete = true
         return
       }
-      await prunePayloadStore(database)
       const payloadTransaction = database.transaction(PAYLOAD_STORE, 'readonly')
       const payloadStore = payloadTransaction.objectStore(PAYLOAD_STORE)
       const payloadRecords = (await toPromise(payloadStore.getAll())) as PayloadRecord[]
-      payloads.clear()
       payloadRecords.forEach((record) => {
+        if (dirtyPayloadKeys.has(record.key) && payloads.has(record.key)) {
+          return
+        }
+        const current = payloads.get(record.key)
+        if (!shouldReplaceHydratedPayload(current, record)) {
+          return
+        }
         payloads.set(record.key, {
           payload: record.payload,
-          version: record.version
+          version: record.version,
+          savedAt: record.savedAt
         })
       })
       await awaitTransaction(payloadTransaction)
@@ -188,14 +244,20 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       const learnedTransaction = database.transaction(LEARNED_SIZING_STORE, 'readonly')
       const learnedStore = learnedTransaction.objectStore(LEARNED_SIZING_STORE)
       const learnedRecords = (await toPromise(learnedStore.getAll())) as LearnedSizingRecord[]
-      learnedHeights.clear()
       learnedRecords.forEach((record) => {
+        if (dirtyLearnedHeightKeys.has(record.key) || learnedHeights.has(record.key)) {
+          return
+        }
         learnedHeights.set(record.key, {
-          height: record.height
+          height: record.height,
+          savedAt: record.savedAt
         })
       })
       await awaitTransaction(learnedTransaction)
-    })()
+      hydrateComplete = true
+    })().finally(() => {
+      void prune()
+    })
     return await hydratePromise
   }
 
@@ -246,9 +308,12 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
   channel?.addEventListener('message', handleBroadcast)
 
   const writePayloadRecord = async (key: string, path: string, lang: string, payload: FragmentPayload) => {
+    const savedAt = now()
+    dirtyPayloadKeys.add(key)
     payloads.set(key, {
       payload,
-      version: buildPayloadVersion(payload)
+      version: buildPayloadVersion(payload),
+      savedAt
     })
     const database = await getDb()
     if (!database) {
@@ -268,7 +333,7 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
       lang,
       fragmentId: payload.id,
       version: buildPayloadVersion(payload),
-      savedAt: now(),
+      savedAt,
       payload
     } satisfies PayloadRecord)
     await awaitTransaction(transaction)
@@ -281,6 +346,7 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
   }
 
   const deletePayloadRecord = async (key: string, version?: string) => {
+    dirtyPayloadKeys.add(key)
     payloads.delete(key)
     const database = await getDb()
     if (database) {
@@ -296,7 +362,9 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
   }
 
   const writeLearnedHeightRecord = async (key: string, height: number) => {
-    learnedHeights.set(key, { height })
+    const savedAt = now()
+    dirtyLearnedHeightKeys.add(key)
+    learnedHeights.set(key, { height, savedAt })
     const database = await getDb()
     if (!database) {
       return
@@ -304,7 +372,7 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     const transaction = database.transaction(LEARNED_SIZING_STORE, 'readwrite')
     transaction.objectStore(LEARNED_SIZING_STORE).put({
       key,
-      savedAt: now(),
+      savedAt,
       height
     } satisfies LearnedSizingRecord)
     await awaitTransaction(transaction)
@@ -315,25 +383,24 @@ export const createPersistentRuntimeCache = (options: PersistentRuntimeCacheOpti
     learnedHeights,
     claims,
     hydrate,
+    prune,
+    isHydrated() {
+      return hydrateComplete
+    },
     async seedPayload(path: string, lang: string, payload: FragmentPayload) {
-      await hydrate()
       const key = buildPayloadCacheKey(path, lang, payload.id)
       await writePayloadRecord(key, path, lang, payload)
     },
     async seedPayloads(path: string, lang: string, nextPayloads: FragmentPayload[]) {
-      await hydrate()
       await Promise.all(nextPayloads.map((payload) => writePayloadRecord(buildPayloadCacheKey(path, lang, payload.id), path, lang, payload)))
     },
     async invalidatePayload(path: string, lang: string, fragmentId: string, version?: string) {
-      await hydrate()
       await deletePayloadRecord(buildPayloadCacheKey(path, lang, fragmentId), version)
     },
     async writeLearnedHeight(key: string, height: number) {
-      await hydrate()
       await writeLearnedHeightRecord(key, height)
     },
     async claimFetch(key: string, owner: string) {
-      await hydrate()
       const existing = claims.get(key)
       if (existing && existing !== owner) {
         return false

@@ -8,7 +8,9 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_FRAGMENT_PAINT_ATTR,
-  STATIC_FRAGMENT_VERSION_ATTR
+  STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR
 } from './constants'
 import type { StaticFragmentRouteModel } from './static-fragment-model'
 import { READY_STAGGER_STATE_ATTR } from '@prometheus/ui/ready-stagger'
@@ -75,6 +77,12 @@ export const StaticFragmentRoute = component$<StaticFragmentRouteProps>(({ model
               {...{
                 [STATIC_FRAGMENT_CARD_ATTR]: 'true',
                 [STATIC_FRAGMENT_VERSION_ATTR]: entry.version ? `${entry.version}` : undefined,
+                [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
+                  entry.desktopWidthBucket ?? entry.mobileWidthBucket ?? undefined,
+                [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
+                  entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
+                    ? entry.mobileWidthBucket
+                    : undefined,
                 [READY_STAGGER_STATE_ATTR]: 'queued'
               }}
             >

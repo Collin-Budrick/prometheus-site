@@ -18,6 +18,7 @@ type FragmentRuntimeBridgeConfig = {
   path: string
   lang: string
   planEntries: FragmentRuntimePlanEntry[]
+  fetchGroups?: string[][]
   initialFragments: FragmentPayload[]
   initialSizing: FragmentRuntimeSizingMap
   knownVersions?: FragmentRuntimeKnownVersions
@@ -111,6 +112,7 @@ export class FragmentRuntimeBridge {
     this.config = {
       ...config,
       planEntries: [...config.planEntries],
+      fetchGroups: config.fetchGroups?.map((group) => [...group]) ?? [],
       initialFragments: [...config.initialFragments],
       initialSizing: { ...config.initialSizing },
       knownVersions: config.knownVersions ? { ...config.knownVersions } : undefined,
@@ -163,6 +165,7 @@ export class FragmentRuntimeBridge {
       path: this.config.path,
       lang: this.config.lang,
       planEntries: this.config.planEntries,
+      fetchGroups: this.config.fetchGroups,
       initialFragments: this.config.initialFragments,
       initialSizing: this.config.initialSizing,
       knownVersions: this.config.knownVersions,

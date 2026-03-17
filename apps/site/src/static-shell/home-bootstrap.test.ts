@@ -1357,7 +1357,7 @@ describe("bindHomeFragmentHydration", () => {
     await flushMicrotasks();
 
     expect(callOrder).toEqual(["stylesheet:start", "fetch:start"]);
-    expect(enqueued).toEqual([]);
+    expect(enqueued).toEqual(["fragment://page/home/planner@v1"]);
 
     resolveStylesheet();
     await flushMicrotasks();

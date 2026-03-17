@@ -1,5 +1,6 @@
 import type { Lang } from '../lang/types'
 import type { LanguageSeedPayload } from '../lang/selection'
+import type { FragmentPayload } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
@@ -21,6 +22,8 @@ export type HomeStaticRouteData = {
   planSignature?: string
   versionSignature?: string
   runtimePlanEntries?: FragmentRuntimePlanEntry[]
+  runtimeFetchGroups?: string[][]
+  runtimeInitialFragments?: FragmentPayload[]
   languageSeed: LanguageSeedPayload
   fragmentVersions: Record<string, number>
 }
@@ -39,6 +42,8 @@ export type HomeStaticBootstrapData = {
   planSignature: string | null
   versionSignature: string | null
   runtimePlanEntries: FragmentRuntimePlanEntry[]
+  runtimeFetchGroups: string[][]
+  runtimeInitialFragments: FragmentPayload[]
   fragmentVersions: Record<string, number>
 }
 
@@ -94,6 +99,8 @@ export const readStaticHomeBootstrapData = ({
     planSignature: route?.planSignature ?? null,
     versionSignature: route?.versionSignature ?? null,
     runtimePlanEntries: route?.runtimePlanEntries ?? [],
+    runtimeFetchGroups: route?.runtimeFetchGroups ?? [],
+    runtimeInitialFragments: route?.runtimeInitialFragments ?? [],
     fragmentVersions: route?.fragmentVersions ?? {}
   }
 }

@@ -1297,16 +1297,8 @@
     line-height: 1.6;
   }
 
-  .home-manifest-copy-lead {
-    display: block;
-    margin-bottom: 0.375rem;
-    color: rgb(var(--ink-soft));
-    font-weight: 500;
-  }
-
-  .home-fragment-copy-lead {
-    display: block;
-    margin-bottom: 0.375rem;
+  .home-manifest-copy-lead-inline,
+  .home-fragment-copy-lead-inline {
     color: rgb(var(--ink-soft));
     font-weight: 500;
   }
@@ -1439,25 +1431,20 @@
     color: rgb(var(--muted-soft));
   }
 
-  .matrix {
-    @apply gap-3 grid mt-4;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  .home-fragment-metrics {
+    @apply mt-4 flex flex-wrap gap-2;
   }
 
-  .matrix .cell {
-    @apply rounded-2xl border border-slate-200/70 bg-white/70 p-4;
-    @apply font-mono text-[11px] text-slate-500 uppercase tracking-[0.35em];
-    display: grid;
-    gap: 8px;
-    background-color: rgb(var(--surface) / 0.75);
-    border-color: rgb(var(--stroke) / 0.7);
+  .home-fragment-metric {
+    @apply rounded-full px-3 py-1.5;
+    border: 1px solid rgb(var(--stroke) / 0.7);
+    background-color: rgb(var(--surface-soft) / 0.72);
     color: rgb(var(--muted));
-  }
-
-  .matrix .cell::after {
-    content: attr(data-value);
-    @apply block font-semibold text-slate-900 text-base;
-    color: rgb(var(--ink));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    line-height: 1.35;
+    text-transform: none;
   }
 
   .action-button {

@@ -1,5 +1,5 @@
 import { getFragmentCssHref } from '../fragment/fragment-css'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
+import type { FragmentPayload, FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
@@ -12,6 +12,7 @@ import {
   buildFragmentHeightVersionSignature,
   readFragmentHeightCookieHeights,
   readFragmentStableHeight,
+  resolveFragmentHeightWidthBucket,
   resolveReservedFragmentHeight,
   type FragmentHeightLayout,
   type FragmentHeightViewport
@@ -27,6 +28,8 @@ export type StaticFragmentRouteEntryModel = {
   reservedHeight: number
   version?: number
   html: string
+  desktopWidthBucket?: string | null
+  mobileWidthBucket?: string | null
 }
 
 export type StaticFragmentRouteModel = {
@@ -56,6 +59,8 @@ type CreateStaticFragmentRouteDataOptions = {
   planSignature?: string
   versionSignature?: string
   runtimePlanEntries?: FragmentRuntimePlanEntry[]
+  runtimeFetchGroups?: string[][]
+  runtimeInitialFragments?: FragmentPayload[]
   fragmentVersions?: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null
@@ -66,6 +71,8 @@ export const createStaticFragmentRouteData = ({
   lang,
   fragmentOrder = [],
   runtimePlanEntries = [],
+  runtimeFetchGroups = [],
+  runtimeInitialFragments = [],
   fragmentVersions = {},
   planSignature = buildFragmentHeightPlanSignature(fragmentOrder),
   versionSignature = buildFragmentHeightVersionSignature(fragmentVersions, fragmentOrder),
@@ -83,6 +90,8 @@ export const createStaticFragmentRouteData = ({
     planSignature,
     versionSignature,
     runtimePlanEntries,
+    runtimeFetchGroups,
+    runtimeInitialFragments,
     fragmentVersions,
     storeSeed: storeSeed ?? null,
     contactInvitesSeed: contactInvitesSeed ?? null
@@ -117,6 +126,7 @@ export const buildStaticFragmentRouteModel = ({
     dependsOn: entry.dependsOn ?? [],
     cacheUpdatedAt: entry.cache?.updatedAt
   }))
+  const runtimeFetchGroups = plan.fetchGroups?.map((group) => [...group]) ?? []
   const cookieHeights =
     cookieHeader && viewportHint
       ? readFragmentHeightCookieHeights(cookieHeader, {
@@ -158,6 +168,16 @@ export const buildStaticFragmentRouteModel = ({
       typeof fragment?.cacheUpdatedAt === 'number' && Number.isFinite(fragment.cacheUpdatedAt)
         ? fragment.cacheUpdatedAt
         : undefined
+    const desktopWidthBucket =
+      resolveFragmentHeightWidthBucket({
+        layout: entry.layout,
+        viewport: 'desktop'
+      }) ?? null
+    const mobileWidthBucket =
+      resolveFragmentHeightWidthBucket({
+        layout: entry.layout,
+        viewport: 'mobile'
+      }) ?? null
 
     return {
       id: entry.id,
@@ -166,7 +186,9 @@ export const buildStaticFragmentRouteModel = ({
       layout: entry.layout,
       reservedHeight,
       version,
-      html
+      html,
+      desktopWidthBucket,
+      mobileWidthBucket
     }
   })
 
@@ -190,6 +212,10 @@ export const buildStaticFragmentRouteModel = ({
       planSignature,
       versionSignature,
       runtimePlanEntries,
+      runtimeFetchGroups,
+      runtimeInitialFragments: plan.fragments
+        .map((entry) => fragments[entry.id])
+        .filter((fragment): fragment is NonNullable<typeof fragment> => Boolean(fragment)),
       fragmentVersions,
       storeSeed,
       contactInvitesSeed

@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import { getFragmentCssHref } from '../fragment/fragment-css'
-import type { FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
+import type { FragmentPayload, FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
@@ -61,6 +61,18 @@ const serializeJson = (value: unknown) =>
     .replace(/&/g, '\\u0026')
 
 const DEFAULT_RESERVED_CARD_HEIGHT = 180
+const HOME_HERO_FRAGMENT_IDS = new Set([
+  'fragment://page/home/manifest@v1',
+  'fragment://page/home/dock@v2'
+])
+const HOME_RENDER_ORDER = [
+  'fragment://page/home/manifest@v1',
+  'fragment://page/home/dock@v2',
+  'fragment://page/home/planner@v1',
+  'fragment://page/home/ledger@v1',
+  'fragment://page/home/island@v1',
+  'fragment://page/home/react@v1'
+] as const
 
 const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
   fragmentKind === 'planner' || fragmentKind === 'ledger' || fragmentKind === 'island' || fragmentKind === 'react'
@@ -87,6 +99,7 @@ type StaticHomeRenderedCard = {
   patchState: 'ready' | 'pending'
   revealPhase: 'queued' | 'holding' | 'visible'
   lcpStable: boolean
+  placement: 'hero' | 'main'
 }
 
 type StaticHomeRouteState = {
@@ -97,6 +110,8 @@ type StaticHomeRouteState = {
   planSignature: string
   versionSignature: string
   runtimePlanEntries: FragmentRuntimePlanEntry[]
+  runtimeFetchGroups: string[][]
+  runtimeInitialFragments: FragmentPayload[]
   cards: StaticHomeRenderedCard[]
 }
 
@@ -116,10 +131,17 @@ export const buildStaticHomeRouteState = ({
 
   const fragmentMap = fragments ?? {}
   const copyBundle = createSeededHomeStaticCopyBundle(languageSeed)
-  const entries = plan.fragments
+  const orderIndex = new Map(HOME_RENDER_ORDER.map((id, index) => [id, index]))
+  const entries = [...plan.fragments].sort((left, right) => {
+    const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER
+    const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex
+    }
+    return plan.fragments.indexOf(left) - plan.fragments.indexOf(right)
+  })
   const fragmentOrder = entries.map((entry) => entry.id)
   const planSignature = buildFragmentHeightPlanSignature(fragmentOrder)
-  const leftCount = Math.ceil(entries.length / 2)
   const fragmentHeaders = createSeededHomeStaticFragmentHeaders(languageSeed)
 
   const inlineStyles = entries
@@ -141,17 +163,16 @@ export const buildStaticHomeRouteState = ({
     dependsOn: entry.dependsOn ?? [],
     cacheUpdatedAt: entry.cache?.updatedAt
   }))
-
-  const anchorColumns = new Set<'1' | '2'>()
+  const runtimeFetchGroups = plan.fetchGroups?.map((group) => [...group]) ?? []
 
   const cards = entries.map<StaticHomeRenderedCard>((entry, index) => {
     const fragment = fragmentMap[entry.id]
     const fragmentKind = getHomeStaticFragmentKind(entry.id)
-    const column = index < leftCount ? '1' : '2'
+    const placement = HOME_HERO_FRAGMENT_IDS.has(entry.id) ? 'hero' : 'main'
     const stage: StaticHomeCardStage = entry.critical
       ? 'critical'
-      : !anchorColumns.has(column)
-        ? (anchorColumns.add(column), 'anchor')
+      : fragmentKind === 'dock'
+        ? 'anchor'
         : 'deferred'
     const activeShell = usesActiveHomeDemoShell(stage, fragmentKind)
     const renderMode =
@@ -167,7 +188,7 @@ export const buildStaticHomeRouteState = ({
             ? 'shell'
             : 'stub'
     const patchState = stage === 'critical' || fragmentKind === 'dock' || activeShell ? 'ready' : 'pending'
-    const lcpStable = Boolean(entry.critical || activeShell)
+    const lcpStable = Boolean(entry.critical || fragmentKind === 'dock' || activeShell)
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,
@@ -203,7 +224,7 @@ export const buildStaticHomeRouteState = ({
       critical: Boolean(entry.critical),
       size: entry.layout.size,
       html,
-      column,
+      column: placement === 'hero' ? (fragmentKind === 'dock' ? '2' : '1') : '1',
       stage,
       layout: entry.layout,
       fragmentKind,
@@ -213,7 +234,8 @@ export const buildStaticHomeRouteState = ({
       mobileWidthBucket,
       patchState,
       revealPhase: lcpStable ? 'visible' : patchState === 'ready' ? 'queued' : 'holding',
-      lcpStable
+      lcpStable,
+      placement
     }
   })
 
@@ -225,6 +247,13 @@ export const buildStaticHomeRouteState = ({
     planSignature,
     versionSignature,
     runtimePlanEntries,
+    runtimeFetchGroups,
+    runtimeInitialFragments: cards
+      .filter((card) => card.patchState === 'ready')
+      .flatMap((card) => {
+        const payload = fragmentMap[card.id]
+        return payload ? [payload] : []
+      }),
     cards
   }
 }
@@ -239,13 +268,24 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   const routeConfig = getStaticShellRouteConfig(plan.path)
   const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({ lang })
   const homeDemoAssets = createHomeDemoAssetMap()
-  const columns = routeState.cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
-    (acc, card) => {
-      acc[card.column].push(card)
-      return acc
-    },
-    { '1': [], '2': [] }
-  )
+  const splitCards = (cards: StaticHomeRenderedCard[]) =>
+    cards.reduce<Record<'1' | '2', StaticHomeRenderedCard[]>>(
+      (acc, card, index) => {
+        const column =
+          card.placement === 'hero'
+            ? card.column
+            : index < Math.ceil(cards.length / 2)
+              ? '1'
+              : '2'
+        acc[column].push({ ...card, column })
+        return acc
+      },
+      { '1': [], '2': [] }
+    )
+  const heroCards = routeState.cards.filter((card) => card.placement === 'hero')
+  const mainCards = routeState.cards.filter((card) => card.placement === 'main')
+  const heroColumns = splitCards(heroCards)
+  const mainColumns = splitCards(mainCards)
 
   return (
     <section
@@ -291,10 +331,63 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           </article>
         </div>
       </div>
+      <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="hero">
+        {(['1', '2'] as const).map((column) => (
+          <div key={`hero-${column}`} class="fragment-grid-static-home-column" data-static-home-column={column}>
+            {heroColumns[column].map((card) => {
+              const style = {
+                '--fragment-min-height': `${card.reservedHeight}px`,
+                order: card.order
+              }
+
+              return (
+                <article
+                  key={card.id}
+                  class={{
+                    'fragment-card': true,
+                    'fragment-card-static-home': true
+                  }}
+                  data-critical={card.critical ? 'true' : undefined}
+                  data-fragment-id={card.id}
+                  data-fragment-loaded="true"
+                  data-fragment-ready={card.patchState === 'ready' ? 'true' : undefined}
+                  data-fragment-stage={card.patchState === 'ready' ? 'ready' : 'waiting-payload'}
+                  data-reveal-phase={card.revealPhase}
+                  data-reveal-locked="false"
+                  data-draggable="false"
+                  data-size={card.size}
+                  data-fragment-height-layout={serializeFragmentHeightLayout(card.layout) ?? undefined}
+                  style={style}
+                  {...{
+                    [STATIC_FRAGMENT_CARD_ATTR]: 'true',
+                    [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
+                    [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
+                      card.desktopWidthBucket ?? card.mobileWidthBucket ?? undefined,
+                    [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
+                      card.mobileWidthBucket && card.mobileWidthBucket !== card.desktopWidthBucket
+                        ? card.mobileWidthBucket
+                        : undefined,
+                    [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
+                    [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
+                    [STATIC_HOME_STAGE_ATTR]: card.stage,
+                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+                    [READY_STAGGER_STATE_ATTR]: card.revealPhase === 'queued' ? 'queued' : undefined,
+                    'data-fragment-height-hint': `${card.reservedHeight}`
+                  }}
+                >
+                  <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
+                    <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(card.html, 'server') as string} />
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        ))}
+      </div>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {(['1', '2'] as const).map((column) => (
           <div key={column} class="fragment-grid-static-home-column" data-static-home-column={column}>
-            {columns[column].map((card) => {
+            {mainColumns[column].map((card) => {
               const style = {
                 '--fragment-min-height': `${card.reservedHeight}px`,
                 order: card.order
@@ -361,6 +454,8 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           planSignature: routeState.planSignature,
           versionSignature: routeState.versionSignature,
           runtimePlanEntries: routeState.runtimePlanEntries,
+          runtimeFetchGroups: routeState.runtimeFetchGroups,
+          runtimeInitialFragments: routeState.runtimeInitialFragments,
           languageSeed,
           fragmentVersions: routeState.fragmentVersions
         })}

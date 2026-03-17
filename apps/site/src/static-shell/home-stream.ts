@@ -605,6 +605,7 @@ export const createStaticHomePatchQueue = ({
   const flushNext = () => {
     if (destroyed) return false
 
+    let processedAny = false
     for (const card of collectStaticHomeCards(root)) {
       const fragmentId = card.dataset.fragmentId
       if (!fragmentId) continue
@@ -634,18 +635,20 @@ export const createStaticHomePatchQueue = ({
           markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
         }
         pendingPayloads.delete(fragmentId)
-        return true
+        processedAny = true
       }
     }
 
-    return false
+    return processedAny
   }
 
   const flushNow = () => {
     if (destroyed) return
     cancelScheduledFlush?.()
     cancelScheduledFlush = null
-    flushNext()
+    while (flushNext()) {
+      // Drain all currently eligible payloads in a single turn.
+    }
     scheduleFlush()
   }
 
@@ -657,7 +660,9 @@ export const createStaticHomePatchQueue = ({
       if (destroyed) return
       flushInFlight = true
       try {
-        flushNext()
+        while (flushNext()) {
+          // Drain all currently eligible payloads in a single scheduled flush.
+        }
       } finally {
         flushInFlight = false
         scheduleFlush()

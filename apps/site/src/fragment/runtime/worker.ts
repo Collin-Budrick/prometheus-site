@@ -68,6 +68,7 @@ type ClientState = {
   paused: boolean
   planOrder: string[]
   entriesById: Map<string, FragmentRuntimePlanEntry>
+  fetchGroups: string[][]
   visibleIds: Set<string>
   committedVersions: Map<string, string>
   knownVersions: Map<string, number>
@@ -75,6 +76,7 @@ type ClientState = {
   widthById: Map<string, number>
   lastSizingKeyById: Map<string, string>
   lastStatus: FragmentRuntimeStatus | null
+  firstWorkerCommitSent: boolean
   stream: {
     key: string
     controller: AbortController
@@ -82,30 +84,44 @@ type ClientState = {
   } | null
 }
 
-type ScheduledFetchJob = {
+type ScheduledFetchJobBase = {
   key: string
-  payloadKey: string
   owner: string
   apiBase: string
   path: string
   lang: string
-  fragmentId: string
   refresh: boolean
   priority: number
   subscribers: Set<string>
   order: number
+  skipClaimWait: boolean
   controller?: AbortController
 }
+
+type FragmentFetchJob = ScheduledFetchJobBase & {
+  kind: 'fragment'
+  payloadKey: string
+  fragmentId: string
+}
+
+type BootstrapGroupFetchJob = ScheduledFetchJobBase & {
+  kind: 'bootstrap-group'
+  fragmentIds: string[]
+  requestedIdsByClient: Map<string, Set<string>>
+  href: string | null
+}
+
+type ScheduledFetchJob = FragmentFetchJob | BootstrapGroupFetchJob
 
 const FETCH_CLAIM_WAIT_MS = 120
 const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope
 const clients = new Map<string, ClientState>()
 const persistentCache = createPersistentRuntimeCache()
-const persistentCacheReady = persistentCache.hydrate()
 const payloadCache = persistentCache.payloads
 const learnedHeights = persistentCache.learnedHeights
 const activeFetchJobs = new Map<string, ScheduledFetchJob>()
 const scheduledFetchJobs: ScheduledFetchJob[] = []
+const primedBootstrapPayloads = new Map<string, Promise<FragmentPayload[]>>()
 let jobOrder = 0
 let warnedAboutNestedDecodeWorkerFallback = false
 
@@ -289,6 +305,12 @@ const decodePool = new DecodePool(resolveDecodePoolSize())
 const buildFetchKey = (apiBase: string, path: string, lang: string, fragmentId: string, refresh: boolean) =>
   `${apiBase}::${path}::${lang}::${fragmentId}::${refresh ? 'refresh' : 'cached'}`
 
+const buildBootstrapGroupJobKey = (apiBase: string, path: string, lang: string, fragmentIds: string[]) =>
+  `${apiBase}::${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
+
+const buildBootstrapPayloadKey = (path: string, lang: string, fragmentIds: string[]) =>
+  `${path}::${lang}::bootstrap::${[...fragmentIds].sort().join('|')}`
+
 const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
   const payloads = await Promise.all(
@@ -296,6 +318,58 @@ const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   )
   return payloads
 }
+
+const parseBootstrapHrefSelection = (href: string | null | undefined) => {
+  if (!href) return null
+  try {
+    const url = new URL(href, workerScope.location.origin)
+    const ids = Array.from(
+      new Set(
+        (url.searchParams.get('ids') ?? '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    )
+    return {
+      href: url.toString(),
+      ids,
+      lang: url.searchParams.get('lang') ?? ''
+    }
+  } catch {
+    return null
+  }
+}
+
+const buildBootstrapPromiseKeys = (
+  client: Pick<ClientState, 'path' | 'lang'>,
+  fragmentIds: string[],
+  href?: string | null
+) => {
+  const normalizedIds = [...fragmentIds].sort()
+  const keys = [buildBootstrapPayloadKey(client.path, client.lang, normalizedIds)]
+  const parsedHref = parseBootstrapHrefSelection(href)
+  if (parsedHref && normalizedIds.every((fragmentId) => parsedHref.ids.includes(fragmentId))) {
+    keys.unshift(parsedHref.href)
+  }
+  return keys
+}
+
+const readPrimedBootstrapPayloads = (
+  client: Pick<ClientState, 'path' | 'lang' | 'bootstrapHref'>,
+  fragmentIds: string[]
+) => {
+  const keys = buildBootstrapPromiseKeys(client, fragmentIds, client.bootstrapHref)
+  for (const key of keys) {
+    const pending = primedBootstrapPayloads.get(key)
+    if (pending) {
+      return pending
+    }
+  }
+  return null
+}
+
+void persistentCache.hydrate().catch(() => undefined)
 
 const normalizeApiBase = (apiBase: string) => {
   if (!apiBase) return ''
@@ -435,6 +509,17 @@ const expandDependencies = (client: ClientState, ids: string[]) => {
   return client.planOrder.filter((fragmentId) => required.has(fragmentId))
 }
 
+const findMatchingFetchGroup = (client: ClientState, ids: string[]) => {
+  if (!ids.length || !client.fetchGroups.length) {
+    return null
+  }
+  return (
+    client.fetchGroups.find((group) => ids.every((fragmentId) => group.includes(fragmentId)))?.filter((fragmentId) =>
+      client.entriesById.has(fragmentId)
+    ) ?? null
+  )
+}
+
 const priorityToValue = (priority: FragmentRuntimePriority, critical: boolean) => {
   if (critical) return 200
   switch (priority) {
@@ -465,6 +550,7 @@ const commitPayloadToClient = (
   }
 
   client.committedVersions.set(payload.id, version)
+  client.firstWorkerCommitSent = true
   postToClient(client, {
     type: 'fragment-commit',
     clientId: client.id,
@@ -527,6 +613,32 @@ const fetchFragmentPayload = async (
   }
 }
 
+const fetchBootstrapPayloadGroup = async (
+  apiBase: string,
+  fragmentIds: string[],
+  lang: string,
+  signal: AbortSignal
+) => {
+  const params = new URLSearchParams({
+    protocol: '2',
+    ids: [...fragmentIds].join(',')
+  })
+  if (lang) {
+    params.set('lang', lang)
+  }
+
+  const response = await fetch(`${normalizeApiBase(apiBase)}/fragments/bootstrap?${params.toString()}`, {
+    cache: 'default',
+    signal
+  })
+
+  if (!response.ok) {
+    throw new Error(`Fragment bootstrap fetch failed: ${response.status}`)
+  }
+
+  return decodeBootstrapPayloads(new Uint8Array(await response.arrayBuffer()))
+}
+
 const removeClientFromJobs = (clientId: string) => {
   for (let index = scheduledFetchJobs.length - 1; index >= 0; index -= 1) {
     const job = scheduledFetchJobs[index]
@@ -552,8 +664,8 @@ const stopClientStream = (client: ClientState) => {
   refreshClientStatus(client)
 }
 
-const commitJobPayloadToSubscribers = (
-  job: ScheduledFetchJob,
+const commitFragmentJobPayloadToSubscribers = (
+  job: FragmentFetchJob,
   payload: FragmentPayload,
   source: 'cache' | 'network'
 ) => {
@@ -562,6 +674,82 @@ const commitJobPayloadToSubscribers = (
     if (!client || client.lang !== job.lang) return
     commitPayloadToClient(client, payload, job.priority >= 200 ? 'critical' : job.refresh ? 'refresh' : 'visible', source)
   })
+}
+
+const commitBootstrapJobPayloadsToSubscribers = (
+  job: BootstrapGroupFetchJob,
+  payloads: FragmentPayload[],
+  source: 'cache' | 'network'
+) => {
+  const payloadsById = new Map(payloads.map((payload) => [payload.id, payload]))
+  job.subscribers.forEach((clientId) => {
+    const client = clients.get(clientId)
+    if (!client || client.lang !== job.lang) return
+    const requestedIds = job.requestedIdsByClient.get(clientId)
+    if (!requestedIds?.size) return
+    client.planOrder.forEach((fragmentId) => {
+      if (!requestedIds.has(fragmentId)) return
+      const payload = payloadsById.get(fragmentId)
+      if (!payload) return
+      commitPayloadToClient(
+        client,
+        payload,
+        client.entriesById.get(fragmentId)?.critical ? 'critical' : 'visible',
+        source
+      )
+    })
+  })
+}
+
+const readReusableCachedPayload = (client: ClientState, fragmentId: string) => {
+  const payloadKey = buildPayloadCacheKey(client.path, client.lang, fragmentId)
+  const cached = payloadCache.get(payloadKey)
+  if (!cached) {
+    return null
+  }
+
+  const knownVersion =
+    client.knownVersions.get(fragmentId) ?? client.entriesById.get(fragmentId)?.cacheUpdatedAt ?? null
+  if (
+    typeof knownVersion === 'number' &&
+    Number.isFinite(knownVersion) &&
+    cached.payload.cacheUpdatedAt !== knownVersion
+  ) {
+    void persistentCache.invalidatePayload(client.path, client.lang, fragmentId, cached.version)
+    payloadCache.delete(payloadKey)
+    return null
+  }
+
+  return cached
+}
+
+const seedFetchedPayloads = (path: string, lang: string, payloads: FragmentPayload[]) => {
+  if (!payloads.length) return
+  payloads.forEach((payload) => {
+    const payloadKey = buildPayloadCacheKey(path, lang, payload.id)
+    const previousVersion = payloadCache.get(payloadKey)?.version
+    if (previousVersion && previousVersion !== buildPayloadVersion(payload)) {
+      void persistentCache.invalidatePayload(path, lang, payload.id, previousVersion)
+    }
+    payloadCache.set(payloadKey, {
+      payload,
+      version: buildPayloadVersion(payload),
+      savedAt: Date.now()
+    })
+  })
+  void persistentCache.seedPayloads(path, lang, payloads)
+}
+
+const shouldUseStartupFastPath = (client: ClientState, priority: FragmentRuntimePriority) =>
+  priority === 'critical' || (priority === 'visible' && !client.firstWorkerCommitSent)
+
+const canUseClaimWaitBypass = (job: ScheduledFetchJob) => job.skipClaimWait && !persistentCache.isHydrated()
+
+const readBootstrapJobCachedPayloads = (job: BootstrapGroupFetchJob) => {
+  const payloads = job.fragmentIds
+    .map((fragmentId) => payloadCache.get(buildPayloadCacheKey(job.path, job.lang, fragmentId))?.payload ?? null)
+    .filter((payload): payload is FragmentPayload => Boolean(payload))
+  return payloads.length === job.fragmentIds.length ? payloads : null
 }
 
 const pumpFetchQueue = () => {
@@ -590,43 +778,73 @@ const pumpFetchQueue = () => {
 
     let claimedByJob = false
     void (async () => {
-      if (!job.refresh) {
+      if (job.kind === 'fragment') {
+        if (!job.refresh && !canUseClaimWaitBypass(job)) {
+          const claimed = await persistentCache.claimFetch(job.key, job.owner)
+          claimedByJob = claimed
+          if (!claimed) {
+            const wrote = await persistentCache.waitForPayloadWrite(job.payloadKey, FETCH_CLAIM_WAIT_MS)
+            if (wrote) {
+              const cached = payloadCache.get(job.payloadKey)
+              if (cached) {
+                commitFragmentJobPayloadToSubscribers(job, cached.payload, 'cache')
+                return
+              }
+            }
+          }
+        } else if (job.refresh) {
+          const cachedVersion = payloadCache.get(job.payloadKey)?.version
+          if (cachedVersion) {
+            void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, cachedVersion)
+          }
+        }
+
+        const payload = await fetchFragmentPayload(job.apiBase, job.fragmentId, job.lang, job.refresh, controller.signal)
+        seedFetchedPayloads(job.path, job.lang, [payload])
+        commitFragmentJobPayloadToSubscribers(job, payload, 'network')
+        return
+      }
+
+      const primedPayloads = readPrimedBootstrapPayloads(
+        {
+          path: job.path,
+          lang: job.lang,
+          bootstrapHref: job.href
+        },
+        job.fragmentIds
+      )
+      if (primedPayloads) {
+        const payloads = await primedPayloads
+        seedFetchedPayloads(job.path, job.lang, payloads)
+        commitBootstrapJobPayloadsToSubscribers(job, payloads, 'cache')
+        return
+      }
+
+      if (!canUseClaimWaitBypass(job)) {
         const claimed = await persistentCache.claimFetch(job.key, job.owner)
         claimedByJob = claimed
         if (!claimed) {
-          const wrote = await persistentCache.waitForPayloadWrite(job.payloadKey, FETCH_CLAIM_WAIT_MS)
+          const wrote = await persistentCache.waitForPayloadWrite(job.key, FETCH_CLAIM_WAIT_MS)
           if (wrote) {
-            const cached = payloadCache.get(job.payloadKey)
-            if (cached) {
-              commitJobPayloadToSubscribers(job, cached.payload, 'cache')
+            const cachedPayloads = readBootstrapJobCachedPayloads(job)
+            if (cachedPayloads) {
+              commitBootstrapJobPayloadsToSubscribers(job, cachedPayloads, 'cache')
               return
             }
           }
         }
-      } else {
-        const cachedVersion = payloadCache.get(job.payloadKey)?.version
-        if (cachedVersion) {
-          void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, cachedVersion)
-        }
       }
 
-      const payload = await fetchFragmentPayload(job.apiBase, job.fragmentId, job.lang, job.refresh, controller.signal)
-      const previousVersion = payloadCache.get(job.payloadKey)?.version
-      if (previousVersion && previousVersion !== buildPayloadVersion(payload)) {
-        void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, previousVersion)
-      }
-      payloadCache.set(job.payloadKey, {
-        payload,
-        version: buildPayloadVersion(payload)
-      })
-      void persistentCache.seedPayload(job.path, job.lang, payload)
-      commitJobPayloadToSubscribers(job, payload, 'network')
+      const payloads = await fetchBootstrapPayloadGroup(job.apiBase, job.fragmentIds, job.lang, controller.signal)
+      seedFetchedPayloads(job.path, job.lang, payloads)
+      commitBootstrapJobPayloadsToSubscribers(job, payloads, 'network')
     })()
       .catch((error) => {
         if (controller.signal.aborted) {
           return
         }
-        notifyError(job.subscribers, error instanceof Error ? error.message : 'Fragment fetch failed', [job.fragmentId])
+        const fragmentIds = job.kind === 'fragment' ? [job.fragmentId] : [...job.fragmentIds]
+        notifyError(job.subscribers, error instanceof Error ? error.message : 'Fragment fetch failed', fragmentIds)
       })
       .finally(() => {
         if (claimedByJob) {
@@ -644,65 +862,112 @@ const pumpFetchQueue = () => {
   }
 }
 
-const scheduleFetch = (
+const scheduleFragmentFetch = (
   client: ClientState,
   fragmentId: string,
   priority: FragmentRuntimePriority,
   refresh = false
 ) => {
-  const cacheKey = buildPayloadCacheKey(client.path, client.lang, fragmentId)
-  const cached = !refresh ? payloadCache.get(cacheKey) : null
-  if (cached) {
-    const knownVersion =
-      client.knownVersions.get(fragmentId) ?? client.entriesById.get(fragmentId)?.cacheUpdatedAt ?? null
-    if (
-      typeof knownVersion === 'number' &&
-      Number.isFinite(knownVersion) &&
-      cached.payload.cacheUpdatedAt !== knownVersion
-    ) {
-      void persistentCache.invalidatePayload(client.path, client.lang, fragmentId, cached.version)
-      payloadCache.delete(cacheKey)
-    } else {
+  if (!refresh) {
+    const cached = readReusableCachedPayload(client, fragmentId)
+    if (cached) {
       commitPayloadToClient(client, cached.payload, priority, 'cache')
       return
     }
   }
 
   const fetchKey = buildFetchKey(client.apiBase, client.path, client.lang, fragmentId, refresh)
+  const nextPriority = priorityToValue(priority, client.entriesById.get(fragmentId)?.critical === true)
+  const skipClaimWait = shouldUseStartupFastPath(client, priority)
   const existingActive = activeFetchJobs.get(fetchKey)
-  if (existingActive) {
+  if (existingActive && existingActive.kind === 'fragment') {
     existingActive.subscribers.add(client.id)
-    existingActive.priority = Math.max(
-      existingActive.priority,
-      priorityToValue(priority, client.entriesById.get(fragmentId)?.critical === true)
-    )
+    existingActive.priority = Math.max(existingActive.priority, nextPriority)
+    existingActive.skipClaimWait ||= skipClaimWait
     refreshClientStatus(client)
     return
   }
 
   const existingQueued = scheduledFetchJobs.find((job) => job.key === fetchKey)
-  if (existingQueued) {
+  if (existingQueued && existingQueued.kind === 'fragment') {
     existingQueued.subscribers.add(client.id)
-    existingQueued.priority = Math.max(
-      existingQueued.priority,
-      priorityToValue(priority, client.entriesById.get(fragmentId)?.critical === true)
-    )
+    existingQueued.priority = Math.max(existingQueued.priority, nextPriority)
+    existingQueued.skipClaimWait ||= skipClaimWait
     refreshClientStatus(client)
     return
   }
 
   scheduledFetchJobs.push({
+    kind: 'fragment',
     key: fetchKey,
-    payloadKey: cacheKey,
+    payloadKey: buildPayloadCacheKey(client.path, client.lang, fragmentId),
     owner: `${client.id}:${fragmentId}:${jobOrder}`,
     apiBase: client.apiBase,
     path: client.path,
     lang: client.lang,
     fragmentId,
     refresh,
-    priority: priorityToValue(priority, client.entriesById.get(fragmentId)?.critical === true),
+    priority: nextPriority,
     subscribers: new Set([client.id]),
-    order: jobOrder++
+    order: jobOrder++,
+    skipClaimWait
+  })
+  refreshClientStatus(client)
+  pumpFetchQueue()
+}
+
+const scheduleBootstrapGroupFetch = (
+  client: ClientState,
+  fragmentIds: string[],
+  requestedIds: string[],
+  priority: FragmentRuntimePriority
+) => {
+  const fetchKey = buildBootstrapGroupJobKey(client.apiBase, client.path, client.lang, fragmentIds)
+  const skipClaimWait = shouldUseStartupFastPath(client, priority)
+  const nextPriority = priorityToValue(
+    priority,
+    requestedIds.some((fragmentId) => client.entriesById.get(fragmentId)?.critical === true)
+  )
+
+  const existingActive = activeFetchJobs.get(fetchKey)
+  if (existingActive && existingActive.kind === 'bootstrap-group') {
+    existingActive.subscribers.add(client.id)
+    existingActive.priority = Math.max(existingActive.priority, nextPriority)
+    existingActive.skipClaimWait ||= skipClaimWait
+    const requested = existingActive.requestedIdsByClient.get(client.id) ?? new Set<string>()
+    requestedIds.forEach((fragmentId) => requested.add(fragmentId))
+    existingActive.requestedIdsByClient.set(client.id, requested)
+    refreshClientStatus(client)
+    return
+  }
+
+  const existingQueued = scheduledFetchJobs.find((job) => job.key === fetchKey)
+  if (existingQueued && existingQueued.kind === 'bootstrap-group') {
+    existingQueued.subscribers.add(client.id)
+    existingQueued.priority = Math.max(existingQueued.priority, nextPriority)
+    existingQueued.skipClaimWait ||= skipClaimWait
+    const requested = existingQueued.requestedIdsByClient.get(client.id) ?? new Set<string>()
+    requestedIds.forEach((fragmentId) => requested.add(fragmentId))
+    existingQueued.requestedIdsByClient.set(client.id, requested)
+    refreshClientStatus(client)
+    return
+  }
+
+  scheduledFetchJobs.push({
+    kind: 'bootstrap-group',
+    key: fetchKey,
+    owner: `${client.id}:bootstrap:${jobOrder}`,
+    apiBase: client.apiBase,
+    path: client.path,
+    lang: client.lang,
+    fragmentIds: [...fragmentIds],
+    requestedIdsByClient: new Map([[client.id, new Set(requestedIds)]]),
+    href: client.bootstrapHref,
+    refresh: false,
+    priority: nextPriority,
+    subscribers: new Set([client.id]),
+    order: jobOrder++,
+    skipClaimWait
   })
   refreshClientStatus(client)
   pumpFetchQueue()
@@ -716,8 +981,33 @@ const requestClientFragments = (
 ) => {
   const orderedIds = expandDependencies(client, ids)
   const refreshIdSet = new Set(refreshIds)
+  const uncachedIds: string[] = []
+
   orderedIds.forEach((fragmentId) => {
-    scheduleFetch(client, fragmentId, priority, refreshIdSet.has(fragmentId))
+    if (refreshIdSet.has(fragmentId)) {
+      scheduleFragmentFetch(client, fragmentId, priority, true)
+      return
+    }
+    const cached = readReusableCachedPayload(client, fragmentId)
+    if (cached) {
+      commitPayloadToClient(client, cached.payload, priority, 'cache')
+      return
+    }
+    uncachedIds.push(fragmentId)
+  })
+
+  if (!uncachedIds.length) {
+    return
+  }
+
+  const matchingFetchGroup = findMatchingFetchGroup(client, uncachedIds)
+  if (matchingFetchGroup) {
+    scheduleBootstrapGroupFetch(client, matchingFetchGroup, uncachedIds, priority)
+    return
+  }
+
+  uncachedIds.forEach((fragmentId) => {
+    scheduleFragmentFetch(client, fragmentId, priority, false)
   })
 }
 
@@ -878,6 +1168,7 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
     paused: false,
     planOrder: message.planEntries.map((entry) => entry.id),
     entriesById,
+    fetchGroups: message.fetchGroups?.map((group) => [...group]) ?? [],
     visibleIds: new Set(message.visibleIds),
     committedVersions: new Map(),
     knownVersions: new Map(),
@@ -885,6 +1176,7 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
     widthById: new Map(),
     lastSizingKeyById: new Map(),
     lastStatus: null,
+    firstWorkerCommitSent: false,
     stream: null
   }
 
@@ -899,6 +1191,11 @@ const createClientState = (message: FragmentRuntimeInitMessage): ClientState => 
   Object.entries(message.initialSizing).forEach(([fragmentId, seed]) => {
     if (typeof seed.cardWidth === 'number' && Number.isFinite(seed.cardWidth) && seed.cardWidth > 0) {
       client.widthById.set(fragmentId, seed.cardWidth)
+    } else {
+      const bucketWidth = resolveCardWidthFromBucket(seed.widthBucket)
+      if (bucketWidth) {
+        client.widthById.set(fragmentId, bucketWidth)
+      }
     }
   })
 
@@ -935,6 +1232,11 @@ const handleUpdateLang = (client: ClientState, message: Extract<FragmentRuntimeP
   Object.entries(message.initialSizing).forEach(([fragmentId, seed]) => {
     if (typeof seed.cardWidth === 'number' && Number.isFinite(seed.cardWidth) && seed.cardWidth > 0) {
       client.widthById.set(fragmentId, seed.cardWidth)
+    } else {
+      const bucketWidth = resolveCardWidthFromBucket(seed.widthBucket)
+      if (bucketWidth) {
+        client.widthById.set(fragmentId, bucketWidth)
+      }
     }
   })
   publishSizingSnapshot(client)
@@ -979,21 +1281,38 @@ const handlePrimeBootstrap = async (
   client: ClientState,
   message: Extract<FragmentRuntimePageMessage, { type: 'prime-bootstrap' }>
 ) => {
-  const payloads = await decodeBootstrapPayloads(new Uint8Array(message.bytes))
-  seedPayloadCache(payloads, client.path, client.lang)
-  payloads.forEach((payload) => {
-    if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
-      client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
-    }
+  const initialKeys = buildBootstrapPromiseKeys(client, [], message.href ?? client.bootstrapHref)
+  const existing = initialKeys
+    .map((key) => primedBootstrapPayloads.get(key))
+    .find((value): value is Promise<FragmentPayload[]> => Boolean(value))
+  const pending =
+    existing ??
+    decodeBootstrapPayloads(new Uint8Array(message.bytes)).then((payloads) => {
+      seedFetchedPayloads(client.path, client.lang, payloads)
+      payloads.forEach((payload) => {
+        if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
+          client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
+        }
+      })
+      const resolvedKeys = buildBootstrapPromiseKeys(client, payloads.map((payload) => payload.id), message.href ?? client.bootstrapHref)
+      resolvedKeys.forEach((key) => {
+        primedBootstrapPayloads.set(key, Promise.resolve(payloads))
+      })
+      return payloads
+    })
+
+  initialKeys.forEach((key) => {
+    primedBootstrapPayloads.set(key, pending)
   })
-  const response: FragmentRuntimeBootstrapPrimedMessage = {
+
+  const payloads = await pending
+  postToClient(client, {
     type: 'bootstrap-primed',
     clientId: client.id,
     requestId: message.requestId,
     href: message.href ?? client.bootstrapHref ?? undefined,
     fragmentIds: payloads.map((payload) => payload.id)
-  }
-  postToClient(client, response)
+  } satisfies FragmentRuntimeBootstrapPrimedMessage)
 }
 
 const handleMessage = (message: FragmentRuntimePageMessage) => {
@@ -1054,7 +1373,5 @@ const handleMessage = (message: FragmentRuntimePageMessage) => {
 }
 
 workerScope.addEventListener('message', (messageEvent: MessageEvent<FragmentRuntimePageMessage>) => {
-  void persistentCacheReady.then(() => {
-    handleMessage(messageEvent.data)
-  })
+  handleMessage(messageEvent.data)
 })

@@ -94,7 +94,7 @@ const HOME_LAYOUT_TWO_COLUMN_BREAKPOINT = 1025;
 const HOME_LAYOUT_GAP = 24;
 type HomeSharedRuntimeRequestOptions = {
   isAnchorBatch: boolean;
-  commitReady: Promise<unknown>;
+  commitReady?: Promise<unknown>;
 };
 
 type HomeSharedRuntimeConnection = {
@@ -244,6 +244,8 @@ const connectSharedHomeRuntime = ({
   controller,
   root = document,
   runtimePlanEntries,
+  runtimeFetchGroups,
+  runtimeInitialFragments,
   fragmentOrder,
   fragmentBootstrapHref,
   onCommit,
@@ -251,6 +253,8 @@ const connectSharedHomeRuntime = ({
   controller: Pick<HomeControllerState, "lang" | "path" | "cleanupFns">;
   root?: ParentNode;
   runtimePlanEntries: FragmentRuntimePlanEntry[];
+  runtimeFetchGroups: string[][];
+  runtimeInitialFragments: FragmentPayload[];
   fragmentOrder: string[];
   fragmentBootstrapHref: string | null;
   onCommit: (payload: FragmentPayload) => void;
@@ -289,7 +293,8 @@ const connectSharedHomeRuntime = ({
     path: controller.path,
     lang: controller.lang,
     planEntries: runtimePlanEntries,
-    initialFragments: [],
+    fetchGroups: runtimeFetchGroups,
+    initialFragments: runtimeInitialFragments,
     initialSizing,
     knownVersions: collectStaticHomeKnownVersions(root),
     visibleIds: [],
@@ -474,17 +479,19 @@ const connectSharedHomeRuntime = ({
       if (!ids.length) return;
       bridge.resumeAfterPageShow();
       ids.forEach((fragmentId) => {
-        commitGateById.set(fragmentId, commitReady);
+        if (commitReady) {
+          commitGateById.set(fragmentId, commitReady);
+          return;
+        }
+        commitGateById.delete(fragmentId);
       });
       if (isAnchorBatch && !didMarkFirstAnchorBatch) {
         pendingAnchorIds = new Set(ids);
       }
       if (fragmentBootstrapHref && isHomeFragmentBootstrapSubset(ids)) {
-        try {
-          await primeBootstrapSelection();
-        } catch {
+        void primeBootstrapSelection().catch(() => {
           // Keep the shared runtime request path alive even if the primed bootstrap fetch failed.
-        }
+        });
       }
       bridge.requestFragments(ids, {
         priority: isAnchorBatch ? "critical" : "visible",
@@ -993,10 +1000,11 @@ export const bindHomeFragmentHydration = ({
       const demoStylesheetReady = ensureDemoStylesheet({
         href: controller.homeDemoStylesheetHref ?? undefined,
       });
+      const commitReady = isAnchorBatch ? undefined : demoStylesheetReady;
       if (requestFragments) {
         await requestFragments(ids, {
           isAnchorBatch,
-          commitReady: demoStylesheetReady,
+          commitReady,
         });
         if (
           controller.destroyed ||
@@ -1033,13 +1041,15 @@ export const bindHomeFragmentHydration = ({
       )
         return;
 
-      await demoStylesheetReady;
-      if (
-        controller.destroyed ||
-        controller.fetchAbort !== fetchAbort ||
-        fetchAbort.signal.aborted
-      )
-        return;
+      if (!isAnchorBatch) {
+        await demoStylesheetReady;
+        if (
+          controller.destroyed ||
+          controller.fetchAbort !== fetchAbort ||
+          fetchAbort.signal.aborted
+        )
+          return;
+      }
 
       ids.forEach((id) => {
         const payload = payloads[id];
@@ -1397,6 +1407,8 @@ export const bootstrapStaticHome = async () => {
   const sharedRuntime = connectSharedHomeRuntime({
     controller,
     runtimePlanEntries: data.runtimePlanEntries,
+    runtimeFetchGroups: data.runtimeFetchGroups,
+    runtimeInitialFragments: data.runtimeInitialFragments,
     fragmentOrder: data.fragmentOrder,
     fragmentBootstrapHref: data.fragmentBootstrapHref,
     onCommit: (payload) => {

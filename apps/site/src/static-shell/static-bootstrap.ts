@@ -3,7 +3,10 @@ import {
   getUiCopy,
   seedLanguageResources,
 } from "../lang/client";
-import { buildFragmentHeightVersionSignature } from "@prometheus/ui/fragment-height";
+import {
+  buildFragmentHeightVersionSignature,
+  getFragmentHeightViewport,
+} from "@prometheus/ui/fragment-height";
 import type { Lang } from "../lang";
 import { FragmentRuntimeBridge } from "../fragment/runtime/client-bridge";
 import type {
@@ -28,6 +31,8 @@ import {
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
+  STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_SHELL_MAIN_REGION,
   normalizeStaticShellRoutePath,
   STATIC_SHELL_REGION_ATTR,
@@ -308,6 +313,21 @@ const readStaticFragmentCardWidth = (card: HTMLElement) => {
   return width > 0 ? width : null;
 };
 
+const readStaticFragmentWidthBucketHint = (card: HTMLElement) => {
+  const viewport = getFragmentHeightViewport(
+    typeof window !== "undefined" ? window.innerWidth : undefined,
+  );
+  const primaryAttr =
+    viewport === "desktop"
+      ? STATIC_FRAGMENT_WIDTH_BUCKET_ATTR
+      : STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR;
+  const fallbackAttr =
+    viewport === "desktop"
+      ? STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR
+      : STATIC_FRAGMENT_WIDTH_BUCKET_ATTR;
+  return card.getAttribute(primaryAttr) ?? card.getAttribute(fallbackAttr) ?? null;
+};
+
 const collectStaticFragmentKnownVersions = () =>
   Array.from(
     document.querySelectorAll<HTMLElement>(`[${STATIC_FRAGMENT_CARD_ATTR}]`),
@@ -328,13 +348,13 @@ const collectStaticFragmentSizingSeeds = (
     const card = getStaticFragmentCard(fragmentId);
     if (!card) return acc;
     const stableHeight = readStaticFragmentHeightHint(card);
-    const cardWidth = readStaticFragmentCardWidth(card);
-    if (stableHeight === null && cardWidth === null) {
+    const widthBucket = readStaticFragmentWidthBucketHint(card);
+    if (stableHeight === null && widthBucket === null) {
       return acc;
     }
     acc[fragmentId] = {
       stableHeight,
-      cardWidth,
+      widthBucket,
     };
     return acc;
   }, {});
@@ -443,7 +463,8 @@ const connectSharedFragmentRuntime = (
     path: controller.routeData.path,
     lang: controller.lang,
     planEntries: runtimePlanEntries,
-    initialFragments: [],
+    fetchGroups: controller.routeData.runtimeFetchGroups ?? [],
+    initialFragments: controller.routeData.runtimeInitialFragments ?? [],
     initialSizing: collectStaticFragmentSizingSeeds(
       controller.routeData.fragmentOrder,
     ),
@@ -938,7 +959,14 @@ const buildStaticFragmentMarkup = (model: StaticFragmentRouteModel) => {
       const sizeAttr = entry.size ? ` data-size="${entry.size}"` : "";
       const criticalAttr = entry.critical ? ` data-critical="true"` : "";
       const layoutAttr = ` data-fragment-height-layout="${escapeHtmlAttr(JSON.stringify(entry.layout))}"`;
-      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
+      const desktopWidthBucketAttr = entry.desktopWidthBucket || entry.mobileWidthBucket
+        ? ` ${STATIC_FRAGMENT_WIDTH_BUCKET_ATTR}="${escapeHtmlAttr(entry.desktopWidthBucket ?? entry.mobileWidthBucket ?? "")}"`
+        : "";
+      const mobileWidthBucketAttr =
+        entry.mobileWidthBucket && entry.mobileWidthBucket !== entry.desktopWidthBucket
+          ? ` ${STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR}="${escapeHtmlAttr(entry.mobileWidthBucket)}"`
+          : "";
+      return `<article class="fragment-card fragment-card-static-home" data-fragment-id="${entry.id}" data-fragment-height-hint="${entry.reservedHeight}"${layoutAttr}${criticalAttr} data-fragment-loaded="true" data-fragment-ready="true" data-fragment-stage="ready" data-reveal-phase="queued" data-reveal-locked="false" data-draggable="false" data-ready-stagger-state="queued"${sizeAttr}${versionAttr}${desktopWidthBucketAttr}${mobileWidthBucketAttr} ${STATIC_FRAGMENT_CARD_ATTR}="true" style="--fragment-min-height:${entry.reservedHeight}px;grid-column:${column};"><div class="fragment-card-body" ${STATIC_FRAGMENT_BODY_ATTR}="${entry.id}"><div class="fragment-html">${entry.html}</div></div></article>`;
     })
     .join("");
 

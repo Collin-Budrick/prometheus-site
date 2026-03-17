@@ -392,32 +392,42 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(state?.cards.map((card) => ({ id: card.id, stage: card.stage, column: card.column }))).toEqual([
       { id: 'fragment://page/home/manifest@v1', stage: 'critical', column: '1' },
-      { id: 'fragment://page/home/planner@v1', stage: 'anchor', column: '1' },
+      { id: 'fragment://page/home/dock@v2', stage: 'anchor', column: '2' },
+      { id: 'fragment://page/home/planner@v1', stage: 'deferred', column: '1' },
+      { id: 'fragment://page/home/ledger@v1', stage: 'deferred', column: '1' },
       { id: 'fragment://page/home/island@v1', stage: 'deferred', column: '1' },
-      { id: 'fragment://page/home/ledger@v1', stage: 'anchor', column: '2' },
-      { id: 'fragment://page/home/react@v1', stage: 'deferred', column: '2' },
-      { id: 'fragment://page/home/dock@v2', stage: 'deferred', column: '2' }
+      { id: 'fragment://page/home/react@v1', stage: 'deferred', column: '1' }
     ])
-    expect(state?.cards[0]?.html).not.toContain('home-fragment-shell')
-    expect(state?.cards[1]?.html).toContain('home-fragment-copy')
-    expect(state?.cards[1]?.html).toContain('planner-demo-grid')
-    expect(state?.cards[1]?.html).toContain('data-fragment-widget="planner-demo"')
-    expect(state?.cards[1]?.html).not.toContain('home-demo-compact')
-    expect(state?.cards[1]?.html).not.toContain('matrix')
-    expect(state?.cards[1]?.patchState).toBe('ready')
-    expect(state?.cards[2]?.html).toContain('home-demo-compact')
-    expect(state?.cards[2]?.html).toContain('data-fragment-widget="preact-island"')
-    expect(state?.cards[2]?.html).not.toContain('home-fragment-stub')
-    expect(state?.cards[2]?.patchState).toBe('pending')
-    expect(state?.cards[2]?.reservedHeight).toBe(544)
-    expect(state?.cards[3]?.html).toContain('wasm-demo-grid')
-    expect(state?.cards[3]?.html).toContain('data-fragment-widget="wasm-renderer-demo"')
-    expect(state?.cards[3]?.html).not.toContain('home-demo-compact')
-    expect(state?.cards[3]?.patchState).toBe('ready')
-    expect(state?.cards[4]?.html).toContain('home-demo-compact')
-    expect(state?.cards[4]?.html).toContain('data-fragment-widget="react-binary-demo"')
-    expect(state?.cards[4]?.patchState).toBe('pending')
-    expect(state?.cards[4]?.reservedHeight).toBe(648)
-    expect(state?.cards[5]?.reservedHeight).toBe(489)
+
+    const manifestoCard = state?.cards.find((card) => card.id === 'fragment://page/home/manifest@v1')
+    const dockCard = state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')
+    const plannerCard = state?.cards.find((card) => card.id === 'fragment://page/home/planner@v1')
+    const ledgerCard = state?.cards.find((card) => card.id === 'fragment://page/home/ledger@v1')
+    const islandCard = state?.cards.find((card) => card.id === 'fragment://page/home/island@v1')
+    const reactCard = state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')
+
+    expect(manifestoCard?.html).not.toContain('home-fragment-shell')
+    expect(dockCard?.html).toContain('home-fragment-shell--dock')
+    expect(dockCard?.patchState).toBe('ready')
+    expect(dockCard?.revealPhase).toBe('visible')
+    expect(plannerCard?.html).toContain('home-fragment-copy')
+    expect(plannerCard?.html).toContain('home-demo-compact')
+    expect(plannerCard?.html).toContain('data-fragment-widget="planner-demo"')
+    expect(plannerCard?.html).not.toContain('planner-demo-grid')
+    expect(plannerCard?.html).not.toContain('matrix')
+    expect(plannerCard?.patchState).toBe('pending')
+    expect(ledgerCard?.html).toContain('home-demo-compact')
+    expect(ledgerCard?.html).toContain('data-fragment-widget="wasm-renderer-demo"')
+    expect(ledgerCard?.html).not.toContain('wasm-demo-grid')
+    expect(ledgerCard?.patchState).toBe('pending')
+    expect(islandCard?.html).toContain('home-demo-compact')
+    expect(islandCard?.html).toContain('data-fragment-widget="preact-island"')
+    expect(islandCard?.patchState).toBe('pending')
+    expect(islandCard?.reservedHeight).toBe(544)
+    expect(reactCard?.html).toContain('home-demo-compact')
+    expect(reactCard?.html).toContain('data-fragment-widget="react-binary-demo"')
+    expect(reactCard?.patchState).toBe('pending')
+    expect(reactCard?.reservedHeight).toBe(648)
+    expect(dockCard?.reservedHeight).toBe(489)
   })
 })

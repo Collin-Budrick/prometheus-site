@@ -17,7 +17,7 @@ const makeText = (translate: (value: string, params?: Record<string, string | nu
 
 const renderHomeCopyBlock = (text: ReturnType<typeof makeText>, lead: string, detail?: string) =>
   h('p', { class: 'home-fragment-copy' }, [
-    h('strong', { class: 'home-fragment-copy-lead' }, [text(lead)]),
+    h('span', { class: 'home-fragment-copy-lead-inline' }, [text(`${lead} `)]),
     ...(detail ? [text(detail)] : [])
   ])
 
@@ -27,9 +27,19 @@ const renderManifestoCopyBlock = (
   detail: string
 ) =>
   h('p', { class: 'home-manifest-copy' }, [
-    h('strong', { class: 'home-manifest-copy-lead' }, [text(lead)]),
+    h('span', { class: 'home-manifest-copy-lead-inline' }, [text(`${lead} `)]),
     text(detail)
   ])
+
+const renderHomeMetricChips = (
+  text: ReturnType<typeof makeText>,
+  values: string[]
+) =>
+  h(
+    'ul',
+    { class: 'home-fragment-metrics' },
+    values.map((value) => h('li', { class: 'home-fragment-metric' }, [text(value)]))
+  )
 
 type FragmentTextNode = RenderNode
 
@@ -97,11 +107,11 @@ const planner: FragmentDefinition = {
           text(t('Dependencies \u00b7 Cache \u00b7 Runtime'))
         )
       ),
-      h('div', { class: 'matrix' }, [
-        h('div', { class: 'cell', 'data-value': 'Resolved' }, [text('Dependencies')]),
-        h('div', { class: 'cell', 'data-value': 'Parallel' }, [text('Cache hits')]),
-        h('div', { class: 'cell', 'data-value': 'Edge/Node' }, [text('Runtime')]),
-        h('div', { class: 'cell', 'data-value': 'Async' }, [text('Revalidation')])
+      renderHomeMetricChips(text, [
+        'Dependencies resolved',
+        'Parallel cache hits',
+        'Edge or Node runtime',
+        'Async revalidation'
       ])
     ])
   }
@@ -138,11 +148,11 @@ const ledger: FragmentDefinition = {
           text(t('Edge-safe \u00b7 Deterministic \u00b7 HTML untouched'))
         )
       ),
-      h('div', { class: 'matrix' }, [
-        h('div', { class: 'cell', 'data-value': `${burst} op/s` }, [text('Burst throughput')]),
-        h('div', { class: 'cell', 'data-value': `${hotPath} pts` }, [text('Hot-path score')]),
-        h('div', { class: 'cell', 'data-value': '30s' }, [text('Cache TTL')]),
-        h('div', { class: 'cell', 'data-value': '120s' }, [text('Stale TTL')])
+      renderHomeMetricChips(text, [
+        `Burst throughput ${burst} op/s`,
+        `Hot-path score ${hotPath} pts`,
+        'Cache TTL 30s',
+        'Stale TTL 120s'
       ])
     ])
   }
@@ -412,9 +422,13 @@ export const homeFragments: FragmentPlanEntry[] = [
 
 const homeFetchGroups = [
   ['fragment://page/home/manifest@v1'],
-  ['fragment://page/home/planner@v1'],
-  ['fragment://page/home/ledger@v1'],
-  ['fragment://page/home/island@v1', 'fragment://page/home/react@v1', 'fragment://page/home/dock@v2']
+  [
+    'fragment://page/home/planner@v1',
+    'fragment://page/home/ledger@v1',
+    'fragment://page/home/island@v1',
+    'fragment://page/home/react@v1',
+    'fragment://page/home/dock@v2'
+  ]
 ] satisfies string[][]
 
 export const homeFragmentDefinitions: FragmentDefinition[] = [planner, ledger, island, manifesto, reactFragment, dockFragment]

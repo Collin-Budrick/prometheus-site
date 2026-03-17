@@ -1,4 +1,5 @@
 import type { Lang } from '../lang'
+import type { FragmentPayload } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { ContactInvitesSeed } from '../shared/contact-invites-seed'
 import type { StoreSeed } from '../shared/store-seed'
@@ -14,6 +15,8 @@ export type StaticFragmentRouteData = {
   planSignature: string
   versionSignature: string
   runtimePlanEntries: FragmentRuntimePlanEntry[]
+  runtimeFetchGroups?: string[][]
+  runtimeInitialFragments?: FragmentPayload[]
   fragmentVersions: Record<string, number>
   storeSeed?: StoreSeed | null
   contactInvitesSeed?: ContactInvitesSeed | null

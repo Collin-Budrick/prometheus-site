@@ -33,6 +33,7 @@ export type FragmentRuntimeInitMessage = {
   path: string
   lang: string
   planEntries: FragmentRuntimePlanEntry[]
+  fetchGroups?: string[][]
   initialFragments: FragmentPayload[]
   initialSizing: FragmentRuntimeSizingMap
   knownVersions?: FragmentRuntimeKnownVersions

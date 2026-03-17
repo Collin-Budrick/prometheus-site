@@ -397,7 +397,7 @@ describe('home-stream patching', () => {
     expect(card.dataset.revealLocked).toBe('false')
   })
 
-  it('flushes anchor payloads immediately and leaves deferred payloads on the scheduled queue', () => {
+  it('flushes anchor payloads immediately and drains other eligible payloads in the same turn', () => {
     const log: string[] = []
     const planner = createCard('fragment://page/home/planner@v1', log, { stage: 'anchor' })
     const react = createCard('fragment://page/home/react@v1', log, { stage: 'deferred' })
@@ -416,17 +416,18 @@ describe('home-stream patching', () => {
 
     expect(log).toEqual([
       'fragment://page/home/planner@v1',
+      'fragment://page/home/react@v1',
       'fragment://page/home/planner@v1'
     ])
     expect(planner.body.innerHTML).toContain('Planner latest')
-    expect(react.body.innerHTML).toBe('')
+    expect(react.body.innerHTML).toContain('React first')
 
     frameQueue.flushFrames(1)
 
     expect(log).toEqual([
       'fragment://page/home/planner@v1',
-      'fragment://page/home/planner@v1',
-      'fragment://page/home/react@v1'
+      'fragment://page/home/react@v1',
+      'fragment://page/home/planner@v1'
     ])
     expect(react.body.innerHTML).toContain('React first')
   })
