@@ -298,6 +298,56 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   const mainCards = routeState.cards.filter((card) => card.placement === 'main')
   const heroColumns = splitCards(heroCards)
   const mainColumns = splitCards(mainCards)
+  const combinedColumns = {
+    '1': [...heroColumns['1'], ...mainColumns['1']],
+    '2': [...heroColumns['2'], ...mainColumns['2']]
+  } as const
+  const renderHomeCard = (card: StaticHomeRenderedCard) => {
+    const style = {
+      '--fragment-min-height': `${card.reservedHeight}px`,
+      order: card.order
+    }
+
+    return (
+      <article
+        key={card.id}
+        class={{
+          'fragment-card': true,
+          'fragment-card-static-home': true
+        }}
+        data-critical={card.critical ? 'true' : undefined}
+        data-fragment-id={card.id}
+        data-fragment-loaded="true"
+        data-fragment-ready={card.patchState === 'ready' ? 'true' : undefined}
+        data-fragment-stage={card.patchState === 'ready' ? 'ready' : 'waiting-payload'}
+        data-reveal-phase={card.revealPhase}
+        data-reveal-locked="false"
+        data-draggable="false"
+        data-size={card.size}
+        style={style}
+        {...{
+          [STATIC_FRAGMENT_CARD_ATTR]: 'true',
+          [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
+          [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
+            card.desktopWidthBucket ?? card.mobileWidthBucket ?? undefined,
+          [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
+            card.mobileWidthBucket && card.mobileWidthBucket !== card.desktopWidthBucket
+              ? card.mobileWidthBucket
+              : undefined,
+          [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
+          [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
+          [STATIC_HOME_STAGE_ATTR]: card.stage,
+          [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
+          [STATIC_HOME_PREVIEW_VISIBLE_ATTR]: card.previewVisible ? 'true' : undefined,
+          'data-fragment-height-hint': `${card.reservedHeight}`
+        }}
+      >
+        <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
+          <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(card.html, 'server') as string} />
+        </div>
+      </article>
+    )
+  }
 
   return (
     <section
@@ -343,107 +393,10 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           </article>
         </div>
       </div>
-      <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="hero">
-        {(['1', '2'] as const).map((column) => (
-          <div key={`hero-${column}`} class="fragment-grid-static-home-column" data-static-home-column={column}>
-            {heroColumns[column].map((card) => {
-              const style = {
-                '--fragment-min-height': `${card.reservedHeight}px`,
-                order: card.order
-              }
-
-              return (
-                <article
-                  key={card.id}
-                  class={{
-                    'fragment-card': true,
-                    'fragment-card-static-home': true
-                  }}
-                  data-critical={card.critical ? 'true' : undefined}
-                  data-fragment-id={card.id}
-                  data-fragment-loaded="true"
-                  data-fragment-ready={card.patchState === 'ready' ? 'true' : undefined}
-                  data-fragment-stage={card.patchState === 'ready' ? 'ready' : 'waiting-payload'}
-                  data-reveal-phase={card.revealPhase}
-                  data-reveal-locked="false"
-                  data-draggable="false"
-                  data-size={card.size}
-                  style={style}
-                  {...{
-                    [STATIC_FRAGMENT_CARD_ATTR]: 'true',
-                    [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
-                    [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
-                      card.desktopWidthBucket ?? card.mobileWidthBucket ?? undefined,
-                    [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
-                      card.mobileWidthBucket && card.mobileWidthBucket !== card.desktopWidthBucket
-                        ? card.mobileWidthBucket
-                        : undefined,
-                    [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
-                    [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
-                    [STATIC_HOME_STAGE_ATTR]: card.stage,
-                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
-                    [STATIC_HOME_PREVIEW_VISIBLE_ATTR]: card.previewVisible ? 'true' : undefined,
-                    'data-fragment-height-hint': `${card.reservedHeight}`
-                  }}
-                >
-                  <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
-                    <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(card.html, 'server') as string} />
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        ))}
-      </div>
       <div class="fragment-grid fragment-grid-static-home" data-fragment-grid="main">
         {(['1', '2'] as const).map((column) => (
           <div key={column} class="fragment-grid-static-home-column" data-static-home-column={column}>
-            {mainColumns[column].map((card) => {
-              const style = {
-                '--fragment-min-height': `${card.reservedHeight}px`,
-                order: card.order
-              }
-
-              return (
-                <article
-                  key={card.id}
-                  class={{
-                    'fragment-card': true,
-                    'fragment-card-static-home': true
-                  }}
-                  data-critical={card.critical ? 'true' : undefined}
-                  data-fragment-id={card.id}
-                  data-fragment-loaded="true"
-                  data-fragment-ready={card.patchState === 'ready' ? 'true' : undefined}
-                  data-fragment-stage={card.patchState === 'ready' ? 'ready' : 'waiting-payload'}
-                  data-reveal-phase={card.revealPhase}
-                  data-reveal-locked="false"
-                  data-draggable="false"
-                  data-size={card.size}
-                  style={style}
-                  {...{
-                    [STATIC_FRAGMENT_CARD_ATTR]: 'true',
-                    [STATIC_FRAGMENT_VERSION_ATTR]: card.version,
-                    [STATIC_FRAGMENT_WIDTH_BUCKET_ATTR]:
-                      card.desktopWidthBucket ?? card.mobileWidthBucket ?? undefined,
-                    [STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR]:
-                      card.mobileWidthBucket && card.mobileWidthBucket !== card.desktopWidthBucket
-                        ? card.mobileWidthBucket
-                        : undefined,
-                    [STATIC_HOME_FRAGMENT_KIND_ATTR]: card.fragmentKind,
-                    [STATIC_HOME_LCP_STABLE_ATTR]: card.lcpStable ? 'true' : undefined,
-                    [STATIC_HOME_STAGE_ATTR]: card.stage,
-                    [STATIC_HOME_PATCH_STATE_ATTR]: card.patchState,
-                    [STATIC_HOME_PREVIEW_VISIBLE_ATTR]: card.previewVisible ? 'true' : undefined,
-                    'data-fragment-height-hint': `${card.reservedHeight}`
-                  }}
-                >
-                  <div class="fragment-card-body" {...{ [STATIC_FRAGMENT_BODY_ATTR]: card.id }}>
-                    <div class="fragment-html" dangerouslySetInnerHTML={asTrustedHtml(card.html, 'server') as string} />
-                  </div>
-                </article>
-              )
-            })}
+            {combinedColumns[column].map((card) => renderHomeCard(card))}
           </div>
         ))}
       </div>

@@ -212,7 +212,7 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntrySource).toContain("HOME_DEMO_OBSERVE_EVENT");
     expect(homeDemoEntrySource).toContain("syncHomeDemoController");
     expect(homeDemoEntrySource).toContain("binding.manager.observeWithin(");
-    expect(homeDemoEntrySource).toContain("ensureHomeDemoStylesheet({");
+    expect(homeDemoEntrySource).toContain("ensureStaticHomeDeferredStylesheet({");
     expect(homeLanguageRuntimeSource).toContain("from '../lang/types'");
     expect(homeLanguageRuntimeSource).not.toContain("from '../lang'");
     expect(homeLanguageRuntimeSource).not.toContain("import.meta.glob");
@@ -260,7 +260,6 @@ describe("static shell performance invariants", () => {
     );
     expect(homeRouteSource).toContain('data-fragment-id="shell-intro"');
     expect(homeRouteSource).toContain('data-reveal-phase="visible"');
-    expect(homeRouteSource).toContain('data-fragment-grid="hero"');
     expect(homeRouteSource).toContain('data-fragment-grid="main"');
     expect(homeRouteSource).toContain("STATIC_HOME_PAINT_ATTR");
     expect(homeRouteSource).toContain("STATIC_HOME_STAGE_ATTR");
