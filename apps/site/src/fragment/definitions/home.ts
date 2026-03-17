@@ -254,13 +254,13 @@ const dockFragment: FragmentDefinition = {
           },
           [
             h('textarea', {
-              class: 'home-collab-textarea',
-              id: 'home-collab-dock-input',
-              name: 'home-collab-dock-input',
-              'data-home-collab-input': 'true',
-              rows: '7',
-              spellcheck: 'false',
-              placeholder: t('Write something. Everyone here sees it live.'),
+            class: 'home-collab-textarea',
+            id: 'home-collab-dock-input',
+            name: 'home-collab-dock-input',
+            'data-home-collab-input': 'true',
+            rows: '5',
+            spellcheck: 'false',
+            placeholder: t('Write something. Everyone here sees it live.'),
               'aria-label': t('Shared collaborative text box'),
               readonly: 'true',
               'aria-busy': 'false'
@@ -410,11 +410,11 @@ export const homeFragments: FragmentPlanEntry[] = [
     layout: {
       column: 'span 12',
       size: 'small',
-      minHeight: 489,
-      heightHint: { desktop: 489, mobile: 489 },
+      minHeight: 420,
+      heightHint: { desktop: 420, mobile: 420 },
       heightProfile: {
-        desktop: [{ maxWidth: 1440, height: 489 }],
-        mobile: [{ maxWidth: 768, height: 489 }]
+        desktop: [{ maxWidth: 1440, height: 420 }],
+        mobile: [{ maxWidth: 768, height: 420 }]
       }
     }
   }
@@ -422,12 +422,12 @@ export const homeFragments: FragmentPlanEntry[] = [
 
 const homeFetchGroups = [
   ['fragment://page/home/manifest@v1'],
+  ['fragment://page/home/dock@v2'],
   [
     'fragment://page/home/planner@v1',
     'fragment://page/home/ledger@v1',
     'fragment://page/home/island@v1',
-    'fragment://page/home/react@v1',
-    'fragment://page/home/dock@v2'
+    'fragment://page/home/react@v1'
   ]
 ] satisfies string[][]
 

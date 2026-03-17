@@ -528,7 +528,6 @@ const buildDockShellNode = (
   header: FragmentHeaderCopy,
   summary: string
 ) => {
-  const shellSummary = summary || header.description || ''
   const collabPlaceholder = 'Write something. Everyone here sees it live.'
   const collabAriaLabel = 'Shared collaborative text box'
   const statusIdle = 'Focus to start live sync.'
@@ -559,7 +558,6 @@ const buildDockShellNode = (
         ? [h('div', { class: 'meta-line' }, [t(normalizeHeaderMeta(header.metaLine))])]
         : []),
       h(header.heading ?? 'h2', null, [t(header.title)]),
-      ...(shellSummary ? [h('div', { class: 'home-fragment-shell-copy' }, [t(shellSummary)])] : []),
       h(
         'div',
         {
@@ -577,7 +575,7 @@ const buildDockShellNode = (
             id: 'home-collab-dock-input',
             name: 'home-collab-dock-input',
             'data-home-collab-input': 'true',
-            rows: '7',
+            rows: '5',
             spellcheck: 'false',
             placeholder: resolveFragmentText(copy, collabPlaceholder),
             'aria-label': resolveFragmentText(copy, collabAriaLabel),

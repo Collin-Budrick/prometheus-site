@@ -365,6 +365,12 @@ const connectSharedHomeRuntime = ({
     return bootstrapPrimePromise;
   };
 
+  if (fragmentBootstrapHref) {
+    void primeBootstrapSelection().catch(() => {
+      // Keep initial runtime connect non-blocking even if bootstrap priming fails.
+    });
+  }
+
   const handleStableHeight = (event: Event) => {
     const detail = (
       event as CustomEvent<{ fragmentId?: string; height?: number }>
@@ -489,7 +495,7 @@ const connectSharedHomeRuntime = ({
         pendingAnchorIds = new Set(ids);
       }
       if (fragmentBootstrapHref && isHomeFragmentBootstrapSubset(ids)) {
-        void primeBootstrapSelection().catch(() => {
+        await primeBootstrapSelection().catch(() => {
           // Keep the shared runtime request path alive even if the primed bootstrap fetch failed.
         });
       }

@@ -179,6 +179,16 @@ afterEach(() => {
 })
 
 describe('fetchHomeFragmentBatch', () => {
+  it('keeps the default home bootstrap bundle scoped to below-the-fold cards', () => {
+    const href = buildHomeFragmentBootstrapHref({ lang: 'en' })
+
+    expect(href).toContain('fragment%3A%2F%2Fpage%2Fhome%2Fplanner%40v1')
+    expect(href).toContain('fragment%3A%2F%2Fpage%2Fhome%2Fledger%40v1')
+    expect(href).toContain('fragment%3A%2F%2Fpage%2Fhome%2Fisland%40v1')
+    expect(href).toContain('fragment%3A%2F%2Fpage%2Fhome%2Freact%40v1')
+    expect(href).not.toContain('fragment%3A%2F%2Fpage%2Fhome%2Fdock%40v2')
+  })
+
   it('uses the stable bootstrap GET bundle for home fragment refreshes', async () => {
     const href = buildHomeFragmentBootstrapHref({
       lang: 'en',

@@ -298,6 +298,7 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(dockHtml).toContain('data-home-collab-root="dock"')
     expect(dockHtml).toContain('data-home-collab-input="true"')
     expect(dockHtml).toContain('data-collab-status-idle="Focus to start live sync."')
+    expect(dockHtml).toContain('rows="5"')
     expect(dockHtml).toContain('readonly="true"')
     expect(dockHtml).toContain('data-home-collab-status="idle"')
   })
@@ -408,6 +409,7 @@ describe('renderHomeStaticFragmentHtml', () => {
 
     expect(manifestoCard?.html).not.toContain('home-fragment-shell')
     expect(dockCard?.html).toContain('home-fragment-shell--dock')
+    expect(dockCard?.html).not.toContain('home-fragment-shell-copy')
     expect(dockCard?.patchState).toBe('ready')
     expect(dockCard?.revealPhase).toBe('visible')
     expect(plannerCard?.html).toContain('home-fragment-copy')
@@ -428,6 +430,6 @@ describe('renderHomeStaticFragmentHtml', () => {
     expect(reactCard?.html).toContain('data-fragment-widget="react-binary-demo"')
     expect(reactCard?.patchState).toBe('pending')
     expect(reactCard?.reservedHeight).toBe(648)
-    expect(dockCard?.reservedHeight).toBe(489)
+    expect(dockCard?.reservedHeight).toBe(420)
   })
 })

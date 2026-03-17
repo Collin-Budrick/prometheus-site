@@ -162,7 +162,7 @@ describe('StaticHomeRoute', () => {
         {
           id: 'fragment://page/home/dock@v2',
           critical: false,
-          layout: { column: 'span 12', size: 'small', minHeight: 489, heightHint: { desktop: 489, mobile: 489 } }
+          layout: { column: 'span 12', size: 'small', minHeight: 420, heightHint: { desktop: 420, mobile: 420 } }
         },
         {
           id: 'fragment://page/home/react@v1',
@@ -211,7 +211,9 @@ describe('StaticHomeRoute', () => {
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.patchState).toBe('ready')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.revealPhase).toBe('visible')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).toContain('home-fragment-shell--dock')
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.html).not.toContain('home-fragment-shell-copy')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.lcpStable).toBe(true)
+    expect(state?.cards.find((card) => card.id === 'fragment://page/home/dock@v2')?.reservedHeight).toBe(420)
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.stage).toBe('deferred')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.patchState).toBe('pending')
     expect(state?.cards.find((card) => card.id === 'fragment://page/home/react@v1')?.revealPhase).toBe('holding')
