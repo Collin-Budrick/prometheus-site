@@ -47,6 +47,20 @@ const isFunctionComponent = (value: unknown): value is (props: ElementProps) => 
 
 const isReactNodeArray = (value: ReactNode): value is ReactNode[] => Array.isArray(value)
 
+const isRenderNodeLike = (value: ReactNode): value is RenderNode => {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as Partial<RenderNode>
+  if (candidate.type === 'text') {
+    return typeof candidate.text === 'string'
+  }
+  if (candidate.type === 'element') {
+    return typeof candidate.tag === 'string'
+  }
+  return false
+}
+
 const isStyleObject = (value: unknown): value is Record<string, string | number> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   return Object.values(value).every((entry) => typeof entry === 'string' || typeof entry === 'number')
@@ -96,6 +110,9 @@ const toRenderNodes = (node: ReactNode): RenderNode[] => {
   }
   if (isReactNodeArray(node)) {
     return node.flatMap((child) => toRenderNodes(child))
+  }
+  if (isRenderNodeLike(node)) {
+    return [node]
   }
   if (!isValidElement<ElementProps>(node)) {
     return []
