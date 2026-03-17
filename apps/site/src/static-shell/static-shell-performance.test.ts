@@ -100,7 +100,7 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).not.toContain(
       "HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15",
     );
-    expect(bootstrapSource).not.toContain(
+    expect(bootstrapSource).toContain(
       'addEventListener("pageshow", handlePageShow)',
     );
     expect(bootstrapSource).not.toContain("HOME_PREVIEW_REFRESH_DELAY_MS");
@@ -613,7 +613,7 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).not.toContain("home-dock-auth-runtime.js");
     expect(entrySsrSource).not.toContain("fragment-height-patch-runtime.js");
     expect(entrySsrSource).toContain("fragment-bootstrap-runtime.js");
-    expect(entrySsrSource).toContain("fragment/runtime/shared-worker.js");
+    expect(entrySsrSource).not.toContain("fragment/runtime/worker.js");
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("store-static-runtime.js");
   });

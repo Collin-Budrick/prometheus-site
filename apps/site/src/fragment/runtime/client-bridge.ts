@@ -36,19 +36,17 @@ type FragmentRuntimeRequestOptions = {
   refreshIds?: string[]
 }
 
-const canUseSharedWorkerRuntime = () =>
-  typeof window !== 'undefined' && typeof SharedWorker === 'function'
+const canUseWorkerRuntime = () => typeof window !== 'undefined' && typeof Worker === 'function'
 
-const FRAGMENT_SHARED_WORKER_ASSET_PATH =
-  'build/static-shell/apps/site/src/fragment/runtime/shared-worker.js'
+const FRAGMENT_RUNTIME_WORKER_ASSET_PATH = 'build/static-shell/apps/site/src/fragment/runtime/worker.js'
 
-export const resolveFragmentSharedWorkerUrl = (
+export const resolveFragmentRuntimeWorkerUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
-) => resolveStaticAssetUrl(FRAGMENT_SHARED_WORKER_ASSET_PATH, options)
+) => resolveStaticAssetUrl(FRAGMENT_RUNTIME_WORKER_ASSET_PATH, options)
 
-export class FragmentSharedRuntimeBridge {
-  private worker: SharedWorker | null = null
-  private port: MessagePort | null = null
+export class FragmentRuntimeBridge {
+  private worker: Worker | null = null
+  private config: FragmentRuntimeBridgeConfig | null = null
   private clientId: string | null = null
   private onCommit: ((payload: FragmentPayload) => void) | null = null
   private onSizing: ((sizing: FragmentRuntimeCardSizing) => void) | null = null
@@ -68,6 +66,16 @@ export class FragmentSharedRuntimeBridge {
 
     switch (message.type) {
       case 'fragment-commit':
+        if (
+          this.config &&
+          typeof message.payload.cacheUpdatedAt === 'number' &&
+          Number.isFinite(message.payload.cacheUpdatedAt)
+        ) {
+          this.config.knownVersions = {
+            ...(this.config.knownVersions ?? {}),
+            [message.payload.id]: message.payload.cacheUpdatedAt
+          }
+        }
         this.onSizing?.(message.sizing)
         this.onCommit?.(message.payload)
         return
@@ -95,54 +103,81 @@ export class FragmentSharedRuntimeBridge {
   }
 
   connect(config: FragmentRuntimeBridgeConfig) {
-    if (!canUseSharedWorkerRuntime()) {
+    if (!canUseWorkerRuntime()) {
       return false
     }
 
     this.dispose()
-
-    try {
-      const workerUrl = asTrustedScriptUrl(resolveFragmentSharedWorkerUrl())
-      this.worker = new SharedWorker(workerUrl as unknown as string, {
-        type: 'module',
-        name: 'fragment-shared-runtime'
-      })
-    } catch (error) {
-      console.error('Failed to start fragment shared runtime', error)
-      this.dispose()
-      return false
+    this.config = {
+      ...config,
+      planEntries: [...config.planEntries],
+      initialFragments: [...config.initialFragments],
+      initialSizing: { ...config.initialSizing },
+      knownVersions: config.knownVersions ? { ...config.knownVersions } : undefined,
+      visibleIds: [...config.visibleIds]
     }
-    this.port = this.worker.port
     this.clientId = config.clientId
     this.onCommit = config.onCommit
     this.onSizing = config.onSizing
     this.onStatus = config.onStatus
     this.onError = config.onError
-    this.port.addEventListener('message', this.handleMessage as EventListener)
-    this.port.start()
+    return this.resumeAfterPageShow()
+  }
+
+  suspendForPageHide() {
+    if (!this.worker) {
+      return false
+    }
+    this.rejectPendingBootstrapPrimes(
+      new Error('Fragment runtime worker suspended for pagehide before bootstrap priming completed')
+    )
+    this.disconnectPort()
+    return true
+  }
+
+  resumeAfterPageShow() {
+    if (!canUseWorkerRuntime() || !this.config) {
+      return false
+    }
+    if (this.worker) {
+      return true
+    }
+
+    try {
+      const workerUrl = asTrustedScriptUrl(resolveFragmentRuntimeWorkerUrl())
+      this.worker = new Worker(workerUrl as unknown as string, {
+        type: 'module',
+        name: 'fragment-runtime'
+      })
+    } catch (error) {
+      console.error('Failed to start fragment runtime worker', error)
+      this.disconnectPort()
+      return false
+    }
+    this.worker.addEventListener('message', this.handleMessage as EventListener)
 
     this.post({
       type: 'init',
-      clientId: config.clientId,
-      apiBase: config.apiBase,
-      path: config.path,
-      lang: config.lang,
-      planEntries: config.planEntries,
-      initialFragments: config.initialFragments,
-      initialSizing: config.initialSizing,
-      knownVersions: config.knownVersions,
-      visibleIds: config.visibleIds,
-      viewportWidth: config.viewportWidth,
-      enableStreaming: config.enableStreaming,
-      bootstrapHref: config.bootstrapHref
+      clientId: this.config.clientId,
+      apiBase: this.config.apiBase,
+      path: this.config.path,
+      lang: this.config.lang,
+      planEntries: this.config.planEntries,
+      initialFragments: this.config.initialFragments,
+      initialSizing: this.config.initialSizing,
+      knownVersions: this.config.knownVersions,
+      visibleIds: this.config.visibleIds,
+      viewportWidth: this.config.viewportWidth,
+      enableStreaming: this.config.enableStreaming,
+      bootstrapHref: this.config.bootstrapHref
     })
 
     return true
   }
 
   primeBootstrap(bytes: Uint8Array | ArrayBuffer, href?: string) {
-    if (!this.clientId || !this.port) {
-      return Promise.reject(new Error('Fragment shared runtime is not connected'))
+    if (!this.clientId || !this.worker) {
+      return Promise.reject(new Error('Fragment runtime worker is not connected'))
     }
 
     const requestId =
@@ -175,7 +210,7 @@ export class FragmentSharedRuntimeBridge {
         reject(
           error instanceof Error
             ? error
-            : new Error('Failed to prime fragment shared runtime bootstrap bytes')
+            : new Error('Failed to prime fragment runtime bootstrap bytes')
         )
       }
     })
@@ -194,6 +229,9 @@ export class FragmentSharedRuntimeBridge {
 
   setVisibleIds(ids: string[]) {
     if (!this.clientId) return
+    if (this.config) {
+      this.config.visibleIds = [...ids]
+    }
     this.post({
       type: 'set-visible-ids',
       clientId: this.clientId,
@@ -208,6 +246,12 @@ export class FragmentSharedRuntimeBridge {
     knownVersions?: FragmentRuntimeKnownVersions
   ) {
     if (!this.clientId) return
+    if (this.config) {
+      this.config.lang = lang
+      this.config.initialFragments = [...initialFragments]
+      this.config.initialSizing = { ...initialSizing }
+      this.config.knownVersions = knownVersions ? { ...knownVersions } : undefined
+    }
     this.post({
       type: 'update-lang',
       clientId: this.clientId,
@@ -266,20 +310,11 @@ export class FragmentSharedRuntimeBridge {
   }
 
   dispose() {
-    this.pendingBootstrapPrimes.forEach(({ reject }) => {
-      reject(new Error('Fragment shared runtime disposed before bootstrap priming completed'))
-    })
-    this.pendingBootstrapPrimes.clear()
-    if (this.port && this.clientId) {
-      this.post({
-        type: 'dispose',
-        clientId: this.clientId
-      })
-      this.port.removeEventListener('message', this.handleMessage as EventListener)
-      this.port.close()
-    }
-    this.port = null
-    this.worker = null
+    this.rejectPendingBootstrapPrimes(
+      new Error('Fragment runtime worker disposed before bootstrap priming completed')
+    )
+    this.disconnectPort()
+    this.config = null
     this.clientId = null
     this.onCommit = null
     this.onSizing = null
@@ -287,12 +322,31 @@ export class FragmentSharedRuntimeBridge {
     this.onError = null
   }
 
+  private rejectPendingBootstrapPrimes(error: Error) {
+    this.pendingBootstrapPrimes.forEach(({ reject }) => {
+      reject(error)
+    })
+    this.pendingBootstrapPrimes.clear()
+  }
+
+  private disconnectPort() {
+    if (this.worker && this.clientId) {
+      this.post({
+        type: 'dispose',
+        clientId: this.clientId
+      })
+      this.worker.removeEventListener('message', this.handleMessage as EventListener)
+      this.worker.terminate()
+    }
+    this.worker = null
+  }
+
   private post(message: FragmentRuntimePageMessage, transfer?: Transferable[]) {
-    if (!this.port) return
+    if (!this.worker) return
     if (transfer && transfer.length > 0) {
-      this.port.postMessage(message, transfer)
+      this.worker.postMessage(message, transfer)
       return
     }
-    this.port.postMessage(message)
+    this.worker.postMessage(message)
   }
 }

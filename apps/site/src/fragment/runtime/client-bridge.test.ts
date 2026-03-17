@@ -1,9 +1,62 @@
-import { describe, expect, it } from 'bun:test'
-import { resolveFragmentSharedWorkerUrl } from './client-bridge'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { FragmentRuntimeBridge, resolveFragmentRuntimeWorkerUrl } from './client-bridge'
+
+type MockListener = (event: { data: unknown }) => void
+
+class MockWorker {
+  static instances: MockWorker[] = []
+
+  readonly posted: unknown[] = []
+  terminated = 0
+  readonly url: string
+  readonly options: { name?: string; type?: string }
+  private readonly listeners = new Set<MockListener>()
+
+  constructor(url: string, options: { name?: string; type?: string }) {
+    this.url = url
+    this.options = options
+    MockWorker.instances.push(this)
+  }
+
+  addEventListener(_type: string, listener: MockListener) {
+    this.listeners.add(listener)
+  }
+
+  removeEventListener(_type: string, listener: MockListener) {
+    this.listeners.delete(listener)
+  }
+
+  terminate() {
+    this.terminated += 1
+  }
+
+  postMessage(message: unknown) {
+    this.posted.push(message)
+  }
+
+  dispatch(message: unknown) {
+    this.listeners.forEach((listener) => listener({ data: message }))
+  }
+}
+
+const mutableGlobal = globalThis as unknown as Record<string, unknown>
+const originalWindow = mutableGlobal.window
+const originalWorker = mutableGlobal.Worker
 
 describe('fragment runtime client bridge', () => {
-  it('derives the shared worker asset URL from the static-shell script base', () => {
-    const workerUrl = resolveFragmentSharedWorkerUrl({
+  beforeEach(() => {
+    MockWorker.instances.length = 0
+    mutableGlobal.window = {}
+    mutableGlobal.Worker = MockWorker
+  })
+
+  afterEach(() => {
+    mutableGlobal.window = originalWindow
+    mutableGlobal.Worker = originalWorker
+  })
+
+  it('derives the worker asset URL from the static-shell script base', () => {
+    const workerUrl = resolveFragmentRuntimeWorkerUrl({
       origin: 'https://fallback.example',
       scripts: [
         {
@@ -16,7 +69,86 @@ describe('fragment runtime client bridge', () => {
     })
 
     expect(workerUrl).toBe(
-      'https://prometheus.prod/build/static-shell/apps/site/src/fragment/runtime/shared-worker.js?v=abc123'
+      'https://prometheus.prod/build/static-shell/apps/site/src/fragment/runtime/worker.js?v=abc123'
     )
+  })
+
+  it('terminates the worker on pagehide and replays init state on restore', () => {
+    const bridge = new FragmentRuntimeBridge()
+    const onCommit = () => undefined
+    const onSizing = () => undefined
+    const onStatus = () => undefined
+    const onError = () => undefined
+
+    expect(
+      bridge.connect({
+        clientId: 'client-1',
+        apiBase: 'https://prometheus.prod/api',
+        path: '/store',
+        lang: 'en',
+        planEntries: [
+          {
+            id: 'store-stream',
+            critical: true,
+            layout: {
+              column: '1'
+            },
+            dependsOn: []
+          }
+        ],
+        initialFragments: [],
+        initialSizing: {
+          'store-stream': {
+            stableHeight: 240
+          }
+        },
+        knownVersions: {
+          'store-stream': 7
+        },
+        visibleIds: ['store-stream'],
+        viewportWidth: 1280,
+        enableStreaming: true,
+        bootstrapHref: 'https://prometheus.prod/api/fragments/bootstrap?path=/store&lang=en',
+        onCommit,
+        onSizing,
+        onStatus,
+        onError
+      })
+    ).toBe(true)
+
+    const firstWorker = MockWorker.instances[0]
+    expect(firstWorker.posted[0]).toMatchObject({
+      type: 'init',
+      clientId: 'client-1',
+      visibleIds: ['store-stream']
+    })
+
+    bridge.setVisibleIds(['store-stream', 'store-cart'])
+    bridge.updateLang('ko', [], { 'store-stream': { stableHeight: 320 } }, { 'store-stream': 9 })
+
+    expect(bridge.suspendForPageHide()).toBe(true)
+    expect(firstWorker.posted.at(-1)).toMatchObject({
+      type: 'dispose',
+      clientId: 'client-1'
+    })
+    expect(firstWorker.terminated).toBe(1)
+
+    expect(bridge.resumeAfterPageShow()).toBe(true)
+
+    const resumedWorker = MockWorker.instances[1]
+    expect(resumedWorker.posted[0]).toMatchObject({
+      type: 'init',
+      clientId: 'client-1',
+      lang: 'ko',
+      visibleIds: ['store-stream', 'store-cart'],
+      initialSizing: {
+        'store-stream': {
+          stableHeight: 320
+        }
+      },
+      knownVersions: {
+        'store-stream': 9
+      }
+    })
   })
 })

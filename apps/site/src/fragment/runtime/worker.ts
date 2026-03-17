@@ -23,6 +23,12 @@ import type {
   FragmentRuntimeWorkerMessage
 } from './protocol'
 import { decodeRuntimeFragmentPayload } from './decode-payload'
+import {
+  buildLearnedHeightKey,
+  buildPayloadCacheKey,
+  buildPayloadVersion,
+  createPersistentRuntimeCache
+} from './persistent-cache'
 
 const GRIDSTACK_CELL_HEIGHT = 8
 const GRIDSTACK_MARGIN = 12
@@ -53,7 +59,6 @@ type DecodePoolResponse = DecodePoolSuccess | DecodePoolFailure
 
 type ClientState = {
   id: string
-  port: MessagePort
   apiBase: string
   path: string
   lang: string
@@ -77,13 +82,10 @@ type ClientState = {
   } | null
 }
 
-type CachedFragmentPayload = {
-  payload: FragmentPayload
-  version: string
-}
-
 type ScheduledFetchJob = {
   key: string
+  payloadKey: string
+  owner: string
   apiBase: string
   path: string
   lang: string
@@ -95,14 +97,13 @@ type ScheduledFetchJob = {
   controller?: AbortController
 }
 
-type HeightLearnedValue = {
-  height: number
-}
-
-const workerScope = globalThis as unknown as SharedWorkerGlobalScope
+const FETCH_CLAIM_WAIT_MS = 120
+const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope
 const clients = new Map<string, ClientState>()
-const payloadCache = new Map<string, CachedFragmentPayload>()
-const learnedHeights = new Map<string, HeightLearnedValue>()
+const persistentCache = createPersistentRuntimeCache()
+const persistentCacheReady = persistentCache.hydrate()
+const payloadCache = persistentCache.payloads
+const learnedHeights = persistentCache.learnedHeights
 const activeFetchJobs = new Map<string, ScheduledFetchJob>()
 const scheduledFetchJobs: ScheduledFetchJob[] = []
 let jobOrder = 0
@@ -142,7 +143,7 @@ class DecodePool {
         this.terminate()
         if (!warnedAboutNestedDecodeWorkerFallback) {
           warnedAboutNestedDecodeWorkerFallback = true
-          console.warn('Nested fragment decode workers unavailable, falling back to in-shared-worker decode.', error)
+          console.warn('Nested fragment decode workers unavailable, falling back to in-worker decode.', error)
         }
         return
       }
@@ -285,22 +286,8 @@ const resolveDecodePoolSize = () => {
 
 const decodePool = new DecodePool(resolveDecodePoolSize())
 
-const buildPayloadCacheKey = (path: string, lang: string, fragmentId: string) =>
-  `${path}::${lang}::${fragmentId}`
-
 const buildFetchKey = (apiBase: string, path: string, lang: string, fragmentId: string, refresh: boolean) =>
   `${apiBase}::${path}::${lang}::${fragmentId}::${refresh ? 'refresh' : 'cached'}`
-
-const buildLearnedHeightKey = (path: string, lang: string, fragmentId: string, widthBucket: string | null) =>
-  `${path}::${lang}::${fragmentId}::${widthBucket ?? ''}`
-
-const buildPayloadVersion = (payload: FragmentPayload) => {
-  const { cacheKey } = payload.meta
-  if (typeof payload.cacheUpdatedAt === 'number') {
-    return `${cacheKey}:${payload.cacheUpdatedAt}`
-  }
-  return cacheKey
-}
 
 const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
@@ -318,7 +305,7 @@ const normalizeApiBase = (apiBase: string) => {
 const getClient = (clientId: string) => clients.get(clientId) ?? null
 
 const postToClient = (client: ClientState, message: FragmentRuntimeWorkerMessage) => {
-  client.port.postMessage(message)
+  workerScope.postMessage(message)
 }
 
 const setClientStatus = (client: ClientState, nextStatus: FragmentRuntimeStatus) => {
@@ -393,12 +380,14 @@ const publishSizingSnapshot = (client: ClientState, fragmentIds = client.planOrd
 }
 
 const seedPayloadCache = (payloads: FragmentPayload[], path: string, lang: string) => {
+  if (!payloads.length) return
   payloads.forEach((payload) => {
     payloadCache.set(buildPayloadCacheKey(path, lang, payload.id), {
       payload,
       version: buildPayloadVersion(payload)
     })
   })
+  void persistentCache.seedPayloads(path, lang, payloads)
 }
 
 const seedKnownVersions = (client: ClientState, knownVersions?: FragmentRuntimeKnownVersions) => {
@@ -547,6 +536,18 @@ const stopClientStream = (client: ClientState) => {
   refreshClientStatus(client)
 }
 
+const commitJobPayloadToSubscribers = (
+  job: ScheduledFetchJob,
+  payload: FragmentPayload,
+  source: 'cache' | 'network'
+) => {
+  job.subscribers.forEach((clientId) => {
+    const client = clients.get(clientId)
+    if (!client || client.lang !== job.lang) return
+    commitPayloadToClient(client, payload, job.priority >= 200 ? 'critical' : job.refresh ? 'refresh' : 'visible', source)
+  })
+}
+
 const pumpFetchQueue = () => {
   while (activeFetchJobs.size < MAX_NETWORK_CONCURRENCY && scheduledFetchJobs.length) {
     scheduledFetchJobs.sort((left, right) => {
@@ -571,18 +572,40 @@ const pumpFetchQueue = () => {
       }
     })
 
-    void fetchFragmentPayload(job.apiBase, job.fragmentId, job.lang, job.refresh, controller.signal)
-      .then((payload) => {
-        payloadCache.set(buildPayloadCacheKey(job.path, job.lang, job.fragmentId), {
-          payload,
-          version: buildPayloadVersion(payload)
-        })
-        job.subscribers.forEach((clientId) => {
-          const client = clients.get(clientId)
-          if (!client || client.lang !== job.lang) return
-          commitPayloadToClient(client, payload, job.priority >= 200 ? 'critical' : job.refresh ? 'refresh' : 'visible', 'network')
-        })
+    let claimedByJob = false
+    void (async () => {
+      if (!job.refresh) {
+        const claimed = await persistentCache.claimFetch(job.key, job.owner)
+        claimedByJob = claimed
+        if (!claimed) {
+          const wrote = await persistentCache.waitForPayloadWrite(job.payloadKey, FETCH_CLAIM_WAIT_MS)
+          if (wrote) {
+            const cached = payloadCache.get(job.payloadKey)
+            if (cached) {
+              commitJobPayloadToSubscribers(job, cached.payload, 'cache')
+              return
+            }
+          }
+        }
+      } else {
+        const cachedVersion = payloadCache.get(job.payloadKey)?.version
+        if (cachedVersion) {
+          void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, cachedVersion)
+        }
+      }
+
+      const payload = await fetchFragmentPayload(job.apiBase, job.fragmentId, job.lang, job.refresh, controller.signal)
+      const previousVersion = payloadCache.get(job.payloadKey)?.version
+      if (previousVersion && previousVersion !== buildPayloadVersion(payload)) {
+        void persistentCache.invalidatePayload(job.path, job.lang, job.fragmentId, previousVersion)
+      }
+      payloadCache.set(job.payloadKey, {
+        payload,
+        version: buildPayloadVersion(payload)
       })
+      void persistentCache.seedPayload(job.path, job.lang, payload)
+      commitJobPayloadToSubscribers(job, payload, 'network')
+    })()
       .catch((error) => {
         if (controller.signal.aborted) {
           return
@@ -590,6 +613,9 @@ const pumpFetchQueue = () => {
         notifyError(job.subscribers, error instanceof Error ? error.message : 'Fragment fetch failed', [job.fragmentId])
       })
       .finally(() => {
+        if (claimedByJob) {
+          persistentCache.releaseFetch(job.key, job.owner)
+        }
         activeFetchJobs.delete(job.key)
         job.subscribers.forEach((clientId) => {
           const client = clients.get(clientId)
@@ -611,8 +637,19 @@ const scheduleFetch = (
   const cacheKey = buildPayloadCacheKey(client.path, client.lang, fragmentId)
   const cached = !refresh ? payloadCache.get(cacheKey) : null
   if (cached) {
-    commitPayloadToClient(client, cached.payload, priority, 'cache')
-    return
+    const knownVersion =
+      client.knownVersions.get(fragmentId) ?? client.entriesById.get(fragmentId)?.cacheUpdatedAt ?? null
+    if (
+      typeof knownVersion === 'number' &&
+      Number.isFinite(knownVersion) &&
+      cached.payload.cacheUpdatedAt !== knownVersion
+    ) {
+      void persistentCache.invalidatePayload(client.path, client.lang, fragmentId, cached.version)
+      payloadCache.delete(cacheKey)
+    } else {
+      commitPayloadToClient(client, cached.payload, priority, 'cache')
+      return
+    }
   }
 
   const fetchKey = buildFetchKey(client.apiBase, client.path, client.lang, fragmentId, refresh)
@@ -640,6 +677,8 @@ const scheduleFetch = (
 
   scheduledFetchJobs.push({
     key: fetchKey,
+    payloadKey: cacheKey,
+    owner: `${client.id}:${fragmentId}:${jobOrder}`,
     apiBase: client.apiBase,
     path: client.path,
     lang: client.lang,
@@ -734,10 +773,16 @@ const streamVisibleFragments = async (client: ClientState, ids: string[], contro
                 payloadCache.get(buildPayloadCacheKey(client.path, client.lang, payload.id))?.payload.cacheUpdatedAt ??
                 payload.cacheUpdatedAt
             }
-            payloadCache.set(buildPayloadCacheKey(client.path, client.lang, nextPayload.id), {
+            const payloadKey = buildPayloadCacheKey(client.path, client.lang, nextPayload.id)
+            const previousVersion = payloadCache.get(payloadKey)?.version
+            if (previousVersion && previousVersion !== buildPayloadVersion(nextPayload)) {
+              void persistentCache.invalidatePayload(client.path, client.lang, nextPayload.id, previousVersion)
+            }
+            payloadCache.set(payloadKey, {
               payload: nextPayload,
               version: buildPayloadVersion(nextPayload)
             })
+            void persistentCache.seedPayload(client.path, client.lang, nextPayload)
             const currentClient = clients.get(client.id)
             if (!currentClient || currentClient.lang !== client.lang) return
             commitPayloadToClient(
@@ -804,11 +849,10 @@ const restartClientStream = (client: ClientState) => {
     })
 }
 
-const createClientState = (message: FragmentRuntimeInitMessage, port: MessagePort): ClientState => {
+const createClientState = (message: FragmentRuntimeInitMessage): ClientState => {
   const entriesById = new Map(message.planEntries.map((entry) => [entry.id, entry]))
   const client: ClientState = {
     id: message.clientId,
-    port,
     apiBase: message.apiBase,
     path: message.path,
     lang: message.lang,
@@ -845,13 +889,13 @@ const createClientState = (message: FragmentRuntimeInitMessage, port: MessagePor
   return client
 }
 
-const handleInit = (message: FragmentRuntimeInitMessage, port: MessagePort) => {
+const handleInit = (message: FragmentRuntimeInitMessage) => {
   const existing = clients.get(message.clientId)
   if (existing) {
     stopClientStream(existing)
     removeClientFromJobs(existing.id)
   }
-  const client = createClientState(message, port)
+  const client = createClientState(message)
   clients.set(client.id, client)
   publishSizingSnapshot(client)
   refreshClientStatus(client)
@@ -865,11 +909,8 @@ const handleUpdateLang = (client: ClientState, message: Extract<FragmentRuntimeP
   client.lastSizingKeyById.clear()
   client.committedVersions.clear()
   seedKnownVersions(client, message.knownVersions)
+  seedPayloadCache(message.initialFragments, client.path, message.lang)
   message.initialFragments.forEach((payload) => {
-    payloadCache.set(buildPayloadCacheKey(client.path, message.lang, payload.id), {
-      payload,
-      version: buildPayloadVersion(payload)
-    })
     client.committedVersions.set(payload.id, buildPayloadVersion(payload))
     if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
       client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
@@ -891,10 +932,9 @@ const handleMeasureCard = (client: ClientState, message: Extract<FragmentRuntime
   if (message.ready !== false && Number.isFinite(message.height) && message.height > 0) {
     const sizing = buildClientSizing(client, message.fragmentId)
     if (sizing) {
-      learnedHeights.set(
-        buildLearnedHeightKey(client.path, client.lang, message.fragmentId, sizing.widthBucket),
-        { height: Math.round(message.height) }
-      )
+      const learnedHeightKey = buildLearnedHeightKey(client.path, client.lang, message.fragmentId, sizing.widthBucket)
+      learnedHeights.set(learnedHeightKey, { height: Math.round(message.height) })
+      void persistentCache.writeLearnedHeight(learnedHeightKey, Math.round(message.height))
       const seed = client.sizingSeeds[message.fragmentId] ?? {}
       client.sizingSeeds[message.fragmentId] = {
         ...seed,
@@ -939,10 +979,10 @@ const handlePrimeBootstrap = async (
   postToClient(client, response)
 }
 
-const handleMessage = (port: MessagePort, message: FragmentRuntimePageMessage) => {
+const handleMessage = (message: FragmentRuntimePageMessage) => {
   switch (message.type) {
     case 'init':
-      handleInit(message, port)
+      handleInit(message)
       return
   }
 
@@ -996,10 +1036,8 @@ const handleMessage = (port: MessagePort, message: FragmentRuntimePageMessage) =
   }
 }
 
-workerScope.onconnect = (event) => {
-  const port = event.ports[0]
-  port.start()
-  port.addEventListener('message', (messageEvent: MessageEvent<FragmentRuntimePageMessage>) => {
-    handleMessage(port, messageEvent.data)
+workerScope.addEventListener('message', (messageEvent: MessageEvent<FragmentRuntimePageMessage>) => {
+  void persistentCacheReady.then(() => {
+    handleMessage(messageEvent.data)
   })
-}
+})

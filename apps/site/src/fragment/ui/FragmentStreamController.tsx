@@ -22,7 +22,7 @@ import { clearFragmentShellCache } from './shell-cache'
 import { resolveFragments, resolvePlan } from './utils'
 import type { Lang } from '../../shared/lang-store'
 import type { FragmentShellMode } from './fragment-shell-types'
-import { FragmentSharedRuntimeBridge } from '../runtime/client-bridge'
+import { FragmentRuntimeBridge } from '../runtime/client-bridge'
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimePlanEntry,
@@ -368,7 +368,7 @@ export const FragmentStreamController = component$(
           }
         }
 
-        const bridge = new FragmentSharedRuntimeBridge()
+        const bridge = new FragmentRuntimeBridge()
         const connected = bridge.connect({
           clientId: buildRuntimeClientId(),
           apiBase: getPublicFragmentApiBase(),
@@ -392,6 +392,10 @@ export const FragmentStreamController = component$(
             status.value = 'error'
           }
         })
+        const handlePageHide = () => {
+          if (!connected) return
+          bridge.suspendForPageHide()
+        }
 
         const reportCardWidth = (element: HTMLElement) => {
           if (!connected) return
@@ -493,6 +497,7 @@ export const FragmentStreamController = component$(
         }
 
         document.addEventListener(STABLE_HEIGHT_EVENT, handleStableHeight as EventListener)
+        window.addEventListener('pagehide', handlePageHide)
 
         if (typeof ResizeObserver !== 'undefined') {
           resizeObserver = new ResizeObserver((entries) => {
@@ -596,6 +601,7 @@ export const FragmentStreamController = component$(
           requestedIds.clear()
           elementsById.clear()
           document.removeEventListener(STABLE_HEIGHT_EVENT, handleStableHeight as EventListener)
+          window.removeEventListener('pagehide', handlePageHide)
           if (flushHandle !== null) {
             window.cancelAnimationFrame(flushHandle)
             flushHandle = null

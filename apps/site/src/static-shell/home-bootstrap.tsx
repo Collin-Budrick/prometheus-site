@@ -4,7 +4,7 @@ import type { FragmentPayload } from "../fragment/types";
 import { getStaticHomeUiCopy, seedStaticHomeCopy } from "./home-copy-store";
 import { readStaticHomeBootstrapData } from "./home-bootstrap-data";
 import { dispatchHomeDemoObserveEvent } from "./home-demo-observe-event";
-import { FragmentSharedRuntimeBridge } from "../fragment/runtime/client-bridge";
+import { FragmentRuntimeBridge } from "../fragment/runtime/client-bridge";
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimePlanEntry,
@@ -78,7 +78,6 @@ const STATIC_LANG_STORAGE_KEYS = [
   STATIC_LANG_STORAGE_KEY,
   STATIC_LANG_PREFERENCE_KEY,
 ] as const;
-
 type HomeSharedRuntimeRequestOptions = {
   isAnchorBatch: boolean;
   commitReady: Promise<unknown>;
@@ -89,6 +88,8 @@ type HomeSharedRuntimeConnection = {
     ids: string[],
     options: HomeSharedRuntimeRequestOptions,
   ) => Promise<void>;
+  suspendForPageHide: () => void;
+  resumeAfterPageShow: () => boolean;
 };
 
 let activeController: HomeControllerState | null = null;
@@ -190,7 +191,7 @@ const connectSharedHomeRuntime = ({
     return null;
   }
 
-  const bridge = new FragmentSharedRuntimeBridge();
+  const bridge = new FragmentRuntimeBridge();
   let didMarkFirstAnchorBatch = false;
   let pendingAnchorIds = new Set<string>();
   let bootstrapPrimePromise: Promise<void> | null = null;
@@ -337,6 +338,7 @@ const connectSharedHomeRuntime = ({
   return {
     async requestFragments(ids, { isAnchorBatch, commitReady }) {
       if (!ids.length) return;
+      bridge.resumeAfterPageShow();
       ids.forEach((fragmentId) => {
         commitGateById.set(fragmentId, commitReady);
       });
@@ -353,6 +355,12 @@ const connectSharedHomeRuntime = ({
       bridge.requestFragments(ids, {
         priority: isAnchorBatch ? "critical" : "visible",
       });
+    },
+    suspendForPageHide() {
+      bridge.suspendForPageHide();
+    },
+    resumeAfterPageShow() {
+      return bridge.resumeAfterPageShow();
     },
   };
 };
@@ -1335,10 +1343,24 @@ export const bootstrapStaticHome = async () => {
 
   const handlePageHide = () => {
     stopHomeHydrationFetches(controller);
+    sharedRuntime?.suspendForPageHide();
+  };
+
+  const handlePageShow = (event: PageTransitionEvent) => {
+    if (!event.persisted || controller.destroyed) return;
+    sharedRuntime?.resumeAfterPageShow();
+    updateFragmentStatus(controller.lang, "idle");
+    homeFragmentHydration.observeWithin(document);
+    homeFragmentHydration.retryPending();
+    requestHomeDemoObserve();
   };
 
   window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
   controller.cleanupFns.push(() =>
     window.removeEventListener("pagehide", handlePageHide),
+  );
+  controller.cleanupFns.push(() =>
+    window.removeEventListener("pageshow", handlePageShow),
   );
 };

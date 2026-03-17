@@ -33,21 +33,16 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
     "build/static-shell/apps/site/src/static-shell/island-static-entry.js",
 } as const;
 
-const FRAGMENT_SHARED_WORKER_BUNDLE_PATH =
-  "build/static-shell/apps/site/src/fragment/runtime/shared-worker.js";
-
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     "build/static-shell/apps/site/src/static-shell/home-demo-entry.js",
     "build/static-shell/apps/site/src/static-shell/home-collab-entry.js",
-    FRAGMENT_SHARED_WORKER_BUNDLE_PATH,
   ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
     "build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js",
-    FRAGMENT_SHARED_WORKER_BUNDLE_PATH,
   ],
   "island-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["island-static"],

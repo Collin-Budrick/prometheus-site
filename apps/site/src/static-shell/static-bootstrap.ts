@@ -5,7 +5,7 @@ import {
 } from "../lang/client";
 import { buildFragmentHeightVersionSignature } from "@prometheus/ui/fragment-height";
 import type { Lang } from "../lang";
-import { FragmentSharedRuntimeBridge } from "../fragment/runtime/client-bridge";
+import { FragmentRuntimeBridge } from "../fragment/runtime/client-bridge";
 import type {
   FragmentRuntimeCardSizing,
   FragmentRuntimeSizingMap,
@@ -81,7 +81,7 @@ type StaticFragmentController = {
   destroyed: boolean;
   routeData: StaticFragmentRouteData;
   visibleFragmentIds: Set<string>;
-  sharedRuntime: FragmentSharedRuntimeBridge | null;
+  sharedRuntime: FragmentRuntimeBridge | null;
 };
 
 const STATIC_THEME_STORAGE_KEY = "prometheus-theme";
@@ -95,7 +95,6 @@ const LIGHT_THEME_COLOR = "#f97316";
 const STATIC_FRAGMENT_STREAM_ROOT_MARGIN = appConfig.fragmentVisibilityMargin;
 const STATIC_FRAGMENT_STREAM_THRESHOLD = appConfig.fragmentVisibilityThreshold;
 const STATIC_FRAGMENT_RUNTIME_ATTR = "data-static-fragment-runtime";
-
 let activeController: StaticFragmentController | null = null;
 let fragmentStreamRuntimePromise: Promise<
   typeof import("./fragment-stream")
@@ -275,7 +274,7 @@ const collectVisibleStreamIds = (
   );
 
 const setStaticFragmentRuntimeMode = (
-  mode: "shared-worker" | "direct" | "idle",
+  mode: "worker" | "direct" | "idle",
 ) => {
   document
     .querySelector<HTMLElement>("[data-static-fragment-root]")
@@ -433,7 +432,7 @@ const connectSharedFragmentRuntime = (
     return false;
   }
 
-  const bridge = new FragmentSharedRuntimeBridge();
+  const bridge = new FragmentRuntimeBridge();
   const connected = bridge.connect({
     clientId:
       typeof crypto !== "undefined" &&
@@ -468,7 +467,7 @@ const connectSharedFragmentRuntime = (
       );
     },
     onError: (message) => {
-      console.error("Static fragment shared runtime failed:", message);
+      console.error("Static fragment worker runtime failed:", message);
       updateFragmentStatus(controller.lang, "error");
     },
   });
@@ -479,7 +478,7 @@ const connectSharedFragmentRuntime = (
   }
 
   controller.sharedRuntime = bridge;
-  setStaticFragmentRuntimeMode("shared-worker");
+  setStaticFragmentRuntimeMode("worker");
 
   const handleStableHeight = (event: Event) => {
     const detail = (
@@ -762,6 +761,7 @@ const startDeferredStream = async (controller: StaticFragmentController) => {
   }
 
   if (controller.sharedRuntime) {
+    controller.sharedRuntime.resumeAfterPageShow();
     controller.sharedRuntime.setVisibleIds(visibleIds);
     controller.sharedRuntime.resume();
     return;
@@ -877,6 +877,7 @@ const observeVisibleStaticFragments = (
       });
       if (!changed) return;
       if (controller.sharedRuntime) {
+        controller.sharedRuntime.resumeAfterPageShow();
         const visibleIds = collectVisibleStreamIds(controller);
         controller.sharedRuntime.setVisibleIds(visibleIds);
         if (visibleIds.length) {
@@ -1153,10 +1154,12 @@ export const bootstrapStaticFragmentShell = async () => {
 
   const handlePageHide = () => {
     stopConnections(controller);
+    controller.sharedRuntime?.suspendForPageHide();
   };
 
   const handlePageShow = (event: PageTransitionEvent) => {
     if (!event.persisted || controller.destroyed) return;
+    controller.sharedRuntime?.resumeAfterPageShow();
     updateFragmentStatus(controller.lang, "idle");
     if (controller.authPolicy === "protected") {
       scheduleProtectedAuthUpgrade(controller);
