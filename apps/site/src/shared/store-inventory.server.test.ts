@@ -6,6 +6,11 @@ const builderCalls = {
   uri: ''
 }
 
+const builderBehavior = {
+  error: new Error('SpaceTimeDB unavailable'),
+  mode: 'success' as 'success' | 'connect-error'
+}
+
 const inventoryRows = [
   { id: 2, name: 'Nebula Hoodie', price: '59.00', quantity: 4 },
   { id: 1, name: 'Photon Drive', price: '19.99', quantity: 2 },
@@ -103,6 +108,10 @@ mock.module('@prometheus/spacetimedb-client', () => {
       }
 
       queueMicrotask(() => {
+        if (builderBehavior.mode === 'connect-error') {
+          this.onConnectErrorCallback?.(connection, builderBehavior.error)
+          return
+        }
         this.onConnectCallback?.(connection)
       })
 
@@ -117,7 +126,9 @@ mock.module('@prometheus/spacetimedb-client', () => {
   }
 })
 
-const { loadServerStoreInventory, resetServerStoreInventoryCacheForTests } = await import('./store-inventory.server')
+const { loadServerStoreInventory, resetServerStoreInventoryCacheForTests, resolveStoreSpacetimeUris } = await import(
+  './store-inventory.server'
+)
 const originalApiBase = process.env.API_BASE
 const originalSpacetimeUri = process.env.SPACETIMEDB_URI
 
@@ -125,6 +136,8 @@ beforeEach(() => {
   builderCalls.buildCount = 0
   builderCalls.moduleName = ''
   builderCalls.uri = ''
+  builderBehavior.error = new Error('SpaceTimeDB unavailable')
+  builderBehavior.mode = 'success'
   resetServerStoreInventoryCacheForTests()
   process.env.API_BASE = originalApiBase
   process.env.SPACETIMEDB_URI = originalSpacetimeUri
@@ -161,5 +174,46 @@ describe('loadServerStoreInventory', () => {
       { id: 1, name: 'Photon Drive', price: 19.99, quantity: 2 },
       { id: 2, name: 'Nebula Hoodie', price: 59, quantity: 4 }
     ])
+  })
+
+  it('skips the same-origin proxy fallback for loopback preview origins without explicit SpaceTimeDB hints', async () => {
+    const request = new Request('http://127.0.0.1:54109/store/?lang=en')
+    delete process.env.API_BASE
+    delete process.env.SPACETIMEDB_URI
+
+    expect(resolveStoreSpacetimeUris(request)).toEqual([])
+
+    const items = await loadServerStoreInventory(request, 2)
+
+    expect(builderCalls.buildCount).toBe(0)
+    expect(items).toEqual([])
+  })
+
+  it('backs off repeated SSR seed failures for the same endpoint', async () => {
+    const request = new Request('http://127.0.0.1:54109/store/?lang=en')
+    const warnCalls: unknown[][] = []
+    const originalWarn = console.warn
+    delete process.env.API_BASE
+    process.env.SPACETIMEDB_URI = 'http://spacetimedb:3000'
+    builderBehavior.error = new Error('Timed out loading store inventory after 4000ms')
+    builderBehavior.mode = 'connect-error'
+
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args)
+    }
+
+    try {
+      const first = await loadServerStoreInventory(request, 2)
+      const second = await loadServerStoreInventory(request, 2)
+
+      expect(first).toEqual([])
+      expect(second).toEqual([])
+      expect(builderCalls.buildCount).toBe(1)
+      expect(warnCalls).toHaveLength(1)
+      expect(warnCalls[0]?.[0]).toBe('Failed to load store inventory from SpaceTimeDB during SSR seed')
+      expect(warnCalls[0]?.[1]).toMatchObject({ uri: 'http://spacetimedb:3000' })
+    } finally {
+      console.warn = originalWarn
+    }
   })
 })
