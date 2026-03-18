@@ -104,7 +104,6 @@ export const bindHomeUiControls = ({
     return deferredStylesheetPromise
   }
   if (settingsRoot.getAttribute(UI_CONTROLS_BOUND_ATTR) === 'true') {
-    void preloadDeferredStylesheet()
     refreshThemeButton(controller.lang)
     return true
   }
@@ -221,7 +220,6 @@ export const bindHomeUiControls = ({
     }
   })
 
-  void preloadDeferredStylesheet()
   setOverlaySurfaceState(settingsPanel, false)
   closeLanguageMenu(false)
   refreshThemeButton(controller.lang)

@@ -5,7 +5,7 @@ import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
-import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
+import homeInteractiveDeferredStylesheetHref from './home-static-deferred.css?url'
 import {
   type LanguageSeedPayload
 } from '../lang/selection'
@@ -83,10 +83,11 @@ const isStaticHomePreviewKind = (fragmentKind: ReturnType<typeof getHomeStaticFr
   fragmentKind === 'react' ||
   fragmentKind === 'dock'
 
-const usesActiveHomeDemoShell = (
-  stage: StaticHomeCardStage,
-  fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>
-) => stage === 'anchor' && (fragmentKind === 'planner' || fragmentKind === 'ledger')
+const usesActiveHomeDemoShell = (fragmentKind: ReturnType<typeof getHomeStaticFragmentKind>) =>
+  fragmentKind === 'planner' ||
+  fragmentKind === 'ledger' ||
+  fragmentKind === 'island' ||
+  fragmentKind === 'react'
 
 type StaticHomeRenderedCard = {
   id: string
@@ -181,7 +182,7 @@ export const buildStaticHomeRouteState = ({
       : fragmentKind === 'dock'
         ? 'anchor'
         : 'deferred'
-    const activeShell = usesActiveHomeDemoShell(stage, fragmentKind)
+    const activeShell = usesActiveHomeDemoShell(fragmentKind)
     const renderMode =
       stage === 'critical'
         ? 'rich'
@@ -194,9 +195,9 @@ export const buildStaticHomeRouteState = ({
             : stage === 'anchor'
               ? 'shell'
               : 'stub'
-    const previewVisible = renderMode === 'preview'
-    const patchState = stage === 'critical' || activeShell ? 'ready' : 'pending'
-    const lcpStable = Boolean(entry.critical || fragmentKind === 'dock' || activeShell)
+    const previewVisible = renderMode === 'preview' || renderMode === 'active-shell'
+    const patchState = stage === 'critical' ? 'ready' : 'pending'
+    const lcpStable = Boolean(entry.critical || fragmentKind === 'dock')
     const html = fragment
       ? renderHomeStaticFragmentHtml(fragment.tree, copyBundle, {
           mode: renderMode,
@@ -408,7 +409,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           lang,
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
-          homeDemoStylesheetHref: globalDeferredStylesheetHref,
+          homeDemoStylesheetHref: homeInteractiveDeferredStylesheetHref,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,

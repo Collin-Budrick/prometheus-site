@@ -168,6 +168,7 @@ describe("installHomeDemoEntry", () => {
         controller: createController(),
         manager: {
           observeWithin: (root) => observedRoots.push(root),
+          attachVisibleRoots: () => undefined,
           destroy: () => undefined,
         } satisfies HomeDemoActivationManager,
       },
@@ -183,12 +184,10 @@ describe("installHomeDemoEntry", () => {
 
     expect(observedRoots).toEqual([]);
     expect(taskQueue.size()).toBe(1);
+    expect(getHomeDemoControllerBinding(win)).toBe(existingBinding);
 
     taskQueue.runNext();
-    await flushMicrotasks();
-
     expect(observedRoots).toEqual([doc as unknown as ParentNode]);
-    expect(getHomeDemoControllerBinding(win)).toBe(existingBinding);
 
     cleanup();
 
@@ -229,6 +228,7 @@ describe("installHomeDemoEntry", () => {
         controller: createController(),
         manager: {
           observeWithin: (root) => observedRoots.push(root),
+          attachVisibleRoots: () => undefined,
           destroy: () => undefined,
         } satisfies HomeDemoActivationManager,
       },
@@ -241,10 +241,6 @@ describe("installHomeDemoEntry", () => {
       scheduleTask: taskQueue.scheduleTask as never,
       ensureDeferredStylesheet: async () => undefined,
     });
-
-    expect(observedRoots).toEqual([]);
-    taskQueue.runNext();
-    await flushMicrotasks();
 
     doc.setScriptText(
       STATIC_HOME_DATA_SCRIPT_ID,
@@ -272,7 +268,7 @@ describe("installHomeDemoEntry", () => {
     });
     await flushMicrotasks();
 
-    expect(observedRoots).toEqual([doc as unknown as ParentNode, patchedRoot]);
+    expect(observedRoots).toEqual([patchedRoot]);
     expect(binding.controller.lang).toBe("ja");
     expect(binding.controller.fragmentOrder).toEqual([
       "fragment://page/home/planner@v2",
@@ -305,6 +301,7 @@ describe("installHomeDemoEntry", () => {
         controller,
         manager: {
           observeWithin: (root) => observedRoots.push(root),
+          attachVisibleRoots: () => undefined,
           destroy: () => undefined,
         } satisfies HomeDemoActivationManager,
       },
@@ -317,9 +314,6 @@ describe("installHomeDemoEntry", () => {
       scheduleTask: taskQueue.scheduleTask as never,
       ensureDeferredStylesheet: async () => undefined,
     });
-
-    taskQueue.runNext();
-    await flushMicrotasks();
 
     doc.setScriptText(
       STATIC_HOME_DATA_SCRIPT_ID,
@@ -343,15 +337,12 @@ describe("installHomeDemoEntry", () => {
     expect(binding.controller.demoRenders.size).toBe(0);
     expect(activeRoot.getAttribute("data-home-demo-active")).toBeNull();
     expect(cleanupCount).toBe(1);
-    expect(observedRoots).toEqual([
-      doc as unknown as ParentNode,
-      doc as unknown as ParentNode,
-    ]);
+    expect(observedRoots).toEqual([doc as unknown as ParentNode]);
 
     cleanup();
   });
 
-  it("waits for the deferred stylesheet before observing home demos", async () => {
+  it("begins observing home demos without waiting for the deferred stylesheet", async () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
     const taskQueue = createScheduledTaskQueue();
@@ -366,6 +357,7 @@ describe("installHomeDemoEntry", () => {
         controller: createController(),
         manager: {
           observeWithin: (root) => observedRoots.push(root),
+          attachVisibleRoots: () => undefined,
           destroy: () => undefined,
         } satisfies HomeDemoActivationManager,
       },
@@ -379,15 +371,12 @@ describe("installHomeDemoEntry", () => {
       ensureDeferredStylesheet: () => stylesheetReady,
     });
 
+    expect(taskQueue.size()).toBe(1);
     taskQueue.runNext();
     await flushMicrotasks();
 
-    expect(observedRoots).toEqual([]);
-
-    resolveStylesheet();
-    await flushMicrotasks();
-
     expect(observedRoots).toEqual([doc as unknown as ParentNode]);
+    resolveStylesheet();
 
     cleanup();
   });

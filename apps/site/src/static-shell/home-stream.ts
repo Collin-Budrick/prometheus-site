@@ -55,6 +55,7 @@ type CreateStaticHomePatchQueueOptions = {
   routeContext?: FragmentHeightRouteContext | null
   settlePatchedHeight?: PatchStaticHomeFragmentCardOptions['settlePatchedHeight']
   visibleFirst?: boolean
+  bufferDeferredUntilRelease?: boolean
 }
 
 type ObserveStaticHomePatchVisibilityOptions = {
@@ -68,6 +69,7 @@ export type PatchStaticHomeFragmentCardResult = 'patched' | 'stale' | 'locked' |
 export type StaticHomePatchQueue = {
   enqueue: (payload: FragmentPayload) => void
   setVisible: (fragmentId: string, visible: boolean) => void
+  releaseDeferred: () => void
   flushNow: () => void
   destroy: () => void
 }
@@ -493,7 +495,8 @@ export const createStaticHomePatchQueue = ({
   scheduleTask = scheduleStaticShellTask,
   routeContext = null,
   settlePatchedHeight = null,
-  visibleFirst = false
+  visibleFirst = false,
+  bufferDeferredUntilRelease = false
 }: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
@@ -503,12 +506,14 @@ export const createStaticHomePatchQueue = ({
   let destroyed = false
   let didMarkFirstAnchorPatch = false
   let hiddenFlushReleased = false
+  let deferredReleaseReady = !bufferDeferredUntilRelease
 
   const isEligibleCard = (card: HTMLElement, fragmentId: string) => {
     if (card.dataset.critical === 'true') return false
     if (card.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return false
     const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
     if (stage === 'anchor') return true
+    if (!deferredReleaseReady) return false
     if (visibleIds.has(fragmentId)) return true
     return visibleFirst && hiddenFlushReleased
   }
@@ -580,6 +585,7 @@ export const createStaticHomePatchQueue = ({
   const scheduleHiddenFlush = () => {
     if (
       destroyed ||
+      !deferredReleaseReady ||
       !visibleFirst ||
       hiddenFlushReleased ||
       cancelHiddenFlush ||
@@ -661,6 +667,12 @@ export const createStaticHomePatchQueue = ({
         visibleIds.delete(fragmentId)
       }
       scheduleFlush()
+    },
+    releaseDeferred() {
+      if (destroyed || deferredReleaseReady) return
+      deferredReleaseReady = true
+      flushNow()
+      scheduleHiddenFlush()
     },
     flushNow,
     destroy() {

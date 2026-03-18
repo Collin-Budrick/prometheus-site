@@ -181,7 +181,8 @@ describe('fragment runtime client bridge', () => {
       type: 'init',
       clientId: 'client-1',
       visibleIds: ['store-stream'],
-      startupMode: 'eager-visible-first'
+      startupMode: 'eager-visible-first',
+      decodeWorkerHref: expect.stringContaining('decode-pool.worker.js')
     })
 
     bridge.setVisibleIds(['store-stream', 'store-cart'])

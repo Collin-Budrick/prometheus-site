@@ -125,6 +125,7 @@ const scheduledFetchJobs: ScheduledFetchJob[] = []
 const primedBootstrapPayloads = new Map<string, Promise<FragmentPayload[]>>()
 let jobOrder = 0
 let warnedAboutNestedDecodeWorkerFallback = false
+let configuredDecodeWorkerHref: string | null = null
 
 const canSpawnNestedDecodeWorkers = () => typeof Worker === 'function'
 
@@ -147,7 +148,7 @@ class DecodePool {
   }> = []
   private nextRequestId = 1
 
-  constructor(size: number) {
+  constructor(size: number, workerHref?: string | null) {
     if (!canSpawnNestedDecodeWorkers()) {
       return
     }
@@ -155,7 +156,9 @@ class DecodePool {
     for (let index = 0; index < size; index += 1) {
       let worker: Worker
       try {
-        worker = new Worker(new URL('./decode-pool.worker.js', import.meta.url), { type: 'module' })
+        worker = workerHref
+          ? new Worker(workerHref, { type: 'module' })
+          : new Worker(new URL('./decode-pool.worker.js', import.meta.url), { type: 'module' })
       } catch (error) {
         this.terminate()
         if (!warnedAboutNestedDecodeWorkerFallback) {
@@ -301,7 +304,12 @@ const resolveDecodePoolSize = () => {
   return Math.max(1, Math.min(MAX_DECODE_WORKERS, Math.floor(hardwareConcurrency / 2) || 1))
 }
 
-const decodePool = new DecodePool(resolveDecodePoolSize())
+let decodePool: DecodePool | null = null
+
+const getDecodePool = () => {
+  decodePool ??= new DecodePool(resolveDecodePoolSize(), configuredDecodeWorkerHref)
+  return decodePool
+}
 
 const buildFetchKey = (apiBase: string, path: string, lang: string, fragmentId: string, refresh: boolean) =>
   `${apiBase}::${path}::${lang}::${fragmentId}::${refresh ? 'refresh' : 'cached'}`
@@ -315,7 +323,7 @@ const buildBootstrapPayloadKey = (path: string, lang: string, fragmentIds: strin
 const decodeBootstrapPayloads = async (bytes: Uint8Array) => {
   const frames = parseFragmentFrames(bytes).filter((frame) => !isFragmentHeartbeatFrame(frame))
   const payloads = await Promise.all(
-    frames.map(async (frame) => decodePool.decode(frame.id, frame.payloadBytes))
+    frames.map(async (frame) => getDecodePool().decode(frame.id, frame.payloadBytes))
   )
   return payloads
 }
@@ -623,7 +631,7 @@ const fetchFragmentPayload = async (
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer())
-  const payload = await decodePool.decode(fragmentId, bytes)
+  const payload = await getDecodePool().decode(fragmentId, bytes)
   const cacheUpdatedAtRaw = response.headers.get('x-fragment-cache-updated')
   const cacheUpdatedAt = cacheUpdatedAtRaw ? Number(cacheUpdatedAtRaw) : Number.NaN
   return {
@@ -1088,7 +1096,7 @@ const streamVisibleFragments = async (client: ClientState, ids: string[], contro
         if (isFragmentHeartbeatFrame(frame)) {
           continue
         }
-        const pendingTask = decodePool
+        const pendingTask = getDecodePool()
           .decode(frame.id, frame.payloadBytes)
           .then((payload) => {
             const nextPayload = {
@@ -1191,6 +1199,9 @@ const startClientEagerFetch = (client: ClientState) => {
 
 const createClientState = (message: FragmentRuntimeInitMessage): ClientState => {
   const entriesById = new Map(message.planEntries.map((entry) => [entry.id, entry]))
+  if (!decodePool && message.decodeWorkerHref) {
+    configuredDecodeWorkerHref = message.decodeWorkerHref
+  }
   const client: ClientState = {
     id: message.clientId,
     apiBase: message.apiBase,

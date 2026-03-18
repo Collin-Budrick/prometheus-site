@@ -12,6 +12,9 @@ describe("entry.ssr static bootstrap injection", () => {
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
     );
     expect(source).toContain(
+      '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
+    );
+    expect(source).toContain(
       "FRAGMENT_RUNTIME_WORKER_ASSET_PATH",
     );
     expect(source).toContain(
@@ -24,7 +27,7 @@ describe("entry.ssr static bootstrap injection", () => {
       '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
     );
     expect(source).toContain(
-      'void import(bootstrapHref).catch((error) => console.error("Static home entry immediate failed:", error));',
+      'Static home demo startup immediate failed:',
     );
     expect(source).not.toContain("const stylesheet = document.querySelector('link[data-home-demo-stylesheet]');");
     expect(source).not.toContain("stylesheet.setAttribute('rel', 'stylesheet');");
@@ -54,6 +57,7 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain('if (resolveStaticBootstrapMode(pathname) !== "home-static")');
     expect(source).toContain('\\brel=["\']stylesheet["\']');
     expect(source).toContain('\\bhref=["\'][^"\']*global-deferred\\.css');
+    expect(source).toContain('\\bhref=["\'][^"\']*home-static-deferred\\.css');
     expect(source).not.toContain('(?=[^>]*\\bas=["\']style["\'])(?=[^>]*\\bhref=["\'][^"\']*global-deferred\\.css');
     expect(source).toContain("stripHomeBlockingDeferredStylesheet(");
   });

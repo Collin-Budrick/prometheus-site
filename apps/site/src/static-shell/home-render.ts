@@ -106,6 +106,14 @@ const demoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
   ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
 })
 
+const activeDemoRootAttrs = (kind: DemoKind, props?: Record<string, string>) => ({
+  'data-home-demo-root': kind,
+  'data-home-demo-ssr-active': 'true',
+  'data-demo-kind': kind,
+  'data-preview': 'false',
+  ...(props && Object.keys(props).length ? { 'data-demo-props': JSON.stringify(props) } : {})
+})
+
 const demoShellAttrs = (kind: DemoKind) => ({
   class: `home-fragment-shell home-fragment-shell--${kind}`
 })
@@ -204,8 +212,7 @@ const buildPlannerActiveNode = (copy: HomeStaticCopyBundle, options: DemoWidgetN
       'div',
       {
         class: 'planner-demo',
-        'data-home-demo-active': 'true',
-        'data-preview': 'false',
+        ...activeDemoRootAttrs('planner'),
         'data-stage': 'idle'
       },
       [
@@ -308,8 +315,7 @@ const buildWasmActiveNode = (copy: HomeStaticCopyBundle, options: DemoWidgetNode
       'div',
       {
         class: 'wasm-demo',
-        'data-home-demo-active': 'true',
-        'data-preview': 'false'
+        ...activeDemoRootAttrs('wasm-renderer')
       },
       [
         h('div', { class: 'wasm-demo-header' }, [
@@ -424,6 +430,62 @@ const buildPreactIslandPreviewNode = (
   )
 }
 
+const buildPreactIslandActiveNode = (
+  copy: HomeStaticCopyBundle,
+  options: DemoWidgetNodeOptions = {},
+  label?: string
+) => {
+  const resolvedLabel = label || copy.preactIsland.label
+  const persistedLabel = resolvedLabel && (Boolean(label) || Boolean(options.widgetId))
+    ? { label: resolvedLabel }
+    : undefined
+  const circumference = Math.round(2 * Math.PI * 48)
+
+  return buildDemoWidgetNode(
+    'preact-island',
+    h(
+      'div',
+      {
+        class: 'preact-island-ui',
+        ...activeDemoRootAttrs('preact-island', persistedLabel),
+        'data-running': 'true'
+      },
+      [
+        h('div', { class: 'preact-island-label' }, [t(resolvedLabel)]),
+        h('div', { class: 'preact-island-timer', 'aria-live': 'polite' }, [t('1:00')]),
+        h('div', { class: 'preact-island-stage' }, [
+          h('svg', { class: 'preact-island-dial', viewBox: '0 0 120 120', 'aria-hidden': 'true' }, [
+            h('circle', { class: 'preact-island-dial-track', cx: '60', cy: '60', r: '48' }),
+            h('circle', { class: 'preact-island-dial-ticks', cx: '60', cy: '60', r: '48' }),
+            h('circle', {
+              class: 'preact-island-dial-progress',
+              cx: '60',
+              cy: '60',
+              r: '48',
+              style: `stroke-dasharray:${circumference};stroke-dashoffset:0`
+            }),
+            h('line', {
+              class: 'preact-island-dial-hand',
+              x1: '60',
+              y1: '60',
+              x2: '60',
+              y2: '16',
+              style: 'transform:rotate(0deg);transform-origin:60px 60px'
+            }),
+            h('circle', { class: 'preact-island-dial-center-dot', cx: '60', cy: '60', r: '4' })
+          ]),
+          h('div', { class: 'preact-island-stage-title' }, [t(copy.preactIsland.countdown)]),
+          h('div', { class: 'preact-island-stage-time', 'aria-live': 'polite' }, [t('1:00')]),
+          h('div', { class: 'preact-island-stage-sub' }, [t(copy.preactIsland.activeSub)])
+        ]),
+        h('button', { class: 'preact-island-action', type: 'button' }, [t(copy.preactIsland.reset)])
+      ]
+    ),
+    options,
+    persistedLabel
+  )
+}
+
 const buildActiveDemoNode = (
   copy: HomeStaticCopyBundle,
   tag: string,
@@ -432,7 +494,7 @@ const buildActiveDemoNode = (
 ): RenderNode | null => {
   if (tag === 'planner-demo') return buildPlannerActiveNode(copy, options)
   if (tag === 'wasm-renderer-demo') return buildWasmActiveNode(copy, options)
-  if (tag === 'preact-island') return buildPreactIslandPreviewNode(copy, options, attrs?.label)
+  if (tag === 'preact-island') return buildPreactIslandActiveNode(copy, options, attrs?.label)
   if (tag === 'react-binary-demo') {
     const stage = copy.reactBinary.stages[0] ?? { id: 'react', label: '', hint: '' }
     return buildDemoWidgetNode(
@@ -441,7 +503,7 @@ const buildActiveDemoNode = (
         'div',
         {
           class: 'react-binary-demo',
-          'data-home-demo-active': 'true',
+          ...activeDemoRootAttrs('react-binary'),
           'data-stage': stage.id
         },
         [

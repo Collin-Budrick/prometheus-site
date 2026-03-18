@@ -12,6 +12,7 @@ const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
 const publicPath = '/build/static-shell/'
 const entrypoints = [
   'apps/site/src/static-shell/home-static-entry.ts',
+  'apps/site/src/static-shell/home-demo-startup-entry.ts',
   'apps/site/src/static-shell/home-demo-entry.ts',
   'apps/site/src/static-shell/home-collab-entry.ts',
   'apps/site/src/static-shell/home-collab-editor-entry.ts',

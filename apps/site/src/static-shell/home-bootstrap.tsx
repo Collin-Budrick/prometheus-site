@@ -45,7 +45,7 @@ import { resolveStaticShellLangParam } from "./lang-param";
 import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
 import { markStaticShellUserTiming } from "./static-shell-performance";
-import { ensureStaticHomeDeferredStylesheet } from "./home-deferred-stylesheet";
+import { HOME_DEFERRED_COMMIT_RELEASE_EVENT } from "./home-deferred-commit-release-event";
 import {
   getFragmentHeightViewport,
   parseFragmentHeightLayout,
@@ -96,7 +96,6 @@ const HOME_LAYOUT_TWO_COLUMN_BREAKPOINT = 1025;
 const HOME_LAYOUT_GAP = 24;
 type HomeSharedRuntimeRequestOptions = {
   isAnchorBatch: boolean;
-  commitReady?: Promise<unknown>;
 };
 
 type HomeSharedRuntimeConnection = {
@@ -242,7 +241,7 @@ const connectSharedHomeRuntime = ({
 }: {
   controller: Pick<
     HomeControllerState,
-    "lang" | "path" | "cleanupFns" | "homeDemoStylesheetHref"
+    "lang" | "path" | "cleanupFns"
   >;
   root?: ParentNode;
   runtimePlanEntries: FragmentRuntimePlanEntry[];
@@ -258,8 +257,6 @@ const connectSharedHomeRuntime = ({
 
   let didMarkFirstAnchorBatch = false;
   let pendingAnchorIds = new Set<string>();
-  const commitGateById = new Map<string, Promise<unknown>>();
-  let deferredCommitReady: Promise<unknown> | null = null;
   const planEntriesById = new Map(
     runtimePlanEntries.map((entry) => [entry.id, entry]),
   );
@@ -301,43 +298,14 @@ const connectSharedHomeRuntime = ({
     return null;
   }
 
-  const getDeferredCommitReady = () => {
-    deferredCommitReady ??= ensureStaticHomeDeferredStylesheet({
-      href: controller.homeDemoStylesheetHref ?? undefined,
-    }).catch(() => undefined);
-    return deferredCommitReady;
-  };
-
-  const resolveDefaultCommitReady = (fragmentId: string) => {
-    const card = getStaticHomeFragmentCard(fragmentId, root);
-    if (card?.getAttribute(STATIC_HOME_STAGE_ATTR) === "anchor") {
-      return null;
-    }
-    return getDeferredCommitReady();
-  };
-
   sharedRuntime.attachHandlers({
     onCommit: (payload) => {
-      const publishCommit = () => {
-        if (!didMarkFirstAnchorBatch && pendingAnchorIds.has(payload.id)) {
-          didMarkFirstAnchorBatch = true;
-          pendingAnchorIds.clear();
-          markStaticShellUserTiming("prom:home:first-anchor-batch-fetched");
-        }
-        onCommit(payload);
-      };
-      const commitGate =
-        commitGateById.get(payload.id) ?? resolveDefaultCommitReady(payload.id);
-      if (!commitGate) {
-        publishCommit();
-        return;
+      if (!didMarkFirstAnchorBatch && pendingAnchorIds.has(payload.id)) {
+        didMarkFirstAnchorBatch = true;
+        pendingAnchorIds.clear();
+        markStaticShellUserTiming("prom:home:first-anchor-batch-fetched");
       }
-      void Promise.resolve(commitGate)
-        .catch(() => undefined)
-        .then(() => {
-          commitGateById.delete(payload.id);
-          publishCommit();
-        });
+      onCommit(payload);
     },
     onSizing: (sizing) => {
       applySharedHomeRuntimeSizing(sizing, root);
@@ -467,16 +435,9 @@ const connectSharedHomeRuntime = ({
   });
 
   return {
-    async requestFragments(ids, { isAnchorBatch, commitReady }) {
+    async requestFragments(ids, { isAnchorBatch }) {
       if (!ids.length) return;
       sharedRuntime.resumeAfterPageShow();
-      ids.forEach((fragmentId) => {
-        if (commitReady) {
-          commitGateById.set(fragmentId, commitReady);
-          return;
-        }
-        commitGateById.delete(fragmentId);
-      });
       if (isAnchorBatch && !didMarkFirstAnchorBatch) {
         pendingAnchorIds = new Set(ids);
       }
@@ -659,7 +620,6 @@ type HomeFragmentHydrationController = Pick<
   | "lang"
   | "patchQueue"
   | "fetchAbort"
-  | "homeDemoStylesheetHref"
   | "homeFragmentBootstrapHref"
 >;
 
@@ -685,7 +645,6 @@ type BindHomeFragmentHydrationOptions = {
     ids: string[],
     options: HomeSharedRuntimeRequestOptions,
   ) => Promise<void>;
-  ensureDemoStylesheet?: (options?: { href?: string }) => Promise<unknown>;
   scheduleTask?: typeof scheduleStaticShellTask;
   ObserverImpl?: typeof IntersectionObserver;
 };
@@ -853,7 +812,6 @@ export const bindHomeFragmentHydration = ({
   root = document,
   fetchBatch = fetchHomeFragmentBatch,
   requestFragments,
-  ensureDemoStylesheet = ensureStaticHomeDeferredStylesheet,
   scheduleTask = scheduleStaticShellTask,
   ObserverImpl = (
     globalThis as typeof globalThis & {
@@ -979,15 +937,9 @@ export const bindHomeFragmentHydration = ({
     updateFragmentStatus(controller.lang, "streaming");
 
     try {
-      const commitReady = isAnchorBatch
-        ? undefined
-        : ensureDemoStylesheet({
-            href: controller.homeDemoStylesheetHref ?? undefined,
-          });
       if (requestFragments) {
         await requestFragments(ids, {
           isAnchorBatch,
-          commitReady,
         });
         if (
           controller.destroyed ||
@@ -1023,16 +975,6 @@ export const bindHomeFragmentHydration = ({
         fetchAbort.signal.aborted
       )
         return;
-
-      if (commitReady) {
-        await commitReady;
-        if (
-          controller.destroyed ||
-          controller.fetchAbort !== fetchAbort ||
-          fetchAbort.signal.aborted
-        )
-          return;
-      }
 
       ids.forEach((id) => {
         const payload = payloads[id];
@@ -1366,6 +1308,7 @@ export const bootstrapStaticHome = async () => {
   controller.patchQueue = createStaticHomePatchQueue({
     lang: controller.lang,
     visibleFirst: true,
+    bufferDeferredUntilRelease: true,
     routeContext: {
       path: controller.path,
       lang: controller.lang,
@@ -1378,6 +1321,19 @@ export const bootstrapStaticHome = async () => {
     },
   });
   controller.cleanupFns.push(() => controller.patchQueue?.destroy());
+  const handleDeferredCommitRelease = () => {
+    controller.patchQueue?.releaseDeferred();
+  };
+  document.addEventListener(
+    HOME_DEFERRED_COMMIT_RELEASE_EVENT,
+    handleDeferredCommitRelease,
+  );
+  controller.cleanupFns.push(() =>
+    document.removeEventListener(
+      HOME_DEFERRED_COMMIT_RELEASE_EVENT,
+      handleDeferredCommitRelease,
+    ),
+  );
   const sharedRuntime = connectSharedHomeRuntime({
     controller,
     runtimePlanEntries: data.runtimePlanEntries,

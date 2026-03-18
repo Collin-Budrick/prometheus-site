@@ -1,5 +1,4 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
-import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
@@ -40,7 +39,6 @@ type InstallHomeStaticEntryOptions = {
   startSharedRuntime?: typeof ensureHomeSharedRuntime
   preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
   disposeSharedRuntime?: typeof disposeHomeSharedRuntime
-  loadDemoEntryRuntime?: typeof loadHomeDemoEntryRuntime
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
@@ -102,8 +100,7 @@ export const installHomeStaticEntry = ({
   scheduleTask = scheduleStaticShellTask,
   startSharedRuntime = ensureHomeSharedRuntime,
   preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
-  disposeSharedRuntime = disposeHomeSharedRuntime,
-  loadDemoEntryRuntime = loadHomeDemoEntryRuntime
+  disposeSharedRuntime = disposeHomeSharedRuntime
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
@@ -124,7 +121,6 @@ export const installHomeStaticEntry = ({
   let bootstrapRequested = false
   let lcpGateReleased = false
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
-  let demoEntryRuntimePromise: ReturnType<typeof loadDemoEntryRuntime> | null = null
   let widgetRuntimePromise: ReturnType<typeof loadFragmentWidgetRuntime> | null = null
   let widgetRuntime:
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
@@ -135,7 +131,6 @@ export const installHomeStaticEntry = ({
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
-  const hasHomeDemoRoots = () => Boolean(liveDoc.querySelector?.('[data-home-demo-root]'))
   const readWidgetRoot = () =>
     liveDoc.querySelector<HTMLElement>(
       `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
@@ -195,19 +190,6 @@ export const installHomeStaticEntry = ({
   const prewarmWidgetRuntime = () => {
     widgetRuntimePromise ??= loadFragmentWidgetRuntime()
     return widgetRuntimePromise
-  }
-
-  const startHomeDemoEntry = () => {
-    if (demoEntryRuntimePromise || !hasHomeDemoRoots()) {
-      return demoEntryRuntimePromise
-    }
-
-    demoEntryRuntimePromise = loadDemoEntryRuntime().catch((error) => {
-      demoEntryRuntimePromise = null
-      console.error('Static home demo entry failed:', error)
-      throw error
-    })
-    return demoEntryRuntimePromise
   }
 
   const startHomeWorkerRuntime = () => {
@@ -328,7 +310,6 @@ export const installHomeStaticEntry = ({
         if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
           requestBootstrap()
         }
-        void startHomeDemoEntry()
         startBootstrap()
       }
     })

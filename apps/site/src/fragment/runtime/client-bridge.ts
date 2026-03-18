@@ -35,6 +35,7 @@ type FragmentRuntimeBridgeConfig = FragmentRuntimeBridgeHandlers & {
   enableStreaming: boolean
   startupMode?: FragmentRuntimeStartupMode
   bootstrapHref?: string
+  decodeWorkerHref?: string
 }
 
 type FragmentRuntimeRequestOptions = {
@@ -159,7 +160,8 @@ export class FragmentRuntimeBridge {
       initialFragments: [...config.initialFragments],
       initialSizing: { ...config.initialSizing },
       knownVersions: config.knownVersions ? { ...config.knownVersions } : undefined,
-      visibleIds: [...config.visibleIds]
+      visibleIds: [...config.visibleIds],
+      decodeWorkerHref: config.decodeWorkerHref ?? resolveFragmentRuntimeDecodeWorkerUrl()
     }
     this.clientId = config.clientId
     this.setHandlers(config)
@@ -221,7 +223,8 @@ export class FragmentRuntimeBridge {
       viewportWidth: this.config.viewportWidth,
       enableStreaming: this.config.enableStreaming,
       startupMode: this.config.startupMode,
-      bootstrapHref: this.config.bootstrapHref
+      bootstrapHref: this.config.bootstrapHref,
+      decodeWorkerHref: this.config.decodeWorkerHref
     })
 
     return true

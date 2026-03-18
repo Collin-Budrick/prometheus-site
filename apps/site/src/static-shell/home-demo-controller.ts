@@ -40,8 +40,13 @@ export type BindHomeDemoActivationOptions = {
 }
 
 export type HomeDemoActivationManager = {
-  observeWithin: (root: ParentNode) => void
+  observeWithin: (root: ParentNode, options?: HomeDemoObserveWithinOptions) => void
+  attachVisibleRoots: (roots: Iterable<HTMLElement>) => void
   destroy: () => void
+}
+
+export type HomeDemoObserveWithinOptions = {
+  startup?: boolean
 }
 
 export type ActivateHomeDemosOptions = {
@@ -152,17 +157,17 @@ const getHomeDemoViewportSnapshot = (root: Element): HomeDemoViewportSnapshot | 
   }
 }
 
-const resolveWarmBudget = () => {
+const resolveNearViewWarmBudget = () => {
   const viewportWidth =
     typeof window !== 'undefined' && typeof window.innerWidth === 'number'
       ? window.innerWidth
       : 1280
 
   if (viewportWidth <= HOME_DEMO_MOBILE_MAX_WIDTH) {
-    return { visible: 1, nearView: 0 }
+    return 0
   }
 
-  return { visible: 2, nearView: 1 }
+  return 1
 }
 
 const activateHomeDemoFromRuntime = async (
@@ -173,7 +178,7 @@ const activateHomeDemoFromRuntime = async (
   const runtimePromise = loadHomeDemoKind(options.kind, { asset })
   await warmHomeDemoKind(options.kind, asset)
   const runtime = await runtimePromise
-  return runtime.activateHomeDemo(options)
+  return (runtime.attachHomeDemo ?? runtime.activateHomeDemo)(options)
 }
 
 export const pruneDetachedHomeDemos = (controller: HomeDemoController) => {
@@ -297,8 +302,8 @@ export const bindHomeDemoActivation = ({
   ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver
 }: BindHomeDemoActivationOptions): HomeDemoActivationManager => {
-  const warmBudget = resolveWarmBudget()
-  const allowAutoNearViewWarm = warmBudget.nearView > 0
+  const nearViewWarmBudget = resolveNearViewWarmBudget()
+  const allowAutoNearViewWarm = nearViewWarmBudget > 0
   const observedRoots = new Set<Element>()
   const observedOrder = new Map<Element, number>()
   const visibleRoots = new Set<Element>()
@@ -306,10 +311,9 @@ export const bindHomeDemoActivation = ({
   const activationQueue: HTMLElement[] = []
   const scheduledWarmRoots = new Set<HTMLElement>()
   const warmedKinds = new Set<HomeDemoKind>()
-  const autoVisibleWarmRoots = new Set<HTMLElement>()
   const autoNearViewWarmRoots = new Set<HTMLElement>()
   let nextObservedOrder = 0
-  let activationInFlight = false
+  let activationInFlightCount = 0
   let cancelScheduledActivation: (() => void) | null = null
   let cancelScheduledWarmup: (() => void) | null = null
 
@@ -325,13 +329,9 @@ export const bindHomeDemoActivation = ({
   }
 
   const warmVisibleRoot = (demoRoot: HTMLElement) => {
-    if (autoVisibleWarmRoots.has(demoRoot) || autoNearViewWarmRoots.has(demoRoot)) {
+    if (autoNearViewWarmRoots.has(demoRoot)) {
       return
     }
-    if (autoVisibleWarmRoots.size >= warmBudget.visible) {
-      return
-    }
-    autoVisibleWarmRoots.add(demoRoot)
     warmKindForRoot(demoRoot)
     if (typeof document === 'undefined') {
       return
@@ -349,12 +349,11 @@ export const bindHomeDemoActivation = ({
     if (
       !allowAutoNearViewWarm ||
       visibleRoots.has(demoRoot) ||
-      autoVisibleWarmRoots.has(demoRoot) ||
       autoNearViewWarmRoots.has(demoRoot)
     ) {
       return
     }
-    if (autoNearViewWarmRoots.size >= warmBudget.nearView) {
+    if (autoNearViewWarmRoots.size >= nearViewWarmBudget) {
       return
     }
     autoNearViewWarmRoots.add(demoRoot)
@@ -365,7 +364,6 @@ export const bindHomeDemoActivation = ({
     demoRoots: HTMLElement[],
     viewportSnapshots: ReadonlyMap<HTMLElement, HomeDemoViewportSnapshot>
   ) => {
-    let visibleKinds = 0
     let nearViewKinds = 0
     const warmRoots: HTMLElement[] = []
 
@@ -377,10 +375,9 @@ export const bindHomeDemoActivation = ({
 
       const viewportSnapshot = viewportSnapshots.get(demoRoot)
       const visibilityRatio = viewportSnapshot?.visibilityRatio ?? 0
-      if (isVisibleHomeDemoRatio(visibilityRatio) && visibleKinds < warmBudget.visible) {
-        visibleKinds += 1
+      if (isVisibleHomeDemoRatio(visibilityRatio)) {
         warmRoots.push(demoRoot)
-      } else if (viewportSnapshot?.withinWarmMargin && nearViewKinds < warmBudget.nearView) {
+      } else if (viewportSnapshot?.withinWarmMargin && nearViewKinds < nearViewWarmBudget) {
         nearViewKinds += 1
         warmRoots.push(demoRoot)
       }
@@ -424,6 +421,40 @@ export const bindHomeDemoActivation = ({
         timeoutMs: 80
       }
     )
+  }
+
+  const pruneTrackedRoots = () => {
+    Array.from(observedRoots).forEach((root) => {
+      if (isConnectedHomeDemoRoot(root)) return
+      observedRoots.delete(root)
+      observedOrder.delete(root)
+      visibleRoots.delete(root)
+      queuedRoots.delete(root)
+      scheduledWarmRoots.delete(root as HTMLElement)
+      autoNearViewWarmRoots.delete(root as HTMLElement)
+      activationObserver?.unobserve(root)
+      warmObserver?.unobserve(root)
+    })
+
+    Array.from(visibleRoots).forEach((root) => {
+      if (isConnectedHomeDemoRoot(root)) return
+      visibleRoots.delete(root)
+    })
+
+    Array.from(queuedRoots).forEach((root) => {
+      if (isConnectedHomeDemoRoot(root)) return
+      queuedRoots.delete(root)
+    })
+
+    let queueIndex = 0
+    while (queueIndex < activationQueue.length) {
+      const root = activationQueue[queueIndex]
+      if (isConnectedHomeDemoRoot(root)) {
+        queueIndex += 1
+        continue
+      }
+      activationQueue.splice(queueIndex, 1)
+    }
   }
 
   const activationObserver =
@@ -496,7 +527,6 @@ export const bindHomeDemoActivation = ({
   const scheduleNextActivation = () => {
     if (
       controller.destroyed ||
-      activationInFlight ||
       cancelScheduledActivation ||
       activationQueue.length === 0
     ) {
@@ -508,13 +538,20 @@ export const bindHomeDemoActivation = ({
         cancelScheduledActivation = null
         if (controller.destroyed) return
 
-        activationInFlight = true
-        void activateNextVisibleHomeDemo().finally(() => {
-          activationInFlight = false
-          if (controller.destroyed) return
-          pruneQueuedRoots()
-          scheduleNextActivation()
-        })
+        pruneQueuedRoots()
+        const maxConcurrentActivations = Math.min(Math.max(visibleRoots.size, 1), 3)
+        while (
+          activationQueue.length > 0 &&
+          activationInFlightCount < maxConcurrentActivations
+        ) {
+          activationInFlightCount += 1
+          void activateNextVisibleHomeDemo().finally(() => {
+            activationInFlightCount = Math.max(0, activationInFlightCount - 1)
+            if (controller.destroyed) return
+            pruneQueuedRoots()
+            scheduleNextActivation()
+          })
+        }
       },
       {
         priority: 'user-visible',
@@ -580,16 +617,36 @@ export const bindHomeDemoActivation = ({
   }
 
   return {
-    observeWithin(root) {
+    attachVisibleRoots(roots) {
       if (controller.destroyed) return
 
       pruneDetachedHomeDemos(controller)
+      pruneTrackedRoots()
+
+      Array.from(roots).forEach((demoRoot) => {
+        if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
+        if (!observedOrder.has(demoRoot)) {
+          observedOrder.set(demoRoot, nextObservedOrder)
+          nextObservedOrder += 1
+        }
+
+        warmVisibleRoot(demoRoot)
+        visibleRoots.add(demoRoot)
+        enqueueDemoRoot(demoRoot)
+      })
+    },
+    observeWithin(root, options) {
+      if (controller.destroyed) return
+
+      pruneDetachedHomeDemos(controller)
+      pruneTrackedRoots()
 
       const demoRoots = Array.from(root.querySelectorAll<HTMLElement>('[data-home-demo-root]'))
       const viewportSnapshots = new Map<HTMLElement, HomeDemoViewportSnapshot>()
       const useObserverSnapshots = Boolean(activationObserver && warmObserver)
+      const startupVisibleOnly = options?.startup === true
 
-      if (!useObserverSnapshots) {
+      if (startupVisibleOnly || !useObserverSnapshots) {
         demoRoots.forEach((demoRoot) => {
           if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
           const viewportSnapshot = getHomeDemoViewportSnapshot(demoRoot)
@@ -597,7 +654,34 @@ export const bindHomeDemoActivation = ({
             viewportSnapshots.set(demoRoot, viewportSnapshot)
           }
         })
+      }
 
+      if (startupVisibleOnly) {
+        demoRoots.forEach((demoRoot) => {
+          if (shouldSkipHomeDemoRoot(controller, demoRoot)) return
+          if (!observedOrder.has(demoRoot)) {
+            observedOrder.set(demoRoot, nextObservedOrder)
+            nextObservedOrder += 1
+          }
+
+          const viewportSnapshot = viewportSnapshots.get(demoRoot)
+          const visible =
+            !viewportSnapshot ||
+            isVisibleHomeDemoRatio(viewportSnapshot.visibilityRatio)
+
+          if (!visible) {
+            visibleRoots.delete(demoRoot)
+            return
+          }
+
+          warmVisibleRoot(demoRoot)
+          visibleRoots.add(demoRoot)
+          enqueueDemoRoot(demoRoot)
+        })
+        return
+      }
+
+      if (!useObserverSnapshots) {
         const warmRoots = collectVisibleAndNearViewWarmRoots(demoRoots, viewportSnapshots)
         scheduleWarmRoots(warmRoots)
       }
@@ -626,8 +710,11 @@ export const bindHomeDemoActivation = ({
         const viewportSnapshot = viewportSnapshots.get(demoRoot)
 
         if (viewportSnapshot && isVisibleHomeDemoRatio(viewportSnapshot.visibilityRatio)) {
+          warmVisibleRoot(demoRoot)
           visibleRoots.add(demoRoot)
           enqueueDemoRoot(demoRoot)
+        } else if (viewportSnapshot?.withinWarmMargin) {
+          warmNearViewRoot(demoRoot)
         }
       })
     },
@@ -643,7 +730,6 @@ export const bindHomeDemoActivation = ({
       visibleRoots.clear()
       queuedRoots.clear()
       scheduledWarmRoots.clear()
-      autoVisibleWarmRoots.clear()
       autoNearViewWarmRoots.clear()
       activationQueue.length = 0
     }

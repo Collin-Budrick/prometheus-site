@@ -479,36 +479,4 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('loads the home demo entry after first paint when demo roots are present', async () => {
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    doc.demoRoot = {}
-    const manualGate = createManualGate()
-    let demoEntryLoadCount = 0
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => ({
-        bootstrapStaticHome: async () => undefined
-      }),
-      loadDemoEntryRuntime: async () => {
-        demoEntryLoadCount += 1
-        return {
-          installHomeDemoEntry: () => () => undefined
-        }
-      }
-    })
-
-    expect(demoEntryLoadCount).toBe(0)
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(demoEntryLoadCount).toBe(1)
-
-    cleanup()
-  })
-
 })

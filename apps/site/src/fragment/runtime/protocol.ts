@@ -44,6 +44,7 @@ export type FragmentRuntimeInitMessage = {
   enableStreaming: boolean
   startupMode?: FragmentRuntimeStartupMode
   bootstrapHref?: string
+  decodeWorkerHref?: string
 }
 
 export type FragmentRuntimeRequestMessage = {

@@ -225,6 +225,49 @@ afterEach(() => {
 })
 
 describe('bindHomeUiControls', () => {
+  it('does not preload deferred styles when the controls bind', () => {
+    const doc = new MockDocument()
+    const settingsRoot = doc.createElement('div')
+    settingsRoot.className = 'topbar-settings'
+    settingsRoot.dataset.open = 'false'
+    const settingsToggle = doc.createElement('button')
+    settingsToggle.setAttribute('data-static-settings-toggle', '')
+    settingsRoot.append(settingsToggle)
+    doc.body.append(settingsRoot)
+
+    const win = {
+      localStorage: {
+        setItem: () => undefined
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    }
+
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: doc
+    })
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: win
+    })
+
+    const callOrder: string[] = []
+    const bound = bindHomeUiControls({
+      controller: {
+        cleanupFns: [],
+        lang: 'en'
+      },
+      onLanguageChange: () => undefined,
+      ensureDeferredStylesheet: async () => {
+        callOrder.push('stylesheet:start')
+      }
+    })
+
+    expect(bound).toBe(true)
+    expect(callOrder).toEqual([])
+  })
+
   it('waits for deferred styles before opening the settings overlay', async () => {
     const doc = new MockDocument()
     const settingsRoot = doc.createElement('div')

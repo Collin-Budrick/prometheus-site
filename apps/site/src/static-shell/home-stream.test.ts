@@ -554,4 +554,32 @@ describe('home-stream patching', () => {
     expect(ledger.body.innerHTML).toContain('Ledger eager payload')
     expect(ledger.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
   })
+
+  it('buffers deferred payloads until the queue is explicitly released', async () => {
+    const log: string[] = []
+    const taskQueue = createTaskQueue()
+    const ledger = createCard('fragment://page/home/ledger@v1', log)
+    const root = new MockRoot([ledger.card])
+    const queue = createStaticHomePatchQueue({
+      lang: 'en',
+      applyEffects: false,
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      settlePatchedHeight,
+      visibleFirst: true,
+      bufferDeferredUntilRelease: true
+    })
+
+    queue.setVisible('fragment://page/home/ledger@v1', true)
+    queue.enqueue(createPayload('fragment://page/home/ledger@v1', 'Ledger buffered payload', 2))
+    queue.flushNow()
+
+    expect(ledger.body.innerHTML).toBe('')
+    expect(taskQueue.pendingCount()).toBe(0)
+
+    queue.releaseDeferred()
+
+    expect(ledger.body.innerHTML).toContain('Ledger buffered payload')
+    expect(ledger.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+  })
 })

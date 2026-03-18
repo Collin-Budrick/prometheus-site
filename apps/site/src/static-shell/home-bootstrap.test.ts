@@ -471,7 +471,7 @@ afterEach(() => {
 });
 
 describe("bindHomeDemoActivation", () => {
-  it("does not activate home demos until they become visible and activates them one task at a time in order", async () => {
+  it("does not activate home demos until they become visible and then attaches the visible set in parallel", async () => {
     const taskQueue = createTaskQueue();
     const activations: Array<{ kind: string; props: Record<string, unknown> }> =
       [];
@@ -511,15 +511,11 @@ describe("bindHomeDemoActivation", () => {
 
     await taskQueue.flushNext();
 
-    expect(activations).toEqual([{ kind: "planner", props: {} }]);
-    expect(taskQueue.pendingCount()).toBe(1);
-
-    await taskQueue.flushNext();
-
     expect(activations).toEqual([
       { kind: "planner", props: {} },
       { kind: "preact-island", props: { label: "Mission clock" } },
     ]);
+    expect(taskQueue.pendingCount()).toBe(0);
   });
 
   it("cleans up detached demos and activates replacement roots after a patch or language swap", async () => {
@@ -968,6 +964,75 @@ describe("bindHomeDemoActivation", () => {
       globals.window = originalWindow;
     }
   });
+
+  it("keeps startup demo warmup visible-only and leaves below-fold roots for the maintenance runtime", async () => {
+    const taskQueue = createTaskQueue();
+    const controller = createController();
+    const planner = new MockDemoElement("planner");
+    const wasm = new MockDemoElement("wasm-renderer");
+    const react = new MockDemoElement("react-binary");
+    const warmKinds: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      window?: { innerWidth?: number; innerHeight?: number };
+    };
+    const originalWindow = globals.window;
+
+    planner.setRect({
+      top: 120,
+      left: 0,
+      right: 420,
+      bottom: 360,
+      width: 420,
+      height: 240,
+    });
+    wasm.setRect({
+      top: 980,
+      left: 0,
+      right: 420,
+      bottom: 1220,
+      width: 420,
+      height: 240,
+    });
+    react.setRect({
+      top: 1260,
+      left: 0,
+      right: 420,
+      bottom: 1500,
+      width: 420,
+      height: 240,
+    });
+
+    globals.window = {
+      ...(originalWindow ?? {}),
+      innerWidth: 1440,
+      innerHeight: 900,
+    };
+
+    try {
+      const manager = bindHomeDemoActivation({
+        controller,
+        scheduleTask: taskQueue.scheduleTask,
+        ObserverImpl:
+          MockIntersectionObserver as unknown as typeof IntersectionObserver,
+        warmKind: async (kind) => {
+          warmKinds.push(kind);
+        },
+        activate: async () => ({ cleanup: () => undefined }),
+      });
+
+      manager.observeWithin(
+        new MockRoot([planner, wasm, react]) as unknown as ParentNode,
+        { startup: true },
+      );
+      await flushMicrotasks();
+
+      expect(warmKinds).toEqual(["planner"]);
+      expect(MockIntersectionObserver.instances[0]?.observed.size ?? 0).toBe(0);
+      expect(MockIntersectionObserver.instances[1]?.observed.size ?? 0).toBe(0);
+    } finally {
+      globals.window = originalWindow;
+    }
+  });
 });
 
 describe("scheduleStaticHomePaintReady", () => {
@@ -1323,6 +1388,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: (payload) => enqueued.push(payload.id),
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
@@ -1377,20 +1443,17 @@ describe("bindHomeFragmentHydration", () => {
       controller: {
         destroyed: false,
         lang: "en",
-        homeDemoStylesheetHref: "/assets/home-static-deferred.css",
         fetchAbort: null,
         patchQueue: {
           enqueue: (payload) => enqueued.push(payload.id),
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
-      ensureDemoStylesheet: async () => {
-        callOrder.push("stylesheet:start");
-      },
       fetchBatch: async (ids) => {
         callOrder.push("fetch:start");
         return Object.fromEntries(
@@ -1424,27 +1487,22 @@ describe("bindHomeFragmentHydration", () => {
       controller: {
         destroyed: false,
         lang: "en",
-        homeDemoStylesheetHref: "/assets/home-static-deferred.css",
         fetchAbort: null,
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
       },
       root: root as unknown as ParentNode,
       scheduleTask: taskQueue.scheduleTask,
-      ensureDemoStylesheet: async () => {
-        callOrder.push("stylesheet:start");
-      },
       fetchBatch: async () => {
         throw new Error("direct fetch path should not run");
       },
       requestFragments: async (ids, options) => {
         callOrder.push(`runtime:${ids.join(",")}:${options.isAnchorBatch}`);
-        await options.commitReady;
-        callOrder.push("runtime:commit-ready");
       },
     });
 
@@ -1456,7 +1514,6 @@ describe("bindHomeFragmentHydration", () => {
 
     expect(callOrder).toEqual([
       "runtime:fragment://page/home/planner@v1:true",
-      "runtime:commit-ready",
     ]);
 
     hydration.destroy();
@@ -1480,6 +1537,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: () => undefined,
           setVisible: (id, visible) => visibility.push({ id, visible }),
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
@@ -1559,6 +1617,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
@@ -1606,6 +1665,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
@@ -1648,6 +1708,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },
@@ -1689,6 +1750,7 @@ describe("bindHomeFragmentHydration", () => {
         patchQueue: {
           enqueue: () => undefined,
           setVisible: () => undefined,
+          releaseDeferred: () => undefined,
           flushNow: () => undefined,
           destroy: () => undefined,
         },

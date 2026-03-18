@@ -13,7 +13,7 @@
     "@prometheus/ui": "workspace:*",
     "@valkey/client": "1.0.0",
     "drizzle-orm": "1.0.0-beta.9-e89174b",
-    "elysia": "1.4.27",
+    "elysia": "1.4.28",
     "zod": "4.4.0-canary.20260125T215152"
   }
 }

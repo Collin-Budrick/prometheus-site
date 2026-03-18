@@ -17,6 +17,7 @@ import {
   HOME_DEMO_OBSERVE_EVENT,
   type HomeDemoObserveEventDetail,
 } from "./home-demo-observe-event";
+import { dispatchHomeDeferredCommitReleaseEvent } from "./home-deferred-commit-release-event";
 import { markHomeDemoPerformance } from "./home-demo-performance";
 import { normalizeHomeDemoAssetMap } from "./home-demo-runtime-types";
 import { scheduleStaticShellTask } from "./scheduler";
@@ -68,12 +69,10 @@ const syncHomeDemoController = (
 const bindHomeDemoObserveRequests = ({
   binding,
   doc,
-  deferredStylesheetReady,
   win,
 }: {
   binding: NonNullable<ReturnType<typeof getHomeDemoControllerBinding>>;
   doc: HomeDemoObserveDocument | null;
-  deferredStylesheetReady: Promise<void>;
   win: HomeDemoEntryWindow;
 }) => {
   if (!doc) {
@@ -89,15 +88,11 @@ const bindHomeDemoObserveRequests = ({
     }
 
     const detail = (event as CustomEvent<HomeDemoObserveEventDetail>).detail;
-    void deferredStylesheetReady.then(() => {
-      if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
-        return;
-      }
+    if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
+      return;
+    }
 
-      binding.manager.observeWithin(
-        (detail?.root ?? doc) as unknown as ParentNode,
-      );
-    });
+    binding.manager.observeWithin((detail?.root ?? doc) as unknown as ParentNode);
   };
 
   doc.addEventListener(
@@ -131,14 +126,18 @@ export const installHomeDemoEntry = ({
   primeTrustedTypesPolicies();
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true;
   markHomeDemoPerformance("prom:home:demo-entry-install");
-  const deferredStylesheetReady = Promise.resolve(
+  void Promise.resolve(
     ensureDeferredStylesheet({
       href: data.homeDemoStylesheetHref,
       doc,
     }),
-  ).catch((error) => {
-    console.error("Static home demo stylesheet failed to load:", error);
-  });
+  )
+    .catch((error) => {
+      console.error("Static home demo stylesheet failed to load:", error);
+    })
+    .finally(() => {
+      dispatchHomeDeferredCommitReleaseEvent({ doc });
+    });
   const observeRoot = doc as unknown as ParentNode;
 
   const scheduleInitialObserve = (
@@ -148,25 +147,23 @@ export const installHomeDemoEntry = ({
       () => {
         markStaticShellPerformance("prom:home:demo-observe-start");
         markStaticShellUserTiming("prom:home:demo-observe-start");
-        void deferredStylesheetReady.then(() => {
-          if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
-            return;
-          }
+        if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
+          return;
+        }
 
-          binding.manager.observeWithin(observeRoot);
-          markStaticShellPerformance("prom:home:demo-observe-ready");
-          markStaticShellUserTiming("prom:home:demo-observe-ready");
-          measureStaticShellPerformance(
-            "prom:home:demo-observe",
-            "prom:home:demo-observe-start",
-            "prom:home:demo-observe-ready",
-          );
-          measureStaticShellUserTiming(
-            "prom:home:demo-observe",
-            "prom:home:demo-observe-start",
-            "prom:home:demo-observe-ready",
-          );
-        });
+        binding.manager.observeWithin(observeRoot);
+        markStaticShellPerformance("prom:home:demo-observe-ready");
+        markStaticShellUserTiming("prom:home:demo-observe-ready");
+        measureStaticShellPerformance(
+          "prom:home:demo-observe",
+          "prom:home:demo-observe-start",
+          "prom:home:demo-observe-ready",
+        );
+        measureStaticShellUserTiming(
+          "prom:home:demo-observe",
+          "prom:home:demo-observe-start",
+          "prom:home:demo-observe-ready",
+        );
       },
       {
         priority: "user-visible",
@@ -181,7 +178,6 @@ export const installHomeDemoEntry = ({
     const cleanupObserveRequests = bindHomeDemoObserveRequests({
       binding: existingBinding,
       doc,
-      deferredStylesheetReady,
       win,
     });
     const cleanupInitialObserve = scheduleInitialObserve(existingBinding);
@@ -222,7 +218,6 @@ export const installHomeDemoEntry = ({
   const cleanupObserveRequests = bindHomeDemoObserveRequests({
     binding,
     doc,
-    deferredStylesheetReady,
     win,
   });
   const cleanupInitialObserve = scheduleInitialObserve(binding);

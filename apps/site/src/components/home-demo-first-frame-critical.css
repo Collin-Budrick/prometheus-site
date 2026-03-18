@@ -1,0 +1,562 @@
+@layer components {
+  .planner-demo,
+  .wasm-demo,
+  .react-binary-demo {
+    margin-top: 1rem;
+    display: grid;
+    gap: 12px;
+    padding: 1rem;
+    border: 1px solid rgb(var(--stroke) / 0.7);
+    border-radius: 1rem;
+    background: rgb(var(--surface) / 0.78);
+  }
+
+  .planner-demo-title,
+  .planner-demo-step,
+  .planner-demo-card::after,
+  .planner-demo-row::before,
+  .planner-demo-row::after,
+  .planner-demo-outcome,
+  .planner-demo-secondary,
+  .wasm-demo-title,
+  .wasm-demo-panel-title,
+  .wasm-demo-label,
+  .wasm-demo-metric,
+  .wasm-demo-history span,
+  .wasm-demo-note,
+  .wasm-demo-chip,
+  .preact-island-label,
+  .preact-island-stage-title,
+  .preact-island-stage-sub,
+  .react-binary-title,
+  .react-binary-step,
+  .react-binary-panel-title,
+  .react-binary-caption,
+  .react-binary-chip {
+    color: rgb(var(--muted));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+  }
+
+  .planner-demo-header,
+  .wasm-demo-header,
+  .react-binary-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .planner-demo-controls,
+  .planner-demo-steps,
+  .wasm-demo-history,
+  .wasm-demo-footer,
+  .react-binary-footer,
+  .react-binary-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .planner-demo-action,
+  .wasm-demo-action,
+  .react-binary-action,
+  .planner-demo-secondary,
+  .planner-demo-toggle,
+  .planner-demo-step,
+  .planner-demo-row::after,
+  .planner-demo-outcome,
+  .wasm-demo-step,
+  .wasm-demo-value,
+  .wasm-demo-history span,
+  .wasm-demo-chip,
+  .preact-island-timer,
+  .preact-island-action,
+  .react-binary-step,
+  .react-binary-node,
+  .react-binary-chip,
+  .react-binary-dom span,
+  .react-binary-bits span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    line-height: 1;
+    border: 1px solid rgb(var(--stroke));
+    border-radius: 999px;
+    background: rgb(var(--surface));
+  }
+
+  .planner-demo-action,
+  .wasm-demo-action,
+  .react-binary-action,
+  .preact-island-action {
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+  }
+
+  .planner-demo-action,
+  .react-binary-action {
+    border-color: rgb(var(--accent) / 0.28);
+    background: rgb(var(--accent) / 0.12);
+    color: rgb(var(--accent-strong));
+  }
+
+  .wasm-demo-action,
+  .preact-island-timer {
+    border-color: rgb(var(--signal) / 0.28);
+    background: rgb(var(--signal) / 0.12);
+    color: rgb(var(--ink-soft));
+  }
+
+  .planner-demo-secondary,
+  .planner-demo-toggle,
+  .wasm-demo-step,
+  .wasm-demo-value,
+  .wasm-demo-history span,
+  .wasm-demo-chip,
+  .preact-island-action,
+  .react-binary-step,
+  .react-binary-node,
+  .react-binary-chip {
+    padding: 0.5rem 0.875rem;
+  }
+
+  .planner-demo-status,
+  .wasm-demo-subtitle,
+  .react-binary-status,
+  .home-collab-status {
+    color: rgb(var(--muted));
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .planner-demo-step,
+  .react-binary-step {
+    padding: 0.25rem 0.75rem;
+  }
+
+  .planner-demo-step::before,
+  .react-binary-step-dot {
+    width: 6px;
+    height: 6px;
+    content: "";
+    border-radius: 999px;
+    background: rgb(var(--muted-soft) / 0.55);
+  }
+
+  .planner-demo-step.is-active,
+  .react-binary-step[aria-selected="true"] {
+    border-color: rgb(var(--accent) / 0.3);
+    background: rgb(var(--accent) / 0.12);
+    color: rgb(var(--accent-strong));
+  }
+
+  .planner-demo-step.is-active::before,
+  .react-binary-step[aria-selected="true"] .react-binary-step-dot {
+    background: rgb(var(--accent));
+  }
+
+  .planner-demo-step.is-done {
+    border-color: rgb(var(--signal) / 0.28);
+    color: rgb(var(--ink-soft));
+  }
+
+  .planner-demo-step.is-done::before {
+    background: rgb(var(--signal));
+  }
+
+  .planner-demo-grid,
+  .wasm-demo-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .planner-demo-card,
+  .wasm-demo-panel,
+  .react-binary-panel {
+    display: grid;
+    gap: 8px;
+    padding: 0.75rem;
+    border: 1px solid rgb(var(--stroke) / 0.7);
+    border-radius: 1rem;
+    background: rgb(var(--surface) / 0.86);
+  }
+
+  .planner-demo-card {
+    min-height: 180px;
+  }
+
+  .planner-demo-card::before {
+    content: attr(data-title);
+    color: rgb(var(--ink));
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .planner-demo-card::after {
+    content: attr(data-meta);
+  }
+
+  .planner-demo-card[data-cache="miss"] {
+    border-color: rgb(var(--accent) / 0.35);
+  }
+
+  .planner-demo-card[data-cache="hit"] {
+    border-color: rgb(var(--signal) / 0.28);
+  }
+
+  .planner-demo-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    color: rgb(var(--muted));
+    font-size: 0.75rem;
+  }
+
+  .planner-demo-row::before {
+    content: attr(data-label);
+  }
+
+  .planner-demo-row::after {
+    content: attr(data-pill);
+    justify-self: end;
+    padding: 0.25rem 0.5rem;
+    font-size: 9px;
+  }
+
+  .planner-demo-toggle[data-state="miss"],
+  .planner-demo-outcome[data-state="render"],
+  .planner-demo-outcome[data-state="fresh"] {
+    border-color: rgb(var(--accent) / 0.28);
+    color: rgb(var(--accent-strong));
+  }
+
+  .planner-demo-row[data-state="ready"]::after,
+  .planner-demo-toggle[data-state="hit"],
+  .planner-demo-outcome[data-state="queued"] {
+    border-color: rgb(var(--signal) / 0.28);
+    background: rgb(var(--signal) / 0.12);
+    color: rgb(var(--ink-soft));
+  }
+
+  .planner-demo-outcome {
+    justify-content: space-between;
+    padding: 0.25rem 0.75rem;
+    font-size: 9px;
+  }
+
+  .planner-demo-outcome + .planner-demo-outcome {
+    margin-top: -4px;
+  }
+
+  .planner-demo-outcome[data-state="skip"] {
+    color: rgb(var(--muted));
+  }
+
+  .wasm-demo-panel {
+    min-height: 150px;
+  }
+
+  .wasm-demo-input {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .wasm-demo-label {
+    min-width: 18px;
+  }
+
+  .wasm-demo-step {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    color: rgb(var(--muted));
+    letter-spacing: 0;
+  }
+
+  .wasm-demo-value,
+  .wasm-demo-bits,
+  .react-binary-bits,
+  .react-binary-dom {
+    background: rgb(var(--surface-soft));
+  }
+
+  .wasm-demo-value {
+    min-width: 64px;
+    padding: 0.375rem 0.75rem;
+    color: rgb(var(--ink-soft));
+  }
+
+  .wasm-demo-core {
+    border: 1px solid rgb(var(--signal) / 0.3);
+    border-radius: 1rem;
+    background: rgb(var(--signal) / 0.12);
+    padding: 0.75rem;
+    text-align: center;
+  }
+
+  .wasm-demo-core-value,
+  .preact-island-stage-time {
+    color: rgb(var(--ink));
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .wasm-demo-core-hash {
+    margin-top: 0.25rem;
+    color: rgb(var(--ink-soft));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+  }
+
+  .wasm-demo-bits,
+  .react-binary-bits,
+  .react-binary-dom {
+    width: 100%;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    color: rgb(var(--ink-soft));
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .wasm-demo-metrics {
+    display: grid;
+    gap: 8px;
+  }
+
+  .wasm-demo-metric {
+    display: grid;
+    gap: 4px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(var(--stroke) / 0.7);
+    border-radius: 1rem;
+  }
+
+  .wasm-demo-metric::before {
+    content: attr(data-label);
+  }
+
+  .wasm-demo-metric::after {
+    content: attr(data-value);
+    color: rgb(var(--ink));
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .wasm-demo-bar {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgb(var(--stroke));
+  }
+
+  .wasm-demo-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, rgb(var(--signal)), rgb(var(--accent)));
+  }
+
+  .wasm-demo-history span {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .preact-island-ui {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .preact-island-timer {
+    justify-self: end;
+    grid-column: 2;
+    padding: 0.25rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+  }
+
+  .preact-island-stage {
+    position: relative;
+    display: grid;
+    grid-column: 1 / -1;
+    place-items: center;
+    gap: 6px;
+    min-height: 196px;
+    padding: 18px;
+    overflow: hidden;
+    border: 1px solid rgb(var(--signal) / 0.25);
+    border-radius: 20px;
+    background:
+      radial-gradient(circle at 50% 25%, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.92) 60%),
+      linear-gradient(180deg, rgb(var(--surface) / 0.9), rgb(var(--surface-soft) / 0.7));
+    text-align: center;
+  }
+
+  .preact-island-dial {
+    position: absolute;
+    inset: 0;
+    width: 160px;
+    height: 160px;
+    margin: auto;
+    pointer-events: none;
+  }
+
+  .preact-island-dial-track {
+    fill: none;
+    stroke: rgb(var(--muted-soft) / 0.3);
+    stroke-width: 10;
+  }
+
+  .preact-island-dial-ticks {
+    fill: none;
+    stroke: rgb(var(--muted-soft) / 0.28);
+    stroke-width: 2;
+    stroke-dasharray: 2 6;
+  }
+
+  .preact-island-dial-progress {
+    fill: none;
+    stroke: rgb(var(--signal) / 0.85);
+    stroke-width: 10;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 60px 60px;
+  }
+
+  .preact-island-dial-hand {
+    stroke: rgb(var(--accent) / 0.85);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+
+  .preact-island-dial-center-dot {
+    fill: rgb(var(--surface));
+    stroke: rgb(var(--signal) / 0.7);
+    stroke-width: 2;
+  }
+
+  .preact-island-action {
+    grid-column: 1 / -1;
+    justify-self: center;
+    color: rgb(var(--muted));
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+  }
+
+  .react-binary-header {
+    display: grid;
+    gap: 8px;
+  }
+
+  .react-binary-track {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .react-binary-connector {
+    position: relative;
+  }
+
+  .react-binary-connector::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: rgb(var(--muted-soft) / 0.45);
+  }
+
+  .react-binary-connector::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-top: 2px solid rgb(var(--muted-soft) / 0.45);
+    border-right: 2px solid rgb(var(--muted-soft) / 0.45);
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  .react-binary-panel {
+    justify-items: center;
+    min-height: 150px;
+    overflow: hidden;
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"] {
+    border-color: rgb(var(--accent) / 0.5);
+    background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.95));
+  }
+
+  .react-binary-node-tree {
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    width: 100%;
+  }
+
+  .react-binary-node {
+    width: fit-content;
+    color: rgb(var(--muted));
+  }
+
+  .react-binary-node::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgb(var(--accent) / 0.6);
+  }
+
+  .react-binary-bits span,
+  .react-binary-dom span {
+    max-width: 100%;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .react-binary-bits span[data-anim="true"] {
+    color: rgb(var(--accent-strong));
+    border-color: rgb(var(--accent) / 0.25);
+    background: rgb(var(--accent) / 0.12);
+  }
+
+  @media (max-width: 720px) {
+    .react-binary-track {
+      grid-template-columns: 1fr;
+    }
+
+    .react-binary-connector {
+      display: none;
+    }
+
+    .react-binary-panel {
+      min-height: 0;
+    }
+  }
+}

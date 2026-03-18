@@ -39,9 +39,13 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
     "build/static-shell/apps/site/src/static-shell/island-static-entry.js",
 } as const;
 
+const HOME_DEMO_STARTUP_BUNDLE_PATH =
+  "build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js";
+
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
+    HOME_DEMO_STARTUP_BUNDLE_PATH,
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
     FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
@@ -138,11 +142,17 @@ const staticFragmentPrewarmPromise = import.meta.env.PROD
 
 const buildImmediateHomeStaticEntryTag = (
   bundleHref: string,
+  demoStartupHref: string,
   nonceAttr: string,
 ) =>
   `<script type="module"${nonceAttr}>(() => {
-const bootstrapHref = ${JSON.stringify(bundleHref)};
-void import(bootstrapHref).catch((error) => console.error("Static home entry immediate failed:", error));
+const startupImports = [
+  [${JSON.stringify(bundleHref)}, "Static home entry immediate failed:"],
+  [${JSON.stringify(demoStartupHref)}, "Static home demo startup immediate failed:"],
+];
+startupImports.forEach(([href, label]) => {
+  void import(href).catch((error) => console.error(label, error));
+});
 })();</script>`;
 
 const stripStaticQwikScripts = (html: string) =>
@@ -200,11 +210,19 @@ const stripHomeBlockingDeferredStylesheet = (html: string, pathname: string) => 
       "",
     )
     .replace(
+      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*home-static-deferred\.css[^"']*["'])[^>]*>\s*/gi,
+      "",
+    )
+    .replace(
       /<style\b(?=[^>]*\bdata-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'])[^>]*>[\s\S]*?<\/style>\s*/gi,
       "",
     )
     .replace(
       /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*home-demo-active\.css[^"']*["'])[^>]*>\s*/gi,
+      "",
+    )
+    .replace(
+      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*home-static-deferred\.css[^"']*["'])[^>]*>\s*/gi,
       "",
     )
     .replace(
@@ -268,13 +286,21 @@ export const injectStaticBootstrap = (
     `${publicBase}${bundlePath}`,
     STATIC_SHELL_BUILD_VERSION,
   );
+  const homeDemoStartupHref = appendStaticAssetVersion(
+    `${publicBase}${HOME_DEMO_STARTUP_BUNDLE_PATH}`,
+    STATIC_SHELL_BUILD_VERSION,
+  );
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
     .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const scriptTag =
     resolveStaticBootstrapMode(pathname) === "home-static"
-      ? buildImmediateHomeStaticEntryTag(bundleHref, nonceAttr)
+      ? buildImmediateHomeStaticEntryTag(
+          bundleHref,
+          homeDemoStartupHref,
+          nonceAttr,
+        )
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
   return html
     .replace("</head>", `${preloadTags}</head>`)

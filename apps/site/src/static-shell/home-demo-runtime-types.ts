@@ -22,6 +22,7 @@ export type ActivateHomeDemoOptions = {
 
 export type HomeDemoRuntimeModule = {
   activateHomeDemo: (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
+  attachHomeDemo: (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
 }
 
 export type HomeDemoAssetDescriptor = {
