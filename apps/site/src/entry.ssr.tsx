@@ -31,9 +31,14 @@ import {
 import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
-import { HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH } from "./static-shell/home-demo-runtime-types";
+import {
+  HOME_DEMO_ENTRY_ASSET_PATH,
+  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
+  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
+} from "./static-shell/home-demo-runtime-types";
 import homeCriticalStyles from "@prometheus/ui/global-critical-home.css?inline";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
+import homeInteractiveDeferredStylesheetHref from "./static-shell/home-static-deferred.css?url";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   "home-static":
@@ -43,9 +48,6 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   "island-static":
     "build/static-shell/apps/site/src/static-shell/island-static-entry.js",
 } as const;
-
-const HOME_DEMO_STARTUP_BUNDLE_PATH =
-  "build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js";
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
@@ -65,7 +67,17 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   ],
 } as const;
 
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
+  "/": [
+    HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
+    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
+    HOME_DEMO_ENTRY_ASSET_PATH,
+  ],
+} as const;
+
+const STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS = {
+  "/": [homeInteractiveDeferredStylesheetHref],
+} as const;
 
 const STATIC_BOOTSTRAP_BUNDLE_URLS = Object.fromEntries(
   Object.entries(STATIC_BOOTSTRAP_BUNDLE_PATHS).map(([mode, bundlePath]) => [
@@ -488,9 +500,15 @@ const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
   if (path === HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH) {
     return `<link rel="modulepreload" href="${href}" data-home-demo-startup-attach="true">`;
   }
+  if (path === HOME_DEMO_ENTRY_ASSET_PATH) {
+    return `<link rel="modulepreload" href="${href}" data-home-demo-entry-preload="true">`;
+  }
 
   return `<link rel="modulepreload" href="${href}">`;
 };
+
+const buildStaticBootstrapStylePreloadTag = (href: string) =>
+  `<link rel="preload" as="style" href="${href}" data-home-demo-stylesheet="true">`;
 
 export const injectStaticBootstrap = (
   html: string,
@@ -505,7 +523,7 @@ export const injectStaticBootstrap = (
     STATIC_SHELL_BUILD_VERSION,
   );
   const homeDemoStartupHref = appendStaticAssetVersion(
-    `${publicBase}${HOME_DEMO_STARTUP_BUNDLE_PATH}`,
+    `${publicBase}${HOME_DEMO_STARTUP_ENTRY_ASSET_PATH}`,
     STATIC_SHELL_BUILD_VERSION,
   );
   const workerHref = appendStaticAssetVersion(
@@ -519,6 +537,13 @@ export const injectStaticBootstrap = (
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
     .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");
+  const stylePreloadTags = (
+    STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS[
+      normalizeStaticShellRoutePath(pathname) as keyof typeof STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS
+    ] ?? []
+  )
+    .map((href) => buildStaticBootstrapStylePreloadTag(href))
+    .join("");
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const scriptTag =
     resolveStaticBootstrapMode(pathname) === "home-static"
@@ -531,7 +556,7 @@ export const injectStaticBootstrap = (
         )
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
   return html
-    .replace("</head>", `${preloadTags}</head>`)
+    .replace("</head>", `${preloadTags}${stylePreloadTags}</head>`)
     .replace("</body>", `${scriptTag}</body>`);
 };
 

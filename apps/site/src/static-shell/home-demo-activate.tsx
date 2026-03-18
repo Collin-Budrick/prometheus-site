@@ -28,12 +28,15 @@ export type HomeDemoActivationResult = {
   setViewportActive?: (active: boolean) => void
 }
 
+type PreparedHomeDemoMarkup = Record<HomeDemoKind, string>
+
 const initialBinaryChunks = ['0101', '1100', '0011', '1010', '0110', '1001', '0001', '1110']
 const plannerStepDelayMs = 720
 const preactCountdownSeconds = 60
 const reactNodeLabels = ['Fragment', 'Card', 'Title', 'Copy', 'Badge']
 const reactDomPreview = '<section> <h2> <p> <div.badge>'
 let didWarnMissingReactBinaryCopy = false
+let preparedHomeDemoMarkupCache: { lang: Lang; markup: PreparedHomeDemoMarkup } | null = null
 
 const scheduleHomeDemoEnhancement = (effect: () => void) => {
   if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
@@ -370,10 +373,41 @@ const renderPreactIslandDemoMarkup = () => `
   <button class="preact-island-action" type="button"></button>
 `
 
+const buildPreparedHomeDemoMarkup = (lang: Lang): PreparedHomeDemoMarkup => ({
+  planner: renderPlannerDemoMarkup(getStaticHomePlannerDemoCopy(lang)),
+  'wasm-renderer': renderWasmRendererDemoMarkup(),
+  'react-binary': renderReactBinaryDemoMarkup(getStaticHomeReactBinaryDemoCopy(lang)),
+  'preact-island': renderPreactIslandDemoMarkup()
+})
+
+const getPreparedHomeDemoMarkup = (kind: HomeDemoKind, lang = getCurrentLang()) => {
+  if (!preparedHomeDemoMarkupCache || preparedHomeDemoMarkupCache.lang !== lang) {
+    preparedHomeDemoMarkupCache = {
+      lang,
+      markup: buildPreparedHomeDemoMarkup(lang)
+    }
+  }
+
+  return preparedHomeDemoMarkupCache.markup[kind]
+}
+
+export const prewarmHomeDemoActivationResources = async (
+  doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  seedStaticHomeDemoCopyFromBootstrapData(doc)
+  const data = await ensureStaticHomeDemoSeed(doc)
+  const lang = data?.lang ?? getCurrentLang()
+  getPreparedHomeDemoMarkup('planner', lang)
+  getPreparedHomeDemoMarkup('wasm-renderer', lang)
+  getPreparedHomeDemoMarkup('react-binary', lang)
+  getPreparedHomeDemoMarkup('preact-island', lang)
+  return data
+}
+
 const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomePlannerDemoCopy(getCurrentLang())
   if (!hasPreparedActiveDemoMarkup(root, 'planner-demo')) {
-    prepareActiveDemoRoot(root, 'planner-demo', renderPlannerDemoMarkup(copy))
+    prepareActiveDemoRoot(root, 'planner-demo', getPreparedHomeDemoMarkup('planner'))
   }
   const title = root.querySelector<HTMLElement>('.planner-demo-title')
   const runButton = root.querySelector<HTMLButtonElement>('.planner-demo-action')
@@ -590,7 +624,7 @@ const activatePlannerDemo = (root: HTMLElement): HomeDemoActivationResult => {
 const activateWasmRendererDemo = (root: HTMLElement): HomeDemoActivationResult => {
   const copy = getStaticHomeWasmRendererDemoCopy(getCurrentLang())
   if (!hasPreparedActiveDemoMarkup(root, 'wasm-demo')) {
-    prepareActiveDemoRoot(root, 'wasm-demo', renderWasmRendererDemoMarkup())
+    prepareActiveDemoRoot(root, 'wasm-demo', getPreparedHomeDemoMarkup('wasm-renderer'))
   }
   const title = root.querySelector<HTMLElement>('.wasm-demo-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.wasm-demo-action')
@@ -757,7 +791,7 @@ const activateReactBinaryDemo = (root: HTMLElement): HomeDemoActivationResult =>
     }
   }
   if (!hasPreparedActiveDemoMarkup(root, 'react-binary-demo')) {
-    prepareActiveDemoRoot(root, 'react-binary-demo', renderReactBinaryDemoMarkup(copy))
+    prepareActiveDemoRoot(root, 'react-binary-demo', getPreparedHomeDemoMarkup('react-binary'))
   }
   const title = root.querySelector<HTMLElement>('.react-binary-title')
   const actionButton = root.querySelector<HTMLButtonElement>('.react-binary-action')
@@ -927,7 +961,7 @@ const activatePreactIslandDemo = (
   const copy = getStaticHomePreactIslandDemoCopy(getCurrentLang())
   const label = typeof props.label === 'string' && props.label.trim() ? props.label : copy.label
   if (!hasPreparedActiveDemoMarkup(root, 'preact-island-ui')) {
-    prepareActiveDemoRoot(root, 'preact-island-ui', renderPreactIslandDemoMarkup())
+    prepareActiveDemoRoot(root, 'preact-island-ui', getPreparedHomeDemoMarkup('preact-island'))
   }
   const labelElement = root.querySelector<HTMLElement>('.preact-island-label')
   const timer = root.querySelector<HTMLElement>('.preact-island-timer')
@@ -1152,4 +1186,5 @@ export const activateHomeDemo = async ({
 
 export const resetHomeDemoActivationForTests = () => {
   didWarnMissingReactBinaryCopy = false
+  preparedHomeDemoMarkupCache = null
 }

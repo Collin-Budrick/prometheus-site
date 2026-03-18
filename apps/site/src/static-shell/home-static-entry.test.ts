@@ -224,6 +224,8 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
+const noopWarmDemoAssets = async () => undefined
+
 const createScheduledTaskQueue = () => {
   const callbacks: Array<() => void> = []
 
@@ -294,6 +296,7 @@ describe('installHomeStaticEntry', () => {
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => undefined
       }),
+      warmDemoAssets: noopWarmDemoAssets,
       startSharedRuntime: () => {
         sharedRuntimeStartCount += 1
         return {} as never
@@ -332,6 +335,7 @@ describe('installHomeStaticEntry', () => {
         sharedRuntimeStartCount += 1
         return {} as never
       },
+      warmDemoAssets: noopWarmDemoAssets,
       scheduleTask: taskQueue.scheduleTask as never
     })
 
@@ -374,6 +378,7 @@ describe('installHomeStaticEntry', () => {
         sharedRuntimeStartCount += 1
         return {} as never
       },
+      warmDemoAssets: noopWarmDemoAssets,
       scheduleTask: taskQueue.scheduleTask as never
     })
 
@@ -424,6 +429,7 @@ describe('installHomeStaticEntry', () => {
         onReady?.()
         return () => undefined
       }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
+      warmDemoAssets: noopWarmDemoAssets,
       scheduleTask: taskQueue.scheduleTask as never
     })
 
@@ -462,6 +468,7 @@ describe('installHomeStaticEntry', () => {
           }
         }
       },
+      warmDemoAssets: noopWarmDemoAssets,
       scheduleTask: taskQueue.scheduleTask as never
     })
 

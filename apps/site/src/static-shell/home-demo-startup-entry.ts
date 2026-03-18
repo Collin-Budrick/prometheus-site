@@ -18,9 +18,17 @@ import {
   HOME_DEMO_OBSERVE_EVENT,
   type HomeDemoObserveEventDetail
 } from './home-demo-observe-event'
-import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
+import {
+  loadHomeDemoEntryRuntime,
+  warmHomeDemoEntryRuntime
+} from './home-demo-entry-loader'
 import { markHomeDemoPerformance } from './home-demo-performance'
-import { loadHomeDemoStartupAttachRuntime, warmHomeDemoStartupAttachRuntime } from './home-demo-runtime-loader'
+import {
+  ensureHomeDemoStylesheet,
+  loadHomeDemoStartupAttachRuntime,
+  warmHomeDemoStartupAttachRuntime
+} from './home-demo-runtime-loader'
+import { prewarmHomeDemoActivationResources } from './home-demo-activate'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import { scheduleStaticShellTask } from './scheduler'
 import {
@@ -113,6 +121,17 @@ export const installHomeDemoStartupEntry = ({
   primeTrustedTypesPolicies()
   win.__PROM_STATIC_HOME_DEMO_STARTUP__ = true
   markHomeDemoPerformance('prom:home:demo-startup-install')
+  void Promise.all([
+    ensureHomeDemoStylesheet({
+      href: data.homeDemoStylesheetHref ?? undefined,
+      doc
+    }),
+    warmHomeDemoStartupAttachRuntime({ doc }),
+    warmHomeDemoEntryRuntime({ doc }),
+    prewarmHomeDemoActivationResources(doc)
+  ]).catch((error) => {
+    console.error('Static home demo startup prewarm failed:', error)
+  })
 
   let createdBinding = false
   let maintenanceRuntimePromise: ReturnType<typeof loadObserverRuntime> | null = null
@@ -249,9 +268,6 @@ export const installHomeDemoStartupEntry = ({
             })
 
             if (visibleRoots.length > 0) {
-              void warmHomeDemoStartupAttachRuntime({ doc }).catch((error) => {
-                console.error('Static home demo startup warmup failed:', error)
-              })
               void attachVisibleHomeDemoRoots({
                 controller: binding.controller,
                 roots: visibleRoots,

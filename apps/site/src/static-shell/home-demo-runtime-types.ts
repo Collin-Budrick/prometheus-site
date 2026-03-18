@@ -7,6 +7,12 @@ export const HOME_DEMO_KINDS = [
   'preact-island'
 ] as const satisfies readonly HomeDemoKind[]
 
+export const HOME_DEMO_STARTUP_ENTRY_ASSET_PATH =
+  'build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js'
+
+export const HOME_DEMO_ENTRY_ASSET_PATH =
+  'build/static-shell/apps/site/src/static-shell/home-demo-entry.js'
+
 export const HOME_DEMO_RUNTIME_ASSET_PATHS = {
   planner: 'build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js',
   'wasm-renderer': 'build/static-shell/apps/site/src/static-shell/home-demo-wasm-renderer-runtime.js',

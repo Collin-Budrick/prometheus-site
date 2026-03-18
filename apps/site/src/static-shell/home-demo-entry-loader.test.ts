@@ -3,6 +3,7 @@ import {
   loadHomeDemoEntryRuntime,
   resetHomeDemoEntryRuntimeLoaderForTests,
   resolveHomeDemoEntryRuntimeUrl,
+  warmHomeDemoEntryRuntime,
   type HomeDemoEntryModule
 } from './home-demo-entry-loader'
 
@@ -45,5 +46,53 @@ describe('home-demo-entry-loader', () => {
     expect(await firstLoad).toBe(runtimeModule)
     expect(await secondLoad).toBe(runtimeModule)
     expect(calls).toEqual([assetUrl])
+  })
+
+  it('adds a modulepreload link when the demo entry runtime is warmed', async () => {
+    const links: Array<Record<string, string>> = []
+    const doc = {
+      head: {
+        appendChild(link: HTMLLinkElement) {
+          links.push({
+            rel: link.getAttribute('rel') ?? '',
+            href: link.getAttribute('href') ?? '',
+            preload: link.getAttribute('data-home-demo-entry-preload') ?? ''
+          })
+          return link
+        }
+      },
+      createElement() {
+        const attrs = new Map<string, string>()
+        return {
+          rel: '',
+          setAttribute(name: string, value: string) {
+            attrs.set(name, value)
+            if (name === 'rel') {
+              this.rel = value
+            }
+          },
+          getAttribute(name: string) {
+            return attrs.get(name) ?? null
+          },
+          addEventListener() {},
+          removeEventListener() {}
+        } as unknown as HTMLLinkElement
+      },
+      querySelector() {
+        return null
+      }
+    }
+
+    await warmHomeDemoEntryRuntime({
+      doc: doc as unknown as Document
+    })
+
+    expect(links).toEqual([
+      {
+        rel: 'modulepreload',
+        href: 'http://localhost/build/static-shell/apps/site/src/static-shell/home-demo-entry.js',
+        preload: 'true'
+      }
+    ])
   })
 })

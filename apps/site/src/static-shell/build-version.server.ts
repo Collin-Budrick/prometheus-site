@@ -3,13 +3,16 @@ import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_RUNTIME_ASSET_PATHS,
+  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
 } from './home-demo-runtime-types'
 
 const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
   'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
-  'build/static-shell/apps/site/src/static-shell/home-demo-entry.js',
+  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
+  HOME_DEMO_ENTRY_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js',

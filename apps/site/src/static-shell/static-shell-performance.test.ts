@@ -257,7 +257,7 @@ describe("static shell performance invariants", () => {
     );
     expect(homeRouteSource).toContain("stage === 'critical'");
     expect(homeRouteSource).toContain("isStaticHomePreviewKind(fragmentKind)");
-    expect(homeRouteSource).toContain("? 'preview'");
+    expect(homeRouteSource).toContain("renderMode = 'preview'");
     expect(homeRouteSource).toContain(
       "const patchState = stage === 'critical' ? 'ready' : 'pending'",
     );
@@ -280,7 +280,7 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_ATTR");
     expect(homeRouteSource).toContain("STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR");
     expect(homeRouteSource).toContain("resolveFragmentHeightWidthBucket({");
-    expect(homeRouteSource).not.toContain("homeDemoAssets");
+    expect(homeRouteSource).toContain("homeDemoAssets: normalizeHomeDemoAssetMap()");
     expect(homeRouteSource).toContain("createSeededHomeStaticCopyBundle");
     expect(homeRouteSource).toContain("createSeededHomeStaticFragmentHeaders");
     expect(homeRouteSource).toContain("buildFragmentHeightPlanSignature");
@@ -532,11 +532,9 @@ describe("static shell performance invariants", () => {
     expect(layoutSource).toContain("toCanonicalStaticShellHref");
     expect(layoutSource).toContain("useStaticShellBuildVersion");
     expect(layoutSource).toContain("await event.next()");
-    expect(layoutSource).toContain(
-      "if (isHtmlRequest && isStaticShellPath(requestUrl.pathname))",
-    );
-    expect(layoutSource).toContain("headers.delete('X-Early-Hints')");
-    expect(layoutSource).toContain("headers.delete('Link')");
+    expect(layoutSource).toContain("if (isHtmlRequest) {");
+    expect(layoutSource).not.toContain("headers.delete('X-Early-Hints')");
+    expect(layoutSource).not.toContain("headers.delete('Link')");
     expect(layoutSource).toContain("event.isTrusted === false");
     expect(layoutSource).not.toContain("requestIdleCallback(appendManifest");
     expect(layoutSource).not.toContain(
@@ -560,7 +558,10 @@ describe("static shell performance invariants", () => {
     expect(runtimeLoaderSource).not.toContain(
       "import homeDemoStylesheetHref from '../components/home-demo-active.css?url'",
     );
-    expect(homeDemoEntryLoaderSource).toContain("home-demo-entry.js");
+    expect(homeDemoEntryLoaderSource).toContain("HOME_DEMO_ENTRY_ASSET_PATH");
+    expect(homeDemoEntryLoaderSource).toContain(
+      "data-home-demo-entry-preload",
+    );
     expect(homeStaticEntrySource).not.toContain("loadHomeDemoEntryRuntime");
     expect(homeStaticEntrySource).not.toContain("void startHomeDemoEntry()");
     expect(homeDemoStartupEntrySource).toContain("HOME_DEMO_OBSERVE_EVENT");
@@ -749,7 +750,7 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).toContain('data-fragment-runtime-preload="worker"');
     expect(entrySsrSource).toContain('data-fragment-runtime-preload="decode"');
     expect(entrySsrSource).toContain("buildImmediateHomeStaticEntryTag");
-    expect(entrySsrSource).toContain("Static home demo startup immediate failed:");
+    expect(entrySsrSource).toContain("Static home demo startup deferred failed:");
     expect(entrySsrSource).not.toContain(
       "const stylesheet = document.querySelector('link[data-home-demo-stylesheet]');",
     );
@@ -757,12 +758,8 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js"',
     );
-    expect(entrySsrSource).toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
-    );
-    expect(entrySsrSource).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-demo-entry.js"',
-    );
+    expect(entrySsrSource).toContain("HOME_DEMO_STARTUP_ENTRY_ASSET_PATH");
+    expect(entrySsrSource).toContain("HOME_DEMO_ENTRY_ASSET_PATH");
     expect(entrySsrSource).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js"',
     );
@@ -780,7 +777,7 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
     expect(entrySsrSource).not.toContain("store-static-runtime.js");
     expect(entrySsrSource).toContain(
-      "const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;",
+      'const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {\n  "/": [',
     );
   });
 

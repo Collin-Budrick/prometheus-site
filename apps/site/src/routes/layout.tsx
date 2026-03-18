@@ -38,11 +38,19 @@ import { StaticShellLayout } from '../static-shell/StaticShellLayout'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
+  HOME_STATIC_ROUTE_PATH,
   getStaticShellRouteConfig,
   isHomeStaticPath,
   isStaticShellPath,
+  normalizeStaticShellRoutePath,
   toCanonicalStaticShellHref
 } from '../static-shell/constants'
+import homeInteractiveDeferredStylesheetHref from '../static-shell/home-static-deferred.css?url'
+import {
+  HOME_DEMO_ENTRY_ASSET_PATH,
+  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
+  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH
+} from '../static-shell/home-demo-runtime-types'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -132,6 +140,16 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
     STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static'],
     'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
   ]
+} as const
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
+  [HOME_STATIC_ROUTE_PATH]: [
+    HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
+    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
+    HOME_DEMO_ENTRY_ASSET_PATH
+  ]
+} as const
+const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
+  [HOME_STATIC_ROUTE_PATH]: [homeInteractiveDeferredStylesheetHref]
 } as const
 
 const buildDeferredManifestScript = (href: string) => {
@@ -272,18 +290,34 @@ const normalizeStaticPublicBase = (base: string) => {
 const STATIC_PUBLIC_BASE = normalizeStaticPublicBase(import.meta.env.BASE_URL || '/')
 
 const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string | null): EarlyHint[] => {
-  const routeConfig = getStaticShellRouteConfig(pathName)
+  const normalizedPath = normalizeStaticShellRoutePath(pathName)
+  const routeConfig = getStaticShellRouteConfig(normalizedPath)
   if (!routeConfig) {
     return []
   }
 
-  return STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode].map((path) => ({
+  const moduleHints = [
+    ...STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode],
+    ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
+      normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
+    ] ?? [])
+  ].map((path) => ({
     href: buildVersion
       ? appendStaticAssetVersion(`${STATIC_PUBLIC_BASE}${path}`, buildVersion)
       : `${STATIC_PUBLIC_BASE}${path}`,
     rel: 'modulepreload' as const,
     crossorigin: 'anonymous' as const
   }))
+  const styleHints = (
+    STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS[
+      normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS
+    ] ?? []
+  ).map((href) => ({
+    href,
+    as: 'style' as const
+  }))
+
+  return [...moduleHints, ...styleHints]
 }
 
 const withLangParam = (href: string, langValue: Lang) => {

@@ -49,6 +49,7 @@ import {
   serializeHomeRuntimeFetchGroups,
   serializeHomeRuntimePlanEntries
 } from './home-bootstrap-data'
+import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 
 type StaticHomeRouteProps = {
   plan: FragmentPlanValue
@@ -504,6 +505,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
           homeDemoStylesheetHref: homeInteractiveDeferredStylesheetHref,
+          homeDemoAssets: normalizeHomeDemoAssetMap(),
           languageSeed,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,

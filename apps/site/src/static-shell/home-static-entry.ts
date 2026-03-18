@@ -1,7 +1,10 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
-import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import {
+  readStaticHomeBootstrapData,
+  type HomeStaticBootstrapData
+} from './home-bootstrap-data'
 import {
   STATIC_HOME_PAINT_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
@@ -20,6 +23,16 @@ import {
   ensureHomeSharedRuntime,
   ensureHomeSharedRuntimeAssetPreloads
 } from './home-shared-runtime'
+import { warmHomeDemoEntryRuntime } from './home-demo-entry-loader'
+import {
+  ensureHomeDemoStylesheet,
+  warmHomeDemoKind,
+  warmHomeDemoStartupAttachRuntime
+} from './home-demo-runtime-loader'
+import {
+  HOME_DEMO_KINDS,
+  normalizeHomeDemoAssetMap
+} from './home-demo-runtime-types'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
@@ -39,9 +52,57 @@ type InstallHomeStaticEntryOptions = {
   startSharedRuntime?: typeof ensureHomeSharedRuntime
   preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
   disposeSharedRuntime?: typeof disposeHomeSharedRuntime
+  warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
+
+type WarmHomeDemoAssetsOptions = {
+  data: HomeStaticBootstrapData
+  doc: Document
+  scheduleTask: typeof scheduleStaticShellTask
+}
+
+const warmStaticHomeDemoAssets = async ({
+  data,
+  doc,
+  scheduleTask
+}: WarmHomeDemoAssetsOptions) => {
+  const assets = normalizeHomeDemoAssetMap(data.homeDemoAssets)
+
+  await Promise.all([
+    ensureHomeDemoStylesheet({
+      href: data.homeDemoStylesheetHref ?? undefined,
+      doc
+    }),
+    warmHomeDemoStartupAttachRuntime({ doc }),
+    warmHomeDemoEntryRuntime({ doc })
+  ])
+
+  await new Promise<void>((resolve) => {
+    scheduleTask(
+      () => {
+        void Promise.all(
+          HOME_DEMO_KINDS.map((kind) =>
+            warmHomeDemoKind(kind, assets[kind], { doc })
+          )
+        )
+          .catch((error) => {
+            console.error('Static home demo kind warmup failed:', error)
+          })
+          .finally(() => {
+            resolve()
+          })
+      },
+      {
+        priority: 'background',
+        timeoutMs: 0,
+        preferIdle: false,
+        waitForPaint: true
+      }
+    )
+  })
+}
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -100,13 +161,12 @@ export const installHomeStaticEntry = ({
   scheduleTask = scheduleStaticShellTask,
   startSharedRuntime = ensureHomeSharedRuntime,
   preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
-  disposeSharedRuntime = disposeHomeSharedRuntime
+  disposeSharedRuntime = disposeHomeSharedRuntime,
+  warmDemoAssets = warmStaticHomeDemoAssets
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
   }
-
-  void scheduleTask
 
   const liveWin = win
   const liveDoc = doc
@@ -128,6 +188,7 @@ export const installHomeStaticEntry = ({
   let lcpGateCleanup: (() => void) | null = null
   let paintReadyCleanup: (() => void) | null = null
   let sharedRuntimeStarted = false
+  let homeDemoWarmupPromise: Promise<void> | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
@@ -219,6 +280,39 @@ export const installHomeStaticEntry = ({
         liveWin
       )
     )
+  }
+
+  const startHomeDemoWarmup = () => {
+    if (homeDemoWarmupPromise) {
+      return homeDemoWarmupPromise
+    }
+
+    const data = readStaticHomeBootstrapData({ doc: liveDoc })
+    if (!data) {
+      homeDemoWarmupPromise = Promise.resolve()
+      return homeDemoWarmupPromise
+    }
+
+    markStaticShellUserTiming('prom:home:demo-warm-start')
+    homeDemoWarmupPromise = warmDemoAssets({
+      data,
+      doc: liveDoc,
+      scheduleTask
+    })
+      .catch((error) => {
+        homeDemoWarmupPromise = null
+        console.error('Static home demo warmup failed:', error)
+      })
+      .finally(() => {
+        markStaticShellUserTiming('prom:home:demo-warm-ready')
+        measureStaticShellUserTiming(
+          'prom:home:demo-warm',
+          'prom:home:demo-warm-start',
+          'prom:home:demo-warm-ready'
+        )
+      })
+
+    return homeDemoWarmupPromise
   }
 
   const startWidgetRuntime = (target: EventTarget | null = null) => {
@@ -328,6 +422,7 @@ export const installHomeStaticEntry = ({
     clearStartupHandlers()
     startHomeWorkerRuntime()
     requestBootstrap()
+    void startHomeDemoWarmup()
     liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
     liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)

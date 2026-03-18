@@ -73,6 +73,14 @@ class MockDemoRoot {
 
 class MockDocument {
   private readonly listeners = new Map<string, Set<(event: Event) => void>>()
+  readonly appendedLinks: MockLinkElement[] = []
+  readonly documentElement = { lang: 'en' }
+  readonly head = {
+    appendChild: (element: HTMLLinkElement) => {
+      this.appendedLinks.push(element as unknown as MockLinkElement)
+      return element
+    }
+  }
 
   constructor(
     private readonly scripts: Map<string, MockScriptElement>,
@@ -81,6 +89,32 @@ class MockDocument {
 
   getElementById(id: string) {
     return this.scripts.get(id) ?? null
+  }
+
+  createElement() {
+    return new MockLinkElement() as unknown as HTMLLinkElement
+  }
+
+  querySelector(selector: string) {
+    if (!selector.startsWith('link[')) {
+      return null
+    }
+
+    const attrMatch = selector.match(/\[([^=\]]+)(?:="([^"]*)")?\]/)
+    if (!attrMatch) {
+      return null
+    }
+
+    const [, attrName, attrValue] = attrMatch
+    return (
+      this.appendedLinks.find((link) => {
+        const value = link.getAttribute(attrName)
+        if (attrValue === undefined) {
+          return value !== null
+        }
+        return value === attrValue
+      }) ?? null
+    )
   }
 
   querySelectorAll(selector?: string) {
@@ -108,6 +142,50 @@ class MockDocument {
   dispatchEvent(event: Event) {
     this.listeners.get(event.type)?.forEach((listener) => listener(event))
     return true
+  }
+}
+
+class MockLinkElement {
+  rel = ''
+  sheet: unknown = null
+  private readonly attrs = new Map<string, string>()
+  private readonly listeners = new Map<string, Set<() => void>>()
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value)
+    if (name === 'rel') {
+      this.rel = value
+      if (value === 'stylesheet') {
+        this.sheet = {}
+      }
+    }
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null
+  }
+
+  removeAttribute(name: string) {
+    this.attrs.delete(name)
+    if (name === 'rel') {
+      this.rel = ''
+      this.sheet = null
+    }
+  }
+
+  addEventListener(type: string, listener: () => void) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: () => void) {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listeners.delete(type)
+    }
   }
 }
 
