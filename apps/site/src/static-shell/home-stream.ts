@@ -76,6 +76,7 @@ export type StaticHomePatchQueue = {
 }
 
 const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
+const HOME_PATCH_BATCH_LIMIT = 2
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
@@ -529,7 +530,6 @@ export const createStaticHomePatchQueue = ({
   const flushNext = () => {
     if (destroyed) return false
 
-    let processedAny = false
     for (const card of collectStaticHomeCards(root)) {
       const fragmentId = card.dataset.fragmentId
       if (!fragmentId) continue
@@ -559,20 +559,26 @@ export const createStaticHomePatchQueue = ({
           markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
         }
         pendingPayloads.delete(fragmentId)
-        processedAny = true
+        return true
       }
     }
 
-    return processedAny
+    return false
+  }
+
+  const flushWithinBudget = () => {
+    let processed = 0
+    while (processed < HOME_PATCH_BATCH_LIMIT && flushNext()) {
+      processed += 1
+    }
+    return processed
   }
 
   const flushNow = () => {
     if (destroyed) return
     cancelScheduledFlush?.()
     cancelScheduledFlush = null
-    while (flushNext()) {
-      // Drain all currently eligible payloads in a single turn.
-    }
+    flushWithinBudget()
     scheduleFlush()
   }
 
@@ -619,9 +625,7 @@ export const createStaticHomePatchQueue = ({
       if (destroyed) return
       flushInFlight = true
       try {
-        while (flushNext()) {
-          // Drain all currently eligible payloads in a single scheduled flush.
-        }
+        flushWithinBudget()
       } finally {
         flushInFlight = false
         scheduleFlush()

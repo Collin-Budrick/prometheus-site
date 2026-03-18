@@ -34,6 +34,7 @@ const GRIDSTACK_CELL_HEIGHT = 8
 const GRIDSTACK_MARGIN = 12
 const MAX_NETWORK_CONCURRENCY = 4
 const MAX_DECODE_WORKERS = 4
+const INITIAL_DECODE_WORKERS = 1
 const FRAME_HEADER_SIZE = 8
 const idDecoder = new TextDecoder()
 
@@ -130,6 +131,8 @@ let configuredDecodeWorkerHref: string | null = null
 const canSpawnNestedDecodeWorkers = () => typeof Worker === 'function'
 
 class DecodePool {
+  private readonly maxSize: number
+  private readonly workerHref: string | null
   private workers: Array<{ worker: Worker; busy: boolean }> = []
   private pending = new Map<
     number,
@@ -149,50 +152,14 @@ class DecodePool {
   private nextRequestId = 1
 
   constructor(size: number, workerHref?: string | null) {
+    this.maxSize = Math.max(INITIAL_DECODE_WORKERS, size)
+    this.workerHref = workerHref ?? null
+
     if (!canSpawnNestedDecodeWorkers()) {
       return
     }
 
-    for (let index = 0; index < size; index += 1) {
-      let worker: Worker
-      try {
-        worker = workerHref
-          ? new Worker(workerHref, { type: 'module' })
-          : new Worker(new URL('./decode-pool.worker.js', import.meta.url), { type: 'module' })
-      } catch (error) {
-        this.terminate()
-        if (!warnedAboutNestedDecodeWorkerFallback) {
-          warnedAboutNestedDecodeWorkerFallback = true
-          console.warn('Nested fragment decode workers unavailable, falling back to in-worker decode.', error)
-        }
-        return
-      }
-      const workerState = { worker, busy: false }
-      worker.addEventListener('message', (event: MessageEvent<DecodePoolResponse>) => {
-        const message = event.data
-        const pending = this.pending.get(message.id)
-        if (!pending) return
-        this.pending.delete(message.id)
-        this.workers[pending.workerIndex].busy = false
-        if (message.ok) {
-          pending.resolve(message.payload)
-        } else {
-          pending.reject(new Error(message.error))
-        }
-        this.pump()
-      })
-      worker.addEventListener('error', (event) => {
-        const error = event.error instanceof Error ? event.error : new Error('Fragment decode worker failed')
-        const affected = Array.from(this.pending.entries()).filter(([, value]) => value.workerIndex === index)
-        affected.forEach(([requestId, pending]) => {
-          this.pending.delete(requestId)
-          pending.reject(error)
-        })
-        workerState.busy = false
-        this.pump()
-      })
-      this.workers.push(workerState)
-    }
+    this.ensureWorkerCapacity(INITIAL_DECODE_WORKERS)
   }
 
   decode(fragmentId: string, bytes: Uint8Array) {
@@ -210,6 +177,7 @@ class DecodePool {
         resolve,
         reject
       })
+      this.ensureWorkerCapacity(this.workers.filter((entry) => entry.busy).length + this.queue.length)
       this.pump()
     })
   }
@@ -223,7 +191,65 @@ class DecodePool {
     this.queue = []
   }
 
+  private spawnWorker(index: number) {
+    let worker: Worker
+    try {
+      worker = this.workerHref
+        ? new Worker(this.workerHref, { type: 'module' })
+        : new Worker(new URL('./decode-pool.worker.js', import.meta.url), { type: 'module' })
+    } catch (error) {
+      this.terminate()
+      if (!warnedAboutNestedDecodeWorkerFallback) {
+        warnedAboutNestedDecodeWorkerFallback = true
+        console.warn('Nested fragment decode workers unavailable, falling back to in-worker decode.', error)
+      }
+      return false
+    }
+
+    const workerState = { worker, busy: false }
+    worker.addEventListener('message', (event: MessageEvent<DecodePoolResponse>) => {
+      const message = event.data
+      const pending = this.pending.get(message.id)
+      if (!pending) return
+      this.pending.delete(message.id)
+      this.workers[pending.workerIndex].busy = false
+      if (message.ok) {
+        pending.resolve(message.payload)
+      } else {
+        pending.reject(new Error(message.error))
+      }
+      this.pump()
+    })
+    worker.addEventListener('error', (event) => {
+      const error = event.error instanceof Error ? event.error : new Error('Fragment decode worker failed')
+      const affected = Array.from(this.pending.entries()).filter(([, value]) => value.workerIndex === index)
+      affected.forEach(([requestId, pending]) => {
+        this.pending.delete(requestId)
+        pending.reject(error)
+      })
+      workerState.busy = false
+      this.pump()
+    })
+    this.workers.push(workerState)
+    return true
+  }
+
+  private ensureWorkerCapacity(targetSize: number) {
+    if (!canSpawnNestedDecodeWorkers()) {
+      return
+    }
+
+    const desiredSize = Math.max(INITIAL_DECODE_WORKERS, Math.min(this.maxSize, targetSize))
+    while (this.workers.length < desiredSize) {
+      const nextIndex = this.workers.length
+      if (!this.spawnWorker(nextIndex)) {
+        return
+      }
+    }
+  }
+
   private pump() {
+    this.ensureWorkerCapacity(this.workers.filter((entry) => entry.busy).length + this.queue.length)
     const idleIndex = this.workers.findIndex((entry) => !entry.busy)
     if (idleIndex < 0) return
     const next = this.queue.shift()
@@ -296,7 +322,7 @@ class FragmentFrameBuffer {
   }
 }
 
-const resolveDecodePoolSize = () => {
+const resolveDecodePoolMaxSize = () => {
   const hardwareConcurrency =
     typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
       ? navigator.hardwareConcurrency
@@ -307,7 +333,7 @@ const resolveDecodePoolSize = () => {
 let decodePool: DecodePool | null = null
 
 const getDecodePool = () => {
-  decodePool ??= new DecodePool(resolveDecodePoolSize(), configuredDecodeWorkerHref)
+  decodePool ??= new DecodePool(resolveDecodePoolMaxSize(), configuredDecodeWorkerHref)
   return decodePool
 }
 
@@ -1336,17 +1362,30 @@ const handlePrimeBootstrap = async (
   const pending =
     existing ??
     decodeBootstrapPayloads(new Uint8Array(message.bytes)).then((payloads) => {
-      seedFetchedPayloads(client.path, client.lang, payloads)
-      payloads.forEach((payload) => {
+      const hydratedPayloads = payloads.map((payload) => {
+        if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
+          return payload
+        }
+        const knownVersion = client.knownVersions.get(payload.id)
+        return typeof knownVersion === 'number' && Number.isFinite(knownVersion)
+          ? { ...payload, cacheUpdatedAt: knownVersion }
+          : payload
+      })
+      seedFetchedPayloads(client.path, client.lang, hydratedPayloads)
+      hydratedPayloads.forEach((payload) => {
         if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
           client.knownVersions.set(payload.id, payload.cacheUpdatedAt)
         }
       })
-      const resolvedKeys = buildBootstrapPromiseKeys(client, payloads.map((payload) => payload.id), message.href ?? client.bootstrapHref)
+      const resolvedKeys = buildBootstrapPromiseKeys(
+        client,
+        hydratedPayloads.map((payload) => payload.id),
+        message.href ?? client.bootstrapHref
+      )
       resolvedKeys.forEach((key) => {
-        primedBootstrapPayloads.set(key, Promise.resolve(payloads))
+        primedBootstrapPayloads.set(key, Promise.resolve(hydratedPayloads))
       })
-      return payloads
+      return hydratedPayloads
     })
 
   initialKeys.forEach((key) => {

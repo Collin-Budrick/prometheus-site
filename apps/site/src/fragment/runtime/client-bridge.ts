@@ -49,11 +49,25 @@ type FragmentRuntimePreloadDocument = Pick<Document, 'querySelector' | 'createEl
   } | null
 }
 
+export type PrewarmedFragmentRuntimeState = {
+  worker: Worker
+  clientId: string
+  apiBase: string
+  path: string
+  lang: string
+  claimed?: boolean
+}
+
+type FragmentRuntimeWindow = Window & {
+  __PROM_PREWARMED_FRAGMENT_RUNTIME__?: PrewarmedFragmentRuntimeState | null
+}
+
 const canUseWorkerRuntime = () => typeof window !== 'undefined' && typeof Worker === 'function'
 
 export const FRAGMENT_RUNTIME_WORKER_ASSET_PATH = 'build/static-shell/apps/site/src/fragment/runtime/worker.js'
 export const FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH =
   'build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js'
+export const PREWARMED_FRAGMENT_RUNTIME_STATE_KEY = '__PROM_PREWARMED_FRAGMENT_RUNTIME__'
 
 export const resolveFragmentRuntimeWorkerUrl = (
   options?: Parameters<typeof resolveStaticAssetUrl>[1]
@@ -68,7 +82,9 @@ export const ensureFragmentRuntimeAssetPreloads = ({
 }: {
   doc?: FragmentRuntimePreloadDocument | null
 } = {}) => {
-  if (!doc?.head?.appendChild || typeof doc.createElement !== 'function') {
+  const head = doc?.head
+  const appendChild = head?.appendChild
+  if (!head || typeof appendChild !== 'function' || typeof doc.createElement !== 'function') {
     return
   }
 
@@ -85,8 +101,47 @@ export const ensureFragmentRuntimeAssetPreloads = ({
     link.href = href
     link.crossOrigin = 'anonymous'
     link.setAttribute('data-fragment-runtime-preload', marker)
-    doc.head?.appendChild(link)
+    appendChild.call(head, link)
   })
+}
+
+const normalizeRuntimeApiBase = (value: string) => value.replace(/\/+$/, '')
+
+const claimPrewarmedFragmentRuntime = (config: Pick<FragmentRuntimeBridgeConfig, 'apiBase' | 'path' | 'lang'>) => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const liveWindow = window as FragmentRuntimeWindow
+  const state = liveWindow[PREWARMED_FRAGMENT_RUNTIME_STATE_KEY]
+  if (!state || state.claimed || !(state.worker instanceof Worker)) {
+    return null
+  }
+
+  if (
+    normalizeRuntimeApiBase(state.apiBase) !== normalizeRuntimeApiBase(config.apiBase) ||
+    state.path !== config.path ||
+    state.lang !== config.lang
+  ) {
+    return null
+  }
+
+  state.claimed = true
+  return state
+}
+
+const clearPrewarmedFragmentRuntime = (worker: Worker | null) => {
+  if (!worker || typeof window === 'undefined') {
+    return
+  }
+
+  const liveWindow = window as FragmentRuntimeWindow
+  const state = liveWindow[PREWARMED_FRAGMENT_RUNTIME_STATE_KEY]
+  if (!state || state.worker !== worker) {
+    return
+  }
+
+  delete liveWindow[PREWARMED_FRAGMENT_RUNTIME_STATE_KEY]
 }
 
 export class FragmentRuntimeBridge {
@@ -163,7 +218,7 @@ export class FragmentRuntimeBridge {
       visibleIds: [...config.visibleIds],
       decodeWorkerHref: config.decodeWorkerHref ?? resolveFragmentRuntimeDecodeWorkerUrl()
     }
-    this.clientId = config.clientId
+    this.clientId = this.config.clientId
     this.setHandlers(config)
     return this.resumeAfterPageShow()
   }
@@ -196,11 +251,17 @@ export class FragmentRuntimeBridge {
 
     try {
       ensureFragmentRuntimeAssetPreloads()
-      const workerUrl = asTrustedScriptUrl(resolveFragmentRuntimeWorkerUrl())
-      this.worker = new Worker(workerUrl as unknown as string, {
-        type: 'module',
-        name: 'fragment-runtime'
-      })
+      const prewarmedRuntime = claimPrewarmedFragmentRuntime(this.config)
+      if (prewarmedRuntime) {
+        this.worker = prewarmedRuntime.worker
+        this.clientId = prewarmedRuntime.clientId
+      } else {
+        const workerUrl = asTrustedScriptUrl(resolveFragmentRuntimeWorkerUrl())
+        this.worker = new Worker(workerUrl as unknown as string, {
+          type: 'module',
+          name: 'fragment-runtime'
+        })
+      }
     } catch (error) {
       console.error('Failed to start fragment runtime worker', error)
       this.disconnectPort()
@@ -210,7 +271,7 @@ export class FragmentRuntimeBridge {
 
     this.post({
       type: 'init',
-      clientId: this.config.clientId,
+      clientId: this.clientId ?? this.config.clientId,
       apiBase: this.config.apiBase,
       path: this.config.path,
       lang: this.config.lang,
@@ -385,14 +446,16 @@ export class FragmentRuntimeBridge {
   }
 
   private disconnectPort() {
-    if (this.worker && this.clientId) {
+    const activeWorker = this.worker
+    if (activeWorker && this.clientId) {
       this.post({
         type: 'dispose',
         clientId: this.clientId
       })
-      this.worker.removeEventListener('message', this.handleMessage as EventListener)
-      this.worker.terminate()
+      activeWorker.removeEventListener('message', this.handleMessage as EventListener)
+      activeWorker.terminate()
     }
+    clearPrewarmedFragmentRuntime(activeWorker)
     this.worker = null
   }
 

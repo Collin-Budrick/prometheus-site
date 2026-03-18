@@ -17,6 +17,11 @@ import { appConfig } from '../public-app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
+import { appendStaticAssetVersion } from '../static-shell/asset-version'
+import {
+  FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
+  FRAGMENT_RUNTIME_WORKER_ASSET_PATH
+} from '../fragment/runtime/client-bridge'
 import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
@@ -106,6 +111,28 @@ const initialFadeScript = `(function () {
 
 const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 30000
 const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 24000
+const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
+  'home-static': 'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
+  'fragment-static': 'build/static-shell/apps/site/src/static-shell/fragment-static-entry.js',
+  'island-static': 'build/static-shell/apps/site/src/static-shell/island-static-entry.js'
+} as const
+const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
+  'home-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
+    'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js',
+    'build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js',
+    FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
+    FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH
+  ],
+  'fragment-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static'],
+    'build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js'
+  ],
+  'island-static': [
+    STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static'],
+    'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
+  ]
+} as const
 
 const buildDeferredManifestScript = (href: string) => {
   const escapedHref = JSON.stringify(href)
@@ -156,12 +183,23 @@ type EarlyHint = {
   crossorigin?: boolean | 'anonymous' | 'use-credentials'
 }
 
-const resolveLinkCrossOrigin = (crossorigin: EarlyHint['crossorigin']) =>
-  crossorigin === 'use-credentials' ? 'use-credentials' : crossorigin ? 'anonymous' : undefined
+const resolveLinkCrossOrigin = (
+  crossorigin?: EarlyHint['crossorigin'] | string | null
+) => {
+  if (crossorigin === 'use-credentials') {
+    return 'use-credentials'
+  }
+
+  if (crossorigin === 'anonymous' || crossorigin === '' || crossorigin === true) {
+    return 'anonymous'
+  }
+
+  return undefined
+}
 
 const isPreloadableFragmentHint = (hint: EarlyHint) => {
   const href = hint.href?.trim()
-  if (!href || hint.as !== 'fetch' || hint.rel === 'modulepreload') return false
+  if (!href || hint.as !== 'fetch') return false
   return /^\/(?:api\/)?fragments\/bootstrap(?:[/?#]|$)/.test(href)
 }
 
@@ -170,7 +208,6 @@ const shouldSkipEarlyHint = (hint: EarlyHint) => {
   if (!href) return true
   if (href.includes('webtransport')) return true
   if (href.includes('/fragments') && !isPreloadableFragmentHint(hint)) return true
-  if (hint.rel === 'modulepreload') return true
   return false
 }
 
@@ -220,6 +257,33 @@ const getPlanEarlyHints = (pathName: string, request: Request | null) => {
   const planHints =
     cached?.earlyHints?.length ? cached.earlyHints : cached ? buildPlanEarlyHints(cached.plan) : []
   return sanitizeHints(planHints)
+}
+
+const normalizeStaticPublicBase = (base: string) => {
+  const normalized = base.endsWith('/') ? base : `${base}/`
+  if (normalized === '/build/') return '/'
+  if (normalized === './build/' || normalized === 'build/') return './'
+  if (normalized.endsWith('/build/')) {
+    return normalized.slice(0, -'build/'.length)
+  }
+  return normalized
+}
+
+const STATIC_PUBLIC_BASE = normalizeStaticPublicBase(import.meta.env.BASE_URL || '/')
+
+const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string | null): EarlyHint[] => {
+  const routeConfig = getStaticShellRouteConfig(pathName)
+  if (!routeConfig) {
+    return []
+  }
+
+  return STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode].map((path) => ({
+    href: buildVersion
+      ? appendStaticAssetVersion(`${STATIC_PUBLIC_BASE}${path}`, buildVersion)
+      : `${STATIC_PUBLIC_BASE}${path}`,
+    rel: 'modulepreload' as const,
+    crossorigin: 'anonymous' as const
+  }))
 }
 
 const withLangParam = (href: string, langValue: Lang) => {
@@ -659,7 +723,12 @@ export const onRequest: RequestHandler = async (event) => {
 
   if (isHtmlRequest) {
     const nonce = getOrCreateRequestCspNonce(event)
-    const planHints = getPlanEarlyHints(requestUrl.pathname, request)
+    const { getStaticShellBuildVersion } = await import('../static-shell/build-version.server')
+    const staticShellBuildVersion = getStaticShellBuildVersion()
+    const planHints = sanitizeHints([
+      ...getPlanEarlyHints(requestUrl.pathname, request),
+      ...buildStaticBootstrapEarlyHints(requestUrl.pathname, staticShellBuildVersion)
+    ])
     headers.set(
       'Content-Security-Policy',
       buildSiteCsp({
@@ -676,11 +745,6 @@ export const onRequest: RequestHandler = async (event) => {
   }
 
   await event.next()
-
-  if (isHtmlRequest && isStaticShellPath(requestUrl.pathname)) {
-    headers.delete('X-Early-Hints')
-    headers.delete('Link')
-  }
 }
 
 export const RouterHead = component$(() => {

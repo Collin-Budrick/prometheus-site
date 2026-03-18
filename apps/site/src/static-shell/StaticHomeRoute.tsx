@@ -1,4 +1,7 @@
 import { component$ } from '@builder.io/qwik'
+import { encodeFragmentPayloadFromTree } from '@core/fragment/binary'
+import { buildFragmentFrame } from '@core/fragment/frames'
+import type { FragmentDefinition } from '@core/fragment/types'
 import { getFragmentCssHref } from '../fragment/fragment-css'
 import type { FragmentPayload, FragmentPayloadValue, FragmentPlanValue } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
@@ -120,7 +123,73 @@ type StaticHomeRouteState = {
   runtimePlanEntries: FragmentRuntimePlanEntry[]
   runtimeFetchGroups: string[][]
   runtimeInitialFragments: FragmentPayload[]
+  runtimeAnchorBootstrapHref: string | null
+  runtimeAnchorBootstrapPayloadBase64: string | null
   cards: StaticHomeRenderedCard[]
+}
+
+const buildHomeBootstrapFragmentIds = (entries: Array<{ id: string; critical: boolean }>) =>
+  entries.flatMap((entry) => {
+    const fragmentKind = getHomeStaticFragmentKind(entry.id)
+    return entry.critical || fragmentKind === 'dock' ? [entry.id] : []
+  })
+
+const concatUint8Arrays = (chunks: Uint8Array[]) => {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+  const next = new Uint8Array(total)
+  let offset = 0
+  chunks.forEach((chunk) => {
+    next.set(chunk, offset)
+    offset += chunk.byteLength
+  })
+  return next
+}
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+const encodeBase64Bytes = (bytes: Uint8Array) => {
+  let encoded = ''
+  for (let index = 0; index < bytes.byteLength; index += 3) {
+    const first = bytes[index] ?? 0
+    const second = bytes[index + 1] ?? 0
+    const third = bytes[index + 2] ?? 0
+    const combined = (first << 16) | (second << 8) | third
+    encoded += BASE64_ALPHABET[(combined >> 18) & 63]
+    encoded += BASE64_ALPHABET[(combined >> 12) & 63]
+    encoded += index + 1 < bytes.byteLength ? BASE64_ALPHABET[(combined >> 6) & 63] : '='
+    encoded += index + 2 < bytes.byteLength ? BASE64_ALPHABET[combined & 63] : '='
+  }
+  return encoded
+}
+
+const buildRuntimeBootstrapBytes = (payloads: FragmentPayload[]) => {
+  if (!payloads.length) {
+    return null
+  }
+
+  const frames = payloads.map((payload) => {
+    const definition: FragmentDefinition = {
+      id: payload.id,
+      ttl: payload.meta.ttl,
+      staleTtl: payload.meta.staleTtl,
+      tags: payload.meta.tags,
+      runtime: payload.meta.runtime,
+      head: payload.head,
+      css: payload.css,
+      render: () => payload.tree
+    }
+    return buildFragmentFrame(
+      payload.id,
+      encodeFragmentPayloadFromTree(
+        definition,
+        payload.tree,
+        payload.meta.cacheKey,
+        payload.html
+      )
+    )
+  })
+
+  return encodeBase64Bytes(concatUint8Arrays(frames))
 }
 
 export const buildStaticHomeRouteState = ({
@@ -139,7 +208,7 @@ export const buildStaticHomeRouteState = ({
 
   const fragmentMap = fragments ?? {}
   const copyBundle = createSeededHomeStaticCopyBundle(languageSeed)
-  const orderIndex = new Map(HOME_RENDER_ORDER.map((id, index) => [id, index]))
+  const orderIndex = new Map<string, number>(HOME_RENDER_ORDER.map((id, index) => [id, index]))
   const entries = [...plan.fragments].sort((left, right) => {
     const leftIndex = orderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER
     const rightIndex = orderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER
@@ -171,7 +240,15 @@ export const buildStaticHomeRouteState = ({
     dependsOn: entry.dependsOn ?? [],
     cacheUpdatedAt: entry.cache?.updatedAt
   }))
-  const runtimeFetchGroups = plan.fetchGroups?.map((group) => [...group]) ?? []
+  const bootstrapFragmentIds = buildHomeBootstrapFragmentIds(entries)
+  const bootstrapFragmentIdSet = new Set(bootstrapFragmentIds)
+  const deferredFragmentIds = entries
+    .map((entry) => entry.id)
+    .filter((fragmentId) => !bootstrapFragmentIdSet.has(fragmentId))
+  const runtimeFetchGroups = [
+    bootstrapFragmentIds,
+    deferredFragmentIds
+  ].filter((group) => group.length > 0)
 
   const cards = entries.map<StaticHomeRenderedCard>((entry, index) => {
     const fragment = fragmentMap[entry.id]
@@ -183,18 +260,16 @@ export const buildStaticHomeRouteState = ({
         ? 'anchor'
         : 'deferred'
     const activeShell = usesActiveHomeDemoShell(fragmentKind)
-    const renderMode =
-      stage === 'critical'
-        ? 'rich'
-        : activeShell
-          ? 'active-shell'
-        : isStaticHomePreviewKind(fragmentKind)
-          ? 'preview'
-          : fragmentKind === 'dock'
-            ? 'shell'
-            : stage === 'anchor'
-              ? 'shell'
-              : 'stub'
+    let renderMode: 'preview' | 'rich' | 'shell' | 'stub' | 'active-shell' = 'stub'
+    if (stage === 'critical') {
+      renderMode = 'rich'
+    } else if (activeShell) {
+      renderMode = 'active-shell'
+    } else if (stage === 'anchor' || fragmentKind === 'dock') {
+      renderMode = 'shell'
+    } else if (isStaticHomePreviewKind(fragmentKind)) {
+      renderMode = 'preview'
+    }
     const previewVisible = renderMode === 'preview' || renderMode === 'active-shell'
     const patchState = stage === 'critical' ? 'ready' : 'pending'
     const lcpStable = Boolean(entry.critical || fragmentKind === 'dock')
@@ -249,6 +324,17 @@ export const buildStaticHomeRouteState = ({
     }
   })
 
+  const anchorFragmentIds = bootstrapFragmentIds
+  const runtimeAnchorBootstrapPayloadBase64 = buildRuntimeBootstrapBytes(
+    anchorFragmentIds.flatMap((fragmentId) => {
+      const payload = fragmentMap[fragmentId]
+      return payload ? [payload] : []
+    })
+  )
+  const runtimeAnchorBootstrapHref = anchorFragmentIds.length
+    ? buildHomeFragmentBootstrapHref({ lang, ids: anchorFragmentIds })
+    : null
+
   return {
     paintState: 'initial',
     inlineStyles,
@@ -259,6 +345,8 @@ export const buildStaticHomeRouteState = ({
     runtimePlanEntries,
     runtimeFetchGroups,
     runtimeInitialFragments: [],
+    runtimeAnchorBootstrapHref,
+    runtimeAnchorBootstrapPayloadBase64,
     cards
   }
 }
@@ -271,7 +359,13 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
   }
 
   const routeConfig = getStaticShellRouteConfig(plan.path)
-  const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({ lang })
+  const deferredFragmentIds = routeState.fragmentOrder.filter(
+    (fragmentId) => !routeState.runtimeFetchGroups[0]?.includes(fragmentId)
+  )
+  const fragmentBootstrapHref = buildHomeFragmentBootstrapHref({
+    lang,
+    ids: deferredFragmentIds.length ? deferredFragmentIds : routeState.fragmentOrder
+  })
   const serializedRuntimePlanEntries = serializeHomeRuntimePlanEntries(routeState.runtimePlanEntries)
   const serializedRuntimeFetchGroups = serializeHomeRuntimeFetchGroups(
     routeState.runtimeFetchGroups,
@@ -417,6 +511,9 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           versionSignature: routeState.versionSignature,
           runtimePlanEntries: serializedRuntimePlanEntries,
           runtimeFetchGroups: serializedRuntimeFetchGroups,
+          runtimeAnchorBootstrapHref: routeState.runtimeAnchorBootstrapHref,
+          runtimeAnchorBootstrapPayloadBase64:
+            routeState.runtimeAnchorBootstrapPayloadBase64,
           fragmentVersions: serializedFragmentVersions
         })}
       />

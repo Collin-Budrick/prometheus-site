@@ -288,7 +288,7 @@ const connectSharedHomeRuntime = ({
       visibleIds: [],
       viewportWidth,
       enableStreaming: false,
-      startupMode: "eager-visible-first",
+      startupMode: "visible-only",
       bootstrapHref: fragmentBootstrapHref,
     },
     window,

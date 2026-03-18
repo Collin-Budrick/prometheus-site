@@ -10,6 +10,7 @@ import Root from "./root";
 import { defaultTheme, readThemeFromCookie } from "@prometheus/ui";
 import {
   FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
+  PREWARMED_FRAGMENT_RUNTIME_STATE_KEY,
   FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
 } from "./fragment/runtime/client-bridge";
 import { readServiceWorkerSeedFromCookie } from "./shared/service-worker-seed";
@@ -23,7 +24,10 @@ import {
   normalizeStaticShellRoutePath,
 } from "./static-shell/constants";
 import { getOrCreateRequestCspNonce } from "./security/server";
-import { CSP_NONCE_ATTR } from "./security/shared";
+import {
+  CSP_NONCE_ATTR,
+  TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
+} from "./security/shared";
 import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
@@ -46,8 +50,6 @@ const HOME_DEMO_STARTUP_BUNDLE_PATH =
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
-    HOME_DEMO_STARTUP_BUNDLE_PATH,
-    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
     FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
@@ -145,15 +147,226 @@ const staticFragmentPrewarmPromise = import.meta.env.PROD
 const buildImmediateHomeStaticEntryTag = (
   bundleHref: string,
   demoStartupHref: string,
+  workerHref: string,
+  decodeWorkerHref: string,
   nonceAttr: string,
 ) =>
   `<script type="module"${nonceAttr}>(() => {
-const startupImports = [
-  [${JSON.stringify(bundleHref)}, "Static home entry immediate failed:"],
-  [${JSON.stringify(demoStartupHref)}, "Static home demo startup immediate failed:"],
-];
-startupImports.forEach(([href, label]) => {
-  void import(href).catch((error) => console.error(label, error));
+const win = window;
+const doc = document;
+if (!win || !doc) return;
+const dataScriptId = ${JSON.stringify(STATIC_HOME_DATA_SCRIPT_ID)};
+const prewarmedWorkerKey = ${JSON.stringify(PREWARMED_FRAGMENT_RUNTIME_STATE_KEY)};
+const homeEntryHref = ${JSON.stringify(bundleHref)};
+const demoStartupHref = ${JSON.stringify(demoStartupHref)};
+const workerHref = ${JSON.stringify(workerHref)};
+const decodeWorkerHref = ${JSON.stringify(decodeWorkerHref)};
+const trustedTypesRuntimeScriptPolicyName = ${JSON.stringify(
+  TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
+)};
+const importModule = (href) => import(/* @vite-ignore */ href);
+const importHomeEntry = () => {
+  void importModule(homeEntryHref).catch((error) => {
+    console.error("Static home entry post-paint failed:", error);
+  });
+};
+const importDemoStartup = () => {
+  void importModule(demoStartupHref).catch((error) => {
+    console.error("Static home demo startup deferred failed:", error);
+  });
+};
+const scheduleAfterPaint = (callback) => {
+  if (typeof win.requestAnimationFrame === "function") {
+    win.requestAnimationFrame(() => {
+      win.requestAnimationFrame(() => {
+        callback();
+      });
+    });
+    return;
+  }
+  win.setTimeout(callback, 0);
+};
+const scheduleIdle = (callback, timeout) => {
+  if (typeof win.requestIdleCallback === "function") {
+    win.requestIdleCallback(() => {
+      callback();
+    }, { timeout });
+    return;
+  }
+  win.setTimeout(callback, timeout);
+};
+const parseJsonScript = (scriptId) => {
+  const element = doc.getElementById(scriptId);
+  if (!element || !element.textContent) {
+    return null;
+  }
+  try {
+    return JSON.parse(element.textContent);
+  } catch (error) {
+    console.error("Static home bootstrap data parse failed:", error);
+    return null;
+  }
+};
+const decodeBase64Bytes = (value) => {
+  if (typeof value !== "string" || value.length === 0 || typeof win.atob !== "function") {
+    return null;
+  }
+  const decoded = win.atob(value);
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return bytes;
+};
+const resolveKnownVersions = (fragmentOrder, fragmentVersions) => {
+  if (Array.isArray(fragmentVersions)) {
+    return fragmentVersions.reduce((acc, version, index) => {
+      const fragmentId = Array.isArray(fragmentOrder) ? fragmentOrder[index] : null;
+      if (typeof fragmentId === "string" && typeof version === "number" && Number.isFinite(version)) {
+        acc[fragmentId] = Math.round(version);
+      }
+      return acc;
+    }, {});
+  }
+  if (!fragmentVersions || typeof fragmentVersions !== "object") {
+    return {};
+  }
+  return Object.entries(fragmentVersions).reduce((acc, [fragmentId, version]) => {
+    if (typeof version === "number" && Number.isFinite(version)) {
+      acc[fragmentId] = Math.round(version);
+    }
+    return acc;
+  }, {});
+};
+const resolveApiBase = (href) => {
+  if (typeof href !== "string" || href.length === 0) {
+    return "/api";
+  }
+  try {
+    const url = new URL(href, win.location.origin);
+    const marker = "/fragments/bootstrap";
+    const nextPath = url.pathname.includes(marker)
+      ? url.pathname.slice(0, url.pathname.indexOf(marker)) || "/api"
+      : "/api";
+    return url.origin === win.location.origin ? nextPath : url.origin + nextPath;
+  } catch {
+    return "/api";
+  }
+};
+const getTrustedTypesRuntimeScriptPolicy = () => {
+  const cached = win.__PROM_TT_POLICIES__?.[trustedTypesRuntimeScriptPolicyName];
+  if (cached && (typeof cached.createScript === "function" || typeof cached.createScriptURL === "function")) {
+    return cached;
+  }
+  const factory = win.trustedTypes;
+  if (!factory || typeof factory.createPolicy !== "function") {
+    return null;
+  }
+  try {
+    const policy = factory.createPolicy(trustedTypesRuntimeScriptPolicyName, {
+      createScript: (input) => input,
+      createScriptURL: (input) => input,
+    });
+    win.__PROM_TT_POLICIES__ = {
+      ...(win.__PROM_TT_POLICIES__ ?? {}),
+      [trustedTypesRuntimeScriptPolicyName]: policy,
+    };
+    return policy;
+  } catch {
+    return win.__PROM_TT_POLICIES__?.[trustedTypesRuntimeScriptPolicyName] ?? null;
+  }
+};
+const asTrustedScriptUrl = (url) => {
+  const policy = getTrustedTypesRuntimeScriptPolicy();
+  if (!policy || typeof policy.createScriptURL !== "function") {
+    return url;
+  }
+  return policy.createScriptURL(url);
+};
+const createClientId = () => {
+  if (win.crypto && typeof win.crypto.randomUUID === "function") {
+    return "home-inline:" + win.crypto.randomUUID();
+  }
+  return "home-inline:" + Date.now().toString(36) + ":" + Math.random().toString(36).slice(2);
+};
+try {
+  const data = parseJsonScript(dataScriptId);
+  const anchorBootstrapHref =
+    data && typeof data.runtimeAnchorBootstrapHref === "string"
+      ? data.runtimeAnchorBootstrapHref
+      : null;
+  const anchorBootstrapBase64 =
+    data && typeof data.runtimeAnchorBootstrapPayloadBase64 === "string"
+      ? data.runtimeAnchorBootstrapPayloadBase64
+      : null;
+  let existing = win[prewarmedWorkerKey] ?? null;
+  if (
+    existing &&
+    (existing.path !== (data?.path || "/") ||
+      existing.lang !== (data?.lang || "en") ||
+      !(existing.worker instanceof Worker))
+  ) {
+    try {
+      existing.worker.terminate();
+    } catch {}
+    delete win[prewarmedWorkerKey];
+    existing = null;
+  }
+  if (!existing && typeof Worker === "function" && anchorBootstrapHref && anchorBootstrapBase64) {
+    const clientId = createClientId();
+    const apiBase = resolveApiBase(anchorBootstrapHref);
+    const path = typeof data?.path === "string" && data.path ? data.path : "/";
+    const lang = typeof data?.lang === "string" && data.lang ? data.lang : "en";
+    const worker = new Worker(asTrustedScriptUrl(workerHref), {
+      type: "module",
+      name: "fragment-runtime",
+    });
+    if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+      performance.mark("prom:home:worker-instantiated");
+    }
+    win[prewarmedWorkerKey] = {
+      worker,
+      clientId,
+      apiBase,
+      path,
+      lang,
+      claimed: false,
+    };
+    worker.postMessage({
+      type: "init",
+      clientId,
+      apiBase,
+      path,
+      lang,
+      planEntries: [],
+      fetchGroups: [],
+      initialFragments: [],
+      initialSizing: {},
+      knownVersions: resolveKnownVersions(data?.fragmentOrder, data?.fragmentVersions),
+      visibleIds: [],
+      viewportWidth: typeof win.innerWidth === "number" && win.innerWidth > 0 ? win.innerWidth : 1280,
+      enableStreaming: false,
+      startupMode: "visible-only",
+      bootstrapHref: anchorBootstrapHref,
+      decodeWorkerHref,
+    });
+    const bootstrapBytes = decodeBase64Bytes(anchorBootstrapBase64);
+    if (bootstrapBytes && bootstrapBytes.byteLength > 0) {
+      worker.postMessage({
+        type: "prime-bootstrap",
+        clientId,
+        requestId: "static-home-anchor-bootstrap",
+        bytes: bootstrapBytes.buffer,
+        href: anchorBootstrapHref,
+      }, [bootstrapBytes.buffer]);
+    }
+  }
+} catch (error) {
+  console.error("Static home worker bootstrap failed:", error);
+}
+scheduleAfterPaint(importHomeEntry);
+scheduleAfterPaint(() => {
+  scheduleIdle(importDemoStartup, 1200);
 });
 })();</script>`;
 
@@ -295,6 +508,14 @@ export const injectStaticBootstrap = (
     `${publicBase}${HOME_DEMO_STARTUP_BUNDLE_PATH}`,
     STATIC_SHELL_BUILD_VERSION,
   );
+  const workerHref = appendStaticAssetVersion(
+    `${publicBase}${FRAGMENT_RUNTIME_WORKER_ASSET_PATH}`,
+    STATIC_SHELL_BUILD_VERSION,
+  );
+  const decodeWorkerHref = appendStaticAssetVersion(
+    `${publicBase}${FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH}`,
+    STATIC_SHELL_BUILD_VERSION,
+  );
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
     .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");
@@ -304,6 +525,8 @@ export const injectStaticBootstrap = (
       ? buildImmediateHomeStaticEntryTag(
           bundleHref,
           homeDemoStartupHref,
+          workerHref,
+          decodeWorkerHref,
           nonceAttr,
         )
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;

@@ -213,7 +213,7 @@ export const installHomeStaticEntry = ({
           initialFragments: data.runtimeInitialFragments,
           knownVersions: data.fragmentVersions,
           bootstrapHref: data.fragmentBootstrapHref,
-          startupMode: 'eager-visible-first',
+          startupMode: 'visible-only',
           enableStreaming: false
         },
         liveWin
