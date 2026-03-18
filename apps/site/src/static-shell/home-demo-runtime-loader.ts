@@ -1,21 +1,28 @@
 import type {
   HomeDemoAssetDescriptor,
-  HomeDemoRuntimeModule
+  HomeDemoRuntimeModule,
+  HomeDemoStartupAttachRuntimeModule
 } from './home-demo-runtime-types'
 import {
-  HOME_DEMO_RUNTIME_ASSET_PATHS
+  HOME_DEMO_RUNTIME_ASSET_PATHS,
+  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
 } from './home-demo-runtime-types'
 import type { HomeDemoKind } from './home-demo-activate'
 import { markHomeDemoPerformance } from './home-demo-performance'
 import { resolveStaticAssetUrl } from './static-asset-url'
 
 export type { HomeDemoRuntimeModule } from './home-demo-runtime-types'
+export type { HomeDemoStartupAttachRuntimeModule } from './home-demo-runtime-types'
 
 type HomeDemoStylesheetDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>
 
 type LoadHomeDemoKindOptions = {
   asset?: HomeDemoAssetDescriptor | null
   importer?: (url: string) => Promise<HomeDemoRuntimeModule>
+}
+
+type LoadHomeDemoStartupAttachRuntimeOptions = {
+  importer?: (url: string) => Promise<HomeDemoStartupAttachRuntimeModule>
 }
 
 type WarmHomeDemoKindOptions = {
@@ -39,10 +46,12 @@ const modulePromises = new Map<HomeDemoKind, Promise<HomeDemoRuntimeModule>>()
 const stylePromises = new Map<HomeDemoKind, Promise<void>>()
 const warmPromises = new Map<HomeDemoKind, Promise<void>>()
 const preloadPromises = new Map<HomeDemoKind, Promise<void>>()
+let startupAttachRuntimePromise: Promise<HomeDemoStartupAttachRuntimeModule> | null = null
+let startupAttachPreloadPromise: Promise<void> | null = null
 let combinedHomeDemoStylesheetPromise: Promise<void> | null = null
 
-const importHomeDemoRuntime = async (url: string) =>
-  (await import(/* @vite-ignore */ url)) as HomeDemoRuntimeModule
+const importRuntimeModule = async <T>(url: string) =>
+  (await import(/* @vite-ignore */ url)) as T
 
 const isAbsoluteUrl = (value: string) => /^https?:\/\//.test(value)
 
@@ -57,6 +66,7 @@ const resolveModuleUrl = (kind: HomeDemoKind, asset?: HomeDemoAssetDescriptor | 
 const getKindStyleSelector = (kind: HomeDemoKind) => `link[data-home-demo-style-kind="${kind}"]`
 const getKindModulePreloadSelector = (kind: HomeDemoKind) =>
   `link[data-home-demo-module-kind="${kind}"]`
+const STARTUP_ATTACH_RUNTIME_PRELOAD_SELECTOR = 'link[data-home-demo-startup-attach]'
 
 const whenStylesheetReady = (link: HTMLLinkElement) =>
   new Promise<void>((resolve) => {
@@ -185,11 +195,15 @@ export const resolveHomeDemoRuntimeUrl = (
   return resolveStaticAssetUrl(href, options)
 }
 
+export const resolveHomeDemoStartupAttachRuntimeUrl = (
+  options?: Parameters<typeof resolveStaticAssetUrl>[1]
+) => resolveStaticAssetUrl(HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH, options)
+
 export const loadHomeDemoKind = (
   kind: HomeDemoKind,
   {
     asset,
-    importer = importHomeDemoRuntime
+    importer = (url) => importRuntimeModule<HomeDemoRuntimeModule>(url)
   }: LoadHomeDemoKindOptions = {}
 ) => {
   const existingPromise = modulePromises.get(kind)
@@ -200,6 +214,17 @@ export const loadHomeDemoKind = (
   const promise = importer(resolveModuleUrl(kind, asset))
   modulePromises.set(kind, promise)
   return promise
+}
+
+export const loadHomeDemoStartupAttachRuntime = ({
+  importer = (url) => importRuntimeModule<HomeDemoStartupAttachRuntimeModule>(url)
+}: LoadHomeDemoStartupAttachRuntimeOptions = {}) => {
+  if (startupAttachRuntimePromise) {
+    return startupAttachRuntimePromise
+  }
+
+  startupAttachRuntimePromise = importer(resolveHomeDemoStartupAttachRuntimeUrl())
+  return startupAttachRuntimePromise
 }
 
 export const warmHomeDemoKind = (
@@ -226,6 +251,69 @@ export const warmHomeDemoKind = (
 
   warmPromises.set(kind, promise)
   return promise
+}
+
+export const warmHomeDemoStartupAttachRuntime = ({
+  doc = typeof document !== 'undefined' ? document : null
+}: WarmHomeDemoKindOptions = {}) => {
+  if (startupAttachPreloadPromise) {
+    return startupAttachPreloadPromise
+  }
+
+  if (
+    !doc ||
+    typeof doc.querySelector !== 'function' ||
+    typeof doc.createElement !== 'function' ||
+    !('head' in doc) ||
+    !doc.head
+  ) {
+    startupAttachPreloadPromise = Promise.resolve()
+    return startupAttachPreloadPromise
+  }
+
+  const href = resolveHomeDemoStartupAttachRuntimeUrl()
+  const existingLink = doc.querySelector(
+    STARTUP_ATTACH_RUNTIME_PRELOAD_SELECTOR
+  ) as HTMLLinkElement | null
+  if (existingLink) {
+    startupAttachPreloadPromise = new Promise<void>((resolve) => {
+      if (existingLink.rel === 'modulepreload') {
+        resolve()
+        return
+      }
+
+      const handleReady = () => {
+        existingLink.removeEventListener('load', handleReady)
+        existingLink.removeEventListener('error', handleReady)
+        resolve()
+      }
+
+      existingLink.addEventListener('load', handleReady, { once: true })
+      existingLink.addEventListener('error', handleReady, { once: true })
+    })
+    return startupAttachPreloadPromise
+  }
+
+  const link = doc.createElement('link')
+  link.setAttribute('rel', 'modulepreload')
+  link.setAttribute('href', href)
+  link.setAttribute('data-home-demo-startup-attach', 'true')
+  doc.head.appendChild(link)
+
+  startupAttachPreloadPromise = new Promise<void>((resolve) => {
+    const handleReady = () => {
+      link.removeEventListener('load', handleReady)
+      link.removeEventListener('error', handleReady)
+      resolve()
+    }
+
+    link.addEventListener('load', handleReady, { once: true })
+    link.addEventListener('error', handleReady, { once: true })
+    if (typeof window === 'undefined') {
+      resolve()
+    }
+  })
+  return startupAttachPreloadPromise
 }
 
 export const ensureHomeDemoStylesheet = ({
@@ -261,5 +349,7 @@ export const resetHomeDemoRuntimeLoaderForTests = () => {
   stylePromises.clear()
   warmPromises.clear()
   preloadPromises.clear()
+  startupAttachRuntimePromise = null
+  startupAttachPreloadPromise = null
   combinedHomeDemoStylesheetPromise = null
 }

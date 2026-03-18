@@ -880,6 +880,9 @@ export const bindHomeFragmentHydration = ({
   let cancelScheduledHydration: (() => void) | null = null;
   let hydrationInFlight = false;
 
+  const hasBufferedHomePayload = (fragmentId: string) =>
+    controller.patchQueue?.hasBuffered?.(fragmentId) ?? false;
+
   const collectQueuedIds = (
     stage: Extract<StaticHomeCardStage, "anchor" | "deferred">,
   ) => {
@@ -898,6 +901,12 @@ export const bindHomeFragmentHydration = ({
       })
       .filter(({ card, id, stage: cardStage }) => {
         if (cardStage !== stage || !activeQueue.has(id)) return false;
+        if (
+          card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) === "pending" &&
+          hasBufferedHomePayload(id)
+        ) {
+          return false;
+        }
         if (
           card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR) !== "pending" &&
           (!previewRefreshesEnabled || !isRefreshableHomeFragmentCard(card))

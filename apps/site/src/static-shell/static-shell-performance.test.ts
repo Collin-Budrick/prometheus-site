@@ -148,6 +148,15 @@ describe("static shell performance invariants", () => {
       "await activateHomeDemos(controller)",
     );
     expect(runtimeLoaderSource).toContain("HOME_DEMO_RUNTIME_ASSET_PATHS");
+    expect(runtimeLoaderSource).toContain(
+      "HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH",
+    );
+    expect(runtimeLoaderSource).toContain(
+      "loadHomeDemoStartupAttachRuntime",
+    );
+    expect(runtimeLoaderSource).toContain(
+      "warmHomeDemoStartupAttachRuntime",
+    );
     expect(runtimeTypesSource).toContain(
       "build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js",
     );
@@ -189,6 +198,9 @@ describe("static shell performance invariants", () => {
     );
     expect(buildVersionSource).toContain(
       "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
+    );
+    expect(buildVersionSource).toContain(
+      "HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH",
     );
     expect(buildVersionSource).not.toContain("home-bootstrap-runtime.js");
     expect(runtimeLoaderSource).toContain("import(/* @vite-ignore */ url)");
@@ -475,6 +487,7 @@ describe("static shell performance invariants", () => {
 
     expect(entrySsrSource).toContain('rel="modulepreload"');
     expect(buildScriptSource).toContain("home-demo-startup-entry.ts");
+    expect(buildScriptSource).toContain("home-demo-attach-runtime.ts");
     expect(buildScriptSource).toContain("home-demo-entry.ts");
     expect(buildScriptSource).toContain("home-collab-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-core-runtime.ts");
@@ -553,7 +566,12 @@ describe("static shell performance invariants", () => {
     expect(homeDemoStartupEntrySource).toContain("HOME_DEMO_OBSERVE_EVENT");
     expect(homeDemoStartupEntrySource).toContain("loadHomeDemoEntryRuntime");
     expect(homeDemoStartupEntrySource).toContain("observeVisibleStartupDemos(doc)");
-    expect(homeDemoStartupEntrySource).toContain("binding.manager.attachVisibleRoots");
+    expect(homeDemoStartupEntrySource).toContain(
+      "loadHomeDemoStartupAttachRuntime",
+    );
+    expect(homeDemoStartupEntrySource).toContain(
+      "attachVisibleHomeDemoRoots({",
+    );
     expect(homeDemoStartupEntrySource).not.toContain("getBoundingClientRect()");
     expect(homeDemoStartupEntrySource).toContain("Static home demo maintenance bundle failed:");
     expect(homeDemoStartupEntrySource).not.toContain("ensureStaticHomeDeferredStylesheet");

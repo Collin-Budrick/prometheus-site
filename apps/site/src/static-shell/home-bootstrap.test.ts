@@ -1640,6 +1640,90 @@ describe("bindHomeFragmentHydration", () => {
     hydration.destroy();
   });
 
+  it("does not re-request deferred fragments that are already buffered in the patch queue", async () => {
+    const taskQueue = createTaskQueue();
+    const bufferedIds = [
+      "fragment://page/home/planner@v1",
+      "fragment://page/home/ledger@v1",
+      "fragment://page/home/island@v1",
+      "fragment://page/home/react@v1",
+    ];
+    const planner = new MockFragmentCard(
+      bufferedIds[0],
+      "deferred",
+      "pending",
+      "planner",
+    );
+    const ledger = new MockFragmentCard(
+      bufferedIds[1],
+      "deferred",
+      "pending",
+      "ledger",
+    );
+    const island = new MockFragmentCard(
+      bufferedIds[2],
+      "deferred",
+      "pending",
+      "island",
+    );
+    const react = new MockFragmentCard(
+      bufferedIds[3],
+      "deferred",
+      "pending",
+      "react",
+    );
+    const root = new MockStaticHomeDocumentRoot([
+      planner,
+      ledger,
+      island,
+      react,
+    ]);
+    root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
+    const requestCalls: Array<{ ids: string[]; isAnchorBatch: boolean }> = [];
+
+    const hydration = bindHomeFragmentHydration({
+      controller: {
+        destroyed: false,
+        lang: "en",
+        fetchAbort: null,
+        homeFragmentBootstrapHref: null,
+        patchQueue: {
+          enqueue: () => undefined,
+          setVisible: () => undefined,
+          hasBuffered: (fragmentId) => bufferedIds.includes(fragmentId),
+          releaseDeferred: () => undefined,
+          flushNow: () => undefined,
+          destroy: () => undefined,
+        },
+      },
+      root: root as unknown as ParentNode,
+      scheduleTask: taskQueue.scheduleTask,
+      requestFragments: async (ids, options) => {
+        requestCalls.push({ ids: [...ids], isAnchorBatch: options.isAnchorBatch });
+      },
+      ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver,
+    });
+
+    hydration.observeWithin(root as unknown as ParentNode);
+    MockIntersectionObserver.instances[0]?.emit(
+      [planner, ledger, island, react].map((card) => ({
+        target: card as unknown as Element,
+        isIntersecting: true,
+        intersectionRatio: 1,
+      })),
+    );
+
+    expect(taskQueue.pendingCount()).toBe(0);
+    expect(requestCalls).toEqual([]);
+
+    hydration.retryPending();
+
+    expect(taskQueue.pendingCount()).toBe(0);
+    expect(requestCalls).toEqual([]);
+
+    hydration.destroy();
+  });
+
   it("does not fetch seeded preview cards during the initial anchor hydration pass", () => {
     const taskQueue = createTaskQueue();
     const readyPlanner = new MockFragmentCard(

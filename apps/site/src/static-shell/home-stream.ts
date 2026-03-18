@@ -69,6 +69,7 @@ export type PatchStaticHomeFragmentCardResult = 'patched' | 'stale' | 'locked' |
 export type StaticHomePatchQueue = {
   enqueue: (payload: FragmentPayload) => void
   setVisible: (fragmentId: string, visible: boolean) => void
+  hasBuffered?: (fragmentId: string) => boolean
   releaseDeferred: () => void
   flushNow: () => void
   destroy: () => void
@@ -667,6 +668,9 @@ export const createStaticHomePatchQueue = ({
         visibleIds.delete(fragmentId)
       }
       scheduleFlush()
+    },
+    hasBuffered(fragmentId) {
+      return pendingPayloads.has(fragmentId)
     },
     releaseDeferred() {
       if (destroyed || deferredReleaseReady) return

@@ -3,9 +3,12 @@ import {
   ensureHomeDemoKindStyle,
   ensureHomeDemoStylesheet,
   loadHomeDemoKind,
+  loadHomeDemoStartupAttachRuntime,
   resetHomeDemoRuntimeLoaderForTests,
   resolveHomeDemoRuntimeUrl,
+  resolveHomeDemoStartupAttachRuntimeUrl,
   warmHomeDemoKind,
+  warmHomeDemoStartupAttachRuntime,
   type HomeDemoRuntimeModule
 } from './home-demo-runtime-loader'
 
@@ -32,6 +35,24 @@ describe('home-demo-runtime-loader', () => {
     )
   })
 
+  it('derives the startup attach runtime asset URL from the static-shell script base', () => {
+    const runtimeUrl = resolveHomeDemoStartupAttachRuntimeUrl({
+      origin: 'https://fallback.example',
+      scripts: [
+        {
+          getAttribute: (name: string) =>
+            name === 'src'
+              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-static-entry.js?v=build123'
+              : null
+        }
+      ]
+    })
+
+    expect(runtimeUrl).toBe(
+      'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-attach-runtime.js?v=build123'
+    )
+  })
+
   it('reuses the same import promise across repeated kind loads', async () => {
     const calls: string[] = []
     const runtimeModule: HomeDemoRuntimeModule = {
@@ -55,6 +76,29 @@ describe('home-demo-runtime-loader', () => {
     expect(await firstLoad).toBe(runtimeModule)
     expect(await secondLoad).toBe(runtimeModule)
     expect(calls).toEqual([asset.moduleHref])
+  })
+
+  it('reuses the same import promise across repeated startup attach runtime loads', async () => {
+    const calls: string[] = []
+    const runtimeModule = {
+      attachHomeDemo: async () => ({
+        cleanup: () => undefined
+      })
+    }
+    const importer = async (url: string) => {
+      calls.push(url)
+      return runtimeModule
+    }
+
+    const firstLoad = loadHomeDemoStartupAttachRuntime({ importer })
+    const secondLoad = loadHomeDemoStartupAttachRuntime({ importer })
+
+    expect(firstLoad).toBe(secondLoad)
+    expect(await firstLoad).toBe(runtimeModule)
+    expect(await secondLoad).toBe(runtimeModule)
+    expect(calls).toEqual([
+      'http://localhost/build/static-shell/apps/site/src/static-shell/home-demo-attach-runtime.js'
+    ])
   })
 
   it('reuses an SSR-emitted preload link for the shared home stylesheet', async () => {
@@ -129,6 +173,59 @@ describe('home-demo-runtime-loader', () => {
 
     link.emit('load')
     await loadPromise
+  })
+
+  it('reuses an SSR-emitted preload link for the startup attach runtime', async () => {
+    class MockLink {
+      rel = 'modulepreload'
+      private attrs = new Map<string, string>()
+      private listeners = new Map<string, Array<() => void>>()
+
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+        if (name === 'rel') {
+          this.rel = value
+        }
+      }
+
+      addEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        listeners.push(listener)
+        this.listeners.set(type, listeners)
+      }
+
+      removeEventListener(type: string, listener: () => void) {
+        const listeners = this.listeners.get(type) ?? []
+        this.listeners.set(
+          type,
+          listeners.filter((value) => value !== listener)
+        )
+      }
+    }
+
+    const link = new MockLink()
+    link.setAttribute('rel', 'modulepreload')
+    link.setAttribute('href', 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/home-demo-attach-runtime.js')
+    link.setAttribute('data-home-demo-startup-attach', 'true')
+
+    const doc = {
+      head: {
+        appendChild: () => {
+          throw new Error('should reuse existing startup preload')
+        }
+      },
+      createElement: () => link,
+      querySelector: (selector: string) =>
+        selector === 'link[data-home-demo-startup-attach]' ? link : null
+    }
+
+    await warmHomeDemoStartupAttachRuntime({
+      doc: doc as never
+    })
   })
 
   it('warms styles and modulepreload links in parallel and memoizes the warm promise', async () => {

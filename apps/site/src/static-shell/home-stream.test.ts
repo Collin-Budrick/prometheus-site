@@ -575,11 +575,13 @@ describe('home-stream patching', () => {
     queue.flushNow()
 
     expect(ledger.body.innerHTML).toBe('')
+    expect(queue.hasBuffered?.('fragment://page/home/ledger@v1')).toBe(true)
     expect(taskQueue.pendingCount()).toBe(0)
 
     queue.releaseDeferred()
 
     expect(ledger.body.innerHTML).toContain('Ledger buffered payload')
     expect(ledger.card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)).toBe('ready')
+    expect(queue.hasBuffered?.('fragment://page/home/ledger@v1')).toBe(false)
   })
 })

@@ -410,6 +410,7 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
           homeDemoStylesheetHref: homeInteractiveDeferredStylesheetHref,
+          languageSeed,
           fragmentBootstrapHref,
           fragmentOrder: routeState.fragmentOrder,
           planSignature: routeState.planSignature,

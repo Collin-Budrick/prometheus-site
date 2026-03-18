@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   activateHomeDemo,
+  attachHomeDemo,
   ensureStaticHomeDemoSeed,
   resetHomeDemoActivationForTests
 } from './home-demo-activate'
@@ -777,6 +778,26 @@ describe('home-demo-activate', () => {
     )
 
     result.cleanup()
+  })
+
+  it('attaches the SSR react binary demo shell without falling back to a rebuild', async () => {
+    const doc = new MockDocument()
+    installBootstrapScripts(doc)
+    installDomGlobals(doc)
+    const root = doc.createElement('div')
+    root.className = 'react-binary-demo'
+    root.setAttribute('data-home-demo-ssr-active', 'true')
+
+    const result = await attachHomeDemo({
+      root: root as never,
+      kind: 'react-binary',
+      props: {}
+    })
+
+    expect(result).not.toBeNull()
+    expect(root.lastInnerHtmlValue).toBeNull()
+
+    result?.cleanup()
   })
 
   it('does not throw when react-binary copy is unavailable', async () => {

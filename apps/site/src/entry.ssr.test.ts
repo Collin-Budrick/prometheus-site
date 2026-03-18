@@ -14,6 +14,7 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain(
       '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
     );
+    expect(source).toContain("HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH");
     expect(source).toContain(
       "FRAGMENT_RUNTIME_WORKER_ASSET_PATH",
     );
@@ -22,6 +23,7 @@ describe("entry.ssr static bootstrap injection", () => {
     );
     expect(source).toContain('data-fragment-runtime-preload="worker"');
     expect(source).toContain('data-fragment-runtime-preload="decode"');
+    expect(source).toContain('data-home-demo-startup-attach="true"');
     expect(source).toContain("buildImmediateHomeStaticEntryTag");
     expect(source).toContain(
       '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',

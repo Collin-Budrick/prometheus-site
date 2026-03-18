@@ -54,6 +54,18 @@ const getCurrentLang = (): Lang => {
   return normalizeStaticShellLang(document.documentElement.lang)
 }
 
+const seedStaticHomeDemoCopyFromBootstrapData = (
+  doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
+) => {
+  const data = readStaticHomeBootstrapData({ doc })
+  if (!data) {
+    return false
+  }
+
+  seedStaticHomeCopy(data.lang, data.shellSeed, data.routeSeed)
+  return true
+}
+
 export const ensureStaticHomeDemoSeed = async (
   doc: StaticHomeBootstrapDocument | null = typeof document !== 'undefined' ? document : null
 ) => {
@@ -1033,11 +1045,33 @@ export const activatePlannerHomeDemo = async ({
   return activatePlannerDemo(getRootElement(root))
 }
 
+export const attachPlannerHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult | null> => {
+  const targetRoot = getRootElement(root)
+  if (!hasPreparedActiveDemoMarkup(targetRoot, 'planner-demo')) {
+    return null
+  }
+  seedStaticHomeDemoCopyFromBootstrapData()
+  return activatePlannerDemo(targetRoot)
+}
+
 export const activateWasmRendererHomeDemo = async ({
   root
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
   await ensureStaticHomeDemoSeed()
   return activateWasmRendererDemo(getRootElement(root))
+}
+
+export const attachWasmRendererHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult | null> => {
+  const targetRoot = getRootElement(root)
+  if (!hasPreparedActiveDemoMarkup(targetRoot, 'wasm-demo')) {
+    return null
+  }
+  seedStaticHomeDemoCopyFromBootstrapData()
+  return activateWasmRendererDemo(targetRoot)
 }
 
 export const activateReactBinaryHomeDemo = async ({
@@ -1047,12 +1081,54 @@ export const activateReactBinaryHomeDemo = async ({
   return activateReactBinaryDemo(getRootElement(root))
 }
 
+export const attachReactBinaryHomeDemo = async ({
+  root
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult | null> => {
+  const targetRoot = getRootElement(root)
+  if (!hasPreparedActiveDemoMarkup(targetRoot, 'react-binary-demo')) {
+    return null
+  }
+  seedStaticHomeDemoCopyFromBootstrapData()
+  return activateReactBinaryDemo(targetRoot)
+}
+
 export const activatePreactIslandHomeDemo = async ({
   root,
   props
 }: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult> => {
   await ensureStaticHomeDemoSeed()
   return activatePreactIslandDemo(getRootElement(root), props)
+}
+
+export const attachPreactIslandHomeDemo = async ({
+  root,
+  props
+}: Pick<ActivateHomeDemoOptions, 'root' | 'props'>): Promise<HomeDemoActivationResult | null> => {
+  const targetRoot = getRootElement(root)
+  if (!hasPreparedActiveDemoMarkup(targetRoot, 'preact-island-ui')) {
+    return null
+  }
+  seedStaticHomeDemoCopyFromBootstrapData()
+  return activatePreactIslandDemo(targetRoot, props)
+}
+
+export const attachHomeDemo = async ({
+  root,
+  kind,
+  props
+}: ActivateHomeDemoOptions): Promise<HomeDemoActivationResult | null> => {
+  switch (kind) {
+    case 'planner':
+      return attachPlannerHomeDemo({ root, props })
+    case 'wasm-renderer':
+      return attachWasmRendererHomeDemo({ root, props })
+    case 'react-binary':
+      return attachReactBinaryHomeDemo({ root, props })
+    case 'preact-island':
+      return attachPreactIslandHomeDemo({ root, props })
+    default:
+      throw new Error(`Unsupported home demo: ${kind satisfies never}`)
+  }
 }
 
 export const activateHomeDemo = async ({

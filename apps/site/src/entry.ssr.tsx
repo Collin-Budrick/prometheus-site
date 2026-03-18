@@ -27,6 +27,7 @@ import { CSP_NONCE_ATTR } from "./security/shared";
 import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
+import { HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH } from "./static-shell/home-demo-runtime-types";
 import homeCriticalStyles from "@prometheus/ui/global-critical-home.css?inline";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
 
@@ -46,6 +47,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
     HOME_DEMO_STARTUP_BUNDLE_PATH,
+    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
     "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
     FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
@@ -269,6 +271,9 @@ const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
   }
   if (path === FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH) {
     return `<link rel="modulepreload" href="${href}" data-fragment-runtime-preload="decode">`;
+  }
+  if (path === HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH) {
+    return `<link rel="modulepreload" href="${href}" data-home-demo-startup-attach="true">`;
   }
 
   return `<link rel="modulepreload" href="${href}">`;

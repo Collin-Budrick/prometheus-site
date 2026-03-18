@@ -1,5 +1,6 @@
 import { primeTrustedTypesPolicies } from '../security/client'
 import {
+  attachVisibleHomeDemoRoots,
   bindHomeDemoActivation,
   resetHomeDemoActivations,
   type HomeDemoController
@@ -19,6 +20,7 @@ import {
 } from './home-demo-observe-event'
 import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { markHomeDemoPerformance } from './home-demo-performance'
+import { loadHomeDemoStartupAttachRuntime, warmHomeDemoStartupAttachRuntime } from './home-demo-runtime-loader'
 import { normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import { scheduleStaticShellTask } from './scheduler'
 import {
@@ -37,6 +39,7 @@ type InstallHomeDemoStartupEntryOptions = {
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
   loadObserverRuntime?: typeof loadHomeDemoEntryRuntime
+  loadStartupAttachRuntime?: typeof loadHomeDemoStartupAttachRuntime
   ObserverImpl?: typeof IntersectionObserver
 }
 
@@ -94,6 +97,7 @@ export const installHomeDemoStartupEntry = ({
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
   loadObserverRuntime = loadHomeDemoEntryRuntime,
+  loadStartupAttachRuntime = loadHomeDemoStartupAttachRuntime,
   ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver
 }: InstallHomeDemoStartupEntryOptions = {}) => {
@@ -245,7 +249,28 @@ export const installHomeDemoStartupEntry = ({
             })
 
             if (visibleRoots.length > 0) {
-              binding.manager.attachVisibleRoots(visibleRoots)
+              void warmHomeDemoStartupAttachRuntime({ doc }).catch((error) => {
+                console.error('Static home demo startup warmup failed:', error)
+              })
+              void attachVisibleHomeDemoRoots({
+                controller: binding.controller,
+                roots: visibleRoots,
+                scheduleTask,
+                activate: async (options) => {
+                  const runtime = await loadStartupAttachRuntime()
+                  const result = await runtime.attachHomeDemo(options)
+                  if (result) {
+                    return result
+                  }
+
+                  void ensureMaintenanceRuntime().catch((error) => {
+                    console.error('Static home demo maintenance bundle failed:', error)
+                  })
+                  return null
+                }
+              }).catch((error) => {
+                console.error('Static home demo startup attach failed:', error)
+              })
             }
           },
           {

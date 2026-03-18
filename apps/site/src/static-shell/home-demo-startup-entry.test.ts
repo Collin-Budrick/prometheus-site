@@ -21,6 +21,7 @@ class MockScriptElement {
 }
 
 class MockDemoRoot {
+  dataset: Record<string, string> = {}
   private readonly attrs = new Map<string, string>()
   isConnected = true
   private rect = {
@@ -34,6 +35,8 @@ class MockDemoRoot {
 
   constructor(kind = 'planner') {
     this.attrs.set('data-home-demo-root', kind)
+    this.dataset.homeDemoRoot = kind
+    this.dataset.demoKind = kind
   }
 
   getAttribute(name: string) {
@@ -61,6 +64,10 @@ class MockDemoRoot {
 
   getBoundingClientRect() {
     return this.rect
+  }
+
+  closest() {
+    return null
   }
 }
 
@@ -303,20 +310,32 @@ describe('installHomeDemoStartupEntry', () => {
     expect(getHomeDemoControllerBinding(win)?.controller).toBe(existingController)
   })
 
-  it('attaches visible startup demos from IntersectionObserver without using the startup geometry pass', () => {
+  it('attaches visible startup demos from IntersectionObserver through the shared startup attach runtime', async () => {
     const win = {} as MockWindow
-    const demoRoot = new MockDemoRoot('planner')
-    const doc = createBootstrapDocument([demoRoot])
+    const plannerRoot = new MockDemoRoot('planner')
+    const reactRoot = new MockDemoRoot('react-binary')
+    const doc = createBootstrapDocument([plannerRoot, reactRoot])
     const taskQueue = createScheduledTaskQueue()
-    const attachedRoots: HTMLElement[][] = []
-    const observedRoots: Array<{ root: ParentNode; startup?: boolean }> = []
+    const activations: string[] = []
+    let startupAttachLoadCount = 0
+    let startupRuntimePromise:
+      | Promise<{
+          attachHomeDemo: ({
+            root,
+            kind,
+          }: {
+            root: Element
+            kind: string
+          }) => Promise<{ cleanup: () => void }>
+        }>
+      | null = null
 
     setHomeDemoControllerBinding(
       {
         controller: createController(),
         manager: {
-          observeWithin: (root, options) => observedRoots.push({ root, startup: options?.startup }),
-          attachVisibleRoots: (roots) => attachedRoots.push(Array.from(roots)),
+          observeWithin: () => undefined,
+          attachVisibleRoots: () => undefined,
           destroy: () => undefined
         } satisfies HomeDemoActivationManager
       },
@@ -327,18 +346,37 @@ describe('installHomeDemoStartupEntry', () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
+      loadStartupAttachRuntime: async () => {
+        if (!startupRuntimePromise) {
+          startupAttachLoadCount += 1
+          startupRuntimePromise = Promise.resolve({
+            attachHomeDemo: async ({ root, kind }) => {
+              ;(root as MockDemoRoot).setAttribute('data-home-demo-active', 'true')
+              activations.push(kind)
+              return {
+                cleanup: () => undefined
+              }
+            }
+          })
+        }
+        return await startupRuntimePromise
+      },
       ObserverImpl: MockIntersectionObserver as unknown as typeof IntersectionObserver
     })
 
     taskQueue.runNext()
-    expect(observedRoots).toEqual([])
+    expect(activations).toEqual([])
 
     MockIntersectionObserver.instances[1]?.emit([
-      { target: demoRoot as unknown as Element, isIntersecting: true }
+      { target: plannerRoot as unknown as Element, isIntersecting: true },
+      { target: reactRoot as unknown as Element, isIntersecting: true }
     ])
 
-    expect(attachedRoots).toEqual([[demoRoot as unknown as HTMLElement]])
-    expect(observedRoots).toEqual([])
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(startupAttachLoadCount).toBe(1)
+    expect(activations).toEqual(['planner', 'react-binary'])
   })
 
   it('loads the maintenance runtime only when an inactive startup root enters the viewport', async () => {

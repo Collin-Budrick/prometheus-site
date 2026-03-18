@@ -28,8 +28,13 @@ export type HomeDemoController = HomeDemoRouteContext & {
   destroyed: boolean
 }
 
-type ActivateHomeDemoFn = (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
+type ActivateHomeDemoFn = (
+  options: ActivateHomeDemoOptions
+) => Promise<HomeDemoActivationResult | null>
 type WarmHomeDemoKindFn = (kind: HomeDemoKind, asset: HomeDemoAssetMap[HomeDemoKind]) => Promise<void>
+type StartupAttachHomeDemoFn = (
+  options: ActivateHomeDemoOptions
+) => Promise<HomeDemoActivationResult | null>
 
 export type BindHomeDemoActivationOptions = {
   controller: HomeDemoController
@@ -54,6 +59,14 @@ export type ActivateHomeDemosOptions = {
   root?: ParentNode
   limit?: number
   scheduleTask?: typeof scheduleStaticShellTask
+}
+
+export type AttachVisibleHomeDemoRootsOptions = {
+  controller: HomeDemoController
+  roots: Iterable<HTMLElement>
+  activate: StartupAttachHomeDemoFn
+  scheduleTask?: typeof scheduleStaticShellTask
+  concurrency?: number
 }
 
 const HOME_DEMO_ACTIVATION_ROOT_MARGIN = '0px'
@@ -216,6 +229,10 @@ const activateHomeDemoRoot = async (
       props: parseDemoProps(demoRoot.getAttribute('data-demo-props'))
     })
 
+    if (!result) {
+      return false
+    }
+
     if (
       controller.destroyed ||
       controller.activationEpoch !== activationEpoch ||
@@ -294,6 +311,63 @@ export const activateHomeDemos = async (
   return activatedCount
 }
 
+export const attachVisibleHomeDemoRoots = async ({
+  controller,
+  roots,
+  activate,
+  scheduleTask = scheduleStaticShellTask,
+  concurrency = 3
+}: AttachVisibleHomeDemoRootsOptions) => {
+  if (controller.destroyed) return 0
+
+  pruneDetachedHomeDemos(controller)
+
+  const orderedRoots = Array.from(new Set(roots)).filter(
+    (demoRoot) => !shouldSkipHomeDemoRoot(controller, demoRoot)
+  )
+  if (!orderedRoots.length) {
+    return 0
+  }
+
+  let activationIndex = 0
+  let activatedCount = 0
+  const maxConcurrentActivations = Math.min(
+    Math.max(orderedRoots.length, 1),
+    Math.max(1, concurrency)
+  )
+
+  const activateNext = async () => {
+    for (;;) {
+      if (controller.destroyed) {
+        return
+      }
+
+      const nextRoot = orderedRoots[activationIndex]
+      activationIndex += 1
+      if (!nextRoot) {
+        return
+      }
+
+      if (
+        await activateHomeDemoRoot(
+          controller,
+          nextRoot,
+          activate,
+          scheduleTask
+        )
+      ) {
+        activatedCount += 1
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: maxConcurrentActivations }, () => activateNext())
+  )
+
+  return activatedCount
+}
+
 export const bindHomeDemoActivation = ({
   controller,
   activate = (options) => activateHomeDemoFromRuntime(controller, options),
@@ -333,16 +407,6 @@ export const bindHomeDemoActivation = ({
       return
     }
     warmKindForRoot(demoRoot)
-    if (typeof document === 'undefined') {
-      return
-    }
-    const kind = resolveHomeDemoKind(demoRoot)
-    if (!kind) return
-    void loadHomeDemoKind(kind, {
-      asset: controller.assets[kind]
-    }).catch((error) => {
-      console.error(`Static home demo preload failed: ${kind}`, error)
-    })
   }
 
   const warmNearViewRoot = (demoRoot: HTMLElement) => {

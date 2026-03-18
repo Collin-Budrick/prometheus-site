@@ -14,6 +14,9 @@ export const HOME_DEMO_RUNTIME_ASSET_PATHS = {
   'preact-island': 'build/static-shell/apps/site/src/static-shell/home-demo-preact-island-runtime.js'
 } as const satisfies Record<HomeDemoKind, string>
 
+export const HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH =
+  'build/static-shell/apps/site/src/static-shell/home-demo-attach-runtime.js'
+
 export type ActivateHomeDemoOptions = {
   root: Element
   kind: HomeDemoKind
@@ -23,6 +26,12 @@ export type ActivateHomeDemoOptions = {
 export type HomeDemoRuntimeModule = {
   activateHomeDemo: (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
   attachHomeDemo: (options: ActivateHomeDemoOptions) => Promise<HomeDemoActivationResult>
+}
+
+export type HomeDemoStartupAttachRuntimeModule = {
+  attachHomeDemo: (
+    options: ActivateHomeDemoOptions
+  ) => Promise<HomeDemoActivationResult | null>
 }
 
 export type HomeDemoAssetDescriptor = {
