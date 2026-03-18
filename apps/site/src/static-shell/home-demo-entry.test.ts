@@ -148,12 +148,17 @@ const createScheduledTaskQueue = () => {
   };
 };
 
+const flushMicrotasks = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 afterEach(() => {
   clearHomeDemoControllerBinding();
 });
 
 describe("installHomeDemoEntry", () => {
-  it("reuses an existing singleton controller binding instead of creating another one", () => {
+  it("reuses an existing singleton controller binding instead of creating another one", async () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
     const taskQueue = createScheduledTaskQueue();
@@ -173,12 +178,14 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
+      ensureDeferredStylesheet: async () => undefined,
     });
 
     expect(observedRoots).toEqual([]);
     expect(taskQueue.size()).toBe(1);
 
     taskQueue.runNext();
+    await flushMicrotasks();
 
     expect(observedRoots).toEqual([doc as unknown as ParentNode]);
     expect(getHomeDemoControllerBinding(win)).toBe(existingBinding);
@@ -212,7 +219,7 @@ describe("installHomeDemoEntry", () => {
     expect(getHomeDemoControllerBinding(win)).toBeNull();
   });
 
-  it("re-observes patched roots via the internal bootstrap event and syncs route context", () => {
+  it("re-observes patched roots via the internal bootstrap event and syncs route context", async () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
     const taskQueue = createScheduledTaskQueue();
@@ -232,10 +239,12 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
+      ensureDeferredStylesheet: async () => undefined,
     });
 
     expect(observedRoots).toEqual([]);
     taskQueue.runNext();
+    await flushMicrotasks();
 
     doc.setScriptText(
       STATIC_HOME_DATA_SCRIPT_ID,
@@ -261,6 +270,7 @@ describe("installHomeDemoEntry", () => {
       root: patchedRoot,
       doc: doc as never,
     });
+    await flushMicrotasks();
 
     expect(observedRoots).toEqual([doc as unknown as ParentNode, patchedRoot]);
     expect(binding.controller.lang).toBe("ja");
@@ -276,7 +286,7 @@ describe("installHomeDemoEntry", () => {
     cleanup();
   });
 
-  it("resets active demos before re-observing the home page after a language swap", () => {
+  it("resets active demos before re-observing the home page after a language swap", async () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
     const taskQueue = createScheduledTaskQueue();
@@ -305,9 +315,11 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
+      ensureDeferredStylesheet: async () => undefined,
     });
 
     taskQueue.runNext();
+    await flushMicrotasks();
 
     doc.setScriptText(
       STATIC_HOME_DATA_SCRIPT_ID,
@@ -324,6 +336,7 @@ describe("installHomeDemoEntry", () => {
     dispatchHomeDemoObserveEvent({
       doc: doc as never,
     });
+    await flushMicrotasks();
 
     expect(binding.controller.lang).toBe("ja");
     expect(binding.controller.activationEpoch).toBe(1);
@@ -334,6 +347,47 @@ describe("installHomeDemoEntry", () => {
       doc as unknown as ParentNode,
       doc as unknown as ParentNode,
     ]);
+
+    cleanup();
+  });
+
+  it("waits for the deferred stylesheet before observing home demos", async () => {
+    const win = {} as MockWindow;
+    const doc = createBootstrapDocument();
+    const taskQueue = createScheduledTaskQueue();
+    const observedRoots: ParentNode[] = [];
+    let resolveStylesheet!: () => void;
+    const stylesheetReady = new Promise<void>((resolve) => {
+      resolveStylesheet = resolve;
+    });
+
+    setHomeDemoControllerBinding(
+      {
+        controller: createController(),
+        manager: {
+          observeWithin: (root) => observedRoots.push(root),
+          destroy: () => undefined,
+        } satisfies HomeDemoActivationManager,
+      },
+      win,
+    );
+
+    const cleanup = installHomeDemoEntry({
+      win,
+      doc: doc as never,
+      scheduleTask: taskQueue.scheduleTask as never,
+      ensureDeferredStylesheet: () => stylesheetReady,
+    });
+
+    taskQueue.runNext();
+    await flushMicrotasks();
+
+    expect(observedRoots).toEqual([]);
+
+    resolveStylesheet();
+    await flushMicrotasks();
+
+    expect(observedRoots).toEqual([doc as unknown as ParentNode]);
 
     cleanup();
   });

@@ -8,6 +8,10 @@ import {
 import { manifest } from "@qwik-client-manifest";
 import Root from "./root";
 import { defaultTheme, readThemeFromCookie } from "@prometheus/ui";
+import {
+  FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
+  FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
+} from "./fragment/runtime/client-bridge";
 import { readServiceWorkerSeedFromCookie } from "./shared/service-worker-seed";
 import {
   getStaticShellRouteConfig,
@@ -39,8 +43,9 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
     "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
-    "build/static-shell/apps/site/src/fragment/runtime/worker.js",
-    "build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js",
+    "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
+    FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
+    FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
   ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
@@ -195,10 +200,6 @@ const stripHomeBlockingDeferredStylesheet = (html: string, pathname: string) => 
       "",
     )
     .replace(
-      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*global-deferred\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    )
-    .replace(
       /<style\b(?=[^>]*\bdata-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'])[^>]*>[\s\S]*?<\/style>\s*/gi,
       "",
     )
@@ -240,6 +241,21 @@ const replaceHomeCriticalStyles = (html: string, pathname: string) => {
     });
 };
 
+const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
+  const href = appendStaticAssetVersion(
+    `${publicBase}${path}`,
+    STATIC_SHELL_BUILD_VERSION,
+  );
+  if (path === FRAGMENT_RUNTIME_WORKER_ASSET_PATH) {
+    return `<link rel="modulepreload" href="${href}" data-fragment-runtime-preload="worker">`;
+  }
+  if (path === FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH) {
+    return `<link rel="modulepreload" href="${href}" data-fragment-runtime-preload="decode">`;
+  }
+
+  return `<link rel="modulepreload" href="${href}">`;
+};
+
 export const injectStaticBootstrap = (
   html: string,
   publicBase: string,
@@ -253,10 +269,7 @@ export const injectStaticBootstrap = (
     STATIC_SHELL_BUILD_VERSION,
   );
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
-    .map(
-      (path) =>
-        `<link rel="modulepreload" href="${appendStaticAssetVersion(`${publicBase}${path}`, STATIC_SHELL_BUILD_VERSION)}">`,
-    )
+    .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const scriptTag =

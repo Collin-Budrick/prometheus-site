@@ -1082,36 +1082,6 @@ describe("scheduleHomePostLcpTasks", () => {
     expect(win.listenerCount("pageshow")).toBe(0);
   });
 
-  it("starts the deferred home demo entry only after the LCP gate resolves", async () => {
-    const manualGate = createManualLcpGate();
-    const win = new MockDeferredWindow();
-    const doc = new MockDeferredDocument();
-    const demoEntryCalls: string[] = [];
-    const cleanup = scheduleHomePostLcpTasks({
-      controller: createHomeBootstrapController(),
-      lcpGate: manualGate.gate,
-      homeFragmentHydration: {
-        schedulePreviewRefreshes: () => undefined,
-        retryPending: () => undefined,
-      },
-      win: win as never,
-      doc: doc as never,
-      startHomeDemoEntry: async () => {
-        demoEntryCalls.push("start");
-      },
-      refreshAuth: async () => undefined,
-    });
-
-    await flushMicrotasks();
-    expect(demoEntryCalls).toEqual([]);
-
-    manualGate.resolve();
-    await flushMicrotasks();
-
-    expect(demoEntryCalls).toEqual(["start"]);
-    cleanup();
-  });
-
   it("runs auth revalidation on first user intent after preview refreshes start", async () => {
     const manualGate = createManualLcpGate();
     const win = new MockDeferredWindow();
@@ -1393,7 +1363,7 @@ describe("bindHomeFragmentHydration", () => {
     hydration.destroy();
   });
 
-  it("waits for the home demo stylesheet before patching fetched home fragments", async () => {
+  it("does not wait for the home demo stylesheet before patching anchor fragments", async () => {
     const taskQueue = createTaskQueue();
     const anchor = new MockFragmentCard(
       "fragment://page/home/planner@v1",
@@ -1403,13 +1373,6 @@ describe("bindHomeFragmentHydration", () => {
     root.setAttribute(STATIC_HOME_PAINT_ATTR, "ready");
     const callOrder: string[] = [];
     const enqueued: string[] = [];
-    let resolveStylesheet!: () => void;
-    const stylesheetReady = new Promise<void>((resolve) => {
-      resolveStylesheet = () => {
-        callOrder.push("stylesheet:ready");
-        resolve();
-      };
-    });
     const hydration = bindHomeFragmentHydration({
       controller: {
         destroyed: false,
@@ -1427,7 +1390,6 @@ describe("bindHomeFragmentHydration", () => {
       scheduleTask: taskQueue.scheduleTask,
       ensureDemoStylesheet: async () => {
         callOrder.push("stylesheet:start");
-        await stylesheetReady;
       },
       fetchBatch: async (ids) => {
         callOrder.push("fetch:start");
@@ -1443,17 +1405,7 @@ describe("bindHomeFragmentHydration", () => {
     await taskQueue.flushNext();
     await flushMicrotasks();
 
-    expect(callOrder).toEqual(["stylesheet:start", "fetch:start"]);
-    expect(enqueued).toEqual([]);
-
-    resolveStylesheet();
-    await flushMicrotasks();
-
-    expect(callOrder).toEqual([
-      "stylesheet:start",
-      "fetch:start",
-      "stylesheet:ready",
-    ]);
+    expect(callOrder).toEqual(["fetch:start"]);
     expect(enqueued).toEqual(["fragment://page/home/planner@v1"]);
 
     hydration.destroy();
@@ -1503,7 +1455,6 @@ describe("bindHomeFragmentHydration", () => {
     await flushMicrotasks();
 
     expect(callOrder).toEqual([
-      "stylesheet:start",
       "runtime:fragment://page/home/planner@v1:true",
       "runtime:commit-ready",
     ]);

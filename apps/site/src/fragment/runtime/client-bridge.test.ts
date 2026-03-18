@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { FragmentRuntimeBridge, resolveFragmentRuntimeWorkerUrl } from './client-bridge'
+import {
+  ensureFragmentRuntimeAssetPreloads,
+  FragmentRuntimeBridge,
+  resolveFragmentRuntimeWorkerUrl
+} from './client-bridge'
 
 type MockListener = (event: { data: unknown }) => void
 
@@ -71,6 +75,61 @@ describe('fragment runtime client bridge', () => {
     expect(workerUrl).toBe(
       'https://prometheus.prod/build/static-shell/apps/site/src/fragment/runtime/worker.js?v=abc123'
     )
+  })
+
+  it('reuses SSR-emitted fragment runtime preload links without appending duplicates', () => {
+    class MockLink {
+      rel = 'modulepreload'
+      private attrs = new Map<string, string>()
+
+      getAttribute(name: string) {
+        return this.attrs.get(name) ?? null
+      }
+
+      setAttribute(name: string, value: string) {
+        this.attrs.set(name, value)
+        if (name === 'rel') {
+          this.rel = value
+        }
+      }
+
+      removeAttribute(name: string) {
+        this.attrs.delete(name)
+      }
+    }
+
+    const workerLink = new MockLink()
+    workerLink.setAttribute('rel', 'modulepreload')
+    workerLink.setAttribute('href', 'https://prometheus.prod/build/static-shell/apps/site/src/fragment/runtime/worker.js')
+    workerLink.setAttribute('data-fragment-runtime-preload', 'worker')
+
+    const decodeLink = new MockLink()
+    decodeLink.setAttribute('rel', 'modulepreload')
+    decodeLink.setAttribute('href', 'https://prometheus.prod/build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js')
+    decodeLink.setAttribute('data-fragment-runtime-preload', 'decode')
+
+    let appendCount = 0
+    const doc = {
+      head: {
+        appendChild: () => {
+          appendCount += 1
+          return null
+        }
+      },
+      createElement: () => new MockLink(),
+      querySelector: (selector: string) =>
+        selector === 'link[data-fragment-runtime-preload="worker"]'
+          ? workerLink
+          : selector === 'link[data-fragment-runtime-preload="decode"]'
+            ? decodeLink
+            : null
+    }
+
+    ensureFragmentRuntimeAssetPreloads({ doc: doc as never })
+
+    expect(appendCount).toBe(0)
+    expect(workerLink.getAttribute('data-fragment-runtime-preload')).toBe('worker')
+    expect(decodeLink.getAttribute('data-fragment-runtime-preload')).toBe('decode')
   })
 
   it('terminates the worker on pagehide and replays init state on restore', () => {

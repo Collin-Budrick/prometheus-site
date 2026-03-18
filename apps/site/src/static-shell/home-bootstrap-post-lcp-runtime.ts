@@ -2,7 +2,6 @@ import type { Lang } from '../lang/types'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { createHomeFirstLcpGate, type HomeFirstLcpGate } from './home-lcp-gate'
 import { loadHomeDockAuthRuntime } from './home-dock-auth-runtime-loader'
-import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { loadHomeLanguageRuntime } from './home-language-runtime-loader'
 import { loadHomeUiControlsRuntime } from './home-ui-controls-runtime-loader'
 import { markStaticShellUserTiming } from './static-shell-performance'
@@ -70,7 +69,6 @@ type ScheduleHomePostLcpTasksOptions = {
   lcpGate?: HomeFirstLcpGate
   homeFragmentHydration: HomeBootstrapPostLcpHydrationManager
   refreshAuth?: (controller: HomeBootstrapPostLcpController) => Promise<void>
-  startHomeDemoEntry?: () => Promise<void> | void
   win?: HomeBootstrapPostLcpWindow | null
   doc?: HomeBootstrapPostLcpDocument | null
 }
@@ -230,10 +228,6 @@ export const scheduleHomePostLcpTasks = ({
   controller,
   lcpGate = createHomeFirstLcpGate(),
   homeFragmentHydration,
-  startHomeDemoEntry = async () => {
-    const { installHomeDemoEntry } = await loadHomeDemoEntryRuntime()
-    installHomeDemoEntry()
-  },
   refreshAuth = refreshHomeDockAuthIfNeeded,
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null
@@ -266,9 +260,6 @@ export const scheduleHomePostLcpTasks = ({
 
     postLcpStarted = true
     markStaticShellUserTiming('prom:home:post-lcp-runtime-start')
-    void Promise.resolve(startHomeDemoEntry()).catch((error) => {
-      console.error('Static home demo entry failed:', error)
-    })
     deferredAuthRefresh = scheduleHomeDeferredAuthRefresh({
       controller,
       homeFragmentHydration,

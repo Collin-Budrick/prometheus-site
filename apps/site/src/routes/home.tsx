@@ -34,8 +34,10 @@ const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => ({
 
 type HomeHeadLink = NonNullable<DocumentHead['links']>[number]
 
-export const buildHomeHeadLinks = (plan?: FragmentPlanValue | null): HomeHeadLink[] =>
-  buildFragmentCssLinks(plan)
+export const buildHomeHeadLinks = (
+  plan?: FragmentPlanValue | null,
+  _lang?: Lang
+): HomeHeadLink[] => buildFragmentCssLinks(plan)
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')

@@ -3,12 +3,14 @@ import { describe, expect, it } from 'bun:test'
 const readSource = async () => await Bun.file(new URL('./home.tsx', import.meta.url)).text()
 
 describe('routes/home head links', () => {
-  it('keeps deferred home assets off the initial head links', async () => {
+  it('keeps the home head limited to fragment CSS links', async () => {
     const source = await readSource()
 
-    expect(source).not.toContain("import homeDemoStylesheetHref from '../static-shell/home-static-deferred.css?url'")
-    expect(source).not.toContain("rel: 'preload'")
-    expect(source).not.toContain("as: 'style'")
-    expect(source).not.toContain('buildHomeFragmentBootstrapPreloadLink(lang)')
+    expect(source).not.toContain(
+      "import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'"
+    )
+    expect(source).toContain('buildFragmentCssLinks(plan)')
+    expect(source).not.toContain("buildHomeFragmentBootstrapPreloadLink(")
+    expect(source).not.toContain("data-home-demo-stylesheet")
   })
 })

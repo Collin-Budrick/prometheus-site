@@ -36,6 +36,7 @@ type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null;
   doc?: Document | null;
   scheduleTask?: typeof scheduleStaticShellTask;
+  ensureDeferredStylesheet?: typeof ensureStaticHomeDeferredStylesheet;
 };
 
 type HomeDemoObserveDocument = Pick<
@@ -67,9 +68,13 @@ const syncHomeDemoController = (
 const bindHomeDemoObserveRequests = ({
   binding,
   doc,
+  deferredStylesheetReady,
+  win,
 }: {
   binding: NonNullable<ReturnType<typeof getHomeDemoControllerBinding>>;
   doc: HomeDemoObserveDocument | null;
+  deferredStylesheetReady: Promise<void>;
+  win: HomeDemoEntryWindow;
 }) => {
   if (!doc) {
     return () => undefined;
@@ -84,9 +89,15 @@ const bindHomeDemoObserveRequests = ({
     }
 
     const detail = (event as CustomEvent<HomeDemoObserveEventDetail>).detail;
-    binding.manager.observeWithin(
-      (detail?.root ?? doc) as unknown as ParentNode,
-    );
+    void deferredStylesheetReady.then(() => {
+      if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
+        return;
+      }
+
+      binding.manager.observeWithin(
+        (detail?.root ?? doc) as unknown as ParentNode,
+      );
+    });
   };
 
   doc.addEventListener(
@@ -106,6 +117,7 @@ export const installHomeDemoEntry = ({
   win = typeof window !== "undefined" ? (window as HomeDemoEntryWindow) : null,
   doc = typeof document !== "undefined" ? document : null,
   scheduleTask = scheduleStaticShellTask,
+  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet,
 }: InstallHomeDemoEntryOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
     return () => undefined;
@@ -119,9 +131,13 @@ export const installHomeDemoEntry = ({
   primeTrustedTypesPolicies();
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true;
   markHomeDemoPerformance("prom:home:demo-entry-install");
-  void ensureStaticHomeDeferredStylesheet({
-    href: data.homeDemoStylesheetHref,
-    doc,
+  const deferredStylesheetReady = Promise.resolve(
+    ensureDeferredStylesheet({
+      href: data.homeDemoStylesheetHref,
+      doc,
+    }),
+  ).catch((error) => {
+    console.error("Static home demo stylesheet failed to load:", error);
   });
   const observeRoot = doc as unknown as ParentNode;
 
@@ -132,19 +148,25 @@ export const installHomeDemoEntry = ({
       () => {
         markStaticShellPerformance("prom:home:demo-observe-start");
         markStaticShellUserTiming("prom:home:demo-observe-start");
-        binding.manager.observeWithin(observeRoot);
-        markStaticShellPerformance("prom:home:demo-observe-ready");
-        markStaticShellUserTiming("prom:home:demo-observe-ready");
-        measureStaticShellPerformance(
-          "prom:home:demo-observe",
-          "prom:home:demo-observe-start",
-          "prom:home:demo-observe-ready",
-        );
-        measureStaticShellUserTiming(
-          "prom:home:demo-observe",
-          "prom:home:demo-observe-start",
-          "prom:home:demo-observe-ready",
-        );
+        void deferredStylesheetReady.then(() => {
+          if (!win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
+            return;
+          }
+
+          binding.manager.observeWithin(observeRoot);
+          markStaticShellPerformance("prom:home:demo-observe-ready");
+          markStaticShellUserTiming("prom:home:demo-observe-ready");
+          measureStaticShellPerformance(
+            "prom:home:demo-observe",
+            "prom:home:demo-observe-start",
+            "prom:home:demo-observe-ready",
+          );
+          measureStaticShellUserTiming(
+            "prom:home:demo-observe",
+            "prom:home:demo-observe-start",
+            "prom:home:demo-observe-ready",
+          );
+        });
       },
       {
         priority: "user-visible",
@@ -159,6 +181,8 @@ export const installHomeDemoEntry = ({
     const cleanupObserveRequests = bindHomeDemoObserveRequests({
       binding: existingBinding,
       doc,
+      deferredStylesheetReady,
+      win,
     });
     const cleanupInitialObserve = scheduleInitialObserve(existingBinding);
     markStaticShellPerformance("prom:home:demo-entry-install-ready");
@@ -198,6 +222,8 @@ export const installHomeDemoEntry = ({
   const cleanupObserveRequests = bindHomeDemoObserveRequests({
     binding,
     doc,
+    deferredStylesheetReady,
+    win,
   });
   const cleanupInitialObserve = scheduleInitialObserve(binding);
   markStaticShellPerformance("prom:home:demo-entry-install-ready");

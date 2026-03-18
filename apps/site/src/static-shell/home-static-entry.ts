@@ -1,4 +1,5 @@
 import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
+import { loadHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
@@ -39,6 +40,7 @@ type InstallHomeStaticEntryOptions = {
   startSharedRuntime?: typeof ensureHomeSharedRuntime
   preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
   disposeSharedRuntime?: typeof disposeHomeSharedRuntime
+  loadDemoEntryRuntime?: typeof loadHomeDemoEntryRuntime
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
@@ -100,11 +102,14 @@ export const installHomeStaticEntry = ({
   scheduleTask = scheduleStaticShellTask,
   startSharedRuntime = ensureHomeSharedRuntime,
   preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
-  disposeSharedRuntime = disposeHomeSharedRuntime
+  disposeSharedRuntime = disposeHomeSharedRuntime,
+  loadDemoEntryRuntime = loadHomeDemoEntryRuntime
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc) {
     return () => undefined
   }
+
+  void scheduleTask
 
   const liveWin = win
   const liveDoc = doc
@@ -119,18 +124,18 @@ export const installHomeStaticEntry = ({
   let bootstrapRequested = false
   let lcpGateReleased = false
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
+  let demoEntryRuntimePromise: ReturnType<typeof loadDemoEntryRuntime> | null = null
   let widgetRuntimePromise: ReturnType<typeof loadFragmentWidgetRuntime> | null = null
   let widgetRuntime:
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
-  let deferredWidgetRuntimeCleanup: (() => void) | null = null
-  let deferredBootstrapCleanup: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let paintReadyCleanup: (() => void) | null = null
   let sharedRuntimeStarted = false
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
+  const hasHomeDemoRoots = () => Boolean(liveDoc.querySelector?.('[data-home-demo-root]'))
   const readWidgetRoot = () =>
     liveDoc.querySelector<HTMLElement>(
       `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
@@ -161,10 +166,6 @@ export const installHomeStaticEntry = ({
     lcpGateCleanup = null
     paintReadyCleanup?.()
     paintReadyCleanup = null
-    deferredWidgetRuntimeCleanup?.()
-    deferredWidgetRuntimeCleanup = null
-    deferredBootstrapCleanup?.()
-    deferredBootstrapCleanup = null
     widgetRuntime?.destroy()
     widgetRuntime = null
     disposeSharedRuntime(liveWin)
@@ -194,6 +195,19 @@ export const installHomeStaticEntry = ({
   const prewarmWidgetRuntime = () => {
     widgetRuntimePromise ??= loadFragmentWidgetRuntime()
     return widgetRuntimePromise
+  }
+
+  const startHomeDemoEntry = () => {
+    if (demoEntryRuntimePromise || !hasHomeDemoRoots()) {
+      return demoEntryRuntimePromise
+    }
+
+    demoEntryRuntimePromise = loadDemoEntryRuntime().catch((error) => {
+      demoEntryRuntimePromise = null
+      console.error('Static home demo entry failed:', error)
+      throw error
+    })
+    return demoEntryRuntimePromise
   }
 
   const startHomeWorkerRuntime = () => {
@@ -226,8 +240,6 @@ export const installHomeStaticEntry = ({
   }
 
   const startWidgetRuntime = (target: EventTarget | null = null) => {
-    deferredWidgetRuntimeCleanup?.()
-    deferredWidgetRuntimeCleanup = null
     return prewarmWidgetRuntime()
       .then((module) => {
         widgetRuntime ??= module.createFragmentWidgetRuntime({
@@ -244,56 +256,10 @@ export const installHomeStaticEntry = ({
       })
   }
 
-  const scheduleDeferredWidgetRuntime = () => {
-    if (widgetRuntime || widgetRuntimePromise || deferredWidgetRuntimeCleanup) {
-      return
-    }
-
-    deferredWidgetRuntimeCleanup = scheduleTask(
-      () => {
-        deferredWidgetRuntimeCleanup = null
-        void startWidgetRuntime()
-      },
-      {
-        priority: 'background',
-        timeoutMs: 480,
-        preferIdle: true,
-        waitForPaint: true
-      }
-    )
-  }
-
-  const scheduleDeferredBootstrap = () => {
-    if (
-      startedBootstrap ||
-      liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ ||
-      bootstrapRequested ||
-      deferredBootstrapCleanup
-    ) {
-      return
-    }
-
-    deferredBootstrapCleanup = scheduleTask(
-      () => {
-        deferredBootstrapCleanup = null
-        requestBootstrap()
-      },
-      {
-        priority: 'background',
-        timeoutMs: 1200,
-        preferIdle: true,
-        waitForLoad: true,
-        waitForPaint: true
-      }
-    )
-  }
-
   const startBootstrap = () => {
     if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
     startedBootstrap = true
     liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
-    deferredBootstrapCleanup?.()
-    deferredBootstrapCleanup = null
 
     void prewarmBootstrapRuntime()
       .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
@@ -305,8 +271,6 @@ export const installHomeStaticEntry = ({
 
   function requestBootstrap() {
     bootstrapRequested = true
-    deferredBootstrapCleanup?.()
-    deferredBootstrapCleanup = null
     void prewarmBootstrapRuntime().catch((error) => {
       bootstrapRuntimePromise = null
       console.error('Static home bootstrap prewarm failed:', error)
@@ -363,16 +327,9 @@ export const installHomeStaticEntry = ({
       onReady: () => {
         if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
           requestBootstrap()
-          scheduleDeferredWidgetRuntime()
-          return
         }
-        if (bootstrapRequested) {
-          startBootstrap()
-          scheduleDeferredWidgetRuntime()
-          return
-        }
-        scheduleDeferredBootstrap()
-        scheduleDeferredWidgetRuntime()
+        void startHomeDemoEntry()
+        startBootstrap()
       }
     })
   }
@@ -389,6 +346,7 @@ export const installHomeStaticEntry = ({
     bootstrapTriggersInstalled = true
     clearStartupHandlers()
     startHomeWorkerRuntime()
+    requestBootstrap()
     liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
     liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
     liveWin.addEventListener('keydown', handleKeyDown, eventOptions)

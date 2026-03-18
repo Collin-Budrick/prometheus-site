@@ -43,7 +43,6 @@ import { primeTrustedTypesPolicies } from "../security/client";
 import type { StaticHomeCardStage } from "./constants";
 import { resolveStaticShellLangParam } from "./lang-param";
 import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
-import { loadHomeDemoEntryRuntime } from "./home-demo-entry-loader";
 import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
 import { markStaticShellUserTiming } from "./static-shell-performance";
 import { ensureStaticHomeDeferredStylesheet } from "./home-deferred-stylesheet";
@@ -260,9 +259,7 @@ const connectSharedHomeRuntime = ({
   let didMarkFirstAnchorBatch = false;
   let pendingAnchorIds = new Set<string>();
   const commitGateById = new Map<string, Promise<unknown>>();
-  const defaultCommitReady = ensureStaticHomeDeferredStylesheet({
-    href: controller.homeDemoStylesheetHref ?? undefined,
-  }).catch(() => undefined);
+  let deferredCommitReady: Promise<unknown> | null = null;
   const planEntriesById = new Map(
     runtimePlanEntries.map((entry) => [entry.id, entry]),
   );
@@ -304,6 +301,21 @@ const connectSharedHomeRuntime = ({
     return null;
   }
 
+  const getDeferredCommitReady = () => {
+    deferredCommitReady ??= ensureStaticHomeDeferredStylesheet({
+      href: controller.homeDemoStylesheetHref ?? undefined,
+    }).catch(() => undefined);
+    return deferredCommitReady;
+  };
+
+  const resolveDefaultCommitReady = (fragmentId: string) => {
+    const card = getStaticHomeFragmentCard(fragmentId, root);
+    if (card?.getAttribute(STATIC_HOME_STAGE_ATTR) === "anchor") {
+      return null;
+    }
+    return getDeferredCommitReady();
+  };
+
   sharedRuntime.attachHandlers({
     onCommit: (payload) => {
       const publishCommit = () => {
@@ -314,7 +326,8 @@ const connectSharedHomeRuntime = ({
         }
         onCommit(payload);
       };
-      const commitGate = commitGateById.get(payload.id) ?? defaultCommitReady;
+      const commitGate =
+        commitGateById.get(payload.id) ?? resolveDefaultCommitReady(payload.id);
       if (!commitGate) {
         publishCommit();
         return;
@@ -966,10 +979,11 @@ export const bindHomeFragmentHydration = ({
     updateFragmentStatus(controller.lang, "streaming");
 
     try {
-      const demoStylesheetReady = ensureDemoStylesheet({
-        href: controller.homeDemoStylesheetHref ?? undefined,
-      });
-      const commitReady = demoStylesheetReady;
+      const commitReady = isAnchorBatch
+        ? undefined
+        : ensureDemoStylesheet({
+            href: controller.homeDemoStylesheetHref ?? undefined,
+          });
       if (requestFragments) {
         await requestFragments(ids, {
           isAnchorBatch,
@@ -1010,13 +1024,15 @@ export const bindHomeFragmentHydration = ({
       )
         return;
 
-      await demoStylesheetReady;
-      if (
-        controller.destroyed ||
-        controller.fetchAbort !== fetchAbort ||
-        fetchAbort.signal.aborted
-      )
-        return;
+      if (commitReady) {
+        await commitReady;
+        if (
+          controller.destroyed ||
+          controller.fetchAbort !== fetchAbort ||
+          fetchAbort.signal.aborted
+        )
+          return;
+      }
 
       ids.forEach((id) => {
         const payload = payloads[id];
@@ -1297,45 +1313,6 @@ const installDeferredHomePostLcpRuntime = ({
   };
 };
 
-const installDeferredHomeDemoEntry = (
-  controller: Pick<HomeControllerState, "destroyed">,
-) => {
-  let runtimeCleanup: (() => void) | null = null;
-  let runtimePromise: Promise<void> | null = null;
-
-  const startDemoEntry = () => {
-    if (controller.destroyed || runtimePromise || runtimeCleanup) {
-      return;
-    }
-
-    runtimePromise = loadHomeDemoEntryRuntime()
-      .then(({ installHomeDemoEntry }) => {
-        runtimePromise = null;
-        if (controller.destroyed || runtimeCleanup) {
-          return;
-        }
-        runtimeCleanup = installHomeDemoEntry();
-      })
-      .catch((error) => {
-        runtimePromise = null;
-        console.error("Static home demo entry failed:", error);
-      });
-  };
-
-  const cancelDeferredStart = scheduleStaticShellTask(startDemoEntry, {
-    priority: "background",
-    timeoutMs: 0,
-    waitForPaint: true,
-    preferIdle: false,
-  });
-
-  return () => {
-    cancelDeferredStart();
-    runtimeCleanup?.();
-    runtimeCleanup = null;
-  };
-};
-
 export const bootstrapStaticHome = async () => {
   const data = readStaticHomeBootstrapData();
   if (!data) return;
@@ -1440,7 +1417,6 @@ export const bootstrapStaticHome = async () => {
       () => {
         if (controller.destroyed) return;
         homeFragmentHydration.observeWithin(document);
-        requestHomeDemoObserve();
       },
       {
         priority: "user-visible",
@@ -1449,9 +1425,6 @@ export const bootstrapStaticHome = async () => {
         preferIdle: false,
       },
     ),
-  );
-  controller.cleanupFns.push(
-    installDeferredHomeDemoEntry(controller),
   );
   controller.cleanupFns.push(
     installDeferredHomePostLcpRuntime({

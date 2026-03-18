@@ -12,23 +12,27 @@ describe("entry.ssr static bootstrap injection", () => {
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
     );
     expect(source).toContain(
-      '"build/static-shell/apps/site/src/fragment/runtime/worker.js"',
+      "FRAGMENT_RUNTIME_WORKER_ASSET_PATH",
     );
     expect(source).toContain(
-      '"build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js"',
+      "FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH",
     );
+    expect(source).toContain('data-fragment-runtime-preload="worker"');
+    expect(source).toContain('data-fragment-runtime-preload="decode"');
     expect(source).toContain("buildImmediateHomeStaticEntryTag");
+    expect(source).toContain(
+      '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
+    );
     expect(source).toContain(
       'void import(bootstrapHref).catch((error) => console.error("Static home entry immediate failed:", error));',
     );
+    expect(source).not.toContain("const stylesheet = document.querySelector('link[data-home-demo-stylesheet]');");
+    expect(source).not.toContain("stylesheet.setAttribute('rel', 'stylesheet');");
     expect(source).not.toContain("HOME_STATIC_ENTRY_DEFER_DELAY_MS");
     expect(source).not.toContain("const loadFromIntent = (event) => {");
     expect(source).not.toContain('document.addEventListener("focusin", load');
     expect(source).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js"',
-    );
-    expect(source).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-demo-entry.js"',
     );
     expect(source).toContain('"fragment-static": [');
     expect(source).toContain(
@@ -50,7 +54,7 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain('if (resolveStaticBootstrapMode(pathname) !== "home-static")');
     expect(source).toContain('\\brel=["\']stylesheet["\']');
     expect(source).toContain('\\bhref=["\'][^"\']*global-deferred\\.css');
-    expect(source).toContain('\\bas=["\']style["\']');
+    expect(source).not.toContain('(?=[^>]*\\bas=["\']style["\'])(?=[^>]*\\bhref=["\'][^"\']*global-deferred\\.css');
     expect(source).toContain("stripHomeBlockingDeferredStylesheet(");
   });
 

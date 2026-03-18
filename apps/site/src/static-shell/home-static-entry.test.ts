@@ -109,6 +109,7 @@ class MockDocument {
   activeElement: unknown = null
   querySelectorValue: unknown = null
   fragmentCards: unknown[] = []
+  demoRoot: unknown = null
   listeners: ListenerMap = new Map()
   homeRoot = {
     attrs: new Map<string, string>([['data-home-paint', 'initial']]),
@@ -182,6 +183,9 @@ class MockDocument {
   querySelector(selector: string) {
     if (selector === '[data-static-home-root]') {
       return this.homeRoot
+    }
+    if (selector === '[data-home-demo-root]') {
+      return this.demoRoot
     }
     if (selector.includes('data-fragment-id') || selector.includes('data-static-home-patch-state')) {
       return this.querySelectorValue
@@ -306,7 +310,7 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('defers the bootstrap runtime until the scheduled background task runs after the LCP gate resolves', async () => {
+  it('prewarms the bootstrap runtime immediately but waits for the LCP gate before bootstrapping', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -331,21 +335,16 @@ describe('installHomeStaticEntry', () => {
       scheduleTask: taskQueue.scheduleTask as never
     })
 
-    expect(bootstrapLoadCount).toBe(0)
+    expect(bootstrapLoadCount).toBe(1)
     expect(sharedRuntimeStartCount).toBe(1)
 
     manualGate.resolve()
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(0)
-    expect(taskQueue.size()).toBe(2)
+    expect(bootstrapLoadCount).toBe(1)
+    expect(taskQueue.size()).toBe(0)
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.timeouts.size).toBe(0)
-
-    taskQueue.runAll()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(1)
 
     cleanup()
   })
@@ -380,6 +379,7 @@ describe('installHomeStaticEntry', () => {
 
     await flushMicrotasks()
     expect(sharedRuntimeStartCount).toBe(1)
+    expect(bootstrapLoadCount).toBe(1)
 
     const fragmentCardTarget = {
       closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
@@ -402,7 +402,7 @@ describe('installHomeStaticEntry', () => {
     cleanup()
   })
 
-  it('marks home paint ready after the LCP gate and schedules bootstrap in the background', async () => {
+  it('marks home paint ready after the LCP gate and bootstraps immediately', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
@@ -431,16 +431,12 @@ describe('installHomeStaticEntry', () => {
     await flushMicrotasks()
 
     expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
-    expect(events).toEqual(['schedule-paint'])
-    expect(taskQueue.size()).toBe(2)
-
-    taskQueue.runAll()
-    await flushMicrotasks()
     expect(events).toEqual(['schedule-paint', 'bootstrap'])
+    expect(taskQueue.size()).toBe(0)
     cleanup()
   })
 
-  it('starts bootstrap only after the deferred task runs once home paint becomes ready', async () => {
+  it('starts bootstrap as soon as home paint becomes ready', async () => {
     ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver
 
@@ -469,17 +465,48 @@ describe('installHomeStaticEntry', () => {
       scheduleTask: taskQueue.scheduleTask as never
     })
 
+    expect(bootstrapLoadCount).toBe(1)
+    expect(bootstrapCount).toBe(0)
+
     manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(0)
-    expect(MockIntersectionObserver.instances.length).toBe(0)
-
-    taskQueue.runAll()
     await flushMicrotasks()
 
     expect(bootstrapLoadCount).toBe(1)
     expect(bootstrapCount).toBe(1)
+    expect(MockIntersectionObserver.instances.length).toBe(0)
+    expect(taskQueue.size()).toBe(0)
+
+    cleanup()
+  })
+
+  it('loads the home demo entry after first paint when demo roots are present', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    doc.demoRoot = {}
+    const manualGate = createManualGate()
+    let demoEntryLoadCount = 0
+
+    const cleanup = installHomeStaticEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      loadBootstrapRuntime: async () => ({
+        bootstrapStaticHome: async () => undefined
+      }),
+      loadDemoEntryRuntime: async () => {
+        demoEntryLoadCount += 1
+        return {
+          installHomeDemoEntry: () => () => undefined
+        }
+      }
+    })
+
+    expect(demoEntryLoadCount).toBe(0)
+
+    manualGate.resolve()
+    await flushMicrotasks()
+
+    expect(demoEntryLoadCount).toBe(1)
 
     cleanup()
   })
