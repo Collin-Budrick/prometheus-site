@@ -66,6 +66,9 @@ type HomeControllerState = {
   fetchAbort: AbortController | null;
   cleanupFns: Array<() => void>;
   patchQueue: StaticHomePatchQueue | null;
+  sharedRuntime: HomeSharedRuntimeConnection | null;
+  homeFragmentHydration: HomeFragmentHydrationManager | null;
+  deferredRuntimeCleanup: (() => void) | null;
   destroyed: boolean;
 };
 
@@ -1178,6 +1181,9 @@ const destroyController = async (controller: HomeControllerState | null) => {
   stopHomeHydrationFetches(controller);
   controller.cleanupFns.splice(0).forEach((cleanup) => cleanup());
   controller.patchQueue = null;
+  controller.sharedRuntime = null;
+  controller.homeFragmentHydration = null;
+  controller.deferredRuntimeCleanup = null;
 };
 
 const installDeferredHomePostLcpRuntime = ({
@@ -1264,10 +1270,33 @@ const installDeferredHomePostLcpRuntime = ({
   };
 };
 
-export const bootstrapStaticHome = async () => {
+const hasStaticHomeVersionMismatch = (
+  controller: Pick<HomeControllerState, "fragmentOrder">,
+  knownVersions: Record<string, number>,
+) =>
+  controller.fragmentOrder.some((fragmentId) => {
+    const renderedVersion = collectStaticHomeKnownVersions(document)[fragmentId];
+    const nextVersion = knownVersions[fragmentId];
+    return typeof renderedVersion === "number" &&
+      typeof nextVersion === "number" &&
+      renderedVersion !== nextVersion;
+  });
+
+export const installHomeBootstrapDeferredRuntime = async () => {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  const controller = activeController;
+  if (!controller || controller.destroyed || controller.deferredRuntimeCleanup) {
+    return;
+  }
+
   const data = readStaticHomeBootstrapData();
-  if (!data) return;
-  primeTrustedTypesPolicies();
+  if (!data) {
+    return;
+  }
+
   const preferredLang = resolvePreferredStaticHomeLang(data.lang);
   if (preferredLang !== data.lang) {
     try {
@@ -1293,6 +1322,61 @@ export const bootstrapStaticHome = async () => {
     }
   }
 
+  const routeSeed = await resolveStaticHomeRouteSeed(data);
+  if (controller !== activeController || controller.destroyed) {
+    return;
+  }
+  applyShellLanguageSeed(data.lang, data.shellSeed, routeSeed);
+
+  const homeFragmentHydration = controller.homeFragmentHydration;
+  if (!homeFragmentHydration) {
+    return;
+  }
+
+  homeFragmentHydration.observeWithin(document);
+  if (hasStaticHomeVersionMismatch(controller, data.fragmentVersions)) {
+    homeFragmentHydration.schedulePreviewRefreshes();
+    homeFragmentHydration.retryPending();
+  }
+
+  const postLcpCleanup = installDeferredHomePostLcpRuntime({
+    controller,
+    homeFragmentHydration,
+  });
+  const handlePageHide = () => {
+    stopHomeHydrationFetches(controller);
+    controller.sharedRuntime?.suspendForPageHide();
+  };
+
+  const handlePageShow = (event: PageTransitionEvent) => {
+    if (!event.persisted || controller.destroyed) return;
+    controller.sharedRuntime?.resumeAfterPageShow();
+    updateFragmentStatus(controller.lang, "idle");
+    homeFragmentHydration.observeWithin(document);
+    homeFragmentHydration.retryPending();
+    requestHomeDemoObserve();
+  };
+
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
+
+  const cleanupDeferredRuntime = () => {
+    window.removeEventListener("pagehide", handlePageHide);
+    window.removeEventListener("pageshow", handlePageShow);
+    postLcpCleanup();
+    if (controller.deferredRuntimeCleanup === cleanupDeferredRuntime) {
+      controller.deferredRuntimeCleanup = null;
+    }
+  };
+
+  controller.deferredRuntimeCleanup = cleanupDeferredRuntime;
+  controller.cleanupFns.push(cleanupDeferredRuntime);
+};
+
+export const bootstrapStaticHomeAnchor = async () => {
+  const data = readStaticHomeBootstrapData();
+  if (!data) return;
+  primeTrustedTypesPolicies();
   cleanupLegacyHomePersistence();
   const routeSeed = await resolveStaticHomeRouteSeed(data);
   applyShellLanguageSeed(data.lang, data.shellSeed, routeSeed);
@@ -1310,6 +1394,9 @@ export const bootstrapStaticHome = async () => {
     fetchAbort: null,
     cleanupFns: [],
     patchQueue: null,
+    sharedRuntime: null,
+    homeFragmentHydration: null,
+    deferredRuntimeCleanup: null,
     destroyed: false,
   };
   activeController = controller;
@@ -1354,10 +1441,12 @@ export const bootstrapStaticHome = async () => {
       controller.patchQueue?.enqueue(payload);
     },
   });
+  controller.sharedRuntime = sharedRuntime;
   const homeFragmentHydration = bindHomeFragmentHydration({
     controller,
     requestFragments: sharedRuntime?.requestFragments,
   });
+  controller.homeFragmentHydration = homeFragmentHydration;
   controller.cleanupFns.push(() => homeFragmentHydration.destroy());
   let didScheduleInitialAnchorHydration = false;
   const scheduleInitialAnchorHydration = () => {
@@ -1377,48 +1466,10 @@ export const bootstrapStaticHome = async () => {
       onReady: scheduleInitialAnchorHydration,
     }),
   );
-  controller.cleanupFns.push(
-    scheduleStaticShellTask(
-      () => {
-        if (controller.destroyed) return;
-        homeFragmentHydration.observeWithin(document);
-      },
-      {
-        priority: "user-visible",
-        timeoutMs: 0,
-        waitForPaint: true,
-        preferIdle: false,
-      },
-    ),
-  );
-  controller.cleanupFns.push(
-    installDeferredHomePostLcpRuntime({
-      controller,
-      homeFragmentHydration,
-    }),
-  );
   updateFragmentStatus(controller.lang, "idle");
+};
 
-  const handlePageHide = () => {
-    stopHomeHydrationFetches(controller);
-    sharedRuntime?.suspendForPageHide();
-  };
-
-  const handlePageShow = (event: PageTransitionEvent) => {
-    if (!event.persisted || controller.destroyed) return;
-    sharedRuntime?.resumeAfterPageShow();
-    updateFragmentStatus(controller.lang, "idle");
-    homeFragmentHydration.observeWithin(document);
-    homeFragmentHydration.retryPending();
-    requestHomeDemoObserve();
-  };
-
-  window.addEventListener("pagehide", handlePageHide);
-  window.addEventListener("pageshow", handlePageShow);
-  controller.cleanupFns.push(() =>
-    window.removeEventListener("pagehide", handlePageHide),
-  );
-  controller.cleanupFns.push(() =>
-    window.removeEventListener("pageshow", handlePageShow),
-  );
+export const bootstrapStaticHome = async () => {
+  await bootstrapStaticHomeAnchor();
+  await installHomeBootstrapDeferredRuntime();
 };

@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { installHomeStaticEntry } from './home-static-entry'
-import type { HomeFirstLcpGate } from './home-lcp-gate'
-import {
-  STATIC_FRAGMENT_CARD_ATTR,
-  STATIC_HOME_DATA_SCRIPT_ID,
-  STATIC_HOME_FRAGMENT_KIND_ATTR,
-  STATIC_HOME_PATCH_STATE_ATTR,
-  STATIC_HOME_STAGE_ATTR,
-  STATIC_SHELL_SEED_SCRIPT_ID
-} from './constants'
+import { STATIC_HOME_DATA_SCRIPT_ID, STATIC_SHELL_SEED_SCRIPT_ID } from './constants'
 
 type MockListener = (event?: { target?: unknown }) => void
 type ListenerMap = Map<string, Set<MockListener>>
@@ -17,54 +9,9 @@ class MockScriptElement {
   constructor(readonly textContent: string) {}
 }
 
-class MockIntersectionObserver {
-  static instances: MockIntersectionObserver[] = []
-  readonly observed = new Set<Element>()
-
-  constructor(private readonly callback: IntersectionObserverCallback) {
-    MockIntersectionObserver.instances.push(this)
-  }
-
-  observe(target: Element) {
-    this.observed.add(target)
-  }
-
-  unobserve(target: Element) {
-    this.observed.delete(target)
-  }
-
-  disconnect() {
-    this.observed.clear()
-  }
-
-  emit(entries: Array<{ target: Element; isIntersecting: boolean; intersectionRatio?: number }>) {
-    this.callback(
-      entries.map(
-        ({ target, isIntersecting, intersectionRatio }) =>
-          ({
-            target,
-            isIntersecting,
-            intersectionRatio: typeof intersectionRatio === 'number' ? intersectionRatio : isIntersecting ? 1 : 0
-          }) as IntersectionObserverEntry
-      ),
-      this as unknown as IntersectionObserver
-    )
-  }
-
-  static reset() {
-    MockIntersectionObserver.instances.length = 0
-  }
-}
-
 class MockWindow {
   __PROM_STATIC_HOME_ENTRY__?: boolean
-  __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
-  __PROM_STATIC_HOME_COLLAB_ENTRY__?: boolean
-  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
-  __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean
   readonly listeners: ListenerMap = new Map()
-  readonly timeouts = new Map<number, () => void>()
-  nextTimeoutId = 1
 
   addEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -74,52 +21,25 @@ class MockWindow {
 
   removeEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type)
-    if (!listeners) return
+    if (!listeners) {
+      return
+    }
     listeners.delete(listener)
     if (listeners.size === 0) {
       this.listeners.delete(type)
     }
   }
 
-  setTimeout(callback: () => void) {
-    const id = this.nextTimeoutId
-    this.nextTimeoutId += 1
-    this.timeouts.set(id, callback)
-    return id as unknown as ReturnType<typeof setTimeout>
-  }
-
-  clearTimeout(id: ReturnType<typeof setTimeout>) {
-    this.timeouts.delete(id as unknown as number)
-  }
-
   emit(type: string, event?: { target?: unknown }) {
     ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
-  }
-
-  runTimeout(id = 1) {
-    const callback = this.timeouts.get(id)
-    if (!callback) return
-    this.timeouts.delete(id)
-    callback()
   }
 }
 
 class MockDocument {
-  readyState: DocumentReadyState = 'complete'
+  readonly listeners: ListenerMap = new Map()
   activeElement: unknown = null
-  querySelectorValue: unknown = null
-  fragmentCards: unknown[] = []
-  demoRoot: unknown = null
-  listeners: ListenerMap = new Map()
-  homeRoot = {
-    attrs: new Map<string, string>([['data-home-paint', 'initial']]),
-    getAttribute(name: string) {
-      return this.attrs.get(name) ?? null
-    },
-    setAttribute(name: string, value: string) {
-      this.attrs.set(name, value)
-    }
-  }
+  readonly mainRoot = { kind: 'main-root' }
+  readonly homeRoot = { kind: 'home-root' }
 
   addEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type) ?? new Set()
@@ -129,7 +49,9 @@ class MockDocument {
 
   removeEventListener(type: string, listener: MockListener) {
     const listeners = this.listeners.get(type)
-    if (!listeners) return
+    if (!listeners) {
+      return
+    }
     listeners.delete(listener)
     if (listeners.size === 0) {
       this.listeners.delete(type)
@@ -158,11 +80,11 @@ class MockDocument {
         JSON.stringify({
           path: '/',
           lang: 'en',
-          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/planner@v1',
-          fragmentOrder: ['fragment://page/home/planner@v1'],
+          fragmentBootstrapHref: '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/manifest@v1',
+          fragmentOrder: ['fragment://page/home/manifest@v1'],
           runtimePlanEntries: [
             {
-              id: 'fragment://page/home/planner@v1',
+              id: 'fragment://page/home/manifest@v1',
               critical: true,
               layout: {},
               dependsOn: []
@@ -172,7 +94,9 @@ class MockDocument {
           runtimeInitialFragments: [],
           fragmentVersions: {},
           languageSeed: {},
-          homeDemoAssets: {}
+          homeDemoAssets: {
+            planner: '/build/static-shell/apps/site/src/static-shell/home-demo-planner-runtime.js'
+          }
         })
       )
     }
@@ -181,41 +105,13 @@ class MockDocument {
   }
 
   querySelector(selector: string) {
+    if (selector === '[data-static-shell-region="main"]') {
+      return this.mainRoot
+    }
     if (selector === '[data-static-home-root]') {
       return this.homeRoot
     }
-    if (selector === '[data-home-demo-root]') {
-      return this.demoRoot
-    }
-    if (selector.includes('data-fragment-id') || selector.includes('data-static-home-patch-state')) {
-      return this.querySelectorValue
-    }
     return null
-  }
-
-  querySelectorAll(selector?: string) {
-    if (selector?.includes(STATIC_FRAGMENT_CARD_ATTR)) {
-      return this.fragmentCards
-    }
-    return []
-  }
-}
-
-class MockFragmentCard {
-  private readonly attrs = new Map<string, string>([[STATIC_FRAGMENT_CARD_ATTR, 'true']])
-
-  constructor(
-    stage: 'critical' | 'anchor' | 'deferred',
-    patchState: 'pending' | 'ready',
-    fragmentKind: 'planner' | 'ledger' | 'island' | 'react' | 'dock' = 'planner'
-  ) {
-    this.attrs.set(STATIC_HOME_STAGE_ATTR, stage)
-    this.attrs.set(STATIC_HOME_PATCH_STATE_ATTR, patchState)
-    this.attrs.set(STATIC_HOME_FRAGMENT_KIND_ATTR, fragmentKind)
-  }
-
-  getAttribute(name: string) {
-    return this.attrs.get(name) ?? null
   }
 }
 
@@ -224,167 +120,95 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
-const noopWarmDemoAssets = async () => undefined
-
-const createScheduledTaskQueue = () => {
-  const callbacks: Array<() => void> = []
-
-  return {
-    scheduleTask(callback: () => void) {
-      callbacks.push(callback)
-      return () => {
-        const index = callbacks.indexOf(callback)
-        if (index >= 0) {
-          callbacks.splice(index, 1)
-        }
-      }
-    },
-    runNext() {
-      const callback = callbacks.shift()
-      callback?.()
-    },
-    runAll() {
-      while (callbacks.length > 0) {
-        this.runNext()
-      }
-    },
-    size() {
-      return callbacks.length
-    }
-  }
-}
-
-const createManualGate = () => {
-  let resolveWait!: () => void
-  let cleanupCount = 0
-  const gate: HomeFirstLcpGate = {
-    wait: new Promise<void>((resolve) => {
-      resolveWait = resolve
-    }),
-    cleanup: () => {
-      cleanupCount += 1
-    }
-  }
-
-  return {
-    gate,
-    resolve: () => resolveWait(),
-    cleanupCount: () => cleanupCount
-  }
-}
-
-const originalIntersectionObserver = globalThis.IntersectionObserver
-
 afterEach(() => {
-  ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
-    originalIntersectionObserver
-  MockIntersectionObserver.reset()
+  // no-op placeholder so each test gets a fresh document/window instance
 })
 
 describe('installHomeStaticEntry', () => {
-  it('installs immediately without waiting for load when the home root already exists', async () => {
+  it('installs the deferred runtime and demo warmup immediately', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
-    doc.readyState = 'loading'
-    const manualGate = createManualGate()
-    let sharedRuntimeStartCount = 0
+    let deferredRuntimeCalls = 0
+    let warmupPayload: {
+      currentPath: string
+      lang: string
+      fragmentOrder: string[]
+    } | null = null
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => ({
-        bootstrapStaticHome: async () => undefined
-      }),
-      warmDemoAssets: noopWarmDemoAssets,
-      startSharedRuntime: () => {
-        sharedRuntimeStartCount += 1
-        return {} as never
+      startDeferredRuntime: async () => {
+        deferredRuntimeCalls += 1
+      },
+      warmDemoAssets: async ({ data }) => {
+        warmupPayload = {
+          currentPath: data.currentPath,
+          lang: data.lang,
+          fragmentOrder: data.fragmentOrder
+        }
       }
     })
 
     await flushMicrotasks()
 
-    expect(sharedRuntimeStartCount).toBe(1)
-    expect(win.listeners.has('load')).toBe(false)
-    expect(doc.listeners.has('DOMContentLoaded')).toBe(false)
+    expect(deferredRuntimeCalls).toBe(1)
+    expect(warmupPayload).toEqual({
+      currentPath: '/',
+      lang: 'en',
+      fragmentOrder: ['fragment://page/home/manifest@v1']
+    })
     expect(win.listeners.has('pointerdown')).toBe(true)
+    expect(win.listeners.has('keydown')).toBe(true)
+    expect(win.listeners.has('touchstart')).toBe(true)
+    expect(doc.listeners.has('focusin')).toBe(true)
 
     cleanup()
+
+    expect(win.listeners.size).toBe(0)
+    expect(doc.listeners.size).toBe(0)
   })
 
-  it('prewarms the bootstrap runtime immediately but waits for the LCP gate before bootstrapping', async () => {
+  it('starts the widget runtime on fragment-card pointer interaction and reuses it', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const taskQueue = createScheduledTaskQueue()
-    let bootstrapLoadCount = 0
-    let sharedRuntimeStartCount = 0
+    const handledTargets: unknown[] = []
+    let loadWidgetRuntimeCalls = 0
+    let createRuntimeCalls = 0
+    let destroyCalls = 0
+
+    const runtime = {
+      handleInteraction(target: EventTarget | null) {
+        handledTargets.push(target)
+      },
+      destroy() {
+        destroyCalls += 1
+      }
+    }
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => {
-        bootstrapLoadCount += 1
+      startDeferredRuntime: async () => undefined,
+      warmDemoAssets: async () => undefined,
+      loadWidgetRuntime: async () => {
+        loadWidgetRuntimeCalls += 1
         return {
-          bootstrapStaticHome: async () => undefined
-        }
-      },
-      startSharedRuntime: () => {
-        sharedRuntimeStartCount += 1
-        return {} as never
-      },
-      warmDemoAssets: noopWarmDemoAssets,
-      scheduleTask: taskQueue.scheduleTask as never
-    })
-
-    expect(bootstrapLoadCount).toBe(1)
-    expect(sharedRuntimeStartCount).toBe(1)
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(bootstrapLoadCount).toBe(1)
-    expect(taskQueue.size()).toBe(0)
-    expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
-    expect(win.timeouts.size).toBe(0)
-
-    cleanup()
-  })
-
-  it('starts the shared worker runtime before intent but waits for the LCP gate before patching', async () => {
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const taskQueue = createScheduledTaskQueue()
-    let bootstrapLoadCount = 0
-    let bootstrapCount = 0
-    let sharedRuntimeStartCount = 0
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => {
-        bootstrapLoadCount += 1
-        return {
-          bootstrapStaticHome: async () => {
-            bootstrapCount += 1
+          createFragmentWidgetRuntime: ({
+            root,
+            observeMutations
+          }: {
+            root: unknown
+            observeMutations: boolean
+          }) => {
+            createRuntimeCalls += 1
+            expect(root).toBe(doc.mainRoot)
+            expect(observeMutations).toBe(true)
+            return runtime
           }
-        }
-      },
-      startSharedRuntime: () => {
-        sharedRuntimeStartCount += 1
-        return {} as never
-      },
-      warmDemoAssets: noopWarmDemoAssets,
-      scheduleTask: taskQueue.scheduleTask as never
+        } as never
+      }
     })
-
-    await flushMicrotasks()
-    expect(sharedRuntimeStartCount).toBe(1)
-    expect(bootstrapLoadCount).toBe(1)
 
     const fragmentCardTarget = {
       closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
@@ -392,98 +216,64 @@ describe('installHomeStaticEntry', () => {
 
     win.emit('pointerdown', { target: fragmentCardTarget })
     await flushMicrotasks()
-
-    expect(sharedRuntimeStartCount).toBe(1)
-    expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(0)
-
-    manualGate.resolve()
+    win.emit('pointerdown', { target: fragmentCardTarget })
     await flushMicrotasks()
 
-    expect(sharedRuntimeStartCount).toBe(1)
-    expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-    expect(manualGate.cleanupCount()).toBe(1)
+    expect(loadWidgetRuntimeCalls).toBe(1)
+    expect(createRuntimeCalls).toBe(1)
+    expect(handledTargets).toEqual([fragmentCardTarget, fragmentCardTarget])
+
     cleanup()
+
+    expect(destroyCalls).toBe(1)
   })
 
-  it('marks home paint ready after the LCP gate and bootstraps immediately', async () => {
+  it('routes focus and keyboard interactions through the widget runtime only for fragment cards', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const taskQueue = createScheduledTaskQueue()
-    const events: string[] = []
+    const handledTargets: unknown[] = []
+    let loadWidgetRuntimeCalls = 0
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => ({
-        bootstrapStaticHome: async () => {
-          events.push('bootstrap')
-        }
-      }),
-      schedulePaintReady: (({ root, readyAttr, onReady }) => {
-        events.push('schedule-paint')
-        ;(root as { setAttribute?: (name: string, value: string) => void } | null)?.setAttribute?.(readyAttr, 'ready')
-        onReady?.()
-        return () => undefined
-      }) as typeof import('./static-route-paint').scheduleStaticRoutePaintReady,
-      warmDemoAssets: noopWarmDemoAssets,
-      scheduleTask: taskQueue.scheduleTask as never
-    })
-
-    manualGate.resolve()
-    await flushMicrotasks()
-
-    expect(doc.homeRoot.getAttribute('data-home-paint')).toBe('ready')
-    expect(events).toEqual(['schedule-paint', 'bootstrap'])
-    expect(taskQueue.size()).toBe(0)
-    cleanup()
-  })
-
-  it('starts bootstrap as soon as home paint becomes ready', async () => {
-    ;(globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver =
-      MockIntersectionObserver as unknown as typeof IntersectionObserver
-
-    const win = new MockWindow()
-    const doc = new MockDocument()
-    const manualGate = createManualGate()
-    const card = new MockFragmentCard('deferred', 'pending')
-    const taskQueue = createScheduledTaskQueue()
-    let bootstrapLoadCount = 0
-    let bootstrapCount = 0
-
-    doc.fragmentCards = [card]
-
-    const cleanup = installHomeStaticEntry({
-      win: win as never,
-      doc: doc as never,
-      createLcpGate: () => manualGate.gate,
-      loadBootstrapRuntime: async () => {
-        bootstrapLoadCount += 1
+      startDeferredRuntime: async () => undefined,
+      warmDemoAssets: async () => undefined,
+      loadWidgetRuntime: async () => {
+        loadWidgetRuntimeCalls += 1
         return {
-          bootstrapStaticHome: async () => {
-            bootstrapCount += 1
-          }
-        }
-      },
-      warmDemoAssets: noopWarmDemoAssets,
-      scheduleTask: taskQueue.scheduleTask as never
+          createFragmentWidgetRuntime: () => ({
+            handleInteraction(target: EventTarget | null) {
+              handledTargets.push(target)
+            },
+            destroy() {}
+          })
+        } as never
+      }
     })
 
-    expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(0)
-
-    manualGate.resolve()
+    doc.activeElement = {
+      closest: () => null
+    }
+    win.emit('keydown')
     await flushMicrotasks()
 
-    expect(bootstrapLoadCount).toBe(1)
-    expect(bootstrapCount).toBe(1)
-    expect(MockIntersectionObserver.instances.length).toBe(0)
-    expect(taskQueue.size()).toBe(0)
+    const keyboardTarget = {
+      closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
+    }
+    doc.activeElement = keyboardTarget
+    win.emit('keydown')
+    await flushMicrotasks()
+
+    const focusTarget = {
+      closest: (selector: string) => (selector === '[data-static-fragment-card]' ? {} : null)
+    }
+    doc.emit('focusin', { target: focusTarget })
+    await flushMicrotasks()
+
+    expect(loadWidgetRuntimeCalls).toBe(1)
+    expect(handledTargets).toEqual([keyboardTarget, focusTarget])
 
     cleanup()
   })
-
 })

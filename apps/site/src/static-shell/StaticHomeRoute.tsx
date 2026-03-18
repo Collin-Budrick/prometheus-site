@@ -18,6 +18,7 @@ import {
   STATIC_FRAGMENT_BODY_ATTR,
   STATIC_FRAGMENT_CARD_ATTR,
   STATIC_FRAGMENT_VERSION_ATTR,
+  STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
   STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
@@ -271,7 +272,8 @@ export const buildStaticHomeRouteState = ({
     } else if (isStaticHomePreviewKind(fragmentKind)) {
       renderMode = 'preview'
     }
-    const previewVisible = renderMode === 'preview' || renderMode === 'active-shell'
+    const previewVisible =
+      renderMode === 'preview' || renderMode === 'active-shell' || renderMode === 'shell'
     const patchState = stage === 'critical' ? 'ready' : 'pending'
     const lcpStable = Boolean(entry.critical || fragmentKind === 'dock')
     const html = fragment
@@ -497,6 +499,19 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
         ))}
       </div>
       <script
+        id={STATIC_HOME_WORKER_DATA_SCRIPT_ID}
+        type="application/json"
+        nonce={nonce || undefined}
+        dangerouslySetInnerHTML={serializeJson({
+          lang,
+          path: plan.path,
+          runtimeAnchorBootstrapHref: routeState.runtimeAnchorBootstrapHref,
+          runtimeAnchorBootstrapPayloadBase64:
+            routeState.runtimeAnchorBootstrapPayloadBase64,
+          knownVersions: routeState.fragmentVersions
+        })}
+      />
+      <script
         id={STATIC_HOME_DATA_SCRIPT_ID}
         type="application/json"
         nonce={nonce || undefined}
@@ -513,9 +528,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           versionSignature: routeState.versionSignature,
           runtimePlanEntries: serializedRuntimePlanEntries,
           runtimeFetchGroups: serializedRuntimeFetchGroups,
-          runtimeAnchorBootstrapHref: routeState.runtimeAnchorBootstrapHref,
-          runtimeAnchorBootstrapPayloadBase64:
-            routeState.runtimeAnchorBootstrapPayloadBase64,
           fragmentVersions: serializedFragmentVersions
         })}
       />

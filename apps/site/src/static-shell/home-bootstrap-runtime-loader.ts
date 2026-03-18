@@ -1,7 +1,7 @@
 import { resolveStaticAssetUrl } from './static-asset-url'
 
-const HOME_BOOTSTRAP_RUNTIME_ASSET_PATH =
-  'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js'
+export const HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH =
+  'build/static-shell/apps/site/src/static-shell/home-bootstrap-anchor-runtime.js'
 
 export type HomeBootstrapRuntimeModule = {
   bootstrapStaticHome: () => Promise<void>
@@ -18,7 +18,7 @@ const importHomeBootstrapRuntime = async (url: string) =>
   (await import(/* @vite-ignore */ url)) as HomeBootstrapRuntimeModule
 
 export const resolveHomeBootstrapRuntimeUrl = (options?: Parameters<typeof resolveStaticAssetUrl>[1]) =>
-  resolveStaticAssetUrl(HOME_BOOTSTRAP_RUNTIME_ASSET_PATH, options)
+  resolveStaticAssetUrl(HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH, options)
 
 export const loadHomeBootstrapRuntime = ({
   assetUrl = resolveHomeBootstrapRuntimeUrl(),

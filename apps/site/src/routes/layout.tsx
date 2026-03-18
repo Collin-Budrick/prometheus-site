@@ -47,10 +47,11 @@ import {
 } from '../static-shell/constants'
 import homeInteractiveDeferredStylesheetHref from '../static-shell/home-static-deferred.css?url'
 import {
-  HOME_DEMO_ENTRY_ASSET_PATH,
-  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH
-} from '../static-shell/home-demo-runtime-types'
+  HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
+} from '../static-shell/home-static-entry-loader'
+import {
+  HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
+} from '../static-shell/home-bootstrap-runtime-loader'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -120,15 +121,14 @@ const initialFadeScript = `(function () {
 const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 30000
 const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 24000
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
-  'home-static': 'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
+  'home-static': HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   'fragment-static': 'build/static-shell/apps/site/src/static-shell/fragment-static-entry.js',
   'island-static': 'build/static-shell/apps/site/src/static-shell/island-static-entry.js'
 } as const
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   'home-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
-    'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js',
-    'build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js',
+    HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
     FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
     FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH
   ],
@@ -141,13 +141,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
     'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
   ]
 } as const
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
-  [HOME_STATIC_ROUTE_PATH]: [
-    HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
-    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-    HOME_DEMO_ENTRY_ASSET_PATH
-  ]
-} as const
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const
 const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
   [HOME_STATIC_ROUTE_PATH]: [homeInteractiveDeferredStylesheetHref]
 } as const

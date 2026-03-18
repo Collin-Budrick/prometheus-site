@@ -8,13 +8,9 @@ describe("entry.ssr static bootstrap injection", () => {
     const source = await readSource();
 
     expect(source).toContain('"home-static": [');
-    expect(source).toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
-    );
-    expect(source).toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
-    );
+    expect(source).toContain("HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH");
     expect(source).toContain("HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH");
+    expect(source).toContain("HOME_DEMO_ENTRY_ASSET_PATH");
     expect(source).toContain(
       "FRAGMENT_RUNTIME_WORKER_ASSET_PATH",
     );
@@ -25,19 +21,30 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain('data-fragment-runtime-preload="decode"');
     expect(source).toContain('data-home-demo-startup-attach="true"');
     expect(source).toContain("buildImmediateHomeStaticEntryTag");
-    expect(source).toContain(
-      '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
-    );
-    expect(source).toContain(
-      'Static home demo startup immediate failed:',
-    );
+    expect(source).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
+    expect(source).toContain("const dataScriptId =");
+    expect(source).toContain("scheduleAnchorEntry");
+    expect(source).toContain('requestId: "static-home-anchor-bootstrap"');
+    expect(source).toContain('console.error("Static home anchor entry failed:", error);');
+    expect(source).toContain('console.error("Static home worker bootstrap failed:", error);');
+    expect(source).toContain('console.error("Static home bootstrap data parse failed:", error);');
     expect(source).not.toContain("const stylesheet = document.querySelector('link[data-home-demo-stylesheet]');");
     expect(source).not.toContain("stylesheet.setAttribute('rel', 'stylesheet');");
     expect(source).not.toContain("HOME_STATIC_ENTRY_DEFER_DELAY_MS");
     expect(source).not.toContain("const loadFromIntent = (event) => {");
     expect(source).not.toContain('document.addEventListener("focusin", load');
+    expect(source).not.toContain("const homeDataScriptId =");
     expect(source).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js"',
+    );
+    expect(source).not.toContain(
+      '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
+    );
+    expect(source).not.toContain(
+      '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
+    );
+    expect(source).not.toContain(
+      '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
     );
     expect(source).toContain('"fragment-static": [');
     expect(source).toContain(

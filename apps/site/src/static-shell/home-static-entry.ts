@@ -1,28 +1,14 @@
-import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
-import { createHomeFirstLcpGate } from './home-lcp-gate'
 import {
   readStaticHomeBootstrapData,
   type HomeStaticBootstrapData
 } from './home-bootstrap-data'
-import {
-  STATIC_HOME_PAINT_ATTR,
-  STATIC_FRAGMENT_VERSION_ATTR,
-  STATIC_SHELL_MAIN_REGION,
-  STATIC_SHELL_REGION_ATTR
-} from './constants'
-import { scheduleStaticRoutePaintReady } from './static-route-paint'
 import { scheduleStaticShellTask } from './scheduler'
 import {
-  markStaticShellPerformance,
   markStaticShellUserTiming,
   measureStaticShellUserTiming
 } from './static-shell-performance'
-import {
-  disposeHomeSharedRuntime,
-  ensureHomeSharedRuntime,
-  ensureHomeSharedRuntimeAssetPreloads
-} from './home-shared-runtime'
+import { installHomeBootstrapDeferredRuntime } from './home-bootstrap'
 import { warmHomeDemoEntryRuntime } from './home-demo-entry-loader'
 import {
   ensureHomeDemoStylesheet,
@@ -38,30 +24,24 @@ export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchsta
 
 type HomeStaticEntryWindow = Window & {
   __PROM_STATIC_HOME_ENTRY__?: boolean
-  __PROM_STATIC_HOME_BOOTSTRAP__?: boolean
-  __PROM_STATIC_HOME_LCP_RELEASED__?: boolean
 }
-
-type InstallHomeStaticEntryOptions = {
-  win?: HomeStaticEntryWindow | null
-  doc?: Document | null
-  loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
-  createLcpGate?: typeof createHomeFirstLcpGate
-  schedulePaintReady?: typeof scheduleStaticRoutePaintReady
-  scheduleTask?: typeof scheduleStaticShellTask
-  startSharedRuntime?: typeof ensureHomeSharedRuntime
-  preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
-  disposeSharedRuntime?: typeof disposeHomeSharedRuntime
-  warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
-}
-
-const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 
 type WarmHomeDemoAssetsOptions = {
   data: HomeStaticBootstrapData
   doc: Document
   scheduleTask: typeof scheduleStaticShellTask
 }
+
+type InstallHomeStaticEntryOptions = {
+  win?: HomeStaticEntryWindow | null
+  doc?: Document | null
+  scheduleTask?: typeof scheduleStaticShellTask
+  startDeferredRuntime?: typeof installHomeBootstrapDeferredRuntime
+  warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
+  loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
+}
+
+const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 
 const warmStaticHomeDemoAssets = async ({
   data,
@@ -104,13 +84,6 @@ const warmStaticHomeDemoAssets = async ({
   })
 }
 
-const escapeFragmentId = (value: string) => {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-    return CSS.escape(value)
-  }
-  return value.replace(/["\\]/g, '\\$&')
-}
-
 const resolveInteractionCard = (target: EventTarget | null) => {
   if (!target || typeof target !== 'object') {
     return null
@@ -127,160 +100,32 @@ const resolveInteractionCard = (target: EventTarget | null) => {
   return element?.closest<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR) ?? null
 }
 
-const hasStaticHomeFragmentVersionMismatch = (doc: Document) => {
-  if (
-    typeof (doc as Document & { getElementById?: unknown }).getElementById !== 'function' ||
-    typeof doc.querySelector !== 'function'
-  ) {
-    return false
-  }
-
-  const data = readStaticHomeBootstrapData({ doc })
-  if (!data) {
-    return false
-  }
-
-  return Object.entries(data.fragmentVersions).some(([fragmentId, version]) => {
-    const card = doc.querySelector<HTMLElement>(
-      `[data-fragment-id="${escapeFragmentId(fragmentId)}"]`
-    )
-    if (!card) {
-      return false
-    }
-    const renderedVersion = card.getAttribute(STATIC_FRAGMENT_VERSION_ATTR)
-    return typeof renderedVersion === 'string' && renderedVersion !== `${version}`
-  })
-}
-
 export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
-  loadBootstrapRuntime = loadHomeBootstrapRuntime,
-  createLcpGate = createHomeFirstLcpGate,
-  schedulePaintReady = scheduleStaticRoutePaintReady,
   scheduleTask = scheduleStaticShellTask,
-  startSharedRuntime = ensureHomeSharedRuntime,
-  preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
-  disposeSharedRuntime = disposeHomeSharedRuntime,
-  warmDemoAssets = warmStaticHomeDemoAssets
+  startDeferredRuntime = installHomeBootstrapDeferredRuntime,
+  warmDemoAssets = warmStaticHomeDemoAssets,
+  loadWidgetRuntime = loadFragmentWidgetRuntime
 }: InstallHomeStaticEntryOptions = {}) => {
-  if (!win || !doc) {
+  if (!win || !doc || win.__PROM_STATIC_HOME_ENTRY__) {
     return () => undefined
   }
 
   const liveWin = win
   const liveDoc = doc
-
-  markStaticShellUserTiming('prom:home:static-entry-install')
   liveWin.__PROM_STATIC_HOME_ENTRY__ = true
 
-  let startedBootstrap = false
-  let bootstrapTriggersInstalled = false
-  let domReadyHandler: (() => void) | null = null
-  let loadHandler: (() => void) | null = null
-  let bootstrapRequested = false
-  let lcpGateReleased = false
-  let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
-  let widgetRuntimePromise: ReturnType<typeof loadFragmentWidgetRuntime> | null = null
+  let widgetRuntimePromise: ReturnType<typeof loadWidgetRuntime> | null = null
   let widgetRuntime:
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
-  let lcpGateCleanup: (() => void) | null = null
-  let paintReadyCleanup: (() => void) | null = null
-  let sharedRuntimeStarted = false
   let homeDemoWarmupPromise: Promise<void> | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
-  const readStaticHomeRoot = () => liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
   const readWidgetRoot = () =>
-    liveDoc.querySelector<HTMLElement>(
-      `[${STATIC_SHELL_REGION_ATTR}="${STATIC_SHELL_MAIN_REGION}"]`
-    ) ?? readStaticHomeRoot()
-  const hasBootstrapSetupPrereqs = () =>
-    Boolean(readStaticHomeRoot()) && Boolean(readStaticHomeBootstrapData({ doc: liveDoc }))
-
-  const clearStartupHandlers = () => {
-    if (domReadyHandler) {
-      liveDoc.removeEventListener?.('DOMContentLoaded', domReadyHandler)
-      domReadyHandler = null
-    }
-
-    if (loadHandler) {
-      liveWin.removeEventListener('load', loadHandler)
-      loadHandler = null
-    }
-  }
-
-  const cleanupTriggers = () => {
-    liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
-    liveWin.removeEventListener('touchstart', handlePointerDown, eventOptions)
-    liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
-    liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
-    clearStartupHandlers()
-
-    lcpGateCleanup?.()
-    lcpGateCleanup = null
-    paintReadyCleanup?.()
-    paintReadyCleanup = null
-    widgetRuntime?.destroy()
-    widgetRuntime = null
-    disposeSharedRuntime(liveWin)
-  }
-
-  const prewarmBootstrapRuntime = () => {
-    if (!bootstrapRuntimePromise) {
-      markStaticShellUserTiming('prom:home:bootstrap-runtime-requested')
-      bootstrapRuntimePromise = loadBootstrapRuntime()
-        .then((runtime) => {
-          markStaticShellUserTiming('prom:home:bootstrap-runtime-ready')
-          measureStaticShellUserTiming(
-            'prom:home:bootstrap-runtime',
-            'prom:home:bootstrap-runtime-requested',
-            'prom:home:bootstrap-runtime-ready'
-          )
-          return runtime
-        })
-        .catch((error) => {
-          bootstrapRuntimePromise = null
-          throw error
-        })
-    }
-    return bootstrapRuntimePromise
-  }
-
-  const prewarmWidgetRuntime = () => {
-    widgetRuntimePromise ??= loadFragmentWidgetRuntime()
-    return widgetRuntimePromise
-  }
-
-  const startHomeWorkerRuntime = () => {
-    if (sharedRuntimeStarted) {
-      return
-    }
-
-    const data = readStaticHomeBootstrapData({ doc: liveDoc })
-    if (!data || !data.runtimePlanEntries.length) {
-      return
-    }
-
-    preloadSharedRuntimeAssets({ doc: liveDoc })
-    sharedRuntimeStarted = Boolean(
-      startSharedRuntime(
-        {
-          path: data.currentPath,
-          lang: data.lang,
-          planEntries: data.runtimePlanEntries,
-          fetchGroups: data.runtimeFetchGroups,
-          initialFragments: data.runtimeInitialFragments,
-          knownVersions: data.fragmentVersions,
-          bootstrapHref: data.fragmentBootstrapHref,
-          startupMode: 'visible-only',
-          enableStreaming: false
-        },
-        liveWin
-      )
-    )
-  }
+    liveDoc.querySelector<HTMLElement>('[data-static-shell-region="main"]') ??
+    liveDoc.querySelector<HTMLElement>('[data-static-home-root]')
 
   const startHomeDemoWarmup = () => {
     if (homeDemoWarmupPromise) {
@@ -315,8 +160,13 @@ export const installHomeStaticEntry = ({
     return homeDemoWarmupPromise
   }
 
-  const startWidgetRuntime = (target: EventTarget | null = null) => {
-    return prewarmWidgetRuntime()
+  const prewarmWidgetRuntime = () => {
+    widgetRuntimePromise ??= loadWidgetRuntime()
+    return widgetRuntimePromise
+  }
+
+  const startWidgetRuntime = (target: EventTarget | null = null) =>
+    prewarmWidgetRuntime()
       .then((module) => {
         widgetRuntime ??= module.createFragmentWidgetRuntime({
           root: readWidgetRoot(),
@@ -330,30 +180,11 @@ export const installHomeStaticEntry = ({
         widgetRuntimePromise = null
         console.error('Static home widget runtime failed:', error)
       })
-  }
 
-  const startBootstrap = () => {
-    if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
-    startedBootstrap = true
-    liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ = true
-
-    void prewarmBootstrapRuntime()
-      .then(({ bootstrapStaticHome }) => bootstrapStaticHome())
-      .catch((error) => {
-        bootstrapRuntimePromise = null
-        console.error('Static home bootstrap failed:', error)
-      })
-  }
-
-  function requestBootstrap() {
-    bootstrapRequested = true
-    void prewarmBootstrapRuntime().catch((error) => {
-      bootstrapRuntimePromise = null
-      console.error('Static home bootstrap prewarm failed:', error)
+  const startDeferredRuntimeInstall = () => {
+    void startDeferredRuntime().catch((error) => {
+      console.error('Static home deferred bootstrap runtime failed:', error)
     })
-    if (lcpGateReleased) {
-      startBootstrap()
-    }
   }
 
   function handlePointerDown(event: Event) {
@@ -361,7 +192,6 @@ export const installHomeStaticEntry = ({
       return
     }
     void startWidgetRuntime(event.target)
-    requestBootstrap()
   }
 
   function handleFocusIn(event: Event) {
@@ -369,7 +199,6 @@ export const installHomeStaticEntry = ({
       return
     }
     void startWidgetRuntime(event.target)
-    requestBootstrap()
   }
 
   function handleKeyDown() {
@@ -377,87 +206,28 @@ export const installHomeStaticEntry = ({
       return
     }
     void startWidgetRuntime(liveDoc.activeElement)
-    requestBootstrap()
   }
 
-  const releaseLcpGate = () => {
-    if (lcpGateReleased) return
-    lcpGateReleased = true
-    liveWin.__PROM_STATIC_HOME_LCP_RELEASED__ = true
-    lcpGateCleanup?.()
-    lcpGateCleanup = null
-    markStaticShellPerformance('prom:home:lcp-release-start')
-    paintReadyCleanup ??= schedulePaintReady({
-      root: readStaticHomeRoot(),
-      readyAttr: STATIC_HOME_PAINT_ATTR,
-      requestFrame:
-        typeof liveWin.requestAnimationFrame === 'function'
-          ? liveWin.requestAnimationFrame.bind(liveWin)
-          : undefined,
-      cancelFrame:
-        typeof liveWin.cancelAnimationFrame === 'function'
-          ? liveWin.cancelAnimationFrame.bind(liveWin)
-          : undefined,
-      setTimer: liveWin.setTimeout.bind(liveWin),
-      clearTimer: liveWin.clearTimeout.bind(liveWin),
-      onReady: () => {
-        if (hasStaticHomeFragmentVersionMismatch(liveDoc)) {
-          requestBootstrap()
-        }
-        startBootstrap()
-      }
+  HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
+    const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
+    liveWin.addEventListener(eventName, handler, eventOptions)
+  })
+  liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
+
+  startDeferredRuntimeInstall()
+  void startHomeDemoWarmup()
+
+  return () => {
+    HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
+      const handler = eventName === 'keydown' ? handleKeyDown : handlePointerDown
+      liveWin.removeEventListener(eventName, handler, eventOptions)
     })
+    liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
+    widgetRuntime?.destroy()
+    widgetRuntime = null
   }
-
-  const setupBootstrapTriggers = () => {
-    if (
-      bootstrapTriggersInstalled ||
-      startedBootstrap ||
-      liveWin.__PROM_STATIC_HOME_BOOTSTRAP__ ||
-      !hasBootstrapSetupPrereqs()
-    ) {
-      return false
-    }
-    bootstrapTriggersInstalled = true
-    clearStartupHandlers()
-    startHomeWorkerRuntime()
-    requestBootstrap()
-    void startHomeDemoWarmup()
-    liveWin.addEventListener('pointerdown', handlePointerDown, eventOptions)
-    liveWin.addEventListener('touchstart', handlePointerDown, eventOptions)
-    liveWin.addEventListener('keydown', handleKeyDown, eventOptions)
-    liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
-
-    const lcpGate = createLcpGate({ win: liveWin, doc: liveDoc })
-    lcpGateCleanup = lcpGate.cleanup
-    void lcpGate.wait.then(() => {
-      if (startedBootstrap || liveWin.__PROM_STATIC_HOME_BOOTSTRAP__) return
-      releaseLcpGate()
-    })
-    return true
-  }
-
-  if (!setupBootstrapTriggers()) {
-    if (liveDoc.readyState === 'loading') {
-      domReadyHandler = () => {
-        domReadyHandler = null
-        setupBootstrapTriggers()
-      }
-      liveDoc.addEventListener?.('DOMContentLoaded', domReadyHandler, { once: true })
-    }
-
-    loadHandler = () => {
-      loadHandler = null
-      setupBootstrapTriggers()
-    }
-    liveWin.addEventListener('load', loadHandler, { once: true })
-  }
-
-  return cleanupTriggers
 }
 
 if (typeof window !== 'undefined') {
   installHomeStaticEntry()
 }
-
-export {}

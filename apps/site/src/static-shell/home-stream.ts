@@ -20,6 +20,7 @@ import {
 import { lockFragmentCardHeight } from './fragment-height-lock'
 import { loadFragmentHeightPatchRuntime } from './fragment-height-patch-runtime-loader'
 import { markStaticShellUserTiming } from './static-shell-performance'
+import { dispatchHomeFirstAnchorPatchEvent } from './home-anchor-patch-event'
 
 type PatchStaticHomeFragmentCardOptions = {
   lang: Lang
@@ -557,6 +558,7 @@ export const createStaticHomePatchQueue = ({
         ) {
           didMarkFirstAnchorPatch = true
           markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
+          void dispatchHomeFirstAnchorPatchEvent()
         }
         pendingPayloads.delete(fragmentId)
         return true

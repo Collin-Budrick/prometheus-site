@@ -18,6 +18,7 @@ import {
   getStaticShellRouteConfig,
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_ISLAND_DATA_SCRIPT_ID,
   STATIC_PAGE_ROOT_ATTR,
   isStaticShellPath,
@@ -32,17 +33,21 @@ import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
 import {
+  HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
+} from "./static-shell/home-static-entry-loader";
+import {
+  HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
+} from "./static-shell/home-bootstrap-runtime-loader";
+import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-  HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
 } from "./static-shell/home-demo-runtime-types";
 import homeCriticalStyles from "@prometheus/ui/global-critical-home.css?inline";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
 import homeInteractiveDeferredStylesheetHref from "./static-shell/home-static-deferred.css?url";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
-  "home-static":
-    "build/static-shell/apps/site/src/static-shell/home-static-entry.js",
+  "home-static": HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   "fragment-static":
     "build/static-shell/apps/site/src/static-shell/fragment-static-entry.js",
   "island-static":
@@ -52,8 +57,7 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
-    "build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js",
-    "build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js",
+    HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
     FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
     FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
   ],
@@ -67,13 +71,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   ],
 } as const;
 
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
-  "/": [
-    HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
-    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-    HOME_DEMO_ENTRY_ASSET_PATH,
-  ],
-} as const;
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;
 
 const STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS = {
   "/": [homeInteractiveDeferredStylesheetHref],
@@ -158,54 +156,27 @@ const staticFragmentPrewarmPromise = import.meta.env.PROD
 
 const buildImmediateHomeStaticEntryTag = (
   bundleHref: string,
-  demoStartupHref: string,
   workerHref: string,
   decodeWorkerHref: string,
   nonceAttr: string,
 ) =>
-  `<script type="module"${nonceAttr}>(() => {
+  `<script${nonceAttr}>(() => {
 const win = window;
 const doc = document;
 if (!win || !doc) return;
-const dataScriptId = ${JSON.stringify(STATIC_HOME_DATA_SCRIPT_ID)};
+const dataScriptId = ${JSON.stringify(STATIC_HOME_WORKER_DATA_SCRIPT_ID)};
 const prewarmedWorkerKey = ${JSON.stringify(PREWARMED_FRAGMENT_RUNTIME_STATE_KEY)};
-const homeEntryHref = ${JSON.stringify(bundleHref)};
-const demoStartupHref = ${JSON.stringify(demoStartupHref)};
+const anchorEntryHref = ${JSON.stringify(bundleHref)};
 const workerHref = ${JSON.stringify(workerHref)};
 const decodeWorkerHref = ${JSON.stringify(decodeWorkerHref)};
 const trustedTypesRuntimeScriptPolicyName = ${JSON.stringify(
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
 )};
 const importModule = (href) => import(/* @vite-ignore */ href);
-const importHomeEntry = () => {
-  void importModule(homeEntryHref).catch((error) => {
-    console.error("Static home entry post-paint failed:", error);
+const importAnchorEntry = () => {
+  void importModule(anchorEntryHref).catch((error) => {
+    console.error("Static home anchor entry failed:", error);
   });
-};
-const importDemoStartup = () => {
-  void importModule(demoStartupHref).catch((error) => {
-    console.error("Static home demo startup deferred failed:", error);
-  });
-};
-const scheduleAfterPaint = (callback) => {
-  if (typeof win.requestAnimationFrame === "function") {
-    win.requestAnimationFrame(() => {
-      win.requestAnimationFrame(() => {
-        callback();
-      });
-    });
-    return;
-  }
-  win.setTimeout(callback, 0);
-};
-const scheduleIdle = (callback, timeout) => {
-  if (typeof win.requestIdleCallback === "function") {
-    win.requestIdleCallback(() => {
-      callback();
-    }, { timeout });
-    return;
-  }
-  win.setTimeout(callback, timeout);
 };
 const parseJsonScript = (scriptId) => {
   const element = doc.getElementById(scriptId);
@@ -219,6 +190,13 @@ const parseJsonScript = (scriptId) => {
     return null;
   }
 };
+const scheduleAnchorEntry = () => {
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", importAnchorEntry, { once: true });
+    return;
+  }
+  importAnchorEntry();
+};
 const decodeBase64Bytes = (value) => {
   if (typeof value !== "string" || value.length === 0 || typeof win.atob !== "function") {
     return null;
@@ -230,20 +208,11 @@ const decodeBase64Bytes = (value) => {
   }
   return bytes;
 };
-const resolveKnownVersions = (fragmentOrder, fragmentVersions) => {
-  if (Array.isArray(fragmentVersions)) {
-    return fragmentVersions.reduce((acc, version, index) => {
-      const fragmentId = Array.isArray(fragmentOrder) ? fragmentOrder[index] : null;
-      if (typeof fragmentId === "string" && typeof version === "number" && Number.isFinite(version)) {
-        acc[fragmentId] = Math.round(version);
-      }
-      return acc;
-    }, {});
-  }
-  if (!fragmentVersions || typeof fragmentVersions !== "object") {
+const resolveKnownVersions = (knownVersions) => {
+  if (!knownVersions || typeof knownVersions !== "object") {
     return {};
   }
-  return Object.entries(fragmentVersions).reduce((acc, [fragmentId, version]) => {
+  return Object.entries(knownVersions).reduce((acc, [fragmentId, version]) => {
     if (typeof version === "number" && Number.isFinite(version)) {
       acc[fragmentId] = Math.round(version);
     }
@@ -354,7 +323,7 @@ try {
       fetchGroups: [],
       initialFragments: [],
       initialSizing: {},
-      knownVersions: resolveKnownVersions(data?.fragmentOrder, data?.fragmentVersions),
+      knownVersions: resolveKnownVersions(data?.knownVersions),
       visibleIds: [],
       viewportWidth: typeof win.innerWidth === "number" && win.innerWidth > 0 ? win.innerWidth : 1280,
       enableStreaming: false,
@@ -376,10 +345,7 @@ try {
 } catch (error) {
   console.error("Static home worker bootstrap failed:", error);
 }
-scheduleAfterPaint(importHomeEntry);
-scheduleAfterPaint(() => {
-  scheduleIdle(importDemoStartup, 1200);
-});
+scheduleAnchorEntry();
 })();</script>`;
 
 const stripStaticQwikScripts = (html: string) =>
@@ -522,10 +488,6 @@ export const injectStaticBootstrap = (
     `${publicBase}${bundlePath}`,
     STATIC_SHELL_BUILD_VERSION,
   );
-  const homeDemoStartupHref = appendStaticAssetVersion(
-    `${publicBase}${HOME_DEMO_STARTUP_ENTRY_ASSET_PATH}`,
-    STATIC_SHELL_BUILD_VERSION,
-  );
   const workerHref = appendStaticAssetVersion(
     `${publicBase}${FRAGMENT_RUNTIME_WORKER_ASSET_PATH}`,
     STATIC_SHELL_BUILD_VERSION,
@@ -549,12 +511,15 @@ export const injectStaticBootstrap = (
     resolveStaticBootstrapMode(pathname) === "home-static"
       ? buildImmediateHomeStaticEntryTag(
           bundleHref,
-          homeDemoStartupHref,
           workerHref,
           decodeWorkerHref,
           nonceAttr,
         )
       : `<script type="module" src="${bundleHref}"${nonceAttr}></script>`;
+  if (resolveStaticBootstrapMode(pathname) === "home-static") {
+    return html.replace("</head>", `${preloadTags}${stylePreloadTags}${scriptTag}</head>`);
+  }
+
   return html
     .replace("</head>", `${preloadTags}${stylePreloadTags}</head>`)
     .replace("</body>", `${scriptTag}</body>`);

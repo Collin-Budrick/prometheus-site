@@ -11,12 +11,14 @@ const repoRoot = path.resolve(siteRoot, '..', '..')
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
 const publicPath = '/build/static-shell/'
 const entrypoints = [
+  'apps/site/src/static-shell/home-static-anchor-entry.ts',
   'apps/site/src/static-shell/home-static-entry.ts',
   'apps/site/src/static-shell/home-demo-startup-entry.ts',
   'apps/site/src/static-shell/home-demo-attach-runtime.ts',
   'apps/site/src/static-shell/home-demo-entry.ts',
   'apps/site/src/static-shell/home-collab-entry.ts',
   'apps/site/src/static-shell/home-collab-editor-entry.ts',
+  'apps/site/src/static-shell/home-bootstrap-anchor-runtime.ts',
   'apps/site/src/static-shell/home-bootstrap-core-runtime.ts',
   'apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.ts',
   'apps/site/src/static-shell/home-ui-controls-runtime.ts',

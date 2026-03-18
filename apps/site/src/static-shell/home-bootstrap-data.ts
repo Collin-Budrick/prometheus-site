@@ -4,6 +4,7 @@ import type { FragmentPayload } from '../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
@@ -40,6 +41,14 @@ export type HomeStaticRouteData = {
   fragmentVersions: Record<string, number> | Array<number | null>
 }
 
+export type HomeStaticWorkerBootstrapData = {
+  lang: Lang
+  path: string
+  runtimeAnchorBootstrapHref?: string | null
+  runtimeAnchorBootstrapPayloadBase64?: string | null
+  knownVersions?: Record<string, number>
+}
+
 export type HomeStaticBootstrapData = {
   currentPath: string
   isAuthenticated: boolean
@@ -57,6 +66,14 @@ export type HomeStaticBootstrapData = {
   runtimeFetchGroups: string[][]
   runtimeInitialFragments: FragmentPayload[]
   fragmentVersions: Record<string, number>
+}
+
+export type HomeStaticWorkerBootstrapPayload = {
+  path: string
+  lang: Lang
+  runtimeAnchorBootstrapHref: string | null
+  runtimeAnchorBootstrapPayloadBase64: string | null
+  knownVersions: Record<string, number>
 }
 
 const readFiniteNumber = (value: unknown) => {
@@ -317,6 +334,38 @@ export const readStaticHomeBootstrapData = ({
     runtimeFetchGroups: deserializeHomeRuntimeFetchGroups(route?.runtimeFetchGroups, fragmentOrder),
     runtimeInitialFragments: route?.runtimeInitialFragments ?? [],
     fragmentVersions: deserializeHomeFragmentVersions(route?.fragmentVersions, fragmentOrder)
+  }
+}
+
+export const readStaticHomeWorkerBootstrapData = ({
+  doc = typeof document !== 'undefined' ? document : null
+}: {
+  doc?: StaticHomeBootstrapDocument | null
+} = {}): HomeStaticWorkerBootstrapPayload | null => {
+  const payload = readJsonScript<HomeStaticWorkerBootstrapData>(
+    STATIC_HOME_WORKER_DATA_SCRIPT_ID,
+    doc
+  )
+  if (!payload) {
+    return null
+  }
+
+  return {
+    path: payload.path || '/',
+    lang: payload.lang || 'en',
+    runtimeAnchorBootstrapHref: payload.runtimeAnchorBootstrapHref ?? null,
+    runtimeAnchorBootstrapPayloadBase64:
+      payload.runtimeAnchorBootstrapPayloadBase64 ?? null,
+    knownVersions:
+      payload.knownVersions && typeof payload.knownVersions === 'object'
+        ? Object.entries(payload.knownVersions).reduce<Record<string, number>>((acc, [fragmentId, value]) => {
+            const parsedVersion = readFiniteNumber(value)
+            if (parsedVersion !== null) {
+              acc[fragmentId] = Math.round(parsedVersion)
+            }
+            return acc
+          }, {})
+        : {}
   }
 }
 

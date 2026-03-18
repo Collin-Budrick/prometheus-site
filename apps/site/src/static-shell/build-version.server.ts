@@ -8,14 +8,20 @@ import {
   HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
 } from './home-demo-runtime-types'
+import {
+  HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
+  HOME_STATIC_ENTRY_ASSET_PATH
+} from './home-static-entry-loader'
+import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from './home-bootstrap-runtime-loader'
 
 const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
-  'build/static-shell/apps/site/src/static-shell/home-static-entry.js',
+  HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
+  HOME_STATIC_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_ENTRY_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
-  'build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js',
+  HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-language-runtime.js',
