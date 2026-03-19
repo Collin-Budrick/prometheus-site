@@ -626,6 +626,15 @@ describe("static shell performance invariants", () => {
     expect(layoutSource).toContain(
       "isStaticShellPath(location.url.pathname) && !isHomeStaticRoute",
     );
+    expect(layoutSource).toContain("const shouldUseConditionalHomeManifest = isHomeStaticRoute");
+    expect(layoutSource).toContain("buildConditionalHomeManifestScript(manifestHref)");
+    expect(layoutSource).toContain("window.matchMedia('(display-mode: standalone)').matches");
+    expect(layoutSource).toContain("nav.standalone === true");
+    expect(layoutSource).toContain("typeof runtimeWindow.__TAURI__ !== 'undefined'");
+    expect(layoutSource).toContain("typeof runtimeWindow.__TAURI_IPC__ !== 'undefined'");
+    expect(layoutSource).toContain("protocol === 'tauri:'");
+    expect(layoutSource).toContain("protocol === 'ipc:'");
+    expect(layoutSource).toContain("userAgent.indexOf('tauri') !== -1");
     expect(layoutSource).toContain("toCanonicalStaticShellHref");
     expect(layoutSource).toContain("useStaticShellBuildVersion");
     expect(layoutSource).toContain("await event.next()");

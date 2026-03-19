@@ -181,6 +181,72 @@ const buildDeferredManifestScript = (href: string) => {
 })();`
 }
 
+const buildConditionalHomeManifestScript = (href: string) => {
+  const escapedHref = JSON.stringify(href)
+  return `(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var started = false;
+  var timeoutHandle = 0;
+  var eventOptions = { capture: true, passive: true };
+  var appendManifestFromIntent = function (event) {
+    if (event && event.isTrusted === false) return;
+    appendManifest();
+  };
+  var appendManifest = function () {
+    if (started) return;
+    started = true;
+    window.removeEventListener('pointerdown', appendManifestFromIntent, eventOptions);
+    window.removeEventListener('keydown', appendManifestFromIntent, eventOptions);
+    window.removeEventListener('touchstart', appendManifestFromIntent, eventOptions);
+    if (timeoutHandle) {
+      window.clearTimeout(timeoutHandle);
+      timeoutHandle = 0;
+    }
+    if (document.head.querySelector('link[rel="manifest"]')) return;
+    var link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = ${escapedHref};
+    document.head.appendChild(link);
+  };
+  var scheduleDeferredAppend = function () {
+    window.addEventListener('pointerdown', appendManifestFromIntent, eventOptions);
+    window.addEventListener('keydown', appendManifestFromIntent, eventOptions);
+    window.addEventListener('touchstart', appendManifestFromIntent, eventOptions);
+    timeoutHandle = window.setTimeout(appendManifest, ${DEFERRED_MANIFEST_FALLBACK_DELAY_MS});
+  };
+  var isStandalonePwa = false;
+  try {
+    isStandalonePwa =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches;
+  } catch (error) {}
+  var nav = window.navigator;
+  var isIosStandalone = !!nav && nav.standalone === true;
+  var runtimeWindow = window;
+  var protocol = window.location && typeof window.location.protocol === 'string'
+    ? window.location.protocol
+    : '';
+  var userAgent = nav && typeof nav.userAgent === 'string'
+    ? nav.userAgent.toLowerCase()
+    : '';
+  var isNativeTauri =
+    typeof runtimeWindow.__TAURI__ !== 'undefined' ||
+    typeof runtimeWindow.__TAURI_IPC__ !== 'undefined' ||
+    protocol === 'tauri:' ||
+    protocol === 'ipc:' ||
+    userAgent.indexOf('tauri') !== -1;
+  if (isStandalonePwa || isIosStandalone || isNativeTauri) {
+    appendManifest();
+    return;
+  }
+  if (document.readyState === 'complete') {
+    scheduleDeferredAppend();
+    return;
+  }
+  window.addEventListener('load', scheduleDeferredAppend, { once: true });
+})();`
+}
+
 type EarlyHint = {
   href: string
   as?: string
@@ -778,6 +844,7 @@ export const RouterHead = component$(() => {
   const nonce = useCspNonce()
   const initialFade = (head.htmlAttributes as Record<string, string> | undefined)?.['data-initial-fade']
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
+  const shouldUseConditionalHomeManifest = isHomeStaticRoute
   const shouldDeferManifest =
     isStaticShellPath(location.url.pathname) && !isHomeStaticRoute
   const currentOrigin = location.url?.origin ?? null
@@ -791,6 +858,7 @@ export const RouterHead = component$(() => {
   const base = import.meta.env.BASE_URL || '/'
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
+  const manifestHref = withBase('manifest.webmanifest')
   const partytownScript = buildPartytownHeadScript({
     config: appConfig.partytown,
     lib: withBase('~partytown/'),
@@ -841,13 +909,18 @@ export const RouterHead = component$(() => {
       ) : null}
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
-      {shouldDeferManifest ? (
+      {shouldUseConditionalHomeManifest ? (
         <script
           nonce={nonce || undefined}
-          dangerouslySetInnerHTML={buildDeferredManifestScript(withBase('manifest.webmanifest'))}
+          dangerouslySetInnerHTML={buildConditionalHomeManifestScript(manifestHref)}
+        />
+      ) : shouldDeferManifest ? (
+        <script
+          nonce={nonce || undefined}
+          dangerouslySetInnerHTML={buildDeferredManifestScript(manifestHref)}
         />
       ) : (
-        <link rel="manifest" href={withBase('manifest.webmanifest')} />
+        <link rel="manifest" href={manifestHref} />
       )}
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <meta name="theme-color" content={siteBrand.themeColor} />
