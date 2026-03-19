@@ -1,9 +1,9 @@
 import type { LanguageSeedPayload } from "../lang/selection";
 import type { Lang } from "../lang/types";
 import { seedStaticHomeCopy } from "./home-copy-store";
-import { resolveStaticShellLangParam } from "./lang-param";
 import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
-import { collectStaticHomeKnownVersions } from "./home-stream";
+import { resolvePreferredStaticHomeLang } from "./home-language-preference";
+import { collectStaticHomeKnownVersions } from "./home-fragment-version-state";
 import {
   clearActiveHomeController,
   type HomeControllerState,
@@ -21,13 +21,6 @@ const LEGACY_HOME_STORAGE_KEYS = [
 const HOME_CRITICAL_COOKIE_KEYS = [
   "prom-frag-critical-m",
   "prom-frag-critical-d",
-] as const;
-const STATIC_LANG_STORAGE_KEY = "prometheus-lang";
-const STATIC_LANG_COOKIE_KEY = "prometheus-lang";
-const STATIC_LANG_PREFERENCE_KEY = "prometheus:pref:locale";
-const STATIC_LANG_STORAGE_KEYS = [
-  STATIC_LANG_STORAGE_KEY,
-  STATIC_LANG_PREFERENCE_KEY,
 ] as const;
 const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = [
   "pointerdown",
@@ -116,34 +109,6 @@ export const applyShellLanguageSeed = (
 ) => {
   seedStaticHomeCopy(lang, shellSeed, routeSeed);
   setDocumentLang(lang);
-};
-
-export const resolvePreferredStaticHomeLang = (fallback: Lang) => {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  const url = new URL(window.location.href);
-  const paramLang = resolveStaticShellLangParam(url.searchParams.get("lang"));
-  if (paramLang) {
-    return paramLang;
-  }
-
-  for (const key of STATIC_LANG_STORAGE_KEYS) {
-    try {
-      const stored = resolveStaticShellLangParam(
-        window.localStorage.getItem(key),
-      );
-      if (stored) {
-        return stored;
-      }
-    } catch {
-      // Ignore storage access failures.
-    }
-  }
-
-  return resolveStaticShellLangParam(readCookieValue(STATIC_LANG_COOKIE_KEY)) ??
-    fallback;
 };
 
 export const stopHomeHydrationFetches = (

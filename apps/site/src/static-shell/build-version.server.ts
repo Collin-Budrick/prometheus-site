@@ -17,11 +17,19 @@ import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from './home-static-entry-de
 import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from './home-bootstrap-runtime-loader'
 import { HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH } from './home-bootstrap-deferred-runtime-loader'
 import { getStaticShellBuildAssetPaths } from './build-manifest.server'
+import { HOME_ANCHOR_CORE_ASSET_PATH } from './home-anchor-core-loader'
+import { HOME_POST_ANCHOR_CORE_ASSET_PATH } from './home-post-anchor-core-loader'
+import { HOME_DEMO_WARM_CORE_ASSET_PATH } from './home-demo-warm-core-loader'
+import { HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH } from './home-post-anchor-lifecycle-runtime-loader'
 
 const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
+  HOME_ANCHOR_CORE_ASSET_PATH,
   HOME_STATIC_ENTRY_ASSET_PATH,
+  HOME_POST_ANCHOR_CORE_ASSET_PATH,
+  HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH,
   HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH,
+  HOME_DEMO_WARM_CORE_ASSET_PATH,
   HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_ENTRY_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',

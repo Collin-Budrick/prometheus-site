@@ -1,4 +1,3 @@
-import { applyHomeFragmentEffects, streamHomeFragmentFrames } from './home-fragment-client'
 import type { FragmentPayload } from '@core/fragment/types'
 import type { Lang } from '../lang/types'
 import { setTrustedInnerHtml } from '../security/client'
@@ -11,19 +10,19 @@ import {
   STATIC_HOME_STAGE_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR
 } from './constants'
-import { createLiveHomeStaticCopyBundle } from './home-copy-bundle'
-import { renderHomeStaticFragmentHtml } from './home-render'
-import { scheduleStaticShellTask } from './scheduler'
-import {
-  type FragmentHeightRouteContext
-} from './fragment-height'
+import type { FragmentHeightRouteContext } from './fragment-height'
 import { lockFragmentCardHeight } from './fragment-height-lock'
+import { applyHomeFragmentEffects } from './home-fragment-client'
 import { loadFragmentHeightPatchRuntime } from './fragment-height-patch-runtime-loader'
-import { markStaticShellUserTiming } from './static-shell-performance'
 import { dispatchHomeFirstAnchorPatchEvent } from './home-anchor-patch-event'
-import { collectStaticHomeKnownVersions } from './home-fragment-version-state'
+import { scheduleStaticShellTask } from './scheduler'
+import { markStaticShellUserTiming } from './static-shell-performance'
+import type {
+  PatchStaticHomeFragmentCardResult,
+  StaticHomePatchQueue
+} from './home-stream'
 
-type PatchStaticHomeFragmentCardOptions = {
+type PatchStaticHomeAnchorFragmentCardOptions = {
   lang: Lang
   payload: FragmentPayload
   applyEffects?: boolean
@@ -39,45 +38,18 @@ type PatchStaticHomeFragmentCardOptions = {
   }) => void | Promise<void>) | null
 }
 
-type StreamHomeFragmentsOptions = {
-  path: string
-  lang: Lang
-  signal: AbortSignal
-  onFragment: (payload: FragmentPayload) => void
-  onError?: (error: unknown) => void
-  live?: boolean
-}
-
-type CreateStaticHomePatchQueueOptions = {
+type CreateStaticHomeAnchorPatchQueueOptions = {
   lang: Lang
   applyEffects?: boolean
   onPatchedBody?: (body: HTMLElement, fragmentId: string) => void
   root?: ParentNode
   scheduleTask?: typeof scheduleStaticShellTask
   routeContext?: FragmentHeightRouteContext | null
-  settlePatchedHeight?: PatchStaticHomeFragmentCardOptions['settlePatchedHeight']
+  settlePatchedHeight?: PatchStaticHomeAnchorFragmentCardOptions['settlePatchedHeight']
   visibleFirst?: boolean
   bufferDeferredUntilRelease?: boolean
 }
 
-type ObserveStaticHomePatchVisibilityOptions = {
-  queue: StaticHomePatchQueue
-  root?: ParentNode
-  rootMargin?: string
-}
-
-export type PatchStaticHomeFragmentCardResult = 'patched' | 'stale' | 'locked' | 'missing'
-
-export type StaticHomePatchQueue = {
-  enqueue: (payload: FragmentPayload) => void
-  setVisible: (fragmentId: string, visible: boolean) => void
-  hasBuffered?: (fragmentId: string) => boolean
-  releaseDeferred: () => void
-  flushNow: () => void
-  destroy: () => void
-}
-
-const DEFAULT_HOME_PATCH_ROOT_MARGIN = '0px'
 const HOME_PATCH_BATCH_LIMIT = 2
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
@@ -105,15 +77,11 @@ const isHomePatchReady = (card: Element | null) =>
 const isStaticHomePreviewVisible = (card: Element | null) =>
   isStaticHomeElement(card) && card.getAttribute(STATIC_HOME_PREVIEW_VISIBLE_ATTR) === 'true'
 
-const shouldPreserveHomeCardRevealState = (card: HTMLElement) => {
-  const revealPhase = card.dataset.revealPhase
-  return (
-    isHomePatchReady(card) ||
-    isStaticHomePreviewVisible(card) ||
-    card.dataset.fragmentReady === 'true' ||
-    revealPhase === 'visible'
-  )
-}
+const shouldPreserveHomeCardRevealState = (card: HTMLElement) =>
+  isHomePatchReady(card) ||
+  isStaticHomePreviewVisible(card) ||
+  card.dataset.fragmentReady === 'true' ||
+  card.dataset.revealPhase === 'visible'
 
 const setHomePatchState = (card: HTMLElement, state: 'pending' | 'ready') => {
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, state)
@@ -226,21 +194,14 @@ const settleReadyHomePreviewCardHeight = async ({
     if (nextHeight > 0) {
       card.style.setProperty('--fragment-min-height', `${nextHeight}px`)
       card.setAttribute('data-fragment-height-hint', `${nextHeight}`)
-
       if (nextHeight > reservedHeight) {
         card.dispatchEvent(
           new CustomEvent('prom:fragment-height-miss', {
             bubbles: true,
-            detail: {
-              fragmentId,
-              reservedHeight,
-              height: nextHeight,
-              widthBucket: null
-            }
+            detail: { fragmentId, reservedHeight, height: nextHeight, widthBucket: null }
           })
         )
       }
-
       card.dispatchEvent(
         new CustomEvent('prom:fragment-stable-height', {
           bubbles: true,
@@ -362,7 +323,12 @@ const parseFragmentVersion = (element: Element | null) => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-export const patchStaticHomeFragmentCard = ({
+const buildHomeAnchorFragmentHtml = (payload: FragmentPayload) => {
+  const html = payload.html?.trim()
+  return html ? `<div class="fragment-html">${html}</div>` : null
+}
+
+export const patchStaticHomeAnchorFragmentCard = ({
   lang,
   payload,
   applyEffects = true,
@@ -371,7 +337,8 @@ export const patchStaticHomeFragmentCard = ({
   onPatchedBody,
   routeContext,
   settlePatchedHeight = null
-}: PatchStaticHomeFragmentCardOptions): PatchStaticHomeFragmentCardResult => {
+}: PatchStaticHomeAnchorFragmentCardOptions): PatchStaticHomeFragmentCardResult => {
+  void lang
   const targetCard = card ?? findStaticHomeFragmentCard(payload.id, root ?? undefined)
   if (!targetCard) return 'missing'
   if (targetCard.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return 'locked'
@@ -381,7 +348,8 @@ export const patchStaticHomeFragmentCard = ({
   const currentVersion = parseFragmentVersion(targetCard)
   const hasReadyMarkup = isHomePatchReady(targetCard)
   const preserveRevealState = shouldPreserveHomeCardRevealState(targetCard)
-  const nextHtml = `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createLiveHomeStaticCopyBundle(lang))}</div>`
+  const nextHtml = buildHomeAnchorFragmentHtml(payload) ?? body.innerHTML
+
   const canReuseVisibleMarkup =
     typeof payload.cacheUpdatedAt === 'number' &&
     Number.isFinite(payload.cacheUpdatedAt) &&
@@ -412,7 +380,6 @@ export const patchStaticHomeFragmentCard = ({
   }
 
   const { lockToken } = lockFragmentCardHeight(targetCard)
-
   targetCard.setAttribute(FRAGMENT_REVEAL_TOKEN_ATTR, lockToken)
   targetCard.dataset.revealLocked = 'true'
   targetCard.dataset.fragmentLoaded = 'true'
@@ -426,11 +393,7 @@ export const patchStaticHomeFragmentCard = ({
     delete targetCard.dataset.fragmentReady
   }
 
-  setTrustedInnerHtml(
-    body,
-    nextHtml,
-    'server'
-  )
+  setTrustedInnerHtml(body, nextHtml, 'server')
   onPatchedBody?.(body)
 
   if (typeof payload.cacheUpdatedAt === 'number' && Number.isFinite(payload.cacheUpdatedAt)) {
@@ -441,60 +404,38 @@ export const patchStaticHomeFragmentCard = ({
 
   const fastSettledHeight = hasReadyMarkup
     ? null
-    : settlePatchedHomeCardHeightFast({
-        card: targetCard,
-        fragmentId: payload.id,
-        lockToken
-      })
+    : settlePatchedHomeCardHeightFast({ card: targetCard, fragmentId: payload.id, lockToken })
 
   const settleTask = hasReadyMarkup
-    ? settleReadyHomePreviewCardHeight({
-      card: targetCard,
-      fragmentId: payload.id,
-      lockToken
-    })
+    ? settleReadyHomePreviewCardHeight({ card: targetCard, fragmentId: payload.id, lockToken })
     : fastSettledHeight !== null
       ? Promise.resolve(fastSettledHeight)
-    : settlePatchedHeight
-      ? Promise.resolve(
-          settlePatchedHeight({
-            card: targetCard,
-            fragmentId: payload.id,
-            routeContext,
-            lockToken
-          })
-        )
-      : loadFragmentHeightPatchRuntime().then(({ settlePatchedFragmentCardHeight }) =>
-          settlePatchedFragmentCardHeight({
-            card: targetCard,
-            fragmentId: payload.id,
-            routeContext,
-            lockToken
-          })
-        )
+      : settlePatchedHeight
+        ? Promise.resolve(settlePatchedHeight({ card: targetCard, fragmentId: payload.id, routeContext, lockToken }))
+        : loadFragmentHeightPatchRuntime().then(({ settlePatchedFragmentCardHeight }) =>
+            settlePatchedFragmentCardHeight({ card: targetCard, fragmentId: payload.id, routeContext, lockToken })
+          )
 
-  void settleTask
-    .catch((error) => {
-      console.error(
-        hasReadyMarkup
-          ? 'Static home preview fragment height settle failed:'
-          : 'Static home fragment height settle failed:',
-        error
-      )
+  void settleTask.catch((error) => {
+    console.error(
+      hasReadyMarkup
+        ? 'Static home preview fragment height settle failed:'
+        : 'Static home anchor fragment height settle failed:',
+      error
+    )
+  }).finally(() => {
+    clearPatchedHomeHeightLock(targetCard, lockToken)
+    finalizePatchedHomeCardWithoutReveal({
+      card: targetCard,
+      lockToken,
+      deferUnlock: !preserveRevealState
     })
-    .finally(() => {
-      clearPatchedHomeHeightLock(targetCard, lockToken)
-      finalizePatchedHomeCardWithoutReveal({
-        card: targetCard,
-        lockToken,
-        deferUnlock: !preserveRevealState
-      })
-    })
+  })
 
   return 'patched'
 }
 
-export const createStaticHomePatchQueue = ({
+export const createStaticHomeAnchorPatchQueue = ({
   lang,
   applyEffects = true,
   onPatchedBody,
@@ -504,7 +445,7 @@ export const createStaticHomePatchQueue = ({
   settlePatchedHeight = null,
   visibleFirst = false,
   bufferDeferredUntilRelease = false
-}: CreateStaticHomePatchQueueOptions): StaticHomePatchQueue => {
+}: CreateStaticHomeAnchorPatchQueueOptions): StaticHomePatchQueue => {
   const pendingPayloads = new Map<string, FragmentPayload>()
   const visibleIds = new Set<string>()
   let cancelScheduledFlush: (() => void) | null = null
@@ -528,8 +469,7 @@ export const createStaticHomePatchQueue = ({
   const hasEligiblePayload = () =>
     collectStaticHomeCards(root).some((card) => {
       const fragmentId = card.dataset.fragmentId
-      if (!fragmentId || !pendingPayloads.has(fragmentId)) return false
-      return isEligibleCard(card, fragmentId)
+      return Boolean(fragmentId && pendingPayloads.has(fragmentId) && isEligibleCard(card, fragmentId))
     })
 
   const flushNext = () => {
@@ -541,7 +481,7 @@ export const createStaticHomePatchQueue = ({
       const payload = pendingPayloads.get(fragmentId)
       if (!payload || !isEligibleCard(card, fragmentId)) continue
 
-      const result = patchStaticHomeFragmentCard({
+      const result = patchStaticHomeAnchorFragmentCard({
         lang,
         payload,
         applyEffects,
@@ -549,17 +489,11 @@ export const createStaticHomePatchQueue = ({
         root,
         routeContext,
         settlePatchedHeight,
-        onPatchedBody: (body) => {
-          onPatchedBody?.(body, fragmentId)
-        }
+        onPatchedBody: (body) => onPatchedBody?.(body, fragmentId)
       })
 
       if (result === 'patched' || result === 'stale' || result === 'missing') {
-        if (
-          (result === 'patched' || result === 'stale') &&
-          !didMarkFirstAnchorPatch &&
-          card.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor'
-        ) {
+        if ((result === 'patched' || result === 'stale') && !didMarkFirstAnchorPatch && card.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor') {
           didMarkFirstAnchorPatch = true
           markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
           void dispatchHomeFirstAnchorPatchEvent()
@@ -591,41 +525,29 @@ export const createStaticHomePatchQueue = ({
   const hasHiddenPayload = () =>
     collectStaticHomeCards(root).some((card) => {
       const fragmentId = card.dataset.fragmentId
-      if (!fragmentId || !pendingPayloads.has(fragmentId)) return false
-      return !isEligibleCard(card, fragmentId)
+      return Boolean(fragmentId && pendingPayloads.has(fragmentId) && !isEligibleCard(card, fragmentId))
     })
 
   const scheduleHiddenFlush = () => {
-    if (
-      destroyed ||
-      !deferredReleaseReady ||
-      !visibleFirst ||
-      hiddenFlushReleased ||
-      cancelHiddenFlush ||
-      !hasHiddenPayload()
-    ) {
+    if (destroyed || !deferredReleaseReady || !visibleFirst || hiddenFlushReleased || cancelHiddenFlush || !hasHiddenPayload()) {
       return
     }
 
-    cancelHiddenFlush = scheduleTask(
-      () => {
-        cancelHiddenFlush = null
-        if (destroyed) return
-        hiddenFlushReleased = true
-        flushNow()
-      },
-      {
-        waitForPaint: true,
-        priority: 'background',
-        preferIdle: false,
-        timeoutMs: 0
-      }
-    )
+    cancelHiddenFlush = scheduleTask(() => {
+      cancelHiddenFlush = null
+      if (destroyed) return
+      hiddenFlushReleased = true
+      flushNow()
+    }, {
+      waitForPaint: true,
+      priority: 'background',
+      preferIdle: false,
+      timeoutMs: 0
+    })
   }
 
   const scheduleFlush = () => {
     if (destroyed || flushInFlight || cancelScheduledFlush || !hasEligiblePayload()) return
-
     const runFlush = () => {
       cancelScheduledFlush = null
       if (destroyed) return
@@ -700,66 +622,3 @@ export const createStaticHomePatchQueue = ({
     }
   }
 }
-
-export const observeStaticHomePatchVisibility = ({
-  queue,
-  root = document,
-  rootMargin = DEFAULT_HOME_PATCH_ROOT_MARGIN
-}: ObserveStaticHomePatchVisibilityOptions) => {
-  const cards = collectStaticHomeCards(root).filter((card) => {
-    if (card.dataset.critical === 'true') return false
-    if (card.getAttribute(STATIC_HOME_STAGE_ATTR) !== 'deferred') return false
-    return Boolean(card.dataset.fragmentId)
-  })
-  if (!cards.length) return () => undefined
-
-  const ObserverImpl = (globalThis as typeof globalThis & { IntersectionObserver?: typeof IntersectionObserver })
-    .IntersectionObserver
-
-  if (typeof ObserverImpl !== 'function') {
-    cards.forEach((card) => {
-      const fragmentId = card.dataset.fragmentId
-      if (fragmentId) {
-        queue.setVisible(fragmentId, true)
-      }
-    })
-    return () => undefined
-  }
-
-  const observer = new ObserverImpl(
-    (entries) => {
-      entries.forEach((entry) => {
-        const card = entry.target as HTMLElement
-        const fragmentId = card.dataset.fragmentId
-        if (!fragmentId) return
-        queue.setVisible(fragmentId, entry.isIntersecting || entry.intersectionRatio > 0)
-      })
-    },
-    {
-      root: null,
-      rootMargin,
-      threshold: 0.01
-    }
-  )
-
-  cards.forEach((card) => observer.observe(card))
-
-  return () => {
-    observer.disconnect()
-  }
-}
-
-export const streamHomeFragments = async ({
-  path,
-  lang,
-  signal,
-  onFragment,
-  onError,
-  live
-}: StreamHomeFragmentsOptions) =>
-  await streamHomeFragmentFrames(path, onFragment, onError, {
-    signal,
-    lang,
-    knownVersions: collectStaticHomeKnownVersions(),
-    live
-  })

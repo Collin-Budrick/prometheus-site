@@ -8,10 +8,15 @@ describe("static shell performance invariants", () => {
     const [
       bootstrapFacadeSource,
       bootstrapHelperSource,
+      bootstrapUiSource,
       bootstrapAnchorSource,
+      bootstrapAnchorRuntimeSource,
+      bootstrapAnchorPatchSource,
       bootstrapDeferredSource,
       bootstrapControllerUtilsSource,
       bootstrapOrchestratorSource,
+      bootstrapDataSource,
+      routeSeedResolverSource,
       fragmentBootstrapSource,
       islandBootstrapSource,
       snapshotClientSource,
@@ -45,10 +50,15 @@ describe("static shell performance invariants", () => {
     ] = await Promise.all([
       readSource("./home-bootstrap.tsx"),
       readSource("./home-bootstrap-helpers.ts"),
+      readSource("./home-bootstrap-ui.ts"),
       readSource("./home-bootstrap-anchor.ts"),
+      readSource("./home-anchor-runtime.ts"),
+      readSource("./home-anchor-patch.ts"),
       readSource("./home-bootstrap-deferred.ts"),
       readSource("./home-bootstrap-controller-utils.ts"),
       readSource("./home-bootstrap-orchestrator.ts"),
+      readSource("./home-bootstrap-data.ts"),
+      readSource("./home-route-seed-resolver.ts"),
       readSource("./static-bootstrap.ts"),
       readSource("./island-bootstrap.ts"),
       readSource("./snapshot-client.ts"),
@@ -84,7 +94,10 @@ describe("static shell performance invariants", () => {
     const bootstrapSource = [
       bootstrapFacadeSource,
       bootstrapHelperSource,
+      bootstrapUiSource,
       bootstrapAnchorSource,
+      bootstrapAnchorRuntimeSource,
+      bootstrapAnchorPatchSource,
       bootstrapDeferredSource,
       bootstrapControllerUtilsSource,
       bootstrapOrchestratorSource,
@@ -96,20 +109,34 @@ describe("static shell performance invariants", () => {
     expect(bootstrapFacadeSource).toContain("./home-bootstrap-deferred");
     expect(bootstrapFacadeSource).toContain("./home-bootstrap-orchestrator");
 
-    expect(bootstrapSource).toContain("./home-stream");
+    expect(bootstrapAnchorSource).toContain("./home-anchor-runtime");
+    expect(bootstrapAnchorSource).toContain("./home-anchor-patch");
+    expect(bootstrapAnchorSource).not.toContain("./home-bootstrap-helpers");
+    expect(bootstrapAnchorSource).not.toContain("./home-stream");
+    expect(bootstrapAnchorRuntimeSource).not.toContain("./home-bootstrap-helpers");
+    expect(bootstrapAnchorRuntimeSource).not.toContain("./home-stream");
+    expect(bootstrapAnchorRuntimeSource).not.toContain("loadHomeFragmentFetchers");
+    expect(bootstrapAnchorRuntimeSource).not.toContain("ResizeObserver");
+    expect(bootstrapAnchorPatchSource).toContain("payload.html");
+    expect(bootstrapAnchorPatchSource).toContain("applyHomeFragmentEffects");
+    expect(bootstrapAnchorPatchSource).not.toContain("renderHomeStaticFragmentHtml");
+    expect(bootstrapDataSource).not.toContain("./language-seed-client");
+    expect(bootstrapDataSource).not.toContain("resolveStaticHomeRouteSeed");
+    expect(routeSeedResolverSource).toContain("./language-seed-client");
+    expect(routeSeedResolverSource).toContain("loadStaticRouteLanguageSeed");
     expect(bootstrapSource).toContain("scheduleStaticHomePaintReady({");
     expect(bootstrapSource).toContain("scheduleStaticRoutePaintReady");
     expect(bootstrapSource).toContain("scheduleTask = scheduleStaticShellTask");
     expect(bootstrapSource).toContain("isAuthenticated");
-    expect(bootstrapSource).toContain("createStaticHomePatchQueue({");
-    expect(bootstrapSource).toContain("connectSharedHomeRuntime({");
+    expect(bootstrapAnchorSource).toContain("createStaticHomeAnchorPatchQueue({");
+    expect(bootstrapAnchorRuntimeSource).toContain("connectHomeAnchorSharedRuntime = ({");
     expect(bootstrapSource).toContain(
       "requestFragments: sharedRuntime?.requestFragments",
     );
-    expect(bootstrapSource).toContain("resolveStaticShellLangParam");
-    expect(bootstrapSource).toContain("loadHomeLanguageRuntime()");
+    expect(bootstrapSource).toContain("resolvePreferredStaticHomeLang");
+    expect(bootstrapSource).toContain("loadHomePostAnchorLifecycleRuntime");
     expect(bootstrapSource).toContain("loadHomeBootstrapPostLcpRuntime()");
-    expect(bootstrapSource).toContain("installDeferredHomePostLcpRuntime({");
+    expect(bootstrapSource).toContain("installDeferredHomePostLcpRuntime = ({");
     expect(bootstrapSource).not.toContain("loadHomeDemoEntryRuntime()");
     expect(bootstrapSource).not.toContain("installDeferredHomeDemoEntry(controller)");
     expect(bootstrapSource).toContain(
@@ -133,7 +160,7 @@ describe("static shell performance invariants", () => {
       "HOME_DEFERRED_HYDRATION_THRESHOLD = 0.15",
     );
     expect(bootstrapSource).toContain(
-      'addEventListener("pageshow", handlePageShow)',
+      "resolvePreferredStaticHomeLang(data.lang) !== data.lang",
     );
     expect(bootstrapSource).not.toContain("HOME_PREVIEW_REFRESH_DELAY_MS");
     expect(bootstrapSource).not.toContain(
@@ -151,11 +178,8 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain("resolveFragmentHeightWidthBucket");
     expect(bootstrapSource).toContain("entry.contentRect.width");
     expect(bootstrapSource).not.toContain("getBoundingClientRect().width");
-    expect(bootstrapSource).toContain(
-      "homeFragmentHydration.observeWithin(document)",
-    );
+    expect(bootstrapSource).toContain("resumeDeferredHomeHydration({");
     expect(bootstrapSource).toContain("requestHomeDemoObserve({ root: body })");
-    expect(bootstrapSource).toContain("requestHomeDemoObserve()");
     expect(bootstrapSource).toContain("bufferDeferredUntilRelease: true");
     expect(bootstrapSource).toContain("HOME_DEFERRED_COMMIT_RELEASE_EVENT");
     expect(bootstrapSource).not.toContain("ensureStaticHomeDeferredStylesheet");
@@ -467,6 +491,9 @@ describe("static shell performance invariants", () => {
       homeRouteSource,
       loginRouteSource,
       homeStaticEntrySource,
+      homePostAnchorCoreSource,
+      homeStaticEntryDemoWarmupSource,
+      homeDemoWarmCoreSource,
       homeDemoStartupEntrySource,
       homeDemoEntrySource,
       runtimeLoaderSource,
@@ -489,6 +516,7 @@ describe("static shell performance invariants", () => {
       assetVersionSource,
       shellLayoutSource,
       seedSource,
+      homeAnchorCoreSource,
       fragmentWidgetRuntimeSource,
     ] = await Promise.all([
       readSource("../entry.ssr.tsx"),
@@ -498,6 +526,9 @@ describe("static shell performance invariants", () => {
       readSource("../routes/home.tsx"),
       readSource("../routes/login/index.tsx"),
       readSource("./home-static-entry.ts"),
+      readSource("./home-post-anchor-core.ts"),
+      readSource("./home-static-entry-demo-warmup.ts"),
+      readSource("./home-demo-warm-core.ts"),
       readSource("./home-demo-startup-entry.ts"),
       readSource("./home-demo-entry.ts"),
       readSource("./home-demo-runtime-loader.ts"),
@@ -520,6 +551,7 @@ describe("static shell performance invariants", () => {
       readSource("./asset-version.ts"),
       readSource("./StaticShellLayout.tsx"),
       readSource("./seed.ts"),
+      readSource("./home-anchor-core.ts"),
       readSource("../fragment/ui/fragment-widget-runtime.ts"),
     ]);
 
@@ -529,8 +561,12 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("home-demo-entry.ts");
     expect(buildScriptSource).toContain("home-collab-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-deferred-runtime.ts");
+    expect(buildScriptSource).toContain("home-post-anchor-core.ts");
+    expect(buildScriptSource).toContain("home-post-anchor-lifecycle-runtime.ts");
     expect(buildScriptSource).toContain("home-static-anchor-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-anchor-runtime.ts");
+    expect(buildScriptSource).toContain("home-demo-warm-core.ts");
+    expect(buildScriptSource).toContain("home-static-entry-demo-warmup.ts");
     expect(buildScriptSource).toContain("home-bootstrap-post-lcp-runtime.ts");
     expect(buildScriptSource).toContain("home-ui-controls-runtime.ts");
     expect(buildScriptSource).toContain("home-language-runtime.ts");
@@ -609,6 +645,10 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntryLoaderSource).toContain(
       "data-home-demo-entry-preload",
     );
+    expect(homeStaticEntryDemoWarmupSource).toContain("loadHomeDemoWarmCore");
+    expect(homeDemoWarmCoreSource).toContain("warmHomeDemoStartupAttachRuntime");
+    expect(homeDemoWarmCoreSource).toContain("warmHomeDemoEntryRuntime");
+    expect(homeDemoWarmCoreSource).toContain("warmHomeDemoKind(kind, assets[kind], { doc })");
     expect(homeStaticEntrySource).not.toContain("loadHomeDemoEntryRuntime");
     expect(homeStaticEntrySource).not.toContain("void startHomeDemoEntry()");
     expect(homeDemoStartupEntrySource).toContain("HOME_DEMO_OBSERVE_EVENT");
@@ -716,77 +756,88 @@ describe("static shell performance invariants", () => {
     );
     expect(homeRouteSource).not.toContain("loadHybridFragmentResource");
     expect(homeStaticEntrySource).toContain("installHomeStaticEntry");
-    expect(homeStaticEntrySource).toContain("installHomeBootstrapDeferredRuntime");
-    expect(homeStaticEntrySource).toContain("loadHomeBootstrapDeferredRuntime");
-    expect(homeStaticEntrySource).toContain("resumeDeferredHomeHydration");
-    expect(homeStaticEntrySource).toContain("loadHomeStaticEntryDemoWarmup");
-    expect(homeStaticEntrySource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
-    expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
-    expect(homeStaticEntrySource).toContain("void startHomeDemoWarmup()");
-    expect(homeStaticEntrySource).toContain("scheduleDeferredRuntime");
-    expect(homeStaticEntrySource).toContain("prom:home:lifecycle-runtime-requested");
-    expect(homeStaticEntrySource).toContain("prom:home:lifecycle-runtime-ready");
-    expect(homeStaticEntrySource).toContain("waitForLoad: true");
-    expect(homeStaticEntrySource).not.toContain("scheduleDeferredWidgetRuntime");
-    expect(homeStaticEntrySource).not.toContain("scheduleDeferredBootstrap");
-    expect(homeStaticEntrySource).not.toContain("primeHomeFragmentBootstrapBytes");
-    expect(homeStaticEntrySource).not.toContain("primeBootstrapRequest");
-    expect(homeStaticEntrySource).not.toContain("releaseQueuedReadyStaggerWithin");
-    expect(homeStaticEntrySource).not.toContain("data-ready-stagger-state");
-    expect(homeStaticEntrySource).not.toContain("startCollabEntry");
-    expect(homeStaticEntrySource).not.toContain("startDemoEntry");
-    expect(homeStaticEntrySource).not.toContain("requestBootstrap()");
-    expect(homeStaticEntrySource).not.toContain("clearStartupHandlers");
-    expect(homeStaticEntrySource).not.toContain("startHomeWorkerRuntime()");
-    expect(homeStaticEntrySource).not.toContain("requestIdleCallback");
-    expect(homeStaticEntrySource).not.toContain("'scroll'");
-    expect(homeStaticEntrySource).toContain("'focusin'");
-    expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'");
-    expect(homeStaticEntrySource).toContain(
-      "from './home-bootstrap-deferred-runtime-loader'",
-    );
-    expect(homeStaticEntrySource).toContain("from './home-active-controller'");
-    expect(homeStaticEntrySource).toContain(
+    expect(homeStaticEntrySource).toContain("loadHomePostAnchorCore");
+    expect(homeStaticEntrySource).toContain("from './home-post-anchor-core-loader'");
+    expect(homeStaticEntrySource).not.toContain("loadFragmentWidgetRuntime");
+    expect(homeStaticEntrySource).not.toContain("resumeDeferredHomeHydration");
+    expect(homeStaticEntrySource).not.toContain("loadHomeStaticEntryDemoWarmup");
+    expect(homeStaticEntrySource).not.toContain("loadHomeBootstrapDeferredRuntime");
+    expect(homeStaticEntrySource).not.toContain("scheduleStaticShellTask");
+    expect(homePostAnchorCoreSource).toContain("installHomeStaticEntry");
+    expect(homePostAnchorCoreSource).toContain("installHomeBootstrapDeferredRuntime");
+    expect(homePostAnchorCoreSource).toContain("resumeDeferredHomeHydration");
+    expect(homePostAnchorCoreSource).toContain("loadHomeStaticEntryDemoWarmup");
+    expect(homePostAnchorCoreSource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
+    expect(homePostAnchorCoreSource).toContain("loadFragmentWidgetRuntime");
+    expect(homePostAnchorCoreSource).toContain("void startHomeDemoWarmup()");
+    expect(homePostAnchorCoreSource).toContain("scheduleDeferredRuntime");
+    expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-requested");
+    expect(homePostAnchorCoreSource).toContain("prom:home:lifecycle-runtime-ready");
+    expect(homePostAnchorCoreSource).toContain("waitForLoad: true");
+    expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredWidgetRuntime");
+    expect(homePostAnchorCoreSource).not.toContain("scheduleDeferredBootstrap");
+    expect(homePostAnchorCoreSource).not.toContain("primeHomeFragmentBootstrapBytes");
+    expect(homePostAnchorCoreSource).not.toContain("primeBootstrapRequest");
+    expect(homePostAnchorCoreSource).not.toContain("releaseQueuedReadyStaggerWithin");
+    expect(homePostAnchorCoreSource).not.toContain("data-ready-stagger-state");
+    expect(homePostAnchorCoreSource).not.toContain("startCollabEntry");
+    expect(homePostAnchorCoreSource).not.toContain("startDemoEntry");
+    expect(homePostAnchorCoreSource).not.toContain("requestBootstrap()");
+    expect(homePostAnchorCoreSource).not.toContain("clearStartupHandlers");
+    expect(homePostAnchorCoreSource).not.toContain("startHomeWorkerRuntime()");
+    expect(homePostAnchorCoreSource).not.toContain("requestIdleCallback");
+    expect(homePostAnchorCoreSource).not.toContain("'scroll'");
+    expect(homePostAnchorCoreSource).toContain("'focusin'");
+    expect(homePostAnchorCoreSource).not.toContain("from './home-bootstrap'");
+    expect(homePostAnchorCoreSource).toContain("from './home-active-controller'");
+    expect(homePostAnchorCoreSource).toContain(
       "from './home-static-entry-demo-warmup-loader'",
     );
-    expect(homeStaticEntrySource).toContain("scheduleStaticShellTask");
+    expect(homePostAnchorCoreSource).toContain("scheduleStaticShellTask");
     expect(homeStaticEntrySource).not.toContain("scheduleReleaseTask(() =>");
     expect(homeStaticAnchorEntrySource).toContain("installHomeStaticAnchorEntry");
-    expect(homeStaticAnchorEntrySource).toContain("createHomeFirstLcpGate");
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeStaticAnchorEntrySource).toContain("loadHomeAnchorCore");
+    expect(homeStaticAnchorEntrySource).toContain("from './home-anchor-core-loader'");
+    expect(homeAnchorCoreSource).toContain("createHomeFirstLcpGate");
+    expect(homeAnchorCoreSource).not.toContain("./language-seed-client");
+    expect(homeAnchorCoreSource).not.toContain("./home-stream");
+    expect(homeAnchorCoreSource).not.toContain("./home-render");
+    expect(homeAnchorCoreSource).toContain(
       "loadBootstrapRuntime = loadHomeBootstrapRuntime",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "loadDeferredEntry = loadHomeStaticEntryRuntime",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "startSharedRuntime = ensureHomeSharedRuntime",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "disposeSharedRuntime = disposeHomeSharedRuntime",
     );
-    expect(homeStaticAnchorEntrySource).toContain("HOME_FIRST_ANCHOR_PATCH_EVENT");
-    expect(homeStaticAnchorEntrySource).toContain("scheduleDeferredEntryFallback");
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain("HOME_FIRST_ANCHOR_PATCH_EVENT");
+    expect(homeAnchorCoreSource).toContain("scheduleDeferredEntryFallback");
+    expect(homeAnchorCoreSource).toContain(
       "prom:home:deferred-entry-requested",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "prom:home:deferred-entry-ready",
     );
-    expect(homeStaticAnchorEntrySource).toContain("clearStartupHandlers");
-    expect(homeStaticAnchorEntrySource).toContain("startHomeWorkerRuntime()");
-    expect(homeStaticAnchorEntrySource).toContain("requestBootstrap()");
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain("clearStartupHandlers");
+    expect(homeAnchorCoreSource).toContain("startHomeWorkerRuntime()");
+    expect(homeAnchorCoreSource).toContain("requestBootstrap()");
+    expect(homeAnchorCoreSource).toContain(
       "data.runtimeAnchorBootstrapHref ?? data.fragmentBootstrapHref",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "liveDoc.addEventListener?.('DOMContentLoaded', domReadyHandler, { once: true })",
     );
-    expect(homeStaticAnchorEntrySource).toContain(
+    expect(homeAnchorCoreSource).toContain(
       "liveWin.addEventListener('load', loadHandler, { once: true })",
     );
-    expect(homeStaticAnchorEntrySource).not.toContain("requestIdleCallback");
-    expect(homeStaticAnchorEntrySource).toContain("'focusin'");
+    expect(homeAnchorCoreSource).not.toContain("requestIdleCallback");
+    expect(homeAnchorCoreSource).toContain("'focusin'");
+    expect(homePostAnchorCoreSource).not.toContain("./language-seed-client");
+    expect(homeDemoWarmCoreSource).not.toContain("./language-seed-client");
     expect(fragmentWidgetRuntimeSource).toContain(
       "const loadHomeDemoRuntime = () => import('../../static-shell/home-demo-activate')",
     );

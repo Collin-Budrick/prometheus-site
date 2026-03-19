@@ -11,7 +11,6 @@ import { buildHomeFragmentBootstrapHref } from './home-fragment-bootstrap'
 import type { HomeDemoAssetMap } from './home-demo-runtime-types'
 import type { StaticShellSeed } from './seed'
 import { readStaticShellSeed } from './seed-client'
-import { loadStaticRouteLanguageSeed } from './language-seed-client'
 
 type SerializedHomeRuntimeProfileBucket = [maxWidth: number, height: number]
 type SerializedHomeRuntimeLayout = [
@@ -271,15 +270,6 @@ type JsonScriptElement = {
   textContent: string | null
 }
 
-const hasSeedValues = (seed: LanguageSeedPayload | null | undefined) =>
-  Boolean(
-    seed?.lab ||
-      (seed?.ui && Object.keys(seed.ui).length > 0) ||
-      (seed?.demos && Object.keys(seed.demos).length > 0) ||
-      (seed?.fragments && Object.keys(seed.fragments).length > 0) ||
-      (seed?.fragmentHeaders && Object.keys(seed.fragmentHeaders).length > 0)
-  )
-
 export type StaticHomeBootstrapDocument = Pick<Document, 'getElementById'>
 
 const isJsonScriptElement = (value: unknown): value is JsonScriptElement => {
@@ -370,14 +360,4 @@ export const readStaticHomeWorkerBootstrapData = ({
           }, {})
         : {}
   }
-}
-
-export const resolveStaticHomeRouteSeed = async (
-  data: Pick<HomeStaticBootstrapData, 'currentPath' | 'lang' | 'routeSeed'>,
-  loadRouteSeed: typeof loadStaticRouteLanguageSeed = loadStaticRouteLanguageSeed
-) => {
-  if (hasSeedValues(data.routeSeed)) {
-    return data.routeSeed
-  }
-  return await loadRouteSeed(data.currentPath, data.lang)
 }

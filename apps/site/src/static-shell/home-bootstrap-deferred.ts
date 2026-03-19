@@ -1,107 +1,97 @@
-import { loadHomeLanguageRuntime } from "./home-language-runtime-loader";
-import { readStaticHomeBootstrapData, resolveStaticHomeRouteSeed } from "./home-bootstrap-data";
-import { getActiveHomeController } from "./home-active-controller";
-import { requestHomeDemoObserve, updateFragmentStatus } from "./home-bootstrap-ui";
-import {
-  applyShellLanguageSeed,
-  destroyHomeController,
-  hasStaticHomeVersionMismatch,
-  installDeferredHomePostLcpRuntime,
-  resolvePreferredStaticHomeLang,
-  stopHomeHydrationFetches,
-} from "./home-bootstrap-controller-utils";
-import { bootstrapStaticHome } from "./home-bootstrap-orchestrator";
+import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import { getActiveHomeController, resumeDeferredHomeHydration } from './home-active-controller'
+import { resolvePreferredStaticHomeLang } from './home-language-preference'
+import { loadHomePostAnchorLifecycleRuntime } from './home-post-anchor-lifecycle-runtime-loader'
+import { scheduleStaticShellTask } from './scheduler'
 
-export const installHomeBootstrapDeferredRuntime = async () => {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return;
+type InstallHomeBootstrapDeferredRuntimeOptions = {
+  win?: Window | null
+  doc?: Document | null
+  scheduleTask?: typeof scheduleStaticShellTask
+  loadLifecycleRuntime?: typeof loadHomePostAnchorLifecycleRuntime
+}
+
+export const installHomeBootstrapDeferredRuntime = async ({
+  win = typeof window !== 'undefined' ? window : null,
+  doc = typeof document !== 'undefined' ? document : null,
+  scheduleTask = scheduleStaticShellTask,
+  loadLifecycleRuntime = loadHomePostAnchorLifecycleRuntime
+}: InstallHomeBootstrapDeferredRuntimeOptions = {}) => {
+  if (!win || !doc) {
+    return
   }
 
-  const controller = getActiveHomeController();
+  const controller = getActiveHomeController()
   if (!controller || controller.destroyed || controller.deferredRuntimeCleanup) {
-    return;
+    return
   }
 
-  const data = readStaticHomeBootstrapData();
+  const data = readStaticHomeBootstrapData({ doc })
   if (!data) {
-    return;
+    return
   }
 
-  const preferredLang = resolvePreferredStaticHomeLang(data.lang);
-  if (preferredLang !== data.lang) {
-    try {
-      const { restorePreferredStaticHomeLanguage } =
-        await loadHomeLanguageRuntime();
-      const restored = await restorePreferredStaticHomeLanguage({
-        current: data,
-        preferredLang,
-        destroyActiveController: async () => {
-          await destroyHomeController(getActiveHomeController());
-        },
-        bootstrapStaticHome,
-      });
-      if (restored) {
-        return;
-      }
-    } catch (error) {
-      console.error(
-        "Failed to restore preferred home language snapshot:",
-        error,
-      );
+  resumeDeferredHomeHydration({
+    root: doc
+  })
+
+  let lifecycleCleanup: (() => void) | null = null
+  let lifecyclePromise: Promise<void> | null = null
+  let cancelLifecycleStart: (() => void) | null = null
+
+  const startLifecycleRuntime = () => {
+    if (lifecyclePromise || controller.destroyed) {
+      return lifecyclePromise
     }
+
+    lifecyclePromise = loadLifecycleRuntime()
+      .then(({ installHomePostAnchorLifecycleRuntime }) =>
+        installHomePostAnchorLifecycleRuntime({
+          controller,
+          data,
+          win,
+          doc
+        })
+      )
+      .then((cleanup) => {
+        lifecycleCleanup = cleanup
+      })
+      .catch((error) => {
+        lifecyclePromise = null
+        console.error('Static home deferred lifecycle runtime failed:', error)
+      })
+
+    return lifecyclePromise
   }
 
-  const routeSeed = await resolveStaticHomeRouteSeed(data);
-  if (controller !== getActiveHomeController() || controller.destroyed) {
-    return;
+  if (resolvePreferredStaticHomeLang(data.lang) !== data.lang) {
+    void startLifecycleRuntime()
+  } else {
+    cancelLifecycleStart = scheduleTask(
+      () => {
+        cancelLifecycleStart = null
+        void startLifecycleRuntime()
+      },
+      {
+        priority: 'background',
+        timeoutMs: 0,
+        preferIdle: false,
+        waitForLoad: true,
+        waitForPaint: true
+      }
+    )
   }
-  applyShellLanguageSeed(data.lang, data.shellSeed, routeSeed);
-
-  const homeFragmentHydration = controller.homeFragmentHydration;
-  if (!homeFragmentHydration) {
-    return;
-  }
-
-  homeFragmentHydration.observeWithin(document);
-  if (hasStaticHomeVersionMismatch(controller, data.fragmentVersions)) {
-    homeFragmentHydration.schedulePreviewRefreshes();
-    homeFragmentHydration.retryPending();
-  }
-
-  const postLcpCleanup = installDeferredHomePostLcpRuntime({
-    controller,
-    homeFragmentHydration,
-    bootstrapStaticHome,
-    destroyActiveController: async () => {
-      await destroyHomeController(getActiveHomeController());
-    },
-  });
-  const handlePageHide = () => {
-    stopHomeHydrationFetches(controller);
-    controller.sharedRuntime?.suspendForPageHide();
-  };
-
-  const handlePageShow = (event: PageTransitionEvent) => {
-    if (!event.persisted || controller.destroyed) return;
-    controller.sharedRuntime?.resumeAfterPageShow();
-    updateFragmentStatus(controller.lang, "idle");
-    homeFragmentHydration.observeWithin(document);
-    homeFragmentHydration.retryPending();
-    requestHomeDemoObserve();
-  };
-
-  window.addEventListener("pagehide", handlePageHide);
-  window.addEventListener("pageshow", handlePageShow);
 
   const cleanupDeferredRuntime = () => {
-    window.removeEventListener("pagehide", handlePageHide);
-    window.removeEventListener("pageshow", handlePageShow);
-    postLcpCleanup();
+    cancelLifecycleStart?.()
+    cancelLifecycleStart = null
+    lifecycleCleanup?.()
+    lifecycleCleanup = null
     if (controller.deferredRuntimeCleanup === cleanupDeferredRuntime) {
-      controller.deferredRuntimeCleanup = null;
+      controller.deferredRuntimeCleanup = null
     }
-  };
+  }
 
-  controller.deferredRuntimeCleanup = cleanupDeferredRuntime;
-  controller.cleanupFns.push(cleanupDeferredRuntime);
-};
+  controller.deferredRuntimeCleanup = cleanupDeferredRuntime
+  controller.cleanupFns.push(cleanupDeferredRuntime)
+}

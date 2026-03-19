@@ -10,9 +10,9 @@ import {
 } from './home-copy-store'
 import {
   readStaticHomeBootstrapData,
-  resolveStaticHomeRouteSeed,
   type StaticHomeBootstrapDocument
 } from './home-bootstrap-data'
+import { resolveStaticHomeRouteSeed } from './home-route-seed-resolver'
 import { normalizeStaticShellLang } from './lang-param'
 
 export type HomeDemoKind = 'planner' | 'wasm-renderer' | 'react-binary' | 'preact-island'

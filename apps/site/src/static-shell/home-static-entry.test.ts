@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { installHomeStaticEntry } from './home-static-entry'
+import { installHomeStaticEntry } from './home-post-anchor-core'
 import { STATIC_HOME_DATA_SCRIPT_ID, STATIC_SHELL_SEED_SCRIPT_ID } from './constants'
 
 type MockListener = (event?: { target?: unknown }) => void

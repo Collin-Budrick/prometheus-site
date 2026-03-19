@@ -6,12 +6,31 @@ type StaticShellChunkManifest = {
   assets: string[];
   entryImports: Record<string, string[]>;
   preloadImports?: Record<string, string[]>;
+  anchorCoreImports?: Record<string, string[]>;
+  postAnchorCoreImports?: Record<string, string[]>;
+  demoWarmCoreImports?: Record<string, string[]>;
 };
 
 const EMPTY_MANIFEST: StaticShellChunkManifest = {
   assets: [],
   entryImports: {},
+  preloadImports: {},
+  anchorCoreImports: {},
+  postAnchorCoreImports: {},
+  demoWarmCoreImports: {},
 };
+
+const readStringArrayMap = (value: unknown) =>
+  value && typeof value === "object"
+    ? Object.fromEntries(
+        Object.entries(value).map(([entryPath, imports]) => [
+          entryPath,
+          Array.isArray(imports)
+            ? imports.filter((item): item is string => typeof item === "string")
+            : [],
+        ]),
+      )
+    : {};
 
 const resolveChunkManifestCandidates = () => [
   path.resolve(process.cwd(), "dist", "build", "static-shell", "chunk-manifest.json"),
@@ -36,28 +55,11 @@ const STATIC_SHELL_CHUNK_MANIFEST = (() => {
           assets: Array.isArray(parsed.assets)
             ? parsed.assets.filter((value): value is string => typeof value === "string")
             : [],
-          entryImports:
-          parsed.entryImports && typeof parsed.entryImports === "object"
-            ? Object.fromEntries(
-                Object.entries(parsed.entryImports).map(([entryPath, imports]) => [
-                  entryPath,
-                  Array.isArray(imports)
-                    ? imports.filter((value): value is string => typeof value === "string")
-                    : [],
-                ]),
-              )
-            : {},
-          preloadImports:
-            parsed.preloadImports && typeof parsed.preloadImports === "object"
-              ? Object.fromEntries(
-                  Object.entries(parsed.preloadImports).map(([entryPath, imports]) => [
-                    entryPath,
-                    Array.isArray(imports)
-                      ? imports.filter((value): value is string => typeof value === "string")
-                      : [],
-                  ]),
-                )
-              : {},
+          entryImports: readStringArrayMap(parsed.entryImports),
+          preloadImports: readStringArrayMap(parsed.preloadImports),
+          anchorCoreImports: readStringArrayMap(parsed.anchorCoreImports),
+          postAnchorCoreImports: readStringArrayMap(parsed.postAnchorCoreImports),
+          demoWarmCoreImports: readStringArrayMap(parsed.demoWarmCoreImports),
         };
     } catch {
       // Fall back to the empty manifest.
@@ -77,7 +79,8 @@ export const expandStaticShellPreloadPaths = (paths: readonly string[]) =>
     new Set(
       paths.flatMap((assetPath) => [
         assetPath,
-        ...(STATIC_SHELL_CHUNK_MANIFEST.preloadImports?.[assetPath] ??
+        ...(STATIC_SHELL_CHUNK_MANIFEST.anchorCoreImports?.[assetPath] ??
+          STATIC_SHELL_CHUNK_MANIFEST.preloadImports?.[assetPath] ??
           STATIC_SHELL_CHUNK_MANIFEST.entryImports[assetPath] ??
           []),
       ]),

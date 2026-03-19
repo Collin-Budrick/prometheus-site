@@ -1,11 +1,11 @@
-import { readStaticHomeBootstrapData, resolveStaticHomeRouteSeed } from "./home-bootstrap-data";
+import { readStaticHomeBootstrapData } from "./home-bootstrap-data";
 import { primeTrustedTypesPolicies } from "../security/client";
 import { HOME_DEFERRED_COMMIT_RELEASE_EVENT } from "./home-deferred-commit-release-event";
 import {
-  bindHomeFragmentHydration,
-  connectSharedHomeRuntime,
+  bindHomeAnchorFragmentHydration,
+  connectHomeAnchorSharedRuntime,
   scheduleStaticHomePaintReady,
-} from "./home-bootstrap-helpers";
+} from "./home-anchor-runtime";
 import {
   requestHomeDemoObserve,
   updateFragmentStatus,
@@ -20,15 +20,14 @@ import {
   setActiveHomeController,
   type HomeControllerState,
 } from "./home-active-controller";
-import { createStaticHomePatchQueue } from "./home-stream";
+import { createStaticHomeAnchorPatchQueue } from "./home-anchor-patch";
 
 export const bootstrapStaticHomeAnchor = async () => {
   const data = readStaticHomeBootstrapData();
   if (!data) return;
   primeTrustedTypesPolicies();
   cleanupLegacyHomePersistence();
-  const routeSeed = await resolveStaticHomeRouteSeed(data);
-  applyShellLanguageSeed(data.lang, data.shellSeed, routeSeed);
+  applyShellLanguageSeed(data.lang, data.shellSeed, data.routeSeed);
   await destroyHomeController(getActiveHomeController());
 
   const controller: HomeControllerState = {
@@ -51,7 +50,7 @@ export const bootstrapStaticHomeAnchor = async () => {
   };
   setActiveHomeController(controller);
 
-  controller.patchQueue = createStaticHomePatchQueue({
+  controller.patchQueue = createStaticHomeAnchorPatchQueue({
     lang: controller.lang,
     visibleFirst: true,
     bufferDeferredUntilRelease: true,
@@ -80,7 +79,7 @@ export const bootstrapStaticHomeAnchor = async () => {
       handleDeferredCommitRelease,
     ),
   );
-  const sharedRuntime = connectSharedHomeRuntime({
+  const sharedRuntime = connectHomeAnchorSharedRuntime({
     controller,
     runtimePlanEntries: data.runtimePlanEntries,
     runtimeFetchGroups: data.runtimeFetchGroups,
@@ -94,7 +93,7 @@ export const bootstrapStaticHomeAnchor = async () => {
     },
   });
   controller.sharedRuntime = sharedRuntime;
-  const homeFragmentHydration = bindHomeFragmentHydration({
+  const homeFragmentHydration = bindHomeAnchorFragmentHydration({
     controller,
     requestFragments: sharedRuntime?.requestFragments,
   });

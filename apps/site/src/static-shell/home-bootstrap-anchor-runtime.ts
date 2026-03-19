@@ -1,1 +1,4 @@
-export { bootstrapStaticHomeAnchor as bootstrapStaticHome } from './home-bootstrap-anchor'
+import { loadHomeAnchorCore } from './home-anchor-core-loader'
+
+export const bootstrapStaticHome = async () =>
+  (await loadHomeAnchorCore()).bootstrapStaticHome()
