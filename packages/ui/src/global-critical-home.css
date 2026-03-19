@@ -409,18 +409,59 @@ body {
 }
 
 .fragment-card {
+  --fragment-card-border-width: 1px;
+  --fragment-card-glass-surface: linear-gradient(
+    160deg,
+    rgb(var(--surface) / 0.42),
+    rgb(var(--surface) / 0.18)
+  );
+  --fragment-card-glass-border: linear-gradient(
+    145deg,
+    rgb(var(--accent) / 0.68),
+    transparent 52%,
+    rgb(255 255 255 / 0.84)
+  );
+  --fragment-card-glass-shadow:
+    0 0 1rem rgb(var(--ink) / 0.12),
+    0 20px 44px rgb(var(--ink) / 0.14);
+  --fragment-card-glass-backplate: linear-gradient(
+    145deg,
+    rgb(var(--accent) / 0.82),
+    rgb(var(--signal) / 0.56)
+  );
+  --fragment-card-glass-backplate-opacity: 0.68;
+  --fragment-card-glass-backplate-transform: translate(-32px, 32px);
   min-height: var(--fragment-min-height, 0px);
   padding: 1.5rem;
   border-radius: var(--radius);
-  border: 1px solid rgb(var(--stroke-strong));
-  background: rgb(var(--surface));
+  border: 1px solid transparent;
+  background: transparent;
   opacity: 1;
   visibility: visible;
   position: relative;
+  isolation: isolate;
+  z-index: 0;
   transform: translateY(0);
   transition:
     opacity 0.18s ease,
     transform 0.18s ease;
+}
+
+:root:not([data-theme="dark"]) .fragment-card {
+  --fragment-card-glass-surface: linear-gradient(
+    160deg,
+    rgb(255 255 255 / 0.46),
+    rgb(255 255 255 / 0.2)
+  );
+  --fragment-card-glass-border: linear-gradient(
+    145deg,
+    rgb(var(--accent) / 0.6),
+    transparent 52%,
+    rgb(255 255 255 / 0.96)
+  );
+  --fragment-card-glass-shadow:
+    0 0 1rem rgb(15 23 42 / 0.14),
+    0 22px 46px rgb(15 23 42 / 0.16);
 }
 
 .fragment-card[data-fragment-id] {
@@ -431,9 +472,88 @@ body {
   overflow: hidden;
 }
 
+.fragment-card::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--fragment-card-border-width) * -1);
+  z-index: -2;
+  border-radius: calc(var(--radius) + var(--fragment-card-border-width));
+  border: var(--fragment-card-border-width) solid transparent;
+  background:
+    var(--fragment-card-glass-surface) padding-box,
+    var(--fragment-card-glass-border) border-box;
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+  box-shadow: var(--fragment-card-glass-shadow);
+  pointer-events: none;
+}
+
+.fragment-card::after {
+  content: none;
+  display: none;
+}
+
 .fragment-card-body {
   position: relative;
   z-index: 1;
+  isolation: isolate;
+}
+
+.fragment-card-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: calc(var(--radius) - 0.3rem);
+  border: 1px solid transparent;
+  background: linear-gradient(
+      to top left,
+      rgb(var(--accent) / 0.42),
+      transparent 52%,
+      rgb(255 255 255 / 0.78)
+    )
+    border-box;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.fragment-card-body > :not(.fragment-card-close) {
+  mix-blend-mode: overlay;
+}
+
+.fragment-card-body
+  :is(
+    h1,
+    h2,
+    h3,
+    h4,
+    p,
+    li,
+    .meta-line,
+    .badge,
+    .home-intro-copy-line,
+    .home-manifest-copy,
+    .home-manifest-copy-line,
+    .home-manifest-copy-lead-inline,
+    .home-fragment-copy,
+    .home-fragment-copy-line,
+    .home-fragment-copy-lead,
+    .home-fragment-copy-lead-inline,
+    .home-fragment-shell-copy,
+    .home-fragment-shell-meta,
+    .home-demo-compact-kicker,
+    .home-demo-compact-meta,
+    .home-demo-compact-copy
+  ) {
+  mix-blend-mode: overlay;
 }
 
 .fragment-card[data-reveal-phase="holding"] {
@@ -464,6 +584,26 @@ body {
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+.fragment-card[data-variant="text"] {
+  min-height: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.fragment-card[data-variant="text"]::before,
+.fragment-card[data-variant="text"]::after {
+  display: none;
+}
+
+.fragment-card[data-variant="text"] .fragment-card-body::after {
+  display: none;
+}
+
+.fragment-card[data-variant="text"] .fragment-card-body > * {
+  mix-blend-mode: normal;
 }
 
 .fragment-html {
@@ -577,9 +717,15 @@ body {
   gap: 12px;
   margin-top: 1rem;
   padding: 1rem;
-  border: 1px solid rgb(var(--stroke));
+  border: 1px solid rgb(var(--stroke) / 0.68);
   border-radius: 1rem;
-  background: rgb(var(--surface-soft));
+  background:
+    linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+  -webkit-backdrop-filter: blur(10px) saturate(1.03);
+  backdrop-filter: blur(10px) saturate(1.03);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    0 12px 26px rgb(var(--ink) / 0.06);
 }
 
 .home-demo-compact-copy {
@@ -610,14 +756,20 @@ body {
   white-space: nowrap;
   padding: 0.5rem 1rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--accent) / 0.28);
-  background-color: rgb(var(--surface) / 0.96);
+  border: 1px solid rgb(var(--accent) / 0.32);
+  background:
+    linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
   color: rgb(var(--accent-strong));
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.35em;
   line-height: 1;
   text-transform: uppercase;
+  -webkit-backdrop-filter: blur(10px) saturate(1.02);
+  backdrop-filter: blur(10px) saturate(1.02);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    0 10px 22px rgb(var(--accent) / 0.08);
 }
 
 .layout-shell[data-static-route="home"] .fragment-grid-static-home-column > .fragment-card {
@@ -693,7 +845,15 @@ body {
   [data-static-home-root][data-home-paint="initial"]
   .fragment-grid-static-home-column
   > .fragment-card {
-  background: rgb(var(--surface));
+  --fragment-card-glass-surface: linear-gradient(
+    160deg,
+    rgb(var(--surface) / 0.5),
+    rgb(var(--surface) / 0.24)
+  );
+  --fragment-card-glass-backplate-opacity: 0.6;
+  --fragment-card-glass-shadow:
+    0 0 0.85rem rgb(var(--ink) / 0.12),
+    0 18px 38px rgb(var(--ink) / 0.14);
 }
 
 .layout-shell[data-static-route="home"]

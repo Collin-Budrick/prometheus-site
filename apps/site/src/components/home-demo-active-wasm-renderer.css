@@ -267,3 +267,39 @@
     }
   }
 }
+@layer components {
+  .wasm-demo {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.58), rgb(var(--surface-soft) / 0.34));
+  }
+
+  .wasm-demo-action {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.09));
+  }
+
+  .wasm-demo-action:hover {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.56), rgb(var(--surface-soft) / 0.32));
+  }
+
+  .wasm-demo-panel,
+  .wasm-demo-bits,
+  .wasm-demo-metric {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.5), rgb(var(--surface-soft) / 0.28));
+  }
+
+  .wasm-demo-step,
+  .wasm-demo-value,
+  .wasm-demo-history span,
+  .wasm-demo-chip {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.26));
+  }
+
+  .wasm-demo-core {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.09));
+  }
+}

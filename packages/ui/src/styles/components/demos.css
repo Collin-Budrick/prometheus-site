@@ -3,8 +3,14 @@
     @apply mt-4 rounded-2xl border p-4;
     display: grid;
     gap: 12px;
-    border-color: rgb(var(--stroke) / 0.72);
-    background-color: rgb(var(--surface-soft) / 0.88);
+    border-color: rgb(var(--stroke) / 0.68);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 26px rgb(var(--ink) / 0.06);
   }
 
   .home-demo-compact-header {
@@ -40,9 +46,12 @@
     @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    background-color: rgb(var(--surface) / 0.92);
-    border-color: rgb(var(--stroke) / 0.72);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.84), rgb(var(--surface-soft) / 0.62));
+    border-color: rgb(var(--stroke) / 0.68);
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .home-demo-compact-action {
@@ -51,9 +60,15 @@
     justify-content: center;
     line-height: 1;
     white-space: nowrap;
-    background-color: rgb(var(--surface) / 0.96);
-    border-color: rgb(var(--accent) / 0.28);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--accent) / 0.32);
     color: rgb(var(--accent-strong));
+    -webkit-backdrop-filter: blur(10px) saturate(1.02);
+    backdrop-filter: blur(10px) saturate(1.02);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 10px 22px rgb(var(--accent) / 0.08);
     transition:
       transform 160ms ease,
       border-color 160ms ease,
@@ -62,7 +77,7 @@
 
   .home-demo-compact-action:hover {
     transform: translateY(-1px);
-    background-color: rgb(var(--surface));
+    background-color: rgb(var(--surface) / 0.92);
     border-color: rgb(var(--accent) / 0.42);
   }
 
@@ -86,8 +101,14 @@
     @apply mt-4 rounded-2xl border border-teal-200/80 bg-white/70 p-4;
     position: relative;
     overflow: hidden;
-    background-color: rgb(var(--surface) / 0.75);
-    border-color: rgb(var(--signal) / 0.22);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.8), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--signal) / 0.26);
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 24px rgb(var(--signal) / 0.06);
   }
 
   .preact-island-ui {
@@ -148,17 +169,7 @@
     border-radius: 20px;
     border: 1px solid rgb(var(--signal) / 0.25);
     grid-column: 1 / -1;
-    background:
-      radial-gradient(
-        circle at 50% 25%,
-        rgb(var(--signal) / 0.12),
-        rgb(var(--surface) / 0.92) 60%
-      ),
-      linear-gradient(
-        180deg,
-        rgb(var(--surface) / 0.9),
-        rgb(var(--surface-soft) / 0.7)
-      );
+    background: transparent;
     animation: timer-bloom 420ms ease;
     overflow: hidden;
   }
@@ -255,10 +266,15 @@
       border-color 160ms ease,
       transform 160ms ease,
       box-shadow 160ms ease;
-    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 10px 18px rgba(15, 23, 42, 0.08);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.74);
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(9px) saturate(1.02);
+    backdrop-filter: blur(9px) saturate(1.02);
   }
 
   .preact-island-action:hover {
@@ -309,8 +325,14 @@
     @apply mt-4 rounded-2xl border border-slate-200/70 bg-white/70 p-4;
     display: grid;
     gap: 12px;
-    background-color: rgb(var(--surface) / 0.75);
-    border-color: rgb(var(--stroke) / 0.7);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.8), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.68);
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 24px rgb(var(--ink) / 0.06);
   }
 
   .planner-demo-header {
@@ -337,14 +359,19 @@
     @apply font-mono text-[10px] text-amber-700 uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 20px rgba(249, 115, 22, 0.16);
     transition:
       transform 160ms ease,
       box-shadow 160ms ease,
       background-color 160ms ease;
-    background-color: rgb(var(--accent) / 0.12);
-    border-color: rgb(var(--accent) / 0.28);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--accent) / 0.14));
+    border-color: rgb(var(--accent) / 0.3);
     color: rgb(var(--accent-strong));
+    -webkit-backdrop-filter: blur(9px) saturate(1.02);
+    backdrop-filter: blur(9px) saturate(1.02);
   }
 
   .planner-demo-action:hover:not(:disabled) {
@@ -365,9 +392,12 @@
     justify-content: center;
     line-height: 1;
     transition: transform 160ms ease;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--muted-soft));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .planner-demo-secondary:hover {
@@ -394,9 +424,12 @@
     justify-content: center;
     line-height: 1;
     transition: transform 160ms ease;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--muted-soft));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .planner-demo-step::before {
@@ -659,14 +692,19 @@
     @apply font-mono text-[10px] text-amber-700 uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 20px rgba(249, 115, 22, 0.16);
     transition:
       transform 160ms ease,
       box-shadow 160ms ease,
       background-color 160ms ease;
-    background-color: rgb(var(--accent) / 0.12);
-    border-color: rgb(var(--accent) / 0.28);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--accent) / 0.14));
+    border-color: rgb(var(--accent) / 0.3);
     color: rgb(var(--accent-strong));
+    -webkit-backdrop-filter: blur(9px) saturate(1.02);
+    backdrop-filter: blur(9px) saturate(1.02);
   }
 
   .react-binary-action:hover {
@@ -698,9 +736,12 @@
       border-color 160ms ease,
       background-color 160ms ease,
       transform 160ms ease;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--muted-soft));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .react-binary-step:hover {
@@ -775,8 +816,14 @@
       border-color 180ms ease,
       box-shadow 180ms ease,
       transform 180ms ease;
-    background-color: rgb(var(--surface) / 0.85);
-    border-color: rgb(var(--stroke) / 0.7);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.6));
+    border-color: rgb(var(--stroke) / 0.68);
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 24px rgb(var(--ink) / 0.05);
   }
 
   .react-binary-panel-title {
@@ -851,9 +898,12 @@
     justify-content: center;
     line-height: 1;
     width: fit-content;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .react-binary-node::before {
@@ -1006,14 +1056,19 @@
     @apply font-mono text-[10px] text-teal-700 uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    box-shadow: 0 12px 20px rgba(20, 184, 166, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 20px rgba(20, 184, 166, 0.16);
     transition:
       transform 160ms ease,
       box-shadow 160ms ease,
       background-color 160ms ease;
-    background-color: rgb(var(--signal) / 0.12);
-    border-color: rgb(var(--signal) / 0.28);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--signal) / 0.14));
+    border-color: rgb(var(--signal) / 0.3);
     color: rgb(var(--signal-strong));
+    -webkit-backdrop-filter: blur(9px) saturate(1.02);
+    backdrop-filter: blur(9px) saturate(1.02);
   }
 
   .wasm-demo-action:hover {
@@ -1043,8 +1098,14 @@
     display: grid;
     gap: 8px;
     min-height: 150px;
-    background-color: rgb(var(--surface) / 0.85);
-    border-color: rgb(var(--stroke) / 0.7);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.6));
+    border-color: rgb(var(--stroke) / 0.68);
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 24px rgb(var(--ink) / 0.05);
   }
 
   .wasm-demo-panel-title {
@@ -1074,9 +1135,12 @@
     line-height: 1;
     letter-spacing: 0;
     transition: transform 160ms ease;
-    background-color: rgb(var(--surface));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .wasm-demo-step:hover {
@@ -1095,9 +1159,12 @@
     line-height: 1;
     min-width: 64px;
     text-align: center;
-    background-color: rgb(var(--surface-soft));
-    border-color: rgb(var(--stroke));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.8), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--stroke) / 0.72);
     color: rgb(var(--ink-soft));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .wasm-demo-core {
@@ -1267,5 +1334,106 @@
   .wasm-demo-step:hover,
   .wasm-demo-core-hash {
     color: rgb(var(--ink-soft));
+  }
+}
+@layer components {
+  .home-demo-compact,
+  .preact-island,
+  .planner-demo,
+  .react-binary-demo,
+  .wasm-demo {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.58), rgb(var(--surface-soft) / 0.34));
+  }
+
+  .planner-demo-card,
+  .react-binary-panel,
+  .wasm-demo-panel,
+  .wasm-demo-bits,
+  .react-binary-bits,
+  .react-binary-dom {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.5), rgb(var(--surface-soft) / 0.28));
+  }
+
+  .home-demo-compact-badge,
+  .home-demo-compact-action,
+  .preact-island-action,
+  .planner-demo-action,
+  .planner-demo-secondary,
+  .planner-demo-step,
+  .planner-demo-pill,
+  .planner-demo-toggle,
+  .planner-demo-outcome,
+  .react-binary-action,
+  .react-binary-step,
+  .react-binary-node,
+  .react-binary-chip,
+  .react-binary-dom span,
+  .react-binary-bits span,
+  .wasm-demo-action,
+  .wasm-demo-step,
+  .wasm-demo-value,
+  .wasm-demo-history span,
+  .wasm-demo-chip,
+  .wasm-demo-metric {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.26));
+    -webkit-backdrop-filter: blur(10px) saturate(1.02);
+    backdrop-filter: blur(10px) saturate(1.02);
+  }
+
+  .preact-island-timer,
+  .planner-demo-step.is-done,
+  .planner-demo-pill[data-state="ready"],
+  .planner-demo-toggle[data-state="hit"],
+  .planner-demo-outcome[data-state="queued"],
+  .wasm-demo-core {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.09));
+  }
+
+  .planner-demo-action,
+  .react-binary-action,
+  .planner-demo-step.is-active,
+  .react-binary-step[aria-selected="true"],
+  .react-binary-bits span[data-anim="true"] {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
+  }
+
+  .planner-demo-card[data-cache="miss"],
+  .planner-demo-toggle[data-state="miss"],
+  .planner-demo-outcome[data-state="render"],
+  .planner-demo-outcome[data-state="fresh"] {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.08));
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"],
+  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
+    background:
+      linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.58));
+  }
+
+  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
+    background:
+      linear-gradient(135deg, rgb(var(--signal) / 0.1), rgb(var(--surface) / 0.56));
+  }
+
+  .planner-demo-action:hover:not(:disabled),
+  .react-binary-action:hover,
+  .wasm-demo-action:hover {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.56), rgb(var(--surface-soft) / 0.32));
+  }
+
+  .home-demo-compact-action:hover,
+  .preact-island-action:hover,
+  .planner-demo-secondary:hover,
+  .planner-demo-toggle:hover,
+  .wasm-demo-step:hover {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.52), rgb(var(--surface-soft) / 0.3));
   }
 }

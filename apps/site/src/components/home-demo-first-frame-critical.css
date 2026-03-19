@@ -419,9 +419,7 @@
     overflow: hidden;
     border: 1px solid rgb(var(--signal) / 0.25);
     border-radius: 20px;
-    background:
-      radial-gradient(circle at 50% 25%, rgb(var(--signal) / 0.12), rgb(var(--surface) / 0.92) 60%),
-      linear-gradient(180deg, rgb(var(--surface) / 0.9), rgb(var(--surface-soft) / 0.7));
+    background: transparent;
     text-align: center;
   }
 
@@ -571,5 +569,69 @@
     .react-binary-panel {
       min-height: 0;
     }
+  }
+}
+@layer components {
+  .planner-demo,
+  .wasm-demo,
+  .react-binary-demo,
+  .preact-island {
+    background: rgb(var(--surface) / 0.58);
+  }
+
+  .planner-demo-card,
+  .wasm-demo-panel,
+  .react-binary-panel,
+  .wasm-demo-bits,
+  .react-binary-bits,
+  .react-binary-dom {
+    background: rgb(var(--surface) / 0.5);
+  }
+
+  .planner-demo-action,
+  .wasm-demo-action,
+  .react-binary-action,
+  .planner-demo-secondary,
+  .planner-demo-toggle,
+  .planner-demo-step,
+  .planner-demo-row::after,
+  .planner-demo-outcome,
+  .wasm-demo-step,
+  .wasm-demo-value,
+  .wasm-demo-history span,
+  .wasm-demo-chip,
+  .preact-island-timer,
+  .preact-island-action,
+  .react-binary-step,
+  .react-binary-node,
+  .react-binary-chip,
+  .react-binary-dom span,
+  .react-binary-bits span {
+    background: rgb(var(--surface) / 0.48);
+  }
+
+  .planner-demo-action,
+  .react-binary-action,
+  .planner-demo-step.is-active,
+  .react-binary-step[aria-selected="true"],
+  .react-binary-bits span[data-anim="true"] {
+    background: rgb(var(--accent) / 0.1);
+  }
+
+  .planner-demo-row[data-state="ready"]::after,
+  .planner-demo-toggle[data-state="hit"],
+  .planner-demo-outcome[data-state="queued"],
+  .wasm-demo-core,
+  .preact-island-timer {
+    background: rgb(var(--signal) / 0.09);
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"],
+  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
+    background: linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.58));
+  }
+
+  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
+    background: linear-gradient(135deg, rgb(var(--signal) / 0.1), rgb(var(--surface) / 0.56));
   }
 }

@@ -370,3 +370,50 @@
     }
   }
 }
+@layer components {
+  .react-binary-demo {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.58), rgb(var(--surface-soft) / 0.34));
+  }
+
+  .react-binary-action {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
+  }
+
+  .react-binary-action:hover {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.56), rgb(var(--surface-soft) / 0.32));
+  }
+
+  .react-binary-step,
+  .react-binary-node,
+  .react-binary-chip,
+  .react-binary-bits span,
+  .react-binary-dom span {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.26));
+  }
+
+  .react-binary-step[aria-selected="true"],
+  .react-binary-demo[data-stage="binary"] .react-binary-bits span[data-anim="true"] {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
+  }
+
+  .react-binary-panel {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.5), rgb(var(--surface-soft) / 0.28));
+  }
+
+  .react-binary-demo[data-stage="react"] .react-binary-panel[data-panel="react"],
+  .react-binary-demo[data-stage="binary"] .react-binary-panel[data-panel="binary"] {
+    background:
+      linear-gradient(135deg, rgb(var(--accent) / 0.08), rgb(var(--surface) / 0.58));
+  }
+
+  .react-binary-demo[data-stage="qwik"] .react-binary-panel[data-panel="qwik"] {
+    background:
+      linear-gradient(135deg, rgb(var(--signal) / 0.1), rgb(var(--surface) / 0.56));
+  }
+}

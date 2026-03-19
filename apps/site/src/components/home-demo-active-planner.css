@@ -332,3 +332,50 @@
     }
   }
 }
+@layer components {
+  .planner-demo {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.58), rgb(var(--surface-soft) / 0.34));
+  }
+
+  .planner-demo-card {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.5), rgb(var(--surface-soft) / 0.28));
+  }
+
+  .planner-demo-action {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
+  }
+
+  .planner-demo-action:hover:not(:disabled) {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.56), rgb(var(--surface-soft) / 0.32));
+  }
+
+  .planner-demo-secondary,
+  .planner-demo-step,
+  .planner-demo-row[data-pill]::after,
+  .planner-demo-toggle,
+  .planner-demo-outcome {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.26));
+  }
+
+  .planner-demo-step.is-active,
+  .planner-demo-card[data-cache="miss"],
+  .planner-demo-toggle[data-state="miss"],
+  .planner-demo-outcome[data-state="render"],
+  .planner-demo-outcome[data-state="fresh"] {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.08));
+  }
+
+  .planner-demo-step.is-done,
+  .planner-demo-row[data-state="ready"]::after,
+  .planner-demo-toggle[data-state="hit"],
+  .planner-demo-outcome[data-state="queued"] {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.09));
+  }
+}

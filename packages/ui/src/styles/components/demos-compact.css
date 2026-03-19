@@ -3,8 +3,14 @@
     @apply mt-4 rounded-2xl border p-4;
     display: grid;
     gap: 12px;
-    border-color: rgb(var(--stroke) / 0.72);
-    background-color: rgb(var(--surface-soft) / 0.88);
+    border-color: rgb(var(--stroke) / 0.68);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 12px 26px rgb(var(--ink) / 0.06);
   }
 
   .home-demo-compact-kicker {
@@ -39,9 +45,12 @@
     @apply font-mono text-[10px] uppercase tracking-[0.35em];
     justify-content: center;
     line-height: 1;
-    background-color: rgb(var(--surface) / 0.92);
-    border-color: rgb(var(--stroke) / 0.72);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.84), rgb(var(--surface-soft) / 0.62));
+    border-color: rgb(var(--stroke) / 0.68);
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(8px) saturate(1.02);
+    backdrop-filter: blur(8px) saturate(1.02);
   }
 
   .home-demo-compact-action {
@@ -50,15 +59,24 @@
     justify-content: center;
     line-height: 1;
     white-space: nowrap;
-    background-color: rgb(var(--surface) / 0.96);
-    border-color: rgb(var(--accent) / 0.28);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
+    border-color: rgb(var(--accent) / 0.32);
     color: rgb(var(--accent-strong));
-    transition: transform 160ms ease;
+    -webkit-backdrop-filter: blur(10px) saturate(1.02);
+    backdrop-filter: blur(10px) saturate(1.02);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 10px 22px rgb(var(--accent) / 0.08);
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease;
   }
 
   .home-demo-compact-action:hover {
     transform: translateY(-1px);
-    background-color: rgb(var(--surface));
+    background-color: rgb(var(--surface) / 0.92);
     border-color: rgb(var(--accent) / 0.42);
   }
 

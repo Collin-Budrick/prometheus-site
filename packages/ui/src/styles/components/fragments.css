@@ -317,10 +317,33 @@
     --motion-fade-ease: cubic-bezier(0.4, 0, 0.2, 1);
     --ready-stagger-duration: 180ms;
     --ready-stagger-delay: 0ms;
-    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
-    background-color: rgb(var(--surface) / 0.9);
-    border-color: rgb(var(--accent) / 0.2);
+    --fragment-card-border-width: 1px;
+    --fragment-card-glass-surface: linear-gradient(
+      160deg,
+      rgb(var(--surface) / 0.36),
+      rgb(var(--surface) / 0.14)
+    );
+    --fragment-card-glass-border: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.68),
+      transparent 52%,
+      rgb(255 255 255 / 0.84)
+    );
+    --fragment-card-glass-shadow:
+      0 0 1rem rgb(var(--ink) / 0.14),
+      0 24px 52px rgb(var(--ink) / 0.18);
+    --fragment-card-glass-backplate: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.84),
+      rgb(var(--signal) / 0.58)
+    );
+    --fragment-card-glass-backplate-opacity: 0.68;
+    --fragment-card-glass-backplate-transform: translate(-32px, 32px);
+    box-shadow: none;
+    background: transparent;
+    border-color: transparent;
     isolation: isolate;
+    z-index: 0;
     opacity: 1;
     transform: translateY(0);
     visibility: visible;
@@ -346,11 +369,37 @@
     contain: layout paint;
   }
 
+  :root:not([data-theme="dark"]) .fragment-card {
+    --fragment-card-glass-surface: linear-gradient(
+      160deg,
+      rgb(255 255 255 / 0.44),
+      rgb(255 255 255 / 0.18)
+    );
+    --fragment-card-glass-border: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.6),
+      transparent 52%,
+      rgb(255 255 255 / 0.94)
+    );
+    --fragment-card-glass-shadow:
+      0 0 1rem rgb(15 23 42 / 0.14),
+      0 22px 46px rgb(15 23 42 / 0.16);
+    --fragment-card-glass-backplate: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.8),
+      rgb(var(--signal) / 0.54)
+    );
+  }
+
   .layout-shell[data-static-route='home'] .fragment-card {
-    background-color: rgb(var(--surface) / 0.96);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+    --fragment-card-glass-surface: linear-gradient(
+      160deg,
+      rgb(var(--surface) / 0.42),
+      rgb(var(--surface) / 0.18)
+    );
+    --fragment-card-glass-shadow:
+      0 0 1rem rgb(var(--ink) / 0.12),
+      0 20px 44px rgb(var(--ink) / 0.14);
   }
 
   .layout-shell[data-static-route='home']
@@ -398,10 +447,6 @@
     contain-intrinsic-size: auto var(--fragment-min-height, 380px);
   }
 
-  .layout-shell[data-static-route='home'] .fragment-card::before {
-    display: none;
-  }
-
   .layout-shell[data-static-route='home'] .fragment-card[data-reveal-phase='visible'] {
     transition: none;
   }
@@ -434,22 +479,15 @@
     [data-static-home-root][data-home-paint='initial']
     .fragment-grid-static-home-column
     > .fragment-card {
-    background-color: rgb(var(--surface) / 0.98);
-    box-shadow: none;
-  }
-
-  .layout-shell[data-static-route='home']
-    [data-static-home-root][data-home-paint='initial']
-    .fragment-grid-static-home-column
-    > .fragment-card::after {
-    display: none;
-  }
-
-  .layout-shell[data-static-route='home']
-    [data-static-home-root][data-home-paint='initial']
-    .fragment-grid-static-home-column
-    > .fragment-card::before {
-    display: none;
+    --fragment-card-glass-surface: linear-gradient(
+      160deg,
+      rgb(var(--surface) / 0.48),
+      rgb(var(--surface) / 0.22)
+    );
+    --fragment-card-glass-backplate-opacity: 0.6;
+    --fragment-card-glass-shadow:
+      0 0 0.85rem rgb(var(--ink) / 0.12),
+      0 18px 38px rgb(var(--ink) / 0.14);
   }
 
   .layout-shell[data-static-route='home']
@@ -590,10 +628,6 @@
     height: 0;
   }
 
-  :root:not([data-theme="dark"]) .fragment-card {
-    background-color: rgb(var(--surface) / 0.96);
-  }
-
   .fragment-card[data-variant='text'] {
     background-color: transparent !important;
     border-color: transparent !important;
@@ -619,6 +653,19 @@
   .fragment-card[data-variant='text']::before {
     display: none;
     opacity: 0;
+  }
+
+  .fragment-card[data-variant='text']::after {
+    display: none;
+    opacity: 0;
+  }
+
+  .fragment-card[data-variant='text'] .fragment-card-body::after {
+    display: none;
+  }
+
+  .fragment-card[data-variant='text'] .fragment-card-body > * {
+    mix-blend-mode: normal;
   }
 
   .fragment-card[data-variant='text']:hover::after,
@@ -666,6 +713,64 @@
   .fragment-card-body {
     position: relative;
     z-index: 2;
+    isolation: isolate;
+  }
+
+  .fragment-card-body::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: calc(var(--radius) - 0.3rem);
+    border: 1px solid transparent;
+    background: linear-gradient(
+        to top left,
+        rgb(var(--accent) / 0.42),
+        transparent 52%,
+        rgb(255 255 255 / 0.78)
+      )
+      border-box;
+    -webkit-mask:
+      linear-gradient(#fff 0 0) padding-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) padding-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    opacity: 0.82;
+    pointer-events: none;
+  }
+
+  .fragment-card-body > :not(.fragment-card-close) {
+    mix-blend-mode: overlay;
+  }
+
+  .fragment-card-body
+    :is(
+      h1,
+      h2,
+      h3,
+      h4,
+      p,
+      li,
+      .meta-line,
+      .badge,
+      .home-intro-copy-line,
+      .home-manifest-copy,
+      .home-manifest-copy-line,
+      .home-manifest-copy-lead-inline,
+      .home-fragment-copy,
+      .home-fragment-copy-line,
+      .home-fragment-copy-lead,
+      .home-fragment-copy-lead-inline,
+      .home-fragment-shell-copy,
+      .home-fragment-shell-meta,
+      .home-demo-compact-kicker,
+      .home-demo-compact-meta,
+      .home-demo-compact-copy
+    ) {
+    mix-blend-mode: overlay;
   }
 
   .fragment-card[data-reveal-phase='holding'] {
@@ -728,21 +833,17 @@
   .fragment-card::before {
     content: "";
     position: absolute;
-    inset: 10px;
-    border-radius: calc(var(--radius) - 10px);
-    border: 1px solid rgb(var(--stroke) / 0.55);
+    inset: calc(var(--fragment-card-border-width) * -1);
+    z-index: -2;
+    border-radius: calc(var(--radius) + var(--fragment-card-border-width));
+    border: var(--fragment-card-border-width) solid transparent;
     background:
-      radial-gradient(
-        circle at 18% 10%,
-        rgb(var(--surface) / 0.85),
-        transparent 55%
-      ),
-      radial-gradient(
-        circle at 85% 18%,
-        rgb(var(--accent) / 0.18),
-        transparent 45%
-      );
-    opacity: 0;
+      var(--fragment-card-glass-surface) padding-box,
+      var(--fragment-card-glass-border) border-box;
+    -webkit-backdrop-filter: blur(16px) saturate(1.08);
+    backdrop-filter: blur(16px) saturate(1.08);
+    box-shadow: var(--fragment-card-glass-shadow);
+    opacity: 1;
     pointer-events: none;
   }
 
@@ -856,11 +957,11 @@
       transform: scale(0.985);
     }
     55% {
-      opacity: 0.75;
+      opacity: 0.82;
       transform: scale(1);
     }
     100% {
-      opacity: 0.22;
+      opacity: 1;
       transform: scale(1);
     }
   }
@@ -946,58 +1047,22 @@
     overflow: hidden;
   }
 
-  @supports (backdrop-filter: blur(8px)) {
-    .fragment-card {
-      backdrop-filter: blur(8px);
-      box-shadow: var(--shadow);
-      background-color: rgb(var(--surface) / 0.82);
-    }
-
-    :root:not([data-theme="dark"]) .fragment-card {
-      backdrop-filter: blur(16px) saturate(1.05);
-      background-color: rgb(var(--surface) / 0.9);
-    }
-
-    .fragment-card[data-variant='text'] {
-      backdrop-filter: none;
-      background-color: transparent;
-    }
-  }
-
-  @supports (backdrop-filter: blur(8px)) {
-    .layout-shell[data-static-route='home'] .fragment-card {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-      background-color: rgb(var(--surface) / 0.96);
-      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  @supports not ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+    .fragment-card::before {
+      background:
+        linear-gradient(
+          160deg,
+          rgb(var(--surface) / 0.94),
+          rgb(var(--surface-soft) / 0.88)
+        )
+        padding-box,
+        var(--fragment-card-glass-border) border-box;
     }
   }
 
   .fragment-card::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background:
-      radial-gradient(
-        circle at top right,
-        rgb(var(--accent) / 0.22),
-        transparent 44%
-      ),
-      radial-gradient(
-        circle at bottom left,
-        rgb(var(--signal) / 0.2),
-        transparent 38%
-      );
-    opacity: 0;
-    transition: opacity 200ms ease;
-    pointer-events: none;
-  }
-
-  .fragment-card:hover::after,
-  .fragment-card:focus-visible::after,
-  .fragment-card:focus-within::after {
-    opacity: 1;
+    content: none;
+    display: none;
   }
 
   .fragment-card h1,
@@ -1354,7 +1419,8 @@
     padding: 0.4rem 0.75rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--stroke) / 0.72);
-    background-color: rgb(var(--surface-soft) / 0.72);
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.6));
     color: rgb(var(--muted));
     font-family: var(--font-mono);
     font-size: 10px;
@@ -1362,6 +1428,9 @@
     line-height: 1.35;
     overflow-wrap: anywhere;
     text-transform: none;
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
   }
 
   .home-fragment-stub {
@@ -1412,12 +1481,17 @@
     min-height: 10.5rem;
     resize: vertical;
     padding: 1rem 1.125rem;
-    border: 1px solid rgb(var(--stroke));
+    border: 1px solid rgb(var(--stroke) / 0.78);
     border-radius: 18px;
-    background: rgb(var(--surface-soft));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.78), rgb(var(--surface-soft) / 0.54));
     color: rgb(var(--ink));
     font: 500 0.95rem/1.6 var(--font-mono);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      0 10px 22px rgb(var(--ink) / 0.06);
   }
 
   .home-collab-textarea:focus-visible {
@@ -1454,8 +1528,12 @@
     padding: 0.4rem 0.8rem;
     border: 1px solid rgb(var(--stroke));
     border-radius: 999px;
-    background: rgb(var(--surface-soft));
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.82), rgb(var(--surface-soft) / 0.58));
     color: rgb(var(--muted));
+    -webkit-backdrop-filter: blur(10px) saturate(1.03);
+    backdrop-filter: blur(10px) saturate(1.03);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
   }
 
   .home-collab-root[data-collab-state='live'] .home-collab-status {
@@ -1537,5 +1615,38 @@
   .action-button:hover {
     transform: translateY(-1px);
     box-shadow: 0 22px 36px rgba(249, 115, 22, 0.35);
+  }
+}
+@layer components {
+  .badge,
+  .home-manifest-pill,
+  .home-collab-status,
+  .home-fragment-metric {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.48), rgb(var(--surface-soft) / 0.28));
+    -webkit-backdrop-filter: blur(10px) saturate(1.02);
+    backdrop-filter: blur(10px) saturate(1.02);
+  }
+
+  .badge.accent {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.46), rgb(var(--accent) / 0.1));
+  }
+
+  .badge.signal,
+  .home-collab-root[data-collab-state='live'] .home-collab-status {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.44), rgb(var(--signal) / 0.09));
+  }
+
+  .home-collab-root[data-collab-state='reconnecting'] .home-collab-status,
+  .home-collab-root[data-collab-state='connecting'] .home-collab-status {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.45), rgb(var(--accent) / 0.08));
+  }
+
+  .home-collab-textarea {
+    background:
+      linear-gradient(160deg, rgb(var(--surface) / 0.54), rgb(var(--surface-soft) / 0.32));
   }
 }
