@@ -74,15 +74,30 @@ export const getStaticShellChunkManifest = () => STATIC_SHELL_CHUNK_MANIFEST;
 export const getStaticShellBuildAssetPaths = () =>
   STATIC_SHELL_CHUNK_MANIFEST.assets;
 
-export const expandStaticShellPreloadPaths = (paths: readonly string[]) =>
+const expandStaticShellPaths = (
+  paths: readonly string[],
+  manifestKey:
+    | "anchorCoreImports"
+    | "postAnchorCoreImports"
+    | "demoWarmCoreImports"
+    | "preloadImports",
+) =>
   Array.from(
     new Set(
       paths.flatMap((assetPath) => [
         assetPath,
-        ...(STATIC_SHELL_CHUNK_MANIFEST.anchorCoreImports?.[assetPath] ??
-          STATIC_SHELL_CHUNK_MANIFEST.preloadImports?.[assetPath] ??
+        ...(STATIC_SHELL_CHUNK_MANIFEST[manifestKey]?.[assetPath] ??
           STATIC_SHELL_CHUNK_MANIFEST.entryImports[assetPath] ??
           []),
       ]),
     ),
   );
+
+export const expandStaticShellPreloadPaths = (paths: readonly string[]) =>
+  expandStaticShellPaths(paths, "anchorCoreImports");
+
+export const expandStaticShellPostAnchorHintPaths = (paths: readonly string[]) =>
+  expandStaticShellPaths(paths, "postAnchorCoreImports");
+
+export const expandStaticShellDemoWarmHintPaths = (paths: readonly string[]) =>
+  expandStaticShellPaths(paths, "demoWarmCoreImports");

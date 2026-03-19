@@ -21,6 +21,7 @@ import { HOME_ANCHOR_CORE_ASSET_PATH } from './home-anchor-core-loader'
 import { HOME_POST_ANCHOR_CORE_ASSET_PATH } from './home-post-anchor-core-loader'
 import { HOME_DEMO_WARM_CORE_ASSET_PATH } from './home-demo-warm-core-loader'
 import { HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH } from './home-post-anchor-lifecycle-runtime-loader'
+import { HOME_COLLAB_WORKER_ASSET_PATH } from './home-collab-worker-loader'
 
 const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
@@ -34,6 +35,7 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_DEMO_ENTRY_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
+  HOME_COLLAB_WORKER_ASSET_PATH,
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
   HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js',

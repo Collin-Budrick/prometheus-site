@@ -184,6 +184,49 @@ class MockWebSocket {
   }
 }
 
+class MockWorker {
+  static instances: MockWorker[] = []
+
+  readonly messages: unknown[] = []
+  terminated = false
+  private readonly listeners = new Map<string, Set<MockListener>>()
+
+  constructor() {
+    MockWorker.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: MockListener) {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: MockListener) {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      this.listeners.delete(type)
+    }
+  }
+
+  postMessage(message: unknown) {
+    this.messages.push(message)
+  }
+
+  terminate() {
+    this.terminated = true
+  }
+
+  dispatchMessage(data: Record<string, unknown>) {
+    this.emit('message', { data })
+  }
+
+  private emit(type: string, event: Record<string, unknown>) {
+    ;(this.listeners.get(type) ?? new Set()).forEach((listener) => listener(event))
+  }
+}
+
 const flushMicrotasks = async () => {
   await Promise.resolve()
   await Promise.resolve()
@@ -203,6 +246,7 @@ describe('home collab bfcache lifecycle', () => {
   beforeEach(() => {
     timers = new MockTimers()
     MockWebSocket.instances.length = 0
+    MockWorker.instances.length = 0
     globalThis.setTimeout = timers.setTimeout as unknown as typeof setTimeout
     globalThis.clearTimeout = timers.clearTimeout as typeof clearTimeout
     mutableGlobal.MutationObserver = undefined
@@ -277,17 +321,26 @@ describe('home collab bfcache lifecycle', () => {
 
     const cleanup = attachHomeCollaborativeEditorRoot({
       root: root as never,
-      WebSocketImpl: MockWebSocket as unknown as typeof WebSocket
+      win: win as never,
+      createWorker: () => new MockWorker() as never
     })
 
-    expect(MockWebSocket.instances).toHaveLength(1)
-    const initialSocket = MockWebSocket.instances[0]
-    initialSocket.dispatchMessage(
-      JSON.stringify({
-        type: 'home-collab:init',
-        snapshot: ''
-      })
-    )
+    expect(MockWorker.instances).toHaveLength(1)
+    const worker = MockWorker.instances[0]
+    expect(worker.messages[0]).toMatchObject({
+      type: 'init',
+      origin: 'https://prometheus.prod'
+    })
+    worker.dispatchMessage({
+      type: 'status',
+      status: 'live',
+      busy: false,
+      editable: true
+    })
+    worker.dispatchMessage({
+      type: 'remote-update',
+      text: ''
+    })
 
     expect(root.status.textContent).toBe('Live for everyone on this page')
     expect(root.textarea.readOnly).toBe(false)
@@ -295,23 +348,21 @@ describe('home collab bfcache lifecycle', () => {
     win.emit('pagehide')
     await flushMicrotasks()
 
-    expect(initialSocket.closeCalls).toEqual([{ code: 1000, reason: 'pagehide' }])
+    expect(worker.messages.at(-1)).toEqual({ type: 'suspend' })
     expect(root.textarea.readOnly).toBe(false)
     expect(timers.callbacks.size).toBe(0)
 
     win.emit('pageshow', { persisted: true })
     await flushMicrotasks()
 
-    expect(MockWebSocket.instances).toHaveLength(2)
-    const resumedSocket = MockWebSocket.instances[1]
-    resumedSocket.dispatchMessage(
-      JSON.stringify({
-        type: 'home-collab:init',
-        snapshot: ''
-      })
-    )
-
-    expect(resumedSocket.url).toContain('/home/collab/dock/ws')
+    expect(MockWorker.instances).toHaveLength(1)
+    expect(worker.messages.at(-1)).toEqual({ type: 'resume' })
+    worker.dispatchMessage({
+      type: 'status',
+      status: 'live',
+      busy: false,
+      editable: true
+    })
     expect(root.status.textContent).toBe('Live for everyone on this page')
     expect(root.textarea.readOnly).toBe(false)
 
@@ -319,6 +370,7 @@ describe('home collab bfcache lifecycle', () => {
     win.emit('pageshow', { persisted: true })
     await flushMicrotasks()
 
-    expect(MockWebSocket.instances).toHaveLength(2)
+    expect(worker.messages.at(-1)).toEqual({ type: 'destroy' })
+    expect(worker.terminated).toBe(true)
   })
 })

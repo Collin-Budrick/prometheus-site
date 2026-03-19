@@ -117,6 +117,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
+      'apps/site/src/static-shell/home-collab.worker.ts',
       'apps/site/src/fragment/runtime/worker.ts',
       'apps/site/src/fragment/runtime/decode-pool.worker.ts'
     ]

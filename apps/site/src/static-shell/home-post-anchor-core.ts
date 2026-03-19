@@ -3,6 +3,7 @@ import { installHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred'
 import { resumeDeferredHomeHydration } from './home-active-controller'
 import { scheduleStaticShellTask } from './scheduler'
 import { loadHomeStaticEntryDemoWarmup } from './home-static-entry-demo-warmup-loader'
+import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
 import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
@@ -32,6 +33,7 @@ type InstallHomeStaticEntryOptions = {
   resumeDeferredHydration?: typeof resumeDeferredHomeHydration
   warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
   loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
+  preconnectPostAnchorOrigins?: typeof ensureHomePostAnchorPreconnects
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
@@ -68,7 +70,8 @@ export const installHomeStaticEntry = ({
   installDeferredRuntime = () => installHomeBootstrapDeferredRuntime(),
   resumeDeferredHydration = resumeDeferredHomeHydration,
   warmDemoAssets = warmStaticHomeDemoAssets,
-  loadWidgetRuntime = loadFragmentWidgetRuntime
+  loadWidgetRuntime = loadFragmentWidgetRuntime,
+  preconnectPostAnchorOrigins = ensureHomePostAnchorPreconnects
 }: InstallHomeStaticEntryOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_ENTRY__) {
     return () => undefined
@@ -221,6 +224,10 @@ export const installHomeStaticEntry = ({
   })
   liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
 
+  preconnectPostAnchorOrigins({
+    win: liveWin,
+    doc: liveDoc
+  })
   resumeHomeHydration()
   scheduleDeferredRuntime()
   void startHomeDemoWarmup()

@@ -44,10 +44,20 @@ import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
 } from '../static-shell/home-static-entry-loader'
+import { HOME_STATIC_ENTRY_ASSET_PATH } from '../static-shell/home-static-entry-loader'
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
 } from '../static-shell/home-bootstrap-runtime-loader'
-import { expandStaticShellPreloadPaths } from '../static-shell/build-manifest.server'
+import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../static-shell/home-static-entry-demo-warmup-loader'
+import {
+  HOME_DEMO_ENTRY_ASSET_PATH,
+  HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
+} from '../static-shell/home-demo-runtime-types'
+import {
+  expandStaticShellDemoWarmHintPaths,
+  expandStaticShellPostAnchorHintPaths,
+  expandStaticShellPreloadPaths
+} from '../static-shell/build-manifest.server'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -135,7 +145,18 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
     'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
   ]
 } as const
-const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const
+const STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS = {
+  [HOME_STATIC_ROUTE_PATH]: [HOME_STATIC_ENTRY_ASSET_PATH]
+} as const
+const STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS = {
+  [HOME_STATIC_ROUTE_PATH]: [HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH]
+} as const
+const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {
+  [HOME_STATIC_ROUTE_PATH]: [
+    HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
+    HOME_DEMO_ENTRY_ASSET_PATH
+  ]
+} as const
 const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
   [HOME_STATIC_ROUTE_PATH]: [homeStaticEagerStylesheetHref]
 } as const
@@ -353,6 +374,16 @@ const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string |
   const moduleHints = [
     ...expandStaticShellPreloadPaths(
       STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode]
+    ),
+    ...expandStaticShellPostAnchorHintPaths(
+      STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS[
+        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS
+      ] ?? []
+    ),
+    ...expandStaticShellDemoWarmHintPaths(
+      STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS[
+        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_DEMO_WARM_HINT_PATHS
+      ] ?? []
     ),
     ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
       normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
