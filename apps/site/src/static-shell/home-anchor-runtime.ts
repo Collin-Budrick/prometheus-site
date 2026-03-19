@@ -29,6 +29,7 @@ import type {
 } from './home-active-controller'
 import { updateFragmentStatus } from './home-bootstrap-ui'
 import { ensureHomeSharedRuntime } from './home-shared-runtime'
+import { promoteSatisfiedStaticHomeAnchorBatch } from './home-anchor-patch'
 import { scheduleStaticShellTask } from './scheduler'
 import { markStaticShellUserTiming } from './static-shell-performance'
 import { scheduleStaticRoutePaintReady } from './static-route-paint'
@@ -287,6 +288,11 @@ export const connectHomeAnchorSharedRuntime = ({
   })
 
   if (isStaticHomeAnchorBatchSatisfied({ ids: initialAnchorIds, knownVersions, root })) {
+    promoteSatisfiedStaticHomeAnchorBatch({
+      ids: initialAnchorIds,
+      knownVersions,
+      root
+    })
     markFirstAnchorBatchFetched()
   }
 
@@ -328,6 +334,11 @@ export const connectHomeAnchorSharedRuntime = ({
         !didMarkFirstAnchorBatch &&
         isStaticHomeAnchorBatchSatisfied({ ids, knownVersions, root })
       ) {
+        promoteSatisfiedStaticHomeAnchorBatch({
+          ids,
+          knownVersions,
+          root
+        })
         markFirstAnchorBatchFetched()
       }
     },

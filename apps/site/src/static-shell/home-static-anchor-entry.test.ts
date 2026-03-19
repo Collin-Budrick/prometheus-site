@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { installHomeStaticAnchorEntry } from './home-static-anchor-entry'
+import { installHomeStaticAnchorEntry } from './home-anchor-core'
 import { HOME_FIRST_ANCHOR_PATCH_EVENT } from './home-anchor-patch-event'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,

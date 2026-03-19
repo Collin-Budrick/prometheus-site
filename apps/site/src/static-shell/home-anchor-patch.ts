@@ -54,6 +54,11 @@ const HOME_PATCH_BATCH_LIMIT = 2
 const FRAGMENT_HEIGHT_LOCK_ATTR = 'data-fragment-height-locked'
 const FRAGMENT_HEIGHT_LOCK_TOKEN_ATTR = 'data-fragment-height-lock-token'
 const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
+const HOME_FIRST_ANCHOR_PATCHED_FLAG = '__PROM_STATIC_HOME_FIRST_ANCHOR_PATCH__'
+
+type HomeAnchorPatchDocument = Pick<Document, 'dispatchEvent'> & {
+  [HOME_FIRST_ANCHOR_PATCHED_FLAG]?: boolean
+}
 
 const escapeFragmentId = (value: string) => {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
@@ -85,6 +90,25 @@ const shouldPreserveHomeCardRevealState = (card: HTMLElement) =>
 
 const setHomePatchState = (card: HTMLElement, state: 'pending' | 'ready') => {
   card.setAttribute(STATIC_HOME_PATCH_STATE_ATTR, state)
+}
+
+const markStaticHomeFirstAnchorPatchApplied = ({
+  doc = typeof document !== 'undefined'
+    ? (document as HomeAnchorPatchDocument)
+    : null
+}: {
+  doc?: HomeAnchorPatchDocument | null
+} = {}) => {
+  if (!doc) {
+    return false
+  }
+  if (doc[HOME_FIRST_ANCHOR_PATCHED_FLAG]) {
+    return false
+  }
+  doc[HOME_FIRST_ANCHOR_PATCHED_FLAG] = true
+  markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
+  void dispatchHomeFirstAnchorPatchEvent({ doc })
+  return true
 }
 
 const readFragmentHeightHint = (card: HTMLElement) => {
@@ -328,6 +352,78 @@ const buildHomeAnchorFragmentHtml = (payload: FragmentPayload) => {
   return html ? `<div class="fragment-html">${html}</div>` : null
 }
 
+const canPromoteSatisfiedAnchorCard = ({
+  card,
+  expectedVersion
+}: {
+  card: HTMLElement
+  expectedVersion?: number
+}) => {
+  const stage = card.getAttribute(STATIC_HOME_STAGE_ATTR)
+  if (stage !== 'anchor') {
+    return false
+  }
+
+  const patchState = card.getAttribute(STATIC_HOME_PATCH_STATE_ATTR)
+  const previewVisible = card.getAttribute(STATIC_HOME_PREVIEW_VISIBLE_ATTR) === 'true'
+  if (patchState !== 'ready' && !(patchState === 'pending' && previewVisible)) {
+    return false
+  }
+
+  if (typeof expectedVersion !== 'number' || !Number.isFinite(expectedVersion)) {
+    return true
+  }
+
+  const renderedVersion = parseFragmentVersion(card)
+  return renderedVersion !== null && renderedVersion >= expectedVersion
+}
+
+export const promoteSatisfiedStaticHomeAnchorBatch = ({
+  ids,
+  knownVersions,
+  root = document,
+  doc = typeof document !== 'undefined'
+    ? (document as HomeAnchorPatchDocument)
+    : null
+}: {
+  ids: string[]
+  knownVersions: Record<string, number>
+  root?: ParentNode
+  doc?: HomeAnchorPatchDocument | null
+}) => {
+  let hasSatisfiedAnchorCard = false
+
+  ids.forEach((fragmentId) => {
+    const card = findStaticHomeFragmentCard(fragmentId, root)
+    if (!card) {
+      return
+    }
+
+    if (
+      !canPromoteSatisfiedAnchorCard({
+        card,
+        expectedVersion: knownVersions[fragmentId]
+      })
+    ) {
+      return
+    }
+
+    hasSatisfiedAnchorCard = true
+    card.dataset.revealPhase = 'visible'
+    card.dataset.fragmentStage = 'ready'
+    card.dataset.fragmentReady = 'true'
+    card.dataset.fragmentLoaded = 'true'
+    setHomePatchState(card, 'ready')
+  })
+
+  if (!hasSatisfiedAnchorCard) {
+    return false
+  }
+
+  markStaticHomeFirstAnchorPatchApplied({ doc })
+  return true
+}
+
 export const patchStaticHomeAnchorFragmentCard = ({
   lang,
   payload,
@@ -495,8 +591,7 @@ export const createStaticHomeAnchorPatchQueue = ({
       if (result === 'patched' || result === 'stale' || result === 'missing') {
         if ((result === 'patched' || result === 'stale') && !didMarkFirstAnchorPatch && card.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor') {
           didMarkFirstAnchorPatch = true
-          markStaticShellUserTiming('prom:home:first-anchor-patch-applied')
-          void dispatchHomeFirstAnchorPatchEvent()
+          markStaticHomeFirstAnchorPatchApplied()
         }
         pendingPayloads.delete(fragmentId)
         return true
