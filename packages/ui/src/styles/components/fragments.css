@@ -277,25 +277,25 @@
   .fragment-card.is-dragging {
     opacity: 0.85;
     cursor: grabbing;
-    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+    box-shadow: none;
   }
 
   .grid-stack-item.ui-draggable-dragging .fragment-card {
     opacity: 0.85;
     cursor: grabbing;
-    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
+    box-shadow: none;
   }
 
   .fragment-card.is-drop-before {
-    box-shadow: 0 -3px 0 0 rgb(var(--accent) / 0.7), 0 24px 48px rgba(15, 23, 42, 0.14);
+    box-shadow: 0 -3px 0 0 rgb(var(--accent) / 0.7);
   }
 
   .fragment-card.is-drop-after {
-    box-shadow: 0 3px 0 0 rgb(var(--accent) / 0.7), 0 24px 48px rgba(15, 23, 42, 0.14);
+    box-shadow: 0 3px 0 0 rgb(var(--accent) / 0.7);
   }
 
   .fragment-card.is-drop-target {
-    box-shadow: 0 0 0 2px rgb(var(--accent) / 0.65), 0 24px 48px rgba(15, 23, 42, 0.14);
+    box-shadow: 0 0 0 2px rgb(var(--accent) / 0.65);
   }
 
   .fragment-grid.is-stacked > .fragment-slot.is-inline {
@@ -325,13 +325,10 @@
     );
     --fragment-card-glass-border: linear-gradient(
       145deg,
-      rgb(var(--accent) / 0.68),
-      transparent 52%,
-      rgb(255 255 255 / 0.84)
+      rgb(var(--stroke) / 0.48),
+      rgb(255 255 255 / 0.16)
     );
-    --fragment-card-glass-shadow:
-      0 0 1rem rgb(var(--ink) / 0.14),
-      0 24px 52px rgb(var(--ink) / 0.18);
+    --fragment-card-glass-shadow: none;
     --fragment-card-glass-backplate: linear-gradient(
       145deg,
       rgb(var(--accent) / 0.84),
@@ -377,13 +374,10 @@
     );
     --fragment-card-glass-border: linear-gradient(
       145deg,
-      rgb(var(--accent) / 0.6),
-      transparent 52%,
-      rgb(255 255 255 / 0.94)
+      rgb(var(--stroke) / 0.42),
+      rgb(255 255 255 / 0.24)
     );
-    --fragment-card-glass-shadow:
-      0 0 1rem rgb(15 23 42 / 0.14),
-      0 22px 46px rgb(15 23 42 / 0.16);
+    --fragment-card-glass-shadow: none;
     --fragment-card-glass-backplate: linear-gradient(
       145deg,
       rgb(var(--accent) / 0.8),
@@ -397,9 +391,7 @@
       rgb(var(--surface) / 0.42),
       rgb(var(--surface) / 0.18)
     );
-    --fragment-card-glass-shadow:
-      0 0 1rem rgb(var(--ink) / 0.12),
-      0 20px 44px rgb(var(--ink) / 0.14);
+    --fragment-card-glass-shadow: none;
   }
 
   .layout-shell[data-static-route='home']
@@ -485,9 +477,7 @@
       rgb(var(--surface) / 0.22)
     );
     --fragment-card-glass-backplate-opacity: 0.6;
-    --fragment-card-glass-shadow:
-      0 0 0.85rem rgb(var(--ink) / 0.12),
-      0 18px 38px rgb(var(--ink) / 0.14);
+    --fragment-card-glass-shadow: none;
   }
 
   .layout-shell[data-static-route='home']
@@ -717,29 +707,8 @@
   }
 
   .fragment-card-body::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: calc(var(--radius) - 0.3rem);
-    border: 1px solid transparent;
-    background: linear-gradient(
-        to top left,
-        rgb(var(--accent) / 0.42),
-        transparent 52%,
-        rgb(255 255 255 / 0.78)
-      )
-      border-box;
-    -webkit-mask:
-      linear-gradient(#fff 0 0) padding-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#fff 0 0) padding-box,
-      linear-gradient(#fff 0 0);
-    mask-composite: exclude;
-    opacity: 0.82;
-    pointer-events: none;
+    content: none;
+    display: none;
   }
 
   .fragment-card-body > :not(.fragment-card-close) {
@@ -845,6 +814,29 @@
     box-shadow: var(--fragment-card-glass-shadow);
     opacity: 1;
     pointer-events: none;
+    transition: background 180ms ease, opacity 180ms ease;
+  }
+
+  .fragment-card:hover,
+  .fragment-card:focus-visible,
+  .fragment-card:focus-within {
+    --fragment-card-glass-border: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.68),
+      transparent 52%,
+      rgb(255 255 255 / 0.84)
+    );
+  }
+
+  :root:not([data-theme="dark"]) .fragment-card:hover,
+  :root:not([data-theme="dark"]) .fragment-card:focus-visible,
+  :root:not([data-theme="dark"]) .fragment-card:focus-within {
+    --fragment-card-glass-border: linear-gradient(
+      145deg,
+      rgb(var(--accent) / 0.6),
+      transparent 52%,
+      rgb(255 255 255 / 0.94)
+    );
   }
 
   .fragment-card[data-motion-state="out"]::before {

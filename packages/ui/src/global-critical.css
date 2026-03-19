@@ -491,13 +491,10 @@ body {
   );
   --fragment-card-glass-border: linear-gradient(
     145deg,
-    rgb(var(--accent) / 0.68),
-    transparent 52%,
-    rgb(255 255 255 / 0.84)
+    rgb(var(--stroke) / 0.48),
+    rgb(255 255 255 / 0.16)
   );
-  --fragment-card-glass-shadow:
-    0 0 1rem rgb(var(--ink) / 0.14),
-    0 24px 52px rgb(var(--ink) / 0.18);
+  --fragment-card-glass-shadow: none;
   --fragment-card-glass-backplate: linear-gradient(
     145deg,
     rgb(var(--accent) / 0.84),
@@ -527,13 +524,10 @@ body {
   );
   --fragment-card-glass-border: linear-gradient(
     145deg,
-    rgb(var(--accent) / 0.6),
-    transparent 52%,
-    rgb(255 255 255 / 0.94)
+    rgb(var(--stroke) / 0.42),
+    rgb(255 255 255 / 0.24)
   );
-  --fragment-card-glass-shadow:
-    0 0 1rem rgb(15 23 42 / 0.14),
-    0 22px 46px rgb(15 23 42 / 0.16);
+  --fragment-card-glass-shadow: none;
   --fragment-card-glass-backplate: linear-gradient(
     145deg,
     rgb(var(--accent) / 0.8),
@@ -563,6 +557,29 @@ body {
   backdrop-filter: blur(16px) saturate(1.08);
   box-shadow: var(--fragment-card-glass-shadow);
   pointer-events: none;
+  transition: background 180ms ease, opacity 180ms ease;
+}
+
+.fragment-card:hover,
+.fragment-card:focus-visible,
+.fragment-card:focus-within {
+  --fragment-card-glass-border: linear-gradient(
+    145deg,
+    rgb(var(--accent) / 0.68),
+    transparent 52%,
+    rgb(255 255 255 / 0.84)
+  );
+}
+
+:root:not([data-theme="dark"]) .fragment-card:hover,
+:root:not([data-theme="dark"]) .fragment-card:focus-visible,
+:root:not([data-theme="dark"]) .fragment-card:focus-within {
+  --fragment-card-glass-border: linear-gradient(
+    145deg,
+    rgb(var(--accent) / 0.6),
+    transparent 52%,
+    rgb(255 255 255 / 0.94)
+  );
 }
 
 .fragment-card::after {
@@ -577,29 +594,8 @@ body {
 }
 
 .fragment-card-body::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: calc(var(--radius) - 0.3rem);
-  border: 1px solid transparent;
-  background: linear-gradient(
-      to top left,
-      rgb(var(--accent) / 0.42),
-      transparent 52%,
-      rgb(255 255 255 / 0.78)
-    )
-    border-box;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) padding-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#fff 0 0) padding-box,
-    linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  opacity: 0.82;
-  pointer-events: none;
+  content: none;
+  display: none;
 }
 
 .fragment-card-body > :not(.fragment-card-close) {
@@ -1197,9 +1193,7 @@ body {
     rgb(var(--surface) / 0.22)
   );
   --fragment-card-glass-backplate-opacity: 0.6;
-  --fragment-card-glass-shadow:
-    0 0 0.85rem rgb(var(--ink) / 0.12),
-    0 18px 38px rgb(var(--ink) / 0.14);
+  --fragment-card-glass-shadow: none;
 }
 
 .layout-shell[data-static-route='home']
