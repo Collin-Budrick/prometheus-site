@@ -7,6 +7,7 @@ import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../f
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
 import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
+import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
 import {
   buildFragmentHeightPlanSignature,
@@ -37,7 +38,13 @@ type HomeHeadLink = NonNullable<DocumentHead['links']>[number]
 export const buildHomeHeadLinks = (
   plan?: FragmentPlanValue | null,
   _lang?: Lang
-): HomeHeadLink[] => buildFragmentCssLinks(plan)
+): HomeHeadLink[] => [
+  {
+    rel: 'stylesheet',
+    href: homeStaticEagerStylesheetHref
+  },
+  ...buildFragmentCssLinks(plan)
+]
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   const { createServerLanguageSeed } = await import('../lang/server')

@@ -10,6 +10,7 @@ import { emptyUiCopy, loginLanguageSelection, type LanguageSeedPayload } from '.
 import type { UiCopy } from '../../lang/types'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticLoginRoute } from '../../static-shell/StaticLoginRoute'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 const loginEnabled = siteFeatures.login !== false
 type LoginResource = {
@@ -78,6 +79,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildGlobalStylesheetLinks(),
     htmlAttributes: {
       lang
     }

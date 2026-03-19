@@ -43,9 +43,7 @@ import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
 } from "./static-shell/home-demo-runtime-types";
-import homeCriticalStyles from "@prometheus/ui/global-critical-home.css?inline";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
-import homeInteractiveDeferredStylesheetHref from "./static-shell/home-static-deferred.css?url";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   "home-static": HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
@@ -71,10 +69,10 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
 } as const;
 
 const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;
-
-const STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS = {
-  "/": [homeInteractiveDeferredStylesheetHref],
-} as const;
+const MANIFEST_INJECTION_STYLESHEET_MARKERS = [
+  "global-deferred.css",
+  "home-static-eager.css",
+] as const;
 
 const STATIC_BOOTSTRAP_BUNDLE_URLS = Object.fromEntries(
   Object.entries(STATIC_BOOTSTRAP_BUNDLE_PATHS).map(([mode, bundlePath]) => [
@@ -132,6 +130,33 @@ const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
   );
 };
 
+const resolveRenderManifest = () => {
+  const injections = (manifest as { injections?: Array<{
+    tag?: string;
+    location?: string;
+    attributes?: Record<string, unknown>;
+  }> }).injections;
+  if (!Array.isArray(injections) || injections.length === 0) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    injections: injections.filter((injection) => {
+      if (injection?.tag !== "link" || injection?.location !== "head") {
+        return true;
+      }
+      const rel = injection.attributes?.rel;
+      const href = injection.attributes?.href;
+      if (rel !== "stylesheet" || typeof href !== "string") {
+        return true;
+      }
+      return !MANIFEST_INJECTION_STYLESHEET_MARKERS.some((marker) =>
+        href.includes(marker),
+      );
+    }),
+  };
+};
+
 const hasStaticBootstrapBundle = (pathname: string) => {
   const routeConfig = getStaticShellRouteConfig(pathname);
   if (!routeConfig) return false;
@@ -140,15 +165,7 @@ const hasStaticBootstrapBundle = (pathname: string) => {
 
 const escapeHtmlAttr = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-const minifyInlineCss = (value: string) =>
-  value
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\s+/g, " ")
-    .replace(/\s*([{}:;,>])\s*/g, "$1")
-    .replace(/;}/g, "}")
-    .trim();
 const STATIC_SHELL_BUILD_VERSION = getStaticShellBuildVersion();
-const HOME_CRITICAL_STYLES = minifyInlineCss(homeCriticalStyles);
 const staticFragmentPrewarmPromise = import.meta.env.PROD
   ? prewarmStaticFragmentResources().catch((error) => {
       console.warn("Static fragment prewarm failed.", error);
@@ -393,38 +410,6 @@ const stripStaticQwikScripts = (html: string) =>
     .replace(/\s+(?:q|on-document):[\w:-]+=(["'])[\s\S]*?\1/gi, "")
     .replace(/\s+(?:q|on-document):[\w:-]+/gi, "");
 
-const stripHomeBlockingDeferredStylesheet = (html: string, pathname: string) => {
-  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
-    return html;
-  }
-
-  return html
-    .replace(
-      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*global-deferred\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    )
-    .replace(
-      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*home-static-deferred\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    )
-    .replace(
-      /<style\b(?=[^>]*\bdata-src=["'][^"']*(?:global-deferred|home-static-deferred|home-demo-active)\.css[^"']*["'])[^>]*>[\s\S]*?<\/style>\s*/gi,
-      "",
-    )
-    .replace(
-      /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*home-demo-active\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    )
-    .replace(
-      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*home-static-deferred\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    )
-    .replace(
-      /<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']style["'])(?=[^>]*\bhref=["'][^"']*home-demo-active\.css[^"']*["'])[^>]*>\s*/gi,
-      "",
-    );
-};
-
 const stripNonCriticalStaticRouteStyles = (html: string, pathname: string) => {
   const mode = resolveStaticBootstrapMode(pathname);
   if (mode !== "home-static" && mode !== "fragment-static") {
@@ -435,22 +420,6 @@ const stripNonCriticalStaticRouteStyles = (html: string, pathname: string) => {
     /<style\b[^>]*data-src=["'][^"']*\/assets\/[^"']*-style\.css[^"']*["'][^>]*>[\s\S]*?<\/style>\s*/gi,
     "",
   );
-};
-
-const replaceHomeCriticalStyles = (html: string, pathname: string) => {
-  if (resolveStaticBootstrapMode(pathname) !== "home-static") {
-    return html;
-  }
-
-  let hiddenStyleIndex = 0;
-  return html
-    .replace(/<style\b[^>]*hidden[^>]*>[\s\S]*?<\/style>/gi, (match) => {
-      hiddenStyleIndex += 1;
-      if (hiddenStyleIndex === 1) {
-        return `<style hidden>${HOME_CRITICAL_STYLES}</style>`;
-      }
-      return hiddenStyleIndex === 2 ? "" : match;
-    });
 };
 
 const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
@@ -467,9 +436,6 @@ const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
 
   return `<link rel="modulepreload" href="${href}">`;
 };
-
-const buildStaticBootstrapStylePreloadTag = (href: string) =>
-  `<link rel="preload" as="style" href="${href}" data-home-demo-stylesheet="true">`;
 
 export const injectStaticBootstrap = (
   html: string,
@@ -494,13 +460,7 @@ export const injectStaticBootstrap = (
   const preloadTags = resolveStaticBootstrapPreloadPaths(pathname)
     .map((path) => buildStaticBootstrapPreloadTag(path, publicBase))
     .join("");
-  const stylePreloadTags = (
-    STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS[
-      normalizeStaticShellRoutePath(pathname) as keyof typeof STATIC_BOOTSTRAP_ROUTE_STYLE_PRELOAD_HREFS
-    ] ?? []
-  )
-    .map((href) => buildStaticBootstrapStylePreloadTag(href))
-    .join("");
+  const stylePreloadTags = "";
   const nonceAttr = nonce ? ` nonce="${escapeHtmlAttr(nonce)}"` : "";
   const scriptTag =
     resolveStaticBootstrapMode(pathname) === "home-static"
@@ -570,8 +530,9 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
   const qwikLoader = import.meta.env.PROD
     ? "inline"
     : (opts.qwikLoader ?? "inline");
+  const renderManifest = resolveRenderManifest();
   const renderOptions = {
-    manifest,
+    manifest: renderManifest,
     ...opts,
     preloader,
     qwikLoader,
@@ -601,14 +562,8 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
         return {
           ...result,
           html: injectStaticBootstrap(
-            replaceHomeCriticalStyles(
-              stripNonCriticalStaticRouteStyles(
-                stripHomeBlockingDeferredStylesheet(
-                  stripStaticQwikScripts(result.html),
-                  pathname,
-                ),
-                pathname,
-              ),
+            stripNonCriticalStaticRouteStyles(
+              stripStaticQwikScripts(result.html),
               pathname,
             ),
             resolvePublicBase(renderOptions),

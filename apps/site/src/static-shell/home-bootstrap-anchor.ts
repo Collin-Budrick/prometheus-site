@@ -37,7 +37,6 @@ export const bootstrapStaticHomeAnchor = async () => {
     fragmentOrder: data.fragmentOrder,
     planSignature: data.planSignature ?? "",
     versionSignature: data.versionSignature ?? "",
-    homeDemoStylesheetHref: data.homeDemoStylesheetHref,
     homeFragmentBootstrapHref:
       data.runtimeAnchorBootstrapHref ?? data.fragmentBootstrapHref,
     fetchAbort: null,

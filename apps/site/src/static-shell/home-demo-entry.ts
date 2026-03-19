@@ -27,7 +27,6 @@ import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming,
 } from "./static-shell-performance";
-import { ensureStaticHomeDeferredStylesheet } from "./home-deferred-stylesheet";
 
 type HomeDemoEntryWindow = Window & {
   __PROM_STATIC_HOME_DEMO_ENTRY__?: boolean;
@@ -37,7 +36,6 @@ type InstallHomeDemoEntryOptions = {
   win?: HomeDemoEntryWindow | null;
   doc?: Document | null;
   scheduleTask?: typeof scheduleStaticShellTask;
-  ensureDeferredStylesheet?: typeof ensureStaticHomeDeferredStylesheet;
 };
 
 type HomeDemoObserveDocument = Pick<
@@ -112,7 +110,6 @@ export const installHomeDemoEntry = ({
   win = typeof window !== "undefined" ? (window as HomeDemoEntryWindow) : null,
   doc = typeof document !== "undefined" ? document : null,
   scheduleTask = scheduleStaticShellTask,
-  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet,
 }: InstallHomeDemoEntryOptions = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_DEMO_ENTRY__) {
     return () => undefined;
@@ -126,18 +123,7 @@ export const installHomeDemoEntry = ({
   primeTrustedTypesPolicies();
   win.__PROM_STATIC_HOME_DEMO_ENTRY__ = true;
   markHomeDemoPerformance("prom:home:demo-entry-install");
-  void Promise.resolve(
-    ensureDeferredStylesheet({
-      href: data.homeDemoStylesheetHref,
-      doc,
-    }),
-  )
-    .catch((error) => {
-      console.error("Static home demo stylesheet failed to load:", error);
-    })
-    .finally(() => {
-      dispatchHomeDeferredCommitReleaseEvent({ doc });
-    });
+  dispatchHomeDeferredCommitReleaseEvent({ doc });
   const observeRoot = doc as unknown as ParentNode;
 
   const scheduleInitialObserve = (

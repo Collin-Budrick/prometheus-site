@@ -32,6 +32,7 @@ import { createStaticIslandRouteData } from '../../static-shell/island-static-da
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
 import { signOutSpacetimeAuth } from '../../shared/spacetime-auth'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -147,6 +148,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildGlobalStylesheetLinks(),
     htmlAttributes: {
       lang
     }

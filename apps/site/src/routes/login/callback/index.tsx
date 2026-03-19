@@ -6,6 +6,7 @@ import { appConfig } from '../../../public-app-config'
 import { siteBrand } from '../../../config'
 import { createCacheHandler } from '../../cache-headers'
 import { completeSpacetimeAuthCallback } from '../../../shared/spacetime-auth'
+import { buildGlobalStylesheetLinks } from '../../../static-shell/global-style-assets'
 
 const CALLBACK_CACHE_CONTROL = 'private, no-store, max-age=0, must-revalidate'
 
@@ -18,7 +19,8 @@ export const head: DocumentHead = {
       name: 'description',
       content: 'Completing the hosted SpacetimeAuth sign-in flow.'
     }
-  ]
+  ],
+  links: buildGlobalStylesheetLinks()
 }
 
 const authClass = {

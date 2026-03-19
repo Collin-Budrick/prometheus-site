@@ -27,6 +27,7 @@ import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
 import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 type ProfileData = {
   user: {
@@ -178,6 +179,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
+    links: buildGlobalStylesheetLinks(),
     htmlAttributes: {
       lang
     }

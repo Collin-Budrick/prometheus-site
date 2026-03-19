@@ -24,7 +24,6 @@ import {
 } from './home-demo-entry-loader'
 import { markHomeDemoPerformance } from './home-demo-performance'
 import {
-  ensureHomeDemoStylesheet,
   loadHomeDemoStartupAttachRuntime,
   warmHomeDemoStartupAttachRuntime
 } from './home-demo-runtime-loader'
@@ -122,10 +121,6 @@ export const installHomeDemoStartupEntry = ({
   win.__PROM_STATIC_HOME_DEMO_STARTUP__ = true
   markHomeDemoPerformance('prom:home:demo-startup-install')
   void Promise.all([
-    ensureHomeDemoStylesheet({
-      href: data.homeDemoStylesheetHref ?? undefined,
-      doc
-    }),
     warmHomeDemoStartupAttachRuntime({ doc }),
     warmHomeDemoEntryRuntime({ doc }),
     prewarmHomeDemoActivationResources(doc)

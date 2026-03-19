@@ -7,6 +7,7 @@ import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { resolveRequestLang } from '../fragment-resource'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { offlineLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 type OfflineRouteData = {
   lang: Lang
@@ -57,6 +58,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: copy?.networkOfflineHint ?? ''
       }
     ],
+    links: buildGlobalStylesheetLinks(),
     htmlAttributes: {
       lang
     }

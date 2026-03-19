@@ -26,6 +26,7 @@ import {
 } from '../../static-shell/static-fragment-model'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
 import { STATIC_FRAGMENT_DATA_SCRIPT_ID } from '../../static-shell/constants'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 type ProtectedRouteData = {
   lang: Lang
@@ -138,7 +139,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
-    links: buildFragmentCssLinks(fragmentData?.plan),
+    links: buildGlobalStylesheetLinks(buildFragmentCssLinks(fragmentData?.plan)),
     htmlAttributes: {
       lang
     }

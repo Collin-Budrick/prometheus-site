@@ -288,7 +288,8 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntrySource).toContain("HOME_DEMO_OBSERVE_EVENT");
     expect(homeDemoEntrySource).toContain("syncHomeDemoController");
     expect(homeDemoEntrySource).toContain("binding.manager.observeWithin(");
-    expect(homeDemoEntrySource).toContain("ensureDeferredStylesheet({");
+    expect(homeDemoEntrySource).toContain("dispatchHomeDeferredCommitReleaseEvent({ doc });");
+    expect(homeDemoEntrySource).not.toContain("ensureDeferredStylesheet({");
     expect(homeLanguageRuntimeSource).toContain("from '../lang/types'");
     expect(homeLanguageRuntimeSource).not.toContain("from '../lang'");
     expect(homeLanguageRuntimeSource).not.toContain("import.meta.glob");
@@ -490,6 +491,15 @@ describe("static shell performance invariants", () => {
       layoutSource,
       homeRouteSource,
       loginRouteSource,
+      storeRouteSource,
+      labRouteSource,
+      chatRouteSource,
+      dashboardRouteSource,
+      profileRouteSource,
+      settingsRouteSource,
+      offlineRouteSource,
+      loginCallbackRouteSource,
+      globalStyleAssetsSource,
       homeStaticEntrySource,
       homePostAnchorCoreSource,
       homeStaticEntryDemoWarmupSource,
@@ -525,6 +535,15 @@ describe("static shell performance invariants", () => {
       readSource("../routes/layout.tsx"),
       readSource("../routes/home.tsx"),
       readSource("../routes/login/index.tsx"),
+      readSource("../routes/store/index.tsx"),
+      readSource("../routes/lab/index.tsx"),
+      readSource("../routes/chat/index.tsx"),
+      readSource("../routes/dashboard/index.tsx"),
+      readSource("../routes/profile/index.tsx"),
+      readSource("../routes/settings/index.tsx"),
+      readSource("../routes/offline/index.tsx"),
+      readSource("../routes/login/callback/index.tsx"),
+      readSource("./global-style-assets.ts"),
       readSource("./home-static-entry.ts"),
       readSource("./home-post-anchor-core.ts"),
       readSource("./home-static-entry-demo-warmup.ts"),
@@ -592,10 +611,8 @@ describe("static shell performance invariants", () => {
     expect(rootSource).toContain("global-critical.css?inline");
     expect(rootSource).not.toContain("global-critical-home.css?inline");
     expect(rootSource).not.toContain("getStaticShellRouteConfig(location.url.pathname)");
-    expect(layoutSource).toContain("global-deferred.css?url");
-    expect(layoutSource).toContain(
-      "const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref",
-    );
+    expect(layoutSource).not.toContain("global-deferred.css?url");
+    expect(layoutSource).not.toContain("deferredStylesheetHref");
     expect(layoutSource).toContain("const shouldPreconnectDb =");
     expect(layoutSource).toContain("shouldPreferSameOriginDbProxy");
     expect(layoutSource).toContain("resolvePreconnectSpacetimeDbUri");
@@ -709,9 +726,12 @@ describe("static shell performance invariants", () => {
     expect(islandEntrySource).not.toContain("from './island-bootstrap'");
     expect(entrySsrSource).toContain("appendStaticAssetVersion");
     expect(entrySsrSource).toContain("STATIC_SHELL_BUILD_VERSION");
-    expect(entrySsrSource).toContain("global-critical-home.css?inline");
-    expect(entrySsrSource).toContain("replaceHomeCriticalStyles(");
-    expect(entrySsrSource).toContain("home-static-deferred\\.css");
+    expect(entrySsrSource).toContain("MANIFEST_INJECTION_STYLESHEET_MARKERS");
+    expect(entrySsrSource).toContain('href.includes(marker)');
+    expect(entrySsrSource).toContain('manifest: renderManifest');
+    expect(entrySsrSource).not.toContain("global-critical-home.css?inline");
+    expect(entrySsrSource).not.toContain("replaceHomeCriticalStyles(");
+    expect(entrySsrSource).not.toContain("home-static-deferred\\.css");
     expect(entrySsrSource).not.toContain(
       "const stylesheet = document.querySelector('link[data-home-demo-stylesheet]');",
     );
@@ -728,7 +748,7 @@ describe("static shell performance invariants", () => {
     expect(seedSource).toContain("buildVersion?: string | null");
     const homeStaticAnchorEntrySource = await readSource("./home-static-anchor-entry.ts");
     const staticHomeRouteSource = await readSource("./StaticHomeRoute.tsx");
-    expect(staticHomeRouteSource).toContain(
+    expect(staticHomeRouteSource).not.toContain(
       "import homeInteractiveDeferredStylesheetHref from './home-static-deferred.css?url'",
     );
     expect(staticHomeRouteSource).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
@@ -750,6 +770,20 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).not.toContain(
       "import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'",
     );
+    expect(homeRouteSource).toContain("rel: 'stylesheet'");
+    expect(homeRouteSource).not.toContain("rel: 'preload'");
+    expect(homeRouteSource).not.toContain("as: 'style'");
+    expect(globalStyleAssetsSource).toContain("global-deferred.css?url");
+    expect(globalStyleAssetsSource).toContain("export const buildGlobalStylesheetLinks");
+    expect(storeRouteSource).toContain("buildGlobalStylesheetLinks(buildFragmentCssLinks(data?.plan))");
+    expect(labRouteSource).toContain("buildGlobalStylesheetLinks(buildFragmentCssLinks(data?.plan))");
+    expect(chatRouteSource).toContain("buildGlobalStylesheetLinks(buildFragmentCssLinks(fragmentData?.plan))");
+    expect(loginRouteSource).toContain("links: buildGlobalStylesheetLinks()");
+    expect(dashboardRouteSource).toContain("links: buildGlobalStylesheetLinks()");
+    expect(profileRouteSource).toContain("links: buildGlobalStylesheetLinks()");
+    expect(settingsRouteSource).toContain("links: buildGlobalStylesheetLinks()");
+    expect(offlineRouteSource).toContain("links: buildGlobalStylesheetLinks()");
+    expect(loginCallbackRouteSource).toContain("links: buildGlobalStylesheetLinks()");
     expect(homeRouteSource).toContain("buildFragmentCssLinks(plan)");
     expect(homeRouteSource).not.toContain(
       "buildHomeFragmentBootstrapPreloadLink(",

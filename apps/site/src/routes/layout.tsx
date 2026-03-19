@@ -1,7 +1,6 @@
 import { $, component$, Slot, useSignal, useVisibleTask$, type QRL, type Signal } from '@builder.io/qwik'
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
-import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
 import { siteBrand, type NavLabelKey } from '../config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
@@ -41,7 +40,7 @@ import {
   normalizeStaticShellRoutePath,
   toCanonicalStaticShellHref
 } from '../static-shell/constants'
-import homeInteractiveDeferredStylesheetHref from '../static-shell/home-static-deferred.css?url'
+import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets'
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
 } from '../static-shell/home-static-entry-loader'
@@ -138,7 +137,7 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
 } as const
 const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const
 const STATIC_BOOTSTRAP_ROUTE_STYLE_HINTS = {
-  [HOME_STATIC_ROUTE_PATH]: [homeInteractiveDeferredStylesheetHref]
+  [HOME_STATIC_ROUTE_PATH]: [homeStaticEagerStylesheetHref]
 } as const
 
 const buildDeferredManifestScript = (href: string) => {
@@ -781,7 +780,6 @@ export const RouterHead = component$(() => {
   const isHomeStaticRoute = isHomeStaticPath(location.url.pathname)
   const shouldDeferManifest =
     isStaticShellPath(location.url.pathname) && !isHomeStaticRoute
-  const deferredStylesheetHref = isHomeStaticRoute ? null : globalDeferredStylesheetHref
   const currentOrigin = location.url?.origin ?? null
   const trackingOrigins = buildTrackingOrigins(currentOrigin)
   const preconnectOrigins = buildPreconnectOrigins({
@@ -806,12 +804,6 @@ export const RouterHead = component$(() => {
         <meta key={`${meta.name || meta.property}-${meta.content}`} {...meta} />
       ))}
       {partytownScript ? <script nonce={nonce || undefined} dangerouslySetInnerHTML={partytownScript} /> : null}
-      {deferredStylesheetHref ? (
-        <>
-          <link rel="preload" as="style" href={deferredStylesheetHref} />
-          <link rel="stylesheet" href={deferredStylesheetHref} />
-        </>
-      ) : null}
       {head.links.flatMap((link) => {
         if (link.rel === 'stylesheet' && typeof link.href === 'string') {
           const fragmentId = (link as Record<string, string>)['data-fragment-css']

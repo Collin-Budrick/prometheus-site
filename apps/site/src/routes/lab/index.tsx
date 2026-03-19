@@ -20,6 +20,7 @@ import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 const featureLabModule = await import('@features/lab/pages/Lab')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
@@ -146,7 +147,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
-    links: buildFragmentCssLinks(data?.plan),
+    links: buildGlobalStylesheetLinks(buildFragmentCssLinks(data?.plan)),
     htmlAttributes: {
       lang
     }

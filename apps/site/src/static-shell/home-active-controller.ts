@@ -29,7 +29,6 @@ export type HomeControllerState = {
   fragmentOrder: string[]
   planSignature: string
   versionSignature: string
-  homeDemoStylesheetHref: string | null
   homeFragmentBootstrapHref: string | null
   fetchAbort: AbortController | null
   cleanupFns: Array<() => void>

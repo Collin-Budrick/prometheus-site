@@ -8,7 +8,6 @@ import type { FragmentRuntimePlanEntry } from '../fragment/runtime/protocol'
 import type { Lang } from '../lang'
 import { asTrustedHtml } from '../security/client'
 import { useCspNonce } from '../security/qwik'
-import homeInteractiveDeferredStylesheetHref from './home-static-deferred.css?url'
 import {
   type LanguageSeedPayload
 } from '../lang/selection'
@@ -519,7 +518,6 @@ export const StaticHomeRoute = component$<StaticHomeRouteProps>(({ plan, fragmen
           lang,
           path: plan.path,
           snapshotKey: routeConfig?.snapshotKey ?? plan.path,
-          homeDemoStylesheetHref: homeInteractiveDeferredStylesheetHref,
           homeDemoAssets: normalizeHomeDemoAssetMap(),
           languageSeed,
           fragmentBootstrapHref,

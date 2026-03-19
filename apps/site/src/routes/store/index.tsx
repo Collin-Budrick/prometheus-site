@@ -23,6 +23,7 @@ import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
 import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-shell-fragment'
 import { isStaticShellBuild } from '../../static-shell/build-mode'
+import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
 
 const storeEnabled = siteFeatures.store !== false
 type FragmentResource = {
@@ -191,7 +192,7 @@ export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
         content: description
       }
     ],
-    links: buildFragmentCssLinks(data?.plan),
+    links: buildGlobalStylesheetLinks(buildFragmentCssLinks(data?.plan)),
     htmlAttributes: {
       lang
     }

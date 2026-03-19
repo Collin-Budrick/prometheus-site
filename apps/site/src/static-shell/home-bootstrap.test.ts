@@ -417,7 +417,6 @@ const createHomeBootstrapController = () => ({
   fragmentOrder: [],
   planSignature: "test",
   versionSignature: "v:test",
-  homeDemoStylesheetHref: null,
   homeFragmentBootstrapHref: null,
   fetchAbort: null,
   cleanupFns: [],

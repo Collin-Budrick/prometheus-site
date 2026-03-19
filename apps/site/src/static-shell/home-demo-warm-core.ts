@@ -1,7 +1,6 @@
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { HOME_DEMO_KINDS, normalizeHomeDemoAssetMap } from './home-demo-runtime-types'
 import {
-  ensureHomeDemoStylesheet,
   warmHomeDemoKind,
   warmHomeDemoStartupAttachRuntime
 } from './home-demo-runtime-loader'
@@ -29,10 +28,6 @@ export const warmStaticHomeDemoAssets = async ({
   const assets = normalizeHomeDemoAssetMap(data.homeDemoAssets)
 
   await Promise.all([
-    ensureHomeDemoStylesheet({
-      href: data.homeDemoStylesheetHref ?? undefined,
-      doc
-    }),
     warmHomeDemoStartupAttachRuntime({ doc }),
     warmHomeDemoEntryRuntime({ doc })
   ])

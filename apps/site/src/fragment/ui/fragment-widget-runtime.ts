@@ -1,6 +1,5 @@
 import type { AttachHomeCollabRootOptions } from '../../static-shell/home-collab-entry'
 import type { HomeDemoKind } from '../../static-shell/home-demo-activate'
-import { ensureStaticHomeDeferredStylesheet } from '../../static-shell/home-deferred-stylesheet'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
 const FRAGMENT_WIDGET_PROPS_SELECTOR = 'script[data-fragment-widget-props]'
@@ -121,10 +120,7 @@ const attachHomeDemoWidget = async (
   payload: FragmentWidgetPayload,
   { root }: FragmentWidgetAttachOptions
 ) => {
-  const [{ activateHomeDemo }] = await Promise.all([
-    loadHomeDemoRuntime(),
-    ensureStaticHomeDeferredStylesheet()
-  ])
+  const { activateHomeDemo } = await loadHomeDemoRuntime()
   const kind = resolveHomeDemoKind(element.dataset.fragmentWidget ?? '')
   if (!kind) {
     return
