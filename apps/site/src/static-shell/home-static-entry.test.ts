@@ -120,48 +120,84 @@ const flushMicrotasks = async () => {
   await Promise.resolve()
 }
 
+const createTaskQueue = () => {
+  const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
+
+  return {
+    schedule(callback: () => void) {
+      const task = { callback, cancelled: false }
+      tasks.push(task)
+      return () => {
+        task.cancelled = true
+      }
+    },
+    flush() {
+      const pending = tasks.splice(0)
+      pending.forEach((task) => {
+        if (!task.cancelled) {
+          task.callback()
+        }
+      })
+    }
+  }
+}
+
 afterEach(() => {
   // no-op placeholder so each test gets a fresh document/window instance
 })
 
 describe('installHomeStaticEntry', () => {
-  it('installs the deferred runtime and demo warmup immediately', async () => {
+  it('resumes hydration immediately, warms demos, and defers the lifecycle runtime', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
-    let deferredRuntimeCalls = 0
-    let warmupPayload: {
-      currentPath: string
-      lang: string
-      fragmentOrder: string[]
-    } | null = null
+    const taskQueue = createTaskQueue()
+    let deferredRuntimeLoads = 0
+    let deferredRuntimeInstalls = 0
+    let resumeCalls = 0
+    let warmupCallCount = 0
+    let warmupDoc: unknown = null
 
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      startDeferredRuntime: async () => {
-        deferredRuntimeCalls += 1
+      scheduleTask: taskQueue.schedule as never,
+      loadDeferredRuntime: async () => {
+        deferredRuntimeLoads += 1
+        return {
+          installHomeBootstrapDeferredRuntime: async () => {
+            deferredRuntimeInstalls += 1
+          }
+        } as never
       },
-      warmDemoAssets: async ({ data }) => {
-        warmupPayload = {
-          currentPath: data.currentPath,
-          lang: data.lang,
-          fragmentOrder: data.fragmentOrder
-        }
+      resumeDeferredHydration: ({ root, previewRefresh }) => {
+        resumeCalls += 1
+        expect(root).toBe(doc)
+        expect(previewRefresh).toBeUndefined()
+        return true
+      },
+      warmDemoAssets: async ({ doc: liveDoc }) => {
+        warmupCallCount += 1
+        warmupDoc = liveDoc
       }
     })
 
     await flushMicrotasks()
 
-    expect(deferredRuntimeCalls).toBe(1)
-    expect(warmupPayload).toEqual({
-      currentPath: '/',
-      lang: 'en',
-      fragmentOrder: ['fragment://page/home/manifest@v1']
-    })
+    expect(resumeCalls).toBe(1)
+    expect(deferredRuntimeLoads).toBe(0)
+    expect(deferredRuntimeInstalls).toBe(0)
+    expect(warmupCallCount).toBe(1)
+    expect(warmupDoc).toBe(doc)
     expect(win.listeners.has('pointerdown')).toBe(true)
     expect(win.listeners.has('keydown')).toBe(true)
     expect(win.listeners.has('touchstart')).toBe(true)
     expect(doc.listeners.has('focusin')).toBe(true)
+
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(deferredRuntimeLoads).toBe(1)
+    expect(deferredRuntimeInstalls).toBe(1)
 
     cleanup()
 
@@ -189,7 +225,11 @@ describe('installHomeStaticEntry', () => {
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      startDeferredRuntime: async () => undefined,
+      scheduleTask: (() => () => undefined) as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
       warmDemoAssets: async () => undefined,
       loadWidgetRuntime: async () => {
         loadWidgetRuntimeCalls += 1
@@ -237,7 +277,11 @@ describe('installHomeStaticEntry', () => {
     const cleanup = installHomeStaticEntry({
       win: win as never,
       doc: doc as never,
-      startDeferredRuntime: async () => undefined,
+      scheduleTask: (() => () => undefined) as never,
+      loadDeferredRuntime: async () => ({
+        installHomeBootstrapDeferredRuntime: async () => undefined
+      }) as never,
+      resumeDeferredHydration: () => true,
       warmDemoAssets: async () => undefined,
       loadWidgetRuntime: async () => {
         loadWidgetRuntimeCalls += 1

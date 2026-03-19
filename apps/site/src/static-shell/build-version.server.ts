@@ -8,20 +8,26 @@ import {
   HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
 } from './home-demo-runtime-types'
+import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../fragment/ui/fragment-widget-runtime-loader'
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   HOME_STATIC_ENTRY_ASSET_PATH
 } from './home-static-entry-loader'
+import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from './home-static-entry-demo-warmup-loader'
 import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from './home-bootstrap-runtime-loader'
+import { HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH } from './home-bootstrap-deferred-runtime-loader'
+import { getStaticShellBuildAssetPaths } from './build-manifest.server'
 
-const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
+const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   HOME_STATIC_ENTRY_ASSET_PATH,
+  HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH,
   HOME_DEMO_STARTUP_ENTRY_ASSET_PATH,
   HOME_DEMO_ENTRY_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-collab-entry.js',
   'build/static-shell/apps/site/src/static-shell/home-collab-editor-entry.js',
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
+  HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-ui-controls-runtime.js',
   'build/static-shell/apps/site/src/static-shell/home-language-runtime.js',
@@ -30,10 +36,16 @@ const STATIC_SHELL_RUNTIME_ASSET_PATHS = [
   'build/static-shell/apps/site/src/static-shell/fragment-static-entry.js',
   'build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js',
   'build/static-shell/apps/site/src/static-shell/store-static-runtime.js',
+  FRAGMENT_WIDGET_RUNTIME_ASSET_PATH,
   'build/static-shell/apps/site/src/static-shell/island-static-entry.js',
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
   ...Object.values(HOME_DEMO_RUNTIME_ASSET_PATHS)
 ] as const
+
+const STATIC_SHELL_RUNTIME_ASSET_PATHS = (() => {
+  const manifestAssets = getStaticShellBuildAssetPaths()
+  return manifestAssets.length > 0 ? manifestAssets : [...STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK]
+})()
 
 const STATIC_SHELL_BUILD_VERSION = (() => {
   const hash = createHash('sha256')

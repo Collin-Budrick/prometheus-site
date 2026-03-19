@@ -103,6 +103,19 @@
 
   .planner-demo-action,
   .react-binary-action {
+    box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
+  }
+
+  .wasm-demo-action {
+    box-shadow: 0 12px 20px rgba(20, 184, 166, 0.2);
+  }
+
+  .preact-island-action {
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+  }
+
+  .planner-demo-action,
+  .react-binary-action {
     border-color: rgb(var(--accent) / 0.28);
     background: rgb(var(--accent) / 0.12);
     color: rgb(var(--accent-strong));

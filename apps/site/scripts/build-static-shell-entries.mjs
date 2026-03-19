@@ -9,66 +9,111 @@ const siteRoot = path.resolve(scriptDir, '..')
 const repoRoot = path.resolve(siteRoot, '..', '..')
 
 const outDir = path.resolve(siteRoot, 'dist', 'build', 'static-shell')
+const metaDir = path.resolve(siteRoot, 'dist', '.static-shell-meta')
 const publicPath = '/build/static-shell/'
-const entrypoints = [
-  'apps/site/src/static-shell/home-static-anchor-entry.ts',
-  'apps/site/src/static-shell/home-static-entry.ts',
-  'apps/site/src/static-shell/home-demo-startup-entry.ts',
-  'apps/site/src/static-shell/home-demo-attach-runtime.ts',
-  'apps/site/src/static-shell/home-demo-entry.ts',
-  'apps/site/src/static-shell/home-collab-entry.ts',
-  'apps/site/src/static-shell/home-collab-editor-entry.ts',
-  'apps/site/src/static-shell/home-bootstrap-anchor-runtime.ts',
-  'apps/site/src/static-shell/home-bootstrap-core-runtime.ts',
-  'apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.ts',
-  'apps/site/src/static-shell/home-ui-controls-runtime.ts',
-  'apps/site/src/static-shell/home-language-runtime.ts',
-  'apps/site/src/static-shell/home-dock-auth-runtime.ts',
-  'apps/site/src/static-shell/home-demo-planner-runtime.ts',
-  'apps/site/src/static-shell/home-demo-wasm-renderer-runtime.ts',
-  'apps/site/src/static-shell/home-demo-react-binary-runtime.ts',
-  'apps/site/src/static-shell/home-demo-preact-island-runtime.ts',
-  'apps/site/src/static-shell/fragment-height-patch-runtime.ts',
-  'apps/site/src/static-shell/fragment-static-entry.ts',
-  'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
-  'apps/site/src/static-shell/store-static-runtime.ts',
-  'apps/site/src/fragment/runtime/worker.ts',
-  'apps/site/src/fragment/runtime/decode-pool.worker.ts',
-  'apps/site/src/static-shell/island-static-entry.ts',
-  'apps/site/src/static-shell/island-bootstrap-runtime.ts'
+
+const buildGroups = [
+  {
+    name: 'home-bootstrap',
+    splitting: true,
+    cssChunking: true,
+    entrypoints: [
+      'apps/site/src/static-shell/home-static-anchor-entry.ts',
+      'apps/site/src/static-shell/home-static-entry.ts',
+      'apps/site/src/static-shell/home-bootstrap-anchor-runtime.ts',
+      'apps/site/src/static-shell/home-bootstrap-deferred-runtime.ts',
+      'apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.ts',
+      'apps/site/src/static-shell/home-ui-controls-runtime.ts',
+      'apps/site/src/static-shell/home-language-runtime.ts',
+      'apps/site/src/static-shell/home-dock-auth-runtime.ts'
+    ]
+  },
+  {
+    name: 'home-demo',
+    splitting: true,
+    cssChunking: true,
+    entrypoints: [
+      'apps/site/src/static-shell/home-static-entry-demo-warmup.ts',
+      'apps/site/src/static-shell/home-demo-startup-entry.ts',
+      'apps/site/src/static-shell/home-demo-attach-runtime.ts',
+      'apps/site/src/static-shell/home-demo-entry.ts',
+      'apps/site/src/static-shell/home-collab-entry.ts',
+      'apps/site/src/static-shell/home-collab-editor-entry.ts',
+      'apps/site/src/static-shell/home-demo-planner-runtime.ts',
+      'apps/site/src/static-shell/home-demo-wasm-renderer-runtime.ts',
+      'apps/site/src/static-shell/home-demo-react-binary-runtime.ts',
+      'apps/site/src/static-shell/home-demo-preact-island-runtime.ts'
+    ]
+  },
+  {
+    name: 'static-support',
+    splitting: true,
+    cssChunking: true,
+    entrypoints: [
+      'apps/site/src/static-shell/fragment-height-patch-runtime.ts',
+      'apps/site/src/static-shell/fragment-static-entry.ts',
+      'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
+      'apps/site/src/static-shell/store-static-runtime.ts',
+      'apps/site/src/fragment/ui/fragment-widget-runtime.ts',
+      'apps/site/src/static-shell/island-static-entry.ts',
+      'apps/site/src/static-shell/island-bootstrap-runtime.ts'
+    ]
+  },
+  {
+    name: 'workers',
+    splitting: false,
+    cssChunking: false,
+    entrypoints: [
+      'apps/site/src/fragment/runtime/worker.ts',
+      'apps/site/src/fragment/runtime/decode-pool.worker.ts'
+    ]
+  }
 ]
 
 rmSync(outDir, { recursive: true, force: true })
+rmSync(metaDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
+mkdirSync(metaDir, { recursive: true })
 
-for (const entrypoint of entrypoints) {
-  const result = spawnSync(
-    'bun',
-    [
-      'build',
-      entrypoint,
-      '--outdir',
-      outDir,
-      '--target',
-      'browser',
-      '--format',
-      'esm',
-      '--minify',
-      '--public-path',
-      publicPath,
-      '--root',
-      '.'
-    ],
-    {
-      cwd: repoRoot,
-      stdio: 'inherit',
-      env: process.env
-    }
-  )
+const runBuildGroup = ({ name, entrypoints, splitting, cssChunking }) => {
+  const metafilePath = path.resolve(metaDir, `${name}.json`)
+  const args = [
+    'build',
+    ...entrypoints,
+    '--outdir',
+    outDir,
+    '--target',
+    'browser',
+    '--format',
+    'esm',
+    '--minify',
+    '--public-path',
+    publicPath,
+    '--root',
+    '.',
+    `--metafile=${metafilePath}`
+  ]
+
+  if (splitting) {
+    args.push('--splitting')
+  }
+  if (cssChunking) {
+    args.push('--css-chunking')
+  }
+
+  const result = spawnSync('bun', args, {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    env: process.env
+  })
 
   if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
+}
+
+for (const buildGroup of buildGroups) {
+  runBuildGroup(buildGroup)
 }
 
 const normalizeBundledAssetPaths = (dir) => {
@@ -180,6 +225,109 @@ const versionBundledWasmAssetPaths = (dir) => {
   rewriteWasmUrls(dir)
 }
 
+const normalizeOutputKey = (value) => value.replace(/\\/g, '/').replace(/^\.\//, '')
+const toAssetPath = (outputKey) => `${publicPath}${normalizeOutputKey(outputKey)}`.replace(/^\//, '')
+
+const CURATED_PRELOAD_IMPORT_LIMITS = {
+  'build/static-shell/apps/site/src/static-shell/home-static-anchor-entry.js': 2,
+  'build/static-shell/apps/site/src/static-shell/home-bootstrap-anchor-runtime.js': 2
+}
+
+const resolveImportedOutputKey = (fromKey, importPath) => {
+  if (!importPath || /^(?:[a-z]+:)?\/\//i.test(importPath)) {
+    return null
+  }
+  if (importPath.startsWith('/')) {
+    return normalizeOutputKey(importPath.replace(publicPath, ''))
+  }
+  return normalizeOutputKey(path.posix.join(path.posix.dirname(fromKey), importPath))
+}
+
+const buildChunkManifest = () => {
+  const outputs = new Map()
+
+  for (const entry of readdirSync(metaDir)) {
+    if (!entry.endsWith('.json')) {
+      continue
+    }
+    const metafile = JSON.parse(readFileSync(path.join(metaDir, entry), 'utf8'))
+    const currentOutputs = metafile.outputs ?? {}
+    for (const [outputKey, output] of Object.entries(currentOutputs)) {
+      outputs.set(normalizeOutputKey(outputKey), output)
+    }
+  }
+
+  const collectStaticImports = (entryKey, seen = new Set()) => {
+    const output = outputs.get(entryKey)
+    if (!output) {
+      return []
+    }
+
+    const imports = []
+    for (const outputImport of output.imports ?? []) {
+      if (outputImport.kind !== 'import-statement') {
+        continue
+      }
+      const importedKey = resolveImportedOutputKey(entryKey, outputImport.path)
+      if (!importedKey || seen.has(importedKey) || !outputs.has(importedKey)) {
+        continue
+      }
+      seen.add(importedKey)
+      imports.push(importedKey, ...collectStaticImports(importedKey, seen))
+    }
+
+    return imports
+  }
+
+  const collectDirectStaticImports = (entryKey) => {
+    const output = outputs.get(entryKey)
+    if (!output) {
+      return []
+    }
+
+    return (output.imports ?? [])
+      .filter((outputImport) => outputImport.kind === 'import-statement')
+      .map((outputImport) => resolveImportedOutputKey(entryKey, outputImport.path))
+      .filter((importedKey) => importedKey && importedKey.endsWith('.js') && outputs.has(importedKey))
+  }
+
+  const entryImports = {}
+  const preloadImports = {}
+  for (const [outputKey, output] of outputs) {
+    if (!output.entryPoint) {
+      continue
+    }
+    const assetPath = toAssetPath(outputKey)
+    entryImports[assetPath] = Array.from(
+      new Set(
+        collectStaticImports(outputKey)
+          .filter((importedKey) => importedKey.endsWith('.js'))
+          .map((importedKey) => toAssetPath(importedKey))
+      )
+    )
+
+    const preloadLimit = CURATED_PRELOAD_IMPORT_LIMITS[assetPath]
+    if (typeof preloadLimit === 'number' && preloadLimit > 0) {
+      preloadImports[assetPath] = Array.from(
+        new Set(
+          collectDirectStaticImports(outputKey)
+            .sort((left, right) => (outputs.get(right)?.bytes ?? 0) - (outputs.get(left)?.bytes ?? 0))
+            .slice(0, preloadLimit)
+            .map((importedKey) => toAssetPath(importedKey))
+        )
+      )
+    }
+  }
+
+  const assets = Array.from(outputs.keys()).map((outputKey) => toAssetPath(outputKey)).sort()
+
+  writeFileSync(
+    path.join(outDir, 'chunk-manifest.json'),
+    JSON.stringify({ assets, entryImports, preloadImports }, null, 2)
+  )
+}
+
 normalizeBundledAssetPaths(outDir)
 sanitizeBundledWasmSourceMaps(outDir)
 versionBundledWasmAssetPaths(outDir)
+buildChunkManifest()

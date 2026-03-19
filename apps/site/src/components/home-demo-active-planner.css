@@ -69,8 +69,8 @@
     box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);
     transition:
       transform 160ms ease,
-      box-shadow 160ms ease,
-      background-color 160ms ease;
+      background-color 160ms ease,
+      border-color 160ms ease;
     background-color: rgb(var(--accent) / 0.12);
     border-color: rgb(var(--accent) / 0.28);
     color: rgb(var(--accent-strong));
@@ -78,8 +78,9 @@
 
   .planner-demo-action:hover:not(:disabled) {
     background: rgb(var(--surface));
-    box-shadow: 0 16px 26px rgba(249, 115, 22, 0.25);
     transform: translateY(-1px);
+    border-color: rgb(var(--accent) / 0.4);
+    color: rgb(var(--accent-strong));
   }
 
   .planner-demo-action:disabled {
@@ -168,7 +169,6 @@
     min-height: 180px;
     transition:
       border-color 160ms ease,
-      box-shadow 160ms ease,
       transform 160ms ease;
     background-color: rgb(var(--surface) / 0.85);
     border-color: rgb(var(--stroke) / 0.7);

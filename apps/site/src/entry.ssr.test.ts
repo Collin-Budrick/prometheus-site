@@ -17,8 +17,8 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).toContain(
       "FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH",
     );
-    expect(source).toContain('data-fragment-runtime-preload="worker"');
-    expect(source).toContain('data-fragment-runtime-preload="decode"');
+    expect(source).not.toContain('data-fragment-runtime-preload="worker"');
+    expect(source).not.toContain('data-fragment-runtime-preload="decode"');
     expect(source).toContain('data-home-demo-startup-attach="true"');
     expect(source).toContain("buildImmediateHomeStaticEntryTag");
     expect(source).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
@@ -45,6 +45,12 @@ describe("entry.ssr static bootstrap injection", () => {
     );
     expect(source).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
+    );
+    expect(source).not.toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/worker.js"',
+    );
+    expect(source).not.toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js"',
     );
     expect(source).toContain('"fragment-static": [');
     expect(source).toContain(

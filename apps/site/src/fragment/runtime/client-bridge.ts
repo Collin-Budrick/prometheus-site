@@ -250,7 +250,6 @@ export class FragmentRuntimeBridge {
     }
 
     try {
-      ensureFragmentRuntimeAssetPreloads()
       const prewarmedRuntime = claimPrewarmedFragmentRuntime(this.config)
       if (prewarmedRuntime) {
         this.worker = prewarmedRuntime.worker

@@ -18,10 +18,6 @@ import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
 import { appendStaticAssetVersion } from '../static-shell/asset-version'
-import {
-  FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
-  FRAGMENT_RUNTIME_WORKER_ASSET_PATH
-} from '../fragment/runtime/client-bridge'
 import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
@@ -52,6 +48,7 @@ import {
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
 } from '../static-shell/home-bootstrap-runtime-loader'
+import { expandStaticShellPreloadPaths } from '../static-shell/build-manifest.server'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -128,9 +125,7 @@ const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   'home-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['home-static'],
-    HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
-    FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
-    FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH
+    HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
   ],
   'fragment-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static'],
@@ -291,7 +286,9 @@ const buildStaticBootstrapEarlyHints = (pathName: string, buildVersion: string |
   }
 
   const moduleHints = [
-    ...STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode],
+    ...expandStaticShellPreloadPaths(
+      STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode]
+    ),
     ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
       normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
     ] ?? [])

@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   STATIC_FRAGMENT_CARD_ATTR,
+  STATIC_FRAGMENT_VERSION_ATTR,
   STATIC_FRAGMENT_WIDTH_BUCKET_ATTR,
   STATIC_FRAGMENT_WIDTH_BUCKET_MOBILE_ATTR,
   STATIC_HOME_FRAGMENT_KIND_ATTR,
   STATIC_HOME_PAINT_ATTR,
   STATIC_HOME_PATCH_STATE_ATTR,
+  STATIC_HOME_PREVIEW_VISIBLE_ATTR,
   STATIC_HOME_STAGE_ATTR,
 } from "./constants";
 import {
   bindHomeFragmentHydration,
   collectStaticHomeSizingSeeds,
+  isStaticHomeAnchorBatchSatisfied,
   requestHomeDemoObserve,
   scheduleStaticHomePaintReady,
 } from "./home-bootstrap";
@@ -147,6 +150,20 @@ class MockFragmentCard {
 
   setAttribute(name: string, value: string) {
     this.attrs.set(name, value);
+  }
+}
+
+class MockFragmentCardRoot {
+  constructor(private readonly cards: MockFragmentCard[]) {}
+
+  querySelector<T>(selector: string) {
+    const match = selector.match(/data-fragment-id="([^"]+)"/);
+    if (!match) {
+      return null;
+    }
+
+    return (this.cards.find((card) => card.dataset.fragmentId === match[1]) ??
+      null) as T | null;
   }
 }
 
@@ -1362,6 +1379,55 @@ describe("scheduleHomePostLcpTasks", () => {
     expect(previewRefreshCalls).toEqual([]);
     expect(authRefreshCalls).toEqual([]);
     expect(manualGate.cleanupCount()).toBe(1);
+  });
+});
+
+describe("isStaticHomeAnchorBatchSatisfied", () => {
+  it("accepts ready and visible shell cards whose SSR version already matches the requested batch", () => {
+    const readyCritical = new MockFragmentCard(
+      "fragment://page/home/manifest@v1",
+      "critical",
+      "ready",
+      "dock",
+    );
+    readyCritical.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, "7");
+    const visibleShellAnchor = new MockFragmentCard(
+      "fragment://page/home/dock@v2",
+      "anchor",
+      "pending",
+      "dock",
+    );
+    visibleShellAnchor.setAttribute(STATIC_FRAGMENT_VERSION_ATTR, "9");
+    visibleShellAnchor.setAttribute(STATIC_HOME_PREVIEW_VISIBLE_ATTR, "true");
+    const root = new MockFragmentCardRoot([readyCritical, visibleShellAnchor]);
+
+    expect(
+      isStaticHomeAnchorBatchSatisfied({
+        ids: [
+          "fragment://page/home/manifest@v1",
+          "fragment://page/home/dock@v2",
+        ],
+        knownVersions: {
+          "fragment://page/home/manifest@v1": 7,
+          "fragment://page/home/dock@v2": 9,
+        },
+        root: root as unknown as ParentNode,
+      }),
+    ).toBe(true);
+
+    expect(
+      isStaticHomeAnchorBatchSatisfied({
+        ids: [
+          "fragment://page/home/manifest@v1",
+          "fragment://page/home/dock@v2",
+        ],
+        knownVersions: {
+          "fragment://page/home/manifest@v1": 8,
+          "fragment://page/home/dock@v2": 9,
+        },
+        root: root as unknown as ParentNode,
+      }),
+    ).toBe(false);
   });
 });
 

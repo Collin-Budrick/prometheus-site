@@ -1,24 +1,12 @@
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
-import {
-  readStaticHomeBootstrapData,
-  type HomeStaticBootstrapData
-} from './home-bootstrap-data'
 import { scheduleStaticShellTask } from './scheduler'
 import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
 } from './static-shell-performance'
-import { installHomeBootstrapDeferredRuntime } from './home-bootstrap'
-import { warmHomeDemoEntryRuntime } from './home-demo-entry-loader'
-import {
-  ensureHomeDemoStylesheet,
-  warmHomeDemoKind,
-  warmHomeDemoStartupAttachRuntime
-} from './home-demo-runtime-loader'
-import {
-  HOME_DEMO_KINDS,
-  normalizeHomeDemoAssetMap
-} from './home-demo-runtime-types'
+import { loadHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred-runtime-loader'
+import { resumeDeferredHomeHydration } from './home-active-controller'
+import { loadHomeStaticEntryDemoWarmup } from './home-static-entry-demo-warmup-loader'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
@@ -27,7 +15,6 @@ type HomeStaticEntryWindow = Window & {
 }
 
 type WarmHomeDemoAssetsOptions = {
-  data: HomeStaticBootstrapData
   doc: Document
   scheduleTask: typeof scheduleStaticShellTask
 }
@@ -36,53 +23,21 @@ type InstallHomeStaticEntryOptions = {
   win?: HomeStaticEntryWindow | null
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
-  startDeferredRuntime?: typeof installHomeBootstrapDeferredRuntime
+  loadDeferredRuntime?: typeof loadHomeBootstrapDeferredRuntime
+  resumeDeferredHydration?: typeof resumeDeferredHomeHydration
   warmDemoAssets?: (options: WarmHomeDemoAssetsOptions) => Promise<void>
   loadWidgetRuntime?: typeof loadFragmentWidgetRuntime
 }
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 
-const warmStaticHomeDemoAssets = async ({
-  data,
-  doc,
-  scheduleTask
-}: WarmHomeDemoAssetsOptions) => {
-  const assets = normalizeHomeDemoAssetMap(data.homeDemoAssets)
-
-  await Promise.all([
-    ensureHomeDemoStylesheet({
-      href: data.homeDemoStylesheetHref ?? undefined,
-      doc
-    }),
-    warmHomeDemoStartupAttachRuntime({ doc }),
-    warmHomeDemoEntryRuntime({ doc })
-  ])
-
-  await new Promise<void>((resolve) => {
-    scheduleTask(
-      () => {
-        void Promise.all(
-          HOME_DEMO_KINDS.map((kind) =>
-            warmHomeDemoKind(kind, assets[kind], { doc })
-          )
-        )
-          .catch((error) => {
-            console.error('Static home demo kind warmup failed:', error)
-          })
-          .finally(() => {
-            resolve()
-          })
-      },
-      {
-        priority: 'background',
-        timeoutMs: 0,
-        preferIdle: false,
-        waitForPaint: true
-      }
-    )
-  })
-}
+const warmStaticHomeDemoAssets = ({ doc, scheduleTask }: WarmHomeDemoAssetsOptions) =>
+  loadHomeStaticEntryDemoWarmup().then(({ warmStaticHomeDemoAssets }) =>
+    warmStaticHomeDemoAssets({
+      doc,
+      scheduleTask
+    })
+  )
 
 const resolveInteractionCard = (target: EventTarget | null) => {
   if (!target || typeof target !== 'object') {
@@ -104,7 +59,8 @@ export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
-  startDeferredRuntime = installHomeBootstrapDeferredRuntime,
+  loadDeferredRuntime = loadHomeBootstrapDeferredRuntime,
+  resumeDeferredHydration = resumeDeferredHomeHydration,
   warmDemoAssets = warmStaticHomeDemoAssets,
   loadWidgetRuntime = loadFragmentWidgetRuntime
 }: InstallHomeStaticEntryOptions = {}) => {
@@ -121,6 +77,8 @@ export const installHomeStaticEntry = ({
     | import('../fragment/ui/fragment-widget-runtime').FragmentWidgetRuntime
     | null = null
   let homeDemoWarmupPromise: Promise<void> | null = null
+  let deferredRuntimePromise: Promise<void> | null = null
+  let cancelDeferredRuntimeStart: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
   const readWidgetRoot = () =>
@@ -132,15 +90,8 @@ export const installHomeStaticEntry = ({
       return homeDemoWarmupPromise
     }
 
-    const data = readStaticHomeBootstrapData({ doc: liveDoc })
-    if (!data) {
-      homeDemoWarmupPromise = Promise.resolve()
-      return homeDemoWarmupPromise
-    }
-
     markStaticShellUserTiming('prom:home:demo-warm-start')
     homeDemoWarmupPromise = warmDemoAssets({
-      data,
       doc: liveDoc,
       scheduleTask
     })
@@ -158,6 +109,59 @@ export const installHomeStaticEntry = ({
       })
 
     return homeDemoWarmupPromise
+  }
+
+  const resumeHomeHydration = () => {
+    return resumeDeferredHydration({
+      root: liveDoc
+    })
+  }
+
+  const startDeferredRuntime = () => {
+    if (deferredRuntimePromise) {
+      return deferredRuntimePromise
+    }
+
+    markStaticShellUserTiming('prom:home:lifecycle-runtime-requested')
+    deferredRuntimePromise = loadDeferredRuntime()
+      .then(({ installHomeBootstrapDeferredRuntime }) =>
+        installHomeBootstrapDeferredRuntime()
+      )
+      .then(() => {
+        markStaticShellUserTiming('prom:home:lifecycle-runtime-ready')
+        measureStaticShellUserTiming(
+          'prom:home:lifecycle-runtime',
+          'prom:home:lifecycle-runtime-requested',
+          'prom:home:lifecycle-runtime-ready'
+        )
+      })
+      .catch((error) => {
+        deferredRuntimePromise = null
+        console.error('Static home deferred lifecycle runtime failed:', error)
+      })
+
+    return deferredRuntimePromise
+  }
+
+  const scheduleDeferredRuntime = () => {
+    if (cancelDeferredRuntimeStart || deferredRuntimePromise) {
+      return
+    }
+
+    cancelDeferredRuntimeStart = scheduleTask(
+      () => {
+        cancelDeferredRuntimeStart = null
+        void startDeferredRuntime()
+      },
+      {
+        priority: 'background',
+        delayMs: 250,
+        timeoutMs: 0,
+        preferIdle: false,
+        waitForLoad: true,
+        waitForPaint: true
+      }
+    )
   }
 
   const prewarmWidgetRuntime = () => {
@@ -180,12 +184,6 @@ export const installHomeStaticEntry = ({
         widgetRuntimePromise = null
         console.error('Static home widget runtime failed:', error)
       })
-
-  const startDeferredRuntimeInstall = () => {
-    void startDeferredRuntime().catch((error) => {
-      console.error('Static home deferred bootstrap runtime failed:', error)
-    })
-  }
 
   function handlePointerDown(event: Event) {
     if (!resolveInteractionCard(event.target)) {
@@ -214,7 +212,8 @@ export const installHomeStaticEntry = ({
   })
   liveDoc.addEventListener?.('focusin', handleFocusIn, eventOptions)
 
-  startDeferredRuntimeInstall()
+  resumeHomeHydration()
+  scheduleDeferredRuntime()
   void startHomeDemoWarmup()
 
   return () => {
@@ -223,6 +222,8 @@ export const installHomeStaticEntry = ({
       liveWin.removeEventListener(eventName, handler, eventOptions)
     })
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
+    cancelDeferredRuntimeStart?.()
+    cancelDeferredRuntimeStart = null
     widgetRuntime?.destroy()
     widgetRuntime = null
   }

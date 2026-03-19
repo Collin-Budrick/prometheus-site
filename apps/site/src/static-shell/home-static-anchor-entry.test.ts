@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 import { installHomeStaticAnchorEntry } from './home-static-anchor-entry'
 import { HOME_FIRST_ANCHOR_PATCH_EVENT } from './home-anchor-patch-event'
-import { STATIC_HOME_DATA_SCRIPT_ID, STATIC_SHELL_SEED_SCRIPT_ID } from './constants'
+import {
+  STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_HOME_WORKER_DATA_SCRIPT_ID,
+  STATIC_SHELL_SEED_SCRIPT_ID
+} from './constants'
 import type { HomeFirstLcpGate } from './home-lcp-gate'
 
 type MockListener = (event?: { target?: unknown }) => void
@@ -105,6 +109,17 @@ class MockDocument {
       )
     }
 
+    if (id === STATIC_HOME_WORKER_DATA_SCRIPT_ID) {
+      return new MockScriptElement(
+        JSON.stringify({
+          path: '/',
+          lang: 'en',
+          runtimeAnchorBootstrapHref:
+            '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/manifest@v1,fragment://page/home/dock@v1'
+        })
+      )
+    }
+
     return null
   }
 }
@@ -133,21 +148,44 @@ const createManualGate = () => {
   }
 }
 
+const createTaskQueue = () => {
+  const tasks: Array<{ callback: () => void; cancelled: boolean }> = []
+
+  return {
+    schedule(callback: () => void) {
+      const task = { callback, cancelled: false }
+      tasks.push(task)
+      return () => {
+        task.cancelled = true
+      }
+    },
+    flush() {
+      const pending = tasks.splice(0)
+      pending.forEach((task) => {
+        if (!task.cancelled) {
+          task.callback()
+        }
+      })
+    }
+  }
+}
+
 describe('installHomeStaticAnchorEntry', () => {
-  it('starts the shared runtime immediately, prewarms bootstrap, and waits for the LCP gate', async () => {
+  it('starts the shared runtime immediately, prewarms bootstrap, and waits for the LCP gate before loading the deferred entry', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createTaskQueue()
     let bootstrapRuntimeLoads = 0
     let bootstrapCalls = 0
     let deferredEntryLoads = 0
-    let preloadCalls = 0
     const sharedRuntimeStarts: Array<Record<string, unknown>> = []
 
     const cleanup = installHomeStaticAnchorEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
+      scheduleTask: taskQueue.schedule as never,
       loadBootstrapRuntime: async () => {
         bootstrapRuntimeLoads += 1
         return {
@@ -160,9 +198,6 @@ describe('installHomeStaticAnchorEntry', () => {
         deferredEntryLoads += 1
         return {}
       },
-      preloadSharedRuntimeAssets: () => {
-        preloadCalls += 1
-      },
       startSharedRuntime: (options) => {
         sharedRuntimeStarts.push(options as unknown as Record<string, unknown>)
         return {} as never
@@ -171,7 +206,6 @@ describe('installHomeStaticAnchorEntry', () => {
 
     await flushMicrotasks()
 
-    expect(preloadCalls).toBe(1)
     expect(sharedRuntimeStarts).toHaveLength(1)
     expect(sharedRuntimeStarts[0]).toMatchObject({
       path: '/',
@@ -179,7 +213,7 @@ describe('installHomeStaticAnchorEntry', () => {
       startupMode: 'visible-only',
       enableStreaming: false,
       bootstrapHref:
-        '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/manifest@v1'
+        '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment://page/home/manifest@v1,fragment://page/home/dock@v1'
     })
     expect(bootstrapRuntimeLoads).toBe(1)
     expect(bootstrapCalls).toBe(0)
@@ -191,16 +225,22 @@ describe('installHomeStaticAnchorEntry', () => {
     expect(win.__PROM_STATIC_HOME_LCP_RELEASED__).toBe(true)
     expect(win.__PROM_STATIC_HOME_BOOTSTRAP__).toBe(true)
     expect(bootstrapCalls).toBe(1)
-    expect(deferredEntryLoads).toBe(1)
+    expect(deferredEntryLoads).toBe(0)
     expect(manualGate.cleanupCalls()).toBe(1)
+
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(deferredEntryLoads).toBe(1)
 
     cleanup()
   })
 
-  it('starts the deferred entry as soon as the first anchor patch event fires', async () => {
+  it('starts the deferred entry as soon as the first anchor patch event fires and prevents fallback duplication', async () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createTaskQueue()
     let bootstrapCalls = 0
     let deferredEntryLoads = 0
 
@@ -208,6 +248,7 @@ describe('installHomeStaticAnchorEntry', () => {
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
+      scheduleTask: taskQueue.schedule as never,
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => {
           bootstrapCalls += 1
@@ -217,7 +258,6 @@ describe('installHomeStaticAnchorEntry', () => {
         deferredEntryLoads += 1
         return {}
       },
-      preloadSharedRuntimeAssets: () => undefined,
       startSharedRuntime: () => ({} as never)
     })
 
@@ -227,6 +267,11 @@ describe('installHomeStaticAnchorEntry', () => {
     expect(deferredEntryLoads).toBe(1)
     expect(bootstrapCalls).toBe(0)
 
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(deferredEntryLoads).toBe(1)
+
     manualGate.resolve()
     await flushMicrotasks()
 
@@ -235,21 +280,54 @@ describe('installHomeStaticAnchorEntry', () => {
     cleanup()
   })
 
+  it('loads the deferred entry from the background fallback when no anchor patch event fires', async () => {
+    const win = new MockWindow()
+    const doc = new MockDocument()
+    const manualGate = createManualGate()
+    const taskQueue = createTaskQueue()
+    let deferredEntryLoads = 0
+
+    const cleanup = installHomeStaticAnchorEntry({
+      win: win as never,
+      doc: doc as never,
+      createLcpGate: () => manualGate.gate,
+      scheduleTask: taskQueue.schedule as never,
+      loadBootstrapRuntime: async () => ({
+        bootstrapStaticHome: async () => undefined
+      }),
+      loadDeferredEntry: async () => {
+        deferredEntryLoads += 1
+        return {}
+      },
+      startSharedRuntime: () => ({} as never)
+    })
+
+    expect(deferredEntryLoads).toBe(0)
+
+    taskQueue.flush()
+    await flushMicrotasks()
+
+    expect(deferredEntryLoads).toBe(1)
+
+    cleanup()
+  })
+
   it('cleans up listeners and disposes the prewarmed shared runtime', () => {
     const win = new MockWindow()
     const doc = new MockDocument()
     const manualGate = createManualGate()
+    const taskQueue = createTaskQueue()
     let disposeCalls = 0
 
     const cleanup = installHomeStaticAnchorEntry({
       win: win as never,
       doc: doc as never,
       createLcpGate: () => manualGate.gate,
+      scheduleTask: taskQueue.schedule as never,
       loadBootstrapRuntime: async () => ({
         bootstrapStaticHome: async () => undefined
       }),
       loadDeferredEntry: async () => ({}),
-      preloadSharedRuntimeAssets: () => undefined,
       startSharedRuntime: () => ({} as never),
       disposeSharedRuntime: () => {
         disposeCalls += 1

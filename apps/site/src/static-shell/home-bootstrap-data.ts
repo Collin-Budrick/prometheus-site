@@ -59,6 +59,7 @@ export type HomeStaticBootstrapData = {
   homeDemoStylesheetHref: string | null
   homeDemoAssets: HomeDemoAssetMap | null
   fragmentBootstrapHref: string | null
+  runtimeAnchorBootstrapHref: string | null
   fragmentOrder: string[]
   planSignature: string | null
   versionSignature: string | null
@@ -308,6 +309,7 @@ export const readStaticHomeBootstrapData = ({
 } = {}): HomeStaticBootstrapData | null => {
   const shell = readStaticShellSeed(doc) ?? readJsonScript<StaticShellSeed>(STATIC_SHELL_SEED_SCRIPT_ID, doc)
   const route = readJsonScript<HomeStaticRouteData>(STATIC_HOME_DATA_SCRIPT_ID, doc)
+  const worker = readStaticHomeWorkerBootstrapData({ doc })
   if (!shell && !route) return null
 
   const fragmentOrder = route?.fragmentOrder ?? []
@@ -325,6 +327,7 @@ export const readStaticHomeBootstrapData = ({
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??
       buildHomeFragmentBootstrapHref({ lang: route?.lang || shell?.lang }),
+    runtimeAnchorBootstrapHref: worker?.runtimeAnchorBootstrapHref ?? null,
     fragmentOrder,
     planSignature: route?.planSignature ?? null,
     versionSignature: route?.versionSignature ?? null,

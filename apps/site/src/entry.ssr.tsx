@@ -32,6 +32,7 @@ import {
 import { existsSync } from "node:fs";
 import { appendStaticAssetVersion } from "./static-shell/asset-version";
 import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
+import { expandStaticShellPreloadPaths } from "./static-shell/build-manifest.server";
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
 } from "./static-shell/home-static-entry-loader";
@@ -58,8 +59,6 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   "home-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["home-static"],
     HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
-    FRAGMENT_RUNTIME_WORKER_ASSET_PATH,
-    FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH,
   ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
@@ -121,13 +120,15 @@ const resolveStaticBootstrapPreloadPaths = (pathname: string) => {
   const normalizedPath = normalizeStaticShellRoutePath(pathname);
   const routeConfig = getStaticShellRouteConfig(normalizedPath);
   if (!routeConfig) return [];
-  return Array.from(
-    new Set([
-      ...STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode],
-      ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
-        normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
-      ] ?? []),
-    ]),
+  return expandStaticShellPreloadPaths(
+    Array.from(
+      new Set([
+        ...STATIC_BOOTSTRAP_PRELOAD_PATHS[routeConfig.bootstrapMode],
+        ...(STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS[
+          normalizedPath as keyof typeof STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS
+        ] ?? []),
+      ]),
+    ),
   );
 };
 
@@ -457,12 +458,6 @@ const buildStaticBootstrapPreloadTag = (path: string, publicBase: string) => {
     `${publicBase}${path}`,
     STATIC_SHELL_BUILD_VERSION,
   );
-  if (path === FRAGMENT_RUNTIME_WORKER_ASSET_PATH) {
-    return `<link rel="modulepreload" href="${href}" data-fragment-runtime-preload="worker">`;
-  }
-  if (path === FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH) {
-    return `<link rel="modulepreload" href="${href}" data-fragment-runtime-preload="decode">`;
-  }
   if (path === HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH) {
     return `<link rel="modulepreload" href="${href}" data-home-demo-startup-attach="true">`;
   }

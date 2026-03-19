@@ -6,7 +6,12 @@ const readSource = async (path: string) =>
 describe("static shell performance invariants", () => {
   it("keeps the home bootstrap on the fast path", async () => {
     const [
-      bootstrapSource,
+      bootstrapFacadeSource,
+      bootstrapHelperSource,
+      bootstrapAnchorSource,
+      bootstrapDeferredSource,
+      bootstrapControllerUtilsSource,
+      bootstrapOrchestratorSource,
       fragmentBootstrapSource,
       islandBootstrapSource,
       snapshotClientSource,
@@ -35,9 +40,15 @@ describe("static shell performance invariants", () => {
       homeLanguageRuntimeSource,
       homeUiControlsRuntimeSource,
       buildVersionSource,
+      buildManifestSource,
       fragmentWidgetRuntimeSource,
     ] = await Promise.all([
       readSource("./home-bootstrap.tsx"),
+      readSource("./home-bootstrap-helpers.ts"),
+      readSource("./home-bootstrap-anchor.ts"),
+      readSource("./home-bootstrap-deferred.ts"),
+      readSource("./home-bootstrap-controller-utils.ts"),
+      readSource("./home-bootstrap-orchestrator.ts"),
       readSource("./static-bootstrap.ts"),
       readSource("./island-bootstrap.ts"),
       readSource("./snapshot-client.ts"),
@@ -66,11 +77,26 @@ describe("static shell performance invariants", () => {
       readSource("./home-language-runtime.ts"),
       readSource("./home-ui-controls-runtime.ts"),
       readSource("./build-version.server.ts"),
+      readSource("./build-manifest.server.ts"),
       readSource("../fragment/ui/fragment-widget-runtime.ts"),
     ]);
 
+    const bootstrapSource = [
+      bootstrapFacadeSource,
+      bootstrapHelperSource,
+      bootstrapAnchorSource,
+      bootstrapDeferredSource,
+      bootstrapControllerUtilsSource,
+      bootstrapOrchestratorSource,
+    ].join("\n");
+
+    expect(bootstrapFacadeSource).toContain("./home-bootstrap-helpers");
+    expect(bootstrapFacadeSource).toContain("./home-bootstrap-ui");
+    expect(bootstrapFacadeSource).toContain("./home-bootstrap-anchor");
+    expect(bootstrapFacadeSource).toContain("./home-bootstrap-deferred");
+    expect(bootstrapFacadeSource).toContain("./home-bootstrap-orchestrator");
+
     expect(bootstrapSource).toContain("./home-stream");
-    expect(bootstrapSource).toContain("./home-demo-observe-event");
     expect(bootstrapSource).toContain("scheduleStaticHomePaintReady({");
     expect(bootstrapSource).toContain("scheduleStaticRoutePaintReady");
     expect(bootstrapSource).toContain("scheduleTask = scheduleStaticShellTask");
@@ -185,6 +211,9 @@ describe("static shell performance invariants", () => {
       "HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH",
     );
     expect(buildVersionSource).toContain(
+      "HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH",
+    );
+    expect(buildVersionSource).toContain(
       "HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH",
     );
     expect(buildVersionSource).toContain(
@@ -209,6 +238,9 @@ describe("static shell performance invariants", () => {
       "HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH",
     );
     expect(buildVersionSource).not.toContain("home-bootstrap-runtime.js");
+    expect(buildVersionSource).toContain("getStaticShellBuildAssetPaths");
+    expect(buildManifestSource).toContain("chunk-manifest.json");
+    expect(buildManifestSource).toContain("expandStaticShellPreloadPaths");
     expect(runtimeLoaderSource).toContain("import(/* @vite-ignore */ url)");
     expect(bootstrapRuntimeLoaderSource).toContain(
       "import(/* @vite-ignore */ url)",
@@ -272,7 +304,7 @@ describe("static shell performance invariants", () => {
       "const lcpStable = Boolean(entry.critical || fragmentKind === 'dock')",
     );
     expect(homeRouteSource).toContain(
-      "const previewVisible = renderMode === 'preview' || renderMode === 'active-shell'",
+      "renderMode === 'preview' || renderMode === 'active-shell' || renderMode === 'shell'",
     );
     expect(homeRouteSource).toContain("STATIC_HOME_PREVIEW_VISIBLE_ATTR");
     expect(homeRouteSource).toContain(
@@ -496,7 +528,7 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("home-demo-attach-runtime.ts");
     expect(buildScriptSource).toContain("home-demo-entry.ts");
     expect(buildScriptSource).toContain("home-collab-entry.ts");
-    expect(buildScriptSource).toContain("home-bootstrap-core-runtime.ts");
+    expect(buildScriptSource).toContain("home-bootstrap-deferred-runtime.ts");
     expect(buildScriptSource).toContain("home-static-anchor-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-anchor-runtime.ts");
     expect(buildScriptSource).toContain("home-bootstrap-post-lcp-runtime.ts");
@@ -516,7 +548,11 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("versionBundledWasmAssetPaths");
     expect(buildScriptSource).toContain("Buffer.from('ignoreMappingURL')");
     expect(buildScriptSource).toContain("createHash('sha256')");
-    expect(buildScriptSource).not.toContain("--splitting");
+    expect(buildScriptSource).toContain("--splitting");
+    expect(buildScriptSource).toContain("--css-chunking");
+    expect(buildScriptSource).toContain("--metafile=");
+    expect(buildScriptSource).toContain("chunk-manifest.json");
+    expect(buildScriptSource).not.toContain("home-bootstrap-core-runtime.ts");
     expect(rootSource).toContain("global-critical.css?inline");
     expect(rootSource).not.toContain("global-critical-home.css?inline");
     expect(rootSource).not.toContain("getStaticShellRouteConfig(location.url.pathname)");
@@ -681,15 +717,16 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).not.toContain("loadHybridFragmentResource");
     expect(homeStaticEntrySource).toContain("installHomeStaticEntry");
     expect(homeStaticEntrySource).toContain("installHomeBootstrapDeferredRuntime");
-    expect(homeStaticEntrySource).toContain("warmHomeDemoEntryRuntime");
-    expect(homeStaticEntrySource).toContain("warmHomeDemoStartupAttachRuntime");
-    expect(homeStaticEntrySource).toContain("ensureHomeDemoStylesheet");
-    expect(homeStaticEntrySource).toContain("warmHomeDemoKind");
+    expect(homeStaticEntrySource).toContain("loadHomeBootstrapDeferredRuntime");
+    expect(homeStaticEntrySource).toContain("resumeDeferredHomeHydration");
+    expect(homeStaticEntrySource).toContain("loadHomeStaticEntryDemoWarmup");
     expect(homeStaticEntrySource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
-    expect(homeStaticEntrySource).toContain("readStaticHomeBootstrapData");
     expect(homeStaticEntrySource).toContain("loadFragmentWidgetRuntime");
     expect(homeStaticEntrySource).toContain("void startHomeDemoWarmup()");
-    expect(homeStaticEntrySource).toContain("void startDeferredRuntime().catch");
+    expect(homeStaticEntrySource).toContain("scheduleDeferredRuntime");
+    expect(homeStaticEntrySource).toContain("prom:home:lifecycle-runtime-requested");
+    expect(homeStaticEntrySource).toContain("prom:home:lifecycle-runtime-ready");
+    expect(homeStaticEntrySource).toContain("waitForLoad: true");
     expect(homeStaticEntrySource).not.toContain("scheduleDeferredWidgetRuntime");
     expect(homeStaticEntrySource).not.toContain("scheduleDeferredBootstrap");
     expect(homeStaticEntrySource).not.toContain("primeHomeFragmentBootstrapBytes");
@@ -704,7 +741,14 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).not.toContain("requestIdleCallback");
     expect(homeStaticEntrySource).not.toContain("'scroll'");
     expect(homeStaticEntrySource).toContain("'focusin'");
-    expect(homeStaticEntrySource).toContain("from './home-bootstrap'");
+    expect(homeStaticEntrySource).not.toContain("from './home-bootstrap'");
+    expect(homeStaticEntrySource).toContain(
+      "from './home-bootstrap-deferred-runtime-loader'",
+    );
+    expect(homeStaticEntrySource).toContain("from './home-active-controller'");
+    expect(homeStaticEntrySource).toContain(
+      "from './home-static-entry-demo-warmup-loader'",
+    );
     expect(homeStaticEntrySource).toContain("scheduleStaticShellTask");
     expect(homeStaticEntrySource).not.toContain("scheduleReleaseTask(() =>");
     expect(homeStaticAnchorEntrySource).toContain("installHomeStaticAnchorEntry");
@@ -719,15 +763,22 @@ describe("static shell performance invariants", () => {
       "startSharedRuntime = ensureHomeSharedRuntime",
     );
     expect(homeStaticAnchorEntrySource).toContain(
-      "preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads",
-    );
-    expect(homeStaticAnchorEntrySource).toContain(
       "disposeSharedRuntime = disposeHomeSharedRuntime",
     );
     expect(homeStaticAnchorEntrySource).toContain("HOME_FIRST_ANCHOR_PATCH_EVENT");
+    expect(homeStaticAnchorEntrySource).toContain("scheduleDeferredEntryFallback");
+    expect(homeStaticAnchorEntrySource).toContain(
+      "prom:home:deferred-entry-requested",
+    );
+    expect(homeStaticAnchorEntrySource).toContain(
+      "prom:home:deferred-entry-ready",
+    );
     expect(homeStaticAnchorEntrySource).toContain("clearStartupHandlers");
     expect(homeStaticAnchorEntrySource).toContain("startHomeWorkerRuntime()");
     expect(homeStaticAnchorEntrySource).toContain("requestBootstrap()");
+    expect(homeStaticAnchorEntrySource).toContain(
+      "data.runtimeAnchorBootstrapHref ?? data.fragmentBootstrapHref",
+    );
     expect(homeStaticAnchorEntrySource).toContain(
       "liveDoc.addEventListener?.('DOMContentLoaded', domReadyHandler, { once: true })",
     );
@@ -751,6 +802,27 @@ describe("static shell performance invariants", () => {
     expect(fragmentWidgetRuntimeSource).not.toContain(
       "import {\n  activateHomeDemo",
     );
+    expect(
+      await readSource("../components/home-demo-active-planner.css"),
+    ).not.toContain("box-shadow 160ms ease");
+    expect(
+      await readSource("../components/home-demo-active-preact-island.css"),
+    ).not.toContain("box-shadow 160ms ease");
+    expect(
+      await readSource("../components/home-demo-active-react-binary.css"),
+    ).not.toContain("box-shadow 160ms ease");
+    expect(
+      await readSource("../components/home-demo-active-wasm-renderer.css"),
+    ).not.toContain("box-shadow 160ms ease");
+    expect(
+      await readSource("../components/home-demo-first-frame-critical.css"),
+    ).toContain("box-shadow: 0 12px 20px rgba(249, 115, 22, 0.2);");
+    expect(
+      await readSource("../components/home-demo-first-frame-critical.css"),
+    ).toContain("box-shadow: 0 12px 20px rgba(20, 184, 166, 0.2);");
+    expect(
+      await readSource("../components/home-demo-first-frame-critical.css"),
+    ).toContain("box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);");
     expect(homeDemoEntrySource).toContain("./home-demo-controller-state");
     expect(homeDemoEntrySource).toContain("./home-demo-observe-event");
     expect(homeDemoEntrySource).toContain("./home-demo-performance");
@@ -771,8 +843,8 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).toContain(
       "FRAGMENT_RUNTIME_DECODE_WORKER_ASSET_PATH",
     );
-    expect(entrySsrSource).toContain('data-fragment-runtime-preload="worker"');
-    expect(entrySsrSource).toContain('data-fragment-runtime-preload="decode"');
+    expect(entrySsrSource).not.toContain('data-fragment-runtime-preload="worker"');
+    expect(entrySsrSource).not.toContain('data-fragment-runtime-preload="decode"');
     expect(entrySsrSource).toContain("buildImmediateHomeStaticEntryTag");
     expect(entrySsrSource).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
     expect(entrySsrSource).toContain("scheduleAnchorEntry");
@@ -799,6 +871,12 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).not.toContain(
       '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
     );
+    expect(entrySsrSource).not.toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/worker.js"',
+    );
+    expect(entrySsrSource).not.toContain(
+      '"build/static-shell/apps/site/src/fragment/runtime/decode-pool.worker.js"',
+    );
     expect(entrySsrSource).not.toContain("home-collab-entry.js");
     expect(entrySsrSource).toContain("fragment-bootstrap-runtime.js");
     expect(entrySsrSource).toContain("island-bootstrap-runtime.js");
@@ -806,6 +884,8 @@ describe("static shell performance invariants", () => {
     expect(entrySsrSource).toContain(
       "const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;",
     );
+    expect(buildScriptSource).toContain("CURATED_PRELOAD_IMPORT_LIMITS");
+    expect(buildScriptSource).toContain("collectDirectStaticImports(outputKey)");
   });
 
   it("threads authenticated state through the static shell layout and seed", async () => {

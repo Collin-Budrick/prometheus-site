@@ -2,6 +2,7 @@ import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
 import { loadHomeStaticEntryRuntime } from './home-static-entry-loader'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
+import { scheduleStaticShellTask } from './scheduler'
 import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
@@ -9,7 +10,6 @@ import {
 import {
   disposeHomeSharedRuntime,
   ensureHomeSharedRuntime,
-  ensureHomeSharedRuntimeAssetPreloads
 } from './home-shared-runtime'
 import { HOME_FIRST_ANCHOR_PATCH_EVENT } from './home-anchor-patch-event'
 
@@ -46,8 +46,8 @@ export const installHomeStaticAnchorEntry = ({
   loadBootstrapRuntime = loadHomeBootstrapRuntime,
   loadDeferredEntry = loadHomeStaticEntryRuntime,
   createLcpGate = createHomeFirstLcpGate,
+  scheduleTask = scheduleStaticShellTask,
   startSharedRuntime = ensureHomeSharedRuntime,
-  preloadSharedRuntimeAssets = ensureHomeSharedRuntimeAssetPreloads,
   disposeSharedRuntime = disposeHomeSharedRuntime
 }: {
   win?: HomeStaticAnchorEntryWindow | null
@@ -55,8 +55,8 @@ export const installHomeStaticAnchorEntry = ({
   loadBootstrapRuntime?: typeof loadHomeBootstrapRuntime
   loadDeferredEntry?: typeof loadHomeStaticEntryRuntime
   createLcpGate?: typeof createHomeFirstLcpGate
+  scheduleTask?: typeof scheduleStaticShellTask
   startSharedRuntime?: typeof ensureHomeSharedRuntime
-  preloadSharedRuntimeAssets?: typeof ensureHomeSharedRuntimeAssetPreloads
   disposeSharedRuntime?: typeof disposeHomeSharedRuntime
 } = {}) => {
   if (!win || !doc || win.__PROM_STATIC_HOME_ANCHOR_ENTRY__) {
@@ -71,6 +71,7 @@ export const installHomeStaticAnchorEntry = ({
   let deferredEntryStarted = false
   let lcpGateReleased = false
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
+  let cancelDeferredEntryFallback: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let domReadyHandler: (() => void) | null = null
   let loadHandler: (() => void) | null = null
@@ -116,7 +117,6 @@ export const installHomeStaticAnchorEntry = ({
       return
     }
 
-    preloadSharedRuntimeAssets({ doc: liveDoc })
     startSharedRuntime(
       {
         path: data.currentPath,
@@ -125,7 +125,8 @@ export const installHomeStaticAnchorEntry = ({
         fetchGroups: data.runtimeFetchGroups,
         initialFragments: data.runtimeInitialFragments,
         knownVersions: data.fragmentVersions,
-        bootstrapHref: data.fragmentBootstrapHref,
+        bootstrapHref:
+          data.runtimeAnchorBootstrapHref ?? data.fragmentBootstrapHref,
         startupMode: 'visible-only',
         enableStreaming: false
       },
@@ -138,10 +139,43 @@ export const installHomeStaticAnchorEntry = ({
       return
     }
     deferredEntryStarted = true
-    void loadDeferredEntry().catch((error) => {
-      deferredEntryStarted = false
-      console.error('Static home deferred entry failed:', error)
-    })
+    cancelDeferredEntryFallback?.()
+    cancelDeferredEntryFallback = null
+    markStaticShellUserTiming('prom:home:deferred-entry-requested')
+    void loadDeferredEntry()
+      .then(() => {
+        markStaticShellUserTiming('prom:home:deferred-entry-ready')
+        measureStaticShellUserTiming(
+          'prom:home:deferred-entry',
+          'prom:home:deferred-entry-requested',
+          'prom:home:deferred-entry-ready'
+        )
+      })
+      .catch((error) => {
+        deferredEntryStarted = false
+        console.error('Static home deferred entry failed:', error)
+      })
+  }
+
+  const scheduleDeferredEntryFallback = () => {
+    if (cancelDeferredEntryFallback || deferredEntryStarted) {
+      return
+    }
+
+    cancelDeferredEntryFallback = scheduleTask(
+      () => {
+        cancelDeferredEntryFallback = null
+        startDeferredEntry()
+      },
+      {
+        priority: 'background',
+        delayMs: 250,
+        timeoutMs: 0,
+        preferIdle: false,
+        waitForLoad: true,
+        waitForPaint: true
+      }
+    )
   }
 
   const startBootstrap = () => {
@@ -174,7 +208,6 @@ export const installHomeStaticAnchorEntry = ({
     liveWin.__PROM_STATIC_HOME_LCP_RELEASED__ = true
     lcpGateCleanup?.()
     lcpGateCleanup = null
-    startDeferredEntry()
     if (bootstrapRequested) {
       startBootstrap()
     }
@@ -208,6 +241,8 @@ export const installHomeStaticAnchorEntry = ({
     liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
     liveDoc.removeEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry)
+    cancelDeferredEntryFallback?.()
+    cancelDeferredEntryFallback = null
     lcpGateCleanup?.()
     lcpGateCleanup = null
     disposeSharedRuntime(liveWin)
@@ -223,6 +258,7 @@ export const installHomeStaticAnchorEntry = ({
     startHomeWorkerRuntime()
     requestBootstrap()
     liveDoc.addEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry, { once: true })
+    scheduleDeferredEntryFallback()
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       liveWin.addEventListener(eventName, handlePointerDown, eventOptions)
     })

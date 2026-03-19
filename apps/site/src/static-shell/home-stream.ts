@@ -387,10 +387,28 @@ export const patchStaticHomeFragmentCard = ({
   const targetCard = card ?? findStaticHomeFragmentCard(payload.id, root ?? undefined)
   if (!targetCard) return 'missing'
   if (targetCard.getAttribute(STATIC_FRAGMENT_LOCKED_ATTR) === 'true') return 'locked'
+  const body = targetCard.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
+  if (!body) return 'missing'
 
   const currentVersion = parseFragmentVersion(targetCard)
   const hasReadyMarkup = isHomePatchReady(targetCard)
   const preserveRevealState = shouldPreserveHomeCardRevealState(targetCard)
+  const nextHtml = `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createLiveHomeStaticCopyBundle(lang))}</div>`
+  const canReuseVisibleMarkup =
+    typeof payload.cacheUpdatedAt === 'number' &&
+    Number.isFinite(payload.cacheUpdatedAt) &&
+    currentVersion !== null &&
+    currentVersion >= payload.cacheUpdatedAt &&
+    body.innerHTML === nextHtml
+
+  if (canReuseVisibleMarkup) {
+    targetCard.dataset.revealPhase = 'visible'
+    targetCard.dataset.fragmentStage = 'ready'
+    targetCard.dataset.fragmentReady = 'true'
+    setHomePatchState(targetCard, 'ready')
+    return 'stale'
+  }
+
   if (
     typeof payload.cacheUpdatedAt === 'number' &&
     Number.isFinite(payload.cacheUpdatedAt) &&
@@ -406,8 +424,6 @@ export const patchStaticHomeFragmentCard = ({
   }
 
   const { lockToken } = lockFragmentCardHeight(targetCard)
-  const body = targetCard.querySelector<HTMLElement>(`[${STATIC_FRAGMENT_BODY_ATTR}]`)
-  if (!body) return 'missing'
 
   targetCard.setAttribute(FRAGMENT_REVEAL_TOKEN_ATTR, lockToken)
   targetCard.dataset.revealLocked = 'true'
@@ -424,7 +440,7 @@ export const patchStaticHomeFragmentCard = ({
 
   setTrustedInnerHtml(
     body,
-    `<div class="fragment-html">${renderHomeStaticFragmentHtml(payload.tree, createLiveHomeStaticCopyBundle(lang))}</div>`,
+    nextHtml,
     'server'
   )
   onPatchedBody?.(body)
@@ -552,7 +568,7 @@ export const createStaticHomePatchQueue = ({
 
       if (result === 'patched' || result === 'stale' || result === 'missing') {
         if (
-          result === 'patched' &&
+          (result === 'patched' || result === 'stale') &&
           !didMarkFirstAnchorPatch &&
           card.getAttribute(STATIC_HOME_STAGE_ATTR) === 'anchor'
         ) {

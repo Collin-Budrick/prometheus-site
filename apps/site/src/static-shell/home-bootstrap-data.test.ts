@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
   STATIC_HOME_DATA_SCRIPT_ID,
+  STATIC_HOME_WORKER_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
 } from './constants'
 import {
@@ -103,6 +104,17 @@ describe('home-bootstrap-data', () => {
             )
           })
         }
+      ],
+      [
+        STATIC_HOME_WORKER_DATA_SCRIPT_ID,
+        {
+          textContent: JSON.stringify({
+            lang: 'en',
+            path: '/',
+            runtimeAnchorBootstrapHref:
+              '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment%3A%2F%2Fpage%2Fhome%2Fmanifest%40v1%2Cfragment%3A%2F%2Fpage%2Fhome%2Fdock%40v1'
+          })
+        }
       ]
     ])
     const doc = {
@@ -139,6 +151,9 @@ describe('home-bootstrap-data', () => {
     expect(data?.fragmentVersions).toEqual({
       'fragment://page/home/react@v1': 1
     })
+    expect(data?.runtimeAnchorBootstrapHref).toBe(
+      '/api/fragments/bootstrap?protocol=2&lang=en&ids=fragment%3A%2F%2Fpage%2Fhome%2Fmanifest%40v1%2Cfragment%3A%2F%2Fpage%2Fhome%2Fdock%40v1'
+    )
   })
 
   it('falls back to route bootstrap data when the shared shell seed is unavailable', () => {
@@ -167,5 +182,6 @@ describe('home-bootstrap-data', () => {
     expect(data?.currentPath).toBe('/')
     expect(data?.isAuthenticated).toBe(false)
     expect(data?.fragmentBootstrapHref).toContain('/api/fragments/bootstrap?protocol=2')
+    expect(data?.runtimeAnchorBootstrapHref).toBeNull()
   })
 })
