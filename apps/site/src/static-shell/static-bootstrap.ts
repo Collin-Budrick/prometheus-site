@@ -73,8 +73,10 @@ import type { StoreSeed } from "../shared/store-seed";
 import {
   createStaticShellThemeIcon,
   ensureStaticShellSettingsOverlay,
+  ensureStaticShellSettingsPanelContent,
   readStaticShellTheme,
 } from "./settings-overlay-dom";
+import { mountStaticSettingsController } from "./controllers/settings-static-controller";
 
 type Theme = "light" | "dark";
 
@@ -755,6 +757,24 @@ const bindShellControls = (controller: StaticFragmentController) => {
 
   const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } =
     overlay;
+  let settingsPanelContentPromise: Promise<unknown> | null = null;
+  let settingsControllerCleanup: (() => void) | null = null;
+
+  const ensureSettingsContent = () => {
+    settingsPanelContentPromise ??= Promise.resolve(
+      ensureStaticShellSettingsPanelContent({
+        settingsPanel,
+        lang: controller.lang,
+      }),
+    ).then(() => {
+      if (!settingsControllerCleanup) {
+        settingsControllerCleanup = mountStaticSettingsController({
+          lang: controller.lang,
+        }).cleanup;
+      }
+    });
+    return settingsPanelContentPromise;
+  };
 
   const closeLanguageMenu = (restoreFocus = false) => {
     const wasOpen = languageDrawer?.dataset.open === "true";
@@ -786,6 +806,7 @@ const bindShellControls = (controller: StaticFragmentController) => {
       closeMenus(false);
       return;
     }
+    void ensureSettingsContent();
     setOverlaySurfaceState(settingsPanel, true);
     focusOverlayEntry(settingsPanel, languageMenuToggle ?? themeToggle);
   };
@@ -870,6 +891,10 @@ const bindShellControls = (controller: StaticFragmentController) => {
   setOverlaySurfaceState(settingsPanel, false);
   closeLanguageMenu(false);
   refreshThemeButton(controller.lang);
+  controller.cleanupFns.push(() => {
+    settingsControllerCleanup?.();
+    settingsControllerCleanup = null;
+  });
 };
 
 const stopConnections = (controller: StaticFragmentController) => {

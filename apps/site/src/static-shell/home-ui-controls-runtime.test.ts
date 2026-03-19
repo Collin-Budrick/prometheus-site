@@ -259,6 +259,7 @@ describe('bindHomeUiControls', () => {
         lang: 'en'
       },
       onLanguageChange: () => undefined,
+      ensureSettingsPanelContent: async () => doc.createElement('div'),
       ensureDeferredStylesheet: async () => {
         callOrder.push('stylesheet:start')
       }
@@ -310,6 +311,7 @@ describe('bindHomeUiControls', () => {
         lang: 'en'
       },
       onLanguageChange: () => undefined,
+      ensureSettingsPanelContent: async () => doc.createElement('div'),
       ensureDeferredStylesheet: async () => {
         callOrder.push('stylesheet:start')
         await stylesheetReady

@@ -1,3 +1,6 @@
+import { getUiCopy, loadLanguageResources } from '../lang/client'
+import { settingsLanguageSelection } from '../lang/selection'
+import { readStaticShellSeed } from './seed-client'
 import { supportedLanguages } from '../lang/manifest'
 import type { Lang } from '../lang/types'
 
@@ -16,6 +19,8 @@ type StaticShellSettingsOverlay = {
   languageDrawer: HTMLElement | null
   themeToggle: HTMLButtonElement
 }
+
+const settingsPanelContentPromises = new WeakMap<HTMLElement, Promise<HTMLElement>>()
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -195,4 +200,295 @@ export const ensureStaticShellSettingsOverlay = ({
     languageDrawer,
     themeToggle
   }
+}
+
+const createSettingsLabelBlock = (title: string, hint: string) => {
+  const label = document.createElement('div')
+  label.className = 'settings-toggle-label'
+
+  const titleElement = document.createElement('span')
+  titleElement.className = 'settings-toggle-title'
+  titleElement.textContent = title
+
+  const hintElement = document.createElement('span')
+  hintElement.className = 'settings-toggle-hint'
+  hintElement.textContent = hint
+
+  label.append(titleElement, hintElement)
+  return label
+}
+
+const createToggleButton = (toggle: string) => {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'chat-settings-toggle'
+  button.dataset.active = 'false'
+  button.dataset.staticSettingsToggle = toggle
+  button.setAttribute('role', 'switch')
+  button.setAttribute('aria-checked', 'false')
+
+  const track = document.createElement('span')
+  track.className = 'chat-settings-toggle-track'
+
+  const knob = document.createElement('span')
+  knob.className = 'chat-settings-toggle-knob'
+
+  track.append(knob)
+  button.append(track)
+  return button
+}
+
+const createActionButton = (action: string, label: string) => {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'settings-action-button'
+  button.dataset.staticSettingsAction = action
+  button.textContent = label
+  return button
+}
+
+const createSettingsPanel = ({
+  title,
+  description
+}: {
+  title: string
+  description: string
+}) => {
+  const section = document.createElement('section')
+  section.className = 'settings-panel'
+
+  const header = document.createElement('div')
+  header.className = 'settings-panel-header'
+
+  const heading = document.createElement('span')
+  heading.className = 'settings-panel-title'
+  heading.textContent = title
+
+  const body = document.createElement('p')
+  body.className = 'settings-panel-description'
+  body.textContent = description
+
+  header.append(heading, body)
+  section.append(header)
+  return section
+}
+
+const appendSettingsFragmentContent = ({
+  settingsPanel,
+  copy,
+  isAuthenticated
+}: {
+  settingsPanel: HTMLElement
+  copy: ReturnType<typeof getUiCopy>
+  isAuthenticated: boolean
+}) => {
+  const existing = settingsPanel.querySelector<HTMLElement>('[data-static-settings-root]')
+  if (existing) {
+    return existing
+  }
+
+  const root = document.createElement('div')
+  root.className = 'settings-detail-root'
+  root.dataset.staticSettingsRoot = ''
+
+  const chatPanel = createSettingsPanel({
+    title: copy.settingsChatTitle,
+    description: copy.settingsChatDescription
+  })
+
+  const readReceiptsRow = document.createElement('div')
+  readReceiptsRow.className = 'settings-toggle-row'
+  readReceiptsRow.append(
+    createSettingsLabelBlock(
+      copy.settingsChatReadReceipts,
+      copy.settingsChatReadReceiptsHint
+    ),
+    createToggleButton('read-receipts')
+  )
+  chatPanel.append(readReceiptsRow)
+
+  const typingRow = document.createElement('div')
+  typingRow.className = 'settings-toggle-row'
+  typingRow.append(
+    createSettingsLabelBlock(
+      copy.settingsChatTypingIndicators,
+      copy.settingsChatTypingIndicatorsHint
+    ),
+    createToggleButton('typing-indicators')
+  )
+  chatPanel.append(typingRow)
+  root.append(chatPanel)
+
+  const invitePanel = createSettingsPanel({
+    title: copy.settingsInviteTitle,
+    description: copy.settingsInviteDescription
+  })
+
+  const inviteRow = document.createElement('div')
+  inviteRow.className = 'settings-invite-row'
+
+  const inviteLabel = document.createElement('div')
+  inviteLabel.className = 'settings-invite-label'
+  const inviteTitle = document.createElement('span')
+  inviteTitle.className = 'settings-toggle-title'
+  inviteTitle.textContent = copy.settingsInviteCodeLabel
+  inviteLabel.append(inviteTitle)
+
+  const inviteActions = document.createElement('div')
+  inviteActions.className = 'settings-invite-actions'
+  const copyButton = createActionButton('copy-friend-code', copy.settingsInviteCopyAction)
+  const rotateButton = createActionButton('rotate-friend-code', copy.settingsInviteRotateAction)
+  inviteActions.append(copyButton, rotateButton)
+  inviteRow.append(inviteLabel, inviteActions)
+
+  const inviteCode = document.createElement('textarea')
+  inviteCode.className = 'settings-invite-code'
+  inviteCode.readOnly = true
+  inviteCode.dataset.staticSettingsFriendCode = ''
+  inviteCode.setAttribute('aria-label', copy.settingsInviteCodeLabel)
+
+  invitePanel.append(inviteRow, inviteCode)
+  root.append(invitePanel)
+
+  const offlinePanel = createSettingsPanel({
+    title: copy.settingsOfflineTitle,
+    description: copy.settingsOfflineDescription
+  })
+
+  const offlineToggleRow = document.createElement('div')
+  offlineToggleRow.className = 'settings-toggle-row'
+  offlineToggleRow.append(
+    createSettingsLabelBlock(
+      copy.settingsOfflineToggleLabel,
+      copy.settingsOfflineToggleHint
+    ),
+    createToggleButton('offline-cache')
+  )
+  offlinePanel.append(offlineToggleRow)
+
+  const offlineRefreshRow = document.createElement('div')
+  offlineRefreshRow.className = 'settings-action-row'
+  offlineRefreshRow.append(
+    createSettingsLabelBlock(
+      copy.settingsOfflineRefreshLabel,
+      copy.settingsOfflineRefreshHint
+    ),
+    createActionButton('offline-refresh', copy.settingsOfflineRefreshAction)
+  )
+  offlinePanel.append(offlineRefreshRow)
+
+  const offlineCleanupRow = document.createElement('div')
+  offlineCleanupRow.className = 'settings-action-row'
+  offlineCleanupRow.append(
+    createSettingsLabelBlock(
+      copy.settingsOfflineCleanupLabel,
+      copy.settingsOfflineCleanupHint
+    ),
+    createActionButton('offline-cleanup', copy.settingsOfflineCleanupAction)
+  )
+  offlinePanel.append(offlineCleanupRow)
+  root.append(offlinePanel)
+
+  const accessibilityPanel = createSettingsPanel({
+    title: copy.settingsNativeAccessibilityTitle,
+    description: copy.settingsNativeAccessibilityDescription
+  })
+
+  const textZoomRow = document.createElement('div')
+  textZoomRow.className = 'settings-action-row'
+  const textZoomLabel = document.createElement('div')
+  textZoomLabel.className = 'settings-action-label'
+
+  const textZoomTitle = document.createElement('label')
+  textZoomTitle.className = 'settings-toggle-title'
+  textZoomTitle.htmlFor = 'settings-overlay-text-zoom'
+  textZoomTitle.textContent = copy.settingsNativeTextZoomAction
+
+  const textZoomHint = document.createElement('span')
+  textZoomHint.className = 'settings-toggle-hint'
+  textZoomHint.textContent = copy.settingsNativeTextZoomHint
+  textZoomLabel.append(textZoomTitle, textZoomHint)
+
+  const textZoomInput = document.createElement('input')
+  textZoomInput.id = 'settings-overlay-text-zoom'
+  textZoomInput.className = 'settings-range'
+  textZoomInput.type = 'range'
+  textZoomInput.min = '85'
+  textZoomInput.max = '140'
+  textZoomInput.step = '5'
+  textZoomInput.value = '100'
+  textZoomInput.setAttribute('aria-valuemin', '85')
+  textZoomInput.setAttribute('aria-valuemax', '140')
+  textZoomInput.setAttribute('aria-valuenow', '100')
+  textZoomInput.setAttribute('aria-label', copy.settingsNativeTextZoomAriaLabel)
+  textZoomInput.dataset.staticSettingsTextZoom = ''
+  textZoomRow.append(textZoomLabel, textZoomInput)
+  accessibilityPanel.append(textZoomRow)
+
+  const privacyRow = document.createElement('div')
+  privacyRow.className = 'settings-toggle-row'
+  privacyRow.append(
+    createSettingsLabelBlock(
+      copy.settingsNativePrivacyShieldAction,
+      copy.settingsNativePrivacyShieldHint
+    ),
+    createToggleButton('privacy-always-on')
+  )
+  accessibilityPanel.append(privacyRow)
+  root.append(accessibilityPanel)
+
+  if (isAuthenticated) {
+    const authPanel = createSettingsPanel({
+      title: copy.navSettings,
+      description: copy.protectedDescription.replace('{{label}}', copy.navSettings)
+    })
+
+    const logoutRow = document.createElement('div')
+    logoutRow.className = 'settings-action-row'
+    logoutRow.append(
+      createSettingsLabelBlock(copy.authLogoutLabel, ''),
+      createActionButton('logout', copy.authLogoutLabel)
+    )
+    authPanel.append(logoutRow)
+    root.append(authPanel)
+  }
+
+  settingsPanel.append(root)
+  return root
+}
+
+export const ensureStaticShellSettingsPanelContent = async ({
+  settingsPanel,
+  lang
+}: {
+  settingsPanel: HTMLElement
+  lang: Lang
+}) => {
+  const existing = settingsPanel.querySelector<HTMLElement>('[data-static-settings-root]')
+  if (existing) {
+    return existing
+  }
+
+  const cachedPromise = settingsPanelContentPromises.get(settingsPanel)
+  if (cachedPromise) {
+    return cachedPromise
+  }
+
+  const promise = loadLanguageResources(lang, settingsLanguageSelection)
+    .catch((error) => {
+      console.error('Static shell settings language load failed:', error)
+      return null
+    })
+    .then(() => {
+      const shellSeed = readStaticShellSeed()
+      const copy = getUiCopy(lang)
+      return appendSettingsFragmentContent({
+        settingsPanel,
+        copy,
+        isAuthenticated: Boolean(shellSeed?.isAuthenticated)
+      })
+    })
+
+  settingsPanelContentPromises.set(settingsPanel, promise)
+  return promise
 }

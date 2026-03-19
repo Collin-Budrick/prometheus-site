@@ -9,9 +9,11 @@ import { getStaticHomeUiCopy } from './home-copy-store'
 import {
   createStaticShellThemeIcon,
   ensureStaticShellSettingsOverlay,
+  ensureStaticShellSettingsPanelContent,
   readStaticShellTheme
 } from './settings-overlay-dom'
 import { ensureStaticHomeDeferredStylesheet } from './home-deferred-stylesheet'
+import { mountStaticSettingsController } from './controllers/settings-static-controller'
 
 type Theme = 'light' | 'dark'
 
@@ -24,6 +26,7 @@ type BindHomeUiControlsOptions = {
   controller: HomeUiControlsController
   onLanguageChange: (nextLang: Lang) => Promise<void> | void
   ensureDeferredStylesheet?: typeof ensureStaticHomeDeferredStylesheet
+  ensureSettingsPanelContent?: typeof ensureStaticShellSettingsPanelContent
 }
 
 const STATIC_THEME_STORAGE_KEY = 'prometheus-theme'
@@ -76,7 +79,8 @@ const refreshThemeButton = (lang: Lang) => {
 export const bindHomeUiControls = ({
   controller,
   onLanguageChange,
-  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet
+  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet,
+  ensureSettingsPanelContent = ensureStaticShellSettingsPanelContent
 }: BindHomeUiControlsOptions) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
   const settingsToggle = document.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
@@ -94,7 +98,26 @@ export const bindHomeUiControls = ({
   }
 
   const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } = overlay
+  let settingsPanelContentPromise: Promise<unknown> | null = null
+  let settingsControllerCleanup: (() => void) | null = null
   let deferredStylesheetPromise: Promise<unknown> | null = null
+
+  const ensureSettingsContent = () => {
+    settingsPanelContentPromise ??= Promise.resolve(
+      ensureSettingsPanelContent({
+        settingsPanel,
+        lang: controller.lang
+      })
+    ).then(() => {
+      if (!settingsControllerCleanup) {
+        settingsControllerCleanup = mountStaticSettingsController({
+          lang: controller.lang
+        }).cleanup
+      }
+    })
+    return settingsPanelContentPromise
+  }
+
   const preloadDeferredStylesheet = () => {
     deferredStylesheetPromise ??= Promise.resolve(
       ensureDeferredStylesheet({ doc: document })
@@ -139,6 +162,7 @@ export const bindHomeUiControls = ({
       return
     }
     await preloadDeferredStylesheet()
+    void ensureSettingsContent()
     settingsRoot.dataset.open = 'true'
     settingsToggle.setAttribute('aria-expanded', 'true')
     setOverlaySurfaceState(settingsPanel, true)
@@ -218,6 +242,8 @@ export const bindHomeUiControls = ({
     if (settingsRoot.getAttribute(UI_CONTROLS_BOUND_ATTR) === 'true') {
       settingsRoot.removeAttribute(UI_CONTROLS_BOUND_ATTR)
     }
+    settingsControllerCleanup?.()
+    settingsControllerCleanup = null
   })
 
   setOverlaySurfaceState(settingsPanel, false)

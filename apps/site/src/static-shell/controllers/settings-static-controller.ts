@@ -26,25 +26,42 @@ type FriendCodeUser = {
   name?: string
 }
 
-const resolveFriendCodeUser = (user?: SettingsUser): FriendCodeUser | null => {
-  if (!user?.id) return null
-  const fallback: FriendCodeUser = {
-    id: user.id,
-    email: user.email?.trim() ? user.email : user.id,
-    name: user.name?.trim() ? user.name : undefined
-  }
+const SETTINGS_CONTROLLER_BOUND_ATTR = 'data-static-settings-controller-bound'
+
+const readBootstrapUser = () => {
   try {
     const raw = window.localStorage.getItem('auth:bootstrap:user')
-    if (!raw) return fallback
+    if (!raw) return null
     const parsed = JSON.parse(raw) as { id?: string; email?: string; name?: string | null } | null
-    if (!parsed?.id || parsed.id !== user.id) return fallback
+    if (!parsed?.id) return null
     return {
       id: parsed.id,
-      email: parsed.email?.trim() ? parsed.email : fallback.email,
-      name: parsed.name?.trim() ? parsed.name : fallback.name
+      email: parsed.email?.trim() ? parsed.email : parsed.id,
+      name: parsed.name?.trim() ? parsed.name : undefined
     }
   } catch {
-    return fallback
+    return null
+  }
+}
+
+const resolveFriendCodeUser = (user?: SettingsUser): FriendCodeUser | null => {
+  const fallback =
+    user?.id
+      ? {
+          id: user.id,
+          email: user.email?.trim() ? user.email : user.id,
+          name: user.name?.trim() ? user.name : undefined
+        }
+      : null
+  const bootstrapUser = readBootstrapUser()
+  if (!fallback) {
+    return bootstrapUser
+  }
+  if (!bootstrapUser || bootstrapUser.id !== fallback.id) return fallback
+  return {
+    id: bootstrapUser.id,
+    email: bootstrapUser.email?.trim() ? bootstrapUser.email : fallback.email,
+    name: bootstrapUser.name?.trim() ? bootstrapUser.name : fallback.name
   }
 }
 
@@ -52,7 +69,7 @@ const ensureStatusElement = (root: HTMLElement, selector: string) => {
   const existing = root.querySelector<HTMLElement>(selector)
   if (existing) return existing
   const next = document.createElement('div')
-  next.className = 'auth-status'
+  next.className = 'settings-status'
   next.setAttribute('role', 'status')
   next.setAttribute('aria-live', 'polite')
   if (selector === '[data-static-settings-sw-status]') {
@@ -89,10 +106,16 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   if (!root) {
     return { cleanup() {} }
   }
+  if (root.getAttribute(SETTINGS_CONTROLLER_BOUND_ATTR) === 'true') {
+    return { cleanup() {} }
+  }
+  root.setAttribute(SETTINGS_CONTROLLER_BOUND_ATTR, 'true')
 
   const copy = getUiCopy(lang)
   const cleanupFns: Array<() => void> = []
-  const logoutButton = document.querySelector<HTMLButtonElement>('[data-static-route-action]')
+  const logoutButton =
+    root.querySelector<HTMLButtonElement>('[data-static-settings-action="logout"]') ??
+    document.querySelector<HTMLButtonElement>('[data-static-route-action]')
   const readReceiptsButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="read-receipts"]')
   const typingIndicatorsButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="typing-indicators"]')
   const offlineCacheButton = root.querySelector<HTMLButtonElement>('[data-static-settings-toggle="offline-cache"]')
@@ -316,6 +339,7 @@ export const mountStaticSettingsController = ({ lang, user }: MountStaticSetting
   return {
     cleanup() {
       cleanupFns.splice(0).forEach((cleanup) => cleanup())
+      root.removeAttribute(SETTINGS_CONTROLLER_BOUND_ATTR)
     }
   }
 }

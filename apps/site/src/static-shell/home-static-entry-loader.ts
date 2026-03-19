@@ -5,7 +5,10 @@ export const HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH =
 export const HOME_STATIC_ENTRY_ASSET_PATH =
   'build/static-shell/apps/site/src/static-shell/home-static-entry.js'
 
-export type HomeStaticEntryRuntimeModule = object
+export type HomeStaticEntryRuntimeModule = {
+  primeHomeSettingsInteraction?: typeof import('./home-static-entry').primeHomeSettingsInteraction
+  waitForHomeStaticEntryInstallation?: typeof import('./home-static-entry').waitForHomeStaticEntryInstallation
+}
 
 type LoadHomeStaticEntryRuntimeOptions = {
   assetUrl?: string

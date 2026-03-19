@@ -26,6 +26,7 @@ const HOME_POST_LCP_RUNTIME_INTENT_EVENTS = [
   "pointerdown",
   "touchstart",
   "keydown",
+  "click",
 ] as const;
 
 const setDocumentLang = (value: Lang) => {
@@ -139,6 +140,7 @@ export const installDeferredHomePostLcpRuntime = ({
   homeFragmentHydration,
   bootstrapStaticHome,
   destroyActiveController,
+  initialTarget = null,
 }: {
   controller: HomeControllerState;
   homeFragmentHydration: Pick<
@@ -147,11 +149,18 @@ export const installDeferredHomePostLcpRuntime = ({
   >;
   bootstrapStaticHome: () => Promise<void>;
   destroyActiveController: () => Promise<void>;
+  initialTarget?: EventTarget | null;
 }) => {
   const settingsRoot = document.querySelector<HTMLElement>(".topbar-settings");
   let runtimeCleanup: (() => void) | null = null;
   let runtimePromise: Promise<void> | null = null;
   const eventOptions: AddEventListenerOptions = { capture: true };
+  const isSettingsTriggerTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+    return Boolean(target.closest("[data-static-settings-toggle]"));
+  };
 
   const cleanupTriggers = () => {
     if (!settingsRoot) {
@@ -174,7 +183,7 @@ export const installDeferredHomePostLcpRuntime = ({
     );
   };
 
-  const startPostLcpRuntime = () => {
+  const startPostLcpRuntime = (target: EventTarget | null = null) => {
     if (controller.destroyed || runtimePromise) {
       return;
     }
@@ -191,6 +200,11 @@ export const installDeferredHomePostLcpRuntime = ({
           bootstrapStaticHome,
           destroyActiveController,
         });
+        if (isSettingsTriggerTarget(target)) {
+          settingsRoot?.querySelector<HTMLButtonElement>(
+            "[data-static-settings-toggle]",
+          )?.click();
+        }
       })
       .catch((error) => {
         runtimePromise = null;
@@ -198,8 +212,8 @@ export const installDeferredHomePostLcpRuntime = ({
       });
   };
 
-  function handleDeferredPostLcpIntent() {
-    startPostLcpRuntime();
+  function handleDeferredPostLcpIntent(event: Event) {
+    startPostLcpRuntime(event.target);
   }
 
   if (settingsRoot) {
@@ -210,6 +224,10 @@ export const installDeferredHomePostLcpRuntime = ({
         eventOptions,
       );
     });
+  }
+
+  if (isSettingsTriggerTarget(initialTarget)) {
+    startPostLcpRuntime(initialTarget);
   }
 
   return () => {

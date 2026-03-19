@@ -9,13 +9,17 @@ type InstallHomeBootstrapDeferredRuntimeOptions = {
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
   loadLifecycleRuntime?: typeof loadHomePostAnchorLifecycleRuntime
+  eagerLifecycleRuntime?: boolean
+  postLcpIntentTarget?: EventTarget | null
 }
 
 export const installHomeBootstrapDeferredRuntime = async ({
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
-  loadLifecycleRuntime = loadHomePostAnchorLifecycleRuntime
+  loadLifecycleRuntime = loadHomePostAnchorLifecycleRuntime,
+  eagerLifecycleRuntime = false,
+  postLcpIntentTarget = null
 }: InstallHomeBootstrapDeferredRuntimeOptions = {}) => {
   if (!win || !doc) {
     return
@@ -50,7 +54,8 @@ export const installHomeBootstrapDeferredRuntime = async ({
           controller,
           data,
           win,
-          doc
+          doc,
+          postLcpIntentTarget
         })
       )
       .then((cleanup) => {
@@ -64,8 +69,11 @@ export const installHomeBootstrapDeferredRuntime = async ({
     return lifecyclePromise
   }
 
-  if (resolvePreferredStaticHomeLang(data.lang) !== data.lang) {
-    void startLifecycleRuntime()
+  if (
+    eagerLifecycleRuntime ||
+    resolvePreferredStaticHomeLang(data.lang) !== data.lang
+  ) {
+    await startLifecycleRuntime()
   } else {
     cancelLifecycleStart = scheduleTask(
       () => {

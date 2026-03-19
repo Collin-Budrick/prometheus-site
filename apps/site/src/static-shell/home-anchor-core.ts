@@ -16,6 +16,13 @@ import { bootstrapStaticHomeAnchor } from './home-bootstrap-anchor'
 
 const HOME_FRAGMENT_CARD_SELECTOR = '[data-static-fragment-card]'
 const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'touchstart'] as const
+const HOME_SETTINGS_ENTRY_EVENTS = [
+  'pointerdown',
+  'touchstart',
+  'keydown',
+  'click',
+  'focusin'
+] as const
 
 type HomeStaticAnchorEntryWindow = Window & {
   __PROM_STATIC_HOME_ANCHOR_ENTRY__?: boolean
@@ -69,15 +76,21 @@ export const installHomeStaticAnchorEntry = ({
   const liveWin = win
   const liveDoc = doc
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
+  const settingsBridgeEventOptions: AddEventListenerOptions = { capture: true }
   let startedBootstrap = false
   let bootstrapRequested = false
   let deferredEntryStarted = false
+  let deferredEntryPromise: Promise<void> | null = null
   let lcpGateReleased = false
   let bootstrapRuntimePromise: ReturnType<typeof loadBootstrapRuntime> | null = null
   let cancelDeferredEntryFallback: (() => void) | null = null
   let lcpGateCleanup: (() => void) | null = null
   let domReadyHandler: (() => void) | null = null
   let loadHandler: (() => void) | null = null
+  const settingsRoot =
+    typeof liveDoc.querySelector === 'function'
+      ? liveDoc.querySelector<HTMLElement>('.topbar-settings')
+      : null
 
   markStaticShellUserTiming('prom:home:static-entry-install')
   liveWin.__PROM_STATIC_HOME_ANCHOR_ENTRY__ = true
@@ -137,16 +150,47 @@ export const installHomeStaticAnchorEntry = ({
     )
   }
 
-  const startDeferredEntry = () => {
-    if (deferredEntryStarted) {
+  const isSettingsTriggerTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) {
+      return false
+    }
+    return Boolean(target.closest('[data-static-settings-toggle]'))
+  }
+
+  const cleanupSettingsEntryBridge = () => {
+    if (!settingsRoot) {
       return
+    }
+    HOME_SETTINGS_ENTRY_EVENTS.forEach((eventName) => {
+      settingsRoot.removeEventListener(
+        eventName,
+        handleSettingsEntryInteraction,
+        settingsBridgeEventOptions
+      )
+    })
+  }
+
+  const replaySettingsToggle = () => {
+    settingsRoot
+      ?.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
+      ?.click()
+  }
+
+  const startDeferredEntry = () => {
+    if (deferredEntryPromise) {
+      return deferredEntryPromise
+    }
+    if (deferredEntryStarted) {
+      return Promise.resolve()
     }
     deferredEntryStarted = true
     cancelDeferredEntryFallback?.()
     cancelDeferredEntryFallback = null
     markStaticShellUserTiming('prom:home:deferred-entry-requested')
-    void loadDeferredEntry()
+    deferredEntryPromise = loadDeferredEntry()
+      .then((module) => module.waitForHomeStaticEntryInstallation?.())
       .then(() => {
+        cleanupSettingsEntryBridge()
         markStaticShellUserTiming('prom:home:deferred-entry-ready')
         measureStaticShellUserTiming(
           'prom:home:deferred-entry',
@@ -156,8 +200,10 @@ export const installHomeStaticAnchorEntry = ({
       })
       .catch((error) => {
         deferredEntryStarted = false
+        deferredEntryPromise = null
         console.error('Static home deferred entry failed:', error)
       })
+    return deferredEntryPromise
   }
 
   const scheduleDeferredEntryFallback = () => {
@@ -237,6 +283,24 @@ export const installHomeStaticAnchorEntry = ({
     requestBootstrap()
   }
 
+  function handleSettingsEntryInteraction(event: Event) {
+    if (!isSettingsTriggerTarget(event.target)) {
+      return
+    }
+    const nextDeferredEntry = startDeferredEntry()
+    if (!nextDeferredEntry) {
+      return
+    }
+    void nextDeferredEntry.then(() => {
+      void loadDeferredEntry().then((module) => {
+        if (module.primeHomeSettingsInteraction) {
+          return module.primeHomeSettingsInteraction(event.target)
+        }
+        replaySettingsToggle()
+      })
+    })
+  }
+
   const cleanup = () => {
     clearStartupHandlers()
     liveWin.removeEventListener('pointerdown', handlePointerDown, eventOptions)
@@ -244,6 +308,7 @@ export const installHomeStaticAnchorEntry = ({
     liveWin.removeEventListener('keydown', handleKeyDown, eventOptions)
     liveDoc.removeEventListener?.('focusin', handleFocusIn, eventOptions)
     liveDoc.removeEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry)
+    cleanupSettingsEntryBridge()
     cancelDeferredEntryFallback?.()
     cancelDeferredEntryFallback = null
     lcpGateCleanup?.()
@@ -262,6 +327,15 @@ export const installHomeStaticAnchorEntry = ({
     requestBootstrap()
     liveDoc.addEventListener?.(HOME_FIRST_ANCHOR_PATCH_EVENT, startDeferredEntry, { once: true })
     scheduleDeferredEntryFallback()
+    if (settingsRoot) {
+      HOME_SETTINGS_ENTRY_EVENTS.forEach((eventName) => {
+        settingsRoot.addEventListener(
+          eventName,
+          handleSettingsEntryInteraction,
+          settingsBridgeEventOptions
+        )
+      })
+    }
     HOME_BOOTSTRAP_INTENT_EVENTS.forEach((eventName) => {
       liveWin.addEventListener(eventName, handlePointerDown, eventOptions)
     })

@@ -19,6 +19,7 @@ type InstallHomePostAnchorLifecycleRuntimeOptions = {
   doc?: Document | null
   bootstrapStaticHome?: () => Promise<void>
   destroyActiveController?: () => Promise<void>
+  postLcpIntentTarget?: EventTarget | null
 }
 
 export const installHomePostAnchorLifecycleRuntime = async ({
@@ -27,6 +28,7 @@ export const installHomePostAnchorLifecycleRuntime = async ({
   win = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null,
   bootstrapStaticHome: bootstrapHome = bootstrapStaticHome,
+  postLcpIntentTarget = null,
   destroyActiveController = async () => {
     await destroyHomeController(getActiveHomeController())
   }
@@ -75,7 +77,8 @@ export const installHomePostAnchorLifecycleRuntime = async ({
     controller,
     homeFragmentHydration,
     bootstrapStaticHome: bootstrapHome,
-    destroyActiveController
+    destroyActiveController,
+    initialTarget: postLcpIntentTarget
   })
 
   const handlePageHide = () => {

@@ -36,6 +36,7 @@ describe("static shell performance invariants", () => {
       homeRouteSource,
       homeFragmentClientSource,
       globalCriticalSource,
+      globalCriticalHomeSource,
       homeDemoPreviewSource,
       plannerDemoSource,
       fragmentHeightScriptSource,
@@ -78,6 +79,7 @@ describe("static shell performance invariants", () => {
       readSource("./StaticHomeRoute.tsx"),
       readSource("./home-fragment-client.ts"),
       readSource("../../../../packages/ui/src/global-critical.css"),
+      readSource("../../../../packages/ui/src/global-critical-home.css"),
       readSource("../components/HomeDemoPreview.tsx"),
       readSource("../components/PlannerDemo.tsx"),
       readSource("./fragment-height-script.ts"),
@@ -370,19 +372,34 @@ describe("static shell performance invariants", () => {
     expect(globalCriticalSource).not.toContain(
       "> .fragment-card:not([data-critical='true'])\n  .fragment-card-body",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalSource).not.toContain(
       ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-stage='deferred']",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalHomeSource).toContain(
+      ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-stage='deferred']",
+    );
+    expect(globalCriticalSource).not.toContain(
       ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true']",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalHomeSource).toContain(
+      ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true']",
+    );
+    expect(globalCriticalSource).not.toContain(
       ".fragment-grid[data-fragment-grid='main'] .fragment-slot {\n  contain: layout;\n}",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalHomeSource).toContain(
+      ".fragment-grid[data-fragment-grid='main'] .fragment-slot {\n  contain: layout;\n}",
+    );
+    expect(globalCriticalSource).not.toContain(
       ".fragment-grid[data-fragment-grid='intro'] .fragment-slot,\n.layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-card {\n  contain: none;\n}",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalHomeSource).toContain(
+      ".fragment-grid[data-fragment-grid='intro'] .fragment-slot,\n.layout-shell[data-static-route='home'] .fragment-grid[data-fragment-grid='intro'] .fragment-card {\n  contain: none;\n}",
+    );
+    expect(globalCriticalSource).not.toContain(
+      ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true'] {\n  content-visibility: visible;\n  contain: none;",
+    );
+    expect(globalCriticalHomeSource).toContain(
       ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-lcp-stable='true'] {\n  content-visibility: visible;\n  contain: none;",
     );
     expect(globalCriticalSource).not.toContain(
@@ -391,7 +408,10 @@ describe("static shell performance invariants", () => {
     expect(globalCriticalSource).not.toContain(
       ".fragment-grid-static-home-column\n  > .fragment-card[data-static-home-preview-visible='true'][data-static-home-stage='deferred']\n  .fragment-card-body {\n  content-visibility: visible;",
     );
-    expect(globalCriticalSource).toContain(
+    expect(globalCriticalSource).not.toContain(
+      "[data-static-home-root][data-home-paint='initial']\n  .fragment-grid-static-home-column\n  > .fragment-card {",
+    );
+    expect(globalCriticalHomeSource).toContain(
       "[data-static-home-root][data-home-paint='initial']\n  .fragment-grid-static-home-column\n  > .fragment-card {",
     );
     expect(globalCriticalSource).toContain(
@@ -658,12 +678,20 @@ describe("static shell performance invariants", () => {
     expect(
       await readSource("./home-static-deferred.css"),
     ).toContain("home-demo-first-frame-critical.css");
-    expect(
-      await readSource("../../../../packages/ui/src/global-critical-home.css"),
-    ).not.toContain("home-demo-first-frame-critical.css");
-    expect(
-      await readSource("../../../../packages/ui/src/global-critical-home.css"),
-    ).not.toContain("home-demo-active.css");
+    const globalCriticalHomeSource = await readSource(
+      "../../../../packages/ui/src/global-critical-home.css",
+    );
+    expect(globalCriticalHomeSource).not.toContain("home-demo-first-frame-critical.css");
+    expect(globalCriticalHomeSource).not.toContain("home-demo-active.css");
+    expect(globalCriticalHomeSource).not.toContain(":root {");
+    expect(globalCriticalHomeSource).not.toContain(".topbar {");
+    expect(globalCriticalHomeSource).not.toContain(".fragment-card::before {");
+    expect(globalCriticalHomeSource).not.toContain(".fragment-card-body > :not(.fragment-card-close)");
+    expect(globalCriticalHomeSource).not.toContain(".dock-shell {");
+    expect(globalCriticalHomeSource).toContain(
+      ".layout-shell[data-static-route='home'] .fragment-grid.fragment-grid-static-home {",
+    );
+    expect(globalCriticalHomeSource).toContain("[data-static-home-stage='anchor']");
     expect(runtimeLoaderSource).not.toContain(
       "import homeDemoStylesheetHref from '../components/home-demo-active.css?url'",
     );

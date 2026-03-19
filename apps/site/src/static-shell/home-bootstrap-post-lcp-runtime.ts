@@ -294,6 +294,12 @@ const installDeferredHomeUiControls = ({
 
   let started = false
   const eventOptions: AddEventListenerOptions = { capture: true }
+  const isSettingsTriggerTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) {
+      return false
+    }
+    return Boolean(target.closest('[data-static-settings-toggle]'))
+  }
 
   const cleanupTriggers = () => {
     settingsRoot.removeEventListener(
@@ -308,6 +314,11 @@ const installDeferredHomeUiControls = ({
     )
     settingsRoot.removeEventListener(
       'keydown',
+      handleDeferredUiInteraction,
+      eventOptions
+    )
+    settingsRoot.removeEventListener(
+      'click',
       handleDeferredUiInteraction,
       eventOptions
     )
@@ -334,7 +345,7 @@ const installDeferredHomeUiControls = ({
     return true
   }
 
-  const loadUiControls = () => {
+  const loadUiControls = (target: EventTarget | null = null) => {
     if (started || controller.destroyed) {
       return
     }
@@ -350,6 +361,9 @@ const installDeferredHomeUiControls = ({
           controller,
           onLanguageChange: swapStaticHomeLanguage
         })
+        if (isSettingsTriggerTarget(target)) {
+          settingsRoot.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')?.click()
+        }
       })
       .catch((error) => {
         started = false
@@ -357,8 +371,8 @@ const installDeferredHomeUiControls = ({
       })
   }
 
-  function handleDeferredUiInteraction() {
-    loadUiControls()
+  function handleDeferredUiInteraction(event: Event) {
+    loadUiControls(event.target)
   }
 
   settingsRoot.addEventListener(
@@ -373,6 +387,11 @@ const installDeferredHomeUiControls = ({
   )
   settingsRoot.addEventListener(
     'keydown',
+    handleDeferredUiInteraction,
+    eventOptions
+  )
+  settingsRoot.addEventListener(
+    'click',
     handleDeferredUiInteraction,
     eventOptions
   )

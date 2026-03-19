@@ -6,30 +6,58 @@ type InstallHomeStaticEntryOptions = Parameters<
   loadCore?: typeof loadHomePostAnchorCore
 }
 
-export const installHomeStaticEntry = ({
+let homePostAnchorCoreModulePromise: ReturnType<typeof loadHomePostAnchorCore> | null = null
+let homeStaticEntryInstallPromise: Promise<(() => void) | undefined> | null = null
+let homeStaticEntryCleanup: (() => void) | undefined
+let homeStaticEntryDisposed = false
+
+const startHomeStaticEntryInstall = ({
   loadCore = loadHomePostAnchorCore,
   ...options
 }: InstallHomeStaticEntryOptions = {}) => {
-  let cleanup: (() => void) | undefined
-  let disposed = false
+  homePostAnchorCoreModulePromise ??= loadCore()
+  if (!homeStaticEntryInstallPromise) {
+    homeStaticEntryInstallPromise = homePostAnchorCoreModulePromise
+      .then(({ installHomeStaticEntry }) => {
+        homeStaticEntryCleanup = installHomeStaticEntry(options)
+        if (homeStaticEntryDisposed) {
+          homeStaticEntryCleanup?.()
+        }
+        return homeStaticEntryCleanup
+      })
+      .catch((error) => {
+        homeStaticEntryInstallPromise = null
+        console.error('Static home post-anchor core failed:', error)
+      })
+  }
 
-  void loadCore()
-    .then(({ installHomeStaticEntry }) => {
-      cleanup = installHomeStaticEntry(options)
-      if (disposed) {
-        cleanup?.()
-      }
-    })
-    .catch((error) => {
-      console.error('Static home post-anchor core failed:', error)
-    })
+  return homeStaticEntryInstallPromise
+}
+
+export const installHomeStaticEntry = ({
+  ...options
+}: InstallHomeStaticEntryOptions = {}) => {
+  void startHomeStaticEntryInstall(options)
 
   return () => {
-    disposed = true
-    cleanup?.()
+    homeStaticEntryDisposed = true
+    homeStaticEntryCleanup?.()
   }
 }
 
+export const waitForHomeStaticEntryInstallation = (
+  options?: InstallHomeStaticEntryOptions
+) => startHomeStaticEntryInstall(options).then(() => undefined)
+
+export const primeHomeSettingsInteraction = async (
+  target: EventTarget | null = null,
+  options?: InstallHomeStaticEntryOptions
+) => {
+  await waitForHomeStaticEntryInstallation(options)
+  const module = await homePostAnchorCoreModulePromise
+  await module?.primeHomeSettingsInteraction?.(target)
+}
+
 if (typeof window !== 'undefined') {
-  installHomeStaticEntry()
+  void waitForHomeStaticEntryInstallation()
 }

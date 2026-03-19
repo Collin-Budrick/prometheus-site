@@ -39,20 +39,40 @@ export type HomeControllerState = {
   destroyed: boolean
 }
 
+type HomeActiveControllerWindow = Window & {
+  __PROM_ACTIVE_HOME_CONTROLLER__?: HomeControllerState | null
+}
+
 let activeController: HomeControllerState | null = null
 
-export const getActiveHomeController = () => activeController
+const readWindowActiveController = () =>
+  typeof window !== 'undefined'
+    ? (window as HomeActiveControllerWindow).__PROM_ACTIVE_HOME_CONTROLLER__ ?? null
+    : null
+
+const writeWindowActiveController = (controller: HomeControllerState | null) => {
+  if (typeof window === 'undefined') {
+    return controller
+  }
+  ;(window as HomeActiveControllerWindow).__PROM_ACTIVE_HOME_CONTROLLER__ = controller
+  return controller
+}
+
+export const getActiveHomeController = () => readWindowActiveController() ?? activeController
 
 export const setActiveHomeController = (controller: HomeControllerState | null) => {
   activeController = controller
-  return activeController
+  writeWindowActiveController(controller)
+  return getActiveHomeController()
 }
 
 export const clearActiveHomeController = (controller?: HomeControllerState | null) => {
-  if (!controller || activeController === controller) {
+  const current = getActiveHomeController()
+  if (!controller || current === controller || activeController === controller) {
     activeController = null
+    writeWindowActiveController(null)
   }
-  return activeController
+  return getActiveHomeController()
 }
 
 export const resumeDeferredHomeHydration = ({
