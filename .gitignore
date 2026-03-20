@@ -33,6 +33,14 @@ Trace-*
 *.keystore
 *.p12
 .codex
+.codex-artifacts/
+.codex-*.json
+.tmp*
+.lh-tmp/
+artifacts/
+reports/
+test-results/
+apps/site/src/fragment/fragment-css.generated.ts
 
 tmp*
 apps/site/local-home*

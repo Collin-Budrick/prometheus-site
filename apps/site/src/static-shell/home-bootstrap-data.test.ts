@@ -40,7 +40,6 @@ describe('home-bootstrap-data', () => {
             lang: 'en',
             path: '/',
             snapshotKey: '/',
-            homeDemoStylesheetHref: '/assets/home-demo.css',
             languageSeed: {
               ui: {
                 demoActivate: 'Launch demo',
@@ -128,7 +127,6 @@ describe('home-bootstrap-data', () => {
     expect(data?.currentPath).toBe('/')
     expect(data?.shellSeed.ui?.navHome).toBe('Home')
     expect(data?.routeSeed.ui?.demoActivate).toBe('Launch demo')
-    expect(data?.homeDemoStylesheetHref).toBe('/assets/home-demo.css')
     expect(data?.runtimePlanEntries).toEqual([
       {
         id: 'fragment://page/home/react@v1',

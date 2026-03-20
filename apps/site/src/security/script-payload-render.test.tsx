@@ -121,7 +121,6 @@ describe('security script payload rendering', () => {
       snapshotKey: staticHomePlan.path,
       authPolicy: 'public',
       bootstrapMode: 'home-static',
-      homeDemoStylesheetHref: '/assets/home-demo.css',
       languageSeed: shellLanguageSeed,
       fragmentVersions: {
         'fragment://page/home/manifest@v1': 1,

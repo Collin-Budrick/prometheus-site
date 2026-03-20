@@ -13,6 +13,16 @@ const storeFragmentCss = `
 .store-fragment {
   display: grid;
   gap: 18px;
+  --store-soft-glass: linear-gradient(
+    160deg,
+    rgb(var(--surface) / 0.58),
+    rgb(var(--surface-soft) / 0.34)
+  );
+  --store-soft-glass-strong: linear-gradient(
+    160deg,
+    rgb(var(--surface) / 0.62),
+    rgb(var(--surface-soft) / 0.38)
+  );
 }
 
 .store-fragment-badges {
@@ -87,7 +97,7 @@ const storeFragmentCss = `
 
 .store-stream-clear {
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   color: rgb(var(--muted));
   padding: 8px 16px;
   border-radius: 999px;
@@ -246,7 +256,7 @@ const storeFragmentCss = `
   padding: 8px;
   border-radius: 16px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface) / 0.95);
+  background: var(--store-soft-glass-strong);
   box-shadow: none;
 }
 
@@ -255,7 +265,7 @@ const storeFragmentCss = `
   align-items: center;
   width: 100%;
   border: 1px solid transparent;
-  background: rgb(var(--surface) / 0.6);
+  background: var(--store-soft-glass);
   color: rgb(var(--muted));
   border-radius: 999px;
   padding: 8px 12px;
@@ -487,7 +497,7 @@ const storeFragmentCss = `
 
 .store-stream-add {
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   color: rgb(var(--muted));
   padding: 4px 10px;
   border-radius: 999px;
@@ -535,7 +545,7 @@ const storeFragmentCss = `
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   font-size: 10px;
   letter-spacing: 0.25em;
   text-transform: uppercase;
@@ -592,7 +602,7 @@ const storeFragmentCss = `
   line-height: 1.2;
   border-radius: 12px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   color: rgb(var(--ink));
   font-size: 0.95rem;
 }
@@ -624,7 +634,7 @@ const storeFragmentCss = `
   min-height: 44px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface-soft));
+  background: var(--store-soft-glass);
   font-size: 8px;
   font-family: var(--font-mono);
   text-transform: uppercase;
@@ -648,8 +658,8 @@ const storeFragmentCss = `
   height: 18px;
   border-radius: 6px;
   border: 1px solid rgb(var(--stroke-strong));
-  background: rgb(var(--surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--surface) / 0.6);
+  background: var(--store-soft-glass);
+  box-shadow: inset 0 0 0 1px rgb(var(--surface) / 0.24);
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -777,7 +787,7 @@ const storeFragmentCss = `
   padding: 10px 14px;
   border-radius: 14px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   font-size: 10px;
   font-family: var(--font-mono);
   text-transform: uppercase;
@@ -807,7 +817,7 @@ const storeFragmentCss = `
   position: relative;
   border-radius: 18px;
   border: 1px dashed rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   padding: 16px;
   min-height: 180px;
   display: grid;
@@ -817,7 +827,8 @@ const storeFragmentCss = `
 
 .store-cart-dropzone.is-active {
   border-color: rgb(var(--accent));
-  background: rgb(var(--surface-soft));
+  background:
+    linear-gradient(160deg, rgb(var(--surface) / 0.52), rgb(var(--accent) / 0.16));
   box-shadow: 0 18px 32px rgba(15, 23, 42, 0.14);
   transform: translateY(-1px);
 }
@@ -827,7 +838,8 @@ const storeFragmentCss = `
   inset: 12px;
   border-radius: 16px;
   border: 1px dashed rgb(var(--accent));
-  background: rgb(var(--surface) / 0.6);
+  background:
+    linear-gradient(160deg, rgb(var(--surface) / 0.52), rgb(var(--surface-soft) / 0.3));
   display: grid;
   place-items: center;
   font-size: 10px;
@@ -864,7 +876,7 @@ const storeFragmentCss = `
   padding: 12px 38px 12px 14px;
   border-radius: 14px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface-soft));
+  background: var(--store-soft-glass);
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.12);
   opacity: 0;
   transform: translateY(8px);
@@ -908,7 +920,7 @@ const storeFragmentCss = `
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   font-size: 10px;
   font-family: var(--font-mono);
   text-transform: uppercase;
@@ -931,7 +943,7 @@ const storeFragmentCss = `
   height: 22px;
   border-radius: 999px;
   border: 1px solid rgb(var(--stroke));
-  background: rgb(var(--surface));
+  background: var(--store-soft-glass);
   color: rgb(var(--muted));
   font-size: 10px;
   font-family: var(--font-mono);

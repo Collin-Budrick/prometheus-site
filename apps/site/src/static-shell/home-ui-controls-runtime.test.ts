@@ -225,7 +225,7 @@ afterEach(() => {
 })
 
 describe('bindHomeUiControls', () => {
-  it('does not preload deferred styles when the controls bind', () => {
+  it('binds successfully without a deferred stylesheet preload dependency', () => {
     const doc = new MockDocument()
     const settingsRoot = doc.createElement('div')
     settingsRoot.className = 'topbar-settings'
@@ -259,17 +259,14 @@ describe('bindHomeUiControls', () => {
         lang: 'en'
       },
       onLanguageChange: () => undefined,
-      ensureSettingsPanelContent: async () => doc.createElement('div'),
-      ensureDeferredStylesheet: async () => {
-        callOrder.push('stylesheet:start')
-      }
+      ensureSettingsPanelContent: async () => doc.createElement('div')
     })
 
     expect(bound).toBe(true)
     expect(callOrder).toEqual([])
   })
 
-  it('waits for deferred styles before opening the settings overlay', async () => {
+  it('opens the settings overlay immediately on click', async () => {
     const doc = new MockDocument()
     const settingsRoot = doc.createElement('div')
     settingsRoot.className = 'topbar-settings'
@@ -296,26 +293,13 @@ describe('bindHomeUiControls', () => {
       value: win
     })
 
-    const callOrder: string[] = []
-    let resolveStyles!: () => void
-    const stylesheetReady = new Promise<void>((resolve) => {
-      resolveStyles = () => {
-        callOrder.push('stylesheet:ready')
-        resolve()
-      }
-    })
-
     const bound = bindHomeUiControls({
       controller: {
         cleanupFns: [],
         lang: 'en'
       },
       onLanguageChange: () => undefined,
-      ensureSettingsPanelContent: async () => doc.createElement('div'),
-      ensureDeferredStylesheet: async () => {
-        callOrder.push('stylesheet:start')
-        await stylesheetReady
-      }
+      ensureSettingsPanelContent: async () => doc.createElement('div')
     })
 
     expect(bound).toBe(true)
@@ -324,14 +308,6 @@ describe('bindHomeUiControls', () => {
     await flushMicrotasks()
 
     const settingsPanel = settingsRoot.querySelector<MockElement>('.settings-dropdown')
-    expect(callOrder).toEqual(['stylesheet:start'])
-    expect(settingsRoot.dataset.open).toBe('false')
-    expect(settingsPanel?.hidden).toBe(true)
-
-    resolveStyles()
-    await flushMicrotasks()
-
-    expect(callOrder).toEqual(['stylesheet:start', 'stylesheet:ready'])
     expect(settingsRoot.dataset.open).toBe('true')
     expect(settingsPanel?.hidden).toBe(false)
   })

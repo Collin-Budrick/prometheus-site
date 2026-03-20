@@ -677,12 +677,6 @@ describe("static shell performance invariants", () => {
     expect(
       await readSource("../../../../packages/ui/src/global-deferred.css"),
     ).toContain("home-demo-active.css");
-    expect(
-      await readSource("./home-static-deferred.css"),
-    ).toContain('home-demo-active.css');
-    expect(
-      await readSource("./home-static-deferred.css"),
-    ).toContain("home-demo-first-frame-critical.css");
     const globalCriticalHomeSource = await readSource(
       "../../../../packages/ui/src/global-critical-home.css",
     );
@@ -790,9 +784,6 @@ describe("static shell performance invariants", () => {
     expect(seedSource).toContain("buildVersion?: string | null");
     const homeStaticAnchorEntrySource = await readSource("./home-static-anchor-entry.ts");
     const staticHomeRouteSource = await readSource("./StaticHomeRoute.tsx");
-    expect(staticHomeRouteSource).not.toContain(
-      "import homeInteractiveDeferredStylesheetHref from './home-static-deferred.css?url'",
-    );
     expect(staticHomeRouteSource).toContain("STATIC_HOME_WORKER_DATA_SCRIPT_ID");
     expect(staticHomeRouteSource).not.toContain("createHomeDemoAssetMap");
     expect(staticHomeRouteSource).not.toContain(

@@ -27,7 +27,6 @@ export type HomeStaticRouteData = {
   lang: Lang
   path: string
   snapshotKey?: string
-  homeDemoStylesheetHref?: string
   homeDemoAssets?: HomeDemoAssetMap
   fragmentBootstrapHref?: string
   fragmentOrder?: string[]
@@ -55,7 +54,6 @@ export type HomeStaticBootstrapData = {
   lang: Lang
   shellSeed: LanguageSeedPayload
   routeSeed: LanguageSeedPayload
-  homeDemoStylesheetHref: string | null
   homeDemoAssets: HomeDemoAssetMap | null
   fragmentBootstrapHref: string | null
   runtimeAnchorBootstrapHref: string | null
@@ -312,7 +310,6 @@ export const readStaticHomeBootstrapData = ({
     lang: route?.lang || shell?.lang || 'en',
     shellSeed: shell?.languageSeed ?? {},
     routeSeed: route?.languageSeed ?? {},
-    homeDemoStylesheetHref: route?.homeDemoStylesheetHref ?? null,
     homeDemoAssets: route?.homeDemoAssets ?? null,
     fragmentBootstrapHref:
       route?.fragmentBootstrapHref ??

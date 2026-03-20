@@ -12,7 +12,6 @@ import {
   ensureStaticShellSettingsPanelContent,
   readStaticShellTheme
 } from './settings-overlay-dom'
-import { ensureStaticHomeDeferredStylesheet } from './home-deferred-stylesheet'
 import { mountStaticSettingsController } from './controllers/settings-static-controller'
 
 type Theme = 'light' | 'dark'
@@ -25,7 +24,6 @@ type HomeUiControlsController = {
 type BindHomeUiControlsOptions = {
   controller: HomeUiControlsController
   onLanguageChange: (nextLang: Lang) => Promise<void> | void
-  ensureDeferredStylesheet?: typeof ensureStaticHomeDeferredStylesheet
   ensureSettingsPanelContent?: typeof ensureStaticShellSettingsPanelContent
 }
 
@@ -79,7 +77,6 @@ const refreshThemeButton = (lang: Lang) => {
 export const bindHomeUiControls = ({
   controller,
   onLanguageChange,
-  ensureDeferredStylesheet = ensureStaticHomeDeferredStylesheet,
   ensureSettingsPanelContent = ensureStaticShellSettingsPanelContent
 }: BindHomeUiControlsOptions) => {
   const settingsRoot = document.querySelector<HTMLElement>('.topbar-settings')
@@ -100,7 +97,6 @@ export const bindHomeUiControls = ({
   const { settingsPanel, languageMenuToggle, languageDrawer, themeToggle } = overlay
   let settingsPanelContentPromise: Promise<unknown> | null = null
   let settingsControllerCleanup: (() => void) | null = null
-  let deferredStylesheetPromise: Promise<unknown> | null = null
 
   const ensureSettingsContent = () => {
     settingsPanelContentPromise ??= Promise.resolve(
@@ -116,15 +112,6 @@ export const bindHomeUiControls = ({
       }
     })
     return settingsPanelContentPromise
-  }
-
-  const preloadDeferredStylesheet = () => {
-    deferredStylesheetPromise ??= Promise.resolve(
-      ensureDeferredStylesheet({ doc: document })
-    ).catch((error) => {
-      console.error('Static home deferred stylesheet failed:', error)
-    })
-    return deferredStylesheetPromise
   }
   if (settingsRoot.getAttribute(UI_CONTROLS_BOUND_ATTR) === 'true') {
     refreshThemeButton(controller.lang)
@@ -161,7 +148,6 @@ export const bindHomeUiControls = ({
       closeMenus(false)
       return
     }
-    await preloadDeferredStylesheet()
     void ensureSettingsContent()
     settingsRoot.dataset.open = 'true'
     settingsToggle.setAttribute('aria-expanded', 'true')
@@ -173,9 +159,6 @@ export const bindHomeUiControls = ({
     if (!languageDrawer || !languageMenuToggle) return
 
     const next = languageDrawer.dataset.open !== 'true'
-    if (next) {
-      await preloadDeferredStylesheet()
-    }
     setOverlaySurfaceState(languageDrawer, next)
     languageMenuToggle.setAttribute('aria-expanded', next ? 'true' : 'false')
     if (next) {

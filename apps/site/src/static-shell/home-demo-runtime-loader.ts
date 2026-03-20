@@ -35,20 +35,12 @@ type EnsureHomeDemoKindStyleOptions = {
   doc?: HomeDemoStylesheetDocument | null
 }
 
-type EnsureHomeDemoStylesheetOptions = {
-  doc?: HomeDemoStylesheetDocument | null
-  href?: string
-}
-
-const HOME_DEMO_STYLESHEET_SELECTOR = 'link[data-home-demo-stylesheet]'
-
 const modulePromises = new Map<HomeDemoKind, Promise<HomeDemoRuntimeModule>>()
 const stylePromises = new Map<HomeDemoKind, Promise<void>>()
 const warmPromises = new Map<HomeDemoKind, Promise<void>>()
 const preloadPromises = new Map<HomeDemoKind, Promise<void>>()
 let startupAttachRuntimePromise: Promise<HomeDemoStartupAttachRuntimeModule> | null = null
 let startupAttachPreloadPromise: Promise<void> | null = null
-let combinedHomeDemoStylesheetPromise: Promise<void> | null = null
 
 const importRuntimeModule = async <T>(url: string) =>
   (await import(/* @vite-ignore */ url)) as T
@@ -316,34 +308,6 @@ export const warmHomeDemoStartupAttachRuntime = ({
   return startupAttachPreloadPromise
 }
 
-export const ensureHomeDemoStylesheet = ({
-  doc = typeof document !== 'undefined' ? document : null,
-  href
-}: EnsureHomeDemoStylesheetOptions = {}) => {
-  if (combinedHomeDemoStylesheetPromise) {
-    return combinedHomeDemoStylesheetPromise
-  }
-
-  if (!doc || !href) {
-    combinedHomeDemoStylesheetPromise = Promise.resolve()
-    return combinedHomeDemoStylesheetPromise
-  }
-
-  const existingLink = doc.querySelector(HOME_DEMO_STYLESHEET_SELECTOR) as HTMLLinkElement | null
-  if (existingLink) {
-    combinedHomeDemoStylesheetPromise = whenStylesheetReady(existingLink)
-    return combinedHomeDemoStylesheetPromise
-  }
-
-  const link = doc.createElement('link')
-  link.setAttribute('rel', 'stylesheet')
-  link.setAttribute('href', href)
-  link.setAttribute('data-home-demo-stylesheet', 'true')
-  doc.head.appendChild(link)
-  combinedHomeDemoStylesheetPromise = whenStylesheetReady(link)
-  return combinedHomeDemoStylesheetPromise
-}
-
 export const resetHomeDemoRuntimeLoaderForTests = () => {
   modulePromises.clear()
   stylePromises.clear()
@@ -351,5 +315,4 @@ export const resetHomeDemoRuntimeLoaderForTests = () => {
   preloadPromises.clear()
   startupAttachRuntimePromise = null
   startupAttachPreloadPromise = null
-  combinedHomeDemoStylesheetPromise = null
 }
