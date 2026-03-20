@@ -1,19 +1,14 @@
 import { loadFragmentWidgetRuntime } from '../fragment/ui/fragment-widget-runtime-loader'
-import { installHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred'
-import {
-  getActiveHomeController,
-  resumeDeferredHomeHydration
-} from './home-active-controller'
+import { resumeDeferredHomeHydration } from './home-active-controller'
+import { loadHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred-runtime-loader'
 import { scheduleStaticShellTask } from './scheduler'
+import { loadHomeSettingsInteractionRuntime } from './home-settings-interaction-runtime-loader'
 import { loadHomeStaticEntryDemoWarmup } from './home-static-entry-demo-warmup-loader'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
-import { loadHomeUiControlsRuntime } from './home-ui-controls-runtime-loader'
 import {
   markStaticShellUserTiming,
   measureStaticShellUserTiming
 } from './static-shell-performance'
-
-export { installHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred'
 
 export const HOME_BOOTSTRAP_INTENT_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 const HOME_SETTINGS_BRIDGE_EVENTS = [
@@ -42,7 +37,7 @@ type InstallHomeStaticEntryOptions = {
   doc?: Document | null
   scheduleTask?: typeof scheduleStaticShellTask
   loadDeferredRuntime?: (() => Promise<{
-    installHomeBootstrapDeferredRuntime: typeof installHomeBootstrapDeferredRuntime
+    installHomeBootstrapDeferredRuntime: typeof import('./home-bootstrap-deferred').installHomeBootstrapDeferredRuntime
   }>) | null
   installDeferredRuntime?: (options?: {
     eagerLifecycleRuntime?: boolean
@@ -80,6 +75,11 @@ const resolveInteractionCard = (target: EventTarget | null) => {
   return element?.closest<HTMLElement>(HOME_FRAGMENT_CARD_SELECTOR) ?? null
 }
 
+const primeHomeSettingsRuntime = (target: EventTarget | null = null) =>
+  loadHomeSettingsInteractionRuntime().then(({ primeHomeSettingsInteraction }) =>
+    primeHomeSettingsInteraction(target)
+  )
+
 export const primeHomeSettingsInteraction = async (
   target: EventTarget | null = null
 ) => {
@@ -90,8 +90,8 @@ export const installHomeStaticEntry = ({
   win = typeof window !== 'undefined' ? (window as HomeStaticEntryWindow) : null,
   doc = typeof document !== 'undefined' ? document : null,
   scheduleTask = scheduleStaticShellTask,
-  loadDeferredRuntime = null,
-  installDeferredRuntime = () => installHomeBootstrapDeferredRuntime(),
+  loadDeferredRuntime = loadHomeBootstrapDeferredRuntime,
+  installDeferredRuntime = null,
   resumeDeferredHydration = resumeDeferredHomeHydration,
   warmDemoAssets = warmStaticHomeDemoAssets,
   loadWidgetRuntime = loadFragmentWidgetRuntime,
@@ -111,7 +111,6 @@ export const installHomeStaticEntry = ({
     | null = null
   let homeDemoWarmupPromise: Promise<void> | null = null
   let deferredRuntimePromise: Promise<void> | null = null
-  let homeUiControlsPromise: Promise<boolean | void> | null = null
   let cancelDeferredRuntimeStart: (() => void) | null = null
 
   const eventOptions: AddEventListenerOptions = { capture: true, passive: true }
@@ -138,56 +137,6 @@ export const installHomeStaticEntry = ({
         settingsBridgeEventOptions
       )
     })
-  }
-
-  const replaySettingsToggle = () => {
-    settingsRoot
-      ?.querySelector<HTMLButtonElement>('[data-static-settings-toggle]')
-      ?.click()
-  }
-
-  const ensureHomeUiControls = () => {
-    if (homeUiControlsPromise) {
-      return homeUiControlsPromise
-    }
-
-    homeUiControlsPromise = loadHomeUiControlsRuntime()
-      .then(({ bindHomeUiControls }) => {
-        const controller = getActiveHomeController()
-        if (!controller || controller.destroyed) {
-          return false
-        }
-
-        return bindHomeUiControls({
-          controller,
-          onLanguageChange: async (nextLang) => {
-            const [
-              { swapStaticHomeLanguage },
-              { destroyHomeController }
-            ] = await Promise.all([
-              import('./home-language-runtime'),
-              import('./home-bootstrap-controller-utils')
-            ])
-
-            await swapStaticHomeLanguage({
-              nextLang,
-              bootstrapStaticHome: async () => {
-                const { bootstrapStaticHome } = await import('./home-bootstrap-orchestrator')
-                await bootstrapStaticHome()
-              },
-              destroyActiveController: async () => {
-                await destroyHomeController(getActiveHomeController())
-              }
-            })
-          }
-        })
-      })
-      .catch((error) => {
-        homeUiControlsPromise = null
-        console.error('Static home UI controls failed:', error)
-      })
-
-    return homeUiControlsPromise
   }
 
   const startHomeDemoWarmup = () => {
@@ -232,11 +181,13 @@ export const installHomeStaticEntry = ({
 
     markStaticShellUserTiming('prom:home:lifecycle-runtime-requested')
     deferredRuntimePromise = (
-      loadDeferredRuntime
+      installDeferredRuntime
+        ? installDeferredRuntime(options)
+        : loadDeferredRuntime
         ? loadDeferredRuntime().then(({ installHomeBootstrapDeferredRuntime }) =>
             installHomeBootstrapDeferredRuntime(options)
           )
-        : installDeferredRuntime(options)
+        : Promise.resolve()
     )
       .then(() => {
         cleanupEarlySettingsBridge()
@@ -259,30 +210,21 @@ export const installHomeStaticEntry = ({
     if (!isSettingsTriggerTarget(event.target)) {
       return
     }
-    const runtimePromise = startDeferredRuntime({
+    void startDeferredRuntime({
       eagerLifecycleRuntime: true,
       postLcpIntentTarget: event.target
     })
-    if (!runtimePromise) {
-      return
-    }
-    void Promise.all([runtimePromise, ensureHomeUiControls()]).then(() => {
-      replaySettingsToggle()
-    })
+    void primeHomeSettingsRuntime(event.target)
   }
 
   primeHomeSettingsInteractionHandler = async (
     target: EventTarget | null = null
   ) => {
-    const runtimePromise = startDeferredRuntime({
+    void startDeferredRuntime({
       eagerLifecycleRuntime: true,
       postLcpIntentTarget: target
     })
-    if (!runtimePromise) {
-      return
-    }
-    await Promise.all([runtimePromise, ensureHomeUiControls()])
-    replaySettingsToggle()
+    await primeHomeSettingsRuntime(target)
   }
 
   const scheduleDeferredRuntime = () => {

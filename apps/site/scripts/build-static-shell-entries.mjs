@@ -77,6 +77,7 @@ const buildGroups = [
     cssChunking: true,
     entrypoints: [
       'apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.ts',
+      'apps/site/src/static-shell/home-settings-interaction-runtime.ts',
       'apps/site/src/static-shell/home-ui-controls-runtime.ts',
       'apps/site/src/static-shell/home-language-runtime.ts',
       'apps/site/src/static-shell/home-dock-auth-runtime.ts'

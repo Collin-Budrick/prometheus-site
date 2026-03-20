@@ -522,6 +522,8 @@ describe("static shell performance invariants", () => {
       globalStyleAssetsSource,
       homeStaticEntrySource,
       homePostAnchorCoreSource,
+      homeSettingsInteractionRuntimeSource,
+      homeSettingsInteractionRuntimeLoaderSource,
       homeStaticEntryDemoWarmupSource,
       homeDemoWarmCoreSource,
       homeDemoStartupEntrySource,
@@ -566,6 +568,8 @@ describe("static shell performance invariants", () => {
       readSource("./global-style-assets.ts"),
       readSource("./home-static-entry.ts"),
       readSource("./home-post-anchor-core.ts"),
+      readSource("./home-settings-interaction-runtime.ts"),
+      readSource("./home-settings-interaction-runtime-loader.ts"),
       readSource("./home-static-entry-demo-warmup.ts"),
       readSource("./home-demo-warm-core.ts"),
       readSource("./home-demo-startup-entry.ts"),
@@ -601,6 +605,7 @@ describe("static shell performance invariants", () => {
     expect(buildScriptSource).toContain("home-collab-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-deferred-runtime.ts");
     expect(buildScriptSource).toContain("home-post-anchor-core.ts");
+    expect(buildScriptSource).toContain("home-settings-interaction-runtime.ts");
     expect(buildScriptSource).toContain("home-post-anchor-lifecycle-runtime.ts");
     expect(buildScriptSource).toContain("home-static-anchor-entry.ts");
     expect(buildScriptSource).toContain("home-bootstrap-anchor-runtime.ts");
@@ -835,7 +840,8 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).not.toContain("loadHomeBootstrapDeferredRuntime");
     expect(homeStaticEntrySource).not.toContain("scheduleStaticShellTask");
     expect(homePostAnchorCoreSource).toContain("installHomeStaticEntry");
-    expect(homePostAnchorCoreSource).toContain("installHomeBootstrapDeferredRuntime");
+    expect(homePostAnchorCoreSource).toContain("loadHomeBootstrapDeferredRuntime");
+    expect(homePostAnchorCoreSource).toContain("loadHomeSettingsInteractionRuntime");
     expect(homePostAnchorCoreSource).toContain("resumeDeferredHomeHydration");
     expect(homePostAnchorCoreSource).toContain("loadHomeStaticEntryDemoWarmup");
     expect(homePostAnchorCoreSource).toContain("HOME_BOOTSTRAP_INTENT_EVENTS");
@@ -860,11 +866,27 @@ describe("static shell performance invariants", () => {
     expect(homePostAnchorCoreSource).not.toContain("'scroll'");
     expect(homePostAnchorCoreSource).toContain("'focusin'");
     expect(homePostAnchorCoreSource).not.toContain("from './home-bootstrap'");
+    expect(homePostAnchorCoreSource).not.toContain("from './home-ui-controls-runtime-loader'");
     expect(homePostAnchorCoreSource).toContain("from './home-active-controller'");
     expect(homePostAnchorCoreSource).toContain(
       "from './home-static-entry-demo-warmup-loader'",
     );
     expect(homePostAnchorCoreSource).toContain("scheduleStaticShellTask");
+    expect(homeSettingsInteractionRuntimeLoaderSource).toContain(
+      "home-settings-interaction-runtime.js",
+    );
+    expect(homeSettingsInteractionRuntimeLoaderSource).toContain(
+      "import(/* @vite-ignore */ url)",
+    );
+    expect(homeSettingsInteractionRuntimeSource).toContain(
+      "loadHomeUiControlsRuntime()",
+    );
+    expect(homeSettingsInteractionRuntimeSource).toContain(
+      "import('./home-language-runtime')",
+    );
+    expect(homeSettingsInteractionRuntimeSource).toContain(
+      "import('./home-bootstrap-controller-utils')",
+    );
     expect(homeStaticEntrySource).not.toContain("scheduleReleaseTask(() =>");
     expect(homeStaticAnchorEntrySource).toContain("installHomeStaticAnchorEntry");
     expect(homeStaticAnchorEntrySource).toContain("loadHomeAnchorCore");
