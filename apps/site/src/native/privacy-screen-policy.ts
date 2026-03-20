@@ -1,6 +1,3 @@
-import { invokeNativeCommand } from './bridge'
-import { isNativeShellRuntime } from './runtime'
-
 const ALWAYS_ON_STORAGE_KEY = 'prometheus:privacy-screen:always-on'
 
 let sensitiveViewActive = false
@@ -15,8 +12,8 @@ const getAlwaysOn = () => {
 }
 
 const setPluginEnabled = async (enabled: boolean, source: string) => {
-  if (!isNativeShellRuntime()) return
-  await invokeNativeCommand<boolean>('native_privacy_screen_set', { enabled, source })
+  void enabled
+  void source
 }
 
 export const setSensitivePrivacyView = async (active: boolean) => {

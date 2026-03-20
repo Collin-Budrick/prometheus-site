@@ -1,7 +1,6 @@
 import { decodeFragmentPayload, type FragmentPayloadMap, type FragmentPlan } from '@core/fragments'
 import { appConfig } from '../public-app-config'
 import { fragmentPlanCache } from '../fragment/plan-cache'
-import { invokeNativeCommand } from './bridge'
 import { isNativeShellRuntime } from './runtime'
 
 type RunnerDispatchOverride = (event: string, details: Record<string, unknown>) => Promise<unknown | null>
@@ -98,15 +97,7 @@ const dispatchRunnerEvent = async <T = unknown>(event: string, details: Record<s
     return (await dispatchOverride(event, details)) as T | null
   }
   if (!isNativeRuntime()) return null
-  try {
-    return (await invokeNativeCommand<T>('native_background_dispatch', {
-      label: BACKGROUND_RUNNER_LABEL,
-      event,
-      details
-    })) as T | null
-  } catch {
-    return null
-  }
+  return null
 }
 
 const normalizeQueueAction = (value: unknown): BackgroundStoreQueueAction | null => {

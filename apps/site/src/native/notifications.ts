@@ -1,17 +1,10 @@
 import { navigateDeepLink } from './deep-links'
-import { loadNativePlugin } from './bridge'
-import { isNativeShellRuntime } from './runtime'
 import { runAfterClientIntentIdle } from '../shared/client-boot'
 
 let initialized = false
 
 const PROMPT_COOLDOWN_KEY = 'prometheus:notifications:last-prompt-at'
 const PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
-
-type NativeNotificationPlugin = {
-  isPermissionGranted?: () => Promise<boolean>
-  requestPermission?: () => Promise<'granted' | 'denied' | 'default' | boolean>
-}
 
 const resolveNotificationUrl = (payload: unknown) => {
   if (!payload || typeof payload !== 'object') return null
@@ -64,23 +57,7 @@ const requestBrowserPermission = async () => {
   }
 }
 
-const requestNativePermission = async () => {
-  const plugin = await loadNativePlugin<NativeNotificationPlugin>('@tauri-apps/plugin-notification')
-  if (!plugin) return false
-  try {
-    if (typeof plugin.isPermissionGranted === 'function' && (await plugin.isPermissionGranted())) return true
-    if (typeof plugin.requestPermission !== 'function') return false
-    const result = await plugin.requestPermission()
-    return result === true || result === 'granted'
-  } catch {
-    return false
-  }
-}
-
-export const requestNativeNotificationPermission = async () => {
-  if (isNativeShellRuntime()) return requestNativePermission()
-  return requestBrowserPermission()
-}
+export const requestNativeNotificationPermission = async () => requestBrowserPermission()
 
 export const initNativeNotifications = async () => {
   if (initialized || typeof window === 'undefined') return

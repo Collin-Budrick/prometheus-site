@@ -803,7 +803,6 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
     const highlightBuildEnabled =
       isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
-    const nativeBuildEnabled = isTruthyEnv(process.env.VITE_TAURI)
     const staticBuildEnabled = isBuildCommand && !ssrBuild
     const deviceApiBase = resolveDeviceApiBase({
       deviceHost: process.env.PROMETHEUS_DEVICE_HOST,
@@ -811,12 +810,12 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       apiPort: process.env.PROMETHEUS_API_PORT
     })
     const appEnv =
-      nativeBuildEnabled && deviceApiBase
+      deviceApiBase
         ? { ...process.env, VITE_API_BASE: process.env.VITE_API_BASE?.trim() || deviceApiBase }
         : process.env
     const baseAppConfig = resolveAppConfig(appEnv)
     const publicAppConfig =
-      nativeBuildEnabled && deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
+      deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
         ? { ...baseAppConfig, apiBase: deviceApiBase }
         : baseAppConfig
     const binding = await loadQwikBinding()
@@ -895,32 +894,24 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         ...(staticBuildEnabled
           ? [staticAdapter({ origin: staticOrigin, maxWorkers: 1 })]
           : []),
-        ...(nativeBuildEnabled && isBuildCommand
-          ? []
-          : [
-            compression({
-              algorithms: [
-                defineAlgorithm('brotliCompress', {
-                  params: {
-                    [constants.BROTLI_PARAM_QUALITY]: brotliQuality
-                  }
-                })
-              ]
-            }),
-            compression({ algorithms: ['gzip'] })
-          ]),
-        ...(nativeBuildEnabled
-          ? []
-          : [
-              serwist({
-                swSrc: 'src/service-worker.ts',
-                swDest: 'service-worker.js',
-                globDirectory: 'dist',
-                globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
-                additionalPrecacheEntries: pwaPrecacheEntries,
-                swUrl: withBase('/service-worker.js')
-              })
-            ])
+        compression({
+          algorithms: [
+            defineAlgorithm('brotliCompress', {
+              params: {
+                [constants.BROTLI_PARAM_QUALITY]: brotliQuality
+              }
+            })
+          ]
+        }),
+        compression({ algorithms: ['gzip'] }),
+        serwist({
+          swSrc: 'src/service-worker.ts',
+          swDest: 'service-worker.js',
+          globDirectory: 'dist',
+          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
+          additionalPrecacheEntries: pwaPrecacheEntries,
+          swUrl: withBase('/service-worker.js')
+        })
       ],
       optimizeDeps: {
         include: ['extend'],

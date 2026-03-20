@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { lookup } from 'node:dns/promises'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import path from 'node:path'
 import {
@@ -23,53 +23,6 @@ ensureSpacetimeJwtKeys()
 const isWsl = process.platform === 'linux' && Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP)
 const runtimeConfig = getRuntimeConfig(process.env)
 const runtimeCompose = runtimeConfig.compose
-
-const resolveExistingPath = (value: string | undefined) => {
-  const raw = value?.trim().replace(/^["'](.*)["']$/, '$1')
-  if (!raw) return undefined
-
-  const normalizedWindows = raw.replace(/\\/g, '/')
-  const driveMatch = /^([a-zA-Z]):\/(.*)$/.exec(normalizedWindows)
-  const candidates = [raw]
-  if (isWsl && driveMatch) {
-    const [, drive, rest] = driveMatch
-    candidates.push(`/mnt/${drive.toLowerCase()}/${rest}`)
-  }
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
-  }
-  return undefined
-}
-
-const resolveAndroidSdkHome = () => {
-  const explicit = resolveExistingPath(process.env.ANDROID_HOME?.trim() || process.env.ANDROID_SDK_ROOT?.trim())
-  if (explicit) return explicit
-  if (process.platform === 'win32' && process.env.LOCALAPPDATA?.trim()) {
-    const fallback = resolveExistingPath(path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk'))
-    if (fallback) return fallback
-  }
-  if (process.platform === 'win32' && process.env.USERPROFILE?.trim()) {
-    const fallback = resolveExistingPath(path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Android', 'Sdk'))
-    if (fallback) return fallback
-  }
-
-  if (isWsl) {
-    const users = [process.env.USERNAME?.trim(), process.env.USER?.trim()].filter((value): value is string => Boolean(value))
-    for (const user of users) {
-      const fallback = resolveExistingPath(path.join('/mnt', 'c', 'Users', user, 'AppData', 'Local', 'Android', 'Sdk'))
-      if (fallback) return fallback
-    }
-  }
-
-  return undefined
-}
-const androidSdkHome = resolveAndroidSdkHome()
-if (androidSdkHome && !process.env.ANDROID_HOME) process.env.ANDROID_HOME = androidSdkHome
-if (androidSdkHome && !process.env.ANDROID_SDK_ROOT) process.env.ANDROID_SDK_ROOT = androidSdkHome
-if (androidSdkHome) {
-  console.info(`[android] Using SDK: ${androidSdkHome}`)
-}
 
 const isPrivateIpv4 = (value: string) => {
   if (value.startsWith('10.')) return true
@@ -175,93 +128,6 @@ const resolveBunBin = () => {
 }
 
 const bunBin = resolveBunBin()
-
-const truthyValues = new Set(['1', 'true', 'yes', 'on'])
-const falsyValues = new Set(['0', 'false', 'no', 'off', 'disabled'])
-const resolveBoolean = (value: string | undefined, fallback: boolean) => {
-  if (!value) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (truthyValues.has(normalized)) return true
-  if (falsyValues.has(normalized)) return false
-  return fallback
-}
-
-const ensureLocalGradleCommand = () => {
-  if (process.platform !== 'win32') return
-
-  const separator = path.delimiter
-  const testGradle = () => {
-    const result = spawnSync('gradle.bat', ['--version'], { encoding: 'utf8' })
-    return !result.error
-  }
-  if (testGradle()) return
-
-  const genDir = path.join(root, 'apps', 'tauri', 'src-tauri', 'gen', 'android')
-  const gradlew = path.join(genDir, 'gradlew.bat')
-  if (!existsSync(gradlew)) {
-    console.warn('[android] Android Gradle wrapper not found in src-tauri/gen/android. Run `bun run tauri:mobile:init` first.')
-    return
-  }
-
-  const shim = path.join(genDir, 'gradle.bat')
-  if (!existsSync(shim)) {
-    try {
-      const shimContent = '@echo off\r\ncall "%~dp0gradlew.bat" %*\r\n'
-      writeFileSync(shim, shimContent)
-      console.info('[android] Created gradle shim for local wrapper fallback.')
-    } catch {
-      console.warn('[android] Could not create gradle shim for wrapper fallback.')
-      return
-    }
-  }
-
-  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter((entry) => entry)
-  const normalizedShimDir = path.resolve(genDir).toLowerCase()
-  if (!pathEntries.some((entry) => path.resolve(entry).toLowerCase() === normalizedShimDir)) {
-    process.env.PATH = `${genDir}${separator}${process.env.PATH || ''}`
-  }
-
-  if (!testGradle()) {
-    console.warn('[android] Could not execute gradle.bat even after shim setup. Ensure Gradle is available to Android tools.')
-  }
-}
-const isTauriMode = resolveBoolean(process.env.VITE_TAURI, true)
-type TauriTarget = 'desktop' | 'android' | 'ios'
-const resolveTauriTarget = (value: string | undefined) => {
-  const normalized = value?.trim().toLowerCase()
-  if (normalized === 'android' || normalized === 'ios') return normalized
-  if (normalized && normalized !== 'desktop') {
-    console.warn(`[preview] Unknown VITE_TAURI_TARGET '${normalized}'. Falling back to desktop.`)
-  }
-  return 'desktop'
-}
-const tauriTarget = resolveTauriTarget(process.env.VITE_TAURI_TARGET?.trim())
-if (isTauriMode && tauriTarget === 'android' && !androidSdkHome) {
-  console.error(
-    '[android] No Android SDK found. Set ANDROID_HOME or ANDROID_SDK_ROOT before running Android targets; see .env.example for fallback guidance.'
-  )
-}
-const resolveTauriLaunchCommand = (target: TauriTarget) => {
-  if (target === 'android') return ['tauri', 'android', 'dev']
-  if (target === 'ios') return ['tauri', 'ios', 'dev']
-  return ['tauri', 'dev']
-}
-if (isTauriMode) {
-  process.env.VITE_TAURI = '1'
-}
-const ensureDefault = (name: string, value: string) => {
-  const current = process.env[name]?.trim()
-  if (!current) process.env[name] = value
-}
-ensureDefault('PROMETHEUS_ANDROID_AUTODEPLOY', '1')
-ensureDefault('PROMETHEUS_ANDROID_AUTO_START_EMULATOR', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MAX_PERFORMANCE', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_MEMORY_MB', '4096')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_CORES', '4')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_OPTIMIZE', '1')
-ensureDefault('PROMETHEUS_ANDROID_ANIMATION_SCALE', '1')
-ensureDefault('PROMETHEUS_ANDROID_EMULATOR_PIXEL_FRAME', '1')
-ensureDefault('PROMETHEUS_ANDROID_GRADLE_CONFIGURATION_CACHE', '1')
 
 const testPortReachable = (host: string, port: string) => {
   if (!host || !port) return false
@@ -525,7 +391,7 @@ const waitForApiHealth = async (port: string) => {
   console.warn(`[preview] API healthcheck timed out (${url}). Continuing with build.`)
 }
 
-const buildNativeBundle = async () => {
+const buildSiteBundle = async () => {
   await waitForApiHealth(previewApiPort)
   const buildEnv = {
     ...process.env,
@@ -567,13 +433,7 @@ const buildNativeBundle = async () => {
     VITE_P2P_WAKU_RELAYS: previewP2pWakuRelays,
     VITE_P2P_PEERJS_SERVER: previewPeerjsServer,
     VITE_DISABLE_SW: previewDisableSw,
-    PROMETHEUS_STATIC_SHELL_BUILD: '1',
-    ...(isTauriMode
-      ? {
-          VITE_TAURI: '1',
-          PROMETHEUS_TAURI_PROFILE: process.env.PROMETHEUS_TAURI_PROFILE?.trim() || 'dev'
-        }
-      : {})
+    PROMETHEUS_STATIC_SHELL_BUILD: '1'
   }
   const runViteBuild = (args: string[]) =>
     spawnSync(bunBin, ['run', '--cwd', 'apps/site', 'scripts/vite-run.ts', '--', 'build', ...args], {
@@ -596,46 +456,20 @@ const buildNativeBundle = async () => {
         PROMETHEUS_STATIC_SHELL_BUILD: '1'
       }
     })
-  if (!isTauriMode) {
-    const clientResult = runViteBuild([])
-    if (clientResult.status !== 0) {
-      logSpawnFailure('Vite client build', clientResult)
-      process.exit(clientResult.status ?? 1)
-    }
-    const staticShellEntryResult = runStaticShellEntryBuild()
-    if (staticShellEntryResult.status !== 0) {
-      logSpawnFailure('Static shell entry build', staticShellEntryResult)
-      process.exit(staticShellEntryResult.status ?? 1)
-    }
-    const staticShellResult = runStaticShellBuild()
-    if (staticShellResult.status !== 0) {
-      logSpawnFailure('Static shell build', staticShellResult)
-      process.exit(staticShellResult.status ?? 1)
-    }
+  const clientResult = runViteBuild([])
+  if (clientResult.status !== 0) {
+    logSpawnFailure('Vite client build', clientResult)
+    process.exit(clientResult.status ?? 1)
   }
-
-  if (isTauriMode) {
-    if (tauriTarget === 'android') {
-      ensureLocalGradleCommand()
-    }
-    const tauriLaunchArgs = resolveTauriLaunchCommand(tauriTarget)
-    const tauriResult = spawnSync(
-      bunBin,
-      ['run', '--cwd', 'apps/tauri', ...tauriLaunchArgs],
-      {
-        stdio: 'inherit',
-        cwd: root,
-        env: {
-          ...buildEnv,
-          VITE_TAURI: '1'
-        }
-      }
-    )
-    if (tauriResult.status !== 0) {
-      const label = tauriTarget === 'desktop' ? 'Tauri launch' : `Tauri ${tauriTarget} launch`
-      logSpawnFailure(label, tauriResult)
-      process.exit(tauriResult.status ?? 1)
-    }
+  const staticShellEntryResult = runStaticShellEntryBuild()
+  if (staticShellEntryResult.status !== 0) {
+    logSpawnFailure('Static shell entry build', staticShellEntryResult)
+    process.exit(staticShellEntryResult.status ?? 1)
+  }
+  const staticShellResult = runStaticShellBuild()
+  if (staticShellResult.status !== 0) {
+    logSpawnFailure('Static shell build', staticShellResult)
+    process.exit(staticShellResult.status ?? 1)
   }
 }
 
@@ -691,8 +525,7 @@ const webBuildExtra = {
 const composeSiteDistCacheKey = `${cacheKeyPrefix}:site-dist`
 const composeSiteDistFingerprint = computeFingerprint(webBuildInputs, webBuildExtra)
 const needsComposeSiteDistBuild =
-  !isTauriMode &&
-  (!existsSync(composeSiteDistManifestPath) || cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint)
+  !existsSync(composeSiteDistManifestPath) || cache[composeSiteDistCacheKey]?.fingerprint !== composeSiteDistFingerprint
 if (needsComposeSiteDistBuild) {
   buildComposeSiteDist()
 }
@@ -752,27 +585,14 @@ const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
 const activeBuildTargets = [...buildTargets, ...optionalBuildTargets]
 const buildResults = activeBuildTargets.map((target) => {
   const fingerprint = computeFingerprint(target.inputs, target.extra)
-  const forceBuild = isTauriMode && target.service === 'web'
-  const needsBuild = forceBuild || cache[target.cacheKey]?.fingerprint !== fingerprint
+  const needsBuild = cache[target.cacheKey]?.fingerprint !== fingerprint
   return { ...target, fingerprint, needsBuild }
 })
 
 const buildServices = buildResults.filter((target) => target.needsBuild).map((target) => target.service)
 if (buildServices.length) {
-  const shouldRebuildWebNoCache = isTauriMode && buildServices.includes('web')
-  const remainingServices = shouldRebuildWebNoCache
-    ? buildServices.filter((service) => service !== 'web')
-    : buildServices
-
-  if (shouldRebuildWebNoCache) {
-    const buildWeb = runSync(command, [...prefix, 'build', '--no-cache', 'web'], composeEnv)
-    if (buildWeb.status !== 0) process.exit(buildWeb.status ?? 1)
-  }
-
-  if (remainingServices.length) {
-    const build = runSync(command, [...prefix, 'build', ...remainingServices], composeEnv)
-    if (build.status !== 0) process.exit(build.status ?? 1)
-  }
+  const build = runSync(command, [...prefix, 'build', ...buildServices], composeEnv)
+  if (build.status !== 0) process.exit(build.status ?? 1)
 }
 
 const optionalServices = includeRealtimeServices ? runtimeCompose.services.optional : []
@@ -801,19 +621,13 @@ if (configChanged && running.has('caddy')) {
 for (const target of buildResults) {
   cache[target.cacheKey] = { fingerprint: target.fingerprint, updatedAt: new Date().toISOString() }
 }
-if (!isTauriMode) {
-  cache[composeSiteDistCacheKey] = {
-    fingerprint: composeSiteDistFingerprint,
-    updatedAt: new Date().toISOString()
-  }
+cache[composeSiteDistCacheKey] = {
+  fingerprint: composeSiteDistFingerprint,
+  updatedAt: new Date().toISOString()
 }
 saveBuildCache(cache)
 
 const runPreview = async () => {
-  if (isTauriMode) {
-    await buildNativeBundle()
-    process.exit(0)
-  }
   if (!process.env.VITE_API_BASE?.trim()) {
     process.env.VITE_API_BASE = previewApiBase
   }
@@ -867,4 +681,4 @@ const runPreview = async () => {
   if (!keepContainers) down()
 }
 
-void runPreview()
+void buildSiteBundle().then(runPreview)

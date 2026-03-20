@@ -4,15 +4,6 @@ import { isOnline } from '../native/connectivity'
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')
 const isLocalHost = (hostname: string) => hostname === '127.0.0.1' || hostname === 'localhost'
 const isOffline = () => !isOnline()
-const isTruthyEnv = (value?: string) => {
-  if (!value) return false
-  const normalized = value.trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
-const allowLocalApiBase = () => {
-  if (typeof process === 'undefined' || typeof process.env !== 'object') return false
-  return isTruthyEnv(process.env.VITE_TAURI)
-}
 
 const readForwardedHeader = (value: string | null) => value?.split(',')[0]?.trim() ?? ''
 
@@ -59,10 +50,8 @@ export const resolveServerApiBase = (apiBase: string, request?: Request) => {
   const runtimeApiBase = resolveApiBase(runtimeEnv)
   const origin = resolveRequestOrigin(request)
   const offline = isOffline()
-  const allowLocalOverride = allowLocalApiBase()
 
   const preferSameOrigin = (value: string) => {
-    if (allowLocalOverride) return null
     if (!origin) return null
     try {
       const apiUrl = new URL(value)

@@ -10,7 +10,6 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
 - **Features (`packages/features/*`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
-- **Tauri (`apps/tauri`):** Desktop and Android/iOS shell layer that consumes `apps/site/dist` for native builds and mobile packaging.
 - **API (platform entrypoint):** Thin Bun entry that boots the platform server and registers site fragment definitions.
 - **WebTransport (`apps/webtransport`):** Go HTTP/3 sidecar that upgrades CONNECT requests and streams fragment binaries from the API over WebTransport.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
@@ -23,16 +22,10 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
 - **Runtime defaults:** canonical host/port/profile defaults live in `scripts/runtime-config.ts`.
-- **Tauri mode (`VITE_TAURI=1`):** `bun run dev:tauri` and `bun run preview:tauri` switch to `apps/tauri` via `tauri dev`/`tauri build`.
-- **Tauri targets (`VITE_TAURI_TARGET`):** use `android` or `ios` to run mobile builds (`tauri android dev|build`, `tauri ios dev|build`); any other value falls back to desktop.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Storybook:** `bun run dev:storybook` starts the Qwik Storybook from `apps/site/.storybook`; `bun run build:storybook` builds it to `apps/site/storybook-static`. The single Storybook instance covers stories in both `apps/site/src/**/*.stories.*` and `packages/ui/src/**/*.stories.*`.
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
-- **Tauri build flag:** `VITE_TAURI=1` enables static generation for Tauri builds (`bun run --cwd apps/site build:tauri`) and should be combined with `bun run --cwd apps/tauri tauri build` for packaging.
-- **Tauri wrapper controls:** `bun run dev:tauri` and `bun run preview:tauri` start the Tauri flow directly.
-- **Tauri config overlays:** `apps/tauri/scripts/tauri.ts` merges `tauri.conf.base.json` + `tauri.conf.dev.json|tauri.conf.prod.json` into runtime `TAURI_CONFIG`; set `PROMETHEUS_TAURI_PROFILE=dev|prod` to override auto profile selection (`dev` for `tauri dev`, `prod` for `tauri build`).
-- **Desktop updater envs:** `PROMETHEUS_TAURI_UPDATER_PUBKEY` (required for production desktop builds), `PROMETHEUS_TAURI_UPDATER_ENDPOINTS` (optional comma/newline list; defaults to GitHub Releases latest JSON URL). Updater is disabled for Android/iOS targets.
 - **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_WEBTRANSPORT_DATAGRAMS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_HIGHLIGHT_SESSION_RECORDING`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on. `VITE_ENABLE_FRAGMENT_STREAMING` defaults off; `VITE_FRAGMENT_VISIBILITY_MARGIN` defaults to `0px` and `VITE_FRAGMENT_VISIBILITY_THRESHOLD` defaults to `0`. `VITE_ENABLE_HIGHLIGHT` defaults off; `VITE_HIGHLIGHT_SAMPLE_RATE` defaults to `0.1` when unset. `VITE_ENABLE_PARTYTOWN` defaults off, and `VITE_PARTYTOWN_FORWARD` accepts a comma/newline list of forwarded globals when Partytown is enabled.
 - **Fragment cache TTLs:** `FRAGMENT_PLAN_TTL` (seconds, default `180`), `FRAGMENT_PLAN_STALE_TTL` (seconds, default `300`), and `FRAGMENT_INITIAL_TTL` (seconds, default `180`) control fragment plan + initial payload cache lifetimes.
 - **WebTransport envs:** `WEBTRANSPORT_API_BASE` (defaults to `http://api:4000`), `WEBTRANSPORT_LISTEN_ADDR` (defaults to `:4444`), `WEBTRANSPORT_CERT_PATH`, `WEBTRANSPORT_KEY_PATH`, `WEBTRANSPORT_ALLOWED_ORIGINS`, `WEBTRANSPORT_ALLOW_ANY_ORIGIN`, `WEBTRANSPORT_ENABLE_DATAGRAMS` (defaults to on), `WEBTRANSPORT_MAX_DATAGRAM_SIZE` (defaults to `1200`), `PROMETHEUS_WEBTRANSPORT_PORT` (defaults to `4444` for host UDP), `VITE_WEBTRANSPORT_BASE` (optional client override).
@@ -56,16 +49,13 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Rate limits and payload limits:** Respect API constraints in `packages/platform/src/server/app.ts` (prompt length, body size, WS quotas). Frontend UX should surface these limits rather than bypass them.
 - **TLS/hosts:** Dev HTTPS assumes mkcert-style certs under `infra/caddy/certs` (shared with Caddy and WebTransport). Don’t check private keys into version control; reuse existing paths.
 - **WebTransport TLS:** Chrome may require WebTransport developer mode for mkcert/local CAs (`chrome://flags/#enable-webtransport-developer-mode` or launch with `--enable-features=WebTransportDeveloperMode`; `chrome-devtools-mcp` supports `--acceptInsecureCerts`/`--chromeArg`).
-- **Native service worker policy:** Native builds (`VITE_TAURI=1`) do not generate/register the service worker. Keep SW behavior only for browser/PWA builds.
+- **Service worker policy:** Browser and PWA builds can generate/register the service worker; keep that behavior isolated from SSR and preview-only flows.
 
 ## Repo conventions and checks
 
 - **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`, `dev:storybook`, `build:storybook`). API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
-- **Native release workflows:** `.github/workflows/native-desktop-release.yml`, `.github/workflows/native-mobile-release.yml`, and `.github/workflows/native-pr-smoke.yml` define desktop/mobile release + PR smoke lanes.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/` or `apps/site/src/**/*.test.tsx`.
-- **Native docs:** Native release checklists and runbooks live in `docs/native-release-qa.md`, `docs/native-release-runbook.md`, and `docs/native-config.md`.
-
-- **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must only invoke native plugin paths in native runtime. Web/PWA flows must retain existing DOM UX when the native plugin path is unavailable.
+- **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must preserve browser/PWA UX without assuming platform plugins are available.
 - **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `packages/ui/src/global.css` and component patterns (Qwik components with `$` suffix).
 - **Git hooks:** `bun run hooks:install` sets `.githooks`; commit messages should be conventional and meaningful.
@@ -80,7 +70,6 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
 - **Runtime config:** `scripts/runtime-config.ts`.
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
-- **Tauri:** `apps/tauri/src-tauri/tauri.conf.base.json`, `apps/tauri/src-tauri/tauri.conf.dev.json`, `apps/tauri/src-tauri/tauri.conf.prod.json`, `apps/tauri/src-tauri/capabilities/*.json`, `apps/tauri/src-tauri/src/lib.rs`, `apps/tauri/src-tauri/Cargo.toml`.
 
 ## Contribution dos and don’ts
 
@@ -90,7 +79,6 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Do** treat generated artifacts as build outputs:
   - `apps/site/public/fragments/`
   - `apps/site/src/fragment/fragment-css.generated.ts`
-  - `apps/tauri/src-tauri/gen/**`
   - `infra/caddy/Caddyfile`
 - **Don’t** replace Bun tooling with npm/yarn or add global installs when a Bun script exists.
 - **Don’t** bypass rate limiting, cache invalidation hooks, or fragment sanitization paths.

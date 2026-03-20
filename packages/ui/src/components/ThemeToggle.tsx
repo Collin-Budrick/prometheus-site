@@ -61,10 +61,6 @@ const isLikelyNativeShellRuntime = () => {
   const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
   if (runtimeFlag === true) return true
   if (runtimeFlag === false) return false
-
-  if (window.location.protocol === 'tauri:' || window.location.protocol === 'ipc:') return true
-  if (window.navigator.userAgent.toLowerCase().includes('tauri')) return true
-  if (window.navigator.userAgent.toLowerCase().includes('wv')) return true
   return false
 }
 

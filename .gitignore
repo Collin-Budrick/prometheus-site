@@ -15,8 +15,6 @@ a.out
 apps/site/server/*
 tmp
 apps/site/public/fragments/
-apps/tauri/src-tauri/target
-apps/tauri/src-tauri/gen/
 
 infra/caddy/Caddyfile
 !infra/caddy/Caddyfile.template

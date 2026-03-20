@@ -243,20 +243,7 @@ const buildConditionalHomeManifestScript = (href: string) => {
   } catch (error) {}
   var nav = window.navigator;
   var isIosStandalone = !!nav && nav.standalone === true;
-  var runtimeWindow = window;
-  var protocol = window.location && typeof window.location.protocol === 'string'
-    ? window.location.protocol
-    : '';
-  var userAgent = nav && typeof nav.userAgent === 'string'
-    ? nav.userAgent.toLowerCase()
-    : '';
-  var isNativeTauri =
-    typeof runtimeWindow.__TAURI__ !== 'undefined' ||
-    typeof runtimeWindow.__TAURI_IPC__ !== 'undefined' ||
-    protocol === 'tauri:' ||
-    protocol === 'ipc:' ||
-    userAgent.indexOf('tauri') !== -1;
-  if (isStandalonePwa || isIosStandalone || isNativeTauri) {
+  if (isStandalonePwa || isIosStandalone) {
     appendManifest();
     return;
   }

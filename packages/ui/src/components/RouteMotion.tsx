@@ -114,9 +114,6 @@ const isNativeShell = () => {
   const runtimeFlag = (window as { __prometheusNativeRuntime?: boolean }).__prometheusNativeRuntime
   if (runtimeFlag === true) return true
   if (runtimeFlag === false) return false
-  if (window.location.protocol === 'tauri:' || window.location.protocol === 'ipc:') return true
-  if (window.navigator.userAgent.toLowerCase().includes('tauri')) return true
-  if (navigator.userAgent.toLowerCase().includes('wv')) return true
   const shellMode = document.documentElement.dataset.nativeShell
   return shellMode === 'native' || shellMode === 'background'
 }

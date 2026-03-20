@@ -1,6 +1,3 @@
-import { invokeNativeCommand } from './bridge'
-import { isNativeShellRuntime } from './runtime'
-
 let userActionScopeDepth = 0
 
 const vibrate = (pattern: number | number[]) => {
@@ -18,9 +15,8 @@ const runIfUserAction = async (operation: () => Promise<void> | void) => {
 }
 
 const runNativeHaptic = async (kind: 'tap' | 'selection' | 'success' | 'warning' | 'error') => {
-  if (!isNativeShellRuntime()) return false
-  const applied = await invokeNativeCommand<boolean>('native_haptic', { kind })
-  return applied === true
+  void kind
+  return false
 }
 
 export const withUserActionHaptics = async <T>(operation: () => T | Promise<T>) => {
