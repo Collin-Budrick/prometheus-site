@@ -184,7 +184,6 @@ describe("static shell performance invariants", () => {
     expect(bootstrapSource).toContain("requestHomeDemoObserve({ root: body })");
     expect(bootstrapSource).toContain("bufferDeferredUntilRelease: true");
     expect(bootstrapSource).toContain("HOME_DEFERRED_COMMIT_RELEASE_EVENT");
-    expect(bootstrapSource).not.toContain("ensureStaticHomeDeferredStylesheet");
     expect(bootstrapSource).not.toContain("scheduleHomePostLcpTasks({");
     expect(bootstrapSource).not.toContain("./home-demo-controller");
     expect(bootstrapSource).not.toContain("./home-demo-controller-state");
@@ -291,7 +290,6 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntrySource).toContain("syncHomeDemoController");
     expect(homeDemoEntrySource).toContain("binding.manager.observeWithin(");
     expect(homeDemoEntrySource).toContain("dispatchHomeDeferredCommitReleaseEvent({ doc });");
-    expect(homeDemoEntrySource).not.toContain("ensureDeferredStylesheet({");
     expect(homeLanguageRuntimeSource).toContain("from '../lang/types'");
     expect(homeLanguageRuntimeSource).not.toContain("from '../lang'");
     expect(homeLanguageRuntimeSource).not.toContain("import.meta.glob");
@@ -668,10 +666,6 @@ describe("static shell performance invariants", () => {
     expect(layoutSource).not.toContain("headers.delete('Link')");
     expect(layoutSource).toContain("event.isTrusted === false");
     expect(layoutSource).not.toContain("requestIdleCallback(appendManifest");
-    expect(layoutSource).not.toContain(
-      "new URL('../components/home-demo-active.css', import.meta.url).href",
-    );
-    expect(layoutSource).not.toContain("buildHomeDemoStylesheetPreloadMarkup(");
     expect(layoutSource).not.toContain("buildThemeBootstrapScriptMarkup()");
     expect(layoutSource).not.toContain("root.style.colorScheme = theme;");
     expect(
@@ -691,9 +685,6 @@ describe("static shell performance invariants", () => {
       ".layout-shell[data-static-route='home'] .fragment-grid.fragment-grid-static-home {",
     );
     expect(globalCriticalHomeSource).toContain("[data-static-home-stage='anchor']");
-    expect(runtimeLoaderSource).not.toContain(
-      "import homeDemoStylesheetHref from '../components/home-demo-active.css?url'",
-    );
     expect(homeDemoEntryLoaderSource).toContain("HOME_DEMO_ENTRY_ASSET_PATH");
     expect(homeDemoEntryLoaderSource).toContain(
       "data-home-demo-entry-preload",
@@ -715,7 +706,6 @@ describe("static shell performance invariants", () => {
     );
     expect(homeDemoStartupEntrySource).not.toContain("getBoundingClientRect()");
     expect(homeDemoStartupEntrySource).toContain("Static home demo maintenance bundle failed:");
-    expect(homeDemoStartupEntrySource).not.toContain("ensureStaticHomeDeferredStylesheet");
     expect(homeDemoStartupEntrySource).not.toContain("Static home demo observer bundle failed:");
     expect(homeCollabEntryLoaderSource).toContain("home-collab-entry.js");
     expect(bootstrapRuntimeLoaderSource).toContain("home-bootstrap-anchor-runtime.js");

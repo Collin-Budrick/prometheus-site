@@ -179,7 +179,6 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
-      ensureDeferredStylesheet: async () => undefined,
     });
 
     expect(observedRoots).toEqual([]);
@@ -239,7 +238,6 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
-      ensureDeferredStylesheet: async () => undefined,
     });
 
     doc.setScriptText(
@@ -312,7 +310,6 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
-      ensureDeferredStylesheet: async () => undefined,
     });
 
     doc.setScriptText(
@@ -342,16 +339,11 @@ describe("installHomeDemoEntry", () => {
     cleanup();
   });
 
-  it("begins observing home demos without waiting for the deferred stylesheet", async () => {
+  it("begins observing home demos", async () => {
     const win = {} as MockWindow;
     const doc = createBootstrapDocument();
     const taskQueue = createScheduledTaskQueue();
     const observedRoots: ParentNode[] = [];
-    let resolveStylesheet!: () => void;
-    const stylesheetReady = new Promise<void>((resolve) => {
-      resolveStylesheet = resolve;
-    });
-
     setHomeDemoControllerBinding(
       {
         controller: createController(),
@@ -368,7 +360,6 @@ describe("installHomeDemoEntry", () => {
       win,
       doc: doc as never,
       scheduleTask: taskQueue.scheduleTask as never,
-      ensureDeferredStylesheet: () => stylesheetReady,
     });
 
     expect(taskQueue.size()).toBe(1);
@@ -376,7 +367,6 @@ describe("installHomeDemoEntry", () => {
     await flushMicrotasks();
 
     expect(observedRoots).toEqual([doc as unknown as ParentNode]);
-    resolveStylesheet();
 
     cleanup();
   });
