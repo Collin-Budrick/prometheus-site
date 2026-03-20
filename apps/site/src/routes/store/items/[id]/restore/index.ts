@@ -1,4 +1,5 @@
 import type { RequestHandler } from '@builder.io/qwik-city'
+import { createFeatureRouteHandler } from '../../../../feature-bundle'
 import {
   createStoreMutationErrorResponse,
   createStoreMutationJsonResponse,
@@ -8,7 +9,7 @@ import {
 } from '../../../../../shared/store-mutation-http'
 import { restoreServerStoreItem } from '../../../../../shared/store-mutation.server'
 
-export const onPost: RequestHandler = async ({ params, request }) => {
+export const onPost: RequestHandler = createFeatureRouteHandler('store', async ({ params, request }) => {
   const id = parseStoreItemIdParam(params.id)
   if (!id) {
     return createStoreMutationErrorResponse(400, 'Invalid store item id.')
@@ -26,4 +27,4 @@ export const onPost: RequestHandler = async ({ params, request }) => {
     const normalized = normalizeStoreMutationRouteError(error)
     return createStoreMutationErrorResponse(normalized.status, normalized.message)
   }
-}
+})

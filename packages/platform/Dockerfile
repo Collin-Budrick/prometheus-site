@@ -7,6 +7,7 @@ COPY apps/site/package.json apps/site/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/platform/package.json packages/platform/package.json
 COPY packages/spacetimedb-client/package.json packages/spacetimedb-client/package.json
+COPY packages/template-config/package.json packages/template-config/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
@@ -38,7 +39,6 @@ ENV API_PORT=4000
 
 COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/packages/platform/dist ./dist
-COPY --from=builder /app/packages/platform/drizzle ./drizzle
 COPY --from=builder /app/packages/platform/package.json ./package.json
 COPY --from=builder /app/apps/site/src/lang /app/apps/site/src/lang
 

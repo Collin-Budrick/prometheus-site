@@ -177,20 +177,24 @@ const previewWebHost = runtimeConfig.domains.web
 const previewDbHost = runtimeConfig.domains.db
 const previewDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const useDeviceHost = Boolean(previewDeviceHost)
+const templateFeatures = runtimeConfig.template.features
+const realtimeEnabled = templateFeatures.realtime
+const analyticsEnabled = templateFeatures.analytics
+const pwaEnabled = templateFeatures.pwa
 const previewEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const previewEnableWebTransport =
-  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (useDeviceHost ? '0' : '1')
+  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
 const previewEnableWebTransportDatagrams =
-  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (useDeviceHost ? '0' : '1')
+  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
 const previewEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
-const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
+const previewEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || (analyticsEnabled ? '1' : '0')
 const previewEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0'
 const previewHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
 const previewHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
 const previewHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
 const previewHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const previewHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || ''
-const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || '0'
+const previewDisableSw = process.env.VITE_DISABLE_SW?.trim() || (pwaEnabled ? '0' : '1')
 const previewCrdtSignaling =
   process.env.VITE_P2P_CRDT_SIGNALING?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_CRDT_SIGNALING?.trim() ||
@@ -208,16 +212,13 @@ const previewPeerjsServer =
   process.env.VITE_P2P_PEERJS_SERVER?.trim() ||
   process.env.PROMETHEUS_VITE_P2P_PEERJS_SERVER?.trim() ||
   'https://0.peerjs.com'
-const previewEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
-const previewEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
+const previewEnableApiWebTransport =
+  process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || (realtimeEnabled ? '1' : '0')
+const previewEnableWebTransportDatagramsServer =
+  process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
 const previewWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
-const includeRealtimeServices =
-  runtimeCompose.includeOptionalServices ||
-  (!useDeviceHost &&
-    (previewEnableWebTransport === '1' ||
-      previewEnableWebTransportDatagrams === '1' ||
-      previewEnableApiWebTransport === '1' ||
-      previewEnableWebTransportDatagramsServer === '1'))
+const includeRealtimeServices = runtimeCompose.includeOptionalServices
+const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
 
 const normalizeBasePort = (value: string) => {
   try {
@@ -272,7 +273,7 @@ const composeStaticSiteOptions = {
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: previewProject,
-  ...(includeRealtimeServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
+  ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
   PROMETHEUS_HTTP_PORT: previewHttpPort,
   PROMETHEUS_HTTPS_PORT: previewHttpsPort,
   PROMETHEUS_API_PORT: previewApiPort,

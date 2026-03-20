@@ -1270,9 +1270,11 @@ export const chatFragments: FragmentPlanEntry[] = [
   }
 ]
 
-registerFragmentDefinitions([contactInvites])
+export const registerChatFragmentDefinitions = () => {
+  registerFragmentDefinitions([contactInvites])
 
-registerFragmentPlanOverride((plan) => {
-  if (plan.path !== '/chat') return plan
-  return buildFragmentPlan(plan.path, chatFragments, [])
-})
+  registerFragmentPlanOverride((plan) => {
+    if (plan.path !== '/chat') return plan
+    return buildFragmentPlan(plan.path, chatFragments, [])
+  })
+}

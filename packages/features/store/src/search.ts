@@ -225,9 +225,9 @@ export const rebuildStoreSearchIndex = async (options: {
 
   let tableExists = true
   try {
-    const tableCheck = await options.db
-      .execute<{ exists: string | null }>(sql`select to_regclass('store_items') as exists`)
-      .execute()
+    const tableCheck = (await options.db
+      .execute(sql`select to_regclass('store_items') as exists`)
+      .execute()) as Array<{ exists: string | null }>
     tableExists = Boolean(tableCheck[0]?.exists)
   } catch (error) {
     if (isMissingTableError(error)) {

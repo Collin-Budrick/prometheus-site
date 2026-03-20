@@ -1,6 +1,6 @@
 import type { AnyElysia } from 'elysia'
 import { readSiteSessionClaims } from '@features/auth/server'
-import { DbConnection } from '../../../spacetimedb-client/src/index.ts'
+import { DbConnection } from '../../../spacetimedb-client/src/index'
 import { platformConfig } from '../config'
 
 type StoreConnection = InstanceType<typeof DbConnection>
@@ -121,6 +121,13 @@ const hasAdminRole = (roles: string[] | undefined) =>
   Array.isArray(roles) && roles.some((role) => role.trim().toLowerCase() === 'admin')
 
 const resolveStoreMutationAuth = async (request: Request) => {
+  if (!platformConfig.auth) {
+    return {
+      roles: [] as string[],
+      token: readBearerToken(request)
+    }
+  }
+
   const siteSession = await readSiteSessionClaims(platformConfig.auth, { request })
   const siteToken =
     typeof siteSession?.id_token === 'string' && siteSession.id_token.trim() !== ''
@@ -128,7 +135,7 @@ const resolveStoreMutationAuth = async (request: Request) => {
       : null
   if (siteToken) {
     return {
-      roles: siteSession.roles ?? [],
+      roles: siteSession?.roles ?? [],
       token: siteToken
     }
   }

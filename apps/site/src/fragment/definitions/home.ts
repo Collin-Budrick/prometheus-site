@@ -2,6 +2,10 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry, RenderNode } from '@core/fragment/types'
+import {
+  hasTemplateFeature,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../widget-markup'
 import { loadWasmAdd } from './wasm'
 
@@ -316,129 +320,204 @@ const manifesto: FragmentDefinition = {
   }
 }
 
-export const homeFragments: FragmentPlanEntry[] = [
-  {
-    id: 'fragment://page/home/manifest@v1',
-    critical: true,
-    layout: {
-      column: 'span 12',
-      size: 'small',
-      minHeight: 489,
-      heightHint: { desktop: 489, mobile: 489 },
-      heightProfile: {
-        desktop: [{ maxWidth: 1440, height: 489 }],
-        mobile: [{ maxWidth: 768, height: 489 }]
-      }
-    }
-  },
-  {
-    id: 'fragment://page/home/planner@v1',
-    critical: false,
-    layout: {
-      column: 'span 5',
-      size: 'big',
-      minHeight: 640,
-      heightHint: { desktop: 1054, mobile: 986 },
-      heightProfile: {
-        desktop: [
-          { maxWidth: 560, height: 1128 },
-          { maxWidth: 760, height: 1054 }
-        ],
-        mobile: [
-          { maxWidth: 480, height: 1048 },
-          { maxWidth: 768, height: 986 }
-        ]
-      }
-    }
-  },
-  {
-    id: 'fragment://page/home/ledger@v1',
-    critical: false,
-    layout: {
-      column: 'span 7',
-      size: 'tall',
-      minHeight: 904,
-      heightHint: { desktop: 1023, mobile: 904 },
-      heightProfile: {
-        desktop: [
-          { maxWidth: 720, height: 1104 },
-          { maxWidth: 980, height: 1023 }
-        ],
-        mobile: [{ maxWidth: 768, height: 904 }]
-      }
-    }
-  },
-  {
-    id: 'fragment://page/home/island@v1',
-    critical: false,
-    layout: {
-      column: 'span 5',
-      minHeight: 489,
-      heightHint: { desktop: 489, mobile: 389 },
-      heightProfile: {
-        desktop: [
-          { maxWidth: 560, height: 544 },
-          { maxWidth: 760, height: 489 }
-        ],
-        mobile: [
-          { maxWidth: 480, height: 428 },
-          { maxWidth: 768, height: 389 }
-        ]
-      }
-    }
-  },
-  {
-    id: 'fragment://page/home/react@v1',
-    critical: false,
-    layout: {
-      column: 'span 12',
-      size: 'small',
-      minHeight: 489,
-      heightHint: { desktop: 596, mobile: 489 },
-      heightProfile: {
-        desktop: [
-          { maxWidth: 880, height: 648 },
-          { maxWidth: 1440, height: 596 }
-        ],
-        mobile: [{ maxWidth: 768, height: 489 }]
-      }
-    }
-  },
-  {
-    id: 'fragment://page/home/dock@v2',
-    critical: false,
-    layout: {
-      column: 'span 12',
-      size: 'small',
-      minHeight: 420,
-      heightHint: { desktop: 420, mobile: 420 },
-      heightProfile: {
-        desktop: [{ maxWidth: 1440, height: 420 }],
-        mobile: [{ maxWidth: 768, height: 420 }]
-      }
-    }
+type HomeTemplateFeatures = Pick<ResolvedTemplateFeatures, 'features'>
+
+const isHomeFeatureEnabled = (
+  template: HomeTemplateFeatures | undefined,
+  featureId: 'demo-home' | 'demo-react' | 'demo-preact' | 'demo-wasm' | 'realtime'
+) => (template ? hasTemplateFeature(template, featureId) : true)
+
+const resolveHomeFragmentDefinitions = (
+  template?: HomeTemplateFeatures
+): FragmentDefinition[] => {
+  const definitions: FragmentDefinition[] = []
+
+  if (isHomeFeatureEnabled(template, 'demo-home')) {
+    definitions.push(manifesto, planner)
   }
-] satisfies FragmentPlanEntry[]
-
-const homeFetchGroups = [
-  ['fragment://page/home/manifest@v1'],
-  ['fragment://page/home/dock@v2'],
-  [
-    'fragment://page/home/planner@v1',
-    'fragment://page/home/ledger@v1',
-    'fragment://page/home/island@v1',
-    'fragment://page/home/react@v1'
-  ]
-] satisfies string[][]
-
-export const homeFragmentDefinitions: FragmentDefinition[] = [planner, ledger, island, manifesto, reactFragment, dockFragment]
-
-registerFragmentDefinitions(homeFragmentDefinitions)
-
-setFragmentPlanBuilder((path, normalizedPath) => {
-  if (normalizedPath === '/') {
-    const plan = buildFragmentPlan('/', homeFragments, [])
-    return { ...plan, fetchGroups: homeFetchGroups }
+  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
+    definitions.push(ledger)
   }
-  return buildFragmentPlan(normalizedPath, [], [])
-})
+  if (isHomeFeatureEnabled(template, 'demo-preact')) {
+    definitions.push(island)
+  }
+  if (isHomeFeatureEnabled(template, 'demo-react')) {
+    definitions.push(reactFragment)
+  }
+  if (isHomeFeatureEnabled(template, 'realtime')) {
+    definitions.push(dockFragment)
+  }
+
+  return definitions
+}
+
+const resolveHomeFragments = (template?: HomeTemplateFeatures): FragmentPlanEntry[] => {
+  const fragments: FragmentPlanEntry[] = []
+
+  if (isHomeFeatureEnabled(template, 'demo-home')) {
+    fragments.push(
+      {
+        id: 'fragment://page/home/manifest@v1',
+        critical: true,
+        layout: {
+          column: 'span 12',
+          size: 'small',
+          minHeight: 489,
+          heightHint: { desktop: 489, mobile: 489 },
+          heightProfile: {
+            desktop: [{ maxWidth: 1440, height: 489 }],
+            mobile: [{ maxWidth: 768, height: 489 }]
+          }
+        }
+      },
+      {
+        id: 'fragment://page/home/planner@v1',
+        critical: false,
+        layout: {
+          column: 'span 5',
+          size: 'big',
+          minHeight: 640,
+          heightHint: { desktop: 1054, mobile: 986 },
+          heightProfile: {
+            desktop: [
+              { maxWidth: 560, height: 1128 },
+              { maxWidth: 760, height: 1054 }
+            ],
+            mobile: [
+              { maxWidth: 480, height: 1048 },
+              { maxWidth: 768, height: 986 }
+            ]
+          }
+        }
+      }
+    )
+  }
+
+  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
+    fragments.push({
+      id: 'fragment://page/home/ledger@v1',
+      critical: false,
+      layout: {
+        column: 'span 7',
+        size: 'tall',
+        minHeight: 904,
+        heightHint: { desktop: 1023, mobile: 904 },
+        heightProfile: {
+          desktop: [
+            { maxWidth: 720, height: 1104 },
+            { maxWidth: 980, height: 1023 }
+          ],
+          mobile: [{ maxWidth: 768, height: 904 }]
+        }
+      }
+    })
+  }
+
+  if (isHomeFeatureEnabled(template, 'demo-preact')) {
+    fragments.push({
+      id: 'fragment://page/home/island@v1',
+      critical: false,
+      layout: {
+        column: 'span 5',
+        minHeight: 489,
+        heightHint: { desktop: 489, mobile: 389 },
+        heightProfile: {
+          desktop: [
+            { maxWidth: 560, height: 544 },
+            { maxWidth: 760, height: 489 }
+          ],
+          mobile: [
+            { maxWidth: 480, height: 428 },
+            { maxWidth: 768, height: 389 }
+          ]
+        }
+      }
+    })
+  }
+
+  if (isHomeFeatureEnabled(template, 'demo-react')) {
+    fragments.push({
+      id: 'fragment://page/home/react@v1',
+      critical: false,
+      layout: {
+        column: 'span 12',
+        size: 'small',
+        minHeight: 489,
+        heightHint: { desktop: 596, mobile: 489 },
+        heightProfile: {
+          desktop: [
+            { maxWidth: 880, height: 648 },
+            { maxWidth: 1440, height: 596 }
+          ],
+          mobile: [{ maxWidth: 768, height: 489 }]
+        }
+      }
+    })
+  }
+
+  if (isHomeFeatureEnabled(template, 'realtime')) {
+    fragments.push({
+      id: 'fragment://page/home/dock@v2',
+      critical: false,
+      layout: {
+        column: 'span 12',
+        size: 'small',
+        minHeight: 420,
+        heightHint: { desktop: 420, mobile: 420 },
+        heightProfile: {
+          desktop: [{ maxWidth: 1440, height: 420 }],
+          mobile: [{ maxWidth: 768, height: 420 }]
+        }
+      }
+    })
+  }
+
+  return fragments
+}
+
+const resolveHomeFetchGroups = (template?: HomeTemplateFeatures) => {
+  const fetchGroups: string[][] = []
+  const secondaryGroup: string[] = []
+
+  if (isHomeFeatureEnabled(template, 'demo-home')) {
+    fetchGroups.push(['fragment://page/home/manifest@v1'])
+    secondaryGroup.push('fragment://page/home/planner@v1')
+  }
+  if (isHomeFeatureEnabled(template, 'realtime')) {
+    fetchGroups.push(['fragment://page/home/dock@v2'])
+  }
+  if (isHomeFeatureEnabled(template, 'demo-wasm')) {
+    secondaryGroup.push('fragment://page/home/ledger@v1')
+  }
+  if (isHomeFeatureEnabled(template, 'demo-preact')) {
+    secondaryGroup.push('fragment://page/home/island@v1')
+  }
+  if (isHomeFeatureEnabled(template, 'demo-react')) {
+    secondaryGroup.push('fragment://page/home/react@v1')
+  }
+  if (secondaryGroup.length > 0) {
+    fetchGroups.push(secondaryGroup)
+  }
+
+  return fetchGroups
+}
+
+export const homeFragments = resolveHomeFragments()
+export const homeFragmentDefinitions = resolveHomeFragmentDefinitions()
+
+export const registerHomeFragmentDefinitions = (options: { template?: HomeTemplateFeatures } = {}) => {
+  const template = options.template
+  const fragmentDefinitions = resolveHomeFragmentDefinitions(template)
+  const fragmentPlanEntries = resolveHomeFragments(template)
+  const fetchGroups = resolveHomeFetchGroups(template)
+
+  registerFragmentDefinitions(fragmentDefinitions)
+
+  setFragmentPlanBuilder((path, normalizedPath) => {
+    if (normalizedPath === '/') {
+      const plan = buildFragmentPlan('/', fragmentPlanEntries, [])
+      return fetchGroups.length > 0 ? { ...plan, fetchGroups } : plan
+    }
+    return buildFragmentPlan(normalizedPath, [], [])
+  })
+}

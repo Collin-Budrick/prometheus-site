@@ -44,7 +44,7 @@ const scheduleIdleTask = (callback: () => void, timeoutMs = 1200) => {
 }
 
 const shouldUseLocalCartFallback = (status: number | undefined) =>
-  !Number.isFinite(status) || status === 0 || status === 401 || status === 403 || status >= 500
+  typeof status !== 'number' || status === 0 || status === 401 || status === 403 || status >= 500
 
 const normalizeLabel = (value: string | undefined, fallback: string) => {
   const trimmed = value?.trim() ?? ''

@@ -1,3 +1,5 @@
+import { resolveTemplateFeatures, type ResolvedTemplateFeatures } from '@prometheus/template-config'
+
 export type AnalyticsConfig = {
   enabled: boolean
   beaconUrl: string
@@ -53,6 +55,7 @@ export type PublicAppConfig = {
   spacetimeAuthPostLogoutRedirectUri?: string
   spacetimeDbUri?: string
   spacetimeDbModule?: string
+  template: ResolvedTemplateFeatures
 }
 
 type PublicEnv = Partial<ImportMetaEnv> & Record<string, string | boolean | undefined>
@@ -70,6 +73,14 @@ const publicEnv =
   typeof import.meta !== 'undefined'
     ? (import.meta as ImportMeta & { env?: PublicEnv }).env
     : undefined
+
+const resolveTemplateEnv = (): PublicEnv | undefined => {
+  if (publicEnv) return publicEnv
+  if (typeof process !== 'undefined' && typeof process.env === 'object') {
+    return process.env as PublicEnv
+  }
+  return undefined
+}
 
 const defaultHighlightEnvironment = (env: PublicEnv | undefined = publicEnv) => {
   const mode = typeof env?.MODE === 'string' ? env.MODE.trim() : ''
@@ -111,7 +122,8 @@ const defaultPublicAppConfig: PublicAppConfig = {
   p2pNostrRelays: [],
   p2pWakuRelays: [],
   p2pCrdtSignaling: [],
-  p2pIceServers: []
+  p2pIceServers: [],
+  template: resolveTemplateFeatures(resolveTemplateEnv() ?? {})
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -298,7 +310,11 @@ export const resolvePublicAppConfig = (
     spacetimeAuthPostLogoutRedirectUri:
       normalizeString(rawConfig?.spacetimeAuthPostLogoutRedirectUri) || undefined,
     spacetimeDbUri: normalizeString(rawConfig?.spacetimeDbUri) || undefined,
-    spacetimeDbModule: normalizeString(rawConfig?.spacetimeDbModule) || undefined
+    spacetimeDbModule: normalizeString(rawConfig?.spacetimeDbModule) || undefined,
+    template:
+      rawConfig?.template && isRecord(rawConfig.template)
+        ? (rawConfig.template as ResolvedTemplateFeatures)
+        : defaultPublicAppConfig.template
   }
 }
 

@@ -13,6 +13,10 @@ build
 lighthouse*
 a.out
 apps/site/server/*
+apps/site/storybook-static/
+apps/site/android/
+packages/spacetimedb-module/target/
+preview-started.txt
 tmp
 apps/site/public/fragments/
 
@@ -32,6 +36,7 @@ Trace-*
 *.p12
 .codex
 .codex-artifacts/
+.codex-temp/
 .codex-*.json
 .tmp*
 .lh-tmp/

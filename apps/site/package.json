@@ -22,6 +22,7 @@
     "@prometheus/core": "workspace:*",
     "@prometheus/platform": "workspace:*",
     "@prometheus/spacetimedb-client": "workspace:*",
+    "@prometheus/template-config": "workspace:*",
     "@prometheus/ui": "workspace:*",
     "@qwikest/icons": "0.0.13",
     "extend": "3.0.2",

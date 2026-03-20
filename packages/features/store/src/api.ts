@@ -34,6 +34,7 @@ export type StoreRouteOptions = {
 }
 
 type StoreItemsPayload<StoreItem> = { items: StoreItem[]; cursor: number | null }
+type StoreItemRow = { id: number; name: string; price: unknown; quantity: unknown }
 
 type StoreSortKey = 'id' | 'name' | 'price'
 type StoreSortDir = 'asc' | 'desc'
@@ -234,7 +235,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
       .limit(limit)
       .offset(offset)
 
-    const items = rows.map((row) => ({
+    const items = (rows as StoreItemRow[]).map((row) => ({
       id: row.id,
       name: row.name,
       price: parsePrice(row.price),
@@ -865,7 +866,7 @@ export const createStoreRoutes = <StoreItem extends { id: number } = { id: numbe
           return attachRateLimitHeaders(options.jsonError(500, 'Unable to load items'), rateLimit.headers)
         }
 
-        const rowById = new Map(rows.map((row) => [row.id, row]))
+        const rowById = new Map<number, StoreItemRow>((rows as StoreItemRow[]).map((row) => [row.id, row]))
         const items = searchResult.hits
           .map((hit) => {
             const row = rowById.get(hit.id)

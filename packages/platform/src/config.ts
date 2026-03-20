@@ -1,5 +1,10 @@
 import { createEnv as arkenvParse } from 'arkenv'
 import type { LogLevel } from '@logtape/logtape'
+import {
+  hasTemplateFeature,
+  resolveTemplateFeatures,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
 import { resolveEnvironment, resolveRuntimeFlags, type Env, type RuntimeFlags } from './runtime'
 
 export type SpacetimeDbConfig = {
@@ -62,8 +67,9 @@ export type PlatformConfig = {
   spacetime: SpacetimeDbConfig
   garnet: GarnetConfig
   rateLimit: RateLimitConfig
-  auth: AuthConfig
-  push: PushConfig
+  auth?: AuthConfig
+  push?: PushConfig
+  template: ResolvedTemplateFeatures
 }
 
 type LogFormat = 'json' | 'pretty'
@@ -348,6 +354,7 @@ const resolveServerConfig = (env: Env): ServerConfig => ({
 })
 
 export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
+  const template = resolveTemplateFeatures(env)
   const parsedEnv = parsePlatformEnv(env)
   const environment = resolveEnvironment(parsedEnv.NODE_ENV)
   const allowDevDefaults = environment !== 'production'
@@ -356,9 +363,20 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
 
   const garnetHost = resolveCacheHost(parsedEnv)
   const garnetPort = resolveCachePort(parsedEnv)
-  const auth = parseAuthConfig(parsedEnv, allowDevDefaults)
-  const push = resolvePushConfig(parsedEnv)
-  const runtime = resolveRuntimeFlags(parsedEnv)
+  const auth = hasTemplateFeature(template, 'auth')
+    ? parseAuthConfig(parsedEnv, allowDevDefaults)
+    : undefined
+  const push = hasTemplateFeature(template, 'messaging')
+    ? resolvePushConfig(parsedEnv)
+    : undefined
+  const runtimeFlags = resolveRuntimeFlags(parsedEnv, {
+    enableWebTransportFragments: hasTemplateFeature(template, 'realtime') && environment !== 'production'
+  })
+  const runtime: RuntimeFlags = {
+    ...runtimeFlags,
+    enableWebTransportFragments:
+      hasTemplateFeature(template, 'realtime') && runtimeFlags.enableWebTransportFragments
+  }
   const server = resolveServerConfig(parsedEnv)
   const spacetime: SpacetimeDbConfig = {
     uri: resolveSpacetimeDbUri(parsedEnv.SPACETIMEDB_URI),
@@ -386,7 +404,8 @@ export const loadPlatformConfig = (env: Env = process.env): PlatformConfig => {
     },
     rateLimit,
     auth,
-    push
+    push,
+    template
   }
 }
 

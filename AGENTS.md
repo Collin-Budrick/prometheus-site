@@ -4,9 +4,9 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## Architecture overview
 
-- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, and features live under `packages/`.
+- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, template-config, and features live under `packages/`.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
-- **Platform (`packages/platform`):** Bun + Elysia integration, env/config resolution, DB/cache clients, rate limiting, and API route composition.
+- **Platform (`packages/platform`):** Bun + Elysia integration, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
 - **Features (`packages/features/*`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
@@ -20,13 +20,14 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## Dev and runtime flow
 
-- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`).
-- **Runtime defaults:** canonical host/port/profile defaults live in `scripts/runtime-config.ts`.
+- **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`, and defaults to the `full` template preset).
+- **Runtime defaults:** canonical host/port/profile/preset defaults live in `scripts/runtime-config.ts`.
 - **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
 - **Storybook:** `bun run dev:storybook` starts the Qwik Storybook from `apps/site/.storybook`; `bun run build:storybook` builds it to `apps/site/storybook-static`. The single Storybook instance covers stories in both `apps/site/src/**/*.stories.*` and `packages/ui/src/**/*.stories.*`.
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
 - **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
-- **Feature flags (dev/preview defaults):** `VITE_ENABLE_PREFETCH`, `VITE_ENABLE_WEBTRANSPORT_FRAGMENTS`, `VITE_ENABLE_WEBTRANSPORT_DATAGRAMS`, `VITE_ENABLE_FRAGMENT_COMPRESSION`, `VITE_ENABLE_ANALYTICS`, `VITE_HIGHLIGHT_SESSION_RECORDING`, and API `ENABLE_WEBTRANSPORT_FRAGMENTS` default to on. `VITE_ENABLE_FRAGMENT_STREAMING` defaults off; `VITE_FRAGMENT_VISIBILITY_MARGIN` defaults to `0px` and `VITE_FRAGMENT_VISIBILITY_THRESHOLD` defaults to `0`. `VITE_ENABLE_HIGHLIGHT` defaults off; `VITE_HIGHLIGHT_SAMPLE_RATE` defaults to `0.1` when unset. `VITE_ENABLE_PARTYTOWN` defaults off, and `VITE_PARTYTOWN_FORWARD` accepts a comma/newline list of forwarded globals when Partytown is enabled.
+- **Template presets:** `PROMETHEUS_TEMPLATE_PRESET`, `TEMPLATE_PRESET`, and `VITE_TEMPLATE_PRESET` resolve the shared feature bundle set. `full` is the default showcase preset; `core` keeps the lean web shell (`auth`, `account`, `demo-home`). Override bundles with `PROMETHEUS_TEMPLATE_FEATURES` / `PROMETHEUS_TEMPLATE_DISABLE_FEATURES` (or the `TEMPLATE_` / `VITE_TEMPLATE_` variants) using comma/newline-separated feature ids.
+- **Bundle-owned runtime defaults:** realtime-owned envs default on only when the `realtime` bundle is enabled, analytics/highlight/Partytown envs only matter when `analytics` is enabled, service-worker/PWA behavior only activates when `pwa` is enabled, and `native` remains off unless explicitly enabled.
 - **Fragment cache TTLs:** `FRAGMENT_PLAN_TTL` (seconds, default `180`), `FRAGMENT_PLAN_STALE_TTL` (seconds, default `300`), and `FRAGMENT_INITIAL_TTL` (seconds, default `180`) control fragment plan + initial payload cache lifetimes.
 - **WebTransport envs:** `WEBTRANSPORT_API_BASE` (defaults to `http://api:4000`), `WEBTRANSPORT_LISTEN_ADDR` (defaults to `:4444`), `WEBTRANSPORT_CERT_PATH`, `WEBTRANSPORT_KEY_PATH`, `WEBTRANSPORT_ALLOWED_ORIGINS`, `WEBTRANSPORT_ALLOW_ANY_ORIGIN`, `WEBTRANSPORT_ENABLE_DATAGRAMS` (defaults to on), `WEBTRANSPORT_MAX_DATAGRAM_SIZE` (defaults to `1200`), `PROMETHEUS_WEBTRANSPORT_PORT` (defaults to `4444` for host UDP), `VITE_WEBTRANSPORT_BASE` (optional client override).
 - **P2P relay + ICE envs:** `VITE_P2P_RELAY_BASES`/`P2P_RELAY_BASES` (comma/newline list of API bases for mailbox relays; defaults to resolved API base), `VITE_P2P_NOSTR_RELAYS`/`P2P_NOSTR_RELAYS` (comma/newline list of `ws(s)` Nostr relays), `VITE_P2P_WAKU_RELAYS`/`P2P_WAKU_RELAYS` (comma/newline list of Waku bootstrap multiaddrs, optionally prefixed with `waku:`), `VITE_P2P_CRDT_SIGNALING`/`P2P_CRDT_SIGNALING` (comma/newline list of y-webrtc signaling URLs), `VITE_P2P_PEERJS_SERVER`/`P2P_PEERJS_SERVER` (PeerJS server URL), and `VITE_P2P_ICE_SERVERS`/`P2P_ICE_SERVERS` (JSON array or comma list of ICE URLs).
@@ -38,6 +39,7 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 - **Public base (IPFS/PWA):** `VITE_PUBLIC_BASE` controls the Vite `base` path (use `./` for IPFS/gateway hosting so assets resolve under the CID path).
 - **P2P relay/signaling envs:** `VITE_P2P_RELAY_BASES` (HTTP mailbox relays), `VITE_P2P_NOSTR_RELAYS` (wss relays for discovery/prekeys), `VITE_P2P_WAKU_RELAYS` (Waku multiaddrs), and `VITE_P2P_CRDT_SIGNALING` (y-webrtc signaling list; if empty, falls back to `/yjs`).
 - **Database bootstrap:** Compose dev/preview now ensures SpaceTimeDB JWT keys exist and publishes the Rust module into the running SpaceTimeDB instance before the API/site are treated as ready.
+- **Compose profiles:** the `realtime` profile is owned by the `realtime` bundle and controls `webtransport` + `yjs-signaling`; `full` enables it by default, while `core` leaves those services off.
 - **Networking:** Caddy expects `prometheus.dev` to resolve to localhost. On WSL/non-macOS, set `DEV_WEB_UPSTREAM` if `host.docker.internal` is unsuitable.
 
 ## Compatibility and constraints
@@ -62,12 +64,13 @@ This monorepo hosts the **Fragment Prime** site: a Qwik frontend that streams bi
 
 ## File map (quick pointers)
 
-- **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/.storybook/` (Storybook config), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragments/` (site fragment definitions).
+- **Site:** `apps/site/src/root.tsx` (app shell), `apps/site/.storybook/` (Storybook config), `apps/site/src/routes/` (pages/layout/head), `apps/site/src/features/fragments/` (FragmentShell), `apps/site/src/fragment/definitions/` (site fragment bundles).
 - **Stories:** `apps/site/src/**/*.stories.tsx` and `packages/ui/src/**/*.stories.tsx` feed the shared Storybook instance; prefer real component stories over generated onboarding samples.
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
-- **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/db/schema.ts` (schema), `packages/platform/src/cache.ts` (Garnet RESP client), `packages/platform/src/server/fragments.ts` (fragment routes).
+- **Template config:** `packages/template-config/src/index.ts` (bundle manifests, presets, and shared feature resolution).
+- **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/config.ts` (resolved runtime config), `packages/platform/src/cache.ts` (Garnet RESP client), `packages/platform/src/server/fragments.ts` (fragment routes).
 - **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
-- **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/db/init.sql`, `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
+- **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
 - **Runtime config:** `scripts/runtime-config.ts`.
 - **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
 

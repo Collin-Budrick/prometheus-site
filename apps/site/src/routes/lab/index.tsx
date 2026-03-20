@@ -6,8 +6,10 @@ import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } f
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { getLabCopy } from '../../shared/lab-copy'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
+import { isSiteFeatureEnabled } from '../../template-features'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import {
   emptyLabCopy,
@@ -34,8 +36,9 @@ type FragmentResource = {
   languageSeed: LanguageSeedPayload
 }
 
-const labEnabled = siteFeatures.lab !== false
+const labEnabled = isSiteFeatureEnabled('lab')
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
+  ensureFeatureEnabled('lab')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const { appConfig } = await import('../../app-config.server')
   const path = url.pathname || '/lab'
@@ -127,7 +130,10 @@ const EnabledLabRoute = component$<{ lang: Lang }>(({ lang }) => {
   return <LabRoute copy={resolvedCopy.value} />
 })
 
-export const onGet: RequestHandler = createCacheHandler(PUBLIC_SWR_CACHE)
+export const onGet: RequestHandler = createFeatureRouteHandler(
+  'lab',
+  createCacheHandler(PUBLIC_SWR_CACHE)
+)
 
 export const LabSkeleton = labEnabled ? FeatureLabSkeleton : StaticRouteSkeleton
 

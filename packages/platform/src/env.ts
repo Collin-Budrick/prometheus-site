@@ -1,4 +1,9 @@
 import { createEnv as arkenvParse } from 'arkenv'
+import {
+  hasTemplateFeature,
+  resolveTemplateFeatures,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
 
 export type AppEnv = Record<string, string | boolean | undefined>
 
@@ -57,6 +62,7 @@ export type AppConfig = {
   spacetimeAuthPostLogoutRedirectUri?: string
   spacetimeDbUri?: string
   spacetimeDbModule?: string
+  template: ResolvedTemplateFeatures
 }
 
 export const DEFAULT_DEV_API_BASE = 'http://127.0.0.1:4000'
@@ -592,33 +598,63 @@ const resolveP2pIceServers = (env: AppEnv): P2pIceServer[] => {
 }
 
 export const resolveAppConfig = (env?: AppEnv): AppConfig => {
-  const resolvedEnv = resolvePublicEnv(env)
+  const mergedEnv = buildMergedEnv(env)
+  const resolvedEnv = resolvePublicEnv(mergedEnv)
+  const template = resolveTemplateFeatures(mergedEnv)
+  const realtimeEnabled = hasTemplateFeature(template, 'realtime')
+  const analyticsEnabled = hasTemplateFeature(template, 'analytics')
+  const authEnabled = hasTemplateFeature(template, 'auth')
+  const directSpacetimeEnabled =
+    hasTemplateFeature(template, 'store') ||
+    hasTemplateFeature(template, 'messaging') ||
+    hasTemplateFeature(template, 'realtime')
 
   return {
     apiBase: resolveApiBase(resolvedEnv),
-    webTransportBase: resolveWebTransportBase(resolvedEnv),
-    preferWebTransport: isWebTransportPreferred(resolvedEnv),
-    preferWebTransportDatagrams: isWebTransportDatagramsPreferred(resolvedEnv),
+    webTransportBase: realtimeEnabled ? resolveWebTransportBase(resolvedEnv) : '',
+    preferWebTransport: realtimeEnabled && isWebTransportPreferred(resolvedEnv),
+    preferWebTransportDatagrams:
+      realtimeEnabled && isWebTransportDatagramsPreferred(resolvedEnv),
     preferFragmentCompression: isFragmentCompressionPreferred(resolvedEnv),
     enableFragmentStreaming: isFragmentStreamingEnabled(resolvedEnv),
     fragmentVisibilityMargin: resolveFragmentVisibilityMargin(resolvedEnv),
     fragmentVisibilityThreshold: resolveFragmentVisibilityThreshold(resolvedEnv),
     enablePrefetch: isPrefetchEnabled(resolvedEnv),
-    analytics: resolveAnalyticsConfig(resolvedEnv),
-    highlight: resolveHighlightConfig(resolvedEnv),
-    partytown: resolvePartytownConfig(resolvedEnv),
-    p2pRelayBases: resolveP2pRelayBases(resolvedEnv),
-    p2pNostrRelays: resolveP2pNostrRelays(resolvedEnv),
-    p2pWakuRelays: resolveP2pWakuRelays(resolvedEnv),
-    p2pCrdtSignaling: resolveP2pCrdtSignaling(resolvedEnv),
-    p2pPeerjsServer: resolveP2pPeerjsServer(resolvedEnv),
-    p2pIceServers: resolveP2pIceServers(resolvedEnv),
-    authBootstrapPublicKey: resolveAuthBootstrapPublicKey(resolvedEnv) || undefined,
-    spacetimeAuthAuthority: resolveSpacetimeAuthAuthority(resolvedEnv) || undefined,
-    spacetimeAuthClientId: resolveSpacetimeAuthClientId(resolvedEnv) || undefined,
+    analytics: analyticsEnabled
+      ? resolveAnalyticsConfig(resolvedEnv)
+      : { enabled: false, beaconUrl: '' },
+    highlight: analyticsEnabled
+      ? resolveHighlightConfig(resolvedEnv)
+      : {
+          enabled: false,
+          projectId: '',
+          privacySetting: 'strict',
+          enableSessionRecording: false,
+          enableCanvasRecording: false,
+          sampleRate: 0,
+          environment: resolveHighlightEnvironment(resolvedEnv),
+          serviceName: 'site'
+        },
+    partytown: analyticsEnabled
+      ? resolvePartytownConfig(resolvedEnv)
+      : { enabled: false, forward: [] },
+    p2pRelayBases: realtimeEnabled ? resolveP2pRelayBases(resolvedEnv) : [],
+    p2pNostrRelays: realtimeEnabled ? resolveP2pNostrRelays(resolvedEnv) : [],
+    p2pWakuRelays: realtimeEnabled ? resolveP2pWakuRelays(resolvedEnv) : [],
+    p2pCrdtSignaling: realtimeEnabled ? resolveP2pCrdtSignaling(resolvedEnv) : [],
+    p2pPeerjsServer: realtimeEnabled ? resolveP2pPeerjsServer(resolvedEnv) : undefined,
+    p2pIceServers: realtimeEnabled ? resolveP2pIceServers(resolvedEnv) : defaultP2pIceServers,
+    authBootstrapPublicKey:
+      authEnabled ? resolveAuthBootstrapPublicKey(resolvedEnv) || undefined : undefined,
+    spacetimeAuthAuthority:
+      authEnabled ? resolveSpacetimeAuthAuthority(resolvedEnv) || undefined : undefined,
+    spacetimeAuthClientId:
+      authEnabled ? resolveSpacetimeAuthClientId(resolvedEnv) || undefined : undefined,
     spacetimeAuthPostLogoutRedirectUri:
-      resolveSpacetimeAuthPostLogoutRedirectUri(resolvedEnv) || undefined,
-    spacetimeDbUri: resolveSpacetimeDbUri(resolvedEnv) || undefined,
-    spacetimeDbModule: resolveSpacetimeDbModule(resolvedEnv) || undefined
+      authEnabled ? resolveSpacetimeAuthPostLogoutRedirectUri(resolvedEnv) || undefined : undefined,
+    spacetimeDbUri: directSpacetimeEnabled ? resolveSpacetimeDbUri(resolvedEnv) || undefined : undefined,
+    spacetimeDbModule:
+      directSpacetimeEnabled ? resolveSpacetimeDbModule(resolvedEnv) || undefined : undefined,
+    template
   }
 }

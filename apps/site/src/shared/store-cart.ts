@@ -360,6 +360,7 @@ const saveStoreCartSnapshot = async (items: StoreCartSnapshotItem[]) => {
 
 const requestStoreCartSync = async (origin: string) => {
   if (typeof window === 'undefined') return
+  if (!appConfig.template.features.pwa) return
   const nativeSync = await syncBackgroundStoreQueue({ origin, reason: 'enqueue' })
   if (nativeSync) return
   if (!('serviceWorker' in navigator)) return

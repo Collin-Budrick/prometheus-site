@@ -1,3 +1,6 @@
+import { hasTemplateFeature, type ResolvedTemplateFeatures, type TemplateFeatureId } from '@prometheus/template-config'
+import { siteTemplateConfig } from '../template-features'
+
 export const HOME_STATIC_ROUTE_PATH = '/'
 export const HOME_STATIC_ROUTE_KIND = 'home'
 export const FRAGMENT_STATIC_ROUTE_KIND = 'fragment'
@@ -12,7 +15,10 @@ export type StaticShellRouteConfig = {
   bootstrapMode: StaticShellBootstrapMode
   authPolicy: StaticShellAuthPolicy
   snapshotKey: string
+  feature?: TemplateFeatureId
 }
+
+type TemplateSelection = Pick<ResolvedTemplateFeatures, 'features'>
 
 export const STATIC_ROUTE_ATTR = 'data-static-route'
 export const STATIC_SHELL_REGION_ATTR = 'data-static-shell-region'
@@ -81,56 +87,64 @@ const staticShellRouteConfigs = [
     routeKind: FRAGMENT_STATIC_ROUTE_KIND,
     bootstrapMode: 'fragment-static',
     authPolicy: 'public',
-    snapshotKey: '/store'
+    snapshotKey: '/store',
+    feature: 'store'
   },
   {
     path: '/lab',
     routeKind: FRAGMENT_STATIC_ROUTE_KIND,
     bootstrapMode: 'fragment-static',
     authPolicy: 'public',
-    snapshotKey: '/lab'
+    snapshotKey: '/lab',
+    feature: 'lab'
   },
   {
     path: '/login',
     routeKind: ISLAND_STATIC_ROUTE_KIND,
     bootstrapMode: 'island-static',
     authPolicy: 'guest',
-    snapshotKey: '/login'
+    snapshotKey: '/login',
+    feature: 'auth'
   },
   {
     path: '/chat',
     routeKind: FRAGMENT_STATIC_ROUTE_KIND,
     bootstrapMode: 'fragment-static',
     authPolicy: 'protected',
-    snapshotKey: '/chat'
+    snapshotKey: '/chat',
+    feature: 'messaging'
   },
   {
     path: '/dashboard',
     routeKind: ISLAND_STATIC_ROUTE_KIND,
     bootstrapMode: 'island-static',
     authPolicy: 'protected',
-    snapshotKey: '/dashboard'
+    snapshotKey: '/dashboard',
+    feature: 'account'
   },
   {
     path: '/profile',
     routeKind: ISLAND_STATIC_ROUTE_KIND,
     bootstrapMode: 'island-static',
     authPolicy: 'protected',
-    snapshotKey: '/profile'
+    snapshotKey: '/profile',
+    feature: 'account'
   },
   {
     path: '/settings',
     routeKind: ISLAND_STATIC_ROUTE_KIND,
     bootstrapMode: 'island-static',
     authPolicy: 'protected',
-    snapshotKey: '/settings'
+    snapshotKey: '/settings',
+    feature: 'account'
   },
   {
     path: '/offline',
     routeKind: FRAGMENT_STATIC_ROUTE_KIND,
     bootstrapMode: 'fragment-static',
     authPolicy: 'public',
-    snapshotKey: '/offline'
+    snapshotKey: '/offline',
+    feature: 'pwa'
   }
 ] as const satisfies readonly StaticShellRouteConfig[]
 
@@ -138,13 +152,26 @@ const staticShellRouteMap = new Map<string, StaticShellRouteConfig>(
   staticShellRouteConfigs.map((config) => [config.path, config])
 )
 
-export const getStaticShellRouteConfig = (path: string): StaticShellRouteConfig | null =>
-  staticShellRouteMap.get(normalizeStaticShellPath(path)) ?? null
+const isStaticShellRouteEnabled = (
+  config: StaticShellRouteConfig,
+  template: TemplateSelection = siteTemplateConfig
+) => !config.feature || hasTemplateFeature(template, config.feature)
 
-export const getStaticShellRouteConfigs = () => Array.from(staticShellRouteConfigs)
+export const getStaticShellRouteConfig = (
+  path: string,
+  template: TemplateSelection = siteTemplateConfig
+): StaticShellRouteConfig | null => {
+  const routeConfig = staticShellRouteMap.get(normalizeStaticShellPath(path)) ?? null
+  if (!routeConfig) return null
+  return isStaticShellRouteEnabled(routeConfig, template) ? routeConfig : null
+}
+
+export const getStaticShellRouteConfigs = (template: TemplateSelection = siteTemplateConfig) =>
+  staticShellRouteConfigs.filter((config) => isStaticShellRouteEnabled(config, template))
 
 export const isHomeStaticPath = (path: string) => normalizeStaticShellPath(path) === HOME_STATIC_ROUTE_PATH
-export const isStaticShellPath = (path: string) => Boolean(getStaticShellRouteConfig(path))
-export const isIslandStaticPath = (path: string) =>
-  getStaticShellRouteConfig(path)?.routeKind === ISLAND_STATIC_ROUTE_KIND
+export const isStaticShellPath = (path: string, template: TemplateSelection = siteTemplateConfig) =>
+  Boolean(getStaticShellRouteConfig(path, template))
+export const isIslandStaticPath = (path: string, template: TemplateSelection = siteTemplateConfig) =>
+  getStaticShellRouteConfig(path, template)?.routeKind === ISLAND_STATIC_ROUTE_KIND
 export const normalizeStaticShellRoutePath = normalizeStaticShellPath

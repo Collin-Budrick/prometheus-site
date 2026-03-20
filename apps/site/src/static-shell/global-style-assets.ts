@@ -1,7 +1,7 @@
-import { type DocumentHead } from '@builder.io/qwik-city'
+import { type DocumentLink } from '@builder.io/qwik-city'
 import globalDeferredStylesheetHref from '@prometheus/ui/global-deferred.css?url'
 
-type HeadLink = NonNullable<DocumentHead['links']>[number]
+type HeadLink = DocumentLink
 
 export const buildGlobalStylesheetLinks = (links: HeadLink[] = []): HeadLink[] => [
   {

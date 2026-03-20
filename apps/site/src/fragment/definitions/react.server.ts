@@ -47,7 +47,7 @@ const isFunctionComponent = (value: unknown): value is (props: ElementProps) => 
 
 const isReactNodeArray = (value: ReactNode): value is ReactNode[] => Array.isArray(value)
 
-const isRenderNodeLike = (value: ReactNode): value is RenderNode => {
+const isRenderNodeLike = (value: unknown): value is RenderNode => {
   if (typeof value !== 'object' || value === null) {
     return false
   }

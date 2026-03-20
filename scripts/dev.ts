@@ -654,36 +654,37 @@ const devDbHost = runtimeConfig.domains.db
 const devDeviceHost = process.env.PROMETHEUS_DEVICE_HOST?.trim()
 const devDeviceWebPort = process.env.PROMETHEUS_DEVICE_WEB_PORT?.trim() || '4173'
 const useDeviceHost = Boolean(devDeviceHost)
+const templateFeatures = runtimeConfig.template.features
+const realtimeEnabled = templateFeatures.realtime
+const analyticsEnabled = templateFeatures.analytics
+const pwaEnabled = templateFeatures.pwa
 const devEnablePrefetch = process.env.VITE_ENABLE_PREFETCH?.trim() || '1'
 const devEnableWebTransport =
-  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (useDeviceHost ? '0' : '1')
+  process.env.VITE_ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
 const devEnableWebTransportDatagrams =
-  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (useDeviceHost ? '0' : '1')
+  process.env.VITE_ENABLE_WEBTRANSPORT_DATAGRAMS?.trim() ?? (realtimeEnabled && !useDeviceHost ? '1' : '0')
 const devEnableCompression = process.env.VITE_ENABLE_FRAGMENT_COMPRESSION?.trim() || '1'
-const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || '1'
+const devEnableAnalytics = process.env.VITE_ENABLE_ANALYTICS?.trim() || (analyticsEnabled ? '1' : '0')
 const devEnableHighlight = process.env.VITE_ENABLE_HIGHLIGHT?.trim() || '0'
 const devHighlightProjectId = process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim() || ''
 const devHighlightPrivacy = process.env.VITE_HIGHLIGHT_PRIVACY?.trim() || 'strict'
 const devHighlightSessionRecording = process.env.VITE_HIGHLIGHT_SESSION_RECORDING?.trim() || '1'
 const devHighlightCanvasSampling = process.env.VITE_HIGHLIGHT_CANVAS_SAMPLING?.trim() || ''
 const devHighlightSampleRate = process.env.VITE_HIGHLIGHT_SAMPLE_RATE?.trim() || ''
-const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || '1'
-const devEnableWebTransportDatagramsServer = process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || '1'
+const devEnableApiWebTransport = process.env.ENABLE_WEBTRANSPORT_FRAGMENTS?.trim() || (realtimeEnabled ? '1' : '0')
+const devEnableWebTransportDatagramsServer =
+  process.env.WEBTRANSPORT_ENABLE_DATAGRAMS?.trim() || (realtimeEnabled ? '1' : '0')
 const devWebTransportMaxDatagramSize = process.env.WEBTRANSPORT_MAX_DATAGRAM_SIZE?.trim() || '1200'
+const devDisableSw = process.env.VITE_DISABLE_SW?.trim() || (pwaEnabled ? '0' : '1')
 const isWindowsMount = root.startsWith('/mnt/')
 const enablePollingWatch = isWsl && isWindowsMount
-const includeRealtimeServices =
-  runtimeCompose.includeOptionalServices ||
-  (!useDeviceHost &&
-    (devEnableWebTransport === '1' ||
-      devEnableWebTransportDatagrams === '1' ||
-      devEnableApiWebTransport === '1' ||
-      devEnableWebTransportDatagramsServer === '1'))
+const includeRealtimeServices = runtimeCompose.includeOptionalServices
+const composeProfiles = Array.from(new Set(runtimeCompose.profiles))
 
 const composeEnv = {
   ...process.env,
   COMPOSE_PROJECT_NAME: devProject,
-  ...(includeRealtimeServices ? { COMPOSE_PROFILES: 'realtime' } : {}),
+  ...(composeProfiles.length > 0 ? { COMPOSE_PROFILES: composeProfiles.join(',') } : {}),
   PROMETHEUS_HTTP_PORT: devHttpPort,
   PROMETHEUS_HTTPS_PORT: devHttpsPort,
   PROMETHEUS_API_PORT: devApiPort,
@@ -888,6 +889,7 @@ const webEnv: NodeJS.ProcessEnv = {
   VITE_HIGHLIGHT_SESSION_RECORDING: devHighlightSessionRecording,
   VITE_HIGHLIGHT_CANVAS_SAMPLING: devHighlightCanvasSampling,
   VITE_HIGHLIGHT_SAMPLE_RATE: devHighlightSampleRate,
+  VITE_DISABLE_SW: devDisableSw,
   API_BASE: `http://127.0.0.1:${devApiPort}`
 }
 

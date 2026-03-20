@@ -4,6 +4,7 @@ import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@features/auth/auth.module.css'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
@@ -140,6 +141,7 @@ const profileClass = {
 } as const
 
 export const useProfileData = routeLoader$<ProfileData>(async ({ request, redirect }) => {
+  ensureFeatureEnabled('account')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   if (isStaticShellBuild()) {
@@ -163,7 +165,10 @@ export const useProfileData = routeLoader$<ProfileData>(async ({ request, redire
   }
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+export const onGet: RequestHandler = createFeatureRouteHandler(
+  'account',
+  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useProfileData)

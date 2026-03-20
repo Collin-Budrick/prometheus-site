@@ -168,6 +168,8 @@ const createStoredFragment = (id: string): StoredFragment => ({
   payload: encodeFragmentPayload(id),
   html: `<section>${id}</section>`,
   updatedAt: 1,
+  staleAt: 121,
+  expiresAt: 31,
   meta: {
     cacheKey: id,
     ttl: 30,

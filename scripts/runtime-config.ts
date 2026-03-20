@@ -1,3 +1,9 @@
+import {
+  hasTemplateFeature,
+  resolveTemplateFeatures,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
+
 type ProcessEnv = NodeJS.ProcessEnv
 
 export type PrometheusRuntimeConfig = {
@@ -27,6 +33,7 @@ export type PrometheusRuntimeConfig = {
       optional: readonly string[]
     }
   }
+  template: ResolvedTemplateFeatures
   caddy: {
     certBasename: string
     certPemPath: string
@@ -97,9 +104,10 @@ const readDomain = (env: ProcessEnv, key: string, fallback: string) => {
   return value
 }
 
-const parseProfiles = (env: ProcessEnv) => {
+const parseProfiles = (env: ProcessEnv, template: ResolvedTemplateFeatures) => {
   const raw = readString(env, 'PROMETHEUS_COMPOSE_PROFILE', '')
-  return raw ? Array.from(new Set(raw.split(',').map((part) => part.trim()).filter(Boolean))) : []
+  const explicit = raw ? raw.split(',').map((part) => part.trim()).filter(Boolean) : []
+  return Array.from(new Set([...template.composeProfiles, ...explicit]))
 }
 
 const readBool = (value: string | undefined, fallback: boolean) => {
@@ -108,14 +116,14 @@ const readBool = (value: string | undefined, fallback: boolean) => {
   return TRUE_VALUES.has(normalized.toLowerCase())
 }
 
-const readIncludeOptionalServices = (env: ProcessEnv) => {
-  const profiles = parseProfiles(env)
+const readIncludeOptionalServices = (env: ProcessEnv, template: ResolvedTemplateFeatures) => {
+  const profiles = parseProfiles(env, template)
   const force = readBool(env.PROMETHEUS_ENABLE_REALTIME_SERVICES, false)
   if (force) return true
   if (profiles.includes('all')) return true
   if (profiles.includes('full')) return true
   if (profiles.includes('realtime')) return true
-  return false
+  return hasTemplateFeature(template, 'realtime')
 }
 
 const readProjectName = (env: ProcessEnv) => {
@@ -130,6 +138,7 @@ const computeCertBasename = (web: string, webProd: string, db: string, dbProd: s
   `${web}+${webProd}+${db}+${dbProd}`
 
 export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRuntimeConfig => {
+  const template = resolveTemplateFeatures(env)
   const dbHost = readDomain(env, 'PROMETHEUS_DB_HOST', DEFAULT_DOMAINS.db)
   const dbProd = readDomain(env, 'PROMETHEUS_DB_HOST_PROD', DEFAULT_DOMAINS.dbProd)
   const webHost = readDomain(env, 'PROMETHEUS_WEB_HOST', DEFAULT_DOMAINS.web)
@@ -148,8 +157,8 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRunti
     'PROMETHEUS_CADDY_CERT_BASENAME',
     computeCertBasename(webHost, webProd, dbHost, dbProd)
   )
-  const includeOptionalServices = readIncludeOptionalServices(env)
-  const profiles = parseProfiles(env)
+  const includeOptionalServices = readIncludeOptionalServices(env, template)
+  const profiles = parseProfiles(env, template)
   const projectName = readProjectName(env)
 
   return {
@@ -171,6 +180,7 @@ export const getRuntimeConfig = (env: ProcessEnv = process.env): PrometheusRunti
         optional: DEFAULT_COMPOSE.services.optional
       }
     },
+    template,
     caddy: {
       certBasename,
       certPemPath: `/etc/caddy/certs/${certBasename}.pem`,

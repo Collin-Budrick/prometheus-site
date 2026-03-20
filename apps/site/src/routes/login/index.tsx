@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand, siteFeatures } from '../../config'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
@@ -11,8 +12,9 @@ import type { UiCopy } from '../../lang/types'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { StaticLoginRoute } from '../../static-shell/StaticLoginRoute'
 import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { isSiteFeatureEnabled } from '../../template-features'
 
-const loginEnabled = siteFeatures.login !== false
+const loginEnabled = isSiteFeatureEnabled('auth')
 type LoginResource = {
   lang: Lang
   languageSeed: LanguageSeedPayload
@@ -29,6 +31,7 @@ const resolveLoginCopy = (seed?: Partial<UiCopy>) => ({
 })
 
 export const useLoginResource = routeLoader$<LoginResource>(async ({ request }) => {
+  ensureFeatureEnabled('auth')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   if (!loginEnabled) {
@@ -57,7 +60,10 @@ const DisabledLoginRoute = component$<{ lang: Lang }>(({ lang }) => {
   )
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+export const onGet: RequestHandler = createFeatureRouteHandler(
+  'auth',
+  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+)
 
 export const LoginSkeleton = StaticRouteSkeleton
 

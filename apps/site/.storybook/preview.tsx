@@ -1,4 +1,5 @@
 import type { Preview } from 'storybook-framework-qwik'
+import { resolveTemplateFeatures } from '@prometheus/template-config'
 import type { PublicAppConfig } from '../src/public-app-config'
 import { defaultLanguage, getLanguagePack } from '../src/lang'
 import { seedLanguageResources } from '../src/lang/client'
@@ -23,6 +24,10 @@ const storybookAppConfig: PublicAppConfig = {
     enabled: false,
     beaconUrl: ''
   },
+  partytown: {
+    enabled: false,
+    forward: []
+  },
   highlight: {
     enabled: false,
     projectId: '',
@@ -37,7 +42,8 @@ const storybookAppConfig: PublicAppConfig = {
   p2pNostrRelays: [],
   p2pWakuRelays: [],
   p2pCrdtSignaling: [],
-  p2pIceServers: []
+  p2pIceServers: [],
+  template: resolveTemplateFeatures({})
 }
 
 ;(globalThis as StorybookGlobalTarget).__PUBLIC_APP_CONFIG__ = storybookAppConfig

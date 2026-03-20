@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { createElement } from 'react'
+import type { ReactNode } from 'react'
 import { createFragmentWidgetMarkerNode } from '../widget-markup'
 import { reactToRenderNode } from './react.server'
 
@@ -23,7 +24,7 @@ describe('reactToRenderNode', () => {
         'section',
         null,
         createElement('h2', null, 'React stays server-only.'),
-        marker,
+        marker as unknown as ReactNode,
         createElement('div', { className: 'badge' }, 'RSC-ready')
       )
     )

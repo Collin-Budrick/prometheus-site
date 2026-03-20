@@ -15,6 +15,8 @@ export {
 
 import type { FragmentPlan as BasePlan, FragmentPayloadMap as BasePayloadMap } from '@core/fragments'
 
-export type FragmentPlanValue = BasePlan | NoSerialize<BasePlan>
+type StableNoSerialize<T> = Exclude<NoSerialize<T>, undefined>
 
-export type FragmentPayloadValue = BasePayloadMap | NoSerialize<BasePayloadMap>
+export type FragmentPlanValue = BasePlan | StableNoSerialize<BasePlan>
+
+export type FragmentPayloadValue = BasePayloadMap | StableNoSerialize<BasePayloadMap>

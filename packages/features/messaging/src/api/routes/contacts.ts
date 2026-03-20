@@ -59,7 +59,11 @@ export const registerContactRoutes = <App extends Elysia>(app: App, ctx: Contact
     }
 
     const otherIds = Array.from(
-      new Set(invites.map((invite) => (invite.inviterId === session.id ? invite.inviteeId : invite.inviterId)))
+      new Set(
+        invites.map((invite: Record<string, unknown>) =>
+          invite.inviterId === session.id ? invite.inviteeId : invite.inviterId
+        )
+      )
     ).filter((id): id is string => typeof id === 'string' && id !== '')
 
     if (!otherIds.length) {
@@ -78,7 +82,7 @@ export const registerContactRoutes = <App extends Elysia>(app: App, ctx: Contact
     }
 
     const userById = new Map<string, { id: string; name?: string | null; email: string }>()
-    users.forEach((user) => {
+    users.forEach((user: { id?: unknown; name?: unknown; email?: unknown }) => {
       if (typeof user.id === 'string' && typeof user.email === 'string') {
         userById.set(user.id, {
           id: user.id,
@@ -107,7 +111,7 @@ export const registerContactRoutes = <App extends Elysia>(app: App, ctx: Contact
     const outgoing: ContactInviteView[] = []
     const contacts: ContactInviteView[] = []
 
-    invites.forEach((invite) => {
+    invites.forEach((invite: Record<string, unknown>) => {
       const view = buildView(invite)
       if (!view) return
       if (view.status === 'accepted') {
@@ -216,7 +220,7 @@ export const registerContactRoutes = <App extends Elysia>(app: App, ctx: Contact
         string,
         { id: string; status: ContactInviteStatus; inviterId: string; inviteeId: string }
       >()
-      invites.forEach((invite) => {
+      invites.forEach((invite: Record<string, unknown>) => {
         const inviteId = invite.id
         const inviterId = invite.inviterId
         const inviteeId = invite.inviteeId

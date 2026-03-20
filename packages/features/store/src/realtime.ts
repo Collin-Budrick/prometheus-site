@@ -1,9 +1,14 @@
 import { eq } from 'drizzle-orm'
+import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core'
 import type { DatabaseClient } from '@platform/db'
-import type { storeItems } from '@platform/db/schema'
 import { z } from 'zod'
 
-export type StoreItemsTable = typeof storeItems
+export type StoreItemsTable = AnyPgTable & {
+  id: AnyPgColumn
+  name: AnyPgColumn
+  price: AnyPgColumn
+  quantity: AnyPgColumn
+}
 
 export type StoreItemRowSnapshot = { id: number; name: string; price: unknown; quantity: unknown }
 

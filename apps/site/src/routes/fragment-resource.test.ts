@@ -35,9 +35,9 @@ describe('loadStaticFragmentResource', () => {
 
     expect(html).toContain('스토어 검색...')
     expect(html).toContain('장바구니')
-    expect(html).toContain('drizzle-zod로 검증하고 업데이트를 실시간으로 스트리밍합니다.')
+    expect(html).toContain('쓰기 시 검증하고 업데이트를 실시간으로 스트리밍합니다.')
     expect(html).not.toContain('Search the store...')
-    expect(html).not.toContain('Validated by drizzle-zod and streamed over realtime updates.')
+    expect(html).not.toContain('Validated on write and streamed over realtime updates.')
   })
 
   it('renders localized chat fragments for japanese static snapshots', async () => {

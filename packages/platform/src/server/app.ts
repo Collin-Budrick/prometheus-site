@@ -3,23 +3,20 @@ import { createFragmentService } from '@core/fragment/service'
 import { defaultFragmentLang, type FragmentLang, type FragmentTranslator } from '@core/fragment/i18n'
 import { createAuthFeature } from '@features/auth/server'
 import { PromptBodyError, readPromptBody, sendServerOnlinePush } from '@features/messaging'
+import type { TemplateFeatureMap } from '@prometheus/template-config'
 import type { CacheClient } from '../cache'
 import { platformConfig } from '../config'
 import { checkEarlyLimit, invalidatePlanCache, recordLatencySample } from '../cache-helpers'
 import { createLogger } from '../logger'
 import { getClientIp } from '../network'
 import type { RateLimiter } from '../rate-limit'
-import { resolveBooleanFlag } from '../runtime'
 import { createPlatformServer, type PlatformServerContext } from './bun'
 import { createFragmentUpdateBroadcaster } from './fragment-updates'
 import { createFragmentRoutes, createFragmentStore, warmFragmentRouteArtifacts } from './fragments'
 import { createHomeCollabRoutes } from './home-collab'
 import { createStoreMutationRoutes } from './store-mutations'
 
-type FeatureFlags = {
-  auth: boolean
-  messaging: boolean
-}
+type FeatureFlags = Pick<TemplateFeatureMap, 'auth' | 'messaging' | 'realtime' | 'store'>
 
 export type ApiServerOptions = {
   fragment?: {
@@ -41,7 +38,8 @@ const jsonError = (status: number, error: string, meta: Record<string, unknown> 
 
 const rateLimitWindowMs = 60_000
 const rateLimitMaxRequests = 60
-const HOT_FRAGMENT_ROUTE_PATHS = ['/', '/store'] as const
+const buildHotFragmentRoutePaths = (featureFlags: FeatureFlags) =>
+  featureFlags.store ? ['/', '/store'] : ['/']
 
 const applyDevCors = (app: AnyElysia) => {
   const allowMethods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
@@ -112,8 +110,10 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
   const logger = createLogger('api')
 
   const defaults: FeatureFlags = {
-    auth: resolveBooleanFlag(process.env.FEATURE_AUTH_ENABLED, true),
-    messaging: resolveBooleanFlag(process.env.FEATURE_MESSAGING_ENABLED, true)
+    auth: platformConfig.template.features.auth,
+    messaging: platformConfig.template.features.messaging,
+    realtime: platformConfig.template.features.realtime,
+    store: platformConfig.template.features.store
   }
 
   const featureFlags: FeatureFlags = {
@@ -135,7 +135,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
       store: fragmentStore,
       createTranslator: options.fragment?.createTranslator,
       onFragmentRendered: ({ id, lang, entry }) => {
-        fragmentUpdates.notifyFragment({ id, lang, updatedAt: entry.updatedAt })
+        fragmentUpdates.notifyFragment({ type: 'fragment', id, lang, updatedAt: entry.updatedAt })
       }
     })
 
@@ -169,7 +169,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
     warmFragmentArtifacts = async () => {
       const warmed = await Promise.all(
-        HOT_FRAGMENT_ROUTE_PATHS.map((path) =>
+        buildHotFragmentRoutePaths(featureFlags).map((path) =>
           warmFragmentRouteArtifacts({
             path,
             lang: defaultFragmentLang,
@@ -197,8 +197,13 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
 
     let app = new Elysia().use(fragmentRoutes).decorate('valkey', valkey)
 
-    app = createHomeCollabRoutes(app, { cache })
-    app = createStoreMutationRoutes(app)
+    if (featureFlags.realtime) {
+      app = createHomeCollabRoutes(app, { cache })
+    }
+
+    if (featureFlags.store) {
+      app = createStoreMutationRoutes(app)
+    }
 
     if (platformConfig.environment !== 'production') {
       applyDevCors(app)
@@ -209,7 +214,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
     const checkRateLimit = (route: string, clientIp: string) =>
       rateLimiter.checkQuota(`${route}:${clientIp}`, rateLimitMaxRequests, rateLimitWindowMs)
 
-    if (featureFlags.auth) {
+    if (featureFlags.auth && platformConfig.auth) {
       const authFeature = createAuthFeature({
         authConfig: platformConfig.auth,
         spacetime: platformConfig.spacetime
@@ -314,7 +319,7 @@ export const startApiServer = async (options: ApiServerOptions = {}) => {
         throw error
       }
 
-      if (featureFlags.messaging) {
+      if (featureFlags.messaging && platformConfig.push) {
         void sendServerOnlinePush({
           valkey: context.cache.client,
           isValkeyReady: context.cache.isReady,

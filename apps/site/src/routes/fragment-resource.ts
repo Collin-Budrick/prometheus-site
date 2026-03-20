@@ -9,6 +9,8 @@ import { readFragmentCriticalFromCookie } from '../fragment/ui/shell-cache'
 import { selectInitialFragmentIds } from '../fragment/initial-selection'
 import { isHomeStaticPath } from '../static-shell/constants'
 import { createFragmentTranslator } from '../fragment/definitions/i18n'
+import { registerSiteFragmentBundles } from '../fragment/definitions/register'
+import { appConfig } from '../public-app-config'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue
@@ -62,11 +64,7 @@ let staticFragmentResourcePrewarmPromise: Promise<void> | null = null
 const loadStaticFragmentService = async () => {
   if (!staticFragmentServicePromise) {
     staticFragmentServicePromise = (async () => {
-      await Promise.all([
-        import('../fragment/definitions/home.server'),
-        import('../fragment/definitions/store'),
-        import('../fragment/definitions/chat')
-      ])
+      registerSiteFragmentBundles({ template: appConfig.template })
       return createFragmentService({
         store: createMemoryFragmentStore(),
         createTranslator: createFragmentTranslator
@@ -96,10 +94,12 @@ export const loadHybridFragmentResource = async (
   const dynamicCriticalIds = request && !isHomeStaticPath(path)
     ? readFragmentCriticalFromCookie(request.headers.get('cookie'), path, viewport)
     : []
-  const selectRequestedIds = (resolvedPlan: FragmentPlanValue) =>
-    options.includeAllFragments
-      ? resolvedPlan.fragments.map((entry) => entry.id)
-      : selectInitialFragmentIds(resolvedPlan, { dynamicCriticalIds })
+  const selectRequestedIds = (resolvedPlan: FragmentPlanValue) => {
+    const plan = resolvedPlan as FragmentPlanValue
+    return options.includeAllFragments
+      ? plan.fragments.map((entry) => entry.id)
+      : selectInitialFragmentIds(plan, { dynamicCriticalIds })
+  }
   const cached = fragmentPlanCache.get(path, lang)
   if (cached?.plan && (cached.initialFragments || cached.initialHtml)) {
     const cachedPlan = cached.plan

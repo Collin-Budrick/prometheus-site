@@ -7,6 +7,7 @@ COPY apps/site/package.json apps/site/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/platform/package.json packages/platform/package.json
 COPY packages/spacetimedb-client/package.json packages/spacetimedb-client/package.json
+COPY packages/template-config/package.json packages/template-config/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/features/auth/package.json packages/features/auth/package.json
 COPY packages/features/lab/package.json packages/features/lab/package.json
@@ -53,6 +54,9 @@ ARG VITE_SPACETIMEAUTH_CLIENT_ID
 ARG VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI
 ARG VITE_SPACETIMEDB_URI
 ARG VITE_SPACETIMEDB_MODULE
+ARG PROMETHEUS_TEMPLATE_PRESET
+ARG PROMETHEUS_TEMPLATE_FEATURES
+ARG PROMETHEUS_TEMPLATE_DISABLE_FEATURES
 ENV VITE_API_BASE=$VITE_API_BASE
 ENV VITE_ENABLE_PREFETCH=$VITE_ENABLE_PREFETCH
 ENV VITE_ENABLE_WEBTRANSPORT_FRAGMENTS=$VITE_ENABLE_WEBTRANSPORT_FRAGMENTS
@@ -78,6 +82,9 @@ ENV VITE_SPACETIMEAUTH_CLIENT_ID=$VITE_SPACETIMEAUTH_CLIENT_ID
 ENV VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI=$VITE_SPACETIMEAUTH_POST_LOGOUT_REDIRECT_URI
 ENV VITE_SPACETIMEDB_URI=$VITE_SPACETIMEDB_URI
 ENV VITE_SPACETIMEDB_MODULE=$VITE_SPACETIMEDB_MODULE
+ENV PROMETHEUS_TEMPLATE_PRESET=$PROMETHEUS_TEMPLATE_PRESET
+ENV PROMETHEUS_TEMPLATE_FEATURES=$PROMETHEUS_TEMPLATE_FEATURES
+ENV PROMETHEUS_TEMPLATE_DISABLE_FEATURES=$PROMETHEUS_TEMPLATE_DISABLE_FEATURES
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
     bun run --cwd apps/site build
@@ -89,6 +96,9 @@ FROM oven/bun:1.3.10-alpine AS runner
 WORKDIR /app/apps/site
 
 ENV API_BASE=http://api:4000
+ENV PROMETHEUS_TEMPLATE_PRESET=
+ENV PROMETHEUS_TEMPLATE_FEATURES=
+ENV PROMETHEUS_TEMPLATE_DISABLE_FEATURES=
 
 COPY --from=deps /app/node_modules /app/node_modules
 COPY --from=builder /app/apps/site/package.json ./package.json

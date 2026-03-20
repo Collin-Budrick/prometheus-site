@@ -1,6 +1,7 @@
 import type { RenderOptions } from '@builder.io/qwik'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import { buildPublicApiUrl, resolvePublicApiHost } from './shared/public-api-url'
+import { appConfig } from './public-app-config'
 import {
   CLEANUP_VERSION_KEY,
   FORCE_CLEANUP_KEY,
@@ -28,6 +29,7 @@ declare global {
 
 const OUTBOX_SYNC_TAG = 'p2p-outbox'
 const HEALTH_CHECK_TIMEOUT_MS = 4000
+const pwaEnabled = appConfig.template.features.pwa
 const serviceWorkerSeed = readServiceWorkerSeedFromDocument()
 const initNativeFeelTelemetryDeferred = async () => {
   const telemetry = await import('./native/telemetry')
@@ -76,8 +78,9 @@ export default function (opts: RenderOptions) {
     void renderFullApp()
   }
   const nativeRuntime = isNativeShellRuntime()
+  const shouldBridgeServiceWorker = pwaEnabled && !nativeRuntime && 'serviceWorker' in navigator
 
-  if (!nativeRuntime && 'serviceWorker' in navigator) {
+  if (shouldBridgeServiceWorker) {
     runAfterClientIntentIdle(() => {
       setupServiceWorkerBridge()
     })
@@ -98,7 +101,17 @@ export default function (opts: RenderOptions) {
     setupServerHealthProbe()
   })
 
-  if (!nativeRuntime && import.meta.env.PROD && 'serviceWorker' in navigator) {
+  if (!nativeRuntime && 'serviceWorker' in navigator && !pwaEnabled) {
+    window.addEventListener(
+      'load',
+      () => {
+        void clearServiceWorkerCacheAndUnregister()
+      },
+      { once: true }
+    )
+  }
+
+  if (!nativeRuntime && import.meta.env.PROD && 'serviceWorker' in navigator && pwaEnabled) {
     window.addEventListener('load', () => {
       const shouldSkipServiceWorker = isServiceWorkerDisabled() || isServiceWorkerOptedOut()
       const shouldRunCleanup = shouldForceServiceWorkerCleanup() || !hasRunCleanupForVersion()
@@ -385,6 +398,7 @@ async function clearServiceWorkerCacheAndUnregister() {
 
 async function registerServiceWorker() {
   if (!import.meta.env.PROD) return
+  if (!pwaEnabled) return
   const { swUrl, scope } = resolveServiceWorkerLocation()
   try {
     await navigator.serviceWorker.register(swUrl, { scope })
@@ -394,6 +408,7 @@ async function registerServiceWorker() {
 }
 
   async function getActiveRegistration() {
+  if (!pwaEnabled) return undefined
   const { scopeUrl } = resolveServiceWorkerLocation()
   const registration = await navigator.serviceWorker.getRegistration(scopeUrl)
   if (registration) return registration
@@ -417,6 +432,9 @@ function getBuildVersion() {
 }
 
 function isServiceWorkerDisabled() {
+  if (!pwaEnabled) {
+    return true
+  }
   if (serviceWorkerSeed.disabled !== undefined) {
     return serviceWorkerSeed.disabled
   }
@@ -477,8 +495,12 @@ async function setServiceWorkerOptOut(optOut: boolean) {
   if (optOut) {
     await clearServiceWorkerCacheAndUnregister()
   } else {
-    await registerServiceWorker()
-    dispatchSwEvent('prom:sw-cache-refreshed', { source: 'window' })
+    if (pwaEnabled) {
+      await registerServiceWorker()
+      dispatchSwEvent('prom:sw-cache-refreshed', { source: 'window' })
+    } else {
+      await clearServiceWorkerCacheAndUnregister()
+    }
   }
 }
 

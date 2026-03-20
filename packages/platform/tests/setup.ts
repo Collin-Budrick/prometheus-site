@@ -1,6 +1,5 @@
 import { mock } from 'bun:test'
 import { Elysia } from 'elysia'
-import { storeItems, chatMessages } from '@platform/db/schema'
 import { createRateLimiter } from '@platform/rate-limit'
 
 type AuthSession = { id: string; userId: string }
@@ -38,6 +37,15 @@ const subscribers: ((message: string) => void)[] = []
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
+const hasOwnKey = <TKey extends string>(value: unknown, key: TKey): value is Record<TKey, unknown> =>
+  isRecord(value) && Object.prototype.hasOwnProperty.call(value, key)
+
+const isStoreItemsTable = (table: unknown) =>
+  hasOwnKey(table, 'id') && hasOwnKey(table, 'name') && hasOwnKey(table, 'price') && hasOwnKey(table, 'quantity')
+
+const isChatMessagesTable = (table: unknown) =>
+  hasOwnKey(table, 'createdAt') || (hasOwnKey(table, 'author') && hasOwnKey(table, 'body'))
+
 const stripValkeyCommandOptions = <T>(args: T[]) => {
   if (args.length === 0) return args
   return typeof args[0] === 'string' || Array.isArray(args[0]) ? args : args.slice(1)
@@ -71,7 +79,7 @@ const buildQuery = <TRow extends { id: number; createdAt?: Date }>(rows: TRow[],
   },
   orderBy(_order: unknown) {
     const sorted = [...rows]
-    if (table === chatMessages) {
+    if (isChatMessagesTable(table)) {
       sorted.sort((a, b) => b.createdAt!.getTime() - a.createdAt!.getTime())
     } else {
       sorted.sort((a, b) => a.id - b.id)
@@ -87,7 +95,7 @@ const fakeDb = {
   select() {
     return {
       from(table: unknown) {
-        const rows = table === storeItems ? storeItemsData : chatMessagesData
+        const rows = isStoreItemsTable(table) ? storeItemsData : chatMessagesData
         return buildQuery(rows, table)
       }
     }
@@ -95,7 +103,7 @@ const fakeDb = {
   insert(table: unknown) {
     return {
       async values(rows: { author: string; body: string } | { author: string; body: string }[]) {
-        if (table === chatMessages) {
+        if (isChatMessagesTable(table)) {
           const payloads = Array.isArray(rows) ? rows : [rows]
           payloads.forEach((row) => {
             chatMessagesData.push({ id: nextChatId, createdAt: new Date(), ...row })
@@ -243,7 +251,8 @@ mock.module('@features/auth/server', () => ({
     auth: null,
     authRoutes,
     validateSession
-  })
+  }),
+  readSiteSessionClaims: async () => null
 }))
 
 let valkeyReady = true

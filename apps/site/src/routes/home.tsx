@@ -1,5 +1,5 @@
 import { component$ } from '@builder.io/qwik'
-import { type DocumentHead, type DocumentHeadProps, routeLoader$ } from '@builder.io/qwik-city'
+import { type DocumentHead, type DocumentHeadProps, type DocumentLink, routeLoader$ } from '@builder.io/qwik-city'
 import { siteBrand } from '../config'
 import { loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
@@ -25,15 +25,18 @@ type FragmentResource = {
 
 const HOME_CRITICAL_FRAGMENT_IDS = new Set(['fragment://page/home/manifest@v1'])
 
-const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => ({
-  ...plan,
-  fragments: plan.fragments.map((entry) => ({
-    ...entry,
-    critical: HOME_CRITICAL_FRAGMENT_IDS.has(entry.id)
-  }))
-})
+const normalizeHomePlan = (plan: FragmentPlanValue): FragmentPlanValue => {
+  const normalizedPlan = plan as FragmentPlan
+  return {
+    ...normalizedPlan,
+    fragments: normalizedPlan.fragments.map((entry) => ({
+      ...entry,
+      critical: HOME_CRITICAL_FRAGMENT_IDS.has(entry.id)
+    }))
+  }
+}
 
-type HomeHeadLink = NonNullable<DocumentHead['links']>[number]
+type HomeHeadLink = DocumentLink
 
 export const buildHomeHeadLinks = (
   plan?: FragmentPlanValue | null,

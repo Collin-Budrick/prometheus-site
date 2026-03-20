@@ -1127,7 +1127,7 @@ const storeCreate: FragmentDefinition = {
       'data-name-placeholder': t('Neural render pack'),
       'data-price-placeholder': t('19.00'),
       'data-quantity-placeholder': t('1'),
-      'data-helper': t('Validated by drizzle-zod and streamed over realtime updates.')
+      'data-helper': t('Validated on write and streamed over realtime updates.')
     })
 }
 
@@ -1199,9 +1199,11 @@ export const storeFragments: FragmentPlanEntry[] = [
   }
 ]
 
-registerFragmentDefinitions([storeStream, storeCreate, storeCart])
+export const registerStoreFragmentDefinitions = () => {
+  registerFragmentDefinitions([storeStream, storeCreate, storeCart])
 
-registerFragmentPlanOverride((plan) => {
-  if (plan.path !== '/store') return plan
-  return buildFragmentPlan(plan.path, storeFragments, [])
-})
+  registerFragmentPlanOverride((plan) => {
+    if (plan.path !== '/store') return plan
+    return buildFragmentPlan(plan.path, storeFragments, [])
+  })
+}

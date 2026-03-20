@@ -877,6 +877,7 @@ export const RouterHead = component$(() => {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`
   const withBase = (path: string) => `${normalizedBase}${path.replace(/^\/+/, '')}`
   const manifestHref = withBase('manifest.webmanifest')
+  const pwaEnabled = appConfig.template.features.pwa
   const partytownScript = buildPartytownHeadScript({
     config: appConfig.partytown,
     lib: withBase('~partytown/'),
@@ -927,25 +928,27 @@ export const RouterHead = component$(() => {
       ) : null}
       <link rel="icon" href={withBase('favicon.svg')} type="image/svg+xml" />
       <link rel="icon" href={withBase('favicon.ico')} sizes="any" />
-      {shouldUseConditionalHomeManifest ? (
-        <script
-          nonce={nonce || undefined}
-          dangerouslySetInnerHTML={buildConditionalHomeManifestScript(manifestHref)}
-        />
-      ) : shouldDeferManifest ? (
-        <script
-          nonce={nonce || undefined}
-          dangerouslySetInnerHTML={buildDeferredManifestScript(manifestHref)}
-        />
-      ) : (
-        <link rel="manifest" href={manifestHref} />
-      )}
+      {pwaEnabled ? (
+        shouldUseConditionalHomeManifest ? (
+          <script
+            nonce={nonce || undefined}
+            dangerouslySetInnerHTML={buildConditionalHomeManifestScript(manifestHref)}
+          />
+        ) : shouldDeferManifest ? (
+          <script
+            nonce={nonce || undefined}
+            dangerouslySetInnerHTML={buildDeferredManifestScript(manifestHref)}
+          />
+        ) : (
+          <link rel="manifest" href={manifestHref} />
+        )
+      ) : null}
       <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       <meta name="theme-color" content={siteBrand.themeColor} />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content={siteBrand.themeColor} />
-      <meta name="apple-mobile-web-app-capable" content="yes" />
-      <meta name="mobile-web-app-capable" content="yes" />
-      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      {pwaEnabled ? <meta name="apple-mobile-web-app-capable" content="yes" /> : null}
+      {pwaEnabled ? <meta name="mobile-web-app-capable" content="yes" /> : null}
+      {pwaEnabled ? <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" /> : null}
     </>
   )
 })

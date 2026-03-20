@@ -1,4 +1,5 @@
 import type { RequestEvent } from "@builder.io/qwik-city";
+import { hasTemplateFeature, resolveTemplateFeatures } from "@prometheus/template-config";
 import {
   renderToStream,
   renderToString,
@@ -166,6 +167,8 @@ const hasStaticBootstrapBundle = (pathname: string) => {
 const escapeHtmlAttr = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 const STATIC_SHELL_BUILD_VERSION = getStaticShellBuildVersion();
+const ssrTemplate = resolveTemplateFeatures(process.env);
+const ssrPwaEnabled = hasTemplateFeature(ssrTemplate, "pwa");
 const staticFragmentPrewarmPromise = import.meta.env.PROD
   ? prewarmStaticFragmentResources().catch((error) => {
       console.warn("Static fragment prewarm failed.", error);
@@ -498,6 +501,7 @@ export default function (opts: RenderOptions & Partial<RenderToStreamOptions>) {
   const theme = requestEv ? readThemeFromCookie(cookieHeader) : null;
   const swSeed = readServiceWorkerSeedFromCookie(cookieHeader);
   const disableSw =
+    !ssrPwaEnabled ||
     import.meta.env.VITE_DISABLE_SW === "1" ||
     import.meta.env.VITE_DISABLE_SW === "true";
   const containerAttributes: Record<string, string> = {

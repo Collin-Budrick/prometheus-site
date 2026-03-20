@@ -801,8 +801,6 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
     const devAllowedHostsList = Array.from(devAllowedHosts)
     const shouldVisualizeBundle =
       process.env.VISUALIZE_BUNDLE === '1' || process.env.VISUALIZE_BUNDLE === 'true'
-    const highlightBuildEnabled =
-      isTruthyEnv(process.env.VITE_ENABLE_HIGHLIGHT) && Boolean(process.env.VITE_HIGHLIGHT_PROJECT_ID?.trim())
     const staticBuildEnabled = isBuildCommand && !ssrBuild
     const deviceApiBase = resolveDeviceApiBase({
       deviceHost: process.env.PROMETHEUS_DEVICE_HOST,
@@ -818,6 +816,12 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
       deviceApiBase && isLocalApiBase(baseAppConfig.apiBase)
         ? { ...baseAppConfig, apiBase: deviceApiBase }
         : baseAppConfig
+    const analyticsBundleEnabled = publicAppConfig.template.features.analytics
+    const pwaBundleEnabled = publicAppConfig.template.features.pwa
+    const highlightBuildEnabled = analyticsBundleEnabled && publicAppConfig.highlight.enabled
+    const enablePartytown = analyticsBundleEnabled && publicAppConfig.partytown.enabled
+    const enableServiceWorkerBundle =
+      pwaBundleEnabled && !isTruthyEnv(process.env.VITE_DISABLE_SW)
     const binding = await loadQwikBinding()
     const bundleVisualizer = shouldVisualizeBundle
       ? visualizer({
@@ -875,9 +879,13 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
         fragmentHmrPlugin(),
         staticCacheHeadersPlugin(),
         staticShellHtmlTrimPlugin(),
-    partytownVite({
-      dest: path.resolve(process.cwd(), 'dist', '~partytown')
-    }),
+        ...(enablePartytown
+          ? [
+              partytownVite({
+                dest: path.resolve(process.cwd(), 'dist', '~partytown')
+              })
+            ]
+          : []),
         tailwindcss(),
         ...(bundleVisualizer ? [bundleVisualizer] : []),
         qwikCity({
@@ -904,14 +912,18 @@ export default defineConfig(async (configEnv): Promise<UserConfig> => {
           ]
         }),
         compression({ algorithms: ['gzip'] }),
-        serwist({
-          swSrc: 'src/service-worker.ts',
-          swDest: 'service-worker.js',
-          globDirectory: 'dist',
-          globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
-          additionalPrecacheEntries: pwaPrecacheEntries,
-          swUrl: withBase('/service-worker.js')
-        })
+        ...(enableServiceWorkerBundle
+          ? [
+              serwist({
+                swSrc: 'src/service-worker.ts',
+                swDest: 'service-worker.js',
+                globDirectory: 'dist',
+                globPatterns: ['**/*.{js,mjs,cjs,css,html,ico,png,svg,webp,avif,webmanifest,woff2,ttf,otf,json,txt}'],
+                additionalPrecacheEntries: pwaPrecacheEntries,
+                swUrl: withBase('/service-worker.js')
+              })
+            ]
+          : [])
       ],
       optimizeDeps: {
         include: ['extend'],

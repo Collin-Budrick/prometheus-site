@@ -6,9 +6,16 @@ import { decodeFragmentPayload, encodeFragmentPayloadFromTree } from './binary'
 import type { FragmentDefinition, RenderNode } from './types'
 
 const originalFetch = globalThis.fetch
-const originalWindow = (globalThis as typeof globalThis & { window?: Window }).window
-const originalWorker = (globalThis as typeof globalThis & { Worker?: typeof Worker }).Worker
-const originalWebTransport = (globalThis as typeof globalThis & { WebTransport?: unknown }).WebTransport
+type MutableGlobals = Omit<typeof globalThis, 'window' | 'Worker' | 'WebTransport'> & {
+  window?: Window & typeof globalThis
+  Worker?: typeof Worker
+  WebTransport?: unknown
+}
+
+const mutableGlobals = globalThis as MutableGlobals
+const originalWindow = mutableGlobals.window
+const originalWorker = mutableGlobals.Worker
+const originalWebTransport = mutableGlobals.WebTransport
 
 const tree: RenderNode = {
   type: 'element',
@@ -80,18 +87,17 @@ class ResettingWebTransport {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  ;(globalThis as typeof globalThis & { window?: Window }).window = originalWindow
-  ;(globalThis as typeof globalThis & { Worker?: typeof Worker }).Worker = originalWorker
-  ;(globalThis as typeof globalThis & { WebTransport?: unknown }).WebTransport = originalWebTransport
+  mutableGlobals.window = originalWindow
+  mutableGlobals.Worker = originalWorker
+  mutableGlobals.WebTransport = originalWebTransport
 })
 
 describe('fragment client V2 decoding', () => {
   it('decodes protocol 2 batch payloads through the worker path', async () => {
     const bytes = encodeFragmentPayloadFromTree(definition, tree)
 
-    ;(globalThis as typeof globalThis & { window?: Window }).window = {} as Window
-    ;(globalThis as typeof globalThis & { Worker?: typeof Worker }).Worker =
-      MockWorker as unknown as typeof Worker
+    mutableGlobals.window = {} as Window & typeof globalThis
+    mutableGlobals.Worker = MockWorker as unknown as typeof Worker
 
     globalThis.fetch = (async () =>
       new Response(buildFragmentFrame(definition.id, bytes), {
@@ -113,7 +119,7 @@ describe('fragment client V2 decoding', () => {
     let webTransportAttempts = 0
     let fetchCalls = 0
 
-    ;(globalThis as typeof globalThis & { WebTransport?: unknown }).WebTransport = class extends ResettingWebTransport {
+    mutableGlobals.WebTransport = class extends ResettingWebTransport {
       constructor(url: string) {
         super()
         void url
@@ -214,7 +220,7 @@ describe('fragment client V2 decoding', () => {
   it('passes explicit fragment ids to webtransport streaming', async () => {
     let transportUrl = ''
 
-    ;(globalThis as typeof globalThis & { WebTransport?: unknown }).WebTransport = class extends ResettingWebTransport {
+    mutableGlobals.WebTransport = class extends ResettingWebTransport {
       constructor(url: string) {
         super()
         transportUrl = url

@@ -42,7 +42,7 @@ type HomeCollabErrorEvent = {
   error: string
 }
 
-type WsData = Record<string, never>
+type WsData = Record<string, unknown>
 
 type WsUpgradeContext = Context
 type WsContextData = WsData
@@ -272,8 +272,7 @@ export const createHomeCollabRoutes = <App extends AnyElysia>(app: App, options:
               type: 'home-collab:update',
               update: event.update,
               clientId: typeof event.clientId === 'string' ? event.clientId : ''
-            },
-            undefined
+            }
           )
           broadcastListeners({
             type: 'home-collab:text-update',
@@ -405,23 +404,23 @@ export const createHomeCollabRoutes = <App extends AnyElysia>(app: App, options:
   }
 
   const withEditorSocket = app.ws('/home/collab/dock/ws', {
-    async open(ws: WsSocket) {
-      await openEditorSocket(ws)
+    async open(ws: unknown) {
+      await openEditorSocket(ws as WsSocket)
     },
-    async message(ws: WsSocket, message: unknown) {
-      await messageEditorSocket(ws, message)
+    async message(ws: unknown, message: unknown) {
+      await messageEditorSocket(ws as WsSocket, message)
     },
-    close(ws: WsSocket) {
-      closeSocket(ws)
+    close(ws: unknown, _code: number, _reason: string) {
+      closeSocket(ws as WsSocket)
     }
   })
 
   return withEditorSocket.ws('/home/collab/listener/dock/ws', {
-    async open(ws: WsSocket) {
-      await openListenerSocket(ws)
+    async open(ws: unknown) {
+      await openListenerSocket(ws as WsSocket)
     },
-    close(ws: WsSocket) {
-      closeSocket(ws)
+    close(ws: unknown, _code: number, _reason: string) {
+      closeSocket(ws as WsSocket)
     }
   })
 }

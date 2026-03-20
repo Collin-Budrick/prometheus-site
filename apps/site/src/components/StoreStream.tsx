@@ -59,7 +59,7 @@ const isStaticShellStoreSurface = (root: HTMLElement | undefined) =>
   Boolean(root?.closest('[data-static-fragment-root]'))
 
 const shouldUseLocalCartFallback = (status: number | undefined) =>
-  !Number.isFinite(status) || status === 0 || status === 401 || status === 403 || status >= 500
+  typeof status !== 'number' || status === 0 || status === 401 || status === 403 || status >= 500
 
 const resolveConsumedQuantity = (quantity: number) => (quantity < 0 ? quantity : Math.max(0, quantity - 1))
 

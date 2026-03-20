@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
@@ -34,6 +35,7 @@ type ProtectedRouteData = {
 }
 
 export const useChatData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+  ensureFeatureEnabled('messaging')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   if (isStaticShellBuild()) {
@@ -60,6 +62,7 @@ const loadContactInvitesSeed = async (_request: Request): Promise<ContactInvites
 })
 
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
+  ensureFeatureEnabled('messaging')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const { appConfig } = await import('../../app-config.server')
   const path = url.pathname || '/chat'
@@ -122,7 +125,10 @@ export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, 
   }
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+export const onGet: RequestHandler = createFeatureRouteHandler(
+  'messaging',
+  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useChatData)

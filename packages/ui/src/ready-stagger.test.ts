@@ -12,6 +12,11 @@ import {
   resolveReadyStaggerDelay
 } from './ready-stagger'
 
+type MutableGlobals = Omit<typeof globalThis, 'window' | 'document'> & {
+  window?: Window & typeof globalThis
+  document?: Document
+}
+
 class MockStyle {
   private props = new Map<string, string>()
 
@@ -122,44 +127,27 @@ class MockIntersectionObserver {
   }
 }
 
-const originalWindow = globalThis.window
-const originalDocument = globalThis.document
+const mutableGlobals = globalThis as MutableGlobals
+const originalWindow = mutableGlobals.window
+const originalDocument = mutableGlobals.document
 
 beforeEach(() => {
-  ;(
-    globalThis as typeof globalThis & {
-      window?: Pick<Window, 'innerWidth' | 'innerHeight' | 'matchMedia'>
-      document?: Pick<Document, 'documentElement'>
-    }
-  ).window = {
+  mutableGlobals.window = {
     innerWidth: 1280,
     innerHeight: 800,
     matchMedia: () => ({ matches: false }) as MediaQueryList
-  }
-  ;(
-    globalThis as typeof globalThis & {
-      document?: Pick<Document, 'documentElement'>
-    }
-  ).document = {
+  } as unknown as Window & typeof globalThis
+  mutableGlobals.document = {
     documentElement: {
       clientWidth: 1280,
       clientHeight: 800
     } as Document['documentElement']
-  }
+  } as Document
 })
 
 afterEach(() => {
-  ;(
-    globalThis as typeof globalThis & {
-      window?: typeof globalThis.window
-      document?: typeof globalThis.document
-    }
-  ).window = originalWindow
-  ;(
-    globalThis as typeof globalThis & {
-      document?: typeof globalThis.document
-    }
-  ).document = originalDocument
+  mutableGlobals.window = originalWindow
+  mutableGlobals.document = originalDocument
   resetReadyStaggerBatchesForTests()
   MockIntersectionObserver.reset()
 })
@@ -181,7 +169,7 @@ describe('ready stagger helpers', () => {
 
   it('queues and releases a card with the shared contract', () => {
     const card = new MockElement()
-    let releaseCallback: FrameRequestCallback | null = null
+    let releaseCallback: ((timestamp: number) => void) | null = null
 
     const delayMs = queueReadyStagger(card as unknown as HTMLElement, {
       group: 'cards',
@@ -196,7 +184,7 @@ describe('ready stagger helpers', () => {
     expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('queued')
     expect(card.style.getPropertyValue(READY_STAGGER_DELAY_VAR)).toBe('0ms')
 
-    releaseCallback?.(0)
+    ;(releaseCallback as ((timestamp: number) => void) | null)?.(0)
 
     expect(card.getAttribute(READY_STAGGER_STATE_ATTR)).toBe('done')
   })
@@ -360,7 +348,8 @@ describe('ready stagger helpers', () => {
     expect(frameCallbacks).toHaveLength(1)
     expect(MockIntersectionObserver.instances).toHaveLength(0)
 
-    frameCallbacks[0]?.(0)
+    const firstFrame = frameCallbacks[0]
+    firstFrame?.(0)
 
     expect(MockIntersectionObserver.instances).toHaveLength(1)
 
@@ -375,8 +364,10 @@ describe('ready stagger helpers', () => {
       }
     ])
     let frameIndex = 1
-    while (frameCallbacks[frameIndex]) {
-      frameCallbacks[frameIndex]?.(frameIndex * 16)
+    while (true) {
+      const scheduledFrame = frameCallbacks[frameIndex]
+      if (!scheduledFrame) break
+      scheduledFrame(frameIndex * 16)
       frameIndex += 1
     }
 

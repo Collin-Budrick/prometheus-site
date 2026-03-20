@@ -2,6 +2,7 @@ import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
 import { resolveRequestLang } from '../fragment-resource'
@@ -15,6 +16,7 @@ type OfflineRouteData = {
 }
 
 export const useOfflineRoute = routeLoader$<OfflineRouteData>(async ({ request }) => {
+  ensureFeatureEnabled('pwa')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   return {
@@ -40,6 +42,8 @@ export default component$(() => {
     </StaticPageRoot>
   )
 })
+
+export const onGet = createFeatureRouteHandler('pwa')
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useOfflineRoute)

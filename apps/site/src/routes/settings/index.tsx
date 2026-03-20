@@ -4,6 +4,8 @@ import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@features/auth/auth.module.css'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
+import { isSiteFeatureEnabled } from '../../template-features'
+import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
@@ -100,6 +102,7 @@ const settingsClass = {
 } as const
 
 export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request, redirect }) => {
+  ensureFeatureEnabled('account')
   const { createServerLanguageSeed } = await import('../../lang/server')
   const lang = resolveRequestLang(request)
   if (isStaticShellBuild()) {
@@ -131,7 +134,10 @@ export const useSettingsData = routeLoader$<ProtectedRouteData>(async ({ request
   }
 })
 
-export const onGet: RequestHandler = createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+export const onGet: RequestHandler = createFeatureRouteHandler(
+  'account',
+  createCacheHandler(PRIVATE_REVALIDATE_CACHE)
+)
 
 export const head: DocumentHead = ({ resolveValue }: DocumentHeadProps) => {
   const data = resolveValue(useSettingsData)
@@ -173,6 +179,9 @@ export default component$(() => {
   const description = copy.value.protectedDescription.replace('{{label}}', copy.value.navSettings)
   const user = data.value.user
   const userId = user?.id
+  const messagingEnabled = isSiteFeatureEnabled('messaging')
+  const pwaEnabled = isSiteFeatureEnabled('pwa')
+  const nativeFeatureEnabled = isSiteFeatureEnabled('native')
 
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
@@ -192,6 +201,7 @@ export default component$(() => {
   useVisibleTask$(() => {
     if (typeof window === 'undefined') return
     nativeRuntime.value = isNativeShellRuntime()
+    if (!messagingEnabled) return
     const friendUser = resolveFriendCodeUser(user)
     if (!friendUser) return
     friendCode.value = ensureFriendCode(friendUser)
@@ -199,6 +209,7 @@ export default component$(() => {
 
   useVisibleTask$((ctx) => {
     if (typeof window === 'undefined') return
+    if (!pwaEnabled) return
     if (isNativeShellRuntime()) return
     const handleCacheRefreshed = () => {
       swStatus.value = { tone: 'success', message: copy.value.settingsOfflineRefreshSuccess }
@@ -340,99 +351,103 @@ export default component$(() => {
         closeLabel={copy.value.fragmentClose}
       >
         <div data-static-settings-root>
-      <section class={settingsClass.panel}>
-        <div class={settingsClass.panelHeader}>
-          <span class={settingsClass.panelTitle}>{copy.value.settingsChatTitle}</span>
-          <p class={settingsClass.panelDescription}>{copy.value.settingsChatDescription}</p>
-        </div>
-        <div class={settingsClass.toggleRow}>
-          <div class={settingsClass.toggleLabel}>
-            <span class={settingsClass.toggleTitle}>{copy.value.settingsChatReadReceipts}</span>
-            <span class={settingsClass.toggleHint}>{copy.value.settingsChatReadReceiptsHint}</span>
+      {messagingEnabled ? (
+        <section class={settingsClass.panel}>
+          <div class={settingsClass.panelHeader}>
+            <span class={settingsClass.panelTitle}>{copy.value.settingsChatTitle}</span>
+            <p class={settingsClass.panelDescription}>{copy.value.settingsChatDescription}</p>
           </div>
-          <button
-            type="button"
-            class={settingsClass.toggle}
-            data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
-            data-static-settings-toggle="read-receipts"
-            role="switch"
-            aria-checked={chatSettings.value.readReceipts}
-            onClick$={toggleReadReceipts}
-          >
-            <span class={settingsClass.toggleTrack}>
-              <span class={settingsClass.toggleKnob} />
-            </span>
-          </button>
-        </div>
-        <div class={settingsClass.toggleRow}>
-          <div class={settingsClass.toggleLabel}>
-            <span class={settingsClass.toggleTitle}>{copy.value.settingsChatTypingIndicators}</span>
-            <span class={settingsClass.toggleHint}>{copy.value.settingsChatTypingIndicatorsHint}</span>
-          </div>
-          <button
-            type="button"
-            class={settingsClass.toggle}
-            data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
-            data-static-settings-toggle="typing-indicators"
-            role="switch"
-            aria-checked={chatSettings.value.typingIndicators}
-            onClick$={toggleTypingIndicators}
-          >
-            <span class={settingsClass.toggleTrack}>
-              <span class={settingsClass.toggleKnob} />
-            </span>
-          </button>
-        </div>
-      </section>
-      <section class={settingsClass.panel}>
-        <div class={settingsClass.panelHeader}>
-          <span class={settingsClass.panelTitle}>{copy.value.settingsInviteTitle}</span>
-          <p class={settingsClass.panelDescription}>{copy.value.settingsInviteDescription}</p>
-        </div>
-        <div class={settingsClass.inviteRow}>
-          <div class={settingsClass.inviteLabel}>
-            <span class={settingsClass.toggleTitle}>{copy.value.settingsInviteCodeLabel}</span>
-          </div>
-          <div class={settingsClass.inviteActions}>
+          <div class={settingsClass.toggleRow}>
+            <div class={settingsClass.toggleLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsChatReadReceipts}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsChatReadReceiptsHint}</span>
+            </div>
             <button
               type="button"
-              class={settingsClass.actionButton}
-              disabled={!friendCode.value}
-              data-static-settings-action="copy-friend-code"
-              onClick$={handleCopyFriendCode}
+              class={settingsClass.toggle}
+              data-active={chatSettings.value.readReceipts ? 'true' : 'false'}
+              data-static-settings-toggle="read-receipts"
+              role="switch"
+              aria-checked={chatSettings.value.readReceipts}
+              onClick$={toggleReadReceipts}
             >
-              {copy.value.settingsInviteCopyAction}
+              <span class={settingsClass.toggleTrack}>
+                <span class={settingsClass.toggleKnob} />
+              </span>
             </button>
+          </div>
+          <div class={settingsClass.toggleRow}>
+            <div class={settingsClass.toggleLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsChatTypingIndicators}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsChatTypingIndicatorsHint}</span>
+            </div>
             <button
               type="button"
-              class={settingsClass.actionButton}
-              data-static-settings-action="rotate-friend-code"
-              onClick$={handleRotateFriendCode}
+              class={settingsClass.toggle}
+              data-active={chatSettings.value.typingIndicators ? 'true' : 'false'}
+              data-static-settings-toggle="typing-indicators"
+              role="switch"
+              aria-checked={chatSettings.value.typingIndicators}
+              onClick$={toggleTypingIndicators}
             >
-              {copy.value.settingsInviteRotateAction}
+              <span class={settingsClass.toggleTrack}>
+                <span class={settingsClass.toggleKnob} />
+              </span>
             </button>
           </div>
-        </div>
-        <textarea
-          class={settingsClass.inviteCode}
-          readOnly
-          value={friendCode.value}
-          data-static-settings-friend-code
-          aria-label={copy.value.settingsInviteCodeLabel}
-        />
-        {friendCodeStatus.value ? (
-          <div
-            class={authClass.status}
-            role="status"
-            aria-live="polite"
-            data-tone={friendCodeStatus.value.tone}
-            data-static-settings-friend-status
-          >
-            {friendCodeStatus.value.message}
+        </section>
+      ) : null}
+      {messagingEnabled ? (
+        <section class={settingsClass.panel}>
+          <div class={settingsClass.panelHeader}>
+            <span class={settingsClass.panelTitle}>{copy.value.settingsInviteTitle}</span>
+            <p class={settingsClass.panelDescription}>{copy.value.settingsInviteDescription}</p>
           </div>
-        ) : null}
-      </section>
-      {!nativeRuntime.value ? (
+          <div class={settingsClass.inviteRow}>
+            <div class={settingsClass.inviteLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsInviteCodeLabel}</span>
+            </div>
+            <div class={settingsClass.inviteActions}>
+              <button
+                type="button"
+                class={settingsClass.actionButton}
+                disabled={!friendCode.value}
+                data-static-settings-action="copy-friend-code"
+                onClick$={handleCopyFriendCode}
+              >
+                {copy.value.settingsInviteCopyAction}
+              </button>
+              <button
+                type="button"
+                class={settingsClass.actionButton}
+                data-static-settings-action="rotate-friend-code"
+                onClick$={handleRotateFriendCode}
+              >
+                {copy.value.settingsInviteRotateAction}
+              </button>
+            </div>
+          </div>
+          <textarea
+            class={settingsClass.inviteCode}
+            readOnly
+            value={friendCode.value}
+            data-static-settings-friend-code
+            aria-label={copy.value.settingsInviteCodeLabel}
+          />
+          {friendCodeStatus.value ? (
+            <div
+              class={authClass.status}
+              role="status"
+              aria-live="polite"
+              data-tone={friendCodeStatus.value.tone}
+              data-static-settings-friend-status
+            >
+              {friendCodeStatus.value.message}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+      {pwaEnabled && !nativeRuntime.value ? (
         <section class={settingsClass.panel}>
           <div class={settingsClass.panelHeader}>
             <span class={settingsClass.panelTitle}>{copy.value.settingsOfflineTitle}</span>
@@ -499,54 +514,56 @@ export default component$(() => {
         </section>
       ) : null}
 
-      <section class={settingsClass.panel}>
-        <div class={settingsClass.panelHeader}>
-          <span class={settingsClass.panelTitle}>{copy.value.settingsNativeAccessibilityTitle}</span>
-          <p class={settingsClass.panelDescription}>{copy.value.settingsNativeAccessibilityDescription}</p>
-        </div>
-        <div class={settingsClass.actionRow}>
-          <div class={settingsClass.actionLabel}>
-            <label class={settingsClass.toggleTitle} for="settings-text-zoom">
-              {copy.value.settingsNativeTextZoomAction} ({textZoom.value}%)
-            </label>
-            <span class={settingsClass.toggleHint}>{copy.value.settingsNativeTextZoomHint}</span>
+      {nativeFeatureEnabled ? (
+        <section class={settingsClass.panel}>
+          <div class={settingsClass.panelHeader}>
+            <span class={settingsClass.panelTitle}>{copy.value.settingsNativeAccessibilityTitle}</span>
+            <p class={settingsClass.panelDescription}>{copy.value.settingsNativeAccessibilityDescription}</p>
           </div>
-          <input
-            id="settings-text-zoom"
-            class={settingsClass.range}
-            type="range"
-            min="85"
-            max="140"
-            step="5"
-            value={textZoom.value}
-            aria-valuemin={85}
-            aria-valuemax={140}
-            aria-valuenow={textZoom.value}
-            aria-label={copy.value.settingsNativeTextZoomAriaLabel}
-            data-static-settings-text-zoom
-            onInput$={handleTextZoomInput}
-          />
-        </div>
-        <div class={settingsClass.toggleRow}>
-          <div class={settingsClass.toggleLabel}>
-            <span class={settingsClass.toggleTitle}>{copy.value.settingsNativePrivacyShieldAction}</span>
-            <span class={settingsClass.toggleHint}>{copy.value.settingsNativePrivacyShieldHint}</span>
+          <div class={settingsClass.actionRow}>
+            <div class={settingsClass.actionLabel}>
+              <label class={settingsClass.toggleTitle} for="settings-text-zoom">
+                {copy.value.settingsNativeTextZoomAction} ({textZoom.value}%)
+              </label>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsNativeTextZoomHint}</span>
+            </div>
+            <input
+              id="settings-text-zoom"
+              class={settingsClass.range}
+              type="range"
+              min="85"
+              max="140"
+              step="5"
+              value={textZoom.value}
+              aria-valuemin={85}
+              aria-valuemax={140}
+              aria-valuenow={textZoom.value}
+              aria-label={copy.value.settingsNativeTextZoomAriaLabel}
+              data-static-settings-text-zoom
+              onInput$={handleTextZoomInput}
+            />
           </div>
-          <button
-            type="button"
-            class={settingsClass.toggle}
-            data-active={privacyAlwaysOn.value ? 'true' : 'false'}
-            data-static-settings-toggle="privacy-always-on"
-            role="switch"
-            aria-checked={privacyAlwaysOn.value}
-            onClick$={togglePrivacyAlwaysOn}
-          >
-            <span class={settingsClass.toggleTrack}>
-              <span class={settingsClass.toggleKnob} />
-            </span>
-          </button>
-        </div>
-      </section>
+          <div class={settingsClass.toggleRow}>
+            <div class={settingsClass.toggleLabel}>
+              <span class={settingsClass.toggleTitle}>{copy.value.settingsNativePrivacyShieldAction}</span>
+              <span class={settingsClass.toggleHint}>{copy.value.settingsNativePrivacyShieldHint}</span>
+            </div>
+            <button
+              type="button"
+              class={settingsClass.toggle}
+              data-active={privacyAlwaysOn.value ? 'true' : 'false'}
+              data-static-settings-toggle="privacy-always-on"
+              role="switch"
+              aria-checked={privacyAlwaysOn.value}
+              onClick$={togglePrivacyAlwaysOn}
+            >
+              <span class={settingsClass.toggleTrack}>
+                <span class={settingsClass.toggleKnob} />
+              </span>
+            </button>
+          </div>
+        </section>
+      ) : null}
       {logoutMessage.value ? (
         <div class={authClass.status} role="status" aria-live="polite" data-tone="error" data-static-settings-logout-status>
           {logoutMessage.value}
