@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.5
-FROM oven/bun:1.3.10-alpine AS deps
+FROM oven/bun:1.3.11-alpine AS deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
@@ -16,7 +16,7 @@ COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --ignore-scripts --omit=optional --omit=dev
 
-FROM oven/bun:1.3.10-alpine AS builder
+FROM oven/bun:1.3.11-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
     --mount=type=cache,target=/root/.cache \
     bun run --cwd packages/platform build
 
-FROM oven/bun:1.3.10-alpine AS runner
+FROM oven/bun:1.3.11-alpine AS runner
 WORKDIR /app/packages/platform
 ENV NODE_ENV=production
 ENV API_HOST=0.0.0.0

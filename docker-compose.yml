@@ -95,7 +95,7 @@ services:
     restart: "no"
 
   garnet:
-    image: ghcr.io/microsoft/garnet:1.1.0
+    image: ghcr.io/microsoft/garnet:latest
     entrypoint: ["bash", "-lc"]
     command:
       - >
