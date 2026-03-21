@@ -1,6 +1,6 @@
 import type { Lang } from '../../lang/types'
 import { getActiveHomeController } from './home-active-controller'
-import { loadHomeUiControlsRuntime } from './home-ui-controls-runtime-loader'
+import { loadHomeUiControlsRuntime } from './runtime-loaders'
 
 let homeSettingsInteractionPromise: Promise<boolean> | null = null
 

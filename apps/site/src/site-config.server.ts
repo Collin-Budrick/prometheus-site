@@ -1,4 +1,4 @@
-import { resolveAppConfig, type AppConfig } from '@platform/env'
+import { resolveAppConfig, type AppConfig } from '@platform/config'
 
 export type { AppConfig }
 

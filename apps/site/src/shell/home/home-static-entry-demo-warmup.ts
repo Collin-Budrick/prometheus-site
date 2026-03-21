@@ -1,4 +1,4 @@
-import { loadHomeDemoWarmCore } from './home-demo-warm-core-loader'
+import { loadHomeDemoWarmCore } from './runtime-loaders'
 
 type WarmHomeDemoAssetsOptions = Parameters<
   typeof import('./home-demo-warm-core').warmStaticHomeDemoAssets

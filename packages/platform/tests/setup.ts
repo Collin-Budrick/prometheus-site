@@ -456,13 +456,31 @@ const databaseClient = {
 
 const rateLimiter = createRateLimiter()
 
+const spacetimeClient = {
+  uri: 'http://127.0.0.1:3000/',
+  moduleName: 'prometheus-site-local',
+  connect: async () => {},
+  disconnect: async () => {},
+  ping: async () => {},
+  getModuleInfo: async () => ({ database_identity: 'test-db' })
+}
+
 export const setValkeyReady = (ready: boolean) => {
   valkeyReady = ready
 }
 
 export const testValkey = valkey
 
-export const apiPort = 4110
+const resolveApiTestPort = () => {
+  const envPort = Number.parseInt(process.env.PROM_API_TEST_PORT ?? '', 10)
+  if (Number.isFinite(envPort) && envPort > 0) {
+    return envPort
+  }
+
+  return 45000 + (process.pid % 10000)
+}
+
+export const apiPort = resolveApiTestPort()
 export const apiUrl = `http://127.0.0.1:${apiPort}`
 
 let startPromise: Promise<void> | null = null
@@ -490,6 +508,7 @@ export const resetTestState = () => {
   authUsersData.splice(0, authUsersData.length, { id: 'user-1', email: 'existing@example.com', name: 'Existing User' })
   authSessionsData.splice(0, authSessionsData.length)
   nextSessionId = 1
+  rateLimiter.clearInMemoryCounters()
   cacheStorage.clear()
   valkeyCounters.clear()
   valkeyHashes.clear()
@@ -506,6 +525,7 @@ export const ensureApiReady = async () => {
     ;(globalThis as typeof globalThis & { __PROM_API_TEST__?: unknown }).__PROM_API_TEST__ = {
       cache: cacheClient,
       database: databaseClient,
+      spacetime: spacetimeClient,
       rateLimiter,
       host: '127.0.0.1',
       port: apiPort

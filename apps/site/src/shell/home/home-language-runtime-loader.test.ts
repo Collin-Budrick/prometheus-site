@@ -4,7 +4,7 @@ import {
   resetHomeLanguageRuntimeLoaderForTests,
   resolveHomeLanguageRuntimeUrl,
   type HomeLanguageRuntimeModule
-} from './home-language-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeLanguageRuntimeLoaderForTests()

@@ -1,7 +1,4 @@
-import plannerStyleHref from './home-demo-planner.css?url'
-import preactIslandStyleHref from './home-demo-preact-island.css?url'
-import reactBinaryStyleHref from './home-demo-react-binary.css?url'
-import wasmRendererStyleHref from './home-demo-wasm-renderer.css?url'
+import sharedStyleHref from './home-demo-shared.css?url'
 import {
   HOME_DEMO_RUNTIME_ASSET_PATHS,
   normalizeHomeDemoAssetMap,
@@ -11,19 +8,19 @@ import {
 export const DEFAULT_HOME_DEMO_ASSETS: HomeDemoAssetMap = {
   planner: {
     moduleHref: HOME_DEMO_RUNTIME_ASSET_PATHS.planner,
-    styleHref: plannerStyleHref
+    styleHref: sharedStyleHref
   },
   'wasm-renderer': {
     moduleHref: HOME_DEMO_RUNTIME_ASSET_PATHS['wasm-renderer'],
-    styleHref: wasmRendererStyleHref
+    styleHref: sharedStyleHref
   },
   'react-binary': {
     moduleHref: HOME_DEMO_RUNTIME_ASSET_PATHS['react-binary'],
-    styleHref: reactBinaryStyleHref
+    styleHref: sharedStyleHref
   },
   'preact-island': {
     moduleHref: HOME_DEMO_RUNTIME_ASSET_PATHS['preact-island'],
-    styleHref: preactIslandStyleHref
+    styleHref: sharedStyleHref
   }
 }
 

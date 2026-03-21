@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { releaseCacheLock, writeCache } from '@platform/cache-helpers'
+import { releaseCacheLock, writeCache } from '@platform/cache'
 import { createFragmentStore } from '@platform/server/fragments'
 
 type TestCacheClient = {

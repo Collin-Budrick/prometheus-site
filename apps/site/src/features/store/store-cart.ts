@@ -1,4 +1,4 @@
-import { appConfig } from '@site/public-app-config'
+import { appConfig } from '@site/site-config'
 import { getSpacetimeDbAuthToken } from '@site/features/auth/spacetime-auth'
 import {
   createStoreLocalRepo,

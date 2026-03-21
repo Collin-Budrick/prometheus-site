@@ -1,9 +1,8 @@
 import { loadFragmentWidgetRuntime } from '../../fragment/ui/fragment-widget-runtime-loader'
 import { resumeDeferredHomeHydration } from './home-active-controller'
-import { loadHomeBootstrapDeferredRuntime } from './home-bootstrap-deferred-runtime-loader'
+import { loadHomeBootstrapDeferredRuntime } from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
-import { loadHomeSettingsInteractionRuntime } from './home-settings-interaction-runtime-loader'
-import { loadHomeStaticEntryDemoWarmup } from './home-static-entry-demo-warmup-loader'
+import { loadHomeSettingsInteractionRuntime, loadHomeStaticEntryDemoWarmup } from './runtime-loaders'
 import { ensureHomePostAnchorPreconnects } from './home-post-anchor-preconnect'
 import {
   markStaticShellUserTiming,

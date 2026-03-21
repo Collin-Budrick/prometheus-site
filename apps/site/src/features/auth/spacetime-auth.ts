@@ -1,5 +1,5 @@
 import { templateBranding } from '@prometheus/template-config'
-import { appConfig } from '@site/public-app-config'
+import { appConfig } from '@site/site-config'
 import { attemptBootstrapSession, clearBootstrapSession } from './auth-bootstrap'
 import { clearClientAuthSessionCache } from './auth-session-client'
 import { buildPublicApiUrl } from '@site/shared/public-api-url'

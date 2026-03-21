@@ -1,6 +1,6 @@
 import { h, renderToHtml } from '@core/fragment/tree'
 import type { FragmentPayload, RenderNode } from '../../fragment/types'
-import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
+import type { ContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
 import type { StoreSeed } from '../../features/store/store-seed'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../../fragment/widget-markup'
 

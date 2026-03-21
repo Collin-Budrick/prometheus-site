@@ -1,4 +1,4 @@
-import { appConfig } from '../../public-app-config'
+import { appConfig } from '../../site-config'
 import { buildPublicApiUrl } from '../../shared/public-api-url'
 
 export const HOME_COLLAB_ROOT_SELECTOR = '[data-home-collab-root]'

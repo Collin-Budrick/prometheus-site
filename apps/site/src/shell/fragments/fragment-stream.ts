@@ -20,7 +20,7 @@ import { lockFragmentCardHeight } from './fragment-height-lock'
 import {
   loadFragmentHeightPatchRuntime,
   type FragmentHeightPatchRuntimeModule
-} from './fragment-height-patch-runtime-loader'
+} from './runtime-loaders'
 
 const FRAGMENT_REVEAL_TOKEN_ATTR = 'data-fragment-reveal-token'
 const FRAGMENT_REVEAL_UNLOCK_PADDING_MS = 40

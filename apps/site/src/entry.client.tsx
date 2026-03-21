@@ -1,7 +1,7 @@
 import type { RenderOptions } from '@builder.io/qwik'
 import { getServerBackoffMs, markServerFailure, markServerSuccess } from './shared/server-backoff'
 import { buildPublicApiUrl, resolvePublicApiHost } from './shared/public-api-url'
-import { appConfig } from './public-app-config'
+import { appConfig } from './site-config'
 import {
   CLEANUP_VERSION_KEY,
   FORCE_CLEANUP_KEY,

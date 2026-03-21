@@ -66,12 +66,12 @@ describe("static shell performance invariants", () => {
       readSource("./home-stream.ts"),
       readSource("./home-demo-runtime-loader.ts"),
       readSource("./home-demo-runtime-types.ts"),
-      readSource("./home-bootstrap-runtime-loader.ts"),
-      readSource("./home-bootstrap-post-lcp-runtime-loader.ts"),
-      readSource("./home-ui-controls-runtime-loader.ts"),
-      readSource("./home-language-runtime-loader.ts"),
-      readSource("./home-dock-auth-runtime-loader.ts"),
-      readSource("../fragments/fragment-height-patch-runtime-loader.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("../fragments/runtime-loaders.ts"),
       readSource("./home-copy-bundle.ts"),
       readSource("./home-render.ts"),
       readSource("../../fragment/definitions/home.ts"),
@@ -297,7 +297,7 @@ describe("static shell performance invariants", () => {
       "(detail?.root ?? doc) as unknown as ParentNode",
     );
     expect(homeDemoEntrySource).not.toContain(
-      "from './home-collab-entry-loader'",
+      "from './runtime-loaders'",
     );
     expect(streamSource).toContain("STATIC_HOME_PATCH_STATE_ATTR");
     expect(streamSource).toContain("STATIC_HOME_STAGE_ATTR");
@@ -556,35 +556,35 @@ describe("static shell performance invariants", () => {
       readSource("../routes/home.tsx"),
       readSource("../routes/login/index.tsx"),
       readSource("../routes/store/index.tsx"),
-      readSource("../routes/lab/index.tsx"),
-      readSource("../routes/chat/index.tsx"),
-      readSource("../routes/dashboard/index.tsx"),
+      readSource("../routes/lab.tsx"),
+      readSource("../routes/chat.tsx"),
+      readSource("../routes/dashboard.tsx"),
       readSource("../routes/profile/index.tsx"),
       readSource("../routes/settings/index.tsx"),
-      readSource("../routes/offline/index.tsx"),
-      readSource("../routes/login/callback/index.tsx"),
+      readSource("../routes/offline.tsx"),
+      readSource("../routes/login/callback.tsx"),
       readSource("./global-style-assets.ts"),
       readSource("./home-static-entry.ts"),
       readSource("./home-post-anchor-core.ts"),
       readSource("./home-settings-interaction-runtime.ts"),
-      readSource("./home-settings-interaction-runtime-loader.ts"),
+      readSource("./runtime-loaders.ts"),
       readSource("./home-static-entry-demo-warmup.ts"),
       readSource("./home-demo-warm-core.ts"),
       readSource("./home-demo-startup-entry.ts"),
       readSource("./home-demo-entry.ts"),
       readSource("./home-demo-runtime-loader.ts"),
-      readSource("./home-bootstrap-runtime-loader.ts"),
-      readSource("./home-bootstrap-post-lcp-runtime-loader.ts"),
-      readSource("./home-ui-controls-runtime-loader.ts"),
-      readSource("./home-language-runtime-loader.ts"),
-      readSource("./home-dock-auth-runtime-loader.ts"),
-      readSource("../fragments/fragment-height-patch-runtime-loader.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("./runtime-loaders.ts"),
+      readSource("../fragments/runtime-loaders.ts"),
       readSource("./fragment-static-entry.ts"),
-      readSource("./fragment-bootstrap-runtime-loader.ts"),
+      readSource("../fragments/runtime-loaders.ts"),
       readSource("./island-static-entry.ts"),
-      readSource("./island-bootstrap-runtime-loader.ts"),
+      readSource("../core/runtime-loaders.ts"),
       readSource("./home-demo-entry-loader.ts"),
-      readSource("./home-collab-entry-loader.ts"),
+      readSource("./runtime-loaders.ts"),
       readSource("./store-static-runtime-loader.ts"),
       readSource("./store-static-runtime.ts"),
       readSource("../core/controllers/store-static-controller.ts"),
@@ -742,7 +742,7 @@ describe("static shell performance invariants", () => {
     expect(fragmentEntrySource).toContain("prewarmFragmentRuntime");
     expect(fragmentEntrySource).not.toContain("from './static-bootstrap'");
     expect(islandEntrySource).toContain(
-      "from './island-bootstrap-runtime-loader'",
+      "from '../core/runtime-loaders'",
     );
     expect(islandEntrySource).not.toContain("from './island-bootstrap'");
     expect(entrySsrSource).toContain("appendStaticAssetVersion");
@@ -809,7 +809,7 @@ describe("static shell performance invariants", () => {
     expect(homeRouteSource).not.toContain("loadHybridFragmentResource");
     expect(homeStaticEntrySource).toContain("installHomeStaticEntry");
     expect(homeStaticEntrySource).toContain("loadHomePostAnchorCore");
-    expect(homeStaticEntrySource).toContain("from './home-post-anchor-core-loader'");
+    expect(homeStaticEntrySource).toContain("from './runtime-loaders'");
     expect(homeStaticEntrySource).not.toContain("loadFragmentWidgetRuntime");
     expect(homeStaticEntrySource).not.toContain("resumeDeferredHomeHydration");
     expect(homeStaticEntrySource).not.toContain("loadHomeStaticEntryDemoWarmup");
@@ -842,10 +842,10 @@ describe("static shell performance invariants", () => {
     expect(homePostAnchorCoreSource).not.toContain("'scroll'");
     expect(homePostAnchorCoreSource).toContain("'focusin'");
     expect(homePostAnchorCoreSource).not.toContain("from './home-bootstrap'");
-    expect(homePostAnchorCoreSource).not.toContain("from './home-ui-controls-runtime-loader'");
+    expect(homePostAnchorCoreSource).not.toContain("from './runtime-loaders'");
     expect(homePostAnchorCoreSource).toContain("from './home-active-controller'");
     expect(homePostAnchorCoreSource).toContain(
-      "from './home-static-entry-demo-warmup-loader'",
+      "from './runtime-loaders'",
     );
     expect(homePostAnchorCoreSource).toContain("scheduleStaticShellTask");
     expect(homeSettingsInteractionRuntimeLoaderSource).toContain(
@@ -866,7 +866,7 @@ describe("static shell performance invariants", () => {
     expect(homeStaticEntrySource).not.toContain("scheduleReleaseTask(() =>");
     expect(homeStaticAnchorEntrySource).toContain("installHomeStaticAnchorEntry");
     expect(homeStaticAnchorEntrySource).toContain("loadHomeAnchorCore");
-    expect(homeStaticAnchorEntrySource).toContain("from './home-anchor-core-loader'");
+    expect(homeStaticAnchorEntrySource).toContain("from './runtime-loaders'");
     expect(homeAnchorCoreSource).toContain("createHomeFirstLcpGate");
     expect(homeAnchorCoreSource).not.toContain("../core/language-seed-client");
     expect(homeAnchorCoreSource).not.toContain("./home-stream");
@@ -950,7 +950,7 @@ describe("static shell performance invariants", () => {
     expect(homeDemoEntrySource).toContain("normalizeHomeDemoAssetMap");
     expect(homeDemoEntrySource).toContain("../core/scheduler");
     expect(homeDemoEntrySource).not.toContain(
-      "from './home-collab-entry-loader'",
+      "from './runtime-loaders'",
     );
     expect(homeDemoEntrySource).not.toContain("from './home-collab-text'");
     expect(entrySsrSource).toContain('"home-static": [');

@@ -1,6 +1,6 @@
 import type { Lang } from '../../../lang'
 import { getUiCopy } from '../../../lang/client'
-import { appConfig } from '../../../public-app-config'
+import { appConfig } from '../../../site-config'
 import { loadClientAuthSession } from '../../auth/auth-client'
 import {
   ensureSpacetimeAuthSession,

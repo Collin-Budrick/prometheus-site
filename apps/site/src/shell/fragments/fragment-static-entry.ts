@@ -1,6 +1,6 @@
-import { loadFragmentBootstrapRuntime } from './fragment-bootstrap-runtime-loader'
+import { loadFragmentBootstrapRuntime } from './runtime-loaders'
 import { loadFragmentWidgetRuntime } from '../../fragment/ui/fragment-widget-runtime-loader'
-import { appConfig } from '../../public-app-config'
+import { appConfig } from '../../site-config'
 import { installTrustedTypesFunctionBridge } from '../../security/client'
 import { releaseQueuedReadyStaggerWithin } from '@prometheus/ui/ready-stagger'
 import { scheduleStaticRoutePaintReady } from '../core/static-route-paint'

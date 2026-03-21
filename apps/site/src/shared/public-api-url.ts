@@ -5,4 +5,4 @@ export {
   resolvePublicApiBase as resolveApiBase,
   resolvePublicApiHost,
   resolvePublicApiHost as resolveApiHost
-} from '../public-app-config'
+} from '../site-config'

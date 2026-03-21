@@ -4,4 +4,4 @@ export {
   isPublicWebTransportDatagramsPreferred,
   isPublicWebTransportPreferred,
   resolvePublicApiBase as getPublicFragmentApiBase
-} from '../public-app-config'
+} from '../site-config'

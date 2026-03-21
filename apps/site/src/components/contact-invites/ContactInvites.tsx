@@ -7,7 +7,7 @@ import {
   markInitialTasksComplete,
   resolveFragmentInitialTaskHost
 } from '../../fragment/ui/initial-settle'
-import { useContactInvitesSeed } from '../../shared/contact-invites-seed'
+import { useContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
 import {
   emptyInviteGroups,
   type ContactInviteGroups,
@@ -27,7 +27,7 @@ import {
   searchContactDirectory,
   sendContactInviteDirect,
   subscribeContactInvites
-} from '../../shared/spacetime-contacts'
+} from '../../features/messaging/spacetime-contacts'
 
 type ContactInvitesProps = {
   class?: string

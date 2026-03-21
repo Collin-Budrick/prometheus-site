@@ -1,4 +1,4 @@
-import { type NavLabelKey } from '../../config'
+import { type NavLabelKey } from '../../site-config'
 import type { Lang } from '../../lang/types'
 import { setTrustedInnerHtml, setTrustedTemplateHtml } from '../../security/client'
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../../shared/nav-order'

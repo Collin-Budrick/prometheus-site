@@ -15,7 +15,7 @@ import {
 import { applyFragmentEffects, teardownFragmentEffects } from '../client'
 import { useSharedLangSignal } from '../../shared/lang-bridge'
 import { runLangViewTransition } from '../../shared/view-transitions'
-import { appConfig } from '../../public-app-config'
+import { appConfig } from '../../site-config'
 import { getPublicFragmentApiBase } from '../../shared/public-fragment-config'
 import { clearFragmentPlanCache } from '../plan-cache'
 import { clearFragmentShellCache } from './shell-cache'

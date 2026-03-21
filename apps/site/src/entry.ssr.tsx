@@ -36,10 +36,10 @@ import { getStaticShellBuildVersion } from "./shell/core/build-version.server";
 import { expandStaticShellPreloadPaths } from "./shell/core/build-manifest.server";
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
-} from "./shell/home/home-static-entry-loader";
+} from "./shell/home/runtime-loaders";
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
-} from "./shell/home/home-bootstrap-runtime-loader";
+} from "./shell/home/runtime-loaders";
 import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,

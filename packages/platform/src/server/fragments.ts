@@ -37,7 +37,7 @@ import {
   releaseCacheLock,
   shouldIgnoreCacheLockReleaseError,
   writeCache
-} from '../cache-helpers'
+} from '../cache'
 import type { FragmentUpdateBroadcaster, FragmentUpdateEvent } from './fragment-updates'
 import { Readable } from 'node:stream'
 import { constants, createBrotliCompress, createDeflate, createGzip } from 'node:zlib'

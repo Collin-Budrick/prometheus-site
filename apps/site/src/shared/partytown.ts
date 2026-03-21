@@ -1,5 +1,5 @@
 import { partytownSnippet, type PartytownConfig } from '@qwik.dev/partytown/integration'
-import type { PartytownAppConfig } from '../public-app-config'
+import type { PartytownAppConfig } from '../site-config'
 
 type PartytownHeadScriptOptions = {
   config: PartytownAppConfig

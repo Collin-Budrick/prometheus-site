@@ -2,7 +2,7 @@ import { $, component$, Slot, useSignal, useVisibleTask$, type QRL, type Signal 
 import { Link, routeLoader$, useDocumentHead, useLocation, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { DockBar, DockIcon, defaultTheme, readThemeFromCookie } from '@prometheus/ui'
 import { InChatLines, InDashboard, InFlask, InHomeSimple, InSettings, InShop, InUser, InUserCircle } from '@qwikest/icons/iconoir'
-import { siteBrand, type NavLabelKey } from '../config'
+import { siteBrand, type NavLabelKey } from '../site-config'
 import { PUBLIC_CACHE_CONTROL } from '../cache-control'
 import { useSharedFragmentStatusSignal } from '@core/fragments'
 import { useLangCopy, useLanguageSeed, useProvideLangSignal } from '../shared/lang-bridge'
@@ -12,7 +12,7 @@ import { runLangViewTransition } from '../shared/view-transitions'
 import { loadAuthSession, type AuthSessionState } from '../features/auth/auth-session'
 import { didAuthSessionChange, revalidateClientAuthSession } from '../features/auth/auth-session-client'
 import { resolveRequestLang } from './fragment-resource'
-import { appConfig } from '../public-app-config'
+import { appConfig } from '../site-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
@@ -43,12 +43,12 @@ import {
 import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
-} from '../shell/home/home-static-entry-loader'
-import { HOME_STATIC_ENTRY_ASSET_PATH } from '../shell/home/home-static-entry-loader'
+} from '../shell/home/runtime-loaders'
+import { HOME_STATIC_ENTRY_ASSET_PATH } from '../shell/home/runtime-loaders'
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
-} from '../shell/home/home-bootstrap-runtime-loader'
-import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../shell/home/home-static-entry-demo-warmup-loader'
+} from '../shell/home/runtime-loaders'
+import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../shell/home/runtime-loaders'
 import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH

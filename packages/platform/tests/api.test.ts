@@ -17,15 +17,27 @@ const protocolTwoPath = featureFlags.store ? '/store' : '/'
 const describeStore = featureFlags.store ? describe : describe.skip
 const describeMessaging = featureFlags.messaging ? describe : describe.skip
 
-const buildKnownVersions = (plan: { fragments: Array<{ id: string; cache?: { updatedAt?: number } }> }) =>
-  encodeFragmentKnownVersions(
-    plan.fragments.reduce<Record<string, number>>((acc, fragment) => {
-      if (typeof fragment.cache?.updatedAt === 'number') {
-        acc[fragment.id] = fragment.cache.updatedAt
-      }
-      return acc
-    }, {})
-  )
+const buildKnownVersionMap = (plan: { fragments: Array<{ id: string; cache?: { updatedAt?: number } }> }) =>
+  plan.fragments.reduce<Record<string, number>>((acc, fragment) => {
+    if (typeof fragment.cache?.updatedAt === 'number') {
+      acc[fragment.id] = fragment.cache.updatedAt
+    }
+    return acc
+  }, {})
+
+const encodeKnownVersions = (knownVersions: Record<string, number>) =>
+  encodeFragmentKnownVersions(knownVersions)
+
+const rememberStreamKnownVersions = (
+  knownVersions: Record<string, number>,
+  frames: Array<{ id: string; updatedAt?: number }>
+) => {
+  frames.forEach((frame) => {
+    if (typeof frame.updatedAt === 'number' && Number.isFinite(frame.updatedAt)) {
+      knownVersions[frame.id] = frame.updatedAt
+    }
+  })
+}
 
 describe('health endpoint', () => {
   it('returns ok status and uptime', async () => {
@@ -133,9 +145,9 @@ describe('fragment plan includeInitial', () => {
     )
     expect(planResponse.status).toBe(200)
     const plan = await planResponse.json()
-    let known = buildKnownVersions(plan)
+    let knownVersions = buildKnownVersionMap(plan)
 
-    const batchResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${known}`, {
+    const batchResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${encodeKnownVersions(knownVersions)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(
@@ -153,8 +165,10 @@ describe('fragment plan includeInitial', () => {
           `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
         )
       ).json()
-      known = buildKnownVersions(refreshedPlan)
-      const retryResponse = await fetch(`${apiUrl}/fragments/batch?protocol=2&known=${known}`, {
+      knownVersions = buildKnownVersionMap(refreshedPlan)
+      const retryResponse = await fetch(
+        `${apiUrl}/fragments/batch?protocol=2&known=${encodeKnownVersions(knownVersions)}`,
+        {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(
@@ -162,7 +176,8 @@ describe('fragment plan includeInitial', () => {
             id: fragment.id
           }))
         )
-      })
+        }
+      )
       expect(retryResponse.status).toBe(200)
       frames = parseFragmentFrames(new Uint8Array(await retryResponse.arrayBuffer()))
     }
@@ -176,26 +191,27 @@ describe('fragment plan includeInitial', () => {
     )
     expect(planResponse.status).toBe(200)
     const plan = await planResponse.json()
-    let known = buildKnownVersions(plan)
+    const knownVersions = buildKnownVersionMap(plan)
 
-    let streamResponse = await fetch(
-      `${apiUrl}/fragments/stream?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&known=${known}&live=0`
-    )
-    expect(streamResponse.status).toBe(200)
+    let frames: ReturnType<typeof parseFragmentFrames> = []
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const streamResponse = await fetch(
+        `${apiUrl}/fragments/stream?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&known=${encodeKnownVersions(knownVersions)}&live=0`
+      )
+      expect(streamResponse.status).toBe(200)
 
-    let frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
-    if (frames.length > 0) {
+      frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+      if (frames.length === 0) {
+        break
+      }
+
+      rememberStreamKnownVersions(knownVersions, frames)
       const refreshedPlan = await (
         await fetch(
           `${apiUrl}/fragments/plan?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&refresh=1`
         )
       ).json()
-      known = buildKnownVersions(refreshedPlan)
-      streamResponse = await fetch(
-        `${apiUrl}/fragments/stream?path=${encodeURIComponent(protocolTwoPath)}&protocol=2&known=${known}&live=0`
-      )
-      expect(streamResponse.status).toBe(200)
-      frames = parseFragmentFrames(new Uint8Array(await streamResponse.arrayBuffer()))
+      Object.assign(knownVersions, buildKnownVersionMap(refreshedPlan))
     }
     expect(frames.length).toBe(0)
   })

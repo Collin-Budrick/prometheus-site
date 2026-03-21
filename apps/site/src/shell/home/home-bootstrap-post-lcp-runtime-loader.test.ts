@@ -4,7 +4,7 @@ import {
   resetHomeBootstrapPostLcpRuntimeLoaderForTests,
   resolveHomeBootstrapPostLcpRuntimeUrl,
   type HomeBootstrapPostLcpRuntimeModule
-} from './home-bootstrap-post-lcp-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeBootstrapPostLcpRuntimeLoaderForTests()

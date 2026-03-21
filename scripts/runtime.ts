@@ -5,40 +5,16 @@ import path from 'node:path'
 import { getTemplatePresetDescriptor, templateBranding } from '../packages/template-config/src/index.ts'
 import { resolveComposeCommand, root, runSync } from './compose-utils'
 
-const allowedPresets = new Set(['full', 'core'])
-const requestedPreset = process.argv[2]?.trim() || process.env.PROMETHEUS_TEMPLATE_PRESET?.trim() || 'full'
-
-if (!allowedPresets.has(requestedPreset)) {
-  throw new Error(`[test-browser] Unsupported preset '${requestedPreset}'. Expected one of: full, core.`)
-}
-
-const preset = requestedPreset as 'full' | 'core'
-const presetDescriptor = getTemplatePresetDescriptor(preset)
-const baseURL = process.env.PLAYWRIGHT_BASE_URL?.trim() || `https://${templateBranding.domains.webProd}`
-const specPath = `tests/browser/${preset}.spec.ts`
 const bunGlobal = globalThis as typeof globalThis & { Bun?: { execPath?: string } }
 const bunBin =
   (bunGlobal.Bun?.execPath && typeof bunGlobal.Bun.execPath === 'string' && bunGlobal.Bun.execPath) ||
   (typeof process.execPath === 'string' && process.execPath) ||
   'bun'
-const env = {
-  ...process.env,
-  COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME?.trim() || templateBranding.composeProjectName,
-  PROMETHEUS_TEMPLATE_PRESET: preset,
-  PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
-  VITE_TEMPLATE_PRESET: preset,
-  VITE_TEMPLATE_HOME_MODE: process.env.VITE_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
-  PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0',
-  PLAYWRIGHT_BASE_URL: baseURL
-}
 
-const { command, prefix } = resolveComposeCommand()
+const command = process.argv[2]?.trim() || 'dev'
 
-const runComposeDown = () => {
-  const down = runSync(command, [...prefix, 'down', '--remove-orphans'], env)
-  if (down.status !== 0) {
-    throw new Error(`[test-browser] Compose down failed with status ${down.status ?? 'unknown'}.`)
-  }
+const importLocalScript = async (scriptPath: string) => {
+  await import(new URL(scriptPath, import.meta.url).href)
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -66,7 +42,7 @@ const waitForUrl = async (url: string, timeoutMs: number) => {
     await wait(1000)
   }
 
-  throw new Error(`[test-browser] Timed out waiting for ${url} (${lastError}).`)
+  throw new Error(`[runtime] Timed out waiting for ${url} (${lastError}).`)
 }
 
 const waitForExit = (child: ReturnType<typeof spawn>, timeoutMs: number) =>
@@ -99,7 +75,38 @@ const killChildTree = (pid: number | undefined) => {
   }
 }
 
-const run = async () => {
+const runBrowserSmoke = async () => {
+  const allowedPresets = new Set(['full', 'core'])
+  const requestedPreset = process.argv[3]?.trim() || process.env.PROMETHEUS_TEMPLATE_PRESET?.trim() || 'full'
+
+  if (!allowedPresets.has(requestedPreset)) {
+    throw new Error(`[runtime] Unsupported preset '${requestedPreset}'. Expected one of: full, core.`)
+  }
+
+  const preset = requestedPreset as 'full' | 'core'
+  const presetDescriptor = getTemplatePresetDescriptor(preset)
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL?.trim() || `https://${templateBranding.domains.webProd}`
+  const specPath = `tests/browser/${preset}.spec.ts`
+  const env = {
+    ...process.env,
+    COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME?.trim() || templateBranding.composeProjectName,
+    PROMETHEUS_TEMPLATE_PRESET: preset,
+    PROMETHEUS_TEMPLATE_HOME_MODE: process.env.PROMETHEUS_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
+    VITE_TEMPLATE_PRESET: preset,
+    VITE_TEMPLATE_HOME_MODE: process.env.VITE_TEMPLATE_HOME_MODE?.trim() || presetDescriptor.homeMode,
+    PROMETHEUS_DEVICE_HOST: process.env.PROMETHEUS_DEVICE_HOST?.trim() || '0',
+    PLAYWRIGHT_BASE_URL: baseURL
+  }
+
+  const { command: composeCommand, prefix } = resolveComposeCommand()
+
+  const runComposeDown = () => {
+    const down = runSync(composeCommand, [...prefix, 'down', '--remove-orphans'], env)
+    if (down.status !== 0) {
+      throw new Error(`[runtime] Compose down failed with status ${down.status ?? 'unknown'}.`)
+    }
+  }
+
   const logDir = path.join(root, 'tmp')
   mkdirSync(logDir, { recursive: true })
   const outLog = createWriteStream(path.join(logDir, `browser-preview-${preset}.out.log`), { flags: 'w' })
@@ -107,7 +114,7 @@ const run = async () => {
 
   runComposeDown()
 
-  const preview = spawn(bunBin, ['run', 'scripts/preview.ts'], {
+  const preview = spawn(bunBin, ['run', 'scripts/runtime.ts', 'preview'], {
     cwd: root,
     env,
     shell: false,
@@ -145,4 +152,16 @@ const run = async () => {
   }
 }
 
-await run()
+switch (command) {
+  case 'dev':
+    await importLocalScript('./dev.ts')
+    break
+  case 'preview':
+    await importLocalScript('./preview.ts')
+    break
+  case 'browser':
+    await runBrowserSmoke()
+    break
+  default:
+    throw new Error(`[runtime] Unknown command '${command}'. Expected dev, preview, or browser.`)
+}

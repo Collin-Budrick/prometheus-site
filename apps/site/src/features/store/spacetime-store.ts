@@ -1,5 +1,5 @@
 import type { SubscriptionHandle } from '@prometheus/spacetimedb-client'
-import { appConfig } from '@site/public-app-config'
+import { appConfig } from '@site/site-config'
 import type { StoreCommandPayload, StoreConsumeResult } from './store-cart'
 import type { StoreSortDir, StoreSortKey } from './store-sort'
 import { getSpacetimeDbAuthToken } from '@site/features/auth/spacetime-auth'

@@ -1,5 +1,5 @@
 import { primeTrustedTypesPolicies } from '../../security/client'
-import { loadHomeCollabEditorRuntime } from './home-collab-editor-entry-loader'
+import { loadHomeCollabEditorRuntime } from './runtime-loaders'
 import {
   HOME_COLLAB_RECONNECT_BASE_MS,
   HOME_COLLAB_RECONNECT_MAX_MS,

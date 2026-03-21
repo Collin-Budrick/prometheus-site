@@ -4,7 +4,7 @@ import {
   resetFragmentBootstrapRuntimeLoaderForTests,
   resolveFragmentBootstrapRuntimeUrl,
   type FragmentBootstrapRuntimeModule
-} from './fragment-bootstrap-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetFragmentBootstrapRuntimeLoaderForTests()

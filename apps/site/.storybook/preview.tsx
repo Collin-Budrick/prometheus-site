@@ -1,6 +1,6 @@
 import type { Preview } from 'storybook-framework-qwik'
 import type { ResolvedTemplateFeatures } from '@prometheus/template-config'
-import type { PublicAppConfig } from '../src/public-app-config'
+import type { PublicAppConfig } from '../src/site-config'
 import { defaultLanguage, getLanguagePack } from '../src/lang'
 import { seedLanguageResources } from '../src/lang/client'
 import { LangProvider } from '../src/shared/lang-bridge'

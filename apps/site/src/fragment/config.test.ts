@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { buildPublicApiUrl, resolvePublicAppConfig } from '../public-app-config'
+import { buildPublicApiUrl, resolvePublicAppConfig } from '../site-config'
 
 describe('resolvePublicAppConfig', () => {
   it('defaults fragment visibility to exact viewport intersection', () => {

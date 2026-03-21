@@ -9,7 +9,7 @@ import {
   PROFILE_AVATAR_MAX_BYTES,
   saveLocalProfile,
   type ProfileColor
-} from '../../../shared/profile-storage'
+} from '../../../features/auth/profile-storage'
 import { buildPublicApiUrl } from '../../../shared/public-api-url'
 
 type ProfileUser = {

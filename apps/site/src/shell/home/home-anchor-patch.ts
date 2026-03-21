@@ -13,7 +13,7 @@ import {
 import type { FragmentHeightRouteContext } from '../fragments/fragment-height'
 import { lockFragmentCardHeight } from '../fragments/fragment-height-lock'
 import { applyHomeFragmentEffects } from './home-fragment-client'
-import { loadFragmentHeightPatchRuntime } from '../fragments/fragment-height-patch-runtime-loader'
+import { loadFragmentHeightPatchRuntime } from '../fragments/runtime-loaders'
 import { dispatchHomeFirstAnchorPatchEvent } from './home-anchor-patch-event'
 import { scheduleStaticShellTask } from '../core/scheduler'
 import { markStaticShellUserTiming } from './static-shell-performance'

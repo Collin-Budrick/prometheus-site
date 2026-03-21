@@ -15,7 +15,7 @@ import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { constants } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
-import { resolveAppConfig } from '../../packages/platform/src/env.ts'
+import { resolveAppConfig } from '../../packages/platform/src/config.ts'
 import { generateFragmentCss } from '../../scripts/fragment-css.ts'
 import { createSiteResolveAliases, siteConfigRoot as configRoot, siteWorkspaceRoot as workspaceRoot } from './scripts/vite.shared.ts'
 import {

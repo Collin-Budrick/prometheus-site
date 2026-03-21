@@ -8,7 +8,7 @@ import {
 import {
   createHomeCollabWorker,
   type HomeCollabWorkerLike
-} from './home-collab-worker-loader'
+} from './runtime-loaders'
 import type {
   HomeCollabWorkerInboundMessage,
   HomeCollabWorkerOutboundMessage

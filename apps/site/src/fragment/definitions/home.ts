@@ -2,9 +2,12 @@ import { buildFragmentPlan } from '@core/fragment/planner'
 import { registerFragmentDefinitions, setFragmentPlanBuilder } from '@core/fragment/registry'
 import { h, t as textNode } from '@core/fragment/tree'
 import type { FragmentDefinition, FragmentPlanEntry, RenderNode } from '@core/fragment/types'
-import { type ResolvedTemplateFeatures } from '@prometheus/template-config'
+import {
+  getHomeTemplateDemo,
+  resolveEnabledHomeTemplateDemos,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../widget-markup'
-import { getHomeTemplateDemo, resolveEnabledHomeTemplateDemos } from '../../template-demos'
 import { loadWasmAdd } from './wasm'
 
 const baseMeta = {

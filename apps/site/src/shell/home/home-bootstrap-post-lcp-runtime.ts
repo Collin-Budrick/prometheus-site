@@ -1,9 +1,11 @@
 import type { Lang } from '../../lang/types'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { createHomeFirstLcpGate, type HomeFirstLcpGate } from './home-lcp-gate'
-import { loadHomeDockAuthRuntime } from './home-dock-auth-runtime-loader'
-import { loadHomeLanguageRuntime } from './home-language-runtime-loader'
-import { loadHomeUiControlsRuntime } from './home-ui-controls-runtime-loader'
+import {
+  loadHomeDockAuthRuntime,
+  loadHomeLanguageRuntime,
+  loadHomeUiControlsRuntime
+} from './runtime-loaders'
 import { markStaticShellUserTiming } from './static-shell-performance'
 
 const HOME_DEFERRED_REVALIDATION_IDLE_TIMEOUT_MS = 5000

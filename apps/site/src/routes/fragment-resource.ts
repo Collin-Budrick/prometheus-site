@@ -10,7 +10,7 @@ import { selectInitialFragmentIds } from '../fragment/initial-selection'
 import { isHomeStaticPath } from '../shell/core/constants'
 import { createFragmentTranslator } from '../fragment/definitions/i18n'
 import { registerSiteFragmentBundles } from '../fragment/definitions/register'
-import { appConfig } from '../public-app-config'
+import { appConfig } from '../site-config'
 
 export type HybridFragmentResource = {
   plan: FragmentPlanValue

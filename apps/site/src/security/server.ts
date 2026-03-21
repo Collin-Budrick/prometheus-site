@@ -1,6 +1,6 @@
 import type { RequestEvent } from '@builder.io/qwik-city'
 import { randomBytes } from 'node:crypto'
-import { appConfig, type PublicAppConfig } from '../public-app-config'
+import { appConfig, type PublicAppConfig } from '../site-config'
 import { isHomeStaticPath } from '../shell/core/constants'
 import {
   CSP_NONCE_SHARED_MAP_KEY,

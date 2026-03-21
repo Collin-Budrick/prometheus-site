@@ -1,4 +1,4 @@
-import { siteBrand } from '../config'
+import { siteBrand } from '../site-config'
 import type { FragmentPayload, RenderNode } from '../fragment/types'
 
 const textNode = (text: string): RenderNode => ({ type: 'text', text })

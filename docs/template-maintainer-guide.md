@@ -16,10 +16,10 @@ This repo ships as a reusable showcase template. Keep `full` as the default ship
   Owns branding defaults, preset descriptors, bundle manifests, starter data ownership, story ownership, test ownership, static shell ownership, and API registration metadata.
 - `docs/template-reference.md`
   Generated from the manifest. Use it as the source of truth for presets, bundles, env keys, generated artifacts, and starter data.
-- `scripts/template-init.ts`
-  Rewrites branding defaults across the repo in one pass.
-- `scripts/template-sync.ts`
-  Regenerates env examples, the web manifest, and the template reference doc from the shared config.
+- `scripts/template.ts`
+  Dispatches the template-facing `init`, `sync`, and `check` commands from one entrypoint.
+- `scripts/template-init.ts` and `scripts/template-sync.ts`
+  Keep the concrete implementation for the rewrite and regeneration passes behind the template dispatcher.
 
 ## Presets
 
@@ -65,8 +65,8 @@ Optional behavior must stay manifest-driven. If a bundle is disabled, its nav li
 
 ## Demo And Starter Data
 
-- Reusable home/demo metadata belongs in `apps/site/src/template-demos.ts`
-- Starter-safe sample data belongs in `apps/site/src/template-starter-data.ts`
+- Reusable home/demo metadata belongs in `packages/template-config/src/index.ts`
+- Starter-safe sample data belongs in `packages/template-config/src/index.ts`
 - Keep copy and seed content editable without forcing forks to edit route or fragment plumbing
 
 Use the `starter` home mode when you want the shell plus a small number of safe demos without the full showcase composition.

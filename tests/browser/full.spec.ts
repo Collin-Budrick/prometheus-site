@@ -10,16 +10,26 @@ const expectRouteReachable = async (status: number) => {
 }
 
 test('full preset exposes showcase routes and dock links', async ({ page, request }) => {
+  test.slow()
+
   await page.goto('/', { waitUntil: 'domcontentloaded' })
 
   await expectLinkVisible(page, 'Home')
   await expectLinkVisible(page, 'Login')
 
-  await expectRouteReachable((await request.get('/')).status())
-  await expectRouteReachable((await request.get('/store/')).status())
-  await expectRouteReachable((await request.get('/lab/')).status())
-  await expectRouteReachable((await request.get('/login/')).status())
-  await expectRouteReachable((await request.get('/offline/')).status())
+  const [rootStatus, storeStatus, labStatus, loginStatus, offlineStatus] = await Promise.all([
+    request.get('/').then((response) => response.status()),
+    request.get('/store/').then((response) => response.status()),
+    request.get('/lab/').then((response) => response.status()),
+    request.get('/login/').then((response) => response.status()),
+    request.get('/offline/').then((response) => response.status())
+  ])
+
+  await expectRouteReachable(rootStatus)
+  await expectRouteReachable(storeStatus)
+  await expectRouteReachable(labStatus)
+  await expectRouteReachable(loginStatus)
+  await expectRouteReachable(offlineStatus)
 
   await page.goto('/store/', { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(/\/store\/?(?:\?[^#]*)?$/)

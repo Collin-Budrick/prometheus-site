@@ -1,10 +1,13 @@
 import { createElement } from 'react'
-import { type ResolvedTemplateFeatures } from '@prometheus/template-config'
+import {
+  getHomeTemplateDemo,
+  resolveEnabledHomeTemplateDemos,
+  type ResolvedTemplateFeatures
+} from '@prometheus/template-config'
 import { registerFragmentDefinitions } from '@core/fragment/registry'
 import { h } from '@core/fragment/tree'
 import type { FragmentDefinition } from '@core/fragment/types'
 import { buildFragmentWidgetId, createFragmentWidgetMarkerNode } from '../widget-markup'
-import { getHomeTemplateDemo, resolveEnabledHomeTemplateDemos } from '../../template-demos'
 import { registerHomeFragmentDefinitions } from './home'
 import { reactToRenderNode } from './react.server'
 

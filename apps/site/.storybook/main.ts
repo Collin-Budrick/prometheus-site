@@ -3,7 +3,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import { mergeConfig } from 'vite'
 import { collectTemplateStoryGlobs, resolveTemplateFeatures } from '@prometheus/template-config'
-import { resolveAppConfig } from '../../../packages/platform/src/env.ts'
+import { resolveAppConfig } from '../../../packages/platform/src/config.ts'
 import { createSiteResolveAliases, siteConfigRoot, siteWorkspaceRoot } from '../scripts/vite.shared.ts'
 
 const resolveStorybookAppConfig = (configType: 'DEVELOPMENT' | 'PRODUCTION') =>

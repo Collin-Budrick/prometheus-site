@@ -1,4 +1,13 @@
-import { resolveTemplateFeatures, type ResolvedTemplateFeatures } from '@prometheus/template-config'
+import {
+  collectTemplateNavItems,
+  hasTemplateFeature,
+  resolveTemplateFeatures,
+  templateBranding,
+  type ResolvedTemplateFeatures,
+  type TemplateFeatureId,
+  type TemplateNavItem,
+  type TemplateNavLabelKey
+} from '@prometheus/template-config'
 
 export type AnalyticsConfig = {
   enabled: boolean
@@ -325,6 +334,46 @@ export const resolvePublicAppConfig = (
 }
 
 export const appConfig: PublicAppConfig = resolvePublicAppConfig()
+
+export type SiteFeature = TemplateFeatureId
+export type NavLabelKey = TemplateNavLabelKey
+export type NavItem = TemplateNavItem
+
+export const siteBrand = {
+  name: templateBranding.site.name,
+  product: templateBranding.site.product,
+  tagline: templateBranding.site.tagline,
+  metaDescription: templateBranding.site.metaDescription,
+  themeColor: templateBranding.site.themeColor
+}
+
+export const siteTemplateConfig = appConfig.template
+export const siteTemplateFeatures = siteTemplateConfig.features
+export const siteFeatures = siteTemplateFeatures
+
+export const isSiteFeatureEnabled = (featureId: TemplateFeatureId) =>
+  hasTemplateFeature(siteTemplateConfig, featureId)
+
+export const navItems: ReadonlyArray<NavItem> = collectTemplateNavItems(siteTemplateConfig)
+export const authNavItems: ReadonlyArray<NavItem> = collectTemplateNavItems(siteTemplateConfig, {
+  authenticated: true
+})
+
+const buildEnabledNav = () =>
+  navItems.filter((item) => {
+    if (!item.feature) return true
+    return isSiteFeatureEnabled(item.feature)
+  })
+
+const buildEnabledAuthNav = () =>
+  authNavItems.filter((item) => {
+    if (!item.feature) return true
+    return isSiteFeatureEnabled(item.feature)
+  })
+
+export const enabledNavItems = buildEnabledNav()
+export const enabledAuthNavItems = buildEnabledAuthNav()
+export const enabledRouteOrder = enabledNavItems.map((item) => item.href)
 
 export const resolvePublicApiBase = () => appConfig.apiBase || defaultPublicAppConfig.apiBase
 

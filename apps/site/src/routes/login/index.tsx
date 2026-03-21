@@ -1,9 +1,8 @@
 import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand, siteFeatures } from '../../config'
-import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
-import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
+import { isSiteFeatureEnabled, siteBrand, siteFeatures } from '../../site-config'
+import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -12,7 +11,6 @@ import type { UiCopy } from '../../lang/types'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { StaticLoginRoute } from '../../shell/auth/StaticLoginRoute'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
-import { isSiteFeatureEnabled } from '../../template-features'
 
 const loginEnabled = isSiteFeatureEnabled('auth')
 type LoginResource = {

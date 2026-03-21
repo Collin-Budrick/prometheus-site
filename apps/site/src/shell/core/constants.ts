@@ -1,5 +1,5 @@
 import { hasTemplateFeature, type ResolvedTemplateFeatures, type TemplateFeatureId } from '@prometheus/template-config'
-import { siteTemplateConfig } from '../../template-features'
+import { siteTemplateConfig } from '../../site-config'
 
 export const HOME_STATIC_ROUTE_PATH = '/'
 export const HOME_STATIC_ROUTE_KIND = 'home'

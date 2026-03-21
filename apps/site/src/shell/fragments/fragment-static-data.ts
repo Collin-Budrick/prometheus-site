@@ -1,7 +1,7 @@
 import type { Lang } from '../../lang'
 import type { FragmentPayload } from '../../fragment/types'
 import type { FragmentRuntimePlanEntry } from '../../fragment/runtime/protocol'
-import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
+import type { ContactInvitesSeed } from '../../features/messaging/contact-invites-seed'
 import type { StoreSeed } from '../../features/store/store-seed'
 import type { StaticShellAuthPolicy } from '../core/constants'
 

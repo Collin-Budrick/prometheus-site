@@ -1,5 +1,5 @@
 import { createContextId, useContext } from '@builder.io/qwik'
-import type { ContactInviteGroups } from '../components/contact-invites/data'
+import type { ContactInviteGroups } from '../../components/contact-invites/data'
 
 export type ContactInvitesSeed = {
   invites: ContactInviteGroups

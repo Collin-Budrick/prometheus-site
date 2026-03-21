@@ -1,4 +1,4 @@
-import { enabledAuthNavItems, enabledNavItems, type NavItem } from '../config'
+import { enabledAuthNavItems, enabledNavItems, type NavItem } from '../site-config'
 
 export type SiteNavItem = (typeof enabledNavItems)[number]
 

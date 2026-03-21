@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { defaultFragmentLang } from '@core/fragment/i18n'
 import { createFragmentService } from '@core/fragment/service'
 import { registerSiteFragmentBundles } from '@site/fragment/definitions/register'
-import { buildFragmentPlanCacheKey } from '@platform/cache-helpers'
+import { buildFragmentPlanCacheKey } from '@platform/cache'
 import { createFragmentUpdateBroadcaster } from '@platform/server/fragment-updates'
 import {
   createFragmentStore,

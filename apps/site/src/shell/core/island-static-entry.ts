@@ -1,4 +1,4 @@
-import { loadIslandBootstrapRuntime } from './island-bootstrap-runtime-loader'
+import { loadIslandBootstrapRuntime } from './runtime-loaders'
 
 declare global {
   interface Window {

@@ -1,13 +1,17 @@
 import type { SubscriptionHandle } from '@prometheus/spacetimedb-client'
-import type { ContactInviteGroups, ContactInviteUser, ContactSearchResult } from '../components/contact-invites/data'
-import { emptyInviteGroups } from '../components/contact-invites/data'
+import type {
+  ContactInviteGroups,
+  ContactInviteUser,
+  ContactSearchResult
+} from '../../components/contact-invites/data'
+import { emptyInviteGroups } from '../../components/contact-invites/data'
 import {
   ensureSpacetimeConnection,
   getSpacetimeConnectionSnapshot,
   loadSpacetimeClient,
   subscribeSpacetimeConnection,
   type SpacetimeConnectionSnapshot
-} from './spacetime-client'
+} from '../../shared/spacetime-client'
 
 type ContactsListener = (snapshot: ContactsSnapshot) => void
 

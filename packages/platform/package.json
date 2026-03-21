@@ -15,8 +15,8 @@
     "build": "bun build src/entrypoints/api.ts --target bun --outfile dist/index.js",
     "lint": "bun x oxlint .",
     "format": "oxfmt --write .",
-    "test": "bun test tests",
-    "test:retry": "bun test --retry 3 tests"
+    "test": "bun test --max-concurrency=1 tests",
+    "test:retry": "bun test --max-concurrency=1 --retry 3 tests"
   },
   "dependencies": {
     "@logtape/logtape": "2.1.0-dev.522",

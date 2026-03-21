@@ -1,5 +1,4 @@
-import { loadHomeBootstrapRuntime } from './home-bootstrap-runtime-loader'
-import { loadHomeStaticEntryRuntime } from './home-static-entry-loader'
+import { loadHomeBootstrapRuntime, loadHomeStaticEntryRuntime } from './runtime-loaders'
 import { createHomeFirstLcpGate } from './home-lcp-gate'
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { scheduleStaticShellTask } from '../core/scheduler'

@@ -12,16 +12,16 @@ import { FRAGMENT_WIDGET_RUNTIME_ASSET_PATH } from '../../fragment/ui/fragment-w
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   HOME_STATIC_ENTRY_ASSET_PATH
-} from '../home/home-static-entry-loader'
-import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../home/home-static-entry-demo-warmup-loader'
-import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from '../home/home-bootstrap-runtime-loader'
-import { HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH } from '../home/home-bootstrap-deferred-runtime-loader'
+} from '../home/runtime-loaders'
+import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_BOOTSTRAP_DEFERRED_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
 import { getStaticShellBuildAssetPaths } from './build-manifest.server'
-import { HOME_ANCHOR_CORE_ASSET_PATH } from '../home/home-anchor-core-loader'
-import { HOME_POST_ANCHOR_CORE_ASSET_PATH } from '../home/home-post-anchor-core-loader'
-import { HOME_DEMO_WARM_CORE_ASSET_PATH } from '../home/home-demo-warm-core-loader'
-import { HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH } from '../home/home-post-anchor-lifecycle-runtime-loader'
-import { HOME_COLLAB_WORKER_ASSET_PATH } from '../home/home-collab-worker-loader'
+import { HOME_ANCHOR_CORE_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_POST_ANCHOR_CORE_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_DEMO_WARM_CORE_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_POST_ANCHOR_LIFECYCLE_RUNTIME_ASSET_PATH } from '../home/runtime-loaders'
+import { HOME_COLLAB_WORKER_ASSET_PATH } from '../home/runtime-loaders'
 
 const STATIC_SHELL_RUNTIME_ASSET_PATHS_FALLBACK = [
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,

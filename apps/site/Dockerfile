@@ -119,7 +119,7 @@ COPY --from=builder /app/apps/site/src ./src
 COPY --from=builder /app/apps/site/scripts ./scripts
 COPY --from=builder /app/scripts /app/scripts
 COPY --from=builder /app/tsconfig.base.json /app/tsconfig.base.json
-COPY --from=builder /app/packages/platform/src/env.ts /app/packages/platform/src/env.ts
+COPY --from=builder /app/packages/platform/src/config.ts /app/packages/platform/src/config.ts
 COPY --from=builder /app/packages/template-config /app/packages/template-config
 
 EXPOSE 4173

@@ -1,10 +1,10 @@
 import { component$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
+import { starterStoreItems } from '@prometheus/template-config'
 import { StaticRouteSkeleton, StaticRouteTemplate } from '@prometheus/ui'
-import { siteBrand, siteFeatures } from '../../config'
-import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
+import { isSiteFeatureEnabled, siteBrand, siteFeatures } from '../../site-config'
+import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PUBLIC_SWR_CACHE } from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
-import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import type { FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
@@ -25,9 +25,6 @@ import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '..
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-shell-fragment'
 import { isStaticShellBuild } from '../../shell/core/build-mode'
 import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
-import { isSiteFeatureEnabled } from '../../template-features'
-import { starterStoreItems } from '../../template-starter-data'
-
 const storeEnabled = isSiteFeatureEnabled('store')
 type FragmentResource = {
   plan: FragmentPlanValue | null
@@ -64,7 +61,7 @@ const loadStoreSeed = async (
 export const useFragmentResource = routeLoader$<FragmentResource>(async ({ url, request }) => {
   ensureFeatureEnabled('store')
   const { createServerLanguageSeed } = await import('../../lang/server')
-  const { appConfig } = await import('../../app-config.server')
+  const { appConfig } = await import('../../site-config.server')
   const path = url.pathname || '/store'
   const lang = resolveRequestLang(request)
   const sortParams = resolveStoreSort(url)

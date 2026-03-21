@@ -4,7 +4,7 @@ import {
   resetHomeDockAuthRuntimeLoaderForTests,
   resolveHomeDockAuthRuntimeUrl,
   type HomeDockAuthRuntimeModule
-} from './home-dock-auth-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeDockAuthRuntimeLoaderForTests()

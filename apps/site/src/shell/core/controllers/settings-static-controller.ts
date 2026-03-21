@@ -2,7 +2,12 @@ import type { Lang } from '../../../lang'
 import { getUiCopy } from '../../../lang/client'
 import { ensureFriendCode, rotateFriendCode } from '../../../components/contact-invites/friend-code'
 import { writeServiceWorkerOptOutCookie } from '../../../shared/service-worker-seed'
-import { defaultChatSettings, loadChatSettings, saveChatSettings, type ChatSettings } from '../../../shared/chat-settings'
+import {
+  defaultChatSettings,
+  loadChatSettings,
+  saveChatSettings,
+  type ChatSettings
+} from '../../../features/messaging/chat-settings'
 import { getPrivacyScreenAlwaysOn, setPrivacyScreenAlwaysOn } from '../../../native/privacy-screen-policy'
 import { applyTextZoom, getStoredTextZoom } from '../../../native/text-zoom'
 import { clearNativeAuthCredentials } from '../../../native/native-auth'

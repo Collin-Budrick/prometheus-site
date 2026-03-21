@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { resolvePublicAppConfig } from '../public-app-config'
+import { resolvePublicAppConfig } from '../site-config'
 import { buildSiteConnectSrc, buildSiteCsp, getOrCreateRequestCspNonce } from './server'
 
 describe('security/server', () => {

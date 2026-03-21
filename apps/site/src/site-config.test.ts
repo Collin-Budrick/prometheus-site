@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { resolvePublicAppConfig } from './public-app-config'
+import { resolvePublicAppConfig } from './site-config'
 
 describe('resolvePublicAppConfig', () => {
   it('normalizes Partytown defaults and forwarded globals', () => {

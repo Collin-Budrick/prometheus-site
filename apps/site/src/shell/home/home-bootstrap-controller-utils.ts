@@ -1,7 +1,7 @@
 import type { LanguageSeedPayload } from "../../lang/selection";
 import type { Lang } from "../../lang/types";
 import { seedStaticHomeCopy } from "./home-copy-store";
-import { loadHomeBootstrapPostLcpRuntime } from "./home-bootstrap-post-lcp-runtime-loader";
+import { loadHomeBootstrapPostLcpRuntime } from './runtime-loaders'
 import { resolvePreferredStaticHomeLang } from "./home-language-preference";
 import { collectStaticHomeKnownVersions } from "./home-fragment-version-state";
 import {

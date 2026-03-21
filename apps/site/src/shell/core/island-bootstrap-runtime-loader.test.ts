@@ -4,7 +4,7 @@ import {
   resetIslandBootstrapRuntimeLoaderForTests,
   resolveIslandBootstrapRuntimeUrl,
   type IslandBootstrapRuntimeModule
-} from './island-bootstrap-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetIslandBootstrapRuntimeLoaderForTests()

@@ -2,12 +2,9 @@ import { $, component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
-import { siteBrand } from '../../config'
-import { appConfig } from '../../public-app-config'
-import { isSiteFeatureEnabled } from '../../template-features'
-import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
+import { appConfig, isSiteFeatureEnabled, siteBrand } from '../../site-config'
+import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
-import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../features/auth/auth-session'
@@ -18,7 +15,7 @@ import {
   readChatSettingsFromCookie,
   saveChatSettings,
   type ChatSettings
-} from '../../shared/chat-settings'
+} from '../../features/messaging/chat-settings'
 import settingsModuleStyles from './settings.module.css'
 import {
   getPrivacyScreenAlwaysOn,

@@ -1,4 +1,4 @@
-import { loadHomePostAnchorCore } from './home-post-anchor-core-loader'
+import { loadHomePostAnchorCore } from './runtime-loaders'
 
 type InstallHomeStaticEntryOptions = Parameters<
   typeof import('./home-post-anchor-core').installHomeStaticEntry

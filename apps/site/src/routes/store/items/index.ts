@@ -1,5 +1,5 @@
 import type { RequestHandler } from '@builder.io/qwik-city'
-import { createFeatureRouteHandler } from '../../feature-bundle'
+import { createFeatureRouteHandler } from '../../route-utils'
 import {
   createStoreMutationErrorResponse,
   createStoreMutationJsonResponse,

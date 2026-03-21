@@ -65,7 +65,7 @@ describe('home-demo-runtime-loader', () => {
     }
     const asset = {
       moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
-      styleHref: 'https://prometheus.prod/assets/home-demo-planner.css'
+      styleHref: 'https://prometheus.prod/assets/home-demo-shared.css'
     }
 
     const firstLoad = loadHomeDemoKind('planner', { asset, importer })
@@ -226,7 +226,7 @@ describe('home-demo-runtime-loader', () => {
 
     const asset = {
       moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-planner-runtime.js',
-      styleHref: 'https://prometheus.prod/assets/home-demo-planner.css'
+      styleHref: 'https://prometheus.prod/assets/home-demo-shared.css'
     }
 
     const firstWarm = warmHomeDemoKind('planner', asset, {
@@ -313,7 +313,7 @@ describe('home-demo-runtime-loader', () => {
       doc: doc as never,
       asset: {
         moduleHref: 'https://prometheus.prod/build/static-shell/apps/site/src/shell/home/home-demo-wasm-renderer-runtime.js',
-        styleHref: 'https://prometheus.prod/assets/home-demo-wasm-renderer.css'
+        styleHref: 'https://prometheus.prod/assets/home-demo-shared.css'
       }
     })
 

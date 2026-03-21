@@ -16,7 +16,7 @@ mock.module('./spacetime-client', () => ({
   subscribeSpacetimeConnection: () => () => undefined
 }))
 
-mock.module('../public-app-config', () => ({
+mock.module('../site-config', () => ({
   appConfig: {
     apiBase: '/api'
   },

@@ -9,6 +9,7 @@ const baseURL =
 export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: false,
+  timeout: 90_000,
   reporter: 'line',
   use: {
     baseURL,

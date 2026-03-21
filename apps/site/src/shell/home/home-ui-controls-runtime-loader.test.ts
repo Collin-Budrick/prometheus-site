@@ -4,7 +4,7 @@ import {
   resetHomeUiControlsRuntimeLoaderForTests,
   resolveHomeUiControlsRuntimeUrl,
   type HomeUiControlsRuntimeModule
-} from './home-ui-controls-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeUiControlsRuntimeLoaderForTests()

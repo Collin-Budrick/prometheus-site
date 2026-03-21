@@ -1,5 +1,5 @@
 import type { HomeStaticBootstrapData } from './home-bootstrap-data'
-import { loadHomeLanguageRuntime } from './home-language-runtime-loader'
+import { loadHomeLanguageRuntime } from './runtime-loaders'
 import {
   destroyHomeController,
   hasStaticHomeVersionMismatch,

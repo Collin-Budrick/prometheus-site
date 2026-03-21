@@ -82,7 +82,7 @@ mock.module('@prometheus/spacetimedb-client', () => {
   }
 })
 
-mock.module('../app-config.server', () => ({
+mock.module('../site-config.server', () => ({
   appConfig: {
     spacetimeDbModule: 'prometheus-site-local'
   }

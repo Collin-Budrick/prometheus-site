@@ -2,11 +2,9 @@ import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builde
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
 import authModuleStyles from '@site/features/auth/auth.module.css'
-import { siteBrand } from '../../config'
-import { appConfig } from '../../public-app-config'
-import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
+import { appConfig, siteBrand } from '../../site-config'
+import { createCacheHandler, createFeatureRouteHandler, ensureFeatureEnabled, PRIVATE_REVALIDATE_CACHE } from '../route-utils'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
-import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { loadAuthSession } from '../../features/auth/auth-session'
@@ -21,7 +19,7 @@ import {
   saveLocalProfile,
   type ProfileColor,
   type ProfilePayload
-} from '../../shared/profile-storage'
+} from '../../features/auth/profile-storage'
 import profileModuleStyles from './profile.module.css'
 import { emptyUiCopy, profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 import { StaticPageRoot } from '../../shell/core/StaticPageRoot'

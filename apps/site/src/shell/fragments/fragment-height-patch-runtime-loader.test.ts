@@ -4,7 +4,7 @@ import {
   resetFragmentHeightPatchRuntimeLoaderForTests,
   resolveFragmentHeightPatchRuntimeUrl,
   type FragmentHeightPatchRuntimeModule
-} from './fragment-height-patch-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetFragmentHeightPatchRuntimeLoaderForTests()

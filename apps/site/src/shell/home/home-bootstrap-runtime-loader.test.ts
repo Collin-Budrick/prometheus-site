@@ -4,7 +4,7 @@ import {
   resetHomeBootstrapRuntimeLoaderForTests,
   resolveHomeBootstrapRuntimeUrl,
   type HomeBootstrapRuntimeModule
-} from './home-bootstrap-runtime-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeBootstrapRuntimeLoaderForTests()

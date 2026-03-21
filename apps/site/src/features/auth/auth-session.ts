@@ -16,7 +16,7 @@ export type AuthSessionState =
 
 export const loadAuthSession = async (request: Request): Promise<AuthSessionState> => {
   const [{ appConfig }, { resolveRequestOrigin, resolveServerApiBase }] = await Promise.all([
-    import('@site/app-config.server'),
+  import('@site/site-config.server'),
     import('@site/shared/api-base.server')
   ])
   const apiBase = resolveServerApiBase(appConfig.apiBase, request)

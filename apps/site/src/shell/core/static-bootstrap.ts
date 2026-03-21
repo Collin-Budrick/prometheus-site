@@ -69,7 +69,7 @@ import {
   setOverlaySurfaceState,
 } from "../../shared/overlay-a11y";
 import { getPublicFragmentApiBase } from "../../shared/public-fragment-config";
-import { appConfig } from "../../public-app-config";
+import { appConfig } from "../../site-config";
 import type { StoreSeed } from "../../features/store/store-seed";
 import {
   createStaticShellThemeIcon,

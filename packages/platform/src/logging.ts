@@ -1,5 +1,5 @@
 import type { HighlightOptions } from 'highlight.run'
-import type { HighlightConfig } from './env'
+import type { HighlightConfig } from './config'
 
 type ErrorMetadata = Record<string, unknown>
 type HighlightModule = typeof import('highlight.run')

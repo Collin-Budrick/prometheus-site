@@ -1,7 +1,7 @@
 import { readStaticHomeBootstrapData } from './home-bootstrap-data'
 import { getActiveHomeController, resumeDeferredHomeHydration } from './home-active-controller'
 import { resolvePreferredStaticHomeLang } from './home-language-preference'
-import { loadHomePostAnchorLifecycleRuntime } from './home-post-anchor-lifecycle-runtime-loader'
+import { loadHomePostAnchorLifecycleRuntime } from './runtime-loaders'
 import { scheduleStaticShellTask } from '../core/scheduler'
 
 type InstallHomeBootstrapDeferredRuntimeOptions = {

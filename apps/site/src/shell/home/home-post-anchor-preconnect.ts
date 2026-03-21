@@ -1,4 +1,4 @@
-import { appConfig } from '../../public-app-config'
+import { appConfig } from '../../site-config'
 
 type HomePostAnchorPreconnectWindow = Pick<Window, 'location'>
 type HomePostAnchorPreconnectDocument = Pick<Document, 'createElement' | 'head' | 'querySelector'>

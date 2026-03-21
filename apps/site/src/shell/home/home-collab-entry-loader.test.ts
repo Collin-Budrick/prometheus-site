@@ -4,7 +4,7 @@ import {
   resetHomeCollabEntryRuntimeLoaderForTests,
   resolveHomeCollabEntryRuntimeUrl,
   type HomeCollabEntryModule
-} from './home-collab-entry-loader'
+} from './runtime-loaders'
 
 afterEach(() => {
   resetHomeCollabEntryRuntimeLoaderForTests()

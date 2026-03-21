@@ -1,4 +1,4 @@
-import { normalizeApiBase, resolveApiBase, resolveRuntimeEnv } from '@platform/env'
+import { normalizeApiBase, resolveApiBase, resolveRuntimeEnv } from '@platform/config'
 import { isOnline } from '../native/connectivity'
 
 const isAbsoluteUrl = (value: string) => value.startsWith('http://') || value.startsWith('https://')

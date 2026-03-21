@@ -1,6 +1,6 @@
 import { DbConnection } from '@prometheus/spacetimedb-client'
 import { templateBranding } from '@prometheus/template-config'
-import { appConfig } from '@site/app-config.server'
+import { appConfig } from '@site/site-config.server'
 import { resolveRequestOrigin } from '@site/shared/api-base.server'
 
 type StoreInventorySeedItem = {

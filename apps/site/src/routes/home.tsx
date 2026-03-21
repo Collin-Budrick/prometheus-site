@@ -1,6 +1,6 @@
 import { component$ } from '@builder.io/qwik'
 import { type DocumentHead, type DocumentHeadProps, type DocumentLink, routeLoader$ } from '@builder.io/qwik-city'
-import { siteBrand } from '../config'
+import { siteBrand } from '../site-config'
 import { loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from './fragment-resource'
 import { defaultLang, type Lang } from '../shared/lang-store'
 import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
