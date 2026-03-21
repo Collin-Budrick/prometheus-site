@@ -5,8 +5,8 @@ import {
   createStoreMutationJsonResponse,
   normalizeStoreMutationRouteError,
   parseStoreItemIdParam
-} from '../../../../shared/store-mutation-http'
-import { deleteServerStoreItem } from '../../../../shared/store-mutation.server'
+} from '../../../../features/store/store-mutation-http'
+import { deleteServerStoreItem } from '../../../../features/store/store-mutation.server'
 
 export const onDelete: RequestHandler = createFeatureRouteHandler('store', async ({ params, request }) => {
   const id = parseStoreItemIdParam(params.id)

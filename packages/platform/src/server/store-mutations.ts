@@ -1,5 +1,5 @@
 import type { AnyElysia } from 'elysia'
-import { readSiteSessionClaims } from '@features/auth/server'
+import { readSiteSessionClaims } from '@platform/features/auth/server'
 import { DbConnection } from '../../../spacetimedb-client/src/index'
 import { platformConfig } from '../config'
 

@@ -6,7 +6,7 @@ describe('routes/home head links', () => {
   it('adds one eager home stylesheet alongside fragment CSS links', async () => {
     const source = await readSource()
 
-    expect(source).toContain("import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets'")
+    expect(source).toContain("import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'")
     expect(source).toContain("rel: 'stylesheet'")
     expect(source).toContain("href: homeStaticEagerStylesheetHref")
     expect(source).toContain('buildFragmentCssLinks(plan)')

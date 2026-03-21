@@ -7,7 +7,7 @@ import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { loadHybridFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
-import { loadAuthSession } from '../../shared/auth-session'
+import { loadAuthSession } from '../../features/auth/auth-session'
 import type { FragmentPlanValue } from '../../fragment/types'
 import type { ContactInvitesSeed } from '../../shared/contact-invites-seed'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
@@ -17,16 +17,16 @@ import {
   withFragmentHeaderSelection,
   type LanguageSeedPayload
 } from '../../lang/selection'
-import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { StaticFragmentRoute } from '../../shell/fragments/StaticFragmentRoute'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import {
   buildStaticFragmentRouteModel,
   createStaticFragmentRouteData,
   type StaticFragmentRouteModel
-} from '../../static-shell/static-fragment-model'
-import { isStaticShellBuild } from '../../static-shell/build-mode'
-import { STATIC_FRAGMENT_DATA_SCRIPT_ID } from '../../static-shell/constants'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+} from '../../shell/fragments/static-fragment-model'
+import { isStaticShellBuild } from '../../shell/core/build-mode'
+import { STATIC_FRAGMENT_DATA_SCRIPT_ID } from '../../shell/core/constants'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { starterContactInvites } from '../../template-starter-data'
 
 type ProtectedRouteData = {

@@ -1,4 +1,4 @@
-import { resolveStaticAssetUrl } from '../../static-shell/static-asset-url'
+import { resolveStaticAssetUrl } from '../../shell/core/static-asset-url'
 import type { FragmentWidgetRuntime } from './fragment-widget-runtime'
 
 export type FragmentWidgetRuntimeModule = {

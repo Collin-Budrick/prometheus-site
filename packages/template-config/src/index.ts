@@ -208,7 +208,7 @@ export const templateBuildOutputs = [
   'apps/site/server/',
   'apps/site/storybook-static/',
   'apps/site/android/',
-  'packages/spacetimedb-module/target/'
+  'extras/spacetimedb-module/target/'
 ] as const
 
 export const templateAllowedBrandingFiles = [
@@ -219,8 +219,7 @@ export const templateAllowedBrandingFiles = [
   '.env.core.example',
   'apps/site/public/manifest.webmanifest',
   'docs/template-reference.md',
-  'docs/monorepo-refactor-plan.md',
-  'docs/add-a-bundle.md',
+  'docs/template-maintainer-guide.md',
   'packages/template-config/src/index.ts',
   'scripts/template-init.ts',
   'scripts/template-sync.ts',
@@ -327,7 +326,7 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     routes: ['/login'],
     envKeys: AUTH_ENV_KEYS,
     navItems: [{ href: '/login', labelKey: 'navLogin', feature: 'auth', order: 40 }],
-    tests: ['packages/features/auth/src/**/*.test.ts', 'apps/site/src/routes/login/**/*.test.tsx'],
+    tests: ['apps/site/src/features/auth/**/*.test.ts', 'apps/site/src/routes/login/**/*.test.tsx'],
     apiRegistrations: ['auth routes', 'auth bootstrap verification'],
     visibility: 'public',
     placement: 'starter-safe',
@@ -341,11 +340,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     routes: ['/store'],
     navItems: [{ href: '/store', labelKey: 'navStore', feature: 'store', order: 20 }],
     tests: [
-      'packages/features/store/src/**/*.test.ts',
-      'apps/site/src/shared/store-*.test.ts',
+      'packages/platform/src/features/store/**/*.test.ts',
+      'apps/site/src/features/store/**/*.test.ts',
       'apps/site/src/routes/store/**/*.test.tsx'
     ],
-    staticShellEntries: ['apps/site/src/static-shell/store-static-runtime.ts'],
+    staticShellEntries: ['apps/site/src/shell/store/store-static-runtime.ts'],
     apiRegistrations: ['store mutation routes'],
     starterData: ['starter-store-items'],
     visibility: 'public',
@@ -358,7 +357,7 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     description: 'Reusable experimentation surface for prototyping new fragments and UI ideas.',
     routes: ['/lab'],
     navItems: [{ href: '/lab', labelKey: 'navLab', feature: 'lab', order: 30 }],
-    tests: ['packages/features/lab/src/**/*.test.ts', 'apps/site/src/routes/lab/**/*.test.tsx'],
+    tests: ['apps/site/src/features/lab/**/*.test.ts', 'apps/site/src/routes/lab/**/*.test.tsx'],
     starterData: ['starter-lab-cards'],
     visibility: 'public',
     placement: 'starter-safe',
@@ -373,13 +372,13 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     envKeys: PUSH_ENV_KEYS,
     navItems: [{ href: '/chat', labelKey: 'navChat', feature: 'messaging', auth: true, order: 20 }],
     tests: [
-      'packages/features/messaging/src/**/*.test.ts',
+      'packages/platform/src/features/messaging/**/*.test.ts',
       'apps/site/src/routes/chat/**/*.test.tsx',
       'apps/site/src/shared/contact-*.test.ts'
     ],
     staticShellEntries: [
-      'apps/site/src/static-shell/home-collab-entry.ts',
-      'apps/site/src/static-shell/home-dock-auth-runtime.ts'
+      'apps/site/src/shell/home/home-collab-entry.ts',
+      'apps/site/src/shell/home/home-dock-auth-runtime.ts'
     ],
     apiRegistrations: ['messaging HTTP routes', 'messaging websocket routes', 'push delivery'],
     starterData: ['starter-contact-invites'],
@@ -399,7 +398,7 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
       { href: '/dashboard', labelKey: 'navDashboard', feature: 'account', auth: true, order: 40 }
     ],
     tests: ['apps/site/src/routes/profile/**/*.test.tsx', 'apps/site/src/routes/settings/**/*.test.tsx'],
-    staticShellEntries: ['apps/site/src/static-shell/controllers/profile-static-controller.ts'],
+    staticShellEntries: ['apps/site/src/shell/core/controllers/profile-static-controller.ts'],
     visibility: 'authenticated',
     placement: 'starter-safe',
     defaultEnabledIn: ['full', 'core']
@@ -411,11 +410,11 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     routes: ['/'],
     navItems: [{ href: '/', labelKey: 'navHome', feature: 'demo-home', order: 10 }],
     stories: ['apps/site/src/components/HomeDemoPreview.planner.stories.tsx'],
-    tests: ['apps/site/src/routes/home.test.ts', 'apps/site/src/static-shell/home-*.test.ts'],
+    tests: ['apps/site/src/routes/home.test.ts', 'apps/site/src/shell/home/home-*.test.ts'],
     staticShellEntries: [
-      'apps/site/src/static-shell/home-static-entry.ts',
-      'apps/site/src/static-shell/home-demo-entry.ts',
-      'apps/site/src/static-shell/home-demo-planner-runtime.ts'
+      'apps/site/src/shell/home/home-static-entry.ts',
+      'apps/site/src/shell/home/home-demo-entry.ts',
+      'apps/site/src/shell/home/home-demo-planner-runtime.ts'
     ],
     demoSections: ['home-manifesto', 'home-planner'],
     starterData: ['starter-home-copy'],
@@ -463,8 +462,8 @@ export const featureBundleManifests: Record<TemplateFeatureId, FeatureBundleMani
     description: 'Realtime transport, collaboration, WebTransport, and signaling services.',
     envKeys: REALTIME_ENV_KEYS,
     composeProfiles: ['realtime'],
-    tests: ['packages/platform/tests/home-collab.test.ts', 'apps/site/src/static-shell/home-collab-*.test.ts'],
-    staticShellEntries: ['apps/site/src/static-shell/home-collab-entry.ts'],
+    tests: ['packages/platform/tests/home-collab.test.ts', 'apps/site/src/shell/home/home-collab-*.test.ts'],
+    staticShellEntries: ['apps/site/src/shell/home/home-collab-entry.ts'],
     apiRegistrations: ['home collaboration routes', 'fragment update broadcasting'],
     demoSections: ['home-collab'],
     visibility: 'infrastructure',

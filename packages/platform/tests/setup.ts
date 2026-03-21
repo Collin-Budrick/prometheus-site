@@ -235,7 +235,7 @@ const authRoutes = new Elysia({ prefix: '/auth' })
   .post('/bootstrap', async ({ request }) => bootstrapSession({ request }))
   .get('/session', async ({ request }) => validateSession({ request }))
 
-mock.module('@features/auth/server', () => ({
+mock.module('@platform/features/auth/server', () => ({
   createAuthFeature: () => ({
     auth: null,
     authRoutes,
@@ -467,6 +467,24 @@ export const apiUrl = `http://127.0.0.1:${apiPort}`
 
 let startPromise: Promise<void> | null = null
 
+const waitForApiHealth = async () => {
+  const timeoutMs = 5_000
+  const intervalMs = 50
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(`${apiUrl}/health`)
+      if (response.ok) return
+    } catch {
+      // Retry until the in-process server starts listening.
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+
+  throw new Error(`API test server did not become ready within ${timeoutMs}ms.`)
+}
+
 export const resetTestState = () => {
   resetStarterShowcaseData()
   authUsersData.splice(0, authUsersData.length, { id: 'user-1', email: 'existing@example.com', name: 'Existing User' })
@@ -492,7 +510,7 @@ export const ensureApiReady = async () => {
       host: '127.0.0.1',
       port: apiPort
     }
-    startPromise = import('../src/entrypoints/api.ts').then(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    startPromise = import('../src/entrypoints/api.ts').then(waitForApiHealth)
   }
   await startPromise
 }

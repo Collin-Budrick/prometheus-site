@@ -635,17 +635,15 @@ const optionalBuildTargets: BuildTarget[] = includeRealtimeServices
           'apps/site/package.json',
           'packages/core/package.json',
           'packages/platform/package.json',
-          'packages/ui/package.json',
-          'packages/features/auth/package.json',
-          'packages/features/lab/package.json',
-          'packages/features/messaging/package.json',
-          'packages/features/store/package.json'
+          'packages/spacetimedb-client/package.json',
+          'packages/template-config/package.json',
+          'packages/ui/package.json'
         ]
       },
       {
         service: 'webtransport',
         cacheKey: `${cacheKeyPrefix}:webtransport`,
-        inputs: ['apps/webtransport/Dockerfile', 'apps/webtransport']
+        inputs: ['extras/webtransport/Dockerfile', 'extras/webtransport']
       }
     ]
   : []

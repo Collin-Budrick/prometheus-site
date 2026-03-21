@@ -2,7 +2,7 @@ import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builde
 import { getFragmentTextCopy } from '../lang/client'
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { useStoreSeed } from '../shared/store-seed'
+import { useStoreSeed } from '../features/store/store-seed'
 import {
   consumeStoreCartDragItem,
   consumeStoreItem,
@@ -12,7 +12,7 @@ import {
   restoreStoreItem,
   storeCartAddEvent,
   type StoreCartItem
-} from '../shared/store-cart'
+} from '../features/store/store-cart'
 
 type StoreCartProps = {
   class?: string

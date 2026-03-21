@@ -2,7 +2,7 @@ import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builde
 import { markInitialTasksComplete, resolveFragmentInitialTaskHost } from '../fragment/ui/initial-settle'
 import { getFragmentTextCopy } from '../lang/client'
 import { useSharedLangSignal } from '../shared/lang-bridge'
-import { createStoreItemDirect } from '../shared/spacetime-store'
+import { createStoreItemDirect } from '../features/store/spacetime-store'
 
 type StoreCreateFormProps = {
   class?: string

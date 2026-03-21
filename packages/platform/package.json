@@ -21,17 +21,16 @@
   "dependencies": {
     "@logtape/logtape": "2.1.0-dev.522",
     "@prometheus/core": "workspace:*",
-    "@prometheus/features-auth": "workspace:*",
-    "@prometheus/features-messaging": "workspace:*",
-    "@prometheus/features-store": "workspace:*",
     "@prometheus/template-config": "workspace:*",
     "@unkey/ratelimit": "2.1.4",
     "@valkey/client": "1.0.0",
     "arkenv": "0.11.0",
     "arktype": "2.2.0",
+    "drizzle-orm": "1.0.0-beta.9-e89174b",
     "elysia": "1.4.28",
     "highlight.run": "9.27.1",
-    "loro-crdt": "1.10.7",
+    "jose": "6.2.2",
+    "loro-crdt": "1.10.8",
     "react": "19.3.0-canary-fd524fe0-20251121",
     "web-push": "3.6.7",
     "zod": "4.4.0-canary.20260125T215152"
@@ -39,7 +38,7 @@
   "devDependencies": {
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
-    "bun-types": "1.3.11-canary.20260319T142214",
+    "bun-types": "1.3.11-canary.20260320T142024",
     "oxfmt": "0.41.0",
     "oxlint": "1.56.0",
     "typescript": "6.0.1-rc"

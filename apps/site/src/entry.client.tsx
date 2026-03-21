@@ -18,7 +18,7 @@ import {
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_PAGE_ROOT_ATTR,
   STATIC_ROUTE_ATTR
-} from './static-shell/constants'
+} from './shell/core/constants'
 
 declare global {
   interface Window {
@@ -65,7 +65,7 @@ export default function (opts: RenderOptions) {
     : false
 
   if (hasStaticShell) {
-    void import('./static-shell/home-static-entry')
+    void import('./shell/home/home-static-entry')
       .catch((error) => {
         console.error('Static shell bootstrap failed.', error)
         if (hasStaticOnlyRoute) {

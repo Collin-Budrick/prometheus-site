@@ -6,8 +6,8 @@ import { defaultLang, type Lang } from '../shared/lang-store'
 import type { FragmentPayloadValue, FragmentPlan, FragmentPlanValue } from '../fragment/types'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { homeLanguageSelection, withFragmentHeaderSelection, type LanguageSeedPayload } from '../lang/selection'
-import { StaticHomeRoute } from '../static-shell/StaticHomeRoute'
-import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets'
+import { StaticHomeRoute } from '../shell/home/StaticHomeRoute'
+import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'
 import { buildOfflineShellFragment, offlineShellFragmentId } from './offline-shell-fragment'
 import {
   buildFragmentHeightPlanSignature,

@@ -4,11 +4,11 @@ import { StaticRouteTemplate } from '@prometheus/ui'
 import { siteBrand } from '../../config'
 import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
 import { defaultLang, type Lang } from '../../shared/lang-store'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
 import { resolveRequestLang } from '../fragment-resource'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { offlineLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 
 type OfflineRouteData = {
   lang: Lang

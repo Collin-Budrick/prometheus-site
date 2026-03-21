@@ -14,8 +14,8 @@ import {
   STATIC_FRAGMENT_DATA_SCRIPT_ID,
   STATIC_HOME_DATA_SCRIPT_ID,
   STATIC_SHELL_SEED_SCRIPT_ID
-} from '../static-shell/constants'
-import { readStaticHomeBootstrapData } from '../static-shell/home-bootstrap-data'
+} from '../shell/core/constants'
+import { readStaticHomeBootstrapData } from '../shell/home/home-bootstrap-data'
 
 const shellLanguageSeed: LanguageSeedPayload = {
   ui: {
@@ -189,7 +189,7 @@ describe('security script payload rendering', () => {
       'utf8'
     )
     const staticShellLayoutSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\static-shell\\StaticShellLayout.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticShellLayout.tsx',
       'utf8'
     )
 
@@ -206,15 +206,15 @@ describe('security script payload rendering', () => {
 
   it('keeps source-level JSON payload scripts on raw inner HTML injection', () => {
     const homeRouteSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\static-shell\\StaticHomeRoute.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticHomeRoute.tsx',
       'utf8'
     )
     const fragmentRouteSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\static-shell\\StaticFragmentRoute.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticFragmentRoute.tsx',
       'utf8'
     )
     const pageRootSource = readFileSync(
-      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\static-shell\\StaticPageRoot.tsx',
+      'c:\\Users\\colli\\Documents\\Project\\prometheus-site\\apps\\site\\src\\shell\\StaticPageRoot.tsx',
       'utf8'
     )
 

@@ -1,13 +1,13 @@
 import { component$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { Link, type DocumentHead, type RequestHandler } from '@builder.io/qwik-city'
 import { FragmentCard } from '@prometheus/ui'
-import authModuleStyles from '@features/auth/auth.module.css'
+import authModuleStyles from '@site/features/auth/auth.module.css'
 import { appConfig } from '../../../public-app-config'
 import { siteBrand } from '../../../config'
 import { createFeatureRouteHandler } from '../../feature-bundle'
 import { createCacheHandler } from '../../cache-headers'
-import { completeSpacetimeAuthCallback } from '../../../shared/spacetime-auth'
-import { buildGlobalStylesheetLinks } from '../../../static-shell/global-style-assets'
+import { completeSpacetimeAuthCallback } from '../../../features/auth/spacetime-auth'
+import { buildGlobalStylesheetLinks } from '../../../shell/core/global-style-assets'
 
 const CALLBACK_CACHE_CONTROL = 'private, no-store, max-age=0, must-revalidate'
 

@@ -35,16 +35,16 @@ describe("entry.ssr static bootstrap injection", () => {
     expect(source).not.toContain('document.addEventListener("focusin", load');
     expect(source).not.toContain("const homeDataScriptId =");
     expect(source).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-bootstrap-runtime.js"',
+      '"build/static-shell/apps/site/src/shell/home/home-bootstrap-runtime.js"',
     );
     expect(source).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-bootstrap-core-runtime.js"',
+      '"build/static-shell/apps/site/src/shell/home/home-bootstrap-core-runtime.js"',
     );
     expect(source).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/home-demo-startup-entry.js"',
+      '"build/static-shell/apps/site/src/shell/home/home-demo-startup-entry.js"',
     );
     expect(source).not.toContain(
-      '"build/static-shell/apps/site/src/static-shell/fragment-height-patch-runtime.js"',
+      '"build/static-shell/apps/site/src/shell/fragments/fragment-height-patch-runtime.js"',
     );
     expect(source).not.toContain(
       '"build/static-shell/apps/site/src/fragment/runtime/worker.js"',
@@ -54,11 +54,11 @@ describe("entry.ssr static bootstrap injection", () => {
     );
     expect(source).toContain('"fragment-static": [');
     expect(source).toContain(
-      '"build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js"',
+      '"build/static-shell/apps/site/src/shell/fragments/fragment-bootstrap-runtime.js"',
     );
     expect(source).toContain('"island-static": [');
     expect(source).toContain(
-      '"build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js"',
+      '"build/static-shell/apps/site/src/shell/core/island-bootstrap-runtime.js"',
     );
     expect(source).toContain("const STATIC_BOOTSTRAP_ROUTE_PRELOAD_PATHS = {} as const;");
     expect(source).not.toContain("store-static-runtime.js");

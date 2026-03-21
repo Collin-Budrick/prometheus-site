@@ -1,5 +1,5 @@
-import type { AttachHomeCollabRootOptions } from '../../static-shell/home-collab-entry'
-import type { HomeDemoKind } from '../../static-shell/home-demo-activate'
+import type { AttachHomeCollabRootOptions } from '../../shell/home/home-collab-entry'
+import type { HomeDemoKind } from '../../shell/home/home-demo-activate'
 
 const FRAGMENT_WIDGET_SELECTOR = '[data-fragment-widget]'
 const FRAGMENT_WIDGET_PROPS_SELECTOR = 'script[data-fragment-widget-props]'
@@ -46,10 +46,10 @@ export type FragmentWidgetRuntime = {
 let storeStaticBootstrapPromise: Promise<void> | null = null
 let didWarnContactWidgetFallback = false
 
-const loadHomeDemoRuntime = () => import('../../static-shell/home-demo-activate')
-const loadHomeCollabRuntime = () => import('../../static-shell/home-collab-entry')
+const loadHomeDemoRuntime = () => import('../../shell/home/home-demo-activate')
+const loadHomeCollabRuntime = () => import('../../shell/home/home-collab-entry')
 const loadStoreStaticRuntimeLoader = () =>
-  import('../../static-shell/store-static-runtime-loader')
+  import('../../shell/store/store-static-runtime-loader')
 
 const isElementLike = (value: unknown): value is Element =>
   Boolean(

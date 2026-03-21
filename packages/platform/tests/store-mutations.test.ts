@@ -29,7 +29,7 @@ mock.module('../src/config', () => ({
   }
 }))
 
-mock.module('@features/auth/server', () => ({
+mock.module('@platform/features/auth/server', () => ({
   readSiteSessionClaims: readSiteSessionClaimsMock
 }))
 

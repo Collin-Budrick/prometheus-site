@@ -9,9 +9,9 @@ import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
 import { emptyUiCopy, loginLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
 import type { UiCopy } from '../../lang/types'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { StaticLoginRoute } from '../../static-shell/StaticLoginRoute'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
+import { StaticLoginRoute } from '../../shell/auth/StaticLoginRoute'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { isSiteFeatureEnabled } from '../../template-features'
 
 const loginEnabled = isSiteFeatureEnabled('auth')

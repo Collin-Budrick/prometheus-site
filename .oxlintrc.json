@@ -18,17 +18,12 @@
                   "@platform/*",
                   "@ui",
                   "@ui/*",
-                  "@features/*",
-                  "@features/*/*",
                   "packages/platform/**",
                   "packages/ui/**",
-                  "packages/features/**",
                   "../platform/**",
                   "../ui/**",
-                  "../features/**",
                   "../../platform/**",
-                  "../../ui/**",
-                  "../../features/**"
+                  "../../ui/**"
                 ],
                 "message": "Core must stay independent from platform, UI, and feature layers."
               }
@@ -46,14 +41,11 @@
             "patterns": [
               {
                 "group": [
-                  "./features/**",
-                  "../features/**",
-                  "../../features/**",
-                  "packages/features/**",
-                  "../packages/features/**",
-                  "../../packages/features/**"
+                  "@platform/features/**",
+                  "../../packages/platform/src/features/**",
+                  "../packages/platform/src/features/**"
                 ],
-                "message": "Feature modules belong under packages/features and should be consumed via @features/* aliases."
+                "message": "Site-specific features belong under apps/site/src/features and server features belong under packages/platform/src/features."
               }
             ]
           }

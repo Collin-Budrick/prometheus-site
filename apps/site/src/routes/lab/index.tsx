@@ -7,7 +7,7 @@ import { defaultLang, type Lang } from '../../shared/lang-store'
 import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import { siteBrand, siteFeatures } from '../../config'
 import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
-import { getLabCopy } from '../../shared/lab-copy'
+import { getLabCopy } from '../../features/lab/lab-copy'
 import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/lang-bridge'
 import { isSiteFeatureEnabled } from '../../template-features'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
@@ -18,17 +18,17 @@ import {
   withFragmentHeaderSelection,
   type LanguageSeedPayload
 } from '../../lang/selection'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
-import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
-import { isStaticShellBuild } from '../../static-shell/build-mode'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
+import { StaticFragmentRoute } from '../../shell/fragments/StaticFragmentRoute'
+import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../shell/fragments/static-fragment-model'
+import { isStaticShellBuild } from '../../shell/core/build-mode'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { starterLabCards } from '../../template-starter-data'
 
-const featureLabModule = await import('@features/lab/pages/Lab')
+const featureLabModule = await import('@site/features/lab/lab-route')
 const { default: LabRoute, LabSkeleton: FeatureLabSkeleton } = featureLabModule
-type LabCopy = import('@features/lab/pages/Lab').LabCopy
-type LabStarterCard = import('@features/lab/pages/Lab').LabStarterCard
+type LabCopy = import('@site/features/lab/lab-route').LabCopy
+type LabStarterCard = import('@site/features/lab/lab-route').LabStarterCard
 
 type FragmentResource = {
   plan: FragmentPlanValue | null

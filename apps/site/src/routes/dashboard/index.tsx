@@ -7,13 +7,13 @@ import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
-import { loadAuthSession } from '../../shared/auth-session'
+import { loadAuthSession } from '../../features/auth/auth-session'
 import { dashboardLanguageSelection, emptyUiCopy, type LanguageSeedPayload } from '../../lang/selection'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
-import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
-import { isStaticShellBuild } from '../../static-shell/build-mode'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
+import { createStaticIslandRouteData } from '../../shell/core/island-static-data'
+import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../shell/core/constants'
+import { isStaticShellBuild } from '../../shell/core/build-mode'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 
 type ProtectedRouteData = {
   lang: Lang

@@ -16,7 +16,7 @@ import {
   restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
-import { useStoreSeed } from '../shared/store-seed'
+import { useStoreSeed } from '../features/store/store-seed'
 import {
   buildStoreSortToken,
   defaultStoreSortDir,
@@ -26,7 +26,7 @@ import {
   parseStoreSortToken,
   type StoreSortDir,
   type StoreSortKey
-} from '../shared/store-sort'
+} from '../features/store/store-sort'
 import {
   consumeStoreItem,
   flushStoreCartQueue,
@@ -36,8 +36,8 @@ import {
   storeCartAddEvent,
   storeCartQueueEvent,
   storeInventoryEvent,
-} from '../shared/store-cart'
-import { deleteStoreItemDirect, executeStoreCommandDirect, subscribeStoreInventory } from '../shared/spacetime-store'
+} from '../features/store/store-cart'
+import { deleteStoreItemDirect, executeStoreCommandDirect, subscribeStoreInventory } from '../features/store/spacetime-store'
 
 type StoreStreamProps = {
   limit?: string

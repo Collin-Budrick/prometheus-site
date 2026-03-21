@@ -11,7 +11,7 @@ import type {
   FragmentRuntimeWorkerMessage
 } from './protocol'
 import { asTrustedScriptUrl } from '../../security/client'
-import { resolveStaticAssetUrl } from '../../static-shell/static-asset-url'
+import { resolveStaticAssetUrl } from '../../shell/core/static-asset-url'
 
 export type FragmentRuntimeBridgeHandlers = {
   onCommit?: ((payload: FragmentPayload) => void) | null

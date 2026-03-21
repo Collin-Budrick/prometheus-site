@@ -8,10 +8,10 @@ import { createCacheHandler, PUBLIC_SWR_CACHE } from '../cache-headers'
 import type { FragmentPlan, FragmentPlanValue } from '../../fragment/types'
 import { loadHybridFragmentResource, loadStaticFragmentResource, resolveRequestLang, resolveViewportHint } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
-import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../shared/store-cart'
-import type { StoreSeed } from '../../shared/store-seed'
-import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../shared/store-sort'
-import { loadServerStoreInventory } from '../../shared/store-inventory.server'
+import { readStoreCartQueueFromCookie, readStoreCartSnapshotFromCookie } from '../../features/store/store-cart'
+import type { StoreSeed } from '../../features/store/store-seed'
+import { normalizeStoreSortDir, normalizeStoreSortKey, type StoreSortDir, type StoreSortKey } from '../../features/store/store-sort'
+import { loadServerStoreInventory } from '../../features/store/store-inventory.server'
 import { buildFragmentCssLinks } from '../../fragment/fragment-css'
 import {
   emptyUiCopy,
@@ -19,12 +19,12 @@ import {
   withFragmentHeaderSelection,
   type LanguageSeedPayload
 } from '../../lang/selection'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { StaticFragmentRoute } from '../../static-shell/StaticFragmentRoute'
-import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../static-shell/static-fragment-model'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
+import { StaticFragmentRoute } from '../../shell/fragments/StaticFragmentRoute'
+import { buildStaticFragmentRouteModel, type StaticFragmentRouteModel } from '../../shell/fragments/static-fragment-model'
 import { buildOfflineShellFragment, offlineShellFragmentId } from '../offline-shell-fragment'
-import { isStaticShellBuild } from '../../static-shell/build-mode'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { isStaticShellBuild } from '../../shell/core/build-mode'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 import { isSiteFeatureEnabled } from '../../template-features'
 import { starterStoreItems } from '../../template-starter-data'
 

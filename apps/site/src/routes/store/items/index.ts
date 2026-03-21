@@ -5,8 +5,8 @@ import {
   createStoreMutationJsonResponse,
   normalizeStoreMutationRouteError,
   parseCreateStoreItemInput
-} from '../../../shared/store-mutation-http'
-import { createServerStoreItem } from '../../../shared/store-mutation.server'
+} from '../../../features/store/store-mutation-http'
+import { createServerStoreItem } from '../../../features/store/store-mutation.server'
 
 export const onPost: RequestHandler = createFeatureRouteHandler('store', async ({ request }) => {
   const input = await parseCreateStoreItemInput(request)

@@ -1,18 +1,18 @@
 # AGENTS
 
-This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Use this file as the repo workflow guide, and use the generated template docs for preset and bundle details.
+This monorepo ships as a reusable web showcase template: a Qwik frontend that streams binary-rendered fragments from a Bun + Elysia API. The default branding currently renders as **Fragment Prime** on the **Prometheus** hostnames, but template defaults now live in `packages/template-config/src/index.ts` and can be rewritten with `bun run template:init`. Keep the primary template surface focused on `apps/site`, `packages/{core,platform,ui,template-config,spacetimedb-client}`, `scripts`, `infra`, `tests`, and `docs`. Advanced or internal subsystems live under `extras/`.
 
 ## Architecture overview
 
-- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, template-config, and features live under `packages/`.
-- **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, `docs/monorepo-refactor-plan.md` is the operator guide for presets/branding/infra defaults, and `docs/add-a-bundle.md` is the contract for adding a new detachable bundle.
+- **Workspaces:** Managed with Bun (`bun@1.3.5`). Site entrypoint lives in `apps/site`, API entrypoint lives in `packages/platform/src/entrypoints/api.ts`. Core, platform, UI, template-config, and the shared SpacetimeDB client live under `packages/`.
+- **Template docs:** `docs/template-reference.md` is generated from the bundle manifest, and `docs/template-maintainer-guide.md` is the maintainer guide for presets, branding, bundle ownership, and template checks.
 - **Core (`packages/core`):** Fragment planning/rendering, binary codecs, client streaming helpers, fragment registry, and prefetch/speculation utilities.
 - **Platform (`packages/platform`):** Bun + Elysia integration, env/config resolution, SpaceTimeDB/Garnet clients, rate limiting, and bundle-aware API route composition.
 - **UI (`packages/ui`):** Design system (global styles, RouteMotion, Dock, FragmentCard, toggles), no data fetching.
-- **Features (`packages/features/*`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
+- **Features (`apps/site/src/features + packages/platform/src/features`):** Auth, Store, Messaging, Lab (self-contained front/back logic).
 - **Site (`apps/site`):** Qwik + Qwik City SPA/SSR composition layer, FragmentShell, routes, branding/copy.
 - **API (platform entrypoint):** Thin Bun entry that boots the platform server and registers site fragment definitions.
-- **WebTransport (`apps/webtransport`):** Go HTTP/3 sidecar that upgrades CONNECT requests and streams fragment binaries from the API over WebTransport.
+- **WebTransport (`extras/webtransport`):** Go HTTP/3 sidecar that upgrades CONNECT requests and streams fragment binaries from the API over WebTransport.
 - **Infrastructure (`infra/` + `docker-compose.yml`):**
   - Caddy terminates TLS and routes `prometheus.dev` traffic to web/API containers.
   - Caddy serves HTTP over TCP (h1/h2); UDP 4444 is bound to the WebTransport sidecar for HTTP/3 WebTransport sessions.
@@ -23,10 +23,9 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 
 - **Local dev entrypoint:** `bun run dev` (runs Compose services, ensures the Caddy file, starts Qwik dev server on 4173 with HTTPS routed through Caddy at `https://prometheus.dev`, and defaults to the `full` template preset).
 - **Runtime defaults:** canonical host/port/profile/preset defaults live in `scripts/runtime-config.ts`.
-- **Direct targets:** `bun run dev:web` and `bun run dev:api` start each app individually (requires backing services for API).
-- **Storybook:** `bun run dev:storybook` starts the Qwik Storybook from `apps/site/.storybook`; `bun run build:storybook` builds it to `apps/site/storybook-static`. The single Storybook instance covers stories in both `apps/site/src/**/*.stories.*` and `packages/ui/src/**/*.stories.*`.
+- **Storybook:** Storybook stays scoped to `apps/site`. Use the app-local scripts inside `apps/site` when you need it; keep the repo root limited to template-facing commands.
 - **Fragment HMR (dev):** Vite watches `apps/site/src/fragment`, `apps/site/src/fragment/definitions`, and fragment island components under `apps/site/src/components`, emits `fragments:refresh`, clears in-memory/local fragment shell + plan cache on refresh, and re-fetches fragment payloads with `refresh=1` (dev-only); requires the API running from source (dev/watch) and plan changes still require a reload.
-- **Build/preview:** `bun run build` builds both apps; `bun run preview` starts Caddy/containers and runs `vite preview` for the site.
+- **Build:** `bun run build` builds the default `full` preset; `bun run build:core` builds the lean preset.
 - **Template presets:** `PROMETHEUS_TEMPLATE_PRESET`, `TEMPLATE_PRESET`, and `VITE_TEMPLATE_PRESET` resolve the shared feature bundle set. `full` is the default showcase preset; `core` keeps the lean web shell (`auth`, `account`, `demo-home`). Override bundles with `PROMETHEUS_TEMPLATE_FEATURES` / `PROMETHEUS_TEMPLATE_DISABLE_FEATURES` (or the `TEMPLATE_` / `VITE_TEMPLATE_` variants) using comma/newline-separated feature ids.
 - **Bundle-owned runtime defaults:** realtime-owned envs default on only when the `realtime` bundle is enabled, analytics/highlight/Partytown envs only matter when `analytics` is enabled, service-worker/PWA behavior only activates when `pwa` is enabled, and `native` remains off unless explicitly enabled.
 - **Fragment cache TTLs:** `FRAGMENT_PLAN_TTL` (seconds, default `180`), `FRAGMENT_PLAN_STALE_TTL` (seconds, default `300`), and `FRAGMENT_INITIAL_TTL` (seconds, default `180`) control fragment plan + initial payload cache lifetimes.
@@ -56,13 +55,13 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 
 ## Repo conventions and checks
 
-- **Scripts:** Use root scripts before custom commands (`dev`, `build`, `preview`, `lint`, `typecheck`, `test`, `dev:storybook`, `build:storybook`). Preset-specific scripts (`build:full`, `build:core`, `typecheck:full`, `typecheck:core`, `test:full`, `test:core`, `test:browser:full`, `test:browser:core`) are the template-facing entrypoints. API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
+- **Scripts:** Keep the root surface template-facing: `dev`, `dev:core`, `build`, `build:core`, `preview`, `typecheck`, `typecheck:core`, `test`, `test:core`, `template:init`, `template:sync`, `check:template`, `test:browser:full`, and `test:browser:core`. Internal helpers should stay app-local or `_internal:*`. API linting uses Oxlint configs in `packages/platform/.oxlintrc.json`.
 - **Testing:** Root `bun run test` executes API tests; `bun run typecheck` covers site, Storybook config, and packages. Add targeted tests in `packages/platform/tests/`, `apps/site/src/**/*.test.tsx`, or `tests/browser/*.spec.ts`.
 - **Template sync:** `bun run template:sync` regenerates `docs/template-reference.md`, the manifest, and env examples. `bun run check:template` verifies generated docs, branding placeholders, and untracked build outputs.
 - **Native affordance fallbacks:** `apps/site/src/native/affordances.ts` and `apps/site/src/native/haptics.ts` must preserve browser/PWA UX without assuming platform plugins are available.
 - **Preferences key allowlist:** Lightweight settings persisted via `apps/site/src/native/preferences.ts` are limited to `theme`, `locale`, `haptics-enabled`, `onboarding-complete`, and `last-tab`. Keep additional user/session/cache data in existing storage layers.
 - **Formatting:** API files use Oxlint/formatter configs (`.oxlintrc.json`, `.oxfmtrc.json`). Frontend follows project styling in `packages/ui/src/global.css` and component patterns (Qwik components with `$` suffix).
-- **Git hooks:** `bun run hooks:install` sets `.githooks`; commit messages should be conventional and meaningful.
+- **Git hooks:** `.githooks` remains the hook source; wire it manually if you need local hooks.
 
 ## File map (quick pointers)
 
@@ -71,10 +70,10 @@ This monorepo ships as a reusable web showcase template: a Qwik frontend that st
 - **Core:** `packages/core/src/fragment/` (types/codec/planner/service), `packages/core/src/app/` (client extras).
 - **Template config:** `packages/template-config/src/index.ts` (bundle manifests, presets, and shared feature resolution).
 - **Platform/API:** `packages/platform/src/server/app.ts` (Elysia setup), `packages/platform/src/config.ts` (resolved runtime config), `packages/platform/src/cache.ts` (Garnet RESP client), `packages/platform/src/server/fragments.ts` (fragment routes).
-- **Features:** `packages/features/auth/src/server.ts`, `packages/features/store/src/api.ts`, `packages/features/messaging/src/api.ts`, `packages/features/lab/src/pages/Lab.tsx`.
+- **Features:** `packages/platform/src/features/auth/server.ts`, `packages/platform/src/features/store/api.ts`, `packages/platform/src/features/messaging/api.ts`, `apps/site/src/features/lab/lab-route.tsx`.
 - **Infra:** `docker-compose.yml` (service graph), `infra/caddy` (Caddyfile routing), `infra/spacetimedb/keys`, `scripts/*.ts` (compose helpers, preview/dev).
 - **Runtime config:** `scripts/runtime-config.ts`.
-- **WebTransport:** `apps/webtransport/main.go` (HTTP/3 server), `apps/webtransport/Dockerfile`.
+- **WebTransport:** `extras/webtransport/main.go` (HTTP/3 server), `extras/webtransport/Dockerfile`.
 
 ## Contribution dos and don’ts
 

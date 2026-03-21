@@ -71,7 +71,7 @@ const runDockerSpacetime = (args: string[], extraEnv: Record<string, string | un
 
 export const buildSpacetimeModule = () =>
   runDockerSpacetime(
-    ['build', '--module-path', 'packages/spacetimedb-module'],
+    ['build', '--module-path', 'extras/spacetimedb-module'],
     {
       SPACETIMEAUTH_AUTHORITY: process.env.SPACETIMEAUTH_AUTHORITY,
       SPACETIMEAUTH_CLIENT_ID: process.env.SPACETIMEAUTH_CLIENT_ID
@@ -83,7 +83,7 @@ export const generateSpacetimeBindings = () =>
     [
       'generate',
       '--module-path',
-      'packages/spacetimedb-module',
+      'extras/spacetimedb-module',
       '--lang',
       'typescript',
       '--out-dir',
@@ -107,7 +107,7 @@ export const publishSpacetimeModule = (
       '--server',
       serverUri,
       '--module-path',
-      'packages/spacetimedb-module',
+      'extras/spacetimedb-module',
       '--anonymous',
       '--yes',
       '--delete-data=on-conflict'

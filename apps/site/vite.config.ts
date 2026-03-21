@@ -23,7 +23,7 @@ import {
   HOME_STATIC_ROUTE_KIND,
   getStaticShellRouteConfig,
   normalizeStaticShellRoutePath
-} from './src/static-shell/constants'
+} from './src/shell/core/constants'
 
 const require = createRequire(import.meta.url)
 
@@ -744,7 +744,7 @@ const manualChunks = (id: string) => {
     return 'vendor'
   }
   if (id.includes('/packages/ui/')) return 'ui'
-  if (id.includes('/packages/features/')) return 'features'
+  if (id.includes('/apps/site/src/features/') || id.includes('/packages/platform/src/features/')) return 'features'
   if (id.includes('/packages/core/')) return 'core'
   if (id.includes('/packages/platform/')) return 'platform'
   return undefined

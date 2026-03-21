@@ -10,7 +10,7 @@ rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 
 const result = await Bun.build({
-  entrypoints: [path.resolve(siteRoot, 'src', 'static-shell', 'home-static-entry.ts')],
+  entrypoints: [path.resolve(siteRoot, 'src', 'shell', 'home', 'home-static-entry.ts')],
   outdir: outDir,
   target: 'browser',
   format: 'esm',

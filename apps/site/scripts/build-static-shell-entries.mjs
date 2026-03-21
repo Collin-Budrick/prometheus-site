@@ -18,7 +18,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-anchor-core.ts'
+      'apps/site/src/shell/home/home-anchor-core.ts'
     ]
   },
   {
@@ -26,8 +26,8 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-static-anchor-entry.ts',
-      'apps/site/src/static-shell/home-bootstrap-anchor-runtime.ts'
+      'apps/site/src/shell/home/home-static-anchor-entry.ts',
+      'apps/site/src/shell/home/home-bootstrap-anchor-runtime.ts'
     ]
   },
   {
@@ -35,7 +35,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-post-anchor-core.ts'
+      'apps/site/src/shell/home/home-post-anchor-core.ts'
     ]
   },
   {
@@ -43,8 +43,8 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-static-entry.ts',
-      'apps/site/src/static-shell/home-bootstrap-deferred-runtime.ts'
+      'apps/site/src/shell/home/home-static-entry.ts',
+      'apps/site/src/shell/home/home-bootstrap-deferred-runtime.ts'
     ]
   },
   {
@@ -52,7 +52,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-post-anchor-lifecycle-runtime.ts'
+      'apps/site/src/shell/home/home-post-anchor-lifecycle-runtime.ts'
     ]
   },
   {
@@ -60,7 +60,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-demo-warm-core.ts'
+      'apps/site/src/shell/home/home-demo-warm-core.ts'
     ]
   },
   {
@@ -68,7 +68,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-static-entry-demo-warmup.ts'
+      'apps/site/src/shell/home/home-static-entry-demo-warmup.ts'
     ]
   },
   {
@@ -76,11 +76,11 @@ const buildGroups = [
     splitting: true,
     cssChunking: true,
     entrypoints: [
-      'apps/site/src/static-shell/home-bootstrap-post-lcp-runtime.ts',
-      'apps/site/src/static-shell/home-settings-interaction-runtime.ts',
-      'apps/site/src/static-shell/home-ui-controls-runtime.ts',
-      'apps/site/src/static-shell/home-language-runtime.ts',
-      'apps/site/src/static-shell/home-dock-auth-runtime.ts'
+      'apps/site/src/shell/home/home-bootstrap-post-lcp-runtime.ts',
+      'apps/site/src/shell/home/home-settings-interaction-runtime.ts',
+      'apps/site/src/shell/home/home-ui-controls-runtime.ts',
+      'apps/site/src/shell/home/home-language-runtime.ts',
+      'apps/site/src/shell/home/home-dock-auth-runtime.ts'
     ]
   },
   {
@@ -88,15 +88,15 @@ const buildGroups = [
     splitting: true,
     cssChunking: true,
     entrypoints: [
-      'apps/site/src/static-shell/home-demo-startup-entry.ts',
-      'apps/site/src/static-shell/home-demo-attach-runtime.ts',
-      'apps/site/src/static-shell/home-demo-entry.ts',
-      'apps/site/src/static-shell/home-collab-entry.ts',
-      'apps/site/src/static-shell/home-collab-editor-entry.ts',
-      'apps/site/src/static-shell/home-demo-planner-runtime.ts',
-      'apps/site/src/static-shell/home-demo-wasm-renderer-runtime.ts',
-      'apps/site/src/static-shell/home-demo-react-binary-runtime.ts',
-      'apps/site/src/static-shell/home-demo-preact-island-runtime.ts'
+      'apps/site/src/shell/home/home-demo-startup-entry.ts',
+      'apps/site/src/shell/home/home-demo-attach-runtime.ts',
+      'apps/site/src/shell/home/home-demo-entry.ts',
+      'apps/site/src/shell/home/home-collab-entry.ts',
+      'apps/site/src/shell/home/home-collab-editor-entry.ts',
+      'apps/site/src/shell/home/home-demo-planner-runtime.ts',
+      'apps/site/src/shell/home/home-demo-wasm-renderer-runtime.ts',
+      'apps/site/src/shell/home/home-demo-react-binary-runtime.ts',
+      'apps/site/src/shell/home/home-demo-preact-island-runtime.ts'
     ]
   },
   {
@@ -104,13 +104,13 @@ const buildGroups = [
     splitting: true,
     cssChunking: true,
     entrypoints: [
-      'apps/site/src/static-shell/fragment-height-patch-runtime.ts',
-      'apps/site/src/static-shell/fragment-static-entry.ts',
-      'apps/site/src/static-shell/fragment-bootstrap-runtime.ts',
-      'apps/site/src/static-shell/store-static-runtime.ts',
+      'apps/site/src/shell/fragments/fragment-height-patch-runtime.ts',
+      'apps/site/src/shell/fragments/fragment-static-entry.ts',
+      'apps/site/src/shell/fragments/fragment-bootstrap-runtime.ts',
+      'apps/site/src/shell/store/store-static-runtime.ts',
       'apps/site/src/fragment/ui/fragment-widget-runtime.ts',
-      'apps/site/src/static-shell/island-static-entry.ts',
-      'apps/site/src/static-shell/island-bootstrap-runtime.ts'
+      'apps/site/src/shell/core/island-static-entry.ts',
+      'apps/site/src/shell/core/island-bootstrap-runtime.ts'
     ]
   },
   {
@@ -118,7 +118,7 @@ const buildGroups = [
     splitting: false,
     cssChunking: false,
     entrypoints: [
-      'apps/site/src/static-shell/home-collab.worker.ts',
+      'apps/site/src/shell/home/home-collab.worker.ts',
       'apps/site/src/fragment/runtime/worker.ts',
       'apps/site/src/fragment/runtime/decode-pool.worker.ts'
     ]
@@ -284,31 +284,31 @@ const normalizeOutputKey = (value) => value.replace(/\\/g, '/').replace(/^\.\//,
 const toAssetPath = (outputKey) => `${publicPath}${normalizeOutputKey(outputKey)}`.replace(/^\//, '')
 
 const CURATED_PRELOAD_IMPORT_LIMITS = {
-  'build/static-shell/apps/site/src/static-shell/home-static-anchor-entry.js': 2,
-  'build/static-shell/apps/site/src/static-shell/home-bootstrap-anchor-runtime.js': 2
+  'build/static-shell/apps/site/src/shell/home/home-static-anchor-entry.js': 2,
+  'build/static-shell/apps/site/src/shell/home/home-bootstrap-anchor-runtime.js': 2
 }
 
 const CURATED_ANCHOR_CORE_IMPORTS = {
-  'build/static-shell/apps/site/src/static-shell/home-static-anchor-entry.js': [
-    'apps/site/src/static-shell/home-anchor-core.js'
+  'build/static-shell/apps/site/src/shell/home/home-static-anchor-entry.js': [
+    'apps/site/src/shell/home/home-anchor-core.js'
   ],
-  'build/static-shell/apps/site/src/static-shell/home-bootstrap-anchor-runtime.js': [
-    'apps/site/src/static-shell/home-anchor-core.js'
+  'build/static-shell/apps/site/src/shell/home/home-bootstrap-anchor-runtime.js': [
+    'apps/site/src/shell/home/home-anchor-core.js'
   ]
 }
 
 const CURATED_POST_ANCHOR_CORE_IMPORTS = {
-  'build/static-shell/apps/site/src/static-shell/home-static-entry.js': [
-    'apps/site/src/static-shell/home-post-anchor-core.js'
+  'build/static-shell/apps/site/src/shell/home/home-static-entry.js': [
+    'apps/site/src/shell/home/home-post-anchor-core.js'
   ],
-  'build/static-shell/apps/site/src/static-shell/home-bootstrap-deferred-runtime.js': [
-    'apps/site/src/static-shell/home-post-anchor-core.js'
+  'build/static-shell/apps/site/src/shell/home/home-bootstrap-deferred-runtime.js': [
+    'apps/site/src/shell/home/home-post-anchor-core.js'
   ]
 }
 
 const CURATED_DEMO_WARM_CORE_IMPORTS = {
-  'build/static-shell/apps/site/src/static-shell/home-static-entry-demo-warmup.js': [
-    'apps/site/src/static-shell/home-demo-warm-core.js'
+  'build/static-shell/apps/site/src/shell/home/home-static-entry-demo-warmup.js': [
+    'apps/site/src/shell/home/home-demo-warm-core.js'
   ]
 }
 

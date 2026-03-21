@@ -24,34 +24,34 @@ import {
   STATIC_PAGE_ROOT_ATTR,
   isStaticShellPath,
   normalizeStaticShellRoutePath,
-} from "./static-shell/constants";
+} from "./shell/core/constants";
 import { getOrCreateRequestCspNonce } from "./security/server";
 import {
   CSP_NONCE_ATTR,
   TRUSTED_TYPES_RUNTIME_SCRIPT_POLICY_NAME,
 } from "./security/shared";
 import { existsSync } from "node:fs";
-import { appendStaticAssetVersion } from "./static-shell/asset-version";
-import { getStaticShellBuildVersion } from "./static-shell/build-version.server";
-import { expandStaticShellPreloadPaths } from "./static-shell/build-manifest.server";
+import { appendStaticAssetVersion } from "./shell/core/asset-version";
+import { getStaticShellBuildVersion } from "./shell/core/build-version.server";
+import { expandStaticShellPreloadPaths } from "./shell/core/build-manifest.server";
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
-} from "./static-shell/home-static-entry-loader";
+} from "./shell/home/home-static-entry-loader";
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH,
-} from "./static-shell/home-bootstrap-runtime-loader";
+} from "./shell/home/home-bootstrap-runtime-loader";
 import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH,
-} from "./static-shell/home-demo-runtime-types";
+} from "./shell/home/home-demo-runtime-types";
 import { prewarmStaticFragmentResources } from "./routes/fragment-resource";
 
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   "home-static": HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
   "fragment-static":
-    "build/static-shell/apps/site/src/static-shell/fragment-static-entry.js",
+    "build/static-shell/apps/site/src/shell/fragments/fragment-static-entry.js",
   "island-static":
-    "build/static-shell/apps/site/src/static-shell/island-static-entry.js",
+    "build/static-shell/apps/site/src/shell/core/island-static-entry.js",
 } as const;
 
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
@@ -61,11 +61,11 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   ],
   "fragment-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["fragment-static"],
-    "build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js",
+    "build/static-shell/apps/site/src/shell/fragments/fragment-bootstrap-runtime.js",
   ],
   "island-static": [
     STATIC_BOOTSTRAP_BUNDLE_PATHS["island-static"],
-    "build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js",
+    "build/static-shell/apps/site/src/shell/core/island-bootstrap-runtime.js",
   ],
 } as const;
 

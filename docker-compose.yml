@@ -87,7 +87,7 @@ services:
         "--server",
         "http://spacetimedb:3000",
         "--module-path",
-        "packages/spacetimedb-module",
+        "extras/spacetimedb-module",
         "--anonymous",
         "--yes",
         "--delete-data=on-conflict"
@@ -209,7 +209,7 @@ services:
       - realtime
     build:
       context: .
-      dockerfile: apps/webtransport/Dockerfile
+      dockerfile: extras/webtransport/Dockerfile
       cache_from:
         - type=local,src=.cache/buildx/webtransport
       cache_to:

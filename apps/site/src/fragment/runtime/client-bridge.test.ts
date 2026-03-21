@@ -66,7 +66,7 @@ describe('fragment runtime client bridge', () => {
         {
           getAttribute: (name: string) =>
             name === 'src'
-              ? 'https://prometheus.prod/build/static-shell/apps/site/src/static-shell/fragment-static-entry.js?v=abc123'
+              ? 'https://prometheus.prod/build/static-shell/apps/site/src/shell/fragments/fragment-static-entry.js?v=abc123'
               : null
         }
       ]

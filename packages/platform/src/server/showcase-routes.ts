@@ -1,8 +1,8 @@
 import { t, type AnyElysia, type Context } from 'elysia'
 import type { ElysiaWS } from 'elysia/ws'
-import { buildStoreItemsCacheKey } from '@features/store/cache'
-import { chatChannel, maxChatLength, maxPromptLength, maxPromptPayloadBytes } from '@features/messaging'
-import type { ValidateSessionHandler } from '@features/auth/server'
+import { buildStoreItemsCacheKey } from '@platform/features/store/cache'
+import { chatChannel, maxChatLength, maxPromptLength, maxPromptPayloadBytes } from '@platform/features/messaging'
+import type { ValidateSessionHandler } from '@platform/features/auth/server'
 import type { CacheClient } from '../cache'
 import {
   appendStarterChatMessage,

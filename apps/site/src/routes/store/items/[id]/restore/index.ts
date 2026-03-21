@@ -6,8 +6,8 @@ import {
   normalizeStoreMutationRouteError,
   parseRestoreStoreItemInput,
   parseStoreItemIdParam
-} from '../../../../../shared/store-mutation-http'
-import { restoreServerStoreItem } from '../../../../../shared/store-mutation.server'
+} from '../../../../../features/store/store-mutation-http'
+import { restoreServerStoreItem } from '../../../../../features/store/store-mutation.server'
 
 export const onPost: RequestHandler = createFeatureRouteHandler('store', async ({ params, request }) => {
   const id = parseStoreItemIdParam(params.id)

@@ -1,6 +1,6 @@
 import type { DbConnection as SpacetimeDbConnection } from '@prometheus/spacetimedb-client'
 import { installTrustedTypesFunctionBridge } from '../security/client'
-import { resolveSpacetimeDbClientConfig } from './spacetime-auth'
+import { resolveSpacetimeDbClientConfig } from '@site/features/auth/spacetime-auth'
 
 export type SpacetimeConnectionStatus = 'idle' | 'connecting' | 'live' | 'offline' | 'error'
 

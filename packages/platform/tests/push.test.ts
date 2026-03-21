@@ -5,8 +5,8 @@ import {
   resolvePushEnabled,
   resolvePushSubscription,
   resolveWebPushEnabled
-} from '../../features/messaging/src/api/push'
-import { p2pPushSubscribeSchema, p2pPushUnsubscribeSchema } from '../../features/messaging/src/api/validators'
+} from '../src/features/messaging/api/push'
+import { p2pPushSubscribeSchema, p2pPushUnsubscribeSchema } from '../src/features/messaging/api/validators'
 
 describe('push subscription schemas', () => {
   it('accepts web push subscription payloads', () => {

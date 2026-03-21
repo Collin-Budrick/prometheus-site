@@ -3,14 +3,14 @@ import { spawnSync } from 'node:child_process'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { getStaticShellRouteConfigs, STATIC_SHELL_REGION_ATTR } from '../src/static-shell/constants'
-import type { StaticShellSnapshot, StaticShellSnapshotManifest } from '../src/static-shell/seed'
+import { getStaticShellRouteConfigs, STATIC_SHELL_REGION_ATTR } from '../src/shell/core/constants'
+import type { StaticShellSnapshot, StaticShellSnapshotManifest } from '../src/shell/core/seed'
 import { supportedLanguages, type Lang } from '../src/lang/manifest'
 import {
   createStaticSnapshotManifestEntry,
   toStaticSnapshotAssetPath,
   toStaticSnapshotKey
-} from '../src/static-shell/snapshot'
+} from '../src/shell/core/snapshot'
 
 type PreviewMiddleware = (
   req: http.IncomingMessage,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createRateLimiter } from '@platform/rate-limit'
 import { resolveRuntimeFlags } from '@platform/runtime'
-import { invalidateStoreItemsCache } from '@features/store/cache'
+import { invalidateStoreItemsCache } from '@platform/features/store/cache'
 import { resolveWsClientIp } from '@platform/network'
 import { resetTestState, testValkey } from './setup'
 

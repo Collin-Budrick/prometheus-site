@@ -9,14 +9,14 @@ import { useLangCopy, useLanguageSeed, useProvideLangSignal } from '../shared/la
 import { AUTH_NAV_ITEMS, TOPBAR_NAV_ITEMS } from '../shared/nav-order'
 import { applyLang, resolveLangParam, supportedLangs, type Lang } from '../shared/lang-store'
 import { runLangViewTransition } from '../shared/view-transitions'
-import { loadAuthSession, type AuthSessionState } from '../shared/auth-session'
-import { didAuthSessionChange, revalidateClientAuthSession } from '../shared/auth-session-client'
+import { loadAuthSession, type AuthSessionState } from '../features/auth/auth-session'
+import { didAuthSessionChange, revalidateClientAuthSession } from '../features/auth/auth-session-client'
 import { resolveRequestLang } from './fragment-resource'
 import { appConfig } from '../public-app-config'
 import { buildFragmentCssLinks } from '../fragment/fragment-css'
 import { fragmentPlanCache } from '../fragment/plan-cache'
 import type { FragmentPlan } from '../fragment/types'
-import { appendStaticAssetVersion } from '../static-shell/asset-version'
+import { appendStaticAssetVersion } from '../shell/core/asset-version'
 import { setPreference } from '../native/preferences'
 import { loadLanguageResources, prefetchLanguageResources } from '../lang/client'
 import { mergeLanguageSelections, resolveRouteLanguageSelection, shellLanguageSelection } from '../lang/selection'
@@ -29,7 +29,7 @@ import {
   restoreOverlayFocusBeforeHide,
   setOverlaySurfaceState
 } from '../shared/overlay-a11y'
-import { StaticShellLayout } from '../static-shell/StaticShellLayout'
+import { StaticShellLayout } from '../shell/core/StaticShellLayout'
 import {
   FRAGMENT_STATIC_ROUTE_KIND,
   HOME_STATIC_ROUTE_KIND,
@@ -39,25 +39,25 @@ import {
   isStaticShellPath,
   normalizeStaticShellRoutePath,
   toCanonicalStaticShellHref
-} from '../static-shell/constants'
-import { homeStaticEagerStylesheetHref } from '../static-shell/home-style-assets'
+} from '../shell/core/constants'
+import { homeStaticEagerStylesheetHref } from '../shell/home/home-style-assets'
 import {
   HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH
-} from '../static-shell/home-static-entry-loader'
-import { HOME_STATIC_ENTRY_ASSET_PATH } from '../static-shell/home-static-entry-loader'
+} from '../shell/home/home-static-entry-loader'
+import { HOME_STATIC_ENTRY_ASSET_PATH } from '../shell/home/home-static-entry-loader'
 import {
   HOME_BOOTSTRAP_ANCHOR_RUNTIME_ASSET_PATH
-} from '../static-shell/home-bootstrap-runtime-loader'
-import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../static-shell/home-static-entry-demo-warmup-loader'
+} from '../shell/home/home-bootstrap-runtime-loader'
+import { HOME_STATIC_ENTRY_DEMO_WARMUP_ASSET_PATH } from '../shell/home/home-static-entry-demo-warmup-loader'
 import {
   HOME_DEMO_ENTRY_ASSET_PATH,
   HOME_DEMO_STARTUP_ATTACH_RUNTIME_ASSET_PATH
-} from '../static-shell/home-demo-runtime-types'
+} from '../shell/home/home-demo-runtime-types'
 import {
   expandStaticShellDemoWarmHintPaths,
   expandStaticShellPostAnchorHintPaths,
   expandStaticShellPreloadPaths
-} from '../static-shell/build-manifest.server'
+} from '../shell/core/build-manifest.server'
 
 const initialFadeDurationMs = 920
 const initialFadeClearDelayMs = initialFadeDurationMs + 200
@@ -128,8 +128,8 @@ const DEFERRED_MANIFEST_IDLE_TIMEOUT_MS = 30000
 const DEFERRED_MANIFEST_FALLBACK_DELAY_MS = 24000
 const STATIC_BOOTSTRAP_BUNDLE_PATHS = {
   'home-static': HOME_STATIC_ANCHOR_ENTRY_ASSET_PATH,
-  'fragment-static': 'build/static-shell/apps/site/src/static-shell/fragment-static-entry.js',
-  'island-static': 'build/static-shell/apps/site/src/static-shell/island-static-entry.js'
+  'fragment-static': 'build/static-shell/apps/site/src/shell/fragments/fragment-static-entry.js',
+  'island-static': 'build/static-shell/apps/site/src/shell/core/island-static-entry.js'
 } as const
 const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   'home-static': [
@@ -138,11 +138,11 @@ const STATIC_BOOTSTRAP_PRELOAD_PATHS = {
   ],
   'fragment-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['fragment-static'],
-    'build/static-shell/apps/site/src/static-shell/fragment-bootstrap-runtime.js'
+    'build/static-shell/apps/site/src/shell/fragments/fragment-bootstrap-runtime.js'
   ],
   'island-static': [
     STATIC_BOOTSTRAP_BUNDLE_PATHS['island-static'],
-    'build/static-shell/apps/site/src/static-shell/island-bootstrap-runtime.js'
+    'build/static-shell/apps/site/src/shell/core/island-bootstrap-runtime.js'
   ]
 } as const
 const STATIC_BOOTSTRAP_ROUTE_POST_ANCHOR_HINT_PATHS = {
@@ -807,7 +807,7 @@ export const useShellPreferences = routeLoader$(async (event) => {
 })
 
 export const useStaticShellBuildVersion = routeLoader$(async () => {
-  const { getStaticShellBuildVersion } = await import('../static-shell/build-version.server')
+  const { getStaticShellBuildVersion } = await import('../shell/core/build-version.server')
   return getStaticShellBuildVersion()
 })
 
@@ -831,7 +831,7 @@ export const onRequest: RequestHandler = async (event) => {
 
   if (isHtmlRequest) {
     const nonce = getOrCreateRequestCspNonce(event)
-    const { getStaticShellBuildVersion } = await import('../static-shell/build-version.server')
+    const { getStaticShellBuildVersion } = await import('../shell/core/build-version.server')
     const staticShellBuildVersion = getStaticShellBuildVersion()
     const planHints = sanitizeHints([
       ...getPlanEarlyHints(requestUrl.pathname, request),

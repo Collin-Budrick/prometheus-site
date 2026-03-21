@@ -1,7 +1,7 @@
 import { $, component$, useComputed$, useSignal, useVisibleTask$ } from '@builder.io/qwik'
 import { routeLoader$, type DocumentHead, type DocumentHeadProps, type RequestHandler } from '@builder.io/qwik-city'
 import { StaticRouteTemplate } from '@prometheus/ui'
-import authModuleStyles from '@features/auth/auth.module.css'
+import authModuleStyles from '@site/features/auth/auth.module.css'
 import { siteBrand } from '../../config'
 import { appConfig } from '../../public-app-config'
 import { createFeatureRouteHandler, ensureFeatureEnabled } from '../feature-bundle'
@@ -9,7 +9,7 @@ import { useLangCopy, useLanguageSeed, useSharedLangSignal } from '../../shared/
 import { createCacheHandler, PRIVATE_REVALIDATE_CACHE } from '../cache-headers'
 import { resolveRequestLang } from '../fragment-resource'
 import { defaultLang, type Lang } from '../../shared/lang-store'
-import { loadAuthSession } from '../../shared/auth-session'
+import { loadAuthSession } from '../../features/auth/auth-session'
 import {
   buildLocalProfilePayload,
   clampChannel,
@@ -24,11 +24,11 @@ import {
 } from '../../shared/profile-storage'
 import profileModuleStyles from './profile.module.css'
 import { emptyUiCopy, profileLanguageSelection, type LanguageSeedPayload } from '../../lang/selection'
-import { StaticPageRoot } from '../../static-shell/StaticPageRoot'
-import { createStaticIslandRouteData } from '../../static-shell/island-static-data'
-import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../static-shell/constants'
-import { isStaticShellBuild } from '../../static-shell/build-mode'
-import { buildGlobalStylesheetLinks } from '../../static-shell/global-style-assets'
+import { StaticPageRoot } from '../../shell/core/StaticPageRoot'
+import { createStaticIslandRouteData } from '../../shell/core/island-static-data'
+import { STATIC_ISLAND_DATA_SCRIPT_ID } from '../../shell/core/constants'
+import { isStaticShellBuild } from '../../shell/core/build-mode'
+import { buildGlobalStylesheetLinks } from '../../shell/core/global-style-assets'
 
 type ProfileData = {
   user: {

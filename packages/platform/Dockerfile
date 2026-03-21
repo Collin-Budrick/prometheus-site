@@ -9,10 +9,6 @@ COPY packages/platform/package.json packages/platform/package.json
 COPY packages/spacetimedb-client/package.json packages/spacetimedb-client/package.json
 COPY packages/template-config/package.json packages/template-config/package.json
 COPY packages/ui/package.json packages/ui/package.json
-COPY packages/features/auth/package.json packages/features/auth/package.json
-COPY packages/features/lab/package.json packages/features/lab/package.json
-COPY packages/features/messaging/package.json packages/features/messaging/package.json
-COPY packages/features/store/package.json packages/features/store/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --ignore-scripts --omit=optional --omit=dev
 

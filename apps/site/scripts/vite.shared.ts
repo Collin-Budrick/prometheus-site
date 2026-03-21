@@ -11,10 +11,6 @@ const coreRoot = path.resolve(siteWorkspaceRoot, 'packages/core/src')
 const platformRoot = path.resolve(siteWorkspaceRoot, 'packages/platform/src')
 const uiRoot = path.resolve(siteWorkspaceRoot, 'packages/ui/src')
 const siteRoot = path.resolve(siteWorkspaceRoot, 'apps/site/src')
-const featureAuthRoot = path.resolve(siteWorkspaceRoot, 'packages/features/auth/src')
-const featureStoreRoot = path.resolve(siteWorkspaceRoot, 'packages/features/store/src')
-const featureMessagingRoot = path.resolve(siteWorkspaceRoot, 'packages/features/messaging/src')
-const featureLabRoot = path.resolve(siteWorkspaceRoot, 'packages/features/lab/src')
 
 export const createSiteResolveAliases = (): Alias[] => {
   return [
@@ -28,14 +24,6 @@ export const createSiteResolveAliases = (): Alias[] => {
     { find: /^@prometheus\/ui$/, replacement: path.join(uiRoot, 'index.ts') },
     { find: /^@prometheus\/ui\/(.*)$/, replacement: path.join(uiRoot, '$1') },
     { find: /^@site$/, replacement: path.join(siteRoot, 'index.ts') },
-    { find: /^@site\/(.*)$/, replacement: path.join(siteRoot, '$1') },
-    { find: /^@features\/auth$/, replacement: path.join(featureAuthRoot, 'index.ts') },
-    { find: /^@features\/auth\/(.*)$/, replacement: path.join(featureAuthRoot, '$1') },
-    { find: /^@features\/store$/, replacement: path.join(featureStoreRoot, 'index.ts') },
-    { find: /^@features\/store\/(.*)$/, replacement: path.join(featureStoreRoot, '$1') },
-    { find: /^@features\/messaging$/, replacement: path.join(featureMessagingRoot, 'index.ts') },
-    { find: /^@features\/messaging\/(.*)$/, replacement: path.join(featureMessagingRoot, '$1') },
-    { find: /^@features\/lab$/, replacement: path.join(featureLabRoot, 'index.ts') },
-    { find: /^@features\/lab\/(.*)$/, replacement: path.join(featureLabRoot, '$1') }
+    { find: /^@site\/(.*)$/, replacement: path.join(siteRoot, '$1') }
   ]
 }
